@@ -94,6 +94,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const client = new Anthropic();
 
+  const today = new Date().toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
   const userMessage = `
 You are analyzing a REAL website. Here is the actual content crawled from the site:
 
@@ -104,12 +110,14 @@ ${websiteContent}
 Based on this REAL content above, perform a ${deliverableType} SEO analysis:
 - Target URL: ${url}
 - Focus Keyword: ${keyword}
+- Today's Date: ${today}
 
 Important instructions:
 - Base ALL your findings on the actual website content provided above
 - Point out SPECIFIC issues you can see in the real content
 - Quote actual text from the site where relevant
 - Do NOT make up or assume data you cannot see
+- Always use today's date (${today}) when mentioning the analysis date — never write 2024
 - Format your response using proper markdown with clear headers, bullet points and tables
 - Be specific, actionable, and direct
   `.trim();
