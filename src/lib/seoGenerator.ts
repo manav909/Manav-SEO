@@ -1,4 +1,4 @@
-export type DeliverableType = 'technical' | 'onpage' | 'offpage' | 'geo';
+export type DeliverableType = 'Technical' | 'On-Page' | 'Off-Page' | 'GEO';
 
 export interface Deliverable {
   id: DeliverableType;
@@ -9,25 +9,25 @@ export interface Deliverable {
 
 export const DELIVERABLES: Deliverable[] = [
   {
-    id: 'technical',
+    id: 'Technical',
     title: 'Technical SEO Blueprint',
     shortTitle: 'Technical',
     description: 'Crawlability, Core Web Vitals, schema & site architecture audit.',
   },
   {
-    id: 'onpage',
+    id: 'On-Page',
     title: 'On-Page Content Gap',
     shortTitle: 'On-Page',
     description: 'Topical clusters, missing keywords & content opportunities.',
   },
   {
-    id: 'offpage',
+    id: 'Off-Page',
     title: 'Off-Page PR Strategy',
     shortTitle: 'Off-Page',
     description: 'Digital PR angles, link prospects & authority outreach plan.',
   },
   {
-    id: 'geo',
+    id: 'GEO',
     title: 'Generative Engine Optimization',
     shortTitle: 'GEO',
     description: 'Optimize for ChatGPT, Perplexity & Google AI Overviews.',

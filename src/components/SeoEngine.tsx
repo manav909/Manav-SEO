@@ -4,19 +4,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
-import { DELIVERABLES, LOADING_STEPS, generateDeliverable, type DeliverableType } from '@/lib/seoGenerator';
+import { DELIVERABLES, LOADING_STEPS, type DeliverableType } from '@/lib/seoGenerator';
 
 const ICONS: Record<DeliverableType, typeof Wrench> = {
-  technical: Wrench,
-  onpage: FileText,
-  offpage: Megaphone,
-  geo: Bot,
+  Technical: Wrench,
+  'On-Page': FileText,
+  'Off-Page': Megaphone,
+  GEO: Bot,
 };
 
 export const SeoEngine = () => {
   const [url, setUrl] = useState('');
   const [keyword, setKeyword] = useState('');
-  const [selected, setSelected] = useState<DeliverableType>('technical');
+  const [selected, setSelected] = useState<DeliverableType>('Technical');
   const [loading, setLoading] = useState(false);
   const [stepIdx, setStepIdx] = useState(0);
   const [output, setOutput] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export const SeoEngine = () => {
     return () => clearInterval(interval);
   }, [loading]);
 
-  const handleGenerate = (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim() || !keyword.trim()) {
       toast({ title: 'Missing fields', description: 'Please add a URL and a keyword.', variant: 'destructive' });
@@ -44,12 +44,43 @@ export const SeoEngine = () => {
     }
     setOutput(null);
     setLoading(true);
-    setTimeout(() => {
-      setOutput(generateDeliverable(selected, url, keyword));
+    try {
+      const res = await fetch('/api/seo-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, keyword, deliverableType: selected }),
+      });
+
+      if (!res.ok || !res.body) throw new Error('Request failed');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedOutput = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+
+        // Detect server-side stream errors forwarded as text
+        if (chunk.includes('[STREAM_ERROR]')) {
+          console.error(chunk);
+          toast({ title: 'Error', description: chunk, variant: 'destructive' });
+          break;
+        }
+
+        accumulatedOutput += chunk;
+        setOutput(accumulatedOutput);
+      }
       setLoading(false);
       setActiveTab('rendered');
       setTimeout(() => outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-    }, LOADING_STEPS.length * 700 + 300);
+    } catch (error) {
+      console.error(error);
+      toast({ title: 'Error', description: 'Failed to generate deliverable.', variant: 'destructive' });
+      setLoading(false);
+    }
   };
 
   const handleCopy = async () => {
