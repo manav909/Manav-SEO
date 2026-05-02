@@ -31,6 +31,49 @@ const SYSTEM_PROMPTS: Record<DeliverableType, string> = {
   `.trim(),
 };
 
+// ─────────────────────────────────────────────
+// Fetches the real website content
+// ─────────────────────────────────────────────
+async function fetchWebsiteContent(url: string): Promise<string> {
+  try {
+    const fullUrl = url.startsWith("http") ? url : `https://${url}`;
+
+    const response = await fetch(fullUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; SEOAnalyzer/1.0; +https://indiit.com)",
+      },
+      signal: AbortSignal.timeout(10000), // 10 second timeout
+    });
+
+    if (!response.ok) {
+      return `Could not fetch website. Status: ${response.status}`;
+    }
+
+    const html = await response.text();
+
+    // Strip HTML tags and clean up the text
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")   // remove scripts
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")      // remove styles
+      .replace(/<[^>]+>/g, " ")                        // remove all tags
+      .replace(/&nbsp;/g, " ")                         // fix entities
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/\s{2,}/g, " ")                         // collapse whitespace
+      .trim()
+      .slice(0, 15000);                                // limit to 15k chars
+
+    return text || "Website content could not be extracted.";
+  } catch (err) {
+    return `Could not fetch website: ${err instanceof Error ? err.message : "Unknown error"}`;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Main handler
+// ─────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed." });
@@ -46,13 +89,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "Invalid deliverableType." });
   }
 
+  // Fetch the REAL website content first
+  const websiteContent = await fetchWebsiteContent(url);
+
   const client = new Anthropic();
 
   const userMessage = `
-    Please perform a ${deliverableType} SEO analysis for the following:
-    - Target URL: ${url}
-    - Focus Keyword: ${keyword}
-    Provide a comprehensive, actionable report.
+You are analyzing a REAL website. Here is the actual content crawled from the site:
+
+=== WEBSITE CONTENT FROM ${url} ===
+${websiteContent}
+=== END OF WEBSITE CONTENT ===
+
+Based on this REAL content above, perform a ${deliverableType} SEO analysis:
+- Target URL: ${url}
+- Focus Keyword: ${keyword}
+
+Important instructions:
+- Base ALL your findings on the actual website content provided above
+- Point out SPECIFIC issues you can see in the real content
+- Quote actual text from the site where relevant
+- Do NOT make up or assume data you cannot see
+- Format your response using proper markdown with clear headers, bullet points and tables
+- Be specific, actionable, and direct
   `.trim();
 
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
