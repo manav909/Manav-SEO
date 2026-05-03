@@ -1,117 +1,78 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import Anthropic from '@anthropic-ai/sdk';
-
-// Load environment variables
-dotenv.config({ path: '.env.local' });
-
+const express = require('express');
+const axios = require('axios');
+const cheerio = require('cheerio');
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
 app.use(express.json());
 
-// ─────────────────────────────────────────────
-// TYPE DEFINITIONS
-// ─────────────────────────────────────────────
+// Session-based cache
+const cache = new Map();
 
-// ─────────────────────────────────────────────
-// SYSTEM PROMPTS — paste your heavy prompts here
-// ─────────────────────────────────────────────
-
-const SYSTEM_PROMPTS = {
-  Technical: `
-    You are a Senior Technical SEO Specialist.
-    <!-- ✏️  PASTE YOUR TECHNICAL SEO SYSTEM PROMPT HERE -->
-  `.trim(),
-
-  "On-Page": `
-    You are a Senior On-Page SEO Content Strategist.
-    <!-- ✏️  PASTE YOUR ON-PAGE SEO SYSTEM PROMPT HERE -->
-  `.trim(),
-
-  "Off-Page": `
-    You are a Senior Off-Page SEO & Link Building Strategist.
-    <!-- ✏️  PASTE YOUR OFF-PAGE SEO SYSTEM PROMPT HERE -->
-  `.trim(),
-
-  GEO: `
-    You are a Generative Engine Optimization (GEO) Specialist.
-    <!-- ✏️  PASTE YOUR GEO SYSTEM PROMPT HERE -->
-  `.trim(),
-};
-
-// ─────────────────────────────────────────────
-// ROUTE HANDLER
-// ─────────────────────────────────────────────
-
-app.post('/api/seo-agent', async (req, res) => {
-  // 1. Parse & validate the request body
-  const body = req.body;
-
-  const { url, keyword, deliverableType } = body;
-
-  if (!url || !keyword || !deliverableType) {
-    return res.status(400).json({ error: "Missing required fields: url, keyword, deliverableType." });
-  }
-
-  if (!SYSTEM_PROMPTS[deliverableType]) {
-    return res.status(400).json({
-      error: `Invalid deliverableType. Must be one of: ${Object.keys(SYSTEM_PROMPTS).join(", ")}.`,
-    });
-  }
-
-  // 2. Initialise the Anthropic client
-  //    It auto-reads process.env.ANTHROPIC_API_KEY — no need to pass it explicitly
-  const client = new Anthropic();
-
-  // 3. Build the user message
-  const userMessage = `
-    Please perform a ${deliverableType} SEO analysis for the following:
-
-    - Target URL: ${url}
-    - Focus Keyword: ${keyword}
-
-    Provide a comprehensive, actionable report based on your specialisation.
-  `.trim();
-
-  // 4. Set headers for streaming
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('Cache-Control', 'no-cache');
-
-  try {
-    const anthropicStream = await client.messages.stream({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 8096,
-      system: SYSTEM_PROMPTS[deliverableType],
-      messages: [{ role: "user", content: userMessage }],
-    });
-
-    // Forward each text delta to the client
-    for await (const chunk of anthropicStream) {
-      if (
-        chunk.type === "content_block_delta" &&
-        chunk.delta.type === "text_delta"
-      ) {
-        res.write(chunk.delta.text);
-      }
+// Function to crawl website and extract data
+async function crawlWebsite(url) {
+    if (cache.has(url)) {
+        return cache.get(url);
     }
-  } catch (err) {
-    const message =
-      err instanceof Anthropic.APIError
-        ? `Anthropic API error ${err.status}: ${err.message}`
-        : "An unexpected error occurred.";
+    try {
+        const response = await axios.get(url);
+        const $ = cheerio.load(response.data);
 
-    // Send error as a final chunk
-    res.write(`\n\n[STREAM_ERROR]: ${message}`);
-  } finally {
-    res.end();
-  }
+        const title = $('title').text();
+        const metaDescription = $('meta[name="description"]').attr('content');
+        const headings = [];
+        $('h1, h2, h3').each((i, el) => headings.push($(el).text()));
+        const links = [];
+        $('a').each((i, el) => links.push($(el).attr('href')));
+        const images = [];
+        $('img').each((i, el) => images.push($(el).attr('src')));
+        const bodyText = $('body').text();
+
+        const crawledData = { title, metaDescription, headings, links, images, bodyText };
+        cache.set(url, crawledData);
+        return crawledData;
+    } catch (error) {
+        throw new Error('Error while crawling the website');
+    }
+}
+
+// Endpoint to analyze SEO
+app.post('/api/seo-agent', async (req, res) => {
+    const { url, keyword, targetCountry, target } = req.body;
+
+    const validTargets = ['traffic', 'ranking', 'conversions', 'engagement', 'visibility', 'authority'];
+
+    if (!targetCountry || !target || !url || !keyword) {
+        return res.status(400).json({ error: 'targetCountry, target, url, and keyword are required fields.' });
+    }
+    if (!validTargets.includes(target)) {
+        return res.status(400).json({ error: 'Invalid target provided.' });
+    }
+
+    try {
+        const crawledData = await crawlWebsite(url);
+        // Include crawled data in user message sent to Claude API
+        const userMessage = `Analyze ${keyword} for the website data: ${JSON.stringify(crawledData)}`;
+        // Call Claude API with all fields
+        // const response = await ClaudeAPI.call({ url, keyword, targetCountry, target, crawledData });
+
+        res.status(200).json({ message: 'SEO analysis requested', crawledData });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint to get cache status
+app.get('/api/cache-status', (req, res) => {
+    res.status(200).json({ cache: Array.from(cache.entries()) });
+});
+
+// Endpoint to clear the cache
+app.post('/api/clear-cache', (req, res) => {
+    cache.clear();
+    res.status(200).json({ message: 'Cache cleared successfully.' });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
