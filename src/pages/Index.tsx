@@ -305,8 +305,14 @@ const Index = () => {
       {/* NAV */}
       <nav className="relative z-20 flex items-center justify-between px-6 sm:px-10 py-5 max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shadow-[0_0_20px_hsl(var(--primary)/0.5)] shrink-0">
-            <span className="text-primary-foreground font-bold text-base">M</span>
+          <div className="relative h-10 w-10 shrink-0">
+            <img
+              src="/manav.jpg"
+              alt="Manav"
+              className="h-10 w-10 rounded-full object-cover"
+              style={{ objectPosition: 'center 20%' }}
+            />
+            <div className="absolute inset-0 rounded-full ring-2 ring-primary shadow-[0_0_16px_hsl(var(--primary)/0.5)]" />
           </div>
           <span className="font-bold text-lg tracking-tight">
             SEO<span className="text-primary"> Seasons</span>
