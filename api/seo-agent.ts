@@ -112,6 +112,8 @@ Critical instructions:
 - Use today's date (${today}) for the analysis date — never write a different year
 - Format using clear markdown: headings, bullet points, and tables where appropriate
 - Be specific, direct, and actionable
+- Write a COMPLETE report — never truncate or summarize at the end
+- If running long, reduce section depth but always finish all sections
   `.trim();
 
   // Set streaming headers
@@ -122,11 +124,11 @@ Critical instructions:
 
   try {
     const anthropicStream = await client.messages.stream({
-      model: "claude-sonnet-4-5",
-      max_tokens: 16000,
-      system: SYSTEM_PROMPTS[deliverableType],
-      messages: [{ role: "user", content: userMessage }],
-    });
+  model: "claude-sonnet-4-5",
+  max_tokens: 32000,
+  system: SYSTEM_PROMPTS[deliverableType],
+  messages: [{ role: "user", content: userMessage }],
+});
 
     for await (const chunk of anthropicStream) {
       if (
