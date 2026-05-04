@@ -123,7 +123,7 @@ Critical instructions:
   try {
     const anthropicStream = await client.messages.stream({
       model: "claude-sonnet-4-5",
-      max_tokens: 8096,
+      max_tokens: 16000,
       system: SYSTEM_PROMPTS[deliverableType],
       messages: [{ role: "user", content: userMessage }],
     });
