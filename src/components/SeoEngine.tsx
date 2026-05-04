@@ -109,7 +109,6 @@ export const SeoEngine = () => {
       const maxWidth = pageWidth - margin * 2;
       let y = margin;
 
-      // Helper: add new page if needed
       const checkNewPage = (neededHeight: number) => {
         if (y + neededHeight > pageHeight - margin) {
           pdf.addPage();
@@ -117,7 +116,23 @@ export const SeoEngine = () => {
         }
       };
 
-      // Helper: wrap and write text
+      // Clean special characters that cause encoding issues
+      const cleanText = (text: string) =>
+        text
+          .replace(/\*\*(.+?)\*\*/g, '$1')
+          .replace(/`(.+?)`/g, '$1')
+          .replace(/✓/g, '[OK]')
+          .replace(/✗/g, '[X]')
+          .replace(/→/g, '->')
+          .replace(/←/g, '<-')
+          .replace(/[""]/g, '"')
+          .replace(/['']/g, "'")
+          .replace(/–/g, '-')
+          .replace(/—/g, '--')
+          .replace(/…/g, '...')
+          .replace(/•/g, '-')
+          .replace(/[^\x00-\x7F]/g, '?');
+
       const writeText = (
         text: string,
         fontSize: number,
@@ -129,7 +144,8 @@ export const SeoEngine = () => {
         pdf.setFontSize(fontSize);
         pdf.setFont('helvetica', isBold ? 'bold' : 'normal');
         pdf.setTextColor(...color);
-        const lines = pdf.splitTextToSize(text, maxWidth);
+        const clean = cleanText(text);
+        const lines = pdf.splitTextToSize(clean, maxWidth);
         const lineHeight = fontSize * 0.45;
         const blockHeight = lines.length * lineHeight + topPad + bottomPad;
         checkNewPage(blockHeight);
@@ -138,50 +154,85 @@ export const SeoEngine = () => {
         y += lines.length * lineHeight + bottomPad;
       };
 
-      // Parse markdown lines into PDF
       const lines = output.split('\n');
       let inTable = false;
       let tableRows: string[][] = [];
+      let inCodeBlock = false;
+      let codeLines: string[] = [];
 
       const flushTable = () => {
         if (tableRows.length < 2) { tableRows = []; inTable = false; return; }
-        const colCount = tableRows[0].length;
+        const colCount = Math.max(...tableRows.map(r => r.length));
         const colWidth = maxWidth / colCount;
         const rowHeight = 7;
 
         tableRows.forEach((row, ri) => {
-          if (ri === 1) return; // skip separator row
+          if (ri === 1) return; // skip separator
           checkNewPage(rowHeight + 2);
           const isHeader = ri === 0;
           pdf.setFontSize(8);
           pdf.setFont('helvetica', isHeader ? 'bold' : 'normal');
-          pdf.setTextColor(isHeader ? 30 : 80, isHeader ? 30 : 80, isHeader ? 30 : 80);
+          pdf.setTextColor(isHeader ? 30 : 60, isHeader ? 30 : 60, isHeader ? 30 : 60);
           if (isHeader) {
-            pdf.setFillColor(240, 240, 240);
-            pdf.rect(margin, y - 4, maxWidth, rowHeight, 'F');
+            pdf.setFillColor(235, 235, 245);
+            pdf.rect(margin, y - 5, maxWidth, rowHeight, 'F');
           }
           row.forEach((cell, ci) => {
-            const cellLines = pdf.splitTextToSize(cell.trim(), colWidth - 2);
+            const cellText = cleanText(cell.trim());
+            const cellLines = pdf.splitTextToSize(cellText, colWidth - 2);
             pdf.text(cellLines, margin + ci * colWidth + 1, y);
           });
-          // Row border
-          pdf.setDrawColor(200, 200, 200);
-          pdf.line(margin, y + 2, margin + maxWidth, y + 2);
+          pdf.setDrawColor(210, 210, 220);
+          pdf.line(margin, y + 2.5, margin + maxWidth, y + 2.5);
           y += rowHeight;
         });
 
-        // Table outer border
-        pdf.setDrawColor(180, 180, 180);
+        pdf.setDrawColor(180, 180, 200);
         y += 4;
         tableRows = [];
         inTable = false;
       };
 
+      const flushCodeBlock = () => {
+        if (codeLines.length === 0) { codeLines = []; inCodeBlock = false; return; }
+        // Draw a grey background box for code
+        const codeText = codeLines.join('\n');
+        pdf.setFontSize(7.5);
+        pdf.setFont('courier', 'normal');
+        pdf.setTextColor(40, 40, 40);
+        const wrappedLines = pdf.splitTextToSize(codeText, maxWidth - 6);
+        const boxHeight = wrappedLines.length * 3.8 + 6;
+        checkNewPage(boxHeight + 4);
+        pdf.setFillColor(242, 242, 248);
+        pdf.setDrawColor(200, 200, 215);
+        pdf.roundedRect(margin, y - 3, maxWidth, boxHeight, 2, 2, 'FD');
+        pdf.text(wrappedLines, margin + 3, y + 1);
+        y += boxHeight + 4;
+        codeLines = [];
+        inCodeBlock = false;
+      };
+
       for (const line of lines) {
-        // Table rows
+        // Handle code blocks
+        if (line.trim().startsWith('```')) {
+          if (inCodeBlock) {
+            flushCodeBlock();
+          } else {
+            if (inTable) flushTable();
+            inCodeBlock = true;
+          }
+          continue;
+        }
+
+        if (inCodeBlock) {
+          codeLines.push(line);
+          continue;
+        }
+
+        // Handle tables
         if (line.trim().startsWith('|')) {
           inTable = true;
-          const cells = line.split('|').filter((c) => c.trim() !== '');
+          const cells = line.split('|').filter((_, i, arr) => i > 0 && i < arr.length - 1);
           tableRows.push(cells);
           continue;
         } else if (inTable) {
@@ -190,75 +241,82 @@ export const SeoEngine = () => {
 
         // Headings
         if (line.startsWith('# ')) {
-          writeText(line.slice(2), 18, true, [99, 102, 241], 6, 4);
+          writeText(line.slice(2), 18, true, [79, 70, 229], 6, 4);
         } else if (line.startsWith('## ')) {
-          writeText(line.slice(3), 14, true, [30, 30, 30], 5, 3);
+          writeText(line.slice(3), 13, true, [30, 30, 40], 5, 3);
         } else if (line.startsWith('### ')) {
-          writeText(line.slice(4), 11, true, [99, 102, 241], 4, 2);
+          writeText(line.slice(4), 10.5, true, [79, 70, 229], 4, 2);
+        } else if (line.startsWith('#### ')) {
+          writeText(line.slice(5), 9.5, true, [60, 60, 80], 3, 2);
         } else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
-          // Bullet points
-          const text = line.trim().replace(/^[-*]\s/, '');
-          const clean = text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1');
+          const text = cleanText(line.trim().replace(/^[-*]\s/, ''));
           pdf.setFontSize(9);
           pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(60, 60, 60);
-          const wrapped = pdf.splitTextToSize('• ' + clean, maxWidth - 4);
-          const blockH = wrapped.length * 4 + 1;
+          pdf.setTextColor(50, 50, 60);
+          const wrapped = pdf.splitTextToSize('  •  ' + text, maxWidth - 5);
+          const blockH = wrapped.length * 4.2 + 1;
           checkNewPage(blockH);
-          pdf.text(wrapped, margin + 3, y);
+          pdf.text(wrapped, margin + 2, y);
           y += blockH;
         } else if (/^\d+\.\s/.test(line.trim())) {
-          // Numbered list
-          const clean = line.trim().replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1');
+          const text = cleanText(line.trim());
           pdf.setFontSize(9);
           pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(60, 60, 60);
-          const wrapped = pdf.splitTextToSize(clean, maxWidth - 4);
-          const blockH = wrapped.length * 4 + 1;
+          pdf.setTextColor(50, 50, 60);
+          const wrapped = pdf.splitTextToSize(text, maxWidth - 5);
+          const blockH = wrapped.length * 4.2 + 1;
           checkNewPage(blockH);
-          pdf.text(wrapped, margin + 3, y);
+          pdf.text(wrapped, margin + 4, y);
+          y += blockH;
+        } else if (line.trim().startsWith('>')) {
+          // Blockquote
+          const text = cleanText(line.trim().replace(/^>\s?/, ''));
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'italic');
+          pdf.setTextColor(90, 90, 110);
+          pdf.setFillColor(245, 245, 252);
+          const wrapped = pdf.splitTextToSize(text, maxWidth - 8);
+          const blockH = wrapped.length * 4.2 + 4;
+          checkNewPage(blockH);
+          pdf.rect(margin, y - 3, 2, blockH, 'F');
+          pdf.text(wrapped, margin + 5, y);
           y += blockH;
         } else if (line.trim() === '---') {
-          // Divider
           checkNewPage(6);
-          pdf.setDrawColor(200, 200, 200);
+          pdf.setDrawColor(200, 200, 220);
           pdf.line(margin, y, margin + maxWidth, y);
           y += 6;
         } else if (line.trim() === '') {
-          y += 3;
+          y += 2.5;
         } else {
-          // Normal paragraph
-          const clean = line.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1');
-          writeText(clean, 9, false, [60, 60, 60], 0, 1);
+          writeText(line, 9, false, [50, 50, 60], 0, 1.5);
         }
       }
 
-      // Flush any remaining table
       if (inTable) flushTable();
+      if (inCodeBlock) flushCodeBlock();
 
-      // Footer on every page
+      // Page footer
       const totalPages = (pdf.internal as any).getNumberOfPages();
       for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i);
         pdf.setFontSize(7);
-        pdf.setTextColor(150, 150, 150);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(160, 160, 180);
         pdf.text(
-          `SEO Report — ${currentDeliverable.title} — Page ${i} of ${totalPages}`,
+          `SEO Report  |  ${currentDeliverable.title}  |  Page ${i} of ${totalPages}`,
           margin,
           pageHeight - 8
         );
+        pdf.line(margin, pageHeight - 11, margin + maxWidth, pageHeight - 11);
       }
 
       pdf.save(`seo-${selected}-${Date.now()}.pdf`);
-      toast({ title: 'PDF downloaded!', description: 'Full report saved successfully.' });
+      toast({ title: 'PDF downloaded!', description: 'Full report saved.' });
 
     } catch (err) {
       console.error('PDF error:', err);
-      toast({
-        title: 'PDF failed',
-        description: String(err),
-        variant: 'destructive',
-      });
+      toast({ title: 'PDF failed', description: String(err), variant: 'destructive' });
     } finally {
       setExportingPdf(false);
     }
