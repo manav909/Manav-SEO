@@ -6,23 +6,19 @@ const Index = () => {
     <main className="relative min-h-screen overflow-hidden">
       <div className="absolute inset-0 bg-grid pointer-events-none" />
 
-      {/* ── AMBIENT GLOW ── */}
+      {/* AMBIENT GLOW */}
       <div className="pointer-events-none absolute -top-32 -left-32 h-[600px] w-[600px] rounded-full bg-primary/10 blur-[120px]" />
       <div className="pointer-events-none absolute top-20 right-0 h-[500px] w-[500px] rounded-full bg-primary/8 blur-[100px]" />
 
-      {/* ── NAV ── */}
+      {/* NAV */}
       <nav className="relative z-20 flex items-center justify-between px-6 sm:px-10 py-5 max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
-          {/* Monogram avatar — no photo crop issues */}
           <div className="relative h-10 w-10 shrink-0">
             <img
               src="/manav.jpg"
               alt="Manav"
               className="h-10 w-10 rounded-full object-cover object-top"
-              style={{
-                mixBlendMode: 'normal',
-                background: 'hsl(var(--primary)/0.15)',
-              }}
+              style={{ background: 'hsl(var(--primary)/0.15)' }}
             />
             <div className="absolute inset-0 rounded-full ring-2 ring-primary shadow-[0_0_16px_hsl(var(--primary)/0.5)]" />
           </div>
@@ -36,13 +32,12 @@ const Index = () => {
         </div>
       </nav>
 
-      {/* ── HERO ── */}
+      {/* HERO */}
       <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 pt-4 pb-6">
         <div className="grid lg:grid-cols-[1fr_460px] gap-0 items-center">
 
           {/* LEFT — Copy */}
           <div className="text-left relative z-10 lg:pr-10">
-
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card/60 backdrop-blur text-xs font-mono text-muted-foreground mb-6 animate-fade-up">
               <Zap className="h-3 w-3 text-primary" />
               Strategy is expensive. Guessing is even costlier.
@@ -149,11 +144,11 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ── BRAND STRIP — manavseo.png used PROPERLY as wide image ── */}
+      {/* BRAND STRIP — manavseo.png full width */}
       <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 mb-10">
         <div className="relative rounded-3xl overflow-hidden border border-border shadow-card min-h-[300px]">
 
-          {/* Photo — positioned to show Manav's face on right */}
+          {/* Photo — positioned to show Manav's face */}
           <img
             src="/manavseo.jpg"
             alt="Manav"
@@ -161,13 +156,10 @@ const Index = () => {
             style={{ objectPosition: '75% 15%' }}
           />
 
-          {/* Dark gradient — covers left 60%, fades to transparent so face shows */}
+          {/* Gradient overlay — text on left, face visible on right */}
           <div className="absolute inset-0 bg-gradient-to-r from-background from-40% via-background/85 via-60% to-transparent" />
 
-          {/* Text content on left */}
-          <div className="relative z-10 p-8 sm:p-10 max-w-lg">
-
-          {/* Text content on left */}
+          {/* Text */}
           <div className="relative z-10 p-8 sm:p-10 max-w-lg">
             <Quote className="h-6 w-6 text-primary mb-3 opacity-80" />
             <p className="text-xl sm:text-2xl font-semibold text-foreground leading-snug mb-4">
@@ -188,6 +180,7 @@ const Index = () => {
               </div>
             </div>
           </div>
+
         </div>
       </section>
 
@@ -197,10 +190,10 @@ const Index = () => {
         <ChevronDown className="h-4 w-4 text-primary" />
       </div>
 
-      {/* ── TOOL ── */}
+      {/* TOOL */}
       <SeoEngine />
 
-      {/* ── FOOTER ── */}
+      {/* FOOTER */}
       <footer className="relative z-10 mt-20 py-6 text-center text-xs text-muted-foreground border-t border-border">
         <p className="mb-1">
           Built by <span className="text-primary font-semibold">Manav</span> — Fiverr Top Rated SEO Strategist
