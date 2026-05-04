@@ -15,7 +15,7 @@ const Index = () => {
         <div className="flex items-center gap-3">
           <div className="relative">
             <img
-              src="/manavseo.png"
+              src="/manavseo.jpg"
               alt="Manav"
               className="h-10 w-10 rounded-full object-cover object-[center_15%] ring-2 ring-primary shadow-[0_0_20px_hsl(var(--primary)/0.6)]"
               style={{ mixBlendMode: 'normal' }}
@@ -124,7 +124,7 @@ const Index = () => {
             {/* Manav + AI Robot image — black bg disappears via screen blend */}
             <div className="relative">
               <img
-                src="/manavai.png"
+                src="/manavai.jpg"
                 alt="Manav — SEO Strategist"
                 className="relative z-10 w-full max-w-[440px] lg:max-w-[480px] object-contain drop-shadow-2xl"
                 style={{
@@ -136,7 +136,7 @@ const Index = () => {
               {/* Floating credential card — bottom left */}
               <div className="absolute bottom-12 -left-4 z-20 rounded-2xl border border-border bg-background/90 backdrop-blur-xl p-3 flex items-center gap-3 shadow-[0_8px_32px_rgba(0,0,0,0.4)] min-w-[200px]">
                 <img
-                  src="/manavseo.png"
+                  src="/manavseo.jpg"
                   alt="Manav"
                   className="h-11 w-11 rounded-full object-cover object-[center_15%] ring-2 ring-primary shrink-0"
                 />
