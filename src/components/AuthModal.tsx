@@ -28,24 +28,41 @@ export const AuthModal = ({ onClose, onAuthenticated }: AuthModalProps) => {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      // Step 1 — Sign in
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      if (!signInData.user) throw new Error('No user returned');
 
-      // Check if approved
-      const { data: profile } = await supabase
+      // Step 2 — Check approval with user id directly
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('approved')
-        .single();
+        .eq('id', signInData.user.id)
+        .maybeSingle();
 
-      if (profile?.approved) {
-        toast({ title: 'Welcome back!', description: 'Access granted.' });
+      // If profile doesn't exist yet, treat as pending
+      if (profileError) {
+        console.error('Profile error:', profileError);
+        setMode('pending');
+        setLoading(false);
+        return;
+      }
+
+      if (profile?.approved === true) {
+        toast({ title: '✅ Welcome back!', description: 'Access granted.' });
         onAuthenticated();
         onClose();
       } else {
+        // Not approved yet — show pending screen
         setMode('pending');
       }
     } catch (err: any) {
-      toast({ title: 'Sign in failed', description: err.message, variant: 'destructive' });
+      console.error('Sign in error:', err);
+      toast({
+        title: 'Sign in failed',
+        description: err?.message ?? 'Something went wrong. Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
