@@ -107,15 +107,21 @@ export const AuthModal = ({ onClose, onAuthenticated }: AuthModalProps) => {
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <div>
-              <div className="font-bold text-sm">SEO Seasons</div>
-              <div className="text-xs text-muted-foreground">by Manav</div>
-            </div>
+         <div className="flex items-center gap-2">
+          <div className="relative h-9 w-9 shrink-0">
+            <img
+              src="/manav.jpg"
+              alt="Manav"
+              className="h-9 w-9 rounded-full object-cover"
+              style={{ objectPosition: 'center 20%' }}
+            />
+            <div className="absolute inset-0 rounded-full ring-2 ring-primary shadow-[0_0_14px_hsl(var(--primary)/0.5)]" />
           </div>
+          <div>
+            <div className="font-bold text-sm">SEO Seasons</div>
+            <div className="text-xs text-muted-foreground">by Manav</div>
+          </div>
+        </div>
           <button onClick={onClose} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50 transition-colors">
             <X className="h-4 w-4" />
           </button>
