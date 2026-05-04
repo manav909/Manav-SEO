@@ -315,7 +315,7 @@ const Index = () => {
             <div className="absolute inset-0 rounded-full ring-2 ring-primary shadow-[0_0_16px_hsl(var(--primary)/0.5)]" />
           </div>
           <span className="font-bold text-lg tracking-tight">
-            SEO<span className="text-primary"> Seasons</span>
+            SEO<span className="text-primary"> Season</span>
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -443,7 +443,7 @@ const Index = () => {
       {/* FOOTER */}
       <footer className="relative z-10 mt-20 py-6 text-center text-xs text-muted-foreground border-t border-border">
         <p className="mb-1">Built by <span className="text-primary font-semibold">Manav</span> — Fiverr Top Rated SEO Strategist</p>
-        <p>© 2026 SEO Seasons — Digital Marketing Operating System</p>
+        <p>© 2026 SEO Season — Digital Marketing Operating System</p>
       </footer>
     </main>
   );
