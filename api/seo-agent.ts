@@ -164,38 +164,37 @@ function parseHTMLForSEO(html: string, url: string): SEOData {
 // ─────────────────────────────────────────────
 // Fetches the real website content with timing
 // ─────────────────────────────────────────────
-async function fetchWebsiteContent(
-  url: string
-): Promise<{ html: string; loadTime: number }> {
+async function fetchWebsiteContent(url: string): Promise<string> {
   try {
     const fullUrl = url.startsWith("http") ? url : `https://${url}`;
-    const startTime = Date.now();
 
-    const response = await fetch(fullUrl, {
+    // Jina AI Reader fully renders JavaScript websites before reading them
+    const jinaUrl = `https://r.jina.ai/${fullUrl}`;
+
+    const response = await fetch(jinaUrl, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/plain",
+        "X-Return-Format": "markdown",
+        "X-Timeout": "30",
       },
-      signal: AbortSignal.timeout(15000), // 15 second timeout
+      signal: AbortSignal.timeout(35000),
     });
 
-    const loadTime = Date.now() - startTime;
-
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      return `Could not fetch website. Status: ${response.status}`;
     }
 
-    const html = await response.text();
+    const text = await response.text();
 
-    if (!html || html.length < 100) {
-      throw new Error("Website returned empty or too-small response");
+    if (!text || text.trim().length < 100) {
+      return `Website content appears empty or too short to analyze.`;
     }
 
-    return { html, loadTime };
+    // Limit to 15,000 characters to stay within token limits
+    return text.trim().slice(0, 15000);
+
   } catch (err) {
-    throw new Error(
-      `Could not fetch website: ${err instanceof Error ? err.message : "Unknown error"}`
-    );
+    return `Could not fetch website: ${err instanceof Error ? err.message : "Unknown error"}`;
   }
 }
 
