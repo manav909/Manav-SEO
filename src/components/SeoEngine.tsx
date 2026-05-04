@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { DELIVERABLES, LOADING_STEPS, type DeliverableType } from '@/lib/seoGenerator';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 const ICONS: Record<DeliverableType, typeof Wrench> = {
   Technical: Wrench,
@@ -96,61 +95,170 @@ export const SeoEngine = () => {
   };
 
   const handleDownloadPdf = async () => {
-    if (!output || !pdfHiddenRef.current) return;
+    if (!output) return;
     setExportingPdf(true);
-    toast({ title: 'Generating PDF...', description: 'Capturing full report, please wait.' });
+    toast({ title: 'Generating PDF...', description: 'Please wait a moment.' });
 
     try {
-      // The hidden div renders the FULL report with no height limit
-      // We temporarily make it visible for html2canvas
-      const el = pdfHiddenRef.current;
-      el.style.left = '0';
-      el.style.visibility = 'visible';
-
-      // Wait for render
-      await new Promise((r) => setTimeout(r, 500));
-
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#0f1117',
-        logging: false,
-        windowWidth: 900,
-        // Capture FULL height — not just visible area
-        height: el.scrollHeight,
-        width: el.scrollWidth,
-      });
-
-      // Hide again
-      el.style.left = '-9999px';
-      el.style.visibility = 'hidden';
-
-      const imgData = canvas.toDataURL('image/png');
+      const { default: jsPDF } = await import('jspdf');
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const margin = 15;
+      const maxWidth = pageWidth - margin * 2;
+      let y = margin;
 
-      let heightLeft = imgHeight;
-      let position = 0;
+      // Helper: add new page if needed
+      const checkNewPage = (neededHeight: number) => {
+        if (y + neededHeight > pageHeight - margin) {
+          pdf.addPage();
+          y = margin;
+        }
+      };
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      // Helper: wrap and write text
+      const writeText = (
+        text: string,
+        fontSize: number,
+        isBold: boolean,
+        color: [number, number, number],
+        topPad = 0,
+        bottomPad = 2
+      ) => {
+        pdf.setFontSize(fontSize);
+        pdf.setFont('helvetica', isBold ? 'bold' : 'normal');
+        pdf.setTextColor(...color);
+        const lines = pdf.splitTextToSize(text, maxWidth);
+        const lineHeight = fontSize * 0.45;
+        const blockHeight = lines.length * lineHeight + topPad + bottomPad;
+        checkNewPage(blockHeight);
+        y += topPad;
+        pdf.text(lines, margin, y);
+        y += lines.length * lineHeight + bottomPad;
+      };
 
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+      // Parse markdown lines into PDF
+      const lines = output.split('\n');
+      let inTable = false;
+      let tableRows: string[][] = [];
+
+      const flushTable = () => {
+        if (tableRows.length < 2) { tableRows = []; inTable = false; return; }
+        const colCount = tableRows[0].length;
+        const colWidth = maxWidth / colCount;
+        const rowHeight = 7;
+
+        tableRows.forEach((row, ri) => {
+          if (ri === 1) return; // skip separator row
+          checkNewPage(rowHeight + 2);
+          const isHeader = ri === 0;
+          pdf.setFontSize(8);
+          pdf.setFont('helvetica', isHeader ? 'bold' : 'normal');
+          pdf.setTextColor(isHeader ? 30 : 80, isHeader ? 30 : 80, isHeader ? 30 : 80);
+          if (isHeader) {
+            pdf.setFillColor(240, 240, 240);
+            pdf.rect(margin, y - 4, maxWidth, rowHeight, 'F');
+          }
+          row.forEach((cell, ci) => {
+            const cellLines = pdf.splitTextToSize(cell.trim(), colWidth - 2);
+            pdf.text(cellLines, margin + ci * colWidth + 1, y);
+          });
+          // Row border
+          pdf.setDrawColor(200, 200, 200);
+          pdf.line(margin, y + 2, margin + maxWidth, y + 2);
+          y += rowHeight;
+        });
+
+        // Table outer border
+        pdf.setDrawColor(180, 180, 180);
+        y += 4;
+        tableRows = [];
+        inTable = false;
+      };
+
+      for (const line of lines) {
+        // Table rows
+        if (line.trim().startsWith('|')) {
+          inTable = true;
+          const cells = line.split('|').filter((c) => c.trim() !== '');
+          tableRows.push(cells);
+          continue;
+        } else if (inTable) {
+          flushTable();
+        }
+
+        // Headings
+        if (line.startsWith('# ')) {
+          writeText(line.slice(2), 18, true, [99, 102, 241], 6, 4);
+        } else if (line.startsWith('## ')) {
+          writeText(line.slice(3), 14, true, [30, 30, 30], 5, 3);
+        } else if (line.startsWith('### ')) {
+          writeText(line.slice(4), 11, true, [99, 102, 241], 4, 2);
+        } else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+          // Bullet points
+          const text = line.trim().replace(/^[-*]\s/, '');
+          const clean = text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1');
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(60, 60, 60);
+          const wrapped = pdf.splitTextToSize('• ' + clean, maxWidth - 4);
+          const blockH = wrapped.length * 4 + 1;
+          checkNewPage(blockH);
+          pdf.text(wrapped, margin + 3, y);
+          y += blockH;
+        } else if (/^\d+\.\s/.test(line.trim())) {
+          // Numbered list
+          const clean = line.trim().replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1');
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(60, 60, 60);
+          const wrapped = pdf.splitTextToSize(clean, maxWidth - 4);
+          const blockH = wrapped.length * 4 + 1;
+          checkNewPage(blockH);
+          pdf.text(wrapped, margin + 3, y);
+          y += blockH;
+        } else if (line.trim() === '---') {
+          // Divider
+          checkNewPage(6);
+          pdf.setDrawColor(200, 200, 200);
+          pdf.line(margin, y, margin + maxWidth, y);
+          y += 6;
+        } else if (line.trim() === '') {
+          y += 3;
+        } else {
+          // Normal paragraph
+          const clean = line.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1');
+          writeText(clean, 9, false, [60, 60, 60], 0, 1);
+        }
+      }
+
+      // Flush any remaining table
+      if (inTable) flushTable();
+
+      // Footer on every page
+      const totalPages = (pdf.internal as any).getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(7);
+        pdf.setTextColor(150, 150, 150);
+        pdf.text(
+          `SEO Report — ${currentDeliverable.title} — Page ${i} of ${totalPages}`,
+          margin,
+          pageHeight - 8
+        );
       }
 
       pdf.save(`seo-${selected}-${Date.now()}.pdf`);
       toast({ title: 'PDF downloaded!', description: 'Full report saved successfully.' });
+
     } catch (err) {
-      console.error(err);
-      toast({ title: 'PDF failed', description: 'Try the Markdown download instead.', variant: 'destructive' });
+      console.error('PDF error:', err);
+      toast({
+        title: 'PDF failed',
+        description: String(err),
+        variant: 'destructive',
+      });
     } finally {
       setExportingPdf(false);
     }
