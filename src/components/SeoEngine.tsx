@@ -26,16 +26,13 @@ export const SeoEngine = () => {
   const [copied, setCopied] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
-  const pdfContentRef = useRef<HTMLDivElement>(null);
+  const pdfHiddenRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loading) return;
     setStepIdx(0);
     const interval = setInterval(() => {
-      setStepIdx((i) => {
-        if (i >= LOADING_STEPS.length - 1) return i;
-        return i + 1;
-      });
+      setStepIdx((i) => (i >= LOADING_STEPS.length - 1 ? i : i + 1));
     }, 700);
     return () => clearInterval(interval);
   }, [loading]);
@@ -54,13 +51,10 @@ export const SeoEngine = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, keyword, deliverableType: selected }),
       });
-
       if (!res.ok || !res.body) throw new Error('Request failed');
-
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let accumulatedOutput = '';
-
+      let accumulated = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -69,14 +63,14 @@ export const SeoEngine = () => {
           toast({ title: 'Error', description: chunk, variant: 'destructive' });
           break;
         }
-        accumulatedOutput += chunk;
-        setOutput(accumulatedOutput);
+        accumulated += chunk;
+        setOutput(accumulated);
       }
       setLoading(false);
       setActiveTab('rendered');
       setTimeout(() => outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       toast({ title: 'Error', description: 'Failed to generate deliverable.', variant: 'destructive' });
       setLoading(false);
     }
@@ -86,7 +80,7 @@ export const SeoEngine = () => {
     if (!output) return;
     await navigator.clipboard.writeText(output);
     setCopied(true);
-    toast({ title: 'Copied to clipboard', description: 'Markdown deliverable ready to paste.' });
+    toast({ title: 'Copied!', description: 'Markdown copied to clipboard.' });
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -98,34 +92,41 @@ export const SeoEngine = () => {
     a.download = `seo-${selected}-${Date.now()}.md`;
     a.click();
     URL.revokeObjectURL(a.href);
-    toast({ title: 'Download started', description: 'Open the .md file in any editor.' });
+    toast({ title: 'Download started', description: 'Markdown file saved.' });
   };
 
   const handleDownloadPdf = async () => {
-    if (!output || !pdfContentRef.current) return;
+    if (!output || !pdfHiddenRef.current) return;
     setExportingPdf(true);
-    toast({ title: 'Generating PDF...', description: 'Please wait a moment.' });
+    toast({ title: 'Generating PDF...', description: 'Capturing full report, please wait.' });
 
     try {
-      // Switch to rendered tab so the formatted content is visible
-      setActiveTab('rendered');
-      await new Promise((r) => setTimeout(r, 300));
+      // The hidden div renders the FULL report with no height limit
+      // We temporarily make it visible for html2canvas
+      const el = pdfHiddenRef.current;
+      el.style.left = '0';
+      el.style.visibility = 'visible';
 
-      const element = pdfContentRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2,           // High resolution
+      // Wait for render
+      await new Promise((r) => setTimeout(r, 500));
+
+      const canvas = await html2canvas(el, {
+        scale: 2,
         useCORS: true,
         backgroundColor: '#0f1117',
         logging: false,
         windowWidth: 900,
+        // Capture FULL height — not just visible area
+        height: el.scrollHeight,
+        width: el.scrollWidth,
       });
 
+      // Hide again
+      el.style.left = '-9999px';
+      el.style.visibility = 'hidden';
+
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
@@ -135,11 +136,9 @@ export const SeoEngine = () => {
       let heightLeft = imgHeight;
       let position = 0;
 
-      // Add first page
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
 
-      // Add additional pages if content is long
       while (heightLeft > 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
@@ -148,10 +147,10 @@ export const SeoEngine = () => {
       }
 
       pdf.save(`seo-${selected}-${Date.now()}.pdf`);
-      toast({ title: 'PDF downloaded!', description: 'Your report has been saved.' });
+      toast({ title: 'PDF downloaded!', description: 'Full report saved successfully.' });
     } catch (err) {
       console.error(err);
-      toast({ title: 'PDF failed', description: 'Could not generate PDF. Try the Markdown download instead.', variant: 'destructive' });
+      toast({ title: 'PDF failed', description: 'Try the Markdown download instead.', variant: 'destructive' });
     } finally {
       setExportingPdf(false);
     }
@@ -161,6 +160,27 @@ export const SeoEngine = () => {
 
   return (
     <section className="relative w-full max-w-4xl mx-auto px-4 sm:px-6">
+
+      {/* ── Hidden full-height div used ONLY for PDF capture ── */}
+      {output && (
+        <div
+          ref={pdfHiddenRef}
+          style={{
+            position: 'fixed',
+            left: '-9999px',
+            top: 0,
+            visibility: 'hidden',
+            width: '900px',
+            backgroundColor: '#0f1117',
+            padding: '40px',
+            color: '#ffffff',
+            fontFamily: 'sans-serif',
+          }}
+        >
+          <RenderedMarkdown source={output} />
+        </div>
+      )}
+
       <form
         onSubmit={handleGenerate}
         className="relative rounded-2xl bg-card/60 backdrop-blur-xl border border-border shadow-card p-6 sm:p-10 animate-fade-up"
@@ -174,12 +194,8 @@ export const SeoEngine = () => {
               Target Website URL
             </Label>
             <Input
-              id="url"
-              type="text"
-              placeholder="yourdomain.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              disabled={loading}
+              id="url" type="text" placeholder="yourdomain.com"
+              value={url} onChange={(e) => setUrl(e.target.value)} disabled={loading}
               className="h-12 text-base bg-background/60 border-border focus-visible:ring-primary focus-visible:ring-offset-0"
             />
           </div>
@@ -188,12 +204,8 @@ export const SeoEngine = () => {
               Main Keyword or Topic
             </Label>
             <Input
-              id="keyword"
-              type="text"
-              placeholder="e.g. project management software"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              disabled={loading}
+              id="keyword" type="text" placeholder="e.g. project management software"
+              value={keyword} onChange={(e) => setKeyword(e.target.value)} disabled={loading}
               className="h-12 text-base bg-background/60 border-border focus-visible:ring-primary focus-visible:ring-offset-0"
             />
           </div>
@@ -209,10 +221,7 @@ export const SeoEngine = () => {
               const active = selected === d.id;
               return (
                 <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => setSelected(d.id)}
-                  disabled={loading}
+                  key={d.id} type="button" onClick={() => setSelected(d.id)} disabled={loading}
                   className={`group relative text-left rounded-xl border p-4 transition-all duration-300 ${
                     active
                       ? 'border-primary bg-primary/10 shadow-[0_0_30px_-8px_hsl(var(--primary)/0.6)]'
@@ -226,9 +235,7 @@ export const SeoEngine = () => {
                   </div>
                   <div className="text-sm font-semibold mb-1 leading-tight">{d.title}</div>
                   <div className="text-xs text-muted-foreground leading-snug">{d.description}</div>
-                  {active && (
-                    <div className="absolute top-3 right-3 h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
-                  )}
+                  {active && <div className="absolute top-3 right-3 h-2 w-2 rounded-full bg-primary animate-pulse-glow" />}
                 </button>
               );
             })}
@@ -236,8 +243,7 @@ export const SeoEngine = () => {
         </div>
 
         <Button
-          type="submit"
-          disabled={loading}
+          type="submit" disabled={loading}
           className="w-full h-14 text-base font-semibold bg-gradient-to-r from-primary to-primary-glow text-primary-foreground hover:opacity-90 transition-all hover:scale-[1.01] shadow-[0_10px_40px_-10px_hsl(var(--primary)/0.6)] disabled:opacity-100"
         >
           {loading ? (
@@ -268,43 +274,24 @@ export const SeoEngine = () => {
         <div ref={outputRef} className="mt-12 animate-fade-up">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-5">
             <div>
-              <div className="text-xs font-mono text-primary uppercase tracking-widest mb-1">
-                ✓ Deliverable ready
-              </div>
+              <div className="text-xs font-mono text-primary uppercase tracking-widest mb-1">✓ Deliverable ready</div>
               <h2 className="text-2xl sm:text-3xl font-bold">{currentDeliverable.title}</h2>
             </div>
-
-            {/* Action buttons */}
             <div className="flex gap-2 flex-wrap">
-              <Button
-                variant="outline"
-                onClick={handleCopy}
-                className="border-border hover:border-primary hover:text-primary bg-card/60"
-              >
+              <Button variant="outline" onClick={handleCopy}
+                className="border-border hover:border-primary hover:text-primary bg-card/60">
                 {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
                 {copied ? 'Copied' : 'Copy'}
               </Button>
-
-              <Button
-                variant="outline"
-                onClick={handleDownloadMd}
-                className="border-border hover:border-primary hover:text-primary bg-card/60"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Markdown
+              <Button variant="outline" onClick={handleDownloadMd}
+                className="border-border hover:border-primary hover:text-primary bg-card/60">
+                <Download className="h-4 w-4 mr-2" />Markdown
               </Button>
-
-              <Button
-                onClick={handleDownloadPdf}
-                disabled={exportingPdf}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {exportingPdf ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <FileDown className="h-4 w-4 mr-2" />
-                )}
-                {exportingPdf ? 'Generating...' : 'PDF'}
+              <Button onClick={handleDownloadPdf} disabled={exportingPdf}
+                className="bg-primary text-primary-foreground hover:bg-primary/90">
+                {exportingPdf
+                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating...</>
+                  : <><FileDown className="h-4 w-4 mr-2" />PDF</>}
               </Button>
             </div>
           </div>
@@ -312,15 +299,10 @@ export const SeoEngine = () => {
           <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl shadow-card overflow-hidden">
             <div className="flex border-b border-border bg-secondary/30">
               {(['rendered', 'markdown'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
+                <button key={tab} onClick={() => setActiveTab(tab)}
                   className={`relative px-6 py-3.5 text-sm font-medium transition-colors ${
-                    activeTab === tab
-                      ? 'text-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
+                    activeTab === tab ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}>
                   {tab === 'rendered' ? 'Formatted' : 'Markdown'}
                   {activeTab === tab && (
                     <span className="absolute bottom-0 left-4 right-4 h-px bg-primary shadow-[0_0_10px_hsl(var(--primary))]" />
@@ -328,16 +310,12 @@ export const SeoEngine = () => {
                 </button>
               ))}
             </div>
-
-            {/* This div is what gets captured for PDF */}
-            <div ref={pdfContentRef} className="p-6 sm:p-10 max-h-[70vh] overflow-y-auto">
-              {activeTab === 'rendered' ? (
-                <RenderedMarkdown source={output} />
-              ) : (
-                <pre className="font-mono text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                  {output}
-                </pre>
-              )}
+            {/* Scrollable display — NOT used for PDF */}
+            <div className="p-6 sm:p-10 max-h-[70vh] overflow-y-auto">
+              {activeTab === 'rendered'
+                ? <RenderedMarkdown source={output} />
+                : <pre className="font-mono text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">{output}</pre>
+              }
             </div>
           </div>
         </div>
@@ -381,7 +359,8 @@ const RenderedMarkdown = ({ source }: { source: string }) => {
             {body.map((row, ri) => (
               <tr key={ri} className="border-t border-border">
                 {row.map((c, ci) => (
-                  <td key={ci} className="px-4 py-2.5 text-foreground/80" dangerouslySetInnerHTML={{ __html: inlineFormat(c) }} />
+                  <td key={ci} className="px-4 py-2.5 text-foreground/80"
+                    dangerouslySetInnerHTML={{ __html: inlineFormat(c) }} />
                 ))}
               </tr>
             ))}
@@ -421,7 +400,8 @@ const RenderedMarkdown = ({ source }: { source: string }) => {
       elements.push(<div key={key} className="h-2" />);
     } else {
       elements.push(
-        <p key={key} className="text-foreground/85 leading-relaxed my-2" dangerouslySetInnerHTML={{ __html: inlineFormat(line) }} />
+        <p key={key} className="text-foreground/85 leading-relaxed my-2"
+          dangerouslySetInnerHTML={{ __html: inlineFormat(line) }} />
       );
     }
   });
