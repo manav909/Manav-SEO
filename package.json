@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
-    "@anthropic-ai/sdk": "^0.39.0",
 "@vercel/node": "^3.0.0",
     "jspdf": "^2.5.1",
 "html2canvas": "^1.4.1",
