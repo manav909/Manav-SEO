@@ -1,4 +1,4 @@
-import { Sparkles, Zap, Star, TrendingUp, Brain, ShieldCheck, ArrowRight, ChevronDown } from 'lucide-react';
+import { Sparkles, Zap, Star, TrendingUp, Brain, ShieldCheck, ChevronDown, Quote } from 'lucide-react';
 import { SeoEngine } from '@/components/SeoEngine';
 
 const Index = () => {
@@ -6,21 +6,16 @@ const Index = () => {
     <main className="relative min-h-screen overflow-hidden">
       <div className="absolute inset-0 bg-grid pointer-events-none" />
 
-      {/* ── AMBIENT GLOW BLOBS ── */}
+      {/* ── AMBIENT GLOW ── */}
       <div className="pointer-events-none absolute -top-32 -left-32 h-[600px] w-[600px] rounded-full bg-primary/10 blur-[120px]" />
       <div className="pointer-events-none absolute top-20 right-0 h-[500px] w-[500px] rounded-full bg-primary/8 blur-[100px]" />
 
       {/* ── NAV ── */}
       <nav className="relative z-20 flex items-center justify-between px-6 sm:px-10 py-5 max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <img
-              src="/manav.jpg"
-              alt="Manav"
-              className="h-10 w-10 rounded-full object-cover object-[center_15%] ring-2 ring-primary shadow-[0_0_20px_hsl(var(--primary)/0.6)]"
-              style={{ mixBlendMode: 'normal' }}
-            />
-            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-400 border-2 border-background" />
+          {/* Monogram avatar — no photo crop issues */}
+          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shadow-[0_0_20px_hsl(var(--primary)/0.5)] shrink-0">
+            <span className="text-primary-foreground font-bold text-base">M</span>
           </div>
           <span className="font-bold text-lg tracking-tight">
             SEO<span className="text-primary"> Seasons</span>
@@ -33,19 +28,17 @@ const Index = () => {
       </nav>
 
       {/* ── HERO ── */}
-      <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 pt-4 pb-8 min-h-[82vh] flex items-center">
-        <div className="grid lg:grid-cols-[1fr_480px] gap-0 items-center w-full">
+      <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 pt-4 pb-6">
+        <div className="grid lg:grid-cols-[1fr_460px] gap-0 items-center">
 
           {/* LEFT — Copy */}
-          <div className="text-left relative z-10 lg:pr-8">
+          <div className="text-left relative z-10 lg:pr-10">
 
-            {/* Pill badge */}
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card/60 backdrop-blur text-xs font-mono text-muted-foreground mb-6 animate-fade-up">
               <Zap className="h-3 w-3 text-primary" />
               Strategy is expensive. Guessing is even costlier.
             </div>
 
-            {/* Headline */}
             <h1
               className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-5 animate-fade-up"
               style={{ animationDelay: '0.05s' }}
@@ -58,7 +51,6 @@ const Index = () => {
               </span>
             </h1>
 
-            {/* Sub */}
             <p
               className="text-lg text-muted-foreground leading-relaxed mb-7 max-w-md animate-fade-up"
               style={{ animationDelay: '0.1s' }}
@@ -68,9 +60,9 @@ const Index = () => {
               and AI that actually knows what it's doing.
             </p>
 
-            {/* Stats */}
+            {/* Stat cards */}
             <div
-              className="flex flex-wrap gap-4 mb-7 animate-fade-up"
+              className="flex flex-wrap gap-3 mb-7 animate-fade-up"
               style={{ animationDelay: '0.15s' }}
             >
               {[
@@ -112,54 +104,33 @@ const Index = () => {
             </div>
           </div>
 
-          {/* RIGHT — Creative Image Panel */}
+          {/* RIGHT — manavai.png with screen blend */}
           <div
             className="relative flex justify-center lg:justify-end animate-fade-up"
             style={{ animationDelay: '0.1s' }}
           >
-            {/* Large purple glow behind Manav */}
             <div className="absolute bottom-0 right-0 h-[500px] w-[400px] rounded-full bg-primary/20 blur-[80px] pointer-events-none" />
             <div className="absolute bottom-0 right-10 h-[300px] w-[300px] rounded-full bg-primary/15 blur-[60px] pointer-events-none" />
 
-            {/* Manav + AI Robot image — black bg disappears via screen blend */}
             <div className="relative">
               <img
-                src="/manavseo.jpg"
+                src="/manav.jpg"
                 alt="Manav — SEO Strategist"
-                className="relative z-10 w-full max-w-[440px] lg:max-w-[480px] object-contain drop-shadow-2xl"
+                className="relative z-10 w-full max-w-[440px] lg:max-w-[480px] object-contain"
                 style={{
                   mixBlendMode: 'screen',
                   filter: 'brightness(1.05) contrast(1.05)',
                 }}
               />
 
-              {/* Floating credential card — bottom left */}
-              <div className="absolute bottom-12 -left-4 z-20 rounded-2xl border border-border bg-background/90 backdrop-blur-xl p-3 flex items-center gap-3 shadow-[0_8px_32px_rgba(0,0,0,0.4)] min-w-[200px]">
-                <img
-                  src="/manav.jpg"
-                  alt="Manav"
-                  className="h-11 w-11 rounded-full object-cover object-[center_15%] ring-2 ring-primary shrink-0"
-                />
-                <div>
-                  <div className="font-semibold text-sm text-foreground">Manav</div>
-                  <div className="text-xs text-muted-foreground">SEO Strategist · AI Search</div>
-                  <div className="flex items-center gap-1 mt-1">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="h-2.5 w-2.5 text-yellow-400 fill-yellow-400" />
-                    ))}
-                    <span className="text-xs text-muted-foreground ml-1">4.9</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Floating stat — top right */}
-              <div className="absolute top-8 -right-4 z-20 rounded-2xl border border-border bg-background/90 backdrop-blur-xl px-4 py-3 text-center shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+              {/* Floating 500+ stat */}
+              <div className="absolute top-8 -right-2 z-20 rounded-2xl border border-border bg-background/90 backdrop-blur-xl px-4 py-3 text-center shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
                 <div className="text-2xl font-bold text-gradient-primary">500+</div>
                 <div className="text-xs text-muted-foreground">Brands Scaled</div>
               </div>
 
-              {/* Floating live badge — middle right */}
-              <div className="absolute top-1/2 -right-6 z-20 rounded-full border border-green-400/30 bg-background/90 backdrop-blur-xl px-3 py-1.5 flex items-center gap-2 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
+              {/* Live badge */}
+              <div className="absolute top-1/2 -right-4 z-20 rounded-full border border-green-400/30 bg-background/90 backdrop-blur-xl px-3 py-1.5 flex items-center gap-2 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
                 <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
                 <span className="text-xs font-mono text-green-400">Live Audits</span>
               </div>
@@ -167,13 +138,52 @@ const Index = () => {
           </div>
 
         </div>
+      </section>
 
-        {/* Scroll hint */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-xs text-muted-foreground animate-bounce">
-          <span className="font-mono">Run your audit</span>
-          <ChevronDown className="h-4 w-4 text-primary" />
+      {/* ── BRAND STRIP — manavseo.png used PROPERLY as wide image ── */}
+      <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 mb-10">
+        <div className="relative rounded-3xl overflow-hidden border border-border shadow-card min-h-[220px]">
+
+          {/* Photo — full width, cropped from right side where Manav sits */}
+          <img
+            src="/manavseo.jpg"
+            alt="Manav"
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ objectPosition: 'right center' }}
+          />
+
+          {/* Dark gradient overlay — left side for text */}
+          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent" />
+
+          {/* Text content on left */}
+          <div className="relative z-10 p-8 sm:p-10 max-w-lg">
+            <Quote className="h-6 w-6 text-primary mb-3 opacity-80" />
+            <p className="text-xl sm:text-2xl font-semibold text-foreground leading-snug mb-4">
+              "Most SEO agencies sell you reports.<br />
+              <span className="text-gradient-primary">I sell you rankings."</span>
+            </p>
+            <div className="flex items-center gap-3">
+              <div>
+                <div className="font-bold text-sm text-foreground">Manav</div>
+                <div className="text-xs text-muted-foreground">
+                  SEO Strategist · Fiverr Top Rated · 500+ Clients
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5 ml-2">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="h-3 w-3 text-yellow-400 fill-yellow-400" />
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
+
+      {/* Scroll hint */}
+      <div className="relative z-10 flex flex-col items-center gap-1 text-xs text-muted-foreground mb-6 animate-bounce">
+        <span className="font-mono">Run your audit below</span>
+        <ChevronDown className="h-4 w-4 text-primary" />
+      </div>
 
       {/* ── TOOL ── */}
       <SeoEngine />
