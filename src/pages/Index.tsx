@@ -10,7 +10,7 @@ const Index = () => {
       <nav className="relative z-10 flex items-center justify-between px-6 sm:px-10 py-5 max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
           <img
-            src="/manavseo.png"
+            src="/manavseo.jpg"
             alt="Manav"
             className="h-9 w-9 rounded-full object-cover object-top ring-2 ring-primary shadow-[0_0_14px_hsl(var(--primary)/0.5)]"
           />
@@ -108,7 +108,7 @@ const Index = () => {
 
             <div className="relative rounded-3xl overflow-hidden border border-border shadow-card max-w-sm lg:max-w-full w-full">
               <img
-                src="/manavai.png"
+                src="/manavai.jpg"
                 alt="Manav — SEO Strategist"
                 className="w-full object-cover object-top"
                 style={{ maxHeight: '420px' }}
