@@ -28,7 +28,7 @@ const Index = () => {
         </div>
         <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-muted-foreground border border-border rounded-full px-3 py-1.5 bg-card/60 backdrop-blur">
           <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
-          Fiverr Top Rated Seller
+          Fiverr Vetted PRO and Top Rated Seller
         </div>
       </nav>
 
@@ -118,7 +118,7 @@ const Index = () => {
 
             <div className="relative">
               <img
-                src="/manav.jpg"
+                src="/manavai.jpg"
                 alt="Manav — SEO Strategist"
                 className="relative z-10 w-full max-w-[440px] lg:max-w-[480px] object-contain"
                 style={{
@@ -196,7 +196,7 @@ const Index = () => {
       {/* FOOTER */}
       <footer className="relative z-10 mt-20 py-6 text-center text-xs text-muted-foreground border-t border-border">
         <p className="mb-1">
-          Built by <span className="text-primary font-semibold">Manav</span> — Fiverr Top Rated SEO Strategist
+          Built by <span className="text-primary font-semibold">Manav</span> — Fiverr PRO and Top Rated SEO Strategist
         </p>
         <p>© 2026 SEO Seasons — Digital Marketing Operating System</p>
       </footer>
