@@ -14,8 +14,17 @@ const Index = () => {
       <nav className="relative z-20 flex items-center justify-between px-6 sm:px-10 py-5 max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
           {/* Monogram avatar — no photo crop issues */}
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shadow-[0_0_20px_hsl(var(--primary)/0.5)] shrink-0">
-            <span className="text-primary-foreground font-bold text-base">M</span>
+          <div className="relative h-10 w-10 shrink-0">
+            <img
+              src="/manav.jpg"
+              alt="Manav"
+              className="h-10 w-10 rounded-full object-cover object-top"
+              style={{
+                mixBlendMode: 'normal',
+                background: 'hsl(var(--primary)/0.15)',
+              }}
+            />
+            <div className="absolute inset-0 rounded-full ring-2 ring-primary shadow-[0_0_16px_hsl(var(--primary)/0.5)]" />
           </div>
           <span className="font-bold text-lg tracking-tight">
             SEO<span className="text-primary"> Seasons</span>
@@ -142,18 +151,21 @@ const Index = () => {
 
       {/* ── BRAND STRIP — manavseo.png used PROPERLY as wide image ── */}
       <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 mb-10">
-        <div className="relative rounded-3xl overflow-hidden border border-border shadow-card min-h-[220px]">
+        <div className="relative rounded-3xl overflow-hidden border border-border shadow-card min-h-[300px]">
 
-          {/* Photo — full width, cropped from right side where Manav sits */}
+          {/* Photo — positioned to show Manav's face on right */}
           <img
             src="/manavseo.jpg"
             alt="Manav"
             className="absolute inset-0 w-full h-full object-cover"
-            style={{ objectPosition: 'right center' }}
+            style={{ objectPosition: '75% 15%' }}
           />
 
-          {/* Dark gradient overlay — left side for text */}
-          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent" />
+          {/* Dark gradient — covers left 60%, fades to transparent so face shows */}
+          <div className="absolute inset-0 bg-gradient-to-r from-background from-40% via-background/85 via-60% to-transparent" />
+
+          {/* Text content on left */}
+          <div className="relative z-10 p-8 sm:p-10 max-w-lg">
 
           {/* Text content on left */}
           <div className="relative z-10 p-8 sm:p-10 max-w-lg">
