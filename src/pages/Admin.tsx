@@ -174,9 +174,14 @@ export default function Admin() {
     setLoading(false);
   };
 
-  const approveUser = async (userId:string, clientId?:string) => {
-    const updates:any = { approved: true };
-    if (clientId) updates.client_id = clientId;
+  const approveUser = async (userId: string, clientIds: string[]) => {
+    const primaryClientId = clientIds[0] || undefined;
+    const updates: any = { 
+      approved: true,
+      client_ids: clientIds.filter(Boolean),
+    };
+    if (primaryClientId) updates.client_id = primaryClientId;
+    
     const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
     if (error) toast({ title:'Error', description: error.message, variant:'destructive' });
     else { toast({ title:'User approved!' }); fetchAll(); }
@@ -551,13 +556,7 @@ export default function Admin() {
               <CheckCircle className="h-4 w-4 text-primary" />
               Pending Approvals ({pendingUsers.length})
             </h2>
-            {pendingUsers.length === 0 ? (
-              <div className="rounded-2xl border border-border bg-card/60 p-8 text-center text-muted-foreground">
-                No pending requests
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {pendingUsers.map(user => (
+           {pendingUsers.map(user => (
                   <div key={user.id} className="rounded-2xl border border-border bg-card/60 p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
@@ -565,19 +564,25 @@ export default function Admin() {
                         <div className="text-xs text-muted-foreground mb-3">
                           {user.phone || 'No phone'} · {new Date(user.created_at).toLocaleDateString()}
                         </div>
-                        <div className="space-y-1">
-                          <Label className={labelClass}>Link to Client</Label>
-                          <select id={`cs-${user.id}`}
-                            className="w-full h-8 rounded-md border border-border bg-background/60 text-xs px-2">
-                            <option value="">— No client yet —</option>
-                            {clients.map(c => <option key={c.id} value={c.id}>{c.name} — {c.company}</option>)}
+                        <div className="space-y-2">
+                          <Label className={labelClass}>Link to Client(s) — hold Ctrl/Cmd to select multiple</Label>
+                          <select
+                            id={`cs-${user.id}`}
+                            multiple
+                            size={Math.min(clients.length, 4)}
+                            className="w-full rounded-md border border-border bg-background/60 text-xs px-2 py-1"
+                          >
+                            {clients.map(c => (
+                              <option key={c.id} value={c.id}>{c.name} — {c.company}</option>
+                            ))}
                           </select>
                         </div>
                       </div>
                       <Button size="sm"
                         onClick={() => {
                           const sel = document.getElementById(`cs-${user.id}`) as HTMLSelectElement;
-                          approveUser(user.id, sel?.value || undefined);
+                          const selected = Array.from(sel?.selectedOptions || []).map(o => o.value);
+                          approveUser(user.id, selected);
                         }}
                         className="bg-green-500 hover:bg-green-600 text-white shrink-0">
                         <CheckCircle className="h-3 w-3 mr-1.5" />Approve
