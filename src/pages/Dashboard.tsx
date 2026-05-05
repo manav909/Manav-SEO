@@ -69,7 +69,6 @@ export default function Dashboard() {
       supabase.from('upsells').select('*').eq('project_id', projectId).eq('status', 'pending'),
     ]);
     setMetrics(m.data || []);
-    setWorkLogs(l.data || []);
     setUpsells(u.data || []);
   };
 
@@ -368,54 +367,6 @@ export default function Dashboard() {
                 <div key={label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <div className="h-2 w-2 rounded-full" style={{ background: color }} />
                   {label}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Proof of Work */}
-        {workLogs.length > 0 && (
-          <div className="rounded-2xl border border-border bg-card/60 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-primary" />
-                <span className="font-semibold text-sm">What Manav Did For You</span>
-              </div>
-              <span className="text-xs font-mono text-muted-foreground bg-secondary/50 px-2 py-1 rounded-full">
-                {totalHours.toFixed(1)} hrs this campaign
-              </span>
-            </div>
-            <div className="space-y-3">
-              {workLogs.slice(0, 8).map((log, i) => (
-                <div key={log.id} className="flex gap-4">
-                  <div className="flex flex-col items-center shrink-0">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">
-                      <CheckCircle className="h-3.5 w-3.5 text-primary" />
-                    </div>
-                    {i < Math.min(workLogs.length, 8) - 1 && <div className="w-px flex-1 bg-border mt-1" />}
-                  </div>
-                  <div className="flex-1 pb-3">
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <div>
-                        <span className="text-sm font-semibold text-foreground">{log.title}</span>
-                        <span className="ml-2 text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full">{log.category}</span>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-xs font-mono text-muted-foreground">{log.hours}h</div>
-                        <div className="text-xs text-muted-foreground">
-                          {new Date(log.logged_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' })}
-                        </div>
-                      </div>
-                    </div>
-                    {log.description && <p className="text-xs text-muted-foreground mb-1.5">{log.description}</p>}
-                    {log.impact_metric && (
-                      <div className="inline-flex items-center gap-1.5 text-xs bg-green-400/10 text-green-400 border border-green-400/20 rounded-full px-2.5 py-1">
-                        <ArrowUpRight className="h-3 w-3" />
-                        {log.impact_metric}: {log.impact_value}
-                      </div>
-                    )}
-                  </div>
                 </div>
               ))}
             </div>
