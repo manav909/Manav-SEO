@@ -709,6 +709,7 @@ export default function Admin() {
                             );
                           })}
                         </div>
+                        </div>
                         <div className="text-xs text-muted-foreground mt-2">
                           Source: Live Google SERP · These rankings will be shown on the client dashboard
                         </div>
