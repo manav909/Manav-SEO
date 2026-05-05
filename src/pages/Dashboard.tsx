@@ -385,20 +385,69 @@ export default function Dashboard() {
     }
   }, [selectedProject]);
 
-  const loadData = async () => {
+ const loadData = async () => {
     try {
       const { data:{ user } } = await supabase.auth.getUser();
       if (!user) { navigate('/'); return; }
-      const { data:prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+
+      const { data:prof } = await supabase
+        .from('profiles').select('*').eq('id', user.id).single();
       if (!prof?.approved) { navigate('/'); return; }
-      if (prof.client_id) {
-        const { data:c } = await supabase.from('clients').select('*').eq('id', prof.client_id).single();
-        setClient(c);
-        const { data:p } = await supabase.from('projects').select('*').eq('client_id', prof.client_id);
-        setProjects(p || []);
-        if (p?.length) setSelectedProject(p[0]);
-      } else { setClient(null); }
-    } catch(e) { console.error(e); }
+
+      // Get ALL client IDs this user has access to
+      // Support both old single client_id and new client_ids array
+      const clientIdList: string[] = [];
+      if (prof.client_ids?.length) {
+        clientIdList.push(...prof.client_ids);
+      } else if (prof.client_id) {
+        clientIdList.push(prof.client_id);
+      }
+
+      // Also search by matching email as fallback
+      const { data: clientsByEmail } = await supabase
+        .from('clients')
+        .select('id, name, company, retainer_amount, industry, website, email')
+        .eq('email', user.email);
+
+      if (clientsByEmail?.length) {
+        clientsByEmail.forEach(c => {
+          if (!clientIdList.includes(c.id)) clientIdList.push(c.id);
+        });
+      }
+
+      if (clientIdList.length === 0) {
+        setClient(null);
+        setLoading(false);
+        return;
+      }
+
+      // Load all clients
+      const { data: clientsData } = await supabase
+        .from('clients')
+        .select('*')
+        .in('id', clientIdList);
+
+      // Load all projects across all clients
+      const { data: allProjects } = await supabase
+        .from('projects')
+        .select('*')
+        .in('client_id', clientIdList);
+
+      const projectList = allProjects || [];
+      const clientList = clientsData || [];
+      const [allClients, setAllClients] = useState<any[]>([]);
+
+      // Store all clients for switcher
+      setAllClients(clientList);
+      setClient(clientList[0] || null);
+      setProjects(projectList);
+
+      if (projectList.length > 0) {
+        setSelectedProject(projectList[0]);
+      }
+    } catch(e) {
+      console.error('loadData error:', e);
+    }
     setLoading(false);
   };
 
@@ -529,10 +578,31 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {projects.length > 1 && (
-              <select value={selectedProject?.id||''} onChange={e=>setSelectedProject(projects.find(x=>x.id===e.target.value))}
-                className="h-8 rounded-lg border border-border bg-background/60 text-xs px-3">
-                {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+            {projects.length > 0 && (
+              <select
+                value={selectedProject?.id||''}
+                onChange={e => {
+                  const proj = projects.find(x => x.id === e.target.value);
+                  setSelectedProject(proj);
+                  // Update displayed client when project changes
+                  if (proj) {
+                    const projClient = allClients.find(c => c.id === proj.client_id);
+                    if (projClient) setClient(projClient);
+                  }
+                }}
+                className="h-8 rounded-lg border border-border bg-background/60 text-xs px-3 max-w-[200px]"
+              >
+                {allClients.map(c => {
+                  const clientProjects = projects.filter(p => p.client_id === c.id);
+                  if (!clientProjects.length) return null;
+                  return (
+                    <optgroup key={c.id} label={c.company}>
+                      {clientProjects.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
             )}
             <Button variant="outline" size="sm" onClick={async()=>{await supabase.auth.signOut();navigate('/')}} className="border-border text-xs">
