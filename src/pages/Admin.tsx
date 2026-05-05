@@ -12,6 +12,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 export default function Admin() {
+  const [fetchedMetrics, setFetchedMetrics] = useState<any>(null);
   const navigate = useNavigate();
   const [tab, setTab] = useState<'clients' | 'logs' | 'upsells' | 'approve'>('clients');
   const [clients, setClients] = useState<any[]>([]);
@@ -364,55 +365,207 @@ export default function Admin() {
             </div>
 
             {/* Log Metrics */}
-            <div className="rounded-2xl border border-border bg-card/60 p-6">
-              <h2 className="font-bold text-base mb-4 flex items-center gap-2"><BarChart3 className="h-4 w-4 text-primary" /> Update Metrics</h2>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <Label className={labelClass}>Select Project</Label>
-                  <select
-                    value={selectedProject}
-                    onChange={e => setSelectedProject(e.target.value)}
-                    className="w-full h-10 rounded-md border border-border bg-background/60 text-sm px-3"
-                  >
-                    <option value="">— Choose project —</option>
-                    {projects.map(p => {
-                      const client = clients.find(c => c.id === p.client_id);
-                      return <option key={p.id} value={p.id}>{client?.name} → {p.name}</option>;
-                    })}
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { key: 'organic_traffic', label: 'Organic Traffic', placeholder: '12500' },
-                    { key: 'domain_rating', label: 'Domain Rating', placeholder: '42' },
-                    { key: 'backlinks', label: 'Backlinks', placeholder: '310' },
-                    { key: 'ai_citations', label: 'AI Citations', placeholder: '8' },
-                    { key: 'conversions', label: 'Conversions', placeholder: '45' },
-                    { key: 'revenue_impact', label: 'Revenue Impact ($)', placeholder: '4500' },
-                  ].map(({ key, label, placeholder }) => (
-                    <div key={key} className="space-y-1">
-                      <Label className={labelClass}>{label}</Label>
-                      <Input
-                        placeholder={placeholder}
-                        value={(metricsForm as any)[key]}
-                        onChange={e => setMetricsForm(f => ({ ...f, [key]: e.target.value }))}
-                        className={inputClass}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="space-y-1">
-                  <Label className={labelClass}>Date</Label>
-                  <Input type="date" value={metricsForm.recorded_at} onChange={e => setMetricsForm(f => ({ ...f, recorded_at: e.target.value }))} className={inputClass} />
-                </div>
-                <Button onClick={saveMetrics} disabled={loading} className="w-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground">
-                  <TrendingUp className="h-4 w-4 mr-2" /> Save Metrics
-                </Button>
-              </div>
-            </div>
+<div className="rounded-2xl border border-border bg-card/60 p-6">
+  <h2 className="font-bold text-base mb-4 flex items-center gap-2">
+    <BarChart3 className="h-4 w-4 text-primary" /> Update Metrics
+  </h2>
+  <div className="space-y-3">
+    <div className="space-y-1">
+      <Label className={labelClass}>Select Project</Label>
+      <select
+        value={selectedProject}
+        onChange={e => setSelectedProject(e.target.value)}
+        className="w-full h-10 rounded-md border border-border bg-background/60 text-sm px-3"
+      >
+        <option value="">— Choose project —</option>
+        {projects.map(p => {
+          const client = clients.find(c => c.id === p.client_id);
+          return <option key={p.id} value={p.id}>{client?.name} → {p.name}</option>;
+        })}
+      </select>
+    </div>
+
+    {/* Auto-fetch button */}
+    {selectedProject && (() => {
+      const proj = projects.find(p => p.id === selectedProject);
+      return proj?.url ? (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <div className="text-xs font-mono text-primary uppercase tracking-wider mb-2">
+            ⚡ Auto-fetch Real Data
           </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Fetches live PageSpeed scores, Core Web Vitals, and SEO data directly from Google for <span className="text-foreground font-mono">{proj.url}</span>
+          </p>
+          <Button
+            onClick={async () => {
+              setLoading(true);
+              try {
+                const res = await fetch('/api/fetch-site-metrics', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ url: proj.url }),
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                // Auto-fill metrics form with REAL data
+                setMetricsForm(f => ({
+                  ...f,
+                  organic_traffic: f.organic_traffic, // keep manual — needs GSC
+                  domain_rating: data.raw_scores.seo?.toString() || f.domain_rating,
+                  backlinks: f.backlinks, // keep manual — needs Ahrefs
+                  ai_citations: f.ai_citations,
+                  conversions: f.conversions,
+                  revenue_impact: f.revenue_impact,
+                }));
+
+                // Store full results for display
+                setFetchedMetrics(data);
+                toast({ title: '✅ Real data fetched!', description: 'Scores from Google PageSpeed Insights' });
+              } catch (err: any) {
+                toast({ title: 'Fetch failed', description: err.message, variant: 'destructive' });
+              }
+              setLoading(false);
+            }}
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground text-sm"
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                Fetching from Google...
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                Fetch Live Metrics for {proj.url}
+              </span>
+            )}
+          </Button>
+        </div>
+      ) : null;
+    })()}
+
+    {/* Show fetched real data */}
+    {fetchedMetrics && (
+      <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-4 space-y-3">
+        <div className="flex items-center gap-2 text-xs font-mono text-green-400 uppercase tracking-wider">
+          <CheckCircle className="h-3.5 w-3.5" />
+          Real Data — Source: {fetchedMetrics.source}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Fetched: {new Date(fetchedMetrics.fetched_at).toLocaleString()}
+        </div>
+
+        {/* PageSpeed Scores */}
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { label: 'Mobile Performance', value: fetchedMetrics.raw_scores.mobile_performance, color: fetchedMetrics.raw_scores.mobile_performance >= 90 ? 'text-green-400' : fetchedMetrics.raw_scores.mobile_performance >= 50 ? 'text-yellow-400' : 'text-red-400' },
+            { label: 'Desktop Performance', value: fetchedMetrics.raw_scores.desktop_performance, color: fetchedMetrics.raw_scores.desktop_performance >= 90 ? 'text-green-400' : fetchedMetrics.raw_scores.desktop_performance >= 50 ? 'text-yellow-400' : 'text-red-400' },
+            { label: 'SEO Score', value: fetchedMetrics.raw_scores.seo, color: fetchedMetrics.raw_scores.seo >= 90 ? 'text-green-400' : 'text-yellow-400' },
+            { label: 'Accessibility', value: fetchedMetrics.raw_scores.accessibility, color: fetchedMetrics.raw_scores.accessibility >= 90 ? 'text-green-400' : 'text-yellow-400' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="rounded-lg border border-border bg-background/40 px-3 py-2">
+              <div className="text-xs text-muted-foreground">{label}</div>
+              <div className={`text-lg font-bold ${color}`}>{value}/100</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Core Web Vitals */}
+        <div>
+          <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-2">Core Web Vitals (Mobile)</div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: 'LCP', value: fetchedMetrics.cwv.lcp },
+              { label: 'CLS', value: fetchedMetrics.cwv.cls },
+              { label: 'FCP', value: fetchedMetrics.cwv.fcp },
+              { label: 'TBT', value: fetchedMetrics.cwv.tbt },
+              { label: 'TTI', value: fetchedMetrics.cwv.tti },
+              { label: 'Speed Index', value: fetchedMetrics.cwv.speed_index },
+            ].map(({ label, value }) => (
+              <div key={label} className="rounded-lg border border-border bg-background/40 px-2 py-1.5 text-center">
+                <div className="text-xs text-muted-foreground">{label}</div>
+                <div className="text-xs font-bold text-foreground">{value || '—'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* AI Analysis */}
+        {fetchedMetrics.analysis && (
+          <>
+            {fetchedMetrics.analysis.ai_summary && (
+              <div className="rounded-lg border border-border bg-background/40 p-3">
+                <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-1">AI Summary</div>
+                <p className="text-xs text-foreground leading-relaxed">{fetchedMetrics.analysis.ai_summary}</p>
+              </div>
+            )}
+            {fetchedMetrics.analysis.technical_issues?.length > 0 && (
+              <div>
+                <div className="text-xs font-mono text-red-400 uppercase tracking-wider mb-1">Confirmed Issues</div>
+                {fetchedMetrics.analysis.technical_issues.map((issue: string, i: number) => (
+                  <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground py-0.5">
+                    <span className="text-red-400 shrink-0 mt-0.5">✗</span>{issue}
+                  </div>
+                ))}
+              </div>
+            )}
+            {fetchedMetrics.analysis.confirmed_positives?.length > 0 && (
+              <div>
+                <div className="text-xs font-mono text-green-400 uppercase tracking-wider mb-1">Confirmed Good</div>
+                {fetchedMetrics.analysis.confirmed_positives.map((item: string, i: number) => (
+                  <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground py-0.5">
+                    <span className="text-green-400 shrink-0 mt-0.5">✓</span>{item}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
+        <div className="text-xs text-muted-foreground border-t border-border pt-2">
+          ⚠️ Organic traffic, backlinks & DR require Google Search Console / Ahrefs — enter manually below
+        </div>
+      </div>
+    )}
+
+    {/* Manual fields for data requiring paid APIs */}
+    <div className="rounded-xl border border-border bg-background/40 p-3">
+      <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-3">
+        Manual Entry (requires GSC / Ahrefs)
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { key: 'organic_traffic', label: 'Organic Traffic (GSC)', placeholder: '12500' },
+          { key: 'domain_rating', label: 'Domain Rating (Ahrefs)', placeholder: '42' },
+          { key: 'backlinks', label: 'Backlinks (Ahrefs)', placeholder: '310' },
+          { key: 'ai_citations', label: 'AI Citations (manual test)', placeholder: '8' },
+          { key: 'conversions', label: 'Conversions (GSC/GA)', placeholder: '45' },
+          { key: 'revenue_impact', label: 'Revenue Impact ($)', placeholder: '4500' },
+        ].map(({ key, label, placeholder }) => (
+          <div key={key} className="space-y-1">
+            <Label className={labelClass}>{label}</Label>
+            <Input
+              placeholder={placeholder}
+              value={(metricsForm as any)[key]}
+              onChange={e => setMetricsForm(f => ({ ...f, [key]: e.target.value }))}
+              className={inputClass}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-1 mt-3">
+        <Label className={labelClass}>Date</Label>
+        <Input type="date" value={metricsForm.recorded_at} onChange={e => setMetricsForm(f => ({ ...f, recorded_at: e.target.value }))} className={inputClass} />
+      </div>
+    </div>
+
+    <Button onClick={saveMetrics} disabled={loading} className="w-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground">
+      <TrendingUp className="h-4 w-4 mr-2" /> Save Metrics to Dashboard
+    </Button>
+  </div>
+</div>
         {/* ── UPSELLS TAB ── */}
         {tab === 'upsells' && (
           <div className="max-w-lg">
