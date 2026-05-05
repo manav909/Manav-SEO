@@ -14,61 +14,24 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
+/* ── SCORE CONFIG — must be defined first ── */
 const getScoreConfig = (score: number) => {
-  if (score >= 80) return { label: 'Leading', bg: 'bg-green-400/10', border: 'border-green-400/30', text: 'text-green-400', bar: '#4ade80', emoji: '🏆' };
-  if (score >= 60) return { label: 'Growing', bg: 'bg-blue-400/10', border: 'border-blue-400/30', text: 'text-blue-400', bar: '#60a5fa', emoji: '📈' };
-  if (score >= 40) return { label: 'Building', bg: 'bg-yellow-400/10', border: 'border-yellow-400/30', text: 'text-yellow-400', bar: '#facc15', emoji: '🚀' };
-  if (score >= 20) return { label: 'Launching', bg: 'bg-orange-400/10', border: 'border-orange-400/30', text: 'text-orange-400', bar: '#fb923c', emoji: '⚡' };
-  return { label: 'Opportunity', bg: 'bg-primary/10', border: 'border-primary/30', text: 'text-primary', bar: '#6366f1', emoji: '💎' };
-};
-
-
-/* ── SCORE RING ── */
-const ScoreRing = ({
-  score, label, color, onClick
-}: {
-  score: number; label: string; color: string; onClick?: () => void;
-}) => {
-  const r = 28;
-  const circ = 2 * Math.PI * r;
-
-  return (
-    <button
-      onClick={onClick}
-      className={`flex flex-col items-center gap-1.5 group ${onClick ? 'cursor-pointer' : ''}`}
-    >
-      <div className="relative h-16 w-16">
-        <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
-          <circle cx="32" cy="32" r={r} fill="none" stroke="hsl(var(--border))" strokeWidth="5" />
-          <circle cx="32" cy="32" r={r} fill="none" stroke={cfg.bar} strokeWidth="5"
-            strokeLinecap="round"
-            strokeDasharray={circ}
-            strokeDashoffset={offset}
-            style={{ transition: 'stroke-dashoffset 1.2s ease' }} />
-        </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{score}</span>
-        {onClick && (
-          <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <HelpCircle className="h-2.5 w-2.5 text-primary" />
-          </div>
-        )}
-      </div>
-      <span className="text-xs text-muted-foreground text-center leading-tight">{label}</span>
-      <span className={`text-xs font-mono ${cfg.text}`}>{cfg.emoji} {cfg.label}</span>
-    </button>
-  );
+  if (score >= 80) return { label:'Leading',     text:'text-green-400',  bar:'#4ade80',  emoji:'🏆' };
+  if (score >= 60) return { label:'Growing',     text:'text-blue-400',   bar:'#60a5fa',  emoji:'📈' };
+  if (score >= 40) return { label:'Building',    text:'text-yellow-400', bar:'#facc15',  emoji:'🚀' };
+  if (score >= 20) return { label:'Launching',   text:'text-orange-400', bar:'#fb923c',  emoji:'⚡' };
+  return             { label:'Opportunity', text:'text-primary',    bar:'#6366f1',  emoji:'💎' };
 };
 
 /* ── WHY MODAL ── */
-
 const WhyModal = ({
   explanation, title, score, color, onClose
 }: {
   explanation: any; title: string; score: number; color: string; onClose: () => void;
 }) => {
-  const hasData = explanation && (explanation.score_reason || explanation.what_it_means);
-  const growthLeft = 100 - score;
   const cfg = getScoreConfig(score);
+  const growthLeft = 100 - score;
+  const hasData = explanation && (explanation.score_reason || explanation.what_it_means);
 
   if (!hasData) {
     return (
@@ -104,8 +67,7 @@ const WhyModal = ({
             </div>
             <div className="rounded-xl border border-border bg-background/60 p-4">
               <p className="text-sm text-muted-foreground">
-                Detailed explanation will appear here after Manav runs the next AI analysis for your project.
-                Each analysis generates specific insights based on your live website data.
+                Detailed explanation will appear after Manav runs the next AI analysis for your project.
               </p>
             </div>
             <div className="rounded-xl bg-gradient-to-r from-primary/10 to-transparent border border-primary/15 p-4 flex items-center gap-3">
@@ -127,10 +89,8 @@ const WhyModal = ({
       <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-[0_32px_80px_rgba(0,0,0,0.6)] overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent" />
 
-        {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">
           <div className="flex items-center gap-3">
-            {/* Score with growth potential */}
             <div className="relative shrink-0">
               <svg className="h-14 w-14 -rotate-90" viewBox="0 0 56 56">
                 <circle cx="28" cy="28" r="22" fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
@@ -145,8 +105,7 @@ const WhyModal = ({
             <div>
               <div className="font-bold text-sm">{title}</div>
               <div className={`text-xs font-mono ${cfg.text} flex items-center gap-1`}>
-                <span>{cfg.emoji}</span>
-                <span>{explanation.score_label || cfg.label}</span>
+                <span>{cfg.emoji}</span><span>{explanation.score_label || cfg.label}</span>
               </div>
             </div>
           </div>
@@ -157,7 +116,6 @@ const WhyModal = ({
 
         <div className="px-5 py-5 space-y-4">
 
-          {/* Growth potential banner — always show */}
           {growthLeft > 0 && (
             <div className="rounded-xl bg-gradient-to-r from-primary/15 to-primary/5 border border-primary/20 p-4">
               <div className="flex items-center justify-between mb-2">
@@ -175,15 +133,6 @@ const WhyModal = ({
             </div>
           )}
 
-          {score >= 100 && (
-            <div className="rounded-xl bg-green-400/10 border border-green-400/30 p-4 text-center">
-              <div className="text-2xl mb-1">🏆</div>
-              <div className="font-bold text-green-400">Perfect Score — Market Leader</div>
-              <div className="text-xs text-muted-foreground mt-1">You're at the top. Now we maintain and defend.</div>
-            </div>
-          )}
-
-          {/* Why this score */}
           <div className="rounded-xl border border-border bg-background/60 p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
@@ -192,16 +141,16 @@ const WhyModal = ({
             <p className="text-sm text-foreground leading-relaxed">{explanation.score_reason}</p>
           </div>
 
-          {/* What it means */}
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Brain className="h-3.5 w-3.5 text-primary" />
-              <span className="text-xs font-mono uppercase tracking-wider text-primary">What This Means For Your Business</span>
+          {explanation.what_it_means && (
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Brain className="h-3.5 w-3.5 text-primary" />
+                <span className="text-xs font-mono uppercase tracking-wider text-primary">What This Means For Your Business</span>
+              </div>
+              <p className="text-sm text-foreground leading-relaxed font-medium">{explanation.what_it_means}</p>
             </div>
-            <p className="text-sm text-foreground leading-relaxed font-medium">{explanation.what_it_means}</p>
-          </div>
+          )}
 
-          {/* The Opportunity — the most important section */}
           {explanation.opportunity && (
             <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -212,7 +161,6 @@ const WhyModal = ({
             </div>
           )}
 
-          {/* Proof points */}
           {explanation.proof_points?.length > 0 && (
             <div className="rounded-xl border border-border bg-background/40 p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -230,69 +178,89 @@ const WhyModal = ({
             </div>
           )}
 
-          {/* What to expect */}
-          <div className="rounded-xl border border-border bg-background/40 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Target className="h-3.5 w-3.5 text-yellow-400" />
-              <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">What To Expect Next</span>
+          {explanation.what_to_expect && (
+            <div className="rounded-xl border border-border bg-background/40 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Target className="h-3.5 w-3.5 text-yellow-400" />
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">What To Expect Next</span>
+              </div>
+              <p className="text-sm text-foreground leading-relaxed">{explanation.what_to_expect}</p>
             </div>
-            <p className="text-sm text-foreground leading-relaxed">{explanation.what_to_expect}</p>
-          </div>
+          )}
 
-          {/* Closing motivator */}
           <div className="rounded-xl bg-gradient-to-r from-primary/10 to-transparent border border-primary/15 p-4 flex items-center gap-3">
             <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-1 ring-primary shrink-0"
               style={{ objectPosition:'center 20%' }} />
             <p className="text-xs text-muted-foreground leading-relaxed">
-              <span className="text-foreground font-semibold">Manav is actively working on this.</span> Every report you see reflects real actions taken on your behalf. Your growth is tracked, planned, and executing on schedule.
+              <span className="text-foreground font-semibold">Manav is actively working on this.</span> Every report reflects real actions taken on your behalf. Your growth is tracked, planned, and on schedule.
             </p>
           </div>
-
         </div>
       </div>
     </div>
   );
 };
 
-/* ── STAT CARD WITH WHY ── */
-const StatCard = ({
-  icon: Icon, label, value, delta: d,
-  color = 'text-primary', explanation, title, score, ringColor
-}: any) => {
+/* ── SCORE RING ── */
+const ScoreRing = ({
+  score, label, color, onClick
+}: {
+  score: number; label: string; color: string; onClick?: () => void;
+}) => {
+  const r = 28;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - score / 100);
+  const cfg = getScoreConfig(score);
+  return (
+    <button onClick={onClick} className="flex flex-col items-center gap-1.5 group cursor-pointer">
+      <div className="relative h-16 w-16">
+        <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r={r} fill="none" stroke="hsl(var(--border))" strokeWidth="5" />
+          <circle cx="32" cy="32" r={r} fill="none" stroke={cfg.bar} strokeWidth="5"
+            strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
+            style={{ transition:'stroke-dashoffset 1.2s ease' }} />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{score}</span>
+        <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <HelpCircle className="h-2.5 w-2.5 text-primary" />
+        </div>
+      </div>
+      <span className="text-xs text-muted-foreground text-center leading-tight">{label}</span>
+      <span className={`text-xs font-mono ${cfg.text}`}>{cfg.emoji} {cfg.label}</span>
+    </button>
+  );
+};
+
+/* ── STAT CARD ── */
+const StatCard = ({ icon: Icon, label, value, delta: d, color = 'text-primary', explanation, title, score, ringColor }: any) => {
   const [showWhy, setShowWhy] = useState(false);
   return (
     <>
-      <div
-        className="rounded-2xl border border-border bg-card/60 backdrop-blur p-4 cursor-pointer group hover:border-primary/40 transition-colors"
-        onClick={() => setShowWhy(true)}
-      >
+      <div onClick={() => setShowWhy(true)}
+        className="rounded-2xl border border-border bg-card/60 backdrop-blur p-4 cursor-pointer group hover:border-primary/40 transition-colors">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
           <div className="flex items-center gap-1">
-            {explanation && (
-              <HelpCircle className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
-            )}
+            <HelpCircle className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
             <Icon className={`h-4 w-4 ${color}`} />
           </div>
         </div>
         <div className="text-2xl font-bold text-foreground mb-1">{value ?? '—'}</div>
         {d !== null && d !== undefined && (
-          <div className={`text-xs flex items-center gap-1 ${d >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          <div className={`text-xs flex items-center gap-1 ${d >= 0 ? 'text-green-400' : 'text-orange-400'}`}>
             <ArrowUpRight className={`h-3 w-3 ${d < 0 ? 'rotate-180' : ''}`} />
             {d >= 0 ? '+' : ''}{d} vs last period
           </div>
         )}
-        {explanation && (
-          <div className="text-xs text-primary mt-2 opacity-0 group-hover:opacity-100 transition-opacity font-mono">
-            tap to understand why →
-          </div>
-        )}
+        <div className="text-xs text-primary mt-2 opacity-0 group-hover:opacity-100 transition-opacity font-mono">
+          tap to understand why →
+        </div>
       </div>
       {showWhy && (
         <WhyModal
           explanation={explanation}
           title={title || label}
-          score={score || value}
+          score={score || 0}
           color={ringColor || '#6366f1'}
           onClose={() => setShowWhy(false)}
         />
@@ -311,33 +279,43 @@ export default function Dashboard() {
   const [upsells, setUpsells] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [approvingUpsell, setApprovingUpsell] = useState<string|null>(null);
-  const [activeModal, setActiveModal] = useState<{key: string; title: string; color: string} | null>(null);
+  const [activeModal, setActiveModal] = useState<{key:string; title:string; color:string}|null>(null);
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => { if (selectedProject) loadProjectData(selectedProject.id); }, [selectedProject]);
 
   const loadData = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { navigate('/'); return; }
-    const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    if (!prof?.approved) { navigate('/'); return; }
-    if (prof.client_id) {
-      const { data: c } = await supabase.from('clients').select('*').eq('id', prof.client_id).single();
-      setClient(c);
-      const { data: p } = await supabase.from('projects').select('*').eq('client_id', prof.client_id);
-      setProjects(p || []);
-      if (p && p.length > 0) setSelectedProject(p[0]);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { navigate('/'); return; }
+      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      if (!prof?.approved) { navigate('/'); return; }
+      if (prof.client_id) {
+        const { data: c } = await supabase.from('clients').select('*').eq('id', prof.client_id).single();
+        setClient(c);
+        const { data: p } = await supabase.from('projects').select('*').eq('client_id', prof.client_id);
+        setProjects(p || []);
+        if (p && p.length > 0) setSelectedProject(p[0]);
+      } else {
+        setClient(null);
+      }
+    } catch (err) {
+      console.error('loadData error:', err);
     }
     setLoading(false);
   };
 
   const loadProjectData = async (projectId: string) => {
-    const [m, u] = await Promise.all([
-      supabase.from('metrics').select('*').eq('project_id', projectId).order('recorded_at'),
-      supabase.from('upsells').select('*').eq('project_id', projectId).eq('status', 'pending'),
-    ]);
-    setMetrics(m.data || []);
-    setUpsells(u.data || []);
+    try {
+      const [m, u] = await Promise.all([
+        supabase.from('metrics').select('*').eq('project_id', projectId).order('recorded_at'),
+        supabase.from('upsells').select('*').eq('project_id', projectId).eq('status', 'pending'),
+      ]);
+      setMetrics(m.data || []);
+      setUpsells(u.data || []);
+    } catch (err) {
+      console.error('loadProjectData error:', err);
+    }
   };
 
   const approveUpsell = async (id: string) => {
@@ -350,28 +328,30 @@ export default function Dashboard() {
     setApprovingUpsell(null);
   };
 
-  const latest = metrics[metrics.length - 1];
-  const previous = metrics[metrics.length - 2];
-  const delta = (key: string) => {
-    if (!latest || !previous || latest[key] == null || previous[key] == null) return null;
-    return latest[key] - previous[key];
-  };
-  const exp = latest?.explanations || {};
+  const latest = metrics[metrics.length - 1] || null;
+  const previous = metrics[metrics.length - 2] || null;
 
+  const delta = (key: string) => {
+    if (!latest || !previous) return null;
+    const a = latest[key]; const b = previous[key];
+    if (a == null || b == null) return null;
+    return a - b;
+  };
+
+  const exp = latest?.explanations || {};
+  const totalCitations = latest
+    ? (latest.chatgpt_citations || 0) + (latest.perplexity_citations || 0) + (latest.google_ai_citations || 0)
+    : 0;
   const indexingPct = latest?.pages_submitted > 0
     ? Math.round((latest.pages_indexed / latest.pages_submitted) * 100) : null;
 
   const chartData = metrics.map(m => ({
     date: new Date(m.recorded_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' }),
-    llm: m.llm_visibility_score,
-    health: m.algorithm_health_score,
-    authority: m.content_authority_score,
-    growth: m.overall_growth_score,
+    llm: m.llm_visibility_score || 0,
+    health: m.algorithm_health_score || 0,
+    authority: m.content_authority_score || 0,
+    growth: m.overall_growth_score || 0,
   }));
-
-  const totalCitations = latest
-    ? (latest.chatgpt_citations || 0) + (latest.perplexity_citations || 0) + (latest.google_ai_citations || 0)
-    : 0;
 
   if (loading) {
     return (
@@ -392,8 +372,12 @@ export default function Dashboard() {
             <Clock className="h-7 w-7 text-primary" />
           </div>
           <h2 className="text-xl font-bold mb-2">Your Dashboard is Being Set Up</h2>
-          <p className="text-muted-foreground text-sm mb-6">Manav is configuring your growth portal. You'll be notified once your first report is ready.</p>
-          <Button variant="outline" onClick={async () => { await supabase.auth.signOut(); navigate('/'); }} className="border-border">
+          <p className="text-muted-foreground text-sm mb-6">
+            Manav is configuring your growth portal. You will be notified once your first report is ready.
+          </p>
+          <Button variant="outline"
+            onClick={async () => { await supabase.auth.signOut(); navigate('/'); }}
+            className="border-border">
             <LogOut className="h-4 w-4 mr-2" />Sign Out
           </Button>
         </div>
@@ -404,12 +388,12 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background text-foreground">
 
-      {/* Active modal from score rings */}
-      {activeModal && latest && (
+      {/* Active modal */}
+      {activeModal && (
         <WhyModal
           explanation={exp[activeModal.key]}
           title={activeModal.title}
-          score={(latest as any)[activeModal.key]}
+          score={latest ? (latest[activeModal.key] || 0) : 0}
           color={activeModal.color}
           onClose={() => setActiveModal(null)}
         />
@@ -419,7 +403,8 @@ export default function Dashboard() {
       <div className="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary" style={{ objectPosition:'center 20%' }} />
+            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary"
+              style={{ objectPosition:'center 20%' }} />
             <div>
               <div className="font-bold text-sm">SEO Seasons</div>
               <div className="text-xs text-muted-foreground">{client.company} — Growth Portal</div>
@@ -461,7 +446,7 @@ export default function Dashboard() {
         {latest && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/15 rounded-xl px-4 py-2.5">
             <HelpCircle className="h-3.5 w-3.5 text-primary shrink-0" />
-            <span>Tap any score or metric to understand exactly <strong className="text-foreground">why</strong> it is what it is, what we did, and what to expect next.</span>
+            Tap any score or metric to understand exactly <strong className="text-foreground mx-1">why</strong> it is what it is, what was done, and what to expect next.
           </div>
         )}
 
@@ -483,7 +468,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Score Rings — all tappable */}
+        {/* Score Rings */}
         {latest && (
           <div className="rounded-2xl border border-border bg-card/60 p-6">
             <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-5">
@@ -491,56 +476,43 @@ export default function Dashboard() {
             </div>
             <div className="flex flex-wrap justify-around gap-6">
               {[
-                { key:'llm_visibility_score', label:'LLM Visibility', color:'#6366f1', title:'LLM Visibility Score' },
-                { key:'algorithm_health_score', label:'Google Health', color:'#06b6d4', title:'Google Algorithm Health' },
-                { key:'eeat_score', label:'E-E-A-T Authority', color:'#8b5cf6', title:'E-E-A-T Authority Score' },
+                { key:'llm_visibility_score',    label:'LLM Visibility',    color:'#6366f1', title:'LLM Visibility Score' },
+                { key:'algorithm_health_score',  label:'Google Health',     color:'#06b6d4', title:'Google Algorithm Health' },
+                { key:'eeat_score',              label:'E-E-A-T Authority', color:'#8b5cf6', title:'E-E-A-T Authority Score' },
                 { key:'content_authority_score', label:'Content Authority', color:'#f59e0b', title:'Content Authority Score' },
-                { key:'overall_growth_score', label:'Overall Growth', color:'#4ade80', title:'Overall Growth Score' },
+                { key:'overall_growth_score',    label:'Overall Growth',    color:'#4ade80', title:'Overall Growth Score' },
               ].map(({ key, label, color, title }) => (
-                <ScoreRing
-                  key={key}
-                  score={latest[key] || 0}
-                  label={label}
-                  color={color}
-                  onClick={() => setActiveModal({ key, title, color })}
-                />
+                <ScoreRing key={key} score={latest[key] || 0} label={label} color={color}
+                  onClick={() => setActiveModal({ key, title, color })} />
               ))}
             </div>
           </div>
         )}
 
-        {/* Stat Cards — all tappable */}
+        {/* Stat Cards */}
         {latest && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              icon={Brain} label="Total AI Citations" color="text-primary"
+            <StatCard icon={Brain} label="Total AI Citations" color="text-primary"
               value={totalCitations} delta={null}
               title="Total AI Citations" score={totalCitations} ringColor="#6366f1"
-              explanation={exp.chatgpt_citations}
-            />
-            <StatCard
-              icon={Eye} label="Pages Indexed" color="text-cyan-400"
+              explanation={exp.chatgpt_citations} />
+            <StatCard icon={Eye} label="Pages Indexed" color="text-cyan-400"
               value={latest.pages_indexed} delta={delta('pages_indexed')}
               title="Google Index Status" score={latest.pages_indexed} ringColor="#06b6d4"
-              explanation={exp.pages_indexed}
-            />
-            <StatCard
-              icon={Trophy} label="Market Rank" color="text-yellow-400"
+              explanation={exp.pages_indexed} />
+            <StatCard icon={Trophy} label="Market Rank" color="text-yellow-400"
               value={latest.competitor_rank ? `#${latest.competitor_rank}` : '—'}
               delta={delta('competitor_rank') !== null ? -(delta('competitor_rank') as number) : null}
-              title="Competitive Market Rank" score={latest.competitor_rank} ringColor="#f59e0b"
-              explanation={exp.competitor_rank}
-            />
-            <StatCard
-              icon={TrendingUp} label="Brand Mentions" color="text-green-400"
+              title="Competitive Market Rank" score={latest.competitor_rank || 0} ringColor="#f59e0b"
+              explanation={exp.competitor_rank} />
+            <StatCard icon={TrendingUp} label="Brand Mentions" color="text-green-400"
               value={latest.brand_mentions} delta={delta('brand_mentions')}
-              title="Brand Mentions" score={latest.brand_mentions} ringColor="#4ade80"
-              explanation={exp.brand_mentions}
-            />
+              title="Brand Mentions" score={latest.brand_mentions || 0} ringColor="#4ade80"
+              explanation={exp.brand_mentions} />
           </div>
         )}
 
-        {/* LLM Platform Breakdown — tappable rows */}
+        {/* LLM Breakdown + Indexing */}
         {latest && (
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="rounded-2xl border border-border bg-card/60 p-5">
@@ -553,25 +525,23 @@ export default function Dashboard() {
               </div>
               <div className="space-y-3">
                 {[
-                  { name:'ChatGPT', value: latest.chatgpt_citations || 0, color:'#6366f1', expKey:'chatgpt_citations', title:'ChatGPT Citations' },
-                  { name:'Perplexity', value: latest.perplexity_citations || 0, color:'#8b5cf6', expKey:'perplexity_citations', title:'Perplexity Citations' },
-                  { name:'Google AI Overviews', value: latest.google_ai_citations || 0, color:'#06b6d4', expKey:'google_ai_citations', title:'Google AI Overview Citations' },
+                  { name:'ChatGPT',              value: latest.chatgpt_citations || 0,    color:'#6366f1', key:'chatgpt_citations',    title:'ChatGPT Citations' },
+                  { name:'Perplexity',           value: latest.perplexity_citations || 0, color:'#8b5cf6', key:'perplexity_citations',  title:'Perplexity Citations' },
+                  { name:'Google AI Overviews',  value: latest.google_ai_citations || 0,  color:'#06b6d4', key:'google_ai_citations',   title:'Google AI Overview Citations' },
                 ].map(item => (
                   <button key={item.name}
-                    onClick={() => exp[item.expKey] && setActiveModal({ key: item.expKey, title: item.title, color: item.color })}
+                    onClick={() => setActiveModal({ key: item.key, title: item.title, color: item.color })}
                     className="w-full group text-left">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{item.name}</span>
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-bold">{item.value} citations</span>
-                        {exp[item.expKey] && (
-                          <HelpCircle className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
-                        )}
+                        <HelpCircle className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
                     </div>
                     <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
                       <div className="h-full rounded-full transition-all duration-1000"
-                        style={{ width:`${Math.min(100, (item.value / Math.max(totalCitations, 1)) * 100)}%`, background: item.color }} />
+                        style={{ width:`${Math.min(100, totalCitations > 0 ? (item.value / totalCitations) * 100 : 0)}%`, background: item.color }} />
                     </div>
                   </button>
                 ))}
@@ -585,17 +555,14 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Indexing */}
             <div className="rounded-2xl border border-border bg-card/60 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Eye className="h-4 w-4 text-cyan-400" />
                 <span className="font-semibold text-sm">Google Index Status</span>
-                {exp.pages_indexed && (
-                  <button onClick={() => setActiveModal({ key:'pages_indexed', title:'Google Index Status', color:'#06b6d4' })}
-                    className="ml-auto text-xs text-primary font-mono flex items-center gap-1 hover:underline">
-                    <HelpCircle className="h-3 w-3" />why?
-                  </button>
-                )}
+                <button onClick={() => setActiveModal({ key:'pages_indexed', title:'Google Index Status', color:'#06b6d4' })}
+                  className="ml-auto text-xs text-primary font-mono flex items-center gap-1 hover:underline">
+                  <HelpCircle className="h-3 w-3" />why?
+                </button>
               </div>
               {latest.pages_submitted > 0 ? (
                 <>
@@ -617,22 +584,28 @@ export default function Dashboard() {
               ) : (
                 <div className="text-sm text-muted-foreground">Indexing data will appear in your next report.</div>
               )}
+              {latest.brand_mentions > 0 && (
+                <div className="mt-4 pt-4 border-t border-border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Brand Mentions</span>
+                    <span className="text-sm font-bold">{latest.brand_mentions}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Competitive Position — tappable */}
+        {/* Competitive Position */}
         {latest && (latest.competitor_rank > 0 || latest.competitors_beaten > 0 || latest.competitor_gap_note) && (
           <div className="rounded-2xl border border-border bg-card/60 p-5">
             <div className="flex items-center gap-2 mb-4">
               <Trophy className="h-4 w-4 text-yellow-400" />
               <span className="font-semibold text-sm">Competitive Position</span>
-              {exp.competitor_rank && (
-                <button onClick={() => setActiveModal({ key:'competitor_rank', title:'Competitive Market Rank', color:'#f59e0b' })}
-                  className="ml-auto text-xs text-primary font-mono flex items-center gap-1 hover:underline">
-                  <HelpCircle className="h-3 w-3" />why?
-                </button>
-              )}
+              <button onClick={() => setActiveModal({ key:'competitor_rank', title:'Competitive Market Rank', color:'#f59e0b' })}
+                className="ml-auto text-xs text-primary font-mono flex items-center gap-1 hover:underline">
+                <HelpCircle className="h-3 w-3" />why?
+              </button>
             </div>
             <div className="grid sm:grid-cols-3 gap-4">
               {latest.competitor_rank > 0 && (
@@ -675,10 +648,10 @@ export default function Dashboard() {
                 <XAxis dataKey="date" tick={{ fontSize:11, fill:'hsl(var(--muted-foreground))' }} />
                 <YAxis domain={[0,100]} tick={{ fontSize:11, fill:'hsl(var(--muted-foreground))' }} />
                 <Tooltip contentStyle={{ background:'hsl(var(--card))', border:'1px solid hsl(var(--border))', borderRadius:'12px', fontSize:'12px' }} />
-                <Line type="monotone" dataKey="llm" name="LLM Visibility" stroke="#6366f1" strokeWidth={2} dot={{ r:3 }} />
-                <Line type="monotone" dataKey="health" name="Google Health" stroke="#06b6d4" strokeWidth={2} dot={{ r:3 }} />
-                <Line type="monotone" dataKey="authority" name="Authority" stroke="#f59e0b" strokeWidth={2} dot={{ r:3 }} />
-                <Line type="monotone" dataKey="growth" name="Overall Growth" stroke="#4ade80" strokeWidth={2} dot={{ r:3 }} />
+                <Line type="monotone" dataKey="llm"       name="LLM Visibility" stroke="#6366f1" strokeWidth={2} dot={{ r:3 }} />
+                <Line type="monotone" dataKey="health"    name="Google Health"  stroke="#06b6d4" strokeWidth={2} dot={{ r:3 }} />
+                <Line type="monotone" dataKey="authority" name="Authority"       stroke="#f59e0b" strokeWidth={2} dot={{ r:3 }} />
+                <Line type="monotone" dataKey="growth"    name="Overall Growth" stroke="#4ade80" strokeWidth={2} dot={{ r:3 }} />
               </LineChart>
             </ResponsiveContainer>
             <div className="flex flex-wrap gap-3 mt-3 justify-center">
@@ -689,8 +662,7 @@ export default function Dashboard() {
                 { color:'#4ade80', label:'Overall Growth' },
               ].map(({ color, label }) => (
                 <div key={label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <div className="h-2 w-2 rounded-full" style={{ background: color }} />
-                  {label}
+                  <div className="h-2 w-2 rounded-full" style={{ background:color }} />{label}
                 </div>
               ))}
             </div>
