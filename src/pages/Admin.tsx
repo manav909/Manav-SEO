@@ -433,12 +433,12 @@ export default function Admin() {
                       ))}
                     </div>
                   )}
-                  {aiResult.analysis.verified_gaps?.length > 0 && (
-                    <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-3">
-                      <div className="text-xs font-mono text-red-400 uppercase tracking-wider mb-2">Verified Gaps</div>
-                      {aiResult.analysis.verified_gaps.map((g: string, i: number) => (
+                {(aiResult.analysis.growth_opportunities || aiResult.analysis.verified_gaps || []).length > 0 && (
+                    <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-3">
+                      <div className="text-xs font-mono text-yellow-400 uppercase tracking-wider mb-2">Growth Opportunities</div>
+                      {(aiResult.analysis.growth_opportunities || aiResult.analysis.verified_gaps || []).map((g: string, i: number) => (
                         <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground py-0.5">
-                          <span className="text-red-400 shrink-0 mt-0.5">✗</span>{g}
+                          <span className="text-yellow-400 shrink-0 mt-0.5">→</span>{g}
                         </div>
                       ))}
                     </div>
