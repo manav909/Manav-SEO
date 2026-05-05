@@ -14,6 +14,15 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
+const getScoreConfig = (score: number) => {
+  if (score >= 80) return { label: 'Leading', bg: 'bg-green-400/10', border: 'border-green-400/30', text: 'text-green-400', bar: '#4ade80', emoji: '🏆' };
+  if (score >= 60) return { label: 'Growing', bg: 'bg-blue-400/10', border: 'border-blue-400/30', text: 'text-blue-400', bar: '#60a5fa', emoji: '📈' };
+  if (score >= 40) return { label: 'Building', bg: 'bg-yellow-400/10', border: 'border-yellow-400/30', text: 'text-yellow-400', bar: '#facc15', emoji: '🚀' };
+  if (score >= 20) return { label: 'Launching', bg: 'bg-orange-400/10', border: 'border-orange-400/30', text: 'text-orange-400', bar: '#fb923c', emoji: '⚡' };
+  return { label: 'Opportunity', bg: 'bg-primary/10', border: 'border-primary/30', text: 'text-primary', bar: '#6366f1', emoji: '💎' };
+};
+
+
 /* ── SCORE RING ── */
 const ScoreRing = ({
   score, label, color, onClick
@@ -22,8 +31,6 @@ const ScoreRing = ({
 }) => {
   const r = 28;
   const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - score / 100);
-  const cfg = getScoreConfig(score);
 
   return (
     <button
@@ -53,20 +60,66 @@ const ScoreRing = ({
 };
 
 /* ── WHY MODAL ── */
-const getScoreConfig = (score: number) => {
-  if (score >= 80) return { label: 'Leading', bg: 'bg-green-400/10', border: 'border-green-400/30', text: 'text-green-400', bar: '#4ade80', emoji: '🏆' };
-  if (score >= 60) return { label: 'Growing', bg: 'bg-blue-400/10', border: 'border-blue-400/30', text: 'text-blue-400', bar: '#60a5fa', emoji: '📈' };
-  if (score >= 40) return { label: 'Building', bg: 'bg-yellow-400/10', border: 'border-yellow-400/30', text: 'text-yellow-400', bar: '#facc15', emoji: '🚀' };
-  if (score >= 20) return { label: 'Launching', bg: 'bg-orange-400/10', border: 'border-orange-400/30', text: 'text-orange-400', bar: '#fb923c', emoji: '⚡' };
-  return { label: 'Opportunity', bg: 'bg-primary/10', border: 'border-primary/30', text: 'text-primary', bar: '#6366f1', emoji: '💎' };
-};
 
 const WhyModal = ({
   explanation, title, score, color, onClose
 }: {
   explanation: any; title: string; score: number; color: string; onClose: () => void;
 }) => {
-  if (!explanation) return null;
+  const hasData = explanation && (explanation.score_reason || explanation.what_it_means);
+  const growthLeft = 100 - score;
+  const cfg = getScoreConfig(score);
+
+  if (!hasData) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
+        <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-[0_32px_80px_rgba(0,0,0,0.6)] overflow-hidden">
+          <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent" />
+          <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full flex items-center justify-center border-2"
+                style={{ borderColor: color, background: `${color}15` }}>
+                <span className="text-sm font-bold" style={{ color }}>{score}</span>
+              </div>
+              <div>
+                <div className="font-bold text-sm">{title}</div>
+                <div className={`text-xs font-mono ${cfg.text}`}>{cfg.emoji} {cfg.label}</div>
+              </div>
+            </div>
+            <button onClick={onClose} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="px-5 py-5 space-y-4">
+            <div className="rounded-xl bg-gradient-to-r from-primary/15 to-primary/5 border border-primary/20 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-mono text-primary uppercase tracking-wider">Growth Potential</span>
+                <span className="text-lg font-bold text-primary">+{growthLeft} points available</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-background/60 overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-1000"
+                  style={{ width:`${score}%` }} />
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-background/60 p-4">
+              <p className="text-sm text-muted-foreground">
+                Detailed explanation will appear here after Manav runs the next AI analysis for your project.
+                Each analysis generates specific insights based on your live website data.
+              </p>
+            </div>
+            <div className="rounded-xl bg-gradient-to-r from-primary/10 to-transparent border border-primary/15 p-4 flex items-center gap-3">
+              <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-1 ring-primary shrink-0"
+                style={{ objectPosition:'center 20%' }} />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <span className="text-foreground font-semibold">Manav is actively working on this.</span> Your next report will include the full breakdown for every score.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const cfg = getScoreConfig(score);
   const growthLeft = 100 - score;
 
@@ -213,7 +266,7 @@ const StatCard = ({
     <>
       <div
         className="rounded-2xl border border-border bg-card/60 backdrop-blur p-4 cursor-pointer group hover:border-primary/40 transition-colors"
-        onClick={() => explanation && setShowWhy(true)}
+        onClick={() => setShowWhy(true)}
       >
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
@@ -451,7 +504,7 @@ export default function Dashboard() {
                   score={latest[key] || 0}
                   label={label}
                   color={color}
-                  onClick={exp[key] ? () => setActiveModal({ key, title, color }) : undefined}
+                  onClick={() => setActiveModal({ key, title, color })}
                 />
               ))}
             </div>
