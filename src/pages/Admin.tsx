@@ -10,6 +10,11 @@ import {
   ArrowLeft, Sparkles, Save, RefreshCw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import {
+  Users, Plus, Globe, CheckCircle,
+  ChevronDown, ChevronUp, Zap, DollarSign,
+  ArrowLeft, Sparkles, Save, RefreshCw, AlertCircle
+} from 'lucide-react';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -379,13 +384,22 @@ export default function Admin() {
 
             {/* Step 2: AI Results preview */}
             {aiResult && (
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6 space-y-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-400" />
-                  <span className="font-semibold text-sm">Analysis Complete</span>
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {new Date(aiResult.fetched_at).toLocaleString()}
-                  </span>
+              <div className="space-y-4">
+
+                {/* WARNING BANNER */}
+                <div className="rounded-xl border border-orange-400/30 bg-orange-400/5 p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-orange-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-semibold text-orange-400 mb-1">Review Before Saving</div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        The scores below are AI estimates based on crawled content — NOT direct measurements.
+                        <strong className="text-foreground"> Scores (0–100) are directionally accurate.</strong>
+                        However, <strong className="text-foreground">citation counts, pages indexed, and competitor rank</strong> are rough estimates.
+                        Edit any value before saving. Only save numbers you are confident in.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Story */}
@@ -469,25 +483,29 @@ export default function Admin() {
                 </h3>
                 <p className="text-xs text-muted-foreground">All fields are pre-filled from real data. Edit any value before saving.</p>
 
-                <div className="grid grid-cols-2 gap-3">
+               <div className="grid grid-cols-2 gap-3">
                   {[
-                    { key:'llm_visibility_score', label:'LLM Visibility Score' },
-                    { key:'chatgpt_citations', label:'ChatGPT Citations' },
-                    { key:'perplexity_citations', label:'Perplexity Citations' },
-                    { key:'google_ai_citations', label:'Google AI Citations' },
-                    { key:'algorithm_health_score', label:'Google Health Score' },
-                    { key:'eeat_score', label:'E-E-A-T Score' },
-                    { key:'content_authority_score', label:'Content Authority' },
-                    { key:'pages_indexed', label:'Pages Indexed' },
-                    { key:'pages_submitted', label:'Pages Submitted' },
-                    { key:'brand_mentions', label:'Brand Mentions' },
-                    { key:'overall_growth_score', label:'Overall Growth Score' },
-                    { key:'competitor_rank', label:'Market Rank (#)' },
-                    { key:'competitors_beaten', label:'Competitors Beaten' },
+                    { key:'llm_visibility_score',    label:'LLM Score (0-100) ✓ reliable' },
+                    { key:'algorithm_health_score',  label:'Google Health (0-100) ✓ reliable' },
+                    { key:'eeat_score',              label:'E-E-A-T Score (0-100) ✓ reliable' },
+                    { key:'content_authority_score', label:'Content Authority (0-100) ✓ reliable' },
+                    { key:'overall_growth_score',    label:'Overall Growth (0-100) ✓ reliable' },
+                    { key:'pages_indexed',           label:'Pages Indexed ⚠ verify in GSC' },
+                    { key:'chatgpt_citations',       label:'ChatGPT Citations ⚠ estimate' },
+                    { key:'perplexity_citations',    label:'Perplexity Citations ⚠ estimate' },
+                    { key:'google_ai_citations',     label:'Google AI Citations ⚠ estimate' },
+                    { key:'brand_mentions',          label:'Brand Mentions ⚠ estimate' },
+                    { key:'competitor_rank',         label:'Market Rank ⚠ estimate' },
+                    { key:'competitors_beaten',      label:'Competitors Beaten ⚠ estimate' },
+                    { key:'pages_submitted',         label:'Pages Submitted ⚠ verify in GSC' },
                   ].map(({ key, label }) => (
                     <div key={key} className="space-y-1">
-                      <Label className={labelClass}>{label}</Label>
-                      <Input value={metricsForm[key]} onChange={e => setMetricsForm((f: any) => ({ ...f, [key]: e.target.value }))} className={inputClass} />
+                      <Label className={`${labelClass} ${label.includes('⚠') ? 'text-orange-400/70' : 'text-green-400/70'}`}>
+                        {label}
+                      </Label>
+                      <Input value={metricsForm[key]}
+                        onChange={e => setMetricsForm((f:any) => ({ ...f, [key]: e.target.value }))}
+                        className={`${inputClass} ${label.includes('⚠') ? 'border-orange-400/20' : 'border-green-400/20'}`} />
                     </div>
                   ))}
                 </div>
