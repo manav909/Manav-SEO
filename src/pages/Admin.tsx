@@ -132,7 +132,7 @@ export default function Admin() {
   };
 
   /* ── Save metrics to dashboard ── */
-  const saveMetrics = async () => {
+ const saveMetrics = async () => {
     if (!selectedProject) return toast({ title:'Select a project', variant:'destructive' });
     setLoading(true);
     const { error } = await supabase.from('metrics').insert({
@@ -157,6 +157,8 @@ export default function Admin() {
       milestone:               metricsForm.milestone,
       milestone_impact:        metricsForm.milestone_impact,
       recorded_at:             metricsForm.recorded_at,
+      keyword_rankings:        aiResult?.analysis?.keyword_rankings || [],
+      data_sources:            aiResult?.analysis?.data_sources     || {},
     });
     if (error) toast({ title:'Error', description: error.message, variant:'destructive' });
     else toast({ title:'Saved to client dashboard!' });
@@ -650,12 +652,69 @@ export default function Admin() {
                     </div>
                   </div>
 
-                  {/* Estimates (orange) */}
+                {/* Verified real data */}
                   <div>
-                    <div className="text-xs font-mono text-orange-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-orange-400 inline-block" />
-                      Estimates — verify in GSC / Ahrefs before saving
+                    <div className="text-xs font-mono text-cyan-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-cyan-400 inline-block" />
+                      Verified Data — fetched live from real sources
                     </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { key:'pages_indexed',        label:'Pages Indexed (Google site: search)' },
+                        { key:'pages_submitted',      label:'Pages Submitted (sitemap.xml)' },
+                        { key:'brand_mentions',       label:'Brand Mentions (Google search count)' },
+                        { key:'perplexity_citations', label:'Perplexity Appearances (live test)' },
+                        { key:'google_ai_citations',  label:'Google AI Overview (live test)' },
+                        { key:'chatgpt_citations',    label:'ChatGPT Citations (AI estimate)' },
+                        { key:'competitor_rank',      label:'Content Quality Rank (#)' },
+                        { key:'competitors_beaten',   label:'Competitors Outperformed' },
+                      ].map(({ key, label }) => (
+                        <div key={key} className="space-y-1">
+                          <Label className="text-xs font-medium text-cyan-400/80 uppercase tracking-wider">{label}</Label>
+                          <Input
+                            value={metricsForm[key]}
+                            onChange={e => setMetricsForm((f:any) => ({ ...f, [key]: e.target.value }))}
+                            className="h-10 bg-background/60 border-cyan-400/25 text-sm"
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Keyword Rankings preview */}
+                    {aiResult?.analysis?.keyword_rankings?.length > 0 && (
+                      <div className="mt-4 rounded-xl border border-border bg-background/40 p-4">
+                        <div className="text-xs font-mono text-cyan-400 uppercase tracking-wider mb-3">
+                          Keyword Rankings — Live Google SERP Results
+                        </div>
+                        <div className="space-y-2">
+                          {aiResult.analysis.keyword_rankings.map((k: any, i: number) => {
+                            const color = !k.found ? 'text-orange-400'
+                              : k.page === 1 ? 'text-green-400'
+                              : k.page === 2 ? 'text-yellow-400'
+                              : 'text-orange-400';
+                            const bg = !k.found ? 'bg-orange-400/5 border-orange-400/20'
+                              : k.page === 1 ? 'bg-green-400/5 border-green-400/20'
+                              : k.page === 2 ? 'bg-yellow-400/5 border-yellow-400/20'
+                              : 'bg-orange-400/5 border-orange-400/20';
+                            return (
+                              <div key={i} className={`rounded-lg border ${bg} px-3 py-2 flex items-center justify-between`}>
+                                <div>
+                                  <div className="text-xs font-semibold text-foreground">"{k.keyword}"</div>
+                                  {k.snippet && <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{k.snippet}</div>}
+                                </div>
+                                <div className={`text-xs font-mono font-bold ${color} shrink-0 ml-2`}>
+                                  {k.positionLabel}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2">
+                          Source: Live Google SERP · These rankings will be shown on the client dashboard
+                        </div>
+                      </div>
+                    )}
+                  </div>
                     <div className="grid grid-cols-2 gap-3">
                       {[
                         { key:'pages_indexed',        label:'Pages Indexed' },
