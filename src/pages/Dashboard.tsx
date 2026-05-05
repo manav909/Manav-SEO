@@ -772,7 +772,69 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-
+{/* ── KEYWORD RANKINGS ── */}
+        {latest?.keyword_rankings?.length > 0 && (
+          <div className="rounded-2xl border border-border bg-card/60 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              <span className="font-semibold text-sm">Keyword Rankings</span>
+              <span className="ml-auto text-xs font-mono text-muted-foreground">Live Google SERP</span>
+            </div>
+            <div className="space-y-2">
+              {latest.keyword_rankings.map((k: any, i: number) => {
+                const isPage1   = k.found && k.page === 1;
+                const isPage2   = k.found && k.page === 2;
+                const notRanking = !k.found;
+                const barWidth  = !k.found ? 0
+                  : k.position <= 3  ? 95
+                  : k.position <= 10 ? 70
+                  : k.position <= 20 ? 40
+                  : 15;
+                const color  = isPage1 ? 'text-green-400' : isPage2 ? 'text-yellow-400' : 'text-orange-400';
+                const bg     = isPage1 ? 'border-green-400/20 bg-green-400/5'
+                             : isPage2 ? 'border-yellow-400/20 bg-yellow-400/5'
+                             : 'border-orange-400/20 bg-orange-400/5';
+                const bar    = isPage1 ? 'bg-green-400' : isPage2 ? 'bg-yellow-400' : 'bg-orange-400';
+                return (
+                  <div key={i} className={`rounded-xl border ${bg} p-3`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="text-sm font-semibold text-foreground">"{k.keyword}"</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-xs font-mono font-bold ${color}`}>
+                            {k.positionLabel || (k.found ? `Position ~${k.position}` : 'Not in top 30')}
+                          </span>
+                          {k.verified && (
+                            <span className="text-xs text-cyan-400 font-mono">✓ verified live</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className={`text-xs px-2.5 py-1 rounded-full border font-semibold ${bg} ${color}`}>
+                        {isPage1 ? '🟢 Page 1' : isPage2 ? '🟡 Page 2' : notRanking ? '🔴 Not ranking' : '🟠 Page 3+'}
+                      </div>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-background/60 overflow-hidden">
+                      <div className={`h-full rounded-full ${bar} transition-all duration-1000`}
+                        style={{ width:`${barWidth}%` }} />
+                    </div>
+                    {k.snippet && (
+                      <p className="text-xs text-muted-foreground mt-1.5 italic truncate">"{k.snippet}"</p>
+                    )}
+                    {!k.found && (
+                      <p className="text-xs text-orange-400 mt-1.5">
+                        Not found in top 30 results — this keyword is a growth opportunity
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 inline-block" />
+              Rankings verified by live Google search on {latest.recorded_at ? fmtDate(latest.recorded_at) : 'last report date'}
+            </div>
+          </div>
+        )}
             {/* Competitive */}
             {(latest.competitor_rank>0 || latest.competitors_beaten>0 || latest.competitor_gap_note || competitiveProof.length>0) && (
               <div className="rounded-2xl border border-border bg-card/60 p-5">
