@@ -120,8 +120,6 @@ const WhyModal = ({
       </div>
     );
   }
-  const cfg = getScoreConfig(score);
-  const growthLeft = 100 - score;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
