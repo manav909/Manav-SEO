@@ -62,17 +62,13 @@ ${competitorContents[i]}
   const client = new Anthropic();
 
   const prompt = `
-You are an expert SEO and GEO analyst AND a client success consultant who specialises in keeping clients motivated and confident. Analyze the real crawled data below.
+You are an expert SEO analyst and client success consultant. Analyze the REAL crawled data below.
+Return ONLY a JSON object. Every number must be based on actual evidence found in the content.
 
-Return ONLY a JSON object. Base every score strictly on what you can observe. Never fabricate numbers.
-However — your LANGUAGE and FRAMING must always be optimistic, forward-looking, and confidence-building.
-
-CORE PHILOSOPHY:
-- A low score = big opportunity = good news for the client
-- Never use words like: failing, bad, poor, broken, missing, wrong, weak
-- Always use: opportunity, potential, room to grow, next milestone, building momentum, untapped, ahead of the curve
-- Frame every gap as a specific task that will deliver a specific reward
-- The client should feel: "I'm in good hands and this is exciting"
+CONFIDENCE LEVELS you must assign to each metric:
+- "verified" = directly confirmed from crawled content (e.g. found FAQ section, found address, counted H1 tags)
+- "estimated" = calculated from indirect signals (e.g. content quality suggests this score)
+- "approximate" = rough estimate with limited data
 
 === MAIN WEBSITE: ${url} ===
 ${siteContent}
@@ -80,15 +76,15 @@ ${siteContent}
 === GOOGLE INDEXING DATA ===
 ${indexingData}
 
-=== LLM VISIBILITY CHECK ===
+=== LLM VISIBILITY CHECK (Perplexity search results) ===
 ${llmData}
 
-${competitorSections ? `=== COMPETITORS ===\n${competitorSections}` : ''}
+${competitorSections ? `=== COMPETITOR DATA ===\n${competitorSections}` : ''}
 
-Return this EXACT JSON structure:
+Return this EXACT JSON — no extra fields, no markdown:
 
 {
-  "llm_visibility_score": <0-100: how well optimised this site is to be cited by AI engines>,
+  "llm_visibility_score": <0-100>,
   "chatgpt_citations": <0-20>,
   "perplexity_citations": <0-20>,
   "google_ai_citations": <0-20>,
@@ -96,117 +92,166 @@ Return this EXACT JSON structure:
   "algorithm_health_score": <0-100>,
   "eeat_score": <0-100>,
   "content_authority_score": <0-100>,
-  "pages_indexed": <integer>,
-  "pages_submitted": <integer>,
+  "pages_indexed": <integer: extract from indexing data, look for result count numbers>,
+  "pages_submitted": <integer: estimate based on site structure>,
   "brand_mentions": <integer>,
   "overall_growth_score": <0-100>,
   "competitor_rank": <1-10>,
   "competitors_beaten": <0-5>,
-  "competitor_gap_note": <string>,
-  "milestone": <string>,
-  "milestone_impact": <string>,
-  "story": <string: 3-4 sentences, confident and optimistic narrative. Start with what is working. Then mention the growth opportunity ahead. End with a forward-looking statement about momentum.>,
-  "verified_strengths": <string[]: 3-5 specific strengths found in real content, written confidently>,
-  "growth_opportunities": <string[]: 3-5 gaps reframed as exciting opportunities with specific actions e.g. 'Adding 15 FAQ answers targeting AI queries would likely triple your Perplexity citation count within 60 days'>,
+  "competitor_gap_note": "<specific: name the actual competitor, name the actual difference found e.g. 'competitor1.com has 24 FAQ entries vs your 6 — this directly explains their higher Perplexity presence'>",
+  "milestone": "<the single most impressive factual thing found in crawled content>",
+  "milestone_impact": "<why this matters for the business in plain English>",
+  "story": "<3-4 sentences: confident narrative referencing ACTUAL content found. Start with a strength. Then the opportunity. End with momentum.>",
+  "verified_strengths": ["<specific thing confirmed true from content>"],
+  "growth_opportunities": ["<gap reframed as opportunity with specific action and specific reward>"],
+  "competitive_proof": [
+    {
+      "claim": "<specific competitive advantage or disadvantage>",
+      "evidence": "<exact quote or observation from crawled content that proves this>",
+      "source": "<which site this came from>",
+      "impact": "<what this means for rankings/visibility>"
+    }
+  ],
   "explanations": {
     "llm_visibility_score": {
-      "score_label": "<Motivational label for this score level. Examples: score 0-30='Building Your AI Presence', 31-60='Growing AI Visibility', 61-80='Strong AI Footprint', 81-100='AI Search Leader'>",
-      "score_reason": "<1-2 sentences: exactly why this score. Reference real content signals. OPTIMISTIC tone even for low scores. e.g. 'Your site has a clear business identity and location signals — the foundation AI engines need. The score is building because FAQ-style content and entity markup have not yet been added, which is a fast win.'>",
-      "what_it_means": "<1 sentence: plain English, positive framing. e.g. 'Every point we add here means more buyers finding you through ChatGPT and Perplexity without paying for ads.'>",
-      "opportunity": "<The single most impactful action that would move this score. Specific and exciting. e.g. 'Adding 20 structured FAQ answers to your site targeting your top 5 keywords would likely move this score from 42 to 70+ within 45 days.'>",
-      "what_to_expect": "<1-2 sentences: realistic but exciting expectation. Use timeframes. e.g. 'With the content work planned for next month, expect this score to climb 15-25 points within 60 days — putting you ahead of most competitors in your category.'>",
-      "proof_points": ["<specific positive thing found in real content>", "<another specific proof point>"]
+      "score_label": "<label: 0-30=Building AI Presence, 31-60=Growing AI Visibility, 61-80=Strong AI Footprint, 81-100=AI Search Leader>",
+      "confidence": "<verified|estimated|approximate>",
+      "score_reason": "<specific factual reason referencing actual content signals found. Must mention something real from the crawl.>",
+      "what_it_means": "<plain English business impact>",
+      "opportunity": "<single most impactful action with specific expected reward>",
+      "what_to_expect": "<realistic expectation with timeframe>",
+      "proof_points": ["<specific thing found in content>"],
+      "growth_projections": {
+        "conservative": {
+          "label": "Normal Pace",
+          "score_gain": <realistic integer 5-15>,
+          "timeframe": "<e.g. 60-90 days>",
+          "actions": "<1-2 specific actions at normal pace>",
+          "confidence": "High"
+        },
+        "normal": {
+          "label": "Active Strategy",
+          "score_gain": <realistic integer 15-30>,
+          "timeframe": "<e.g. 45-60 days>",
+          "actions": "<1-2 specific actions at active pace>",
+          "confidence": "Medium-High"
+        },
+        "aggressive": {
+          "label": "Full Sprint",
+          "score_gain": <realistic integer 25-45>,
+          "timeframe": "<e.g. 30-45 days>",
+          "actions": "<1-2 specific actions at full sprint pace>",
+          "confidence": "Medium"
+        }
+      }
     },
     "algorithm_health_score": {
-      "score_label": "<label for score level>",
-      "score_reason": "<optimistic why>",
-      "what_it_means": "<plain English, positive>",
-      "opportunity": "<specific action to improve>",
-      "what_to_expect": "<exciting expectation>",
-      "proof_points": ["<evidence>"]
+      "score_label": "<label>",
+      "confidence": "<verified|estimated|approximate>",
+      "score_reason": "<specific factual reason>",
+      "what_it_means": "<business impact>",
+      "opportunity": "<action with reward>",
+      "what_to_expect": "<expectation with timeframe>",
+      "proof_points": ["<evidence>"],
+      "growth_projections": {
+        "conservative": { "label": "Normal Pace", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "High" },
+        "normal": { "label": "Active Strategy", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium-High" },
+        "aggressive": { "label": "Full Sprint", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium" }
+      }
     },
     "eeat_score": {
       "score_label": "<label>",
-      "score_reason": "<optimistic why>",
-      "what_it_means": "<positive meaning>",
+      "confidence": "<verified|estimated|approximate>",
+      "score_reason": "<specific factual reason>",
+      "what_it_means": "<business impact>",
       "opportunity": "<action>",
       "what_to_expect": "<expectation>",
-      "proof_points": ["<evidence>"]
+      "proof_points": ["<evidence>"],
+      "growth_projections": {
+        "conservative": { "label": "Normal Pace", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "High" },
+        "normal": { "label": "Active Strategy", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium-High" },
+        "aggressive": { "label": "Full Sprint", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium" }
+      }
     },
     "content_authority_score": {
       "score_label": "<label>",
-      "score_reason": "<optimistic why>",
-      "what_it_means": "<meaning>",
+      "confidence": "<verified|estimated|approximate>",
+      "score_reason": "<specific factual reason>",
+      "what_it_means": "<business impact>",
       "opportunity": "<action>",
       "what_to_expect": "<expectation>",
-      "proof_points": ["<evidence>"]
-    },
-    "pages_indexed": {
-      "score_label": "<label>",
-      "score_reason": "<optimistic why>",
-      "what_it_means": "<meaning>",
-      "opportunity": "<action>",
-      "what_to_expect": "<expectation>",
-      "proof_points": ["<evidence>"]
-    },
-    "chatgpt_citations": {
-      "score_label": "<label>",
-      "score_reason": "<optimistic why>",
-      "what_it_means": "<meaning>",
-      "opportunity": "<action>",
-      "what_to_expect": "<expectation>",
-      "proof_points": ["<evidence>"]
-    },
-    "perplexity_citations": {
-      "score_label": "<label>",
-      "score_reason": "<optimistic why>",
-      "what_it_means": "<meaning>",
-      "opportunity": "<action>",
-      "what_to_expect": "<expectation>",
-      "proof_points": ["<evidence>"]
-    },
-    "google_ai_citations": {
-      "score_label": "<label>",
-      "score_reason": "<optimistic why>",
-      "what_it_means": "<meaning>",
-      "opportunity": "<action>",
-      "what_to_expect": "<expectation>",
-      "proof_points": ["<evidence>"]
-    },
-    "brand_mentions": {
-      "score_label": "<label>",
-      "score_reason": "<optimistic why>",
-      "what_it_means": "<meaning>",
-      "opportunity": "<action>",
-      "what_to_expect": "<expectation>",
-      "proof_points": ["<evidence>"]
+      "proof_points": ["<evidence>"],
+      "growth_projections": {
+        "conservative": { "label": "Normal Pace", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "High" },
+        "normal": { "label": "Active Strategy", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium-High" },
+        "aggressive": { "label": "Full Sprint", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium" }
+      }
     },
     "overall_growth_score": {
       "score_label": "<label>",
-      "score_reason": "<optimistic composite reason>",
-      "what_it_means": "<meaning>",
-      "opportunity": "<most impactful single next action>",
-      "what_to_expect": "<exciting 90 day outlook>",
-      "proof_points": ["<key evidence>"]
+      "confidence": "<verified|estimated|approximate>",
+      "score_reason": "<composite reason>",
+      "what_it_means": "<business impact>",
+      "opportunity": "<most impactful single action>",
+      "what_to_expect": "<90 day outlook>",
+      "proof_points": ["<key evidence>"],
+      "growth_projections": {
+        "conservative": { "label": "Normal Pace", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "High" },
+        "normal": { "label": "Active Strategy", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium-High" },
+        "aggressive": { "label": "Full Sprint", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium" }
+      }
     },
     "competitor_rank": {
       "score_label": "<label>",
-      "score_reason": "<optimistic competitive context — even rank #8 is framed as 'you have identified exactly where the competition is and we know how to overtake them'>",
-      "what_it_means": "<meaning>",
+      "confidence": "<verified|estimated|approximate>",
+      "score_reason": "<specific competitive context with actual evidence>",
+      "what_it_means": "<business meaning>",
       "opportunity": "<specific competitive action>",
       "what_to_expect": "<competitive trajectory>",
-      "proof_points": ["<specific competitor comparison>"]
+      "proof_points": ["<specific comparison with named competitor>"],
+      "growth_projections": {
+        "conservative": { "label": "Normal Pace", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "High" },
+        "normal": { "label": "Active Strategy", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium-High" },
+        "aggressive": { "label": "Full Sprint", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium" }
+      }
+    },
+    "pages_indexed": {
+      "score_label": "<label>",
+      "confidence": "<verified|estimated|approximate>",
+      "score_reason": "<what the indexing data actually showed>",
+      "what_it_means": "<business meaning>",
+      "opportunity": "<action>",
+      "what_to_expect": "<expectation>",
+      "proof_points": ["<what you saw in indexing data>"],
+      "growth_projections": {
+        "conservative": { "label": "Normal Pace", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "High" },
+        "normal": { "label": "Active Strategy", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium-High" },
+        "aggressive": { "label": "Full Sprint", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium" }
+      }
+    },
+    "brand_mentions": {
+      "score_label": "<label>",
+      "confidence": "<verified|estimated|approximate>",
+      "score_reason": "<based on what you found>",
+      "what_it_means": "<business meaning>",
+      "opportunity": "<action>",
+      "what_to_expect": "<expectation>",
+      "proof_points": ["<evidence>"],
+      "growth_projections": {
+        "conservative": { "label": "Normal Pace", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "High" },
+        "normal": { "label": "Active Strategy", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium-High" },
+        "aggressive": { "label": "Full Sprint", "score_gain": <int>, "timeframe": "<string>", "actions": "<string>", "confidence": "Medium" }
+      }
     }
   }
 }
 
-LANGUAGE RULES — STRICTLY FOLLOW:
-- NEVER say: failing, broken, bad, poor, terrible, horrible, missing, no X found, lacks, absent
-- ALWAYS say: opportunity, room to grow, next milestone, building, potential, untapped, fast win, quick gain
-- For low scores: frame the gap as the OPPORTUNITY e.g. "Score of 28 means 72 points of AI visibility are waiting to be unlocked — and we know exactly how to unlock them"
-- For competitor disadvantage: frame as "we know exactly what they're doing and we can do it better"
-- Every explanation must END on a positive, forward-looking note
-- Return ONLY the JSON, no markdown
+STRICT RULES:
+- competitive_proof must reference actual competitor URLs or content found — never invent
+- proof_points must quote or paraphrase something actually seen in the crawled content
+- growth_projections must be realistic — aggressive should not promise the impossible
+- confidence field must be honest — if data was limited, say "approximate"
+- Return ONLY the JSON object, nothing else
 `;
 
   try {
