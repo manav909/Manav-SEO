@@ -7,14 +7,9 @@ import { toast } from '@/hooks/use-toast';
 import {
   Users, Plus, Globe, CheckCircle,
   ChevronDown, ChevronUp, Zap, DollarSign,
-  ArrowLeft, Sparkles, Save, RefreshCw
-} from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Users, Plus, Globe, CheckCircle,
-  ChevronDown, ChevronUp, Zap, DollarSign,
   ArrowLeft, Sparkles, Save, RefreshCw, AlertCircle
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -102,11 +97,8 @@ export default function Admin() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Analysis failed');
-
       const a = data.analysis;
       setAiResult(data);
-
-      // Auto-populate the form with AI results
       setMetricsForm({
         llm_visibility_score: a.llm_visibility_score?.toString() || '',
         chatgpt_citations: a.chatgpt_citations?.toString() || '',
@@ -127,10 +119,9 @@ export default function Admin() {
         milestone_impact: a.milestone_impact || '',
         recorded_at: new Date().toISOString().split('T')[0],
       });
-
-      toast({ title: 'AI Analysis Complete!', description: 'All fields populated from real data.' });
+      toast({ title:'AI Analysis Complete!', description:'Review all fields before saving.' });
     } catch (err: any) {
-      toast({ title: 'Analysis failed', description: err.message, variant: 'destructive' });
+      toast({ title:'Analysis failed', description: err.message, variant:'destructive' });
     }
     setFetchingAI(false);
   };
@@ -181,12 +172,8 @@ export default function Admin() {
 
   const approveUser = async (userId: string, clientIds: string[]) => {
     const primaryClientId = clientIds[0] || undefined;
-    const updates: any = { 
-      approved: true,
-      client_ids: clientIds.filter(Boolean),
-    };
+    const updates: any = { approved: true, client_ids: clientIds.filter(Boolean) };
     if (primaryClientId) updates.client_id = primaryClientId;
-    
     const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
     if (error) toast({ title:'Error', description: error.message, variant:'destructive' });
     else { toast({ title:'User approved!' }); fetchAll(); }
@@ -201,18 +188,25 @@ export default function Admin() {
       <select value={selectedProject} onChange={e => setSelectedProject(e.target.value)}
         className="w-full h-10 rounded-md border border-border bg-background/60 text-sm px-3">
         <option value="">— Choose project —</option>
-        {projects.map(p => {
-          const c = clients.find(x => x.id === p.client_id);
-          return <option key={p.id} value={p.id}>{c?.name} — {p.name}</option>;
+        {clients.map(c => {
+          const cProjects = projects.filter(p => p.client_id === c.id);
+          if (!cProjects.length) return null;
+          return (
+            <optgroup key={c.id} label={`${c.name} — ${c.company}`}>
+              {cProjects.map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({p.url})</option>
+              ))}
+            </optgroup>
+          );
         })}
       </select>
     </div>
   );
 
   const tabs = [
-    { id:'clients', label:'Clients', icon: Users },
-    { id:'metrics', label:'Run Analysis', icon: Sparkles },
-    { id:'upsells', label:'Upsells', icon: Zap },
+    { id:'clients', label:'Clients',       icon: Users },
+    { id:'metrics', label:'Run Analysis',  icon: Sparkles },
+    { id:'upsells', label:'Upsells',       icon: Zap },
     { id:'approve', label:`Approvals${pendingUsers.length > 0 ? ` (${pendingUsers.length})` : ''}`, icon: CheckCircle },
   ];
 
@@ -221,7 +215,8 @@ export default function Admin() {
       <div className="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary" style={{ objectPosition:'center 20%' }} />
+            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary"
+              style={{ objectPosition:'center 20%' }} />
             <div>
               <div className="font-bold text-sm">Admin Panel</div>
               <div className="text-xs text-muted-foreground">SEO Seasons by Manav</div>
@@ -256,11 +251,11 @@ export default function Admin() {
               </h2>
               <div className="space-y-3">
                 {[
-                  { key:'name', label:'Client Name', placeholder:'John Smith' },
-                  { key:'company', label:'Company', placeholder:'Acme Corp' },
-                  { key:'industry', label:'Industry', placeholder:'E-commerce, SaaS...' },
-                  { key:'website', label:'Website', placeholder:'https://example.com' },
-                  { key:'email', label:'Email', placeholder:'client@email.com' },
+                  { key:'name',            label:'Client Name',          placeholder:'John Smith' },
+                  { key:'company',         label:'Company',              placeholder:'Acme Corp' },
+                  { key:'industry',        label:'Industry',             placeholder:'E-commerce, SaaS...' },
+                  { key:'website',         label:'Website',              placeholder:'https://example.com' },
+                  { key:'email',           label:'Email',                placeholder:'client@email.com' },
                   { key:'retainer_amount', label:'Monthly Retainer ($)', placeholder:'1500' },
                 ].map(({ key, label, placeholder }) => (
                   <div key={key} className="space-y-1">
@@ -290,9 +285,9 @@ export default function Admin() {
                   </select>
                 </div>
                 {[
-                  { key:'name', label:'Project Name', placeholder:'Main Website' },
-                  { key:'url', label:'Website URL', placeholder:'https://example.com' },
-                  { key:'keywords', label:'Target Keywords (comma separated)', placeholder:'event rental dubai, av equipment' },
+                  { key:'name',        label:'Project Name',                      placeholder:'Main Website' },
+                  { key:'url',         label:'Website URL',                       placeholder:'https://example.com' },
+                  { key:'keywords',    label:'Target Keywords (comma separated)',  placeholder:'event rental dubai, av equipment' },
                   { key:'competitors', label:'Competitor URLs (comma separated)', placeholder:'competitor1.com, competitor2.com' },
                 ].map(({ key, label, placeholder }) => (
                   <div key={key} className="space-y-1">
@@ -321,7 +316,7 @@ export default function Admin() {
                         </div>
                         <div>
                           <div className="font-medium text-sm">{client.name}</div>
-                          <div className="text-xs text-muted-foreground">{client.company} · ${client.retainer_amount}/mo</div>
+                          <div className="text-xs text-muted-foreground">{client.company} · ${client.retainer_amount}/mo · {client.email}</div>
                         </div>
                       </div>
                       {expandedClient === client.id
@@ -330,12 +325,15 @@ export default function Admin() {
                     </button>
                     {expandedClient === client.id && (
                       <div className="px-4 pb-3 border-t border-border pt-3">
-                        <div className="text-xs font-mono text-muted-foreground mb-2">ID: {client.id} · {client.email}</div>
+                        <div className="text-xs font-mono text-muted-foreground mb-2">ID: {client.id}</div>
                         {projects.filter(p => p.client_id === client.id).map(p => (
                           <div key={p.id} className="flex items-center gap-2 text-xs text-muted-foreground py-1">
                             <Globe className="h-3 w-3 text-primary" />{p.name} — {p.url}
                           </div>
                         ))}
+                        {projects.filter(p => p.client_id === client.id).length === 0 && (
+                          <div className="text-xs text-muted-foreground italic">No projects yet</div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -345,18 +343,15 @@ export default function Admin() {
           </div>
         )}
 
-        {/* ── AI ANALYSIS & METRICS ── */}
+        {/* ── AI ANALYSIS ── */}
         {tab === 'metrics' && (
           <div className="max-w-3xl space-y-6">
-
-            {/* Step 1: Select + Run */}
             <div className="rounded-2xl border border-border bg-card/60 p-6">
               <h2 className="font-bold text-base mb-1 flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />AI Website Analysis
               </h2>
               <p className="text-xs text-muted-foreground mb-4">
-                Select a project and click Run. AI will crawl the website and competitors in real time,
-                verify actual content, and populate all metrics automatically.
+                Select a project and click Run. AI crawls the website and competitors, then populates all metrics.
               </p>
               <div className="space-y-3">
                 {projectSelector}
@@ -364,13 +359,11 @@ export default function Admin() {
                   className="w-full h-12 bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
                   {fetchingAI ? (
                     <span className="flex items-center gap-3">
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Crawling website and competitors...
+                      <RefreshCw className="h-4 w-4 animate-spin" />Crawling website and competitors...
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4" />
-                      Run AI Analysis
+                      <Sparkles className="h-4 w-4" />Run AI Analysis
                     </span>
                   )}
                 </Button>
@@ -382,156 +375,182 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Step 2: AI Results preview */}
             {aiResult && (
               <div className="space-y-4">
 
-                {/* WARNING BANNER */}
+                {/* Warning banner */}
                 <div className="rounded-xl border border-orange-400/30 bg-orange-400/5 p-4">
                   <div className="flex items-start gap-3">
                     <AlertCircle className="h-5 w-5 text-orange-400 shrink-0 mt-0.5" />
                     <div>
                       <div className="text-sm font-semibold text-orange-400 mb-1">Review Before Saving</div>
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        The scores below are AI estimates based on crawled content — NOT direct measurements.
-                        <strong className="text-foreground"> Scores (0–100) are directionally accurate.</strong>
-                        However, <strong className="text-foreground">citation counts, pages indexed, and competitor rank</strong> are rough estimates.
-                        Edit any value before saving. Only save numbers you are confident in.
+                        Scores (0–100) are reliable — based on real content analysis.
+                        Citation counts, pages indexed, and rank are <strong className="text-foreground">AI estimates</strong> — verify against Google Search Console before saving.
+                        Edit any value below before hitting Save.
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Story */}
-                {aiResult.analysis.story && (
-                  <div className="rounded-xl border border-border bg-background/60 p-4">
-                    <div className="text-xs font-mono text-primary uppercase tracking-wider mb-2">Website Story</div>
-                    <p className="text-sm text-foreground leading-relaxed">{aiResult.analysis.story}</p>
+                {/* AI preview */}
+                <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-400" />
+                    <span className="font-semibold text-sm">Analysis Complete</span>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {new Date(aiResult.fetched_at).toLocaleString()}
+                    </span>
                   </div>
-                )}
 
-                {/* Scores preview */}
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-                  {[
-                    { label:'LLM Score', value: aiResult.analysis.llm_visibility_score },
-                    { label:'Google Health', value: aiResult.analysis.algorithm_health_score },
-                    { label:'E-E-A-T', value: aiResult.analysis.eeat_score },
-                    { label:'Authority', value: aiResult.analysis.content_authority_score },
-                    { label:'Growth', value: aiResult.analysis.overall_growth_score },
-                  ].map(({ label, value }) => {
-                    const color = value >= 70 ? 'text-green-400' : value >= 40 ? 'text-yellow-400' : 'text-red-400';
-                    return (
-                      <div key={label} className="rounded-xl border border-border bg-background/40 p-3 text-center">
-                        <div className={`text-xl font-bold ${color}`}>{value}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+                  {aiResult.analysis.story && (
+                    <div className="rounded-xl border border-border bg-background/60 p-4">
+                      <div className="text-xs font-mono text-primary uppercase tracking-wider mb-2">Website Story</div>
+                      <p className="text-sm leading-relaxed">{aiResult.analysis.story}</p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                    {[
+                      { label:'LLM Score',    value: aiResult.analysis.llm_visibility_score },
+                      { label:'Google Health', value: aiResult.analysis.algorithm_health_score },
+                      { label:'E-E-A-T',       value: aiResult.analysis.eeat_score },
+                      { label:'Authority',     value: aiResult.analysis.content_authority_score },
+                      { label:'Growth',        value: aiResult.analysis.overall_growth_score },
+                    ].map(({ label, value }) => {
+                      const color = value >= 70 ? 'text-green-400' : value >= 40 ? 'text-yellow-400' : 'text-orange-400';
+                      return (
+                        <div key={label} className="rounded-xl border border-border bg-background/40 p-3 text-center">
+                          <div className={`text-xl font-bold ${color}`}>{value ?? '—'}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {aiResult.analysis.milestone && (
+                    <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
+                      <div className="text-xs font-mono text-yellow-400 uppercase tracking-wider mb-1">Big Win Found</div>
+                      <div className="font-semibold text-sm">{aiResult.analysis.milestone}</div>
+                      {aiResult.analysis.milestone_impact && (
+                        <p className="text-xs text-muted-foreground mt-1">{aiResult.analysis.milestone_impact}</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {aiResult.analysis.verified_strengths?.length > 0 && (
+                      <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-3">
+                        <div className="text-xs font-mono text-green-400 uppercase tracking-wider mb-2">Verified Strengths</div>
+                        {aiResult.analysis.verified_strengths.map((s:string, i:number) => (
+                          <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground py-0.5">
+                            <span className="text-green-400 shrink-0">✓</span>{s}
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })}
-                </div>
-
-                {/* Big win */}
-                {aiResult.analysis.milestone && (
-                  <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
-                    <div className="text-xs font-mono text-yellow-400 uppercase tracking-wider mb-1">Big Win Found</div>
-                    <div className="font-semibold text-sm text-foreground">{aiResult.analysis.milestone}</div>
-                    {aiResult.analysis.milestone_impact && (
-                      <p className="text-xs text-muted-foreground mt-1">{aiResult.analysis.milestone_impact}</p>
+                    )}
+                    {(aiResult.analysis.growth_opportunities || aiResult.analysis.verified_gaps || []).length > 0 && (
+                      <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-3">
+                        <div className="text-xs font-mono text-yellow-400 uppercase tracking-wider mb-2">Growth Opportunities</div>
+                        {(aiResult.analysis.growth_opportunities || aiResult.analysis.verified_gaps || []).map((g:string, i:number) => (
+                          <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground py-0.5">
+                            <span className="text-yellow-400 shrink-0">→</span>{g}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                )}
 
-                {/* Strengths + Gaps */}
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {aiResult.analysis.verified_strengths?.length > 0 && (
-                    <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-3">
-                      <div className="text-xs font-mono text-green-400 uppercase tracking-wider mb-2">Verified Strengths</div>
-                      {aiResult.analysis.verified_strengths.map((s: string, i: number) => (
-                        <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground py-0.5">
-                          <span className="text-green-400 shrink-0 mt-0.5">✓</span>{s}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                {(aiResult.analysis.growth_opportunities || aiResult.analysis.verified_gaps || []).length > 0 && (
-                    <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-3">
-                      <div className="text-xs font-mono text-yellow-400 uppercase tracking-wider mb-2">Growth Opportunities</div>
-                      {(aiResult.analysis.growth_opportunities || aiResult.analysis.verified_gaps || []).map((g: string, i: number) => (
-                        <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground py-0.5">
-                          <span className="text-yellow-400 shrink-0 mt-0.5">→</span>{g}
-                        </div>
-                      ))}
+                  {aiResult.analysis.competitor_gap_note && (
+                    <div className="rounded-xl border border-border bg-background/40 p-3">
+                      <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-1">Competitive Position</div>
+                      <p className="text-sm">{aiResult.analysis.competitor_gap_note}</p>
                     </div>
                   )}
                 </div>
 
-                {/* Competitive note */}
-                {aiResult.analysis.competitor_gap_note && (
-                  <div className="rounded-xl border border-border bg-background/40 p-3">
-                    <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-1">Competitive Position</div>
-                    <p className="text-sm text-foreground">{aiResult.analysis.competitor_gap_note}</p>
+                {/* Edit form */}
+                <div className="rounded-2xl border border-border bg-card/60 p-6 space-y-4">
+                  <h3 className="font-semibold text-sm flex items-center gap-2">
+                    <Save className="h-4 w-4 text-primary" />Review and Save to Dashboard
+                  </h3>
+
+                  {/* Reliable scores */}
+                  <div>
+                    <div className="text-xs font-mono text-green-400 uppercase tracking-wider mb-2">
+                      Reliable Scores — based on real content analysis
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { key:'llm_visibility_score',    label:'LLM Visibility Score' },
+                        { key:'algorithm_health_score',  label:'Google Health Score' },
+                        { key:'eeat_score',              label:'E-E-A-T Score' },
+                        { key:'content_authority_score', label:'Content Authority' },
+                        { key:'overall_growth_score',    label:'Overall Growth Score' },
+                      ].map(({ key, label }) => (
+                        <div key={key} className="space-y-1">
+                          <Label className="text-xs font-medium text-green-400/70 uppercase tracking-wider">{label}</Label>
+                          <Input value={metricsForm[key]}
+                            onChange={e => setMetricsForm((f:any) => ({ ...f, [key]: e.target.value }))}
+                            className="h-10 bg-background/60 border-green-400/20 text-sm" />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* Step 3: Edit fields before saving */}
-            {aiResult && (
-              <div className="rounded-2xl border border-border bg-card/60 p-6 space-y-4">
-                <h3 className="font-semibold text-sm flex items-center gap-2">
-                  <Save className="h-4 w-4 text-primary" />
-                  Review & Save to Dashboard
-                </h3>
-                <p className="text-xs text-muted-foreground">All fields are pre-filled from real data. Edit any value before saving.</p>
+                  {/* Estimates — verify before saving */}
+                  <div>
+                    <div className="text-xs font-mono text-orange-400 uppercase tracking-wider mb-2">
+                      Estimates — verify against GSC / Ahrefs before saving
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { key:'pages_indexed',      label:'Pages Indexed' },
+                        { key:'pages_submitted',    label:'Pages Submitted' },
+                        { key:'chatgpt_citations',  label:'ChatGPT Citations' },
+                        { key:'perplexity_citations', label:'Perplexity Citations' },
+                        { key:'google_ai_citations', label:'Google AI Citations' },
+                        { key:'brand_mentions',     label:'Brand Mentions' },
+                        { key:'competitor_rank',    label:'Market Rank (#)' },
+                        { key:'competitors_beaten', label:'Competitors Beaten' },
+                      ].map(({ key, label }) => (
+                        <div key={key} className="space-y-1">
+                          <Label className="text-xs font-medium text-orange-400/70 uppercase tracking-wider">{label}</Label>
+                          <Input value={metricsForm[key]}
+                            onChange={e => setMetricsForm((f:any) => ({ ...f, [key]: e.target.value }))}
+                            className="h-10 bg-background/60 border-orange-400/20 text-sm" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-               <div className="grid grid-cols-2 gap-3">
+                  {/* Text fields */}
                   {[
-                    { key:'llm_visibility_score',    label:'LLM Score (0-100) ✓ reliable' },
-                    { key:'algorithm_health_score',  label:'Google Health (0-100) ✓ reliable' },
-                    { key:'eeat_score',              label:'E-E-A-T Score (0-100) ✓ reliable' },
-                    { key:'content_authority_score', label:'Content Authority (0-100) ✓ reliable' },
-                    { key:'overall_growth_score',    label:'Overall Growth (0-100) ✓ reliable' },
-                    { key:'pages_indexed',           label:'Pages Indexed ⚠ verify in GSC' },
-                    { key:'chatgpt_citations',       label:'ChatGPT Citations ⚠ estimate' },
-                    { key:'perplexity_citations',    label:'Perplexity Citations ⚠ estimate' },
-                    { key:'google_ai_citations',     label:'Google AI Citations ⚠ estimate' },
-                    { key:'brand_mentions',          label:'Brand Mentions ⚠ estimate' },
-                    { key:'competitor_rank',         label:'Market Rank ⚠ estimate' },
-                    { key:'competitors_beaten',      label:'Competitors Beaten ⚠ estimate' },
-                    { key:'pages_submitted',         label:'Pages Submitted ⚠ verify in GSC' },
+                    { key:'llm_platforms',      label:'LLM Platforms (comma separated)' },
+                    { key:'competitor_gap_note', label:'Competitive Insight (shown to client)' },
+                    { key:'milestone',          label:'Big Win Headline' },
+                    { key:'milestone_impact',   label:'Why It Matters' },
                   ].map(({ key, label }) => (
                     <div key={key} className="space-y-1">
-                      <Label className={`${labelClass} ${label.includes('⚠') ? 'text-orange-400/70' : 'text-green-400/70'}`}>
-                        {label}
-                      </Label>
+                      <Label className={labelClass}>{label}</Label>
                       <Input value={metricsForm[key]}
                         onChange={e => setMetricsForm((f:any) => ({ ...f, [key]: e.target.value }))}
-                        className={`${inputClass} ${label.includes('⚠') ? 'border-orange-400/20' : 'border-green-400/20'}`} />
+                        className={inputClass} />
                     </div>
                   ))}
-                </div>
 
-                {[
-                  { key:'llm_platforms', label:'LLM Platforms (comma separated)' },
-                  { key:'competitor_gap_note', label:'Competitive Insight (shown to client)' },
-                  { key:'milestone', label:'Big Win Headline' },
-                  { key:'milestone_impact', label:'Why It Matters' },
-                ].map(({ key, label }) => (
-                  <div key={key} className="space-y-1">
-                    <Label className={labelClass}>{label}</Label>
-                    <Input value={metricsForm[key]} onChange={e => setMetricsForm((f: any) => ({ ...f, [key]: e.target.value }))} className={inputClass} />
+                  <div className="space-y-1">
+                    <Label className={labelClass}>Report Date</Label>
+                    <Input type="date" value={metricsForm.recorded_at}
+                      onChange={e => setMetricsForm((f:any) => ({ ...f, recorded_at: e.target.value }))}
+                      className={inputClass} />
                   </div>
-                ))}
 
-                <div className="space-y-1">
-                  <Label className={labelClass}>Report Date</Label>
-                  <Input type="date" value={metricsForm.recorded_at}
-                    onChange={e => setMetricsForm((f: any) => ({ ...f, recorded_at: e.target.value }))} className={inputClass} />
+                  <Button onClick={saveMetrics} disabled={loading}
+                    className="w-full h-12 bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
+                    <Save className="h-4 w-4 mr-2" />Save to Client Dashboard
+                  </Button>
                 </div>
-
-                <Button onClick={saveMetrics} disabled={loading}
-                  className="w-full h-12 bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
-                  <Save className="h-4 w-4 mr-2" />Save to Client Dashboard
-                </Button>
               </div>
             )}
           </div>
@@ -547,10 +566,10 @@ export default function Admin() {
               <div className="space-y-3">
                 {projectSelector}
                 {[
-                  { key:'title', label:'Offer Title', placeholder:'AI Search Domination Package' },
-                  { key:'description', label:'Description', placeholder:'You are visible in 3 AI platforms. With this package we target 8 more...' },
-                  { key:'price', label:'Price ($)', placeholder:'499' },
-                  { key:'potential_impact', label:'What Client Gains', placeholder:'Featured in ChatGPT answers for 50+ buyer queries' },
+                  { key:'title',            label:'Offer Title',       placeholder:'AI Search Domination Package' },
+                  { key:'description',      label:'Description',       placeholder:'You are visible in 3 AI platforms...' },
+                  { key:'price',            label:'Price ($)',          placeholder:'499' },
+                  { key:'potential_impact', label:'What Client Gains',  placeholder:'Featured in ChatGPT for 50+ buyer queries' },
                 ].map(({ key, label, placeholder }) => (
                   <div key={key} className="space-y-1">
                     <Label className={labelClass}>{label}</Label>
@@ -574,7 +593,13 @@ export default function Admin() {
               <CheckCircle className="h-4 w-4 text-primary" />
               Pending Approvals ({pendingUsers.length})
             </h2>
-           {pendingUsers.map(user => (
+            {pendingUsers.length === 0 ? (
+              <div className="rounded-2xl border border-border bg-card/60 p-8 text-center text-muted-foreground">
+                No pending requests
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pendingUsers.map(user => (
                   <div key={user.id} className="rounded-2xl border border-border bg-card/60 p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
@@ -582,16 +607,20 @@ export default function Admin() {
                         <div className="text-xs text-muted-foreground mb-3">
                           {user.phone || 'No phone'} · {new Date(user.created_at).toLocaleDateString()}
                         </div>
-                        <div className="space-y-2">
-                          <Label className={labelClass}>Link to Client(s) — hold Ctrl/Cmd to select multiple</Label>
+                        <div className="space-y-1">
+                          <Label className={labelClass}>
+                            Link to Client(s) — hold Ctrl/Cmd to select multiple
+                          </Label>
                           <select
                             id={`cs-${user.id}`}
                             multiple
-                            size={Math.min(clients.length, 4)}
+                            size={Math.min(clients.length + 1, 5)}
                             className="w-full rounded-md border border-border bg-background/60 text-xs px-2 py-1"
                           >
                             {clients.map(c => (
-                              <option key={c.id} value={c.id}>{c.name} — {c.company}</option>
+                              <option key={c.id} value={c.id}>
+                                {c.name} — {c.company}
+                              </option>
                             ))}
                           </select>
                         </div>
@@ -602,7 +631,7 @@ export default function Admin() {
                           const selected = Array.from(sel?.selectedOptions || []).map(o => o.value);
                           approveUser(user.id, selected);
                         }}
-                        className="bg-green-500 hover:bg-green-600 text-white shrink-0">
+                        className="bg-green-500 hover:bg-green-600 text-white shrink-0 mt-6">
                         <CheckCircle className="h-3 w-3 mr-1.5" />Approve
                       </Button>
                     </div>
