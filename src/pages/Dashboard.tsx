@@ -23,6 +23,8 @@ const ScoreRing = ({
   const r = 28;
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - score / 100);
+  const cfg = getScoreConfig(score);
+
   return (
     <button
       onClick={onClick}
@@ -31,7 +33,7 @@ const ScoreRing = ({
       <div className="relative h-16 w-16">
         <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
           <circle cx="32" cy="32" r={r} fill="none" stroke="hsl(var(--border))" strokeWidth="5" />
-          <circle cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="5"
+          <circle cx="32" cy="32" r={r} fill="none" stroke={cfg.bar} strokeWidth="5"
             strokeLinecap="round"
             strokeDasharray={circ}
             strokeDashoffset={offset}
@@ -45,36 +47,56 @@ const ScoreRing = ({
         )}
       </div>
       <span className="text-xs text-muted-foreground text-center leading-tight">{label}</span>
-      {onClick && (
-        <span className="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity font-mono">tap for why</span>
-      )}
+      <span className={`text-xs font-mono ${cfg.text}`}>{cfg.emoji} {cfg.label}</span>
     </button>
   );
 };
 
 /* ── WHY MODAL ── */
+const getScoreConfig = (score: number) => {
+  if (score >= 80) return { label: 'Leading', bg: 'bg-green-400/10', border: 'border-green-400/30', text: 'text-green-400', bar: '#4ade80', emoji: '🏆' };
+  if (score >= 60) return { label: 'Growing', bg: 'bg-blue-400/10', border: 'border-blue-400/30', text: 'text-blue-400', bar: '#60a5fa', emoji: '📈' };
+  if (score >= 40) return { label: 'Building', bg: 'bg-yellow-400/10', border: 'border-yellow-400/30', text: 'text-yellow-400', bar: '#facc15', emoji: '🚀' };
+  if (score >= 20) return { label: 'Launching', bg: 'bg-orange-400/10', border: 'border-orange-400/30', text: 'text-orange-400', bar: '#fb923c', emoji: '⚡' };
+  return { label: 'Opportunity', bg: 'bg-primary/10', border: 'border-primary/30', text: 'text-primary', bar: '#6366f1', emoji: '💎' };
+};
+
 const WhyModal = ({
   explanation, title, score, color, onClose
 }: {
   explanation: any; title: string; score: number; color: string; onClose: () => void;
 }) => {
   if (!explanation) return null;
+  const cfg = getScoreConfig(score);
+  const growthLeft = 100 - score;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-[0_32px_80px_rgba(0,0,0,0.6)] overflow-hidden max-h-[85vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-[0_32px_80px_rgba(0,0,0,0.6)] overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent" />
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full flex items-center justify-center border-2"
-              style={{ borderColor: color, background: `${color}15` }}>
-              <span className="text-sm font-bold" style={{ color }}>{score}</span>
+            {/* Score with growth potential */}
+            <div className="relative shrink-0">
+              <svg className="h-14 w-14 -rotate-90" viewBox="0 0 56 56">
+                <circle cx="28" cy="28" r="22" fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
+                <circle cx="28" cy="28" r="22" fill="none" stroke={color} strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 22}`}
+                  strokeDashoffset={`${2 * Math.PI * 22 * (1 - score / 100)}`}
+                  style={{ transition: 'stroke-dashoffset 1s ease' }} />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{score}</span>
             </div>
             <div>
               <div className="font-bold text-sm">{title}</div>
-              <div className="text-xs text-muted-foreground">Score breakdown & next steps</div>
+              <div className={`text-xs font-mono ${cfg.text} flex items-center gap-1`}>
+                <span>{cfg.emoji}</span>
+                <span>{explanation.score_label || cfg.label}</span>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50">
@@ -84,11 +106,37 @@ const WhyModal = ({
 
         <div className="px-5 py-5 space-y-4">
 
+          {/* Growth potential banner — always show */}
+          {growthLeft > 0 && (
+            <div className="rounded-xl bg-gradient-to-r from-primary/15 to-primary/5 border border-primary/20 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-mono text-primary uppercase tracking-wider">Growth Potential</span>
+                <span className="text-lg font-bold text-primary">+{growthLeft} points available</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-background/60 overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-1000"
+                  style={{ width:`${score}%` }} />
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>Current: {score}/100</span>
+                <span className="text-primary">{growthLeft} points to unlock 🔓</span>
+              </div>
+            </div>
+          )}
+
+          {score >= 100 && (
+            <div className="rounded-xl bg-green-400/10 border border-green-400/30 p-4 text-center">
+              <div className="text-2xl mb-1">🏆</div>
+              <div className="font-bold text-green-400">Perfect Score — Market Leader</div>
+              <div className="text-xs text-muted-foreground mt-1">You're at the top. Now we maintain and defend.</div>
+            </div>
+          )}
+
           {/* Why this score */}
           <div className="rounded-xl border border-border bg-background/60 p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-              <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Why This Score</span>
+              <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Where You Stand</span>
             </div>
             <p className="text-sm text-foreground leading-relaxed">{explanation.score_reason}</p>
           </div>
@@ -97,22 +145,33 @@ const WhyModal = ({
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
             <div className="flex items-center gap-2 mb-2">
               <Brain className="h-3.5 w-3.5 text-primary" />
-              <span className="text-xs font-mono uppercase tracking-wider text-primary">What This Means For You</span>
+              <span className="text-xs font-mono uppercase tracking-wider text-primary">What This Means For Your Business</span>
             </div>
             <p className="text-sm text-foreground leading-relaxed font-medium">{explanation.what_it_means}</p>
           </div>
+
+          {/* The Opportunity — the most important section */}
+          {explanation.opportunity && (
+            <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="h-3.5 w-3.5 text-green-400" />
+                <span className="text-xs font-mono uppercase tracking-wider text-green-400">The Growth Opportunity</span>
+              </div>
+              <p className="text-sm text-foreground leading-relaxed">{explanation.opportunity}</p>
+            </div>
+          )}
 
           {/* Proof points */}
           {explanation.proof_points?.length > 0 && (
             <div className="rounded-xl border border-border bg-background/40 p-4">
               <div className="flex items-center gap-2 mb-3">
-                <CheckCircle className="h-3.5 w-3.5 text-green-400" />
-                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Evidence From Your Site</span>
+                <CheckCircle className="h-3.5 w-3.5 text-primary" />
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Verified From Your Site</span>
               </div>
               <div className="space-y-2">
                 {explanation.proof_points.map((point: string, i: number) => (
                   <div key={i} className="flex items-start gap-2">
-                    <ChevronRight className="h-3.5 w-3.5 text-green-400 shrink-0 mt-0.5" />
+                    <ChevronRight className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
                     <span className="text-xs text-foreground leading-relaxed">{point}</span>
                   </div>
                 ))}
@@ -120,22 +179,22 @@ const WhyModal = ({
             </div>
           )}
 
-          {/* What was done */}
+          {/* What to expect */}
           <div className="rounded-xl border border-border bg-background/40 p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="h-3.5 w-3.5 text-yellow-400" />
-              <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">What's Driving This</span>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">{explanation.what_was_done}</p>
-          </div>
-
-          {/* What to expect */}
-          <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp className="h-3.5 w-3.5 text-green-400" />
-              <span className="text-xs font-mono uppercase tracking-wider text-green-400">What To Expect Next</span>
+              <Target className="h-3.5 w-3.5 text-yellow-400" />
+              <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">What To Expect Next</span>
             </div>
             <p className="text-sm text-foreground leading-relaxed">{explanation.what_to_expect}</p>
+          </div>
+
+          {/* Closing motivator */}
+          <div className="rounded-xl bg-gradient-to-r from-primary/10 to-transparent border border-primary/15 p-4 flex items-center gap-3">
+            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-1 ring-primary shrink-0"
+              style={{ objectPosition:'center 20%' }} />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <span className="text-foreground font-semibold">Manav is actively working on this.</span> Every report you see reflects real actions taken on your behalf. Your growth is tracked, planned, and executing on schedule.
+            </p>
           </div>
 
         </div>
