@@ -15,7 +15,7 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
-/* ─── Score config ─── */
+/* ─── helpers ─── */
 const getScoreConfig = (score: number) => {
   if (score >= 80) return { label: 'Leading',     text: 'text-green-400',  bar: '#4ade80',  emoji: '🏆' };
   if (score >= 60) return { label: 'Growing',     text: 'text-blue-400',   bar: '#60a5fa',  emoji: '📈' };
@@ -35,16 +35,14 @@ const confidenceBadge = (c?: string) => {
 
 const fmtDate = (raw: string) => {
   if (!raw) return '';
-  const s = raw.split('T')[0];
-  const [y, m, d] = s.split('-');
+  const [y, m, d] = raw.split('T')[0].split('-');
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${parseInt(d)} ${months[parseInt(m) - 1]} ${y}`;
 };
 
 const fmtShort = (raw: string) => {
   if (!raw) return '';
-  const s = raw.split('T')[0];
-  const [, m, d] = s.split('-');
+  const [, m, d] = raw.split('T')[0].split('-');
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${parseInt(d)} ${months[parseInt(m) - 1]}`;
 };
@@ -53,17 +51,15 @@ const toDateStr = (raw: string) => (raw || '').split('T')[0];
 
 const closestMetric = (metrics: any[], dateStr: string) => {
   if (!metrics.length || !dateStr) return null;
-  return metrics.reduce((best, m) => {
+  return metrics.reduce((best: any, m: any) => {
     const diff  = Math.abs(new Date(toDateStr(m.recorded_at)).getTime() - new Date(dateStr).getTime());
     const bDiff = best ? Math.abs(new Date(toDateStr(best.recorded_at)).getTime() - new Date(dateStr).getTime()) : Infinity;
     return diff < bDiff ? m : best;
-  }, null as any);
+  }, null);
 };
 
-/* ─── Fallback explanations ─── */
 const buildFallback = (key: string, score: number) => {
   const cfg = getScoreConfig(score);
-  const g   = 100 - score;
   const templates: Record<string, any> = {
     llm_visibility_score: {
       score_reason: `LLM visibility is ${score}/100 — ${cfg.label} stage. Reflects how ready your content is to be cited by ChatGPT, Perplexity, and Google AI Overviews.`,
@@ -77,69 +73,69 @@ const buildFallback = (key: string, score: number) => {
       what_it_means: `A stronger health score means better resistance to algorithm updates and more stable rankings.`,
       opportunity: `Improving content depth and adding verifiable author credentials has the highest impact.`,
       what_to_expect: `Targeted improvements typically move this 10–20 points within 45 days.`,
-      proof_points: [`Health score of ${score}/100 from content quality and compliance analysis.`],
+      proof_points: [`Health score from content quality and compliance analysis.`],
     },
     eeat_score: {
       score_reason: `E-E-A-T score is ${score}/100 — measuring verifiable Experience, Expertise, Authoritativeness, and Trustworthiness.`,
-      what_it_means: `Higher E-E-A-T means Google trusts your site more, leading to better placements in competitive queries.`,
-      opportunity: `Adding team credentials, certifications, testimonials with names, and a detailed About page builds E-E-A-T rapidly.`,
+      what_it_means: `Higher E-E-A-T means Google trusts your site more, leading to better placements.`,
+      opportunity: `Adding team credentials, certifications, and a detailed About page builds E-E-A-T rapidly.`,
       what_to_expect: `E-E-A-T improvements compound over time. Expect 12–18 point growth within 60 days.`,
-      proof_points: [`E-E-A-T of ${score}/100 from trust and authority signal analysis.`],
+      proof_points: [`E-E-A-T from trust and authority signal analysis.`],
     },
     content_authority_score: {
       score_reason: `Content Authority is ${score}/100 — reflecting the depth, specificity, and citation-worthiness of your content.`,
       what_it_means: `Higher authority means Google and AI engines treat your site as a primary source.`,
-      opportunity: `One comprehensive, statistics-rich guide per month on your core topic grows this score significantly.`,
-      what_to_expect: `Content authority builds steadily — 10–20 point growth within 90 days with a structured plan.`,
-      proof_points: [`Authority of ${score}/100 from content depth and specificity analysis.`],
+      opportunity: `One comprehensive guide per month on your core topic grows this score significantly.`,
+      what_to_expect: `Content authority builds steadily — 10–20 point growth within 90 days.`,
+      proof_points: [`Authority from content depth and specificity analysis.`],
     },
     overall_growth_score: {
       score_reason: `Overall Growth Score is ${score}/100 — composite of LLM visibility, Google health, E-E-A-T, and content authority.`,
-      what_it_means: `This is your single most important number. Every point means harder to displace, easier to find.`,
+      what_it_means: `Every point means harder to displace and easier to find.`,
       opportunity: `Focusing on LLM visibility and E-E-A-T simultaneously delivers the fastest compound growth.`,
-      what_to_expect: `With consistent strategy, overall scores typically improve 20–35 points over 90 days.`,
-      proof_points: [`Composite score of ${score}/100 across all visibility and authority signals.`],
+      what_to_expect: `With consistent strategy, overall scores improve 20–35 points over 90 days.`,
+      proof_points: [`Composite score across all visibility and authority signals.`],
     },
     competitor_rank: {
-      score_reason: `Market rank #${score} reflects your current competitive position based on content quality vs competitors.`,
+      score_reason: `Content quality rank #${score} reflects your position based on content strength vs competitors.`,
       what_it_means: `Every position moved up means more buyers choose you over a competitor.`,
       opportunity: `Closing specific content gaps your top competitors have is the most direct path.`,
-      what_to_expect: `Competitive improvements are visible within 45–60 days when gaps are specifically targeted.`,
+      what_to_expect: `Competitive improvements visible within 45–60 days when gaps are targeted.`,
       proof_points: [`Rank based on comparative content quality and visibility analysis.`],
     },
     pages_indexed: {
-      score_reason: `${score} pages are currently indexed by Google — verified via live site: search.`,
-      what_it_means: `More indexed pages means a wider organic footprint and more ways for buyers to discover you.`,
-      opportunity: `Ensuring all key pages have unique, valuable content removes indexing barriers quickly.`,
-      what_to_expect: `Indexing gaps are typically resolved within 2–4 weeks of technical optimization.`,
+      score_reason: `${score} pages currently indexed by Google — verified via live site: search.`,
+      what_it_means: `More indexed pages means a wider organic footprint.`,
+      opportunity: `Ensuring all key pages have unique content removes indexing barriers.`,
+      what_to_expect: `Indexing gaps typically resolved within 2–4 weeks.`,
       proof_points: [`Indexing count verified from live Google site:domain search.`],
     },
     brand_mentions: {
       score_reason: `${score} brand mentions detected across the web — verified via live Google search.`,
-      what_it_means: `Brand mentions build entity recognition, making AI engines more confident recommending your business.`,
+      what_it_means: `Brand mentions build entity recognition, making AI engines more confident recommending you.`,
       opportunity: `A targeted digital PR campaign can multiply brand mentions rapidly.`,
-      what_to_expect: `Active outreach typically generates 20–50 new mentions per month.`,
+      what_to_expect: `Active outreach generates 20–50 new mentions per month.`,
       proof_points: [`Brand mention count from live Google search results.`],
     },
     chatgpt_citations: {
-      score_reason: `AI citations across ChatGPT, Perplexity, and Google AI Overviews reflect how often AI engines surface your brand.`,
-      what_it_means: `AI citations drive highly qualified traffic — buyers who find you through AI are already pre-sold.`,
-      opportunity: `Structuring content to answer the exact questions buyers ask AI engines is the fastest path.`,
-      what_to_expect: `Targeted content additions typically grow citation counts 3–5x within 60 days.`,
+      score_reason: `AI citations across ChatGPT, Perplexity, and Google AI Overviews reflect how often AI surfaces your brand.`,
+      what_it_means: `AI citations drive highly qualified traffic — buyers already pre-sold on your service.`,
+      opportunity: `Structuring content to answer questions buyers ask AI engines is the fastest path.`,
+      what_to_expect: `Targeted content additions grow citation counts 3–5x within 60 days.`,
       proof_points: [`Citation estimates based on AI engine visibility analysis.`],
     },
     perplexity_citations: {
-      score_reason: `Perplexity visibility was tested live — reflects how often your content is referenced in Perplexity AI results.`,
-      what_it_means: `Perplexity users are typically high-intent researchers making purchase decisions.`,
-      opportunity: `Adding detailed, factual content with verifiable statistics gives Perplexity the sources it prefers.`,
-      what_to_expect: `Citation improvements on Perplexity are typically visible within 30–45 days.`,
+      score_reason: `Perplexity visibility tested live — reflects how often your content is referenced in Perplexity AI results.`,
+      what_it_means: `Perplexity users are high-intent researchers making purchase decisions.`,
+      opportunity: `Adding detailed, factual content with verifiable statistics gives Perplexity preferred sources.`,
+      what_to_expect: `Citation improvements typically visible within 30–45 days.`,
       proof_points: [`Perplexity citation count from live search test.`],
     },
   };
   return templates[key] || {
-    score_reason: `This metric scores ${score}/100. ${g} points of growth potential remain.`,
-    what_it_means: `Every improvement here strengthens your overall digital presence and competitive position.`,
-    opportunity: `Run a fresh AI analysis to get specific, actionable recommendations for this metric.`,
+    score_reason: `This metric scores ${score}/100. ${100 - score} points of growth potential remain.`,
+    what_it_means: `Every improvement here strengthens your overall digital presence.`,
+    opportunity: `Run a fresh AI analysis to get specific recommendations.`,
     what_to_expect: `Focused effort typically yields 10–20 point improvements within 60 days.`,
     proof_points: [`Score of ${score}/100 from current site analysis.`],
   };
@@ -151,17 +147,17 @@ const GrowthProjections = ({ projections, currentScore }: { projections: any; cu
   const defaults = {
     conservative: { label: 'Normal Pace',     score_gain: Math.max(5,  Math.round((100 - s) * 0.10)), timeframe: '60–90 days', actions: 'Monthly content updates and basic optimizations.', confidence: 'High' },
     normal:       { label: 'Active Strategy', score_gain: Math.max(10, Math.round((100 - s) * 0.20)), timeframe: '45–60 days', actions: 'Weekly optimizations, structured content plan, competitor gap targeting.', confidence: 'Medium-High' },
-    aggressive:   { label: 'Full Sprint',     score_gain: Math.max(15, Math.round((100 - s) * 0.35)), timeframe: '30–45 days', actions: 'Daily publishing, outreach, technical audits, and AI optimization simultaneously.', confidence: 'Medium' },
+    aggressive:   { label: 'Full Sprint',     score_gain: Math.max(15, Math.round((100 - s) * 0.35)), timeframe: '30–45 days', actions: 'Daily publishing, outreach, technical audits, AI optimization simultaneously.', confidence: 'Medium' },
   };
   const tiers = projections || defaults;
   return (
     <div className="space-y-2">
-      {([
-        { key: 'conservative', color: 'text-blue-400',   bar: 'bg-blue-400',   border: 'border-blue-400/20',   bg: 'bg-blue-400/5'   },
+      {[
+        { key: 'conservative', color: 'text-blue-400',   bar: 'bg-blue-400',   border: 'border-blue-400/20',   bg: 'bg-blue-400/5' },
         { key: 'normal',       color: 'text-yellow-400', bar: 'bg-yellow-400', border: 'border-yellow-400/20', bg: 'bg-yellow-400/5' },
         { key: 'aggressive',   color: 'text-orange-400', bar: 'bg-orange-400', border: 'border-orange-400/20', bg: 'bg-orange-400/5' },
-      ] as const).map(({ key, color, bar, border, bg }) => {
-        const t = tiers[key];
+      ].map(({ key, color, bar, border, bg }) => {
+        const t = (tiers as any)[key];
         if (!t) return null;
         const target = Math.min(100, s + (t.score_gain || 0));
         return (
@@ -195,14 +191,11 @@ const WhyModal = ({ explanation, metricKey, title, score, color, onClose }: {
   const safe = Math.min(Math.max(score, 0), 100);
   const cfg  = getScoreConfig(safe);
   const data = (explanation?.score_reason) ? explanation : buildFallback(metricKey, score);
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-[0_32px_80px_rgba(0,0,0,0.6)] overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent" />
-
-        {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
@@ -231,7 +224,6 @@ const WhyModal = ({ explanation, metricKey, title, score, color, onClose }: {
             <X className="h-4 w-4" />
           </button>
         </div>
-
         <div className="px-5 py-5 space-y-4">
           <div className="rounded-xl border border-border bg-background/60 p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -240,7 +232,6 @@ const WhyModal = ({ explanation, metricKey, title, score, color, onClose }: {
             </div>
             <p className="text-sm leading-relaxed">{data.score_reason}</p>
           </div>
-
           {data.what_it_means && (
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -250,7 +241,6 @@ const WhyModal = ({ explanation, metricKey, title, score, color, onClose }: {
               <p className="text-sm leading-relaxed font-medium">{data.what_it_means}</p>
             </div>
           )}
-
           {data.proof_points?.length > 0 && (
             <div className="rounded-xl border border-border bg-background/40 p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -265,7 +255,6 @@ const WhyModal = ({ explanation, metricKey, title, score, color, onClose }: {
               ))}
             </div>
           )}
-
           {data.opportunity && (
             <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -275,7 +264,6 @@ const WhyModal = ({ explanation, metricKey, title, score, color, onClose }: {
               <p className="text-sm leading-relaxed">{data.opportunity}</p>
             </div>
           )}
-
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Target className="h-3.5 w-3.5 text-yellow-400" />
@@ -283,7 +271,6 @@ const WhyModal = ({ explanation, metricKey, title, score, color, onClose }: {
             </div>
             <GrowthProjections projections={data.growth_projections} currentScore={safe} />
           </div>
-
           {data.what_to_expect && (
             <div className="rounded-xl border border-border bg-background/40 p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -293,10 +280,8 @@ const WhyModal = ({ explanation, metricKey, title, score, color, onClose }: {
               <p className="text-sm leading-relaxed">{data.what_to_expect}</p>
             </div>
           )}
-
           <div className="rounded-xl bg-gradient-to-r from-primary/10 to-transparent border border-primary/15 p-4 flex items-center gap-3">
-            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-1 ring-primary shrink-0"
-              style={{ objectPosition: 'center 20%' }} />
+            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-1 ring-primary shrink-0" style={{ objectPosition: 'center 20%' }} />
             <p className="text-xs text-muted-foreground leading-relaxed">
               <span className="text-foreground font-semibold">Manav is actively working on this.</span> Every report reflects real actions. Your growth is on schedule.
             </p>
@@ -338,7 +323,7 @@ const ScoreRing = ({ score, label, color, onClick }: { score: number; label: str
 const StatCard = ({ icon: Icon, label, value, color = 'text-primary', explanation, metricKey, title, score, ringColor, baselineValue }: any) => {
   const [show, setShow] = useState(false);
   const numScore = typeof score === 'number' ? score : 0;
-  const diff = (typeof baselineValue === 'number' && typeof numScore === 'number') ? numScore - baselineValue : null;
+  const diff     = (typeof baselineValue === 'number') ? numScore - baselineValue : null;
   return (
     <>
       <div onClick={() => setShow(true)}
@@ -359,16 +344,7 @@ const StatCard = ({ icon: Icon, label, value, color = 'text-primary', explanatio
         )}
         <div className="text-xs text-primary mt-1 opacity-0 group-hover:opacity-100 transition-opacity font-mono">tap to understand why →</div>
       </div>
-      {show && (
-        <WhyModal
-          explanation={explanation}
-          metricKey={metricKey || label}
-          title={title || label}
-          score={numScore}
-          color={ringColor || '#6366f1'}
-          onClose={() => setShow(false)}
-        />
-      )}
+      {show && <WhyModal explanation={explanation} metricKey={metricKey || label} title={title || label} score={numScore} color={ringColor || '#6366f1'} onClose={() => setShow(false)} />}
     </>
   );
 };
@@ -381,6 +357,84 @@ const DeltaBadge = ({ current, baseline, label }: { current: number; baseline: n
     <div className={`flex items-center gap-1 text-xs font-semibold ${diff > 0 ? 'text-green-400' : 'text-orange-400'}`}>
       {diff > 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
       {diff > 0 ? '+' : ''}{diff} {label} since baseline
+    </div>
+  );
+};
+
+/* ─── Keyword Card ─── */
+const KeywordCard = ({ keyword: k, insight, col, bg, bar, barW, badge, none, isP1 }: any) => {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className={`rounded-xl border ${bg} overflow-hidden`}>
+      <button onClick={() => setExpanded(e => !e)} className="w-full text-left p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold">"{k.keyword}"</span>
+              {insight?.priority === 'high' && (
+                <span className="text-xs bg-primary/10 text-primary border border-primary/20 rounded-full px-1.5 py-0.5">High Priority</span>
+              )}
+            </div>
+            <div className={`text-xs font-mono font-bold ${col} mt-0.5`}>
+              {k.positionLabel || (k.found ? `Position ~${k.position}` : 'Not yet ranking')}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            <span className={`text-xs px-2 py-1 rounded-full border font-semibold ${bg} ${col}`}>{badge}</span>
+            <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          </div>
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-background/60 overflow-hidden">
+          <div className={`h-full rounded-full ${bar} transition-all duration-1000`} style={{ width: `${barW}%` }} />
+        </div>
+        {k.snippet && <p className="text-xs text-muted-foreground mt-1.5 italic truncate">"{k.snippet}"</p>}
+        {insight?.business_value && !expanded && (
+          <p className="text-xs text-muted-foreground mt-1.5 line-clamp-1">{insight.business_value}</p>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border/50 p-3 space-y-3">
+          {insight ? (
+            <>
+              <div className={`rounded-lg ${isP1 ? 'bg-green-400/10 border border-green-400/20' : 'bg-background/60 border border-border'} p-3`}>
+                <div className={`text-xs font-mono uppercase tracking-wider mb-1 ${isP1 ? 'text-green-400' : 'text-primary'}`}>
+                  {isP1 ? '🏆 You Are Winning Here' : none ? '💎 The Opportunity' : '📈 Current Status'}
+                </div>
+                <p className="text-xs leading-relaxed">{insight.current_status_message}</p>
+              </div>
+
+              <div className="rounded-lg bg-background/60 border border-border p-3">
+                <div className="text-xs font-mono text-primary uppercase tracking-wider mb-1">What This Ranking Brings</div>
+                <p className="text-xs leading-relaxed">{insight.business_value}</p>
+              </div>
+
+              {insight.buyer_intent && (
+                <div className="flex items-start gap-2">
+                  <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider shrink-0 mt-0.5">Intent:</div>
+                  <p className="text-xs text-foreground">{insight.buyer_intent}</p>
+                </div>
+              )}
+
+              <div className="rounded-lg bg-primary/5 border border-primary/15 p-3">
+                <div className="text-xs font-mono text-primary uppercase tracking-wider mb-1">Why Keep Working On This</div>
+                <p className="text-xs leading-relaxed">{insight.why_keep_working}</p>
+              </div>
+
+              {insight.quick_win && (
+                <div className="rounded-lg bg-green-400/5 border border-green-400/20 p-3">
+                  <div className="text-xs font-mono text-green-400 uppercase tracking-wider mb-1">⚡ Quick Win</div>
+                  <p className="text-xs leading-relaxed">{insight.quick_win}</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Detailed keyword insights will appear after Manav runs the next AI analysis.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -424,16 +478,15 @@ export default function Dashboard() {
       if (prof.client_ids?.length)  clientIdList.push(...prof.client_ids);
       else if (prof.client_id)      clientIdList.push(prof.client_id);
 
-      // Fallback: match by email
       const { data: byEmail } = await supabase.from('clients').select('id').eq('email', user.email);
       byEmail?.forEach((c: any) => { if (!clientIdList.includes(c.id)) clientIdList.push(c.id); });
 
       if (!clientIdList.length) { setLoading(false); return; }
 
-      const { data: clientsData } = await supabase.from('clients').select('*').in('id', clientIdList);
+      const { data: clientsData  } = await supabase.from('clients').select('*').in('id', clientIdList);
       const { data: projectsData } = await supabase.from('projects').select('*').in('client_id', clientIdList);
 
-      const cList = clientsData || [];
+      const cList = clientsData  || [];
       const pList = projectsData || [];
 
       setAllClients(cList);
@@ -478,8 +531,9 @@ export default function Dashboard() {
 
   const latest         = allMetrics[allMetrics.length - 1] || null;
   const baselineMetric = useMemo(() => closestMetric(allMetrics, baselineDate), [allMetrics, baselineDate]);
-  const hasProgress    = baselineMetric && latest && baselineMetric.id !== latest.id;
+  const hasProgress    = !!(baselineMetric && latest && baselineMetric.id !== latest.id);
   const exp            = latest?.explanations || {};
+  const kwInsights     = exp?.keyword_insights || latest?.keyword_insights || {};
 
   const totalCitations = latest
     ? (latest.chatgpt_citations || 0) + (latest.perplexity_citations || 0) + (latest.google_ai_citations || 0) : 0;
@@ -504,10 +558,10 @@ export default function Dashboard() {
       growth:   m.overall_growth_score       || 0,
     })), [allMetrics, chartFrom, chartTo]);
 
-  const firstDate = allMetrics[0] ? toDateStr(allMetrics[0].recorded_at) : '';
-  const lastDate  = latest ? toDateStr(latest.recorded_at) : '';
-  const competitiveProof  = latest?.competitive_proof || [];
-  const compProofFromExp  = exp?.competitor_rank?.proof_points || [];
+  const firstDate        = allMetrics[0] ? toDateStr(allMetrics[0].recorded_at) : '';
+  const lastDate         = latest ? toDateStr(latest.recorded_at) : '';
+  const competitiveProof = latest?.competitive_proof || [];
+  const compProofExp     = exp?.competitor_rank?.proof_points || [];
 
   /* ─── Loading ─── */
   if (loading) return (
@@ -528,11 +582,10 @@ export default function Dashboard() {
         </div>
         <h2 className="text-xl font-bold mb-2">Dashboard Being Set Up</h2>
         <p className="text-muted-foreground text-sm mb-2">
-          Your account is approved but not yet linked to a client record. Manav needs to link your account in the admin panel.
+          Your account is approved but not yet linked to a client record.
+          Manav needs to link your account in the admin panel.
         </p>
-        <p className="text-xs text-muted-foreground mb-6">
-          If this seems wrong, contact Manav directly so he can link your profile.
-        </p>
+        <p className="text-xs text-muted-foreground mb-6">Contact Manav directly so he can complete your setup.</p>
         <Button variant="outline" onClick={async () => { await supabase.auth.signOut(); navigate('/'); }} className="border-border">
           <LogOut className="h-4 w-4 mr-2" />Sign Out
         </Button>
@@ -543,7 +596,6 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background text-foreground">
 
-      {/* Active modal */}
       {activeModal && (
         <WhyModal
           explanation={exp[activeModal.key]}
@@ -559,8 +611,7 @@ export default function Dashboard() {
       <div className="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary"
-              style={{ objectPosition: 'center 20%' }} />
+            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary" style={{ objectPosition: 'center 20%' }} />
             <div>
               <div className="font-bold text-sm">SEO Season</div>
               <div className="text-xs text-muted-foreground">{client.company} — Growth Portal</div>
@@ -574,8 +625,8 @@ export default function Dashboard() {
                   const proj = projects.find(x => x.id === e.target.value);
                   setSelectedProject(proj);
                   if (proj) {
-                    const projClient = allClients.find(c => c.id === proj.client_id);
-                    if (projClient) setClient(projClient);
+                    const pc = allClients.find(c => c.id === proj.client_id);
+                    if (pc) setClient(pc);
                   }
                 }}
                 className="h-8 rounded-lg border border-border bg-background/60 text-xs px-3 max-w-[200px]"
@@ -614,7 +665,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Tap hint */}
         {latest && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/15 rounded-xl px-4 py-2.5">
             <HelpCircle className="h-3.5 w-3.5 text-primary shrink-0" />
@@ -622,9 +672,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ═════════════════════════════════
-            SECTION 1 — CURRENT STATUS
-        ═════════════════════════════════ */}
+        {/* ═════════════ SECTION 1 — CURRENT STATUS ═════════════ */}
         {latest && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
@@ -636,7 +684,6 @@ export default function Dashboard() {
               <div className="h-px flex-1 bg-border" />
             </div>
 
-            {/* Big Win */}
             {latest.milestone && (
               <div className="rounded-2xl border border-yellow-400/30 bg-yellow-400/5 p-5">
                 <div className="flex items-start gap-3">
@@ -655,7 +702,7 @@ export default function Dashboard() {
             {/* Score Rings */}
             <div className="rounded-2xl border border-border bg-card/60 p-6">
               <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-5">
-                Health Scores Today — tap any score for full breakdown
+                Health Scores Today — tap any score for full breakdown + growth projections
               </div>
               <div className="flex flex-wrap justify-around gap-6">
                 {[
@@ -681,11 +728,10 @@ export default function Dashboard() {
                 value={latest.pages_indexed} score={latest.pages_indexed || 0} ringColor="#06b6d4"
                 baselineValue={hasProgress ? baselineMetric?.pages_indexed : null}
                 metricKey="pages_indexed" title="Google Index Status" explanation={exp.pages_indexed} />
-              <StatCard icon={Trophy} label="Market Rank" color="text-yellow-400"
+              <StatCard icon={Trophy} label="Content Rank" color="text-yellow-400"
                 value={latest.competitor_rank ? `#${latest.competitor_rank}` : '—'}
-                score={latest.competitor_rank || 0} ringColor="#f59e0b"
-                baselineValue={null}
-                metricKey="competitor_rank" title="Competitive Market Rank" explanation={exp.competitor_rank} />
+                score={latest.competitor_rank || 0} ringColor="#f59e0b" baselineValue={null}
+                metricKey="competitor_rank" title="Competitive Content Rank" explanation={exp.competitor_rank} />
               <StatCard icon={TrendingUp} label="Brand Mentions" color="text-green-400"
                 value={latest.brand_mentions} score={latest.brand_mentions || 0} ringColor="#4ade80"
                 baselineValue={hasProgress ? baselineMetric?.brand_mentions : null}
@@ -767,58 +813,76 @@ export default function Dashboard() {
             {/* Keyword Rankings */}
             {latest.keyword_rankings?.length > 0 && (
               <div className="rounded-2xl border border-border bg-card/60 p-5">
-                <div className="flex items-center gap-2 mb-4">
+                <div className="flex items-center gap-2 mb-2">
                   <BarChart3 className="h-4 w-4 text-primary" />
                   <span className="font-semibold text-sm">Keyword Rankings</span>
-                  <span className="ml-auto text-xs font-mono text-cyan-400">✓ verified live · Google SERP</span>
+                  <span className="ml-auto text-xs font-mono text-cyan-400 flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />verified live · Google SERP
+                  </span>
                 </div>
-                <div className="space-y-2">
-                  {latest.keyword_rankings.map((k: any, i: number) => {
-                    const isP1  = k.found && k.page === 1;
-                    const isP2  = k.found && k.page === 2;
-                    const none  = !k.found;
-                    const barW  = none ? 0 : k.position <= 3 ? 95 : k.position <= 10 ? 70 : k.position <= 20 ? 40 : 15;
-                    const col   = isP1 ? 'text-green-400' : isP2 ? 'text-yellow-400' : 'text-orange-400';
-                    const bg    = isP1 ? 'border-green-400/20 bg-green-400/5' : isP2 ? 'border-yellow-400/20 bg-yellow-400/5' : 'border-orange-400/20 bg-orange-400/5';
-                    const bar   = isP1 ? 'bg-green-400' : isP2 ? 'bg-yellow-400' : 'bg-orange-400';
-                    const badge = isP1 ? '🟢 Page 1' : isP2 ? '🟡 Page 2' : none ? '🔴 Not ranking' : '🟠 Page 3+';
-                    return (
-                      <div key={i} className={`rounded-xl border ${bg} p-3`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <span className="text-sm font-semibold">"{k.keyword}"</span>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className={`text-xs font-mono font-bold ${col}`}>
-                                {k.positionLabel || (k.found ? `Position ~${k.position}` : 'Not in top 30')}
-                              </span>
-                              {k.verified && <span className="text-xs text-cyan-400 font-mono">✓ live</span>}
-                            </div>
-                          </div>
-                          <div className={`text-xs px-2.5 py-1 rounded-full border font-semibold ${bg} ${col}`}>{badge}</div>
-                        </div>
-                        <div className="h-1.5 w-full rounded-full bg-background/60 overflow-hidden">
-                          <div className={`h-full rounded-full ${bar} transition-all duration-1000`} style={{ width: `${barW}%` }} />
-                        </div>
-                        {k.snippet && <p className="text-xs text-muted-foreground mt-1.5 italic truncate">"{k.snippet}"</p>}
-                        {none && <p className="text-xs text-orange-400 mt-1.5">Not found in top 30 — this is a growth opportunity</p>}
+                <p className="text-xs text-muted-foreground mb-4">
+                  All {latest.keyword_rankings.length} tracked keywords — tap any for strategy insights.
+                </p>
+
+                {/* Summary strip */}
+                <div className="flex gap-3 mb-4 flex-wrap">
+                  {(() => {
+                    const p1    = latest.keyword_rankings.filter((k: any) => k.found && k.page === 1).length;
+                    const p2    = latest.keyword_rankings.filter((k: any) => k.found && k.page === 2).length;
+                    const other = latest.keyword_rankings.filter((k: any) => k.found && k.page > 2).length;
+                    const none  = latest.keyword_rankings.filter((k: any) => !k.found).length;
+                    return [
+                      { label: 'Page 1',      count: p1,    color: 'text-green-400',  bg: 'bg-green-400/10 border-green-400/20' },
+                      { label: 'Page 2',      count: p2,    color: 'text-yellow-400', bg: 'bg-yellow-400/10 border-yellow-400/20' },
+                      { label: 'Page 3+',     count: other, color: 'text-orange-400', bg: 'bg-orange-400/10 border-orange-400/20' },
+                      { label: 'Opportunity', count: none,  color: 'text-primary',    bg: 'bg-primary/10 border-primary/20' },
+                    ].filter(x => x.count > 0).map(({ label, count, color, bg }) => (
+                      <div key={label} className={`rounded-xl border ${bg} px-3 py-2 text-center`}>
+                        <div className={`text-lg font-bold ${color}`}>{count}</div>
+                        <div className="text-xs text-muted-foreground">{label}</div>
                       </div>
+                    ));
+                  })()}
+                </div>
+
+                <div className="space-y-3">
+                  {latest.keyword_rankings.map((k: any, i: number) => {
+                    const isP1   = k.found && k.page === 1;
+                    const isP2   = k.found && k.page === 2;
+                    const isP3   = k.found && k.page > 2;
+                    const none   = !k.found;
+                    const insight = kwInsights[k.keyword] || null;
+                    const col   = isP1 ? 'text-green-400' : isP2 ? 'text-yellow-400' : isP3 ? 'text-orange-400' : 'text-primary';
+                    const bg    = isP1 ? 'border-green-400/20 bg-green-400/5'
+                                : isP2 ? 'border-yellow-400/20 bg-yellow-400/5'
+                                : isP3 ? 'border-orange-400/20 bg-orange-400/5'
+                                : 'border-primary/20 bg-primary/5';
+                    const bar   = isP1 ? 'bg-green-400' : isP2 ? 'bg-yellow-400' : isP3 ? 'bg-orange-400' : 'bg-primary';
+                    const barW  = none ? 8 : k.position <= 3 ? 96 : k.position <= 10 ? 75 : k.position <= 20 ? 45 : 20;
+                    const badge = isP1 ? '🟢 Page 1 — Ranking!'
+                                : isP2 ? '🟡 Page 2 — Almost there'
+                                : isP3 ? '🟠 Page 3+'
+                                : '💎 Opportunity';
+                    return (
+                      <KeywordCard key={i} keyword={k} insight={insight}
+                        col={col} bg={bg} bar={bar} barW={barW} badge={badge} none={none} isP1={isP1} />
                     );
                   })}
                 </div>
                 <div className="mt-3 text-xs text-muted-foreground flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                  Rankings verified by live Google search on {fmtDate(latest.recorded_at)}
+                  Rankings verified by live Google search · {fmtDate(latest.recorded_at)}
                 </div>
               </div>
             )}
 
-            {/* Competitive Position */}
+            {/* Competitive */}
             {(latest.competitor_rank > 0 || latest.competitors_beaten > 0 || latest.competitor_gap_note || competitiveProof.length > 0) && (
               <div className="rounded-2xl border border-border bg-card/60 p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <Swords className="h-4 w-4 text-yellow-400" />
                   <span className="font-semibold text-sm">Competitive Position</span>
-                  <button onClick={() => setActiveModal({ key: 'competitor_rank', title: 'Competitive Market Rank', color: '#f59e0b' })}
+                  <button onClick={() => setActiveModal({ key: 'competitor_rank', title: 'Competitive Content Rank', color: '#f59e0b' })}
                     className="ml-auto text-xs text-primary font-mono flex items-center gap-1 hover:underline">
                     <HelpCircle className="h-3 w-3" />full analysis
                   </button>
@@ -827,7 +891,7 @@ export default function Dashboard() {
                   {latest.competitor_rank > 0 && (
                     <div className="rounded-xl border border-border bg-background/40 p-4 text-center">
                       <div className="text-3xl font-bold text-primary">#{latest.competitor_rank}</div>
-                      <div className="text-xs text-muted-foreground mt-1">Content Rank</div>
+                      <div className="text-xs text-muted-foreground mt-1">Content Quality Rank</div>
                     </div>
                   )}
                   {latest.competitors_beaten > 0 && (
@@ -858,9 +922,9 @@ export default function Dashboard() {
                     ))}
                   </div>
                 )}
-                {compProofFromExp.length > 0 && competitiveProof.length === 0 && (
+                {compProofExp.length > 0 && competitiveProof.length === 0 && (
                   <div className="space-y-1.5 mt-2">
-                    {compProofFromExp.map((p: string, i: number) => (
+                    {compProofExp.map((p: string, i: number) => (
                       <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
                         <ChevronRight className="h-3.5 w-3.5 text-yellow-400 shrink-0 mt-0.5" />{p}
                       </div>
@@ -872,9 +936,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ═════════════════════════════════
-            SECTION 2 — PROGRESS TRACKING
-        ═════════════════════════════════ */}
+        {/* ═════════════ SECTION 2 — PROGRESS TRACKING ═════════════ */}
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="h-px flex-1 bg-border" />
@@ -884,7 +946,6 @@ export default function Dashboard() {
             <div className="h-px flex-1 bg-border" />
           </div>
 
-          {/* Baseline setter */}
           <div className="rounded-2xl border border-border bg-card/60 p-5">
             <div className="flex items-center gap-2 mb-2">
               <Flag className="h-4 w-4 text-primary" />
@@ -911,15 +972,10 @@ export default function Dashboard() {
                 Set Baseline
               </Button>
             </div>
-            {allMetrics.length === 0 && (
-              <p className="text-xs text-muted-foreground mt-3 italic">No reports yet — baseline available once Manav runs your first analysis.</p>
-            )}
-            {allMetrics.length === 1 && (
-              <p className="text-xs text-muted-foreground mt-3 italic">Only 1 report so far. Progress comparison needs 2+ reports.</p>
-            )}
+            {allMetrics.length === 0 && <p className="text-xs text-muted-foreground mt-3 italic">No reports yet.</p>}
+            {allMetrics.length === 1 && <p className="text-xs text-muted-foreground mt-3 italic">Only 1 report so far. Progress comparison needs 2+ reports.</p>}
           </div>
 
-          {/* Progress comparison */}
           {hasProgress ? (
             <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 space-y-4">
               <div className="flex items-center justify-between">
@@ -931,7 +987,6 @@ export default function Dashboard() {
                   {Math.round((new Date(lastDate).getTime() - new Date(toDateStr(baselineMetric.recorded_at)).getTime()) / (1000 * 60 * 60 * 24))} days
                 </div>
               </div>
-
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 {[
                   { key: 'llm_visibility_score',    label: 'LLM',       color: 'text-primary' },
@@ -958,7 +1013,6 @@ export default function Dashboard() {
                   );
                 })}
               </div>
-
               <div className="grid sm:grid-cols-3 gap-3">
                 <div className="rounded-xl border border-border bg-background/60 p-3">
                   <div className="text-xs text-muted-foreground mb-1">AI Citations</div>
@@ -984,14 +1038,12 @@ export default function Dashboard() {
           ) : (baselineDate && allMetrics.length >= 2) ? (
             <div className="rounded-2xl border border-border bg-card/60 p-6 text-center">
               <CalendarDays className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">The baseline date matches your only report. Progress comparison needs at least 2 reports at different dates.</p>
+              <p className="text-sm text-muted-foreground">Baseline matches only one report. Progress comparison needs 2 reports at different dates.</p>
             </div>
           ) : null}
         </div>
 
-        {/* ═════════════════════════════════
-            SECTION 3 — GROWTH CHART
-        ═════════════════════════════════ */}
+        {/* ═════════════ SECTION 3 — GROWTH CHART ═════════════ */}
         {allMetrics.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
@@ -1001,16 +1053,15 @@ export default function Dashboard() {
               </div>
               <div className="h-px flex-1 bg-border" />
             </div>
-
             <div className="rounded-2xl border border-border bg-card/60 p-5">
               <div className="flex flex-wrap items-center gap-3 mb-4">
                 <span className="text-sm font-semibold">Growth Trajectory</span>
                 <div className="ml-auto flex flex-wrap gap-2">
                   {[
-                    { label: 'All',      from: '',  to: '' },
-                    { label: 'Last 30d', from: (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split('T')[0]; })(), to: '' },
-                    { label: 'Last 60d', from: (() => { const d = new Date(); d.setDate(d.getDate() - 60); return d.toISOString().split('T')[0]; })(), to: '' },
-                    { label: 'Last 90d', from: (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().split('T')[0]; })(), to: '' },
+                    { label: 'All',      from: '', to: '' },
+                    { label: 'Last 30d', from: (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().split('T')[0]; })(), to: '' },
+                    { label: 'Last 60d', from: (() => { const d = new Date(); d.setDate(d.getDate()-60); return d.toISOString().split('T')[0]; })(), to: '' },
+                    { label: 'Last 90d', from: (() => { const d = new Date(); d.setDate(d.getDate()-90); return d.toISOString().split('T')[0]; })(), to: '' },
                   ].map(({ label, from, to }) => (
                     <button key={label}
                       onClick={() => { setChartFrom(from); setChartTo(to); }}
@@ -1024,7 +1075,6 @@ export default function Dashboard() {
                   ))}
                 </div>
               </div>
-
               {chartData.length < 2 ? (
                 <div className="text-center py-10 text-sm text-muted-foreground">
                   <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-30" />
