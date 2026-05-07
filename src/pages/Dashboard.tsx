@@ -1,3 +1,4 @@
+import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
@@ -444,6 +445,7 @@ const KeywordCard = ({ keyword: k, insight, col, bg, bar, barW, badge, none, isP
 ════════════════════════════════════════ */
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { clients: authClients, projects: authProjects, loading: authLoading, authChecked, user, isApproved, signOut } = useAuth();
   const [client, setClient]               = useState<any>(null);
   const [allClients, setAllClients]       = useState<any[]>([]);
   const [projects, setProjects]           = useState<any[]>([]);
@@ -458,7 +460,11 @@ export default function Dashboard() {
   const [chartFrom, setChartFrom]         = useState('');
   const [chartTo, setChartTo]             = useState('');
 
-  useEffect(() => { loadData(); }, []);
+ useEffect(() => {
+    if (authChecked && !authLoading) {
+      loadData();
+    }
+  }, [authChecked, authLoading, authClients, authProjects]);
   useEffect(() => {
     if (selectedProject) {
       loadProjectData(selectedProject.id);
@@ -467,33 +473,23 @@ export default function Dashboard() {
   }, [selectedProject]);
 
   const loadData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { navigate('/'); return; }
+    /* Auth is handled by AuthContext — just use the data it provides */
+   if (authLoading || (!authChecked)) return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        <p className="text-sm text-muted-foreground font-mono">Loading your growth portal...</p>
+      </div>
+    </div>
+  );
 
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (!prof?.approved) { navigate('/'); return; }
+    const cList = authClients;
+    const pList = authProjects;
 
-      const clientIdList: string[] = [];
-      if (prof.client_ids?.length)  clientIdList.push(...prof.client_ids);
-      else if (prof.client_id)      clientIdList.push(prof.client_id);
-
-      const { data: byEmail } = await supabase.from('clients').select('id').eq('email', user.email);
-      byEmail?.forEach((c: any) => { if (!clientIdList.includes(c.id)) clientIdList.push(c.id); });
-
-      if (!clientIdList.length) { setLoading(false); return; }
-
-      const { data: clientsData  } = await supabase.from('clients').select('*').in('id', clientIdList);
-      const { data: projectsData } = await supabase.from('projects').select('*').in('client_id', clientIdList);
-
-      const cList = clientsData  || [];
-      const pList = projectsData || [];
-
-      setAllClients(cList);
-      setProjects(pList);
-      setClient(cList[0] || null);
-      if (pList.length) setSelectedProject(pList[0]);
-    } catch (e) { console.error(e); }
+    setAllClients(cList);
+    setProjects(pList);
+    setClient(cList[0] || null);
+    if (pList.length) setSelectedProject(pList[0]);
     setLoading(false);
   };
 
@@ -643,7 +639,7 @@ export default function Dashboard() {
               </select>
             )}
             <Button variant="outline" size="sm"
-              onClick={async () => { await supabase.auth.signOut(); navigate('/'); }}
+             onClick={async () => { await signOut(); navigate('/'); }}
               className="border-border text-xs">
               <LogOut className="h-3 w-3 mr-1.5" />Sign Out
             </Button>
