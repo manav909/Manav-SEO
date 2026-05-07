@@ -125,7 +125,7 @@ export default function Index() {
       {/* BRAND IMAGE STRIP */}
       <section className="relative overflow-hidden">
         <div className="relative h-64 sm:h-80">
-          <img src="/manavseo.png" alt="Manav SEO"
+          <img src="/manavseo.jpg" alt="Manav SEO"
             className="w-full h-full object-cover object-center opacity-60" />
           <div className="absolute inset-0 bg-gradient-to-r from-background via-background/50 to-background/20" />
           <div className="absolute inset-0 flex items-center px-8 sm:px-16">
