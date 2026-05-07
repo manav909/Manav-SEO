@@ -3,9 +3,13 @@ import { supabase } from '@/lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface Profile {
-  id: string; email: string; approved: boolean;
-  client_id?: string; client_ids?: string[];
+  id: string;
+  email: string;
+  approved: boolean;
+  client_id?: string;
+  client_ids?: string[];
 }
+
 interface AuthState {
   user:        User | null;
   session:     Session | null;
@@ -38,7 +42,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [projects,    setProjects]    = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
-  const loadingRef = useRef(false); // prevent concurrent loads
+  const loadingRef = useRef(false);
+  const currentUserId = useRef<string | null>(null);
 
   const loadUserData = useCallback(async (currentUser: User) => {
     if (loadingRef.current) return;
@@ -49,16 +54,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (profErr) {
         if (profErr.code === 'PGRST116') {
-          await supabase.from('profiles').insert({
-            id: currentUser.id, email: currentUser.email || '', approved: false,
-          }).single();
+          try {
+            await supabase.from('profiles').insert({
+              id: currentUser.id,
+              email: currentUser.email || '',
+              approved: false,
+            });
+          } catch { /* ignore */ }
         }
-        setProfile(null); setClients([]); setProjects([]);
+        setProfile(null);
+        setClients([]);
+        setProjects([]);
         return;
       }
 
       setProfile(prof);
-      if (!prof?.approved) { setClients([]); setProjects([]); return; }
+      if (!prof?.approved) {
+        setClients([]);
+        setProjects([]);
+        return;
+      }
 
       const idList: string[] = [];
       if (Array.isArray(prof.client_ids) && prof.client_ids.length) {
@@ -66,12 +81,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else if (prof.client_id) {
         idList.push(prof.client_id);
       }
+
       if (currentUser.email) {
         const { data: byEmail } = await supabase
           .from('clients').select('id').eq('email', currentUser.email);
-        byEmail?.forEach((c: any) => { if (!idList.includes(c.id)) idList.push(c.id); });
+        byEmail?.forEach((c: any) => {
+          if (!idList.includes(c.id)) idList.push(c.id);
+        });
       }
-      if (!idList.length) { setClients([]); setProjects([]); return; }
+
+      if (!idList.length) {
+        setClients([]);
+        setProjects([]);
+        return;
+      }
 
       const [cR, pR] = await Promise.allSettled([
         supabase.from('clients').select('*').in('id', idList),
@@ -80,8 +103,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setClients(cR.status === 'fulfilled' ? (cR.value.data || []) : []);
       setProjects(pR.status === 'fulfilled' ? (pR.value.data || []) : []);
     } catch (e) {
-      console.error('loadUserData:', e);
-      setClients([]); setProjects([]);
+      console.error('loadUserData error:', e);
+      setClients([]);
+      setProjects([]);
     } finally {
       loadingRef.current = false;
     }
@@ -93,16 +117,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
-    setUser(null); setSession(null); setProfile(null);
-    setClients([]); setProjects([]);
+    currentUserId.current = null;
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setClients([]);
+    setProjects([]);
   }, []);
 
   useEffect(() => {
     let mounted = true;
 
-    // Hard timeout — never stuck loading beyond 10s
-    const timeout = setTimeout(() => {
-      if (mounted) { setLoading(false); setAuthChecked(true); }
+    const hardTimeout = setTimeout(() => {
+      if (mounted) {
+        setLoading(false);
+        setAuthChecked(true);
+      }
     }, 10000);
 
     const init = async () => {
@@ -110,15 +140,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const { data: { session: s } } = await supabase.auth.getSession();
         if (!mounted) return;
         if (s?.user) {
+          currentUserId.current = s.user.id;
           setSession(s);
           setUser(s.user);
           await loadUserData(s.user);
         }
       } catch (e) {
-        console.error('Auth init:', e);
+        console.error('Auth init error:', e);
       } finally {
         if (mounted) {
-          clearTimeout(timeout);
+          clearTimeout(hardTimeout);
           setLoading(false);
           setAuthChecked(true);
         }
@@ -132,24 +163,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (!mounted) return;
 
         if (event === 'SIGNED_OUT' || !s) {
-          setUser(null); setSession(null); setProfile(null);
-          setClients([]); setProjects([]);
-          setLoading(false); setAuthChecked(true);
+          currentUserId.current = null;
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+          setClients([]);
+          setProjects([]);
+          setLoading(false);
+          setAuthChecked(true);
           return;
         }
 
-        // TOKEN_REFRESHED — just update session, never reset loading
         if (event === 'TOKEN_REFRESHED') {
           setSession(s);
           return;
         }
 
-        // SIGNED_IN — load full data
         if (event === 'SIGNED_IN') {
+          const isNewUser = s.user.id !== currentUserId.current;
+          currentUserId.current = s.user.id;
           setSession(s);
           setUser(s.user);
-          // Only reload if we don't already have data for this user
-          if (s.user.id !== user?.id) {
+          if (isNewUser) {
             setLoading(true);
             await loadUserData(s.user);
             setLoading(false);
@@ -161,17 +196,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => {
       mounted = false;
-      clearTimeout(timeout);
+      clearTimeout(hardTimeout);
       subscription.unsubscribe();
     };
-  }, []); // eslint-disable-line
+  }, [loadUserData]);
 
   return (
     <AuthContext.Provider value={{
       user, session, profile, clients, projects,
       loading, authChecked,
       isApproved: profile?.approved === true,
-      hasClient: clients.length > 0,
+      hasClient:  clients.length > 0,
       signOut, refreshData,
     }}>
       {children}
