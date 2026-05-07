@@ -1,3 +1,4 @@
+import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
@@ -194,18 +195,30 @@ const ValueCard = ({ icon: Icon, label, value, sub, color }: any) => (
    MAIN LAUNCHPAD PAGE
 ═══════════════════════════════════════ */
 export default function Launchpad() {
+  const { clients: authClients, projects: authProjects, loading: authLoading, authChecked, signOut } = useAuth();
   const navigate = useNavigate();
-  const [client, setClient]               = useState<any>(null);
-  const [project, setProject]             = useState<any>(null);
-  const [projects, setProjects]           = useState<any[]>([]);
-  const [allClients, setAllClients]       = useState<any[]>([]);
-  const [dashboard, setDashboard]         = useState<any>(null);
-  const [latestMetric, setLatestMetric]   = useState<any>(null);
-  const [loading, setLoading]             = useState(true);
-  const [approvingIdx, setApprovingIdx]   = useState<number | null>(null);
-  const [generatedAt, setGeneratedAt]     = useState<string>('');
+  const [client, setClient]             = useState<any>(null);
+  const [project, setProject]           = useState<any>(null);
+  const [projects, setProjects]         = useState<any[]>([]);
+  const [allClients, setAllClients]     = useState<any[]>([]);
+  const [dashboard, setDashboard]       = useState<any>(null);
+  const [latestMetric, setLatestMetric] = useState<any>(null);
+  const [loading, setLoading]           = useState(true);
+  const [approvingIdx, setApprovingIdx] = useState<number | null>(null);
+  const [generatedAt, setGeneratedAt]   = useState<string>('');
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    if (authChecked && !authLoading) {
+      const cList = authClients;
+      const pList = authProjects;
+      setAllClients(cList);
+      setProjects(pList);
+      setClient(cList[0] || null);
+      if (pList.length) setProject(pList[0]);
+      setLoading(false);
+    }
+  }, [authChecked, authLoading, authClients, authProjects]);
+
   useEffect(() => { if (project) loadProject(project); }, [project]);
 
   const loadData = async () => {
@@ -343,7 +356,14 @@ export default function Launchpad() {
             <Button variant="outline" size="sm" onClick={() => navigate('/dashboard')} className="border-border text-xs">
               <BarChart3 className="h-3 w-3 mr-1.5" />Dashboard
             </Button>
-            <Button variant="outline" size="sm" onClick={async () => { await supabase.auth.signOut(); navigate('/'); }} className="border-border text-xs">
+            <Button variant="outline" size="sm" if (authLoading || !authChecked || loading) return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        <p className="text-sm text-muted-foreground font-mono">Loading your strategy launchpad...</p>
+      </div>
+    </div>
+  ); className="border-border text-xs">
               <LogOut className="h-3 w-3 mr-1.5" />Sign Out
             </Button>
           </div>
