@@ -173,3 +173,129 @@
   border-color: rgba(99,102,241,0.22) !important;
   transform: translateY(-2px);
 }
+/* ── Hero image — responsive ── */
+.hero-section {
+  position: relative;
+  overflow: hidden;
+  min-height: 92vh;
+  display: flex;
+  align-items: center;
+}
+.hero-photo-wrap {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+.hero-photo-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    to bottom,
+    rgba(4,4,13,0.78) 0%,
+    rgba(4,4,13,0.6) 50%,
+    rgba(4,4,13,0.92) 100%
+  );
+}
+.hero-content {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  padding: 80px 24px;
+}
+.hero-badge-wrap {
+  display: none;
+}
+
+/* ── Desktop ── */
+@media (min-width: 1024px) {
+  .hero-photo-wrap {
+    width: 62%;
+  }
+  .hero-photo-wrap img {
+    object-position: 35% top;
+  }
+  .hero-overlay {
+    background: linear-gradient(
+      to right,
+      #04040d 28%,
+      rgba(4,4,13,0.92) 44%,
+      rgba(4,4,13,0.48) 64%,
+      rgba(4,4,13,0.04) 100%
+    );
+  }
+  .hero-content {
+    padding: 80px 48px;
+  }
+  .hero-badge-wrap {
+    display: block;
+  }
+}
+
+/* ── Spatial animations ── */
+@keyframes float-a { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
+@keyframes float-b { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-9px)} }
+@keyframes float-c { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-18px)} }
+@keyframes nebula-pulse { 0%,100%{opacity:0.3} 50%{opacity:0.65} }
+@keyframes border-shimmer {
+  0%,100%{border-color:rgba(255,255,255,0.07)}
+  50%{border-color:rgba(99,102,241,0.3)}
+}
+
+.spa-float-a { animation: float-a 6s ease-in-out infinite; }
+.spa-float-b { animation: float-b 8s ease-in-out infinite; animation-delay:-2s; }
+.spa-float-c { animation: float-c 5s ease-in-out infinite; animation-delay:-3.5s; }
+.spa-nebula  { animation: nebula-pulse 7s ease-in-out infinite; }
+.spa-shimmer { animation: border-shimmer 4s ease-in-out infinite; }
+
+/* ── Glass morphism ── */
+.glass {
+  background: rgba(255,255,255,0.035);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+.glass-strong {
+  background: rgba(255,255,255,0.055);
+  -webkit-backdrop-filter: blur(32px) saturate(1.6);
+  backdrop-filter: blur(32px) saturate(1.6);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+.glass-nav {
+  background: rgba(4,4,13,0.75);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.spa-btn {
+  background: linear-gradient(135deg,#6366f1,#8b5cf6);
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  font-weight: 700;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 24px rgba(99,102,241,0.4);
+}
+.spa-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 40px rgba(99,102,241,0.55);
+}
+.spa-card {
+  transition: background 0.25s, border-color 0.25s, transform 0.25s;
+}
+.spa-card:hover {
+  background: rgba(255,255,255,0.065) !important;
+  border-color: rgba(99,102,241,0.22) !important;
+  transform: translateY(-2px);
+}
