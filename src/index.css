@@ -111,3 +111,65 @@
     animation: shimmer 2s linear infinite;
   }
 }
+/* ── Spatial animations ── */
+@keyframes float-a { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-14px)} }
+@keyframes float-b { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-9px)} }
+@keyframes float-c { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-18px)} }
+@keyframes nebula-pulse { 0%,100%{opacity:0.35} 50%{opacity:0.65} }
+@keyframes border-shimmer {
+  0%,100%{border-color:rgba(255,255,255,0.07)}
+  50%{border-color:rgba(99,102,241,0.28)}
+}
+@keyframes badge-in {
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+.spa-float-a { animation: float-a 6s ease-in-out infinite; }
+.spa-float-b { animation: float-b 8s ease-in-out infinite; animation-delay:-2s; }
+.spa-float-c { animation: float-c 5s ease-in-out infinite; animation-delay:-3.5s; }
+.spa-nebula  { animation: nebula-pulse 7s ease-in-out infinite; }
+.spa-badge   { animation: badge-in 0.7s ease forwards; }
+.spa-shimmer { animation: border-shimmer 4s ease-in-out infinite; }
+
+/* ── Glass morphism — cross-browser ── */
+.glass {
+  background: rgba(255,255,255,0.035);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+.glass-strong {
+  background: rgba(255,255,255,0.055);
+  -webkit-backdrop-filter: blur(32px) saturate(1.6);
+  backdrop-filter: blur(32px) saturate(1.6);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+.glass-nav {
+  background: rgba(4,4,13,0.75);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.spa-btn {
+  background: linear-gradient(135deg,#6366f1,#8b5cf6);
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  font-weight: 700;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 24px rgba(99,102,241,0.4);
+}
+.spa-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 40px rgba(99,102,241,0.55);
+}
+.spa-card {
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+  cursor: default;
+}
+.spa-card:hover {
+  background: rgba(255,255,255,0.065) !important;
+  border-color: rgba(99,102,241,0.22) !important;
+  transform: translateY(-2px);
+}
