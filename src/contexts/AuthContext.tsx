@@ -70,20 +70,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading,     setLoading]     = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
 
-  const loadUserData = useCallback(async (currentUser: User) => {
+ const loadUserData = useCallback(async (currentUser: User) => {
     try {
-      /* ── 1. Load profile ── */
       const { data: prof, error: profErr } = await supabase
         .from('profiles').select('*').eq('id', currentUser.id).single();
 
-      if (profErr || !prof) {
-        /* Profile might not exist yet — create it */
-        if (profErr?.code === 'PGRST116') {
-          await supabase.from('profiles').insert({
-            id:       currentUser.id,
-            email:    currentUser.email,
-            approved: false,
-          });
+      if (profErr) {
+        if (profErr.code === 'PGRST116') {
+          /* Profile doesn't exist — create it silently */
+          try {
+            await supabase.from('profiles').insert({
+              id:       currentUser.id,
+              email:    currentUser.email || '',
+              approved: false,
+            });
+          } catch { /* ignore insert error */ }
         }
         setProfile(null);
         setClients([]);
@@ -92,25 +93,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       setProfile(prof);
-
-      if (!prof.approved) {
+      if (!prof?.approved) {
         setClients([]);
         setProjects([]);
         return;
       }
 
-      /* ── 2. Build client ID list ── */
       const idList: string[] = [];
-      if (prof.client_ids?.length)  idList.push(...prof.client_ids.filter(Boolean));
-      else if (prof.client_id)      idList.push(prof.client_id);
+      if (Array.isArray(prof.client_ids) && prof.client_ids.length) {
+        idList.push(...prof.client_ids.filter(Boolean));
+      } else if (prof.client_id) {
+        idList.push(prof.client_id);
+      }
 
-      /* ── 3. Email fallback ── */
       if (currentUser.email) {
-        const { data: byEmail } = await supabase
-          .from('clients').select('id').eq('email', currentUser.email);
-        byEmail?.forEach((c: any) => {
-          if (!idList.includes(c.id)) idList.push(c.id);
-        });
+        try {
+          const { data: byEmail } = await supabase
+            .from('clients').select('id').eq('email', currentUser.email);
+          byEmail?.forEach((c: any) => {
+            if (c.id && !idList.includes(c.id)) idList.push(c.id);
+          });
+        } catch { /* ignore */ }
       }
 
       if (!idList.length) {
@@ -119,16 +122,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      /* ── 4. Load clients + projects in parallel ── */
-      const [{ data: cList }, { data: pList }] = await Promise.all([
+      const [cResult, pResult] = await Promise.allSettled([
         supabase.from('clients').select('*').in('id', idList),
         supabase.from('projects').select('*').in('client_id', idList),
       ]);
 
-      setClients(cList || []);
-      setProjects(pList || []);
+      setClients(cResult.status === 'fulfilled' ? (cResult.value.data || []) : []);
+      setProjects(pResult.status === 'fulfilled' ? (pResult.value.data || []) : []);
     } catch (err) {
-      console.error('AuthContext loadUserData error:', err);
+      console.error('loadUserData failed:', err);
+      setProfile(null);
+      setClients([]);
+      setProjects([]);
     }
   }, []);
 
@@ -151,14 +156,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const init = async () => {
       try {
-        /* Get current session */
-        const { data: { session: s } } = await supabase.auth.getSession();
+        const { data: { session: s }, error } = await supabase.auth.getSession();
         if (!mounted) return;
 
-        if (s?.user) {
+        if (error) {
+          console.error('getSession error:', error);
+          /* Clear potentially corrupted session */
+          await supabase.auth.signOut();
+        } else if (s?.user) {
           setSession(s);
           setUser(s.user);
-          await loadUserData(s.user);
+          try {
+            await loadUserData(s.user);
+          } catch (dataErr) {
+            console.error('loadUserData error:', dataErr);
+          }
         }
       } catch (err) {
         console.error('Auth init error:', err);
