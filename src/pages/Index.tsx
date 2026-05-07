@@ -6,21 +6,15 @@ import { SeoEngine } from '@/components/SeoEngine';
 import {
   Sparkles, Star, TrendingUp, Brain, ShieldCheck,
   CheckCircle, Globe, BarChart3, Zap, ArrowRight,
-  Lock, LogOut
+  Lock, LogOut, Quote
 } from 'lucide-react';
 
-const gradientText: React.CSSProperties = {
-  background: 'linear-gradient(135deg,#6366f1 0%,#a78bfa 48%,#67e8f9 100%)',
+const gText: React.CSSProperties = {
+  background: 'linear-gradient(135deg,#6366f1 0%,#a78bfa 50%,#67e8f9 100%)',
   WebkitBackgroundClip: 'text',
   WebkitTextFillColor: 'transparent',
   backgroundClip: 'text',
 };
-
-const sp = (extra?: React.CSSProperties): React.CSSProperties => ({
-  background: '#04040d',
-  color: '#fff',
-  ...extra,
-});
 
 export default function Index() {
   const navigate = useNavigate();
@@ -37,7 +31,7 @@ export default function Index() {
   };
 
   return (
-    <div style={sp({ minHeight: '100vh' })}>
+    <div style={{ background: '#04040d', minHeight: '100vh', color: '#fff', overflowX: 'hidden' }}>
       {showModal && <AuthModal onClose={() => setShowModal(false)} />}
 
       {/* ══ NAV ══ */}
@@ -48,7 +42,7 @@ export default function Index() {
               style={{ height: 36, width: 36, borderRadius: '50%', objectFit: 'cover', objectPosition: 'center 15%', border: '2px solid rgba(99,102,241,0.55)', flexShrink: 0 }}
               onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             <div style={{ lineHeight: 1.25 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#fff' }}>SEO Season</div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>SEO Season</div>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>by Manav</div>
             </div>
           </div>
@@ -56,7 +50,7 @@ export default function Index() {
             {user && isApproved ? (
               <>
                 <button onClick={() => navigate('/dashboard')} className="glass spa-card"
-                  style={{ padding: '7px 16px', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#a5b4fc', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: '#a5b4fc' as any }}>
+                  style={{ padding: '7px 16px', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#a5b4fc', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <BarChart3 size={13} />Dashboard
                 </button>
                 <button onClick={() => navigate('/launchpad')} className="glass spa-card"
@@ -78,115 +72,134 @@ export default function Index() {
         </div>
       </nav>
 
-      {/* ══ HERO ══ */}
-      <section className="hero-section">
+      {/* ══ HERO — pure spatial, no background image ══ */}
+      <section style={{ position: 'relative', overflow: 'hidden', minHeight: '95vh', display: 'flex', alignItems: 'center' }}>
 
-        {/* Ambient nebula — behind everything */}
-        <div className="spa-nebula" style={{ position: 'absolute', top: '-10%', left: '-10%', width: '55vw', height: '70vh', borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(99,102,241,0.18) 0%,transparent 68%)', pointerEvents: 'none', zIndex: 0 }} />
-        <div className="spa-nebula" style={{ position: 'absolute', bottom: '-5%', right: '30%', width: '40vw', height: '50vh', borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(6,182,212,0.09) 0%,transparent 68%)', pointerEvents: 'none', zIndex: 0, animationDelay: '-4s' }} />
+        {/* Ambient light orbs */}
+        <div className="spa-nebula" style={{ position: 'absolute', top: '-20%', left: '-15%', width: '70vw', height: '80vh', borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(99,102,241,0.22) 0%,transparent 65%)', pointerEvents: 'none' }} />
+        <div className="spa-nebula" style={{ position: 'absolute', top: '30%', right: '-20%', width: '60vw', height: '70vh', borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(139,92,246,0.16) 0%,transparent 65%)', pointerEvents: 'none', animationDelay: '-3s' }} />
+        <div className="spa-nebula" style={{ position: 'absolute', bottom: '-10%', left: '30%', width: '50vw', height: '60vh', borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(6,182,212,0.10) 0%,transparent 65%)', pointerEvents: 'none', animationDelay: '-6s' }} />
 
-        {/* Photo */}
-        <div className="hero-photo-wrap">
-          <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 65% 30%,rgba(99,102,241,0.22) 0%,transparent 55%)', zIndex: 1 }} />
-          <img
-            src="/manavseo.jpg"
-            alt="Manav"
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        </div>
+        {/* Grid mesh subtle */}
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(99,102,241,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,0.03) 1px,transparent 1px)', backgroundSize: '60px 60px', pointerEvents: 'none' }} />
 
-        {/* Gradient overlay */}
-        <div className="hero-overlay" />
+        <div style={{ position: 'relative', zIndex: 5, maxWidth: 1280, margin: '0 auto', padding: '60px 24px', width: '100%' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 48, alignItems: 'center', justifyContent: 'space-between' }}>
 
-        {/* Floating badges — desktop only */}
-        <div className="hero-badge-wrap">
-          <div className="spa-float-a" style={{ position: 'absolute', top: '14%', right: '41%', zIndex: 8 }}>
-            <div className="glass-strong spa-shimmer" style={{ borderRadius: 14, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ height: 8, width: 8, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 10px #4ade80', flexShrink: 0 }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap' }}>500+ Brands Grown</span>
-            </div>
-          </div>
-          <div className="spa-float-b" style={{ position: 'absolute', top: '25%', right: '6%', zIndex: 8 }}>
-            <div className="glass" style={{ borderRadius: 18, padding: '16px 20px', textAlign: 'center', minWidth: 115 }}>
-              <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1, ...gradientText }}>↑40%</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.42)', marginTop: 4 }}>Avg Ranking Lift</div>
-            </div>
-          </div>
-          <div className="spa-float-c" style={{ position: 'absolute', bottom: '28%', right: '38%', zIndex: 8 }}>
-            <div className="glass-strong" style={{ borderRadius: 14, padding: '9px 15px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Brain size={13} style={{ color: '#a5b4fc', flexShrink: 0 }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.88)', whiteSpace: 'nowrap' }}>AI-Native SEO</span>
-            </div>
-          </div>
-          <div className="spa-float-a" style={{ position: 'absolute', top: '50%', right: '5%', zIndex: 8, animationDelay: '-4s' }}>
-            <div className="glass" style={{ borderRadius: 16, padding: '12px 16px', textAlign: 'center' }}>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 2, marginBottom: 4 }}>
-                {[1,2,3,4,5].map(i => <Star key={i} size={11} style={{ fill: '#facc15', color: '#facc15' }} />)}
+            {/* LEFT — text */}
+            <div style={{ flex: '1 1 460px', maxWidth: 600 }}>
+
+              <div className="glass" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, padding: '7px 16px', marginBottom: 28 }}>
+                <div className="spa-nebula" style={{ height: 6, width: 6, borderRadius: '50%', background: '#6366f1', boxShadow: '0 0 10px #6366f1', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', letterSpacing: '0.05em' }}>
+                  AI-NATIVE SEO · FIVERR TOP RATED · 500+ BRANDS
+                </span>
               </div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>500+ Fiverr Reviews</div>
-            </div>
-          </div>
-        </div>
 
-        {/* Main text content */}
-        <div className="hero-content" style={{ maxWidth: 1280, margin: '0 auto' }}>
-          <div style={{ maxWidth: 580 }}>
+              <h1 style={{ fontSize: 'clamp(2.4rem,5.5vw,4rem)', fontWeight: 900, lineHeight: 1.06, letterSpacing: '-0.025em', marginBottom: 22, color: '#fff' }}>
+                I'm Manav.<br />
+                I architect the<br />
+                <span style={gText}>end-to-end<br />digital growth</span><br />
+                for brands that<br className="block-mobile" /> can't afford to fail.
+              </h1>
 
-            <div className="glass" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, padding: '7px 16px', marginBottom: 28 }}>
-              <div className="spa-nebula" style={{ height: 6, width: 6, borderRadius: '50%', background: '#6366f1', boxShadow: '0 0 8px #6366f1', flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.62)', letterSpacing: '0.05em' }}>
-                AI-NATIVE SEO · FIVERR TOP RATED · 500+ BRANDS
-              </span>
-            </div>
+              <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.45)', marginBottom: 36, lineHeight: 1.7, maxWidth: 440 }}>
+                Strategy is expensive.<br />Guessing is even costlier.
+              </p>
 
-            <h1 style={{ fontSize: 'clamp(2.2rem,5vw,3.8rem)', fontWeight: 800, lineHeight: 1.07, letterSpacing: '-0.02em', marginBottom: 20, color: '#fff' }}>
-              I'm Manav.<br />
-              I architect the{' '}
-              <span style={gradientText}>end-to-end<br />digital growth</span>{' '}
-              for brands<br className="block sm:hidden" /> that can't afford to fail.
-            </h1>
-
-            <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.46)', marginBottom: 36, lineHeight: 1.65, maxWidth: 420 }}>
-              Strategy is expensive. Guessing is even costlier.
-            </p>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, marginBottom: 36 }}>
-              <button onClick={handlePortal} className="spa-btn"
-                style={{ padding: '14px 32px', borderRadius: 16, fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                {user && isApproved ? 'Go to Dashboard' : 'Access Client Portal'}
-                <ArrowRight size={16} />
-              </button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
-                <CheckCircle size={15} style={{ color: '#4ade80', flexShrink: 0 }} />
-                No commitment required
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px' }}>
-              {[
-                { icon: Globe,       text: '30+ Countries' },
-                { icon: ShieldCheck, text: 'Validation-First' },
-                { icon: Zap,         text: 'AI-Native' },
-              ].map(({ icon: Icon, text }) => (
-                <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'rgba(255,255,255,0.34)' }}>
-                  <Icon size={13} style={{ color: 'rgba(99,102,241,0.6)', flexShrink: 0 }} />
-                  {text}
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14, marginBottom: 40 }}>
+                <button onClick={handlePortal} className="spa-btn"
+                  style={{ padding: '15px 34px', borderRadius: 16, fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 9 }}>
+                  {user && isApproved ? 'Go to Dashboard' : 'Access Client Portal'}
+                  <ArrowRight size={16} />
+                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(255,255,255,0.38)' }}>
+                  <CheckCircle size={14} style={{ color: '#4ade80', flexShrink: 0 }} />
+                  No commitment required
                 </div>
-              ))}
+              </div>
+
+              {/* Trust pills */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {[
+                  { icon: Star,        text: 'Fiverr Top Rated' },
+                  { icon: Globe,       text: '30+ Countries' },
+                  { icon: ShieldCheck, text: 'Validation-First' },
+                  { icon: Brain,       text: 'AI-Native' },
+                ].map(({ icon: Icon, text }) => (
+                  <div key={text} className="glass"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '5px 12px', fontSize: 11, color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>
+                    <Icon size={11} style={{ color: 'rgba(99,102,241,0.7)' }} />{text}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* RIGHT — contained photo card + floating stats */}
+            <div style={{ flex: '0 0 auto', position: 'relative', alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0 }}>
+
+              {/* Main photo frame — completely self-contained */}
+              <div className="spa-float-b" style={{ position: 'relative', width: 'clamp(260px,28vw,360px)', flexShrink: 0 }}>
+                {/* Glow behind card */}
+                <div className="spa-nebula" style={{ position: 'absolute', inset: -32, borderRadius: '50%', background: 'radial-gradient(ellipse,rgba(99,102,241,0.3) 0%,transparent 65%)', filter: 'blur(24px)', zIndex: 0 }} />
+                {/* Photo card */}
+                <div style={{ position: 'relative', zIndex: 1, borderRadius: 28, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.10)', aspectRatio: '3/4', background: 'rgba(99,102,241,0.08)' }}>
+                  <img src="/manavseo.jpg" alt="Manav"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block' }}
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  {/* Bottom glass info strip */}
+                  <div className="glass-strong" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 18px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, color: '#fff' }}>Manav</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>Founder, SEO Season</div>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {[1,2,3,4,5].map(i => <Star key={i} size={10} style={{ fill: '#facc15', color: '#facc15' }} />)}
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginLeft: 5 }}>500+ reviews</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Floating badge — top left of card */}
+                <div className="spa-float-a" style={{ position: 'absolute', top: -14, left: -24, zIndex: 3 }}>
+                  <div className="glass-strong spa-shimmer" style={{ borderRadius: 14, padding: '9px 14px', display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap' }}>
+                    <div style={{ height: 7, width: 7, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 8px #4ade80', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>500+ Brands</span>
+                  </div>
+                </div>
+
+                {/* Floating badge — right of card */}
+                <div className="spa-float-c" style={{ position: 'absolute', top: '30%', right: -28, zIndex: 3 }}>
+                  <div className="glass" style={{ borderRadius: 16, padding: '14px 16px', textAlign: 'center', minWidth: 90 }}>
+                    <div style={{ fontSize: 24, fontWeight: 900, ...gText, lineHeight: 1 }}>↑40%</div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>Rankings</div>
+                  </div>
+                </div>
+
+                {/* Floating badge — bottom right */}
+                <div className="spa-float-a" style={{ position: 'absolute', bottom: 80, right: -22, zIndex: 3, animationDelay: '-2s' }}>
+                  <div className="glass-strong" style={{ borderRadius: 12, padding: '8px 14px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#a5b4fc' }}>AI-Native SEO</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Quote card — bottom left always */}
-        <div className="spa-float-b" style={{ position: 'absolute', bottom: 28, left: 24, zIndex: 10, maxWidth: 300 }}>
-          <div className="glass-strong spa-shimmer" style={{ borderRadius: 20, padding: '16px 20px' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(99,102,241,0.75)', letterSpacing: '0.1em', marginBottom: 8 }}>MANAV · SEO SEASON</div>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', lineHeight: 1.55, margin: '0 0 10px' }}>
-              "I don't do vanity SEO. I build search authority that compounds."
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {[1,2,3,4,5].map(i => <Star key={i} size={10} style={{ fill: '#facc15', color: '#facc15' }} />)}
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.28)', marginLeft: 4 }}>500+ Fiverr reviews</span>
+          {/* Quote — below the split, full width */}
+          <div style={{ marginTop: 52 }}>
+            <div className="glass spa-shimmer" style={{ borderRadius: 22, padding: '24px 28px', maxWidth: 640, display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+              <Quote size={20} style={{ color: 'rgba(99,102,241,0.6)', flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6, margin: '0 0 10px', fontStyle: 'italic' }}>
+                  "I don't do vanity SEO. I build search authority that compounds — and I do it with AI as the engine, human strategy as the driver."
+                </p>
+                <div style={{ display: 'flex', items: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>— Manav, Founder SEO Season</span>
+                  <span style={{ color: 'rgba(255,255,255,0.2)', margin: '0 6px' }}>·</span>
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    {[1,2,3,4,5].map(i => <Star key={i} size={11} style={{ fill: '#facc15', color: '#facc15' }} />)}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -196,11 +209,11 @@ export default function Index() {
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.015)', padding: '14px 24px' }}>
         <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px 28px' }}>
           {[
-            { icon: Star,        text: 'Fiverr Top Rated' },
+            { icon: Star,        text: 'Fiverr Top Rated Seller' },
             { icon: CheckCircle, text: '500+ Audits Delivered' },
-            { icon: Brain,       text: 'AI-Native SEO' },
-            { icon: Globe,       text: '30+ Countries' },
-            { icon: ShieldCheck, text: 'Validation-First' },
+            { icon: Brain,       text: 'AI-Native SEO Methodology' },
+            { icon: Globe,       text: 'Clients in 30+ Countries' },
+            { icon: ShieldCheck, text: 'Validation-First Approach' },
           ].map(({ icon: Icon, text }) => (
             <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
               <Icon size={12} style={{ color: 'rgba(99,102,241,0.55)', flexShrink: 0 }} />{text}
@@ -211,10 +224,10 @@ export default function Index() {
 
       {/* ══ STATS ══ */}
       <section style={{ padding: '80px 24px', position: 'relative', overflow: 'hidden' }}>
-        <div className="spa-nebula" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '60vw', height: '50vh', background: 'radial-gradient(ellipse,rgba(99,102,241,0.07) 0%,transparent 65%)', pointerEvents: 'none' }} />
+        <div className="spa-nebula" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '55vw', height: '50vh', background: 'radial-gradient(ellipse,rgba(99,102,241,0.08) 0%,transparent 65%)', pointerEvents: 'none' }} />
         <div style={{ maxWidth: 1280, margin: '0 auto', position: 'relative' }}>
           <div style={{ textAlign: 'center', marginBottom: 44 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(99,102,241,0.65)', marginBottom: 10 }}>THE NUMBERS</div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(99,102,241,0.65)', marginBottom: 10 }}>BY THE NUMBERS</div>
             <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.5rem)', fontWeight: 800, color: '#fff', margin: 0 }}>Results that speak for themselves</h2>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
@@ -224,10 +237,10 @@ export default function Index() {
               { value: '10x',   label: 'AI Citations',     color: '#a78bfa', sub: 'ChatGPT · Perplexity' },
               { value: '94%',   label: 'Client Retention', color: '#facc15', sub: '12+ month average' },
             ].map(({ value, label, color, sub }) => (
-              <div key={label} className="glass spa-card spa-float-b" style={{ borderRadius: 20, padding: '26px 20px', textAlign: 'center' }}>
+              <div key={label} className="glass spa-card spa-float-b" style={{ borderRadius: 20, padding: '28px 20px', textAlign: 'center' }}>
                 <div style={{ fontSize: 36, fontWeight: 900, color, marginBottom: 6, lineHeight: 1 }}>{value}</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.33)' }}>{sub}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.32)' }}>{sub}</div>
               </div>
             ))}
           </div>
@@ -242,17 +255,15 @@ export default function Index() {
               <Zap size={12} style={{ color: '#6366f1' }} />
               <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em' }}>FREE SEO AUDIT TOOL</span>
             </div>
-            <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.4rem)', fontWeight: 800, color: '#fff', marginBottom: 10 }}>
-              See Where You Stand in 60 Seconds
-            </h2>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 15, maxWidth: 480, margin: '0 auto' }}>
+            <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.4rem)', fontWeight: 800, color: '#fff', marginBottom: 10 }}>See Where You Stand in 60 Seconds</h2>
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 15, maxWidth: 460, margin: '0 auto' }}>
               Powered by the same AI framework used for every client. No fluff — just the truth.
             </p>
           </div>
           <div style={{ position: 'relative', borderRadius: 24, overflow: 'hidden' }}>
             <SeoEngine />
             {(!user || !isApproved) && (
-              <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,4,13,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 24 }}>
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,4,13,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 24 }}>
                 <div style={{ textAlign: 'center', maxWidth: 340, padding: 28 }}>
                   <div className="glass" style={{ height: 60, width: 60, borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
                     <Lock size={22} style={{ color: '#6366f1' }} />
@@ -274,16 +285,16 @@ export default function Index() {
 
       {/* ══ WHY MANAV ══ */}
       <section style={{ padding: '80px 24px', borderTop: '1px solid rgba(255,255,255,0.05)', position: 'relative', overflow: 'hidden' }}>
-        <div className="spa-nebula" style={{ position: 'absolute', top: 0, right: '5%', width: '45vw', height: '100%', background: 'radial-gradient(ellipse at top,rgba(139,92,246,0.07) 0%,transparent 60%)', pointerEvents: 'none' }} />
+        <div className="spa-nebula" style={{ position: 'absolute', top: 0, right: 0, width: '40vw', height: '100%', background: 'radial-gradient(ellipse at top right,rgba(139,92,246,0.08) 0%,transparent 60%)', pointerEvents: 'none' }} />
         <div style={{ maxWidth: 1280, margin: '0 auto', position: 'relative' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(290px,1fr))', gap: 48, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(290px,1fr))', gap: 52, alignItems: 'start' }}>
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(99,102,241,0.65)', marginBottom: 14 }}>WHY SEO SEASON</div>
               <h2 style={{ fontSize: 'clamp(1.8rem,3vw,2.4rem)', fontWeight: 800, color: '#fff', marginBottom: 18, lineHeight: 1.12 }}>
                 Most agencies sell you reports.<br />I sell you results.
               </h2>
-              <p style={{ color: 'rgba(255,255,255,0.4)', lineHeight: 1.75, fontSize: 15, marginBottom: 28 }}>
-                The SEO industry is broken. Agencies charge thousands for vanity metrics while your competitors steal your market share. Every strategy I run is validated before we scale it.
+              <p style={{ color: 'rgba(255,255,255,0.42)', lineHeight: 1.75, fontSize: 15, marginBottom: 28 }}>
+                The SEO industry is broken. Agencies charge thousands for vanity metrics while your competitors steal your market share. Every strategy I run is validated before we scale it, every dollar protected before we invest it.
               </p>
               {[
                 { icon: Brain,       text: 'AI-first methodology built for ChatGPT, Perplexity, and Google AI Overviews' },
@@ -291,20 +302,20 @@ export default function Index() {
                 { icon: TrendingUp,  text: 'Transparent dashboards showing real data, not agency spin' },
                 { icon: Star,        text: 'Fiverr Top Rated with 500+ five-star audits delivered' },
               ].map(({ icon: Icon, text }) => (
-                <div key={text} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-                  <div className="glass" style={{ height: 30, width: 30, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <div key={text} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+                  <div className="glass" style={{ height: 30, width: 30, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
                     <Icon size={13} style={{ color: '#6366f1' }} />
                   </div>
-                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.65, margin: 0 }}>{text}</p>
+                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.47)', lineHeight: 1.65, margin: 0 }}>{text}</p>
                 </div>
               ))}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
-                { title: 'AI Search Visibility',         desc: 'Get found in ChatGPT, Perplexity, and Google AI Overviews.', icon: Brain,       color: '#6366f1' },
-                { title: 'Live Keyword Rankings',        desc: 'Real SERP positions verified live — not 3-month-old estimates.', icon: BarChart3,   color: '#06b6d4' },
-                { title: 'Validation-First Strategy',   desc: 'Every tactic tested in a controlled sprint before scaling.', icon: ShieldCheck, color: '#4ade80' },
-                { title: 'Executive Strategy Launchpad',desc: 'Premium dashboard showing your campaign phase and growth accelerators.', icon: Sparkles,    color: '#a78bfa' },
+                { title: 'AI Search Visibility',         desc: 'Get found in ChatGPT, Perplexity, and Google AI Overviews — the new search frontier.',     icon: Brain,       color: '#6366f1' },
+                { title: 'Live Keyword Rankings',        desc: 'Real SERP positions verified live — not 3-month-old cached estimates.',                     icon: BarChart3,   color: '#06b6d4' },
+                { title: 'Validation-First Strategy',   desc: 'Every tactic is tested in a controlled sprint before we scale it. Zero wasted budget.',      icon: ShieldCheck, color: '#4ade80' },
+                { title: 'Executive Strategy Launchpad',desc: 'Premium dashboard showing your campaign phase, value realised, and growth accelerators.',    icon: Sparkles,    color: '#a78bfa' },
               ].map(({ title, desc, icon: Icon, color }) => (
                 <div key={title} className="glass spa-card" style={{ borderRadius: 18, padding: '18px 20px', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                   <div style={{ height: 38, width: 38, borderRadius: 13, background: `${color}18`, border: `1px solid ${color}28`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -312,7 +323,7 @@ export default function Index() {
                   </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 14, color: '#fff', marginBottom: 4 }}>{title}</div>
-                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.37)', lineHeight: 1.65, margin: 0 }}>{desc}</p>
+                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', lineHeight: 1.65, margin: 0 }}>{desc}</p>
                   </div>
                 </div>
               ))}
@@ -333,14 +344,16 @@ export default function Index() {
             Ready to stop guessing<br />and start growing?
           </h2>
           <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 16, marginBottom: 34, lineHeight: 1.65 }}>
-            Join brands winning in AI-native search. Your personalised growth dashboard is waiting.
+            Join brands winning in AI-native search.<br />Your personalised growth dashboard is waiting.
           </p>
           <button onClick={handlePortal} className="spa-btn"
             style={{ padding: '16px 40px', borderRadius: 18, fontSize: 16, display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             {user && isApproved ? 'Go to My Dashboard' : 'Request Client Portal Access'}
             <ArrowRight size={17} />
           </button>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>Approved clients only · Managed personally by Manav</p>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', marginTop: 4 }}>
+            Approved clients only · Managed personally by Manav
+          </p>
         </div>
       </section>
 
