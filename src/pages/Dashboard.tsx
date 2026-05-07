@@ -1,3 +1,4 @@
+import PortalNav from '@/components/PortalNav';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -473,24 +474,18 @@ export default function Dashboard() {
   }, [selectedProject]);
 
   const loadData = async () => {
-    /* Auth is handled by AuthContext — just use the data it provides */
-   if (authLoading || (!authChecked)) return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-        <p className="text-sm text-muted-foreground font-mono">Loading your growth portal...</p>
-      </div>
-    </div>
-  );
-
-    const cList = authClients;
-    const pList = authProjects;
-
-    setAllClients(cList);
-    setProjects(pList);
-    setClient(cList[0] || null);
-    if (pList.length) setSelectedProject(pList[0]);
-    setLoading(false);
+    try {
+      const cList = authClients || [];
+      const pList = authProjects || [];
+      setAllClients(cList);
+      setProjects(pList);
+      setClient(cList[0] || null);
+      if (pList.length) setSelectedProject(pList[0]);
+    } catch (e) {
+      console.error('Dashboard loadData:', e);
+    } finally {
+      setLoading(false); // always runs — never stuck
+    }
   };
 
   const loadProjectData = async (id: string) => {
@@ -603,52 +598,9 @@ export default function Dashboard() {
         />
       )}
 
-      {/* NAV */}
-      <div className="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src="/manav.jpg" alt="Manav" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary" style={{ objectPosition: 'center 20%' }} />
-            <div>
-              <div className="font-bold text-sm">SEO Season</div>
-              <div className="text-xs text-muted-foreground">{client.company} — Growth Portal</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {projects.length > 0 && (
-              <select
-                value={selectedProject?.id || ''}
-                onChange={e => {
-                  const proj = projects.find(x => x.id === e.target.value);
-                  setSelectedProject(proj);
-                  if (proj) {
-                    const pc = allClients.find(c => c.id === proj.client_id);
-                    if (pc) setClient(pc);
-                  }
-                }}
-                className="h-8 rounded-lg border border-border bg-background/60 text-xs px-3 max-w-[200px]"
-              >
-                {allClients.map(c => {
-                  const cp = projects.filter(p => p.client_id === c.id);
-                  if (!cp.length) return null;
-                  return (
-                    <optgroup key={c.id} label={c.company}>
-                      {cp.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </optgroup>
-                  );
-                })}
-              </select>
-            )}
-            <Button variant="outline" size="sm"
-             onClick={async () => { await signOut(); navigate('/'); }}
-              className="border-border text-xs">
-              <LogOut className="h-3 w-3 mr-1.5" />Sign Out
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
-
+{/* NAV */}
+      <PortalNav company={`${client?.company} — Growth Portal`} />
+      
         {/* Welcome */}
         <div className="rounded-2xl border border-border bg-gradient-to-r from-primary/10 to-transparent p-5 flex items-center justify-between">
           <div>
