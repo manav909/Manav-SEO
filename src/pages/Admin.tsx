@@ -301,30 +301,39 @@ export default function Admin() {
 
     try {
       const clientData = clients.find(c => c.id === proj.client_id);
-      const { data: metrics } = await supabase
+     const { data: allMetricsData } = await supabase
         .from('metrics').select('*')
         .eq('project_id', proj.id)
-        .order('recorded_at', { ascending: false })
-        .limit(1);
-      const latest = metrics?.[0] || {};
+        .order('recorded_at');
+      const allMetrics = allMetricsData || [];
+      const latest     = allMetrics[allMetrics.length - 1] || {};
 
       const res = await fetch('/api/launchpad', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          client_name:      clientData?.name            || '',
-          company:          clientData?.company         || '',
-          industry:         clientData?.industry        || '',
-          website:          proj.url,
-          keywords:         proj.keywords               || [],
-          competitors:      proj.competitors            || [],
-          current_phase:    launchpadPhase,
-          phase_context:    launchpadContext,
-          latest_metrics:   latest,
-          keyword_rankings: latest.keyword_rankings     || [],
-          retainer_amount:  clientData?.retainer_amount || 0,
-          months_active:    launchpadMonths,
+          client_name:        clientData?.name                              || '',
+          company:            clientData?.company                           || '',
+          industry:           clientData?.industry                         || '',
+          website:            proj.url,
+          keywords:           proj.keywords                                 || [],
+          competitors:        proj.competitors                              || [],
+          current_phase:      launchpadPhase,
+          phase_context:      launchpadContext,
+          months_active:      launchpadMonths,
+          retainer_amount:    clientData?.retainer_amount                  || 0,
+          /* ── pass ALL existing data — no re-crawling ── */
+          latest_metrics:     latest,
+          saved_analysis:     proj.last_analysis?.analysis                 || {},
+          keyword_rankings:   latest.keyword_rankings
+                               || proj.last_analysis?.analysis?.keyword_rankings
+                               || [],
+          keyword_insights:   latest.explanations?.keyword_insights
+                               || proj.last_analysis?.analysis?.keyword_insights
+                               || proj.last_analysis?.analysis?.explanations?.keyword_insights
+                               || {},
+          historical_metrics: allMetrics,
         }),
       });
 
