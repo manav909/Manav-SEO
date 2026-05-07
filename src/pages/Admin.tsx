@@ -1,3 +1,4 @@
+import React, { useEffect, useState } from 'react';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,7 @@ import {
   Users, Plus, Globe, CheckCircle,
   ChevronDown, ChevronUp, Zap, DollarSign,
   ArrowLeft, Sparkles, Save, RefreshCw,
-  AlertCircle, Rocket
+  AlertCircle, Rocket, X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -41,6 +42,9 @@ export default function Admin() {
   const [loading,             setLoading]             = useState(false);
   const [fetchingAI,          setFetchingAI]          = useState(false);
   const [generatingLaunchpad, setGeneratingLaunchpad] = useState(false);
+  const [launchpadTimer, setLaunchpadTimer]           = useState(0);
+  const [launchpadError, setLaunchpadError]           = useState('');
+  const launchpadAbortRef = React.useRef<AbortController | null>(null);
 
   /* ── UI state ── */
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
@@ -275,8 +279,26 @@ export default function Admin() {
   const generateLaunchpad = async () => {
     const proj = projects.find(p => p.id === selectedProject);
     if (!proj) return toast({ title: 'Select a project first', variant: 'destructive' });
+
     setGeneratingLaunchpad(true);
     setLaunchpadPreview(null);
+    setLaunchpadError('');
+    setLaunchpadTimer(0);
+
+    // Start timer
+    const timerInterval = setInterval(() => {
+      setLaunchpadTimer(t => t + 1);
+    }, 1000);
+
+    // Abort controller for cancel
+    const controller = new AbortController();
+    launchpadAbortRef.current = controller;
+
+    // Hard timeout at 90 seconds
+    const hardTimeout = setTimeout(() => {
+      controller.abort();
+    }, 90000);
+
     try {
       const clientData = clients.find(c => c.id === proj.client_id);
       const { data: metrics } = await supabase
@@ -289,23 +311,30 @@ export default function Admin() {
       const res = await fetch('/api/launchpad', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
-          client_name:      clientData?.name             || '',
-          company:          clientData?.company          || '',
-          industry:         clientData?.industry         || '',
+          client_name:      clientData?.name            || '',
+          company:          clientData?.company         || '',
+          industry:         clientData?.industry        || '',
           website:          proj.url,
-          keywords:         proj.keywords                || [],
-          competitors:      proj.competitors             || [],
+          keywords:         proj.keywords               || [],
+          competitors:      proj.competitors            || [],
           current_phase:    launchpadPhase,
           phase_context:    launchpadContext,
           latest_metrics:   latest,
-          keyword_rankings: latest.keyword_rankings      || [],
-          retainer_amount:  clientData?.retainer_amount  || 0,
+          keyword_rankings: latest.keyword_rankings     || [],
+          retainer_amount:  clientData?.retainer_amount || 0,
           months_active:    launchpadMonths,
         }),
       });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`API error ${res.status}: ${errText.slice(0, 200)}`);
+      }
+
       const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      if (!data.success) throw new Error(data.error || 'Generation failed');
 
       await supabase.from('projects').update({
         launchpad_data:         data,
@@ -316,10 +345,26 @@ export default function Admin() {
       fetchAll();
       setLaunchpadPreview(data);
       toast({ title: 'Launchpad generated!', description: 'Live on client portal immediately.' });
+
     } catch (err: any) {
-      toast({ title: 'Failed to generate launchpad', description: err.message, variant: 'destructive' });
+      if (err.name === 'AbortError') {
+        setLaunchpadError('Request was cancelled or timed out after 90 seconds. Try again or check your Vercel function logs.');
+      } else {
+        setLaunchpadError(err.message || 'Unknown error occurred');
+      }
+      toast({ title: 'Generation failed', description: err.message, variant: 'destructive' });
+    } finally {
+      clearInterval(timerInterval);
+      clearTimeout(hardTimeout);
+      setGeneratingLaunchpad(false);
     }
+  };
+
+  const cancelLaunchpad = () => {
+    launchpadAbortRef.current?.abort();
     setGeneratingLaunchpad(false);
+    setLaunchpadTimer(0);
+    toast({ title: 'Cancelled', description: 'Launchpad generation was stopped.' });
   };
 
   /* ══════════════════════════════════════════
@@ -907,24 +952,89 @@ export default function Admin() {
                   </p>
                 </div>
 
-                <Button onClick={generateLaunchpad} disabled={generatingLaunchpad || !selectedProject}
-                  className="w-full h-12 bg-gradient-to-r from-primary to-purple-500 text-white font-semibold">
-                  {generatingLaunchpad ? (
-                    <span className="flex items-center gap-3">
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Generating executive strategy report...
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <Rocket className="h-4 w-4" />
-                      Generate & Publish Launchpad
-                    </span>
-                  )}
-                </Button>
+                {!generatingLaunchpad ? (
+                  <Button onClick={generateLaunchpad} disabled={!selectedProject}
+                    className="w-full h-12 bg-gradient-to-r from-primary to-purple-500 text-white font-semibold">
+                    <Rocket className="h-4 w-4 mr-2" />Generate & Publish Launchpad
+                  </Button>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Progress bar */}
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="h-4 w-4 text-primary animate-spin" />
+                          <span className="text-sm font-semibold">Generating...</span>
+                        </div>
+                        <span className="text-sm font-mono text-primary">{launchpadTimer}s</span>
+                      </div>
 
-                {generatingLaunchpad && (
-                  <div className="text-xs text-center text-muted-foreground font-mono animate-pulse">
-                    Analysing campaign data · Identifying gaps · Crafting accelerator opportunities...
+                      {/* Animated progress bar */}
+                      <div className="h-2 w-full rounded-full bg-background/60 overflow-hidden mb-3">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-primary to-purple-500 transition-all duration-1000"
+                          style={{ width: `${Math.min(95, (launchpadTimer / 60) * 100)}%` }}
+                        />
+                      </div>
+
+                      {/* Step indicators */}
+                      <div className="grid grid-cols-3 gap-2 text-xs text-center">
+                        {[
+                          { label: 'Loading data',       done: launchpadTimer > 3  },
+                          { label: 'AI analysis',        done: launchpadTimer > 15 },
+                          { label: 'Building report',    done: launchpadTimer > 30 },
+                        ].map(({ label, done }) => (
+                          <div key={label} className={`rounded-lg border px-2 py-1.5 transition-colors ${
+                            done
+                              ? 'border-green-400/30 bg-green-400/10 text-green-400'
+                              : 'border-border text-muted-foreground'
+                          }`}>
+                            {done ? '✓' : '·'} {label}
+                          </div>
+                        ))}
+                      </div>
+
+                      {launchpadTimer > 10 && launchpadTimer < 50 && (
+                        <p className="text-xs text-muted-foreground text-center mt-2 font-mono animate-pulse">
+                          {launchpadTimer < 20 ? 'Analysing campaign data and competitor gaps...' :
+                           launchpadTimer < 35 ? 'Claude is crafting your executive strategy...' :
+                           'Almost done — building accelerator opportunities...'}
+                        </p>
+                      )}
+
+                      {launchpadTimer >= 50 && (
+                        <p className="text-xs text-orange-400 text-center mt-2 font-mono">
+                          Taking longer than usual — still running ({launchpadTimer}s)...
+                        </p>
+                      )}
+                    </div>
+
+                    <Button onClick={cancelLaunchpad} variant="outline"
+                      className="w-full border-red-400/30 text-red-400 hover:bg-red-400/10">
+                      <X className="h-4 w-4 mr-2" />Cancel Generation
+                    </Button>
+                  </div>
+                )}
+
+                {/* Error state */}
+                {launchpadError && !generatingLaunchpad && (
+                  <div className="rounded-xl border border-red-400/30 bg-red-400/5 p-4">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="text-sm font-semibold text-red-400 mb-1">Generation Failed</div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">{launchpadError}</p>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          <strong className="text-foreground">Debug steps:</strong>
+                          <ol className="list-decimal ml-4 mt-1 space-y-0.5">
+                            <li>Check Vercel → Functions → launchpad logs</li>
+                            <li>Verify ANTHROPIC_API_KEY is set in Vercel env vars</li>
+                            <li>Check if function is timing out (add maxDuration: 60 to api/launchpad.ts)</li>
+                            <li>Try with shorter phase context first</li>
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
