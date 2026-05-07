@@ -1,3 +1,4 @@
+import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState, useRef } from 'react';
 import { Sparkles, Zap, Star, TrendingUp, Brain, ShieldCheck, ChevronDown, Quote, CheckCircle, Globe, BarChart3, Search, Cpu, Lock, LogOut, User } from 'lucide-react';
 import { SeoEngine } from '@/components/SeoEngine';
@@ -9,6 +10,7 @@ import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 /* ── TRUST PANEL (unchanged) ── */
 const TrustPanel = () => {
+  const { user, isApproved, authChecked } = useAuth();
   const [auditStep, setAuditStep] = useState(0);
   const [score, setScore] = useState(0);
   const [clients, setClients] = useState(487);
@@ -247,19 +249,17 @@ const Index = () => {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [approved, setApproved] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
+  /* Redirect if already logged in and approved */
+  useEffect(() => {
+    if (authChecked && user && isApproved) {
+      navigate('/dashboard');
+    }
+  }, [authChecked, user, isApproved]);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   // Check session on load
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        await checkApproval();
-      }
-      setCheckingAuth(false);
-    };
-    checkUser();
+    const { user, isApproved, authChecked } = useAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null);
