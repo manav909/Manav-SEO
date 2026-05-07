@@ -1,12 +1,10 @@
 import React from 'react';
 
+interface Props { children: React.ReactNode; }
 interface State { hasError: boolean; error: string; }
 
-export class ErrorBoundary extends React.Component
-  { children: React.ReactNode },
-  State
-> {
-  constructor(props: any) {
+export class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
     super(props);
     this.state = { hasError: false, error: '' };
   }
@@ -30,7 +28,7 @@ export class ErrorBoundary extends React.Component
               {this.state.error}
             </p>
             <button
-              onClick={() => window.location.href = '/'}
+              onClick={() => { window.location.href = '/'; }}
               className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
             >
               Reload App
