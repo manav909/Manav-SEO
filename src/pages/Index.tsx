@@ -1,452 +1,263 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useEffect, useState, useRef } from 'react';
-import { Sparkles, Zap, Star, TrendingUp, Brain, ShieldCheck, ChevronDown, Quote, CheckCircle, Globe, BarChart3, Search, Cpu, Lock, LogOut, User } from 'lucide-react';
-import { SeoEngine } from '@/components/SeoEngine';
 import AuthModal from '@/components/AuthModal';
-import { supabase } from '@/lib/supabase';
+import { SeoEngine } from '@/components/SeoEngine';
 import { Button } from '@/components/ui/button';
-import { toast } from '@/hooks/use-toast';
-import type { User as SupabaseUser } from '@supabase/supabase-js';
+import {
+  Sparkles, Star, TrendingUp, Brain, ShieldCheck,
+  CheckCircle, Globe, BarChart3, Zap, ArrowRight,
+  Lock, LogOut
+} from 'lucide-react';
 
-/* ── TRUST PANEL (unchanged) ── */
-const TrustPanel = () => {
-  const { user, isApproved, authChecked } = useAuth();
-  const [auditStep, setAuditStep] = useState(0);
-  const [score, setScore] = useState(0);
-  const [clients, setClients] = useState(487);
-  const [activity, setActivity] = useState([
-    { id: 1, flag: '🇺🇸', text: 'TechStartup.io',  action: 'audit complete', score: 94, time: '2m ago' },
-    { id: 2, flag: '🇬🇧', text: 'GrowthLabs.co',   action: 'GEO report',     score: 87, time: '5m ago' },
-    { id: 3, flag: '🇦🇪', text: 'DubaiRetail.ae',  action: 'on-page fix',    score: 91, time: '9m ago' },
-  ]);
-  const [typing, setTyping] = useState('');
-  const [pulseIdx, setPulseIdx] = useState(0);
-  const typingRef = useRef(0);
+export default function Index() {
+  const navigate = useNavigate();
+  const { user, isApproved, authChecked, loading, signOut } = useAuth();
+  const [showModal, setShowModal] = useState(false);
 
-  const auditSteps = [
-    { icon: Search,     label: 'Crawling URL...',             color: 'text-blue-400' },
-    { icon: BarChart3,  label: 'Analyzing SERP intent...',    color: 'text-purple-400' },
-    { icon: Globe,      label: 'Mapping competitors...',      color: 'text-cyan-400' },
-    { icon: Cpu,        label: 'Synthesizing AI insights...', color: 'text-yellow-400' },
-    { icon: Lock,       label: 'Checking technical SEO...',   color: 'text-orange-400' },
-    { icon: CheckCircle,label: 'Report ready ✓',              color: 'text-green-400' },
-  ];
-
-  const domains = ['ecommerce-brand.com', 'saas-startup.io', 'localservice.ae', 'b2b-agency.co'];
-
+  /* Redirect approved users straight to dashboard */
   useEffect(() => {
-    const t = setInterval(() => setAuditStep(s => (s + 1) % auditSteps.length), 1800);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    let v = 0;
-    const t = setInterval(() => { v += 2; setScore(v); if (v >= 96) clearInterval(t); }, 30);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => setClients(c => c + 1), 8000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    let domainIdx = 0; let charIdx = 0; let deleting = false;
-    const tick = () => {
-      const domain = domains[domainIdx];
-      if (!deleting) {
-        charIdx++; setTyping(domain.slice(0, charIdx));
-        if (charIdx === domain.length) { deleting = true; setTimeout(tick, 1200); return; }
-      } else {
-        charIdx--; setTyping(domain.slice(0, charIdx));
-        if (charIdx === 0) { deleting = false; domainIdx = (domainIdx + 1) % domains.length; }
-      }
-      typingRef.current = window.setTimeout(tick, deleting ? 40 : 80);
-    };
-    typingRef.current = window.setTimeout(tick, 600);
-    return () => clearTimeout(typingRef.current);
-  }, []);
-
-  useEffect(() => {
-    const newEntries = [
-      { flag: '🇮🇳', text: 'IndiaFintech.in',  action: 'technical audit', score: 89 },
-      { flag: '🇸🇬', text: 'SGrowth.sg',       action: 'GEO report',      score: 93 },
-      { flag: '🇺🇸', text: 'HealthApp.com',    action: 'on-page fix',     score: 88 },
-      { flag: '🇩🇪', text: 'EuroSaaS.de',      action: 'off-page plan',   score: 91 },
-      { flag: '🇦🇺', text: 'AussieStore.au',   action: 'audit complete',  score: 95 },
-    ];
-    let i = 0;
-    const t = setInterval(() => {
-      const entry = newEntries[i % newEntries.length];
-      setActivity(prev => [
-        { ...entry, id: Date.now(), time: 'just now' },
-        { ...prev[0], time: '2m ago' },
-        { ...prev[1], time: '5m ago' },
-      ]);
-      i++;
-    }, 4000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => setPulseIdx(i => (i + 1) % 3), 1400);
-    return () => clearInterval(t);
-  }, []);
-
-  const StepIcon = auditSteps[auditStep].icon;
-
-  return (
-    <div className="relative w-full max-w-[440px] lg:max-w-[480px] mx-auto lg:ml-auto">
-      <div className="absolute -inset-4 rounded-3xl bg-primary/10 blur-2xl pointer-events-none" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-64 w-64 rounded-full bg-primary/15 blur-3xl pointer-events-none" />
-      <div className="relative rounded-2xl border border-border bg-card/80 backdrop-blur-xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.5)]">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-secondary/30">
-          <div className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
-          <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/70" />
-          <div className="h-2.5 w-2.5 rounded-full bg-green-500/70" />
-          <span className="ml-2 text-xs font-mono text-muted-foreground">manav-seo-engine.live</span>
-          <span className="ml-auto flex items-center gap-1 text-xs text-green-400 font-mono">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />LIVE
-          </span>
-        </div>
-        <div className="p-5 space-y-4">
-          <div className="rounded-xl border border-border bg-background/60 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Running Audit</span>
-              <span className="text-xs font-mono text-primary animate-pulse">● processing</span>
-            </div>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs text-muted-foreground">URL:</span>
-              <span className="text-xs font-mono text-foreground">
-                {typing}<span className="animate-ping inline-block w-0.5 h-3 bg-primary ml-0.5 relative -top-0.5" />
-              </span>
-            </div>
-            <div className="space-y-1.5">
-              {auditSteps.map((step, i) => {
-                const Icon = step.icon;
-                const done = i < auditStep;
-                const active = i === auditStep;
-                return (
-                  <div key={i} className={`flex items-center gap-2 text-xs transition-all duration-500 ${done ? 'opacity-40' : active ? 'opacity-100' : 'opacity-20'}`}>
-                    <Icon className={`h-3 w-3 shrink-0 ${active ? step.color : done ? 'text-green-400' : 'text-muted-foreground'}`} />
-                    <span className={active ? step.color : done ? 'text-green-400' : 'text-muted-foreground'}>{step.label}</span>
-                    {done && <CheckCircle className="h-2.5 w-2.5 text-green-400 ml-auto" />}
-                    {active && <span className="ml-auto flex gap-0.5">{[0,1,2].map(d => <span key={d} className="h-1 w-1 rounded-full bg-primary animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />)}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-1 rounded-xl border border-border bg-background/60 p-3 flex flex-col items-center justify-center">
-              <div className="relative h-14 w-14 mb-1">
-                <svg className="h-14 w-14 -rotate-90" viewBox="0 0 56 56">
-                  <circle cx="28" cy="28" r="22" fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
-                  <circle cx="28" cy="28" r="22" fill="none" stroke="hsl(var(--primary))" strokeWidth="4" strokeLinecap="round"
-                    strokeDasharray={`${2 * Math.PI * 22}`}
-                    strokeDashoffset={`${2 * Math.PI * 22 * (1 - score / 100)}`}
-                    style={{ transition: 'stroke-dashoffset 0.3s ease' }} />
-                </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-primary">{score}</span>
-              </div>
-              <span className="text-xs text-muted-foreground text-center leading-tight">SEO Score</span>
-            </div>
-            <div className="col-span-2 space-y-2">
-              {[
-                { label: 'Clients Served', value: clients.toString(), color: 'text-primary' },
-                { label: 'Avg. Score Lift', value: '+34pts', color: 'text-green-400' },
-                { label: 'Reports Today', value: '12', color: 'text-yellow-400' },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-1.5">
-                  <span className="text-xs text-muted-foreground">{label}</span>
-                  <span className={`text-xs font-bold font-mono ${color}`}>{value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-background/60 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Recent Audits</span>
-              <span className="text-xs text-green-400 font-mono">live feed</span>
-            </div>
-            <div className="space-y-2">
-              {activity.map((item, i) => (
-                <div key={item.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-all duration-700 ${i === 0 ? 'bg-primary/8 border border-primary/20' : 'bg-transparent'} ${pulseIdx === i ? 'opacity-100' : 'opacity-70'}`}>
-                  <span className="text-base shrink-0">{item.flag}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-mono text-foreground truncate">{item.text}</div>
-                    <div className="text-xs text-muted-foreground truncate">{item.action}</div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <div className="text-xs font-bold text-green-400">{item.score}</div>
-                    <div className="text-xs text-muted-foreground">{item.time}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-1.5">
-              {[...Array(5)].map((_, i) => <Star key={i} className="h-3 w-3 text-yellow-400 fill-yellow-400" />)}
-              <span className="text-xs text-muted-foreground ml-1">4.9 · Fiverr</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <ShieldCheck className="h-3 w-3 text-primary" />
-              Trusted by 500+ brands
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ── LOCKED OVERLAY — shown over tool when not approved ── */
-const LockedOverlay = ({ onSignIn }: { onSignIn: () => void }) => (
-  <div className="relative w-full max-w-4xl mx-auto px-4 sm:px-6">
-    <div className="relative rounded-2xl border border-border bg-card/60 backdrop-blur-xl overflow-hidden">
-      {/* Blurred tool preview */}
-      <div className="filter blur-sm pointer-events-none select-none opacity-40 p-10">
-        <div className="grid sm:grid-cols-2 gap-5 mb-8">
-          <div className="h-12 rounded-lg bg-secondary/60" />
-          <div className="h-12 rounded-lg bg-secondary/60" />
-        </div>
-        <div className="grid grid-cols-4 gap-3 mb-8">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-24 rounded-xl bg-secondary/60" />)}
-        </div>
-        <div className="h-14 rounded-lg bg-secondary/60" />
-      </div>
-
-      {/* Lock overlay */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm p-6 text-center">
-        <div className="h-16 w-16 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center mb-4 shadow-[0_0_30px_hsl(var(--primary)/0.2)]">
-          <Lock className="h-7 w-7 text-primary" />
-        </div>
-        <h3 className="text-xl font-bold mb-2">This Tool is Private</h3>
-        <p className="text-muted-foreground text-sm max-w-sm mb-6 leading-relaxed">
-          Manav's SEO audit engine is available to approved clients only.
-          Sign in if you have access, or request it below.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Button
-            onClick={onSignIn}
-            className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold px-8"
-          >
-            <User className="h-4 w-4 mr-2" />
-            Sign In / Request Access
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground mt-4">
-          New requests approved within 24 hours
-        </p>
-      </div>
-    </div>
-  </div>
-);
-
-/* ── MAIN PAGE ── */
-const Index = () => {
-  const [user, setUser] = useState<SupabaseUser | null>(null);
-  const [approved, setApproved] = useState(false);
-  const [showAuth, setShowAuth] = useState(false);
-  /* Redirect if already logged in and approved */
-  useEffect(() => {
-    if (authChecked && user && isApproved) {
+    if (authChecked && !loading && user && isApproved) {
       navigate('/dashboard');
     }
-  }, [authChecked, user, isApproved]);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  }, [authChecked, loading, user, isApproved, navigate]);
 
-  // Check session on load
-  useEffect(() => {
-    const { user, isApproved, authChecked } = useAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) await checkApproval();
-      else { setApproved(false); }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const checkApproval = async () => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('approved')
-      .single();
-    setApproved(data?.approved ?? false);
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setApproved(false);
-    toast({ title: 'Signed out', description: 'See you next time!' });
-  };
-
-  const handleAuthenticated = async () => {
-    await checkApproval();
+  const handleSignInClick = () => {
+    if (user && isApproved) { navigate('/dashboard'); return; }
+    setShowModal(true);
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden">
-      <div className="absolute inset-0 bg-grid pointer-events-none" />
-      <div className="pointer-events-none absolute -top-32 -left-32 h-[600px] w-[600px] rounded-full bg-primary/10 blur-[120px]" />
-      <div className="pointer-events-none absolute top-20 right-0 h-[500px] w-[500px] rounded-full bg-primary/8 blur-[100px]" />
+    <div className="min-h-screen bg-background text-foreground">
 
-      {/* AUTH MODAL */}
-      {showAuth && (
-        <AuthModal
-          onClose={() => setShowAuth(false)}
-          onAuthenticated={handleAuthenticated}
-        />
-      )}
+      {showModal && <AuthModal onClose={() => setShowModal(false)} />}
 
       {/* NAV */}
-      <nav className="relative z-20 flex items-center justify-between px-6 sm:px-10 py-5 max-w-7xl mx-auto">
-        <div className="flex items-center gap-3">
-          <div className="relative h-10 w-10 shrink-0">
-            <img
-              src="/manav.jpg"
-              alt="Manav"
-              className="h-10 w-10 rounded-full object-cover"
-              style={{ objectPosition: 'center 20%' }}
-            />
-            <div className="absolute inset-0 rounded-full ring-2 ring-primary shadow-[0_0_16px_hsl(var(--primary)/0.5)]" />
+      <nav className="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img src="/manav.jpg" alt="Manav"
+              className="h-9 w-9 rounded-full object-cover ring-2 ring-primary"
+              style={{ objectPosition: 'center 20%' }} />
+            <div>
+              <div className="font-bold text-sm">SEO Season</div>
+              <div className="text-xs text-muted-foreground">by Manav</div>
+            </div>
           </div>
-          <span className="font-bold text-lg tracking-tight">
-            SEO<span className="text-primary"> Season</span>
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          {!checkingAuth && (
-            user ? (
-              <div className="flex items-center gap-3">
-                <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-muted-foreground border border-border rounded-full px-3 py-1.5 bg-card/60 backdrop-blur">
-                  <div className={`h-2 w-2 rounded-full ${approved ? 'bg-green-400' : 'bg-yellow-400'} animate-pulse`} />
-                  {approved ? 'Access Granted' : 'Pending Approval'}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSignOut}
-                  className="border-border text-xs h-8 px-3"
-                >
-                  <LogOut className="h-3 w-3 mr-1.5" />
-                  Sign Out
+          <div className="flex items-center gap-3">
+            {user && isApproved ? (
+              <>
+                <Button size="sm" onClick={() => navigate('/dashboard')}
+                  className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground text-xs">
+                  <BarChart3 className="h-3.5 w-3.5 mr-1.5" />My Dashboard
                 </Button>
-              </div>
+                <Button size="sm" variant="outline" onClick={() => navigate('/launchpad')}
+                  className="border-border text-xs">
+                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />Launchpad
+                </Button>
+                <Button size="sm" variant="ghost"
+                  onClick={async () => { await signOut(); }}
+                  className="text-xs text-muted-foreground">
+                  <LogOut className="h-3.5 w-3.5" />
+                </Button>
+              </>
             ) : (
-              <Button
-                onClick={() => setShowAuth(true)}
-                size="sm"
-                className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground text-xs h-8 px-4"
-              >
-                <User className="h-3 w-3 mr-1.5" />
-                Sign In
+              <Button size="sm" onClick={handleSignInClick}
+                className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground text-xs">
+                Client Portal
               </Button>
-            )
-          )}
+            )}
+          </div>
         </div>
       </nav>
 
       {/* HERO */}
-      <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 pt-4 pb-6">
-        <div className="grid lg:grid-cols-[1fr_480px] gap-8 items-center">
-          <div className="text-left relative z-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card/60 backdrop-blur text-xs font-mono text-muted-foreground mb-6 animate-fade-up">
-              <Zap className="h-3 w-3 text-primary" />
-              Strategy is expensive. Guessing is even costlier.
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5 pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-6 py-20 sm:py-28">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 text-xs font-mono text-primary bg-primary/10 border border-primary/20 rounded-full px-3 py-1.5 mb-6">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              AI-Native SEO · Fiverr Top Rated · 500+ Brands Grown
             </div>
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-5 animate-fade-up" style={{ animationDelay: '0.05s' }}>
-              I'm <span className="text-gradient-primary">Manav.</span><br />
-              I Don't Do<br />
-              <span className="relative inline-block">
-                Vanity SEO.
-                <span className="absolute -bottom-1 left-0 h-1 w-full rounded-full bg-gradient-to-r from-primary to-primary-glow opacity-60" />
-              </span>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-6">
+              I'm Manav. I architect the{' '}
+              <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                end-to-end digital growth
+              </span>{' '}
+              for brands that can't afford to fail.
             </h1>
-            <p className="text-lg text-muted-foreground leading-relaxed mb-7 max-w-md animate-fade-up" style={{ animationDelay: '0.1s' }}>
-              I architect end-to-end digital growth for brands that can't afford to fail —
-              powered by real data, deep strategy, and AI that actually knows what it's doing.
+            <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
+              Strategy is expensive. Guessing is even costlier.
             </p>
-            <div className="flex flex-wrap gap-3 mb-7 animate-fade-up" style={{ animationDelay: '0.15s' }}>
-              {[
-                { value: '500+',    label: 'Brands Scaled', icon: TrendingUp },
-                { value: '4.9★',   label: 'Fiverr Rating',  icon: Star },
-                { value: '90 Days', label: 'Avg. Results',  icon: Sparkles },
-              ].map(({ value, label, icon: Icon }) => (
-                <div key={label} className="flex items-center gap-2.5 rounded-2xl border border-border bg-card/60 backdrop-blur px-4 py-2.5">
-                  <Icon className="h-4 w-4 text-primary shrink-0" />
-                  <div>
-                    <div className="text-base font-bold text-foreground leading-none">{value}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+            <div className="flex flex-wrap gap-4">
+              <Button size="lg"
+                onClick={handleSignInClick}
+                className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold h-12 px-8">
+                {user && isApproved ? 'Go to Dashboard' : 'Access Client Portal'}
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* TRUST STRIP */}
+      <section className="border-y border-border bg-card/40 py-6">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-wrap items-center justify-center gap-8 text-sm text-muted-foreground">
+            {[
+              { icon: Star,        text: 'Fiverr Top Rated Seller' },
+              { icon: CheckCircle, text: '500+ SEO Audits Delivered' },
+              { icon: Brain,       text: 'AI-Native SEO Methodology' },
+              { icon: Globe,       text: 'Clients Across 30+ Countries' },
+              { icon: ShieldCheck, text: 'Validation-First Approach' },
+            ].map(({ icon: Icon, text }) => (
+              <div key={text} className="flex items-center gap-2">
+                <Icon className="h-4 w-4 text-primary" />
+                <span>{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* BRAND IMAGE STRIP */}
+      <section className="relative overflow-hidden">
+        <div className="relative h-64 sm:h-80">
+          <img src="/manavseo.png" alt="Manav SEO"
+            className="w-full h-full object-cover object-center opacity-60" />
+          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/50 to-background/20" />
+          <div className="absolute inset-0 flex items-center px-8 sm:px-16">
+            <div className="max-w-lg">
+              <p className="text-2xl sm:text-3xl font-bold leading-snug text-foreground mb-3">
+                "I don't do vanity SEO. I build search authority that compounds."
+              </p>
+              <p className="text-muted-foreground text-sm">— Manav, SEO Season</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SEO TOOL */}
+      <section className="py-16 relative">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 text-xs font-mono text-primary bg-primary/10 border border-primary/20 rounded-full px-3 py-1.5 mb-4">
+              <Zap className="h-3 w-3" />Free SEO Audit Tool
+            </div>
+            <h2 className="text-3xl font-bold mb-3">See Where You Stand in 60 Seconds</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              Get a professional SEO audit powered by the same AI framework I use for every client.
+              No fluff. Just the truth about your search visibility.
+            </p>
+          </div>
+
+          {/* Lock overlay for non-approved users */}
+          <div className="relative">
+            <SeoEngine />
+            {(!user || !isApproved) && (
+              <div className="absolute inset-0 bg-background/80 backdrop-blur-sm rounded-2xl flex items-center justify-center z-10">
+                <div className="text-center p-8">
+                  <div className="h-14 w-14 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
+                    <Lock className="h-6 w-6 text-primary" />
                   </div>
+                  <h3 className="font-bold text-lg mb-2">Client Portal Access Required</h3>
+                  <p className="text-muted-foreground text-sm mb-5 max-w-xs mx-auto">
+                    The full audit tool is available to active clients. Sign in or request portal access below.
+                  </p>
+                  <Button onClick={handleSignInClick}
+                    className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
+                    <ArrowRight className="h-4 w-4 mr-2" />Access Portal
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* WHY MANAV */}
+      <section className="py-16 border-t border-border">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <div className="text-xs font-mono text-primary uppercase tracking-wider mb-3">Why SEO Season</div>
+              <h2 className="text-3xl font-bold mb-4">
+                Most SEO agencies sell you reports. I sell you results.
+              </h2>
+              <p className="text-muted-foreground leading-relaxed mb-6">
+                The SEO industry is broken. Agencies charge thousands for dashboards full of vanity metrics while your competitors quietly steal your market share. I built SEO Season to be different — every strategy is validated before we scale it, every rupee is protected before we invest it.
+              </p>
+              <div className="space-y-3">
+                {[
+                  { icon: Brain,       text: 'AI-first methodology built for the era of ChatGPT, Perplexity, and Google AI Overviews' },
+                  { icon: ShieldCheck, text: 'Validation before execution — we test before we spend' },
+                  { icon: TrendingUp,  text: 'Transparent dashboards that show real data, not agency spin' },
+                  { icon: Star,        text: 'Fiverr Top Rated with 500+ five-star audits delivered' },
+                ].map(({ icon: Icon, text }) => (
+                  <div key={text} className="flex items-start gap-3">
+                    <div className="h-6 w-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <Icon className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">{text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { label: 'Brands Grown',       value: '500+',   color: 'text-primary' },
+                { label: 'Avg Ranking Lift',    value: '↑ 40%',  color: 'text-green-400' },
+                { label: 'AI Citations Added',  value: '10x',    color: 'text-purple-400' },
+                { label: 'Client Retention',    value: '94%',    color: 'text-yellow-400' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="rounded-2xl border border-border bg-card/60 p-5 text-center">
+                  <div className={`text-3xl font-bold mb-1 ${color}`}>{value}</div>
+                  <div className="text-xs text-muted-foreground">{label}</div>
                 </div>
               ))}
             </div>
-            <div className="flex flex-wrap gap-2 animate-fade-up" style={{ animationDelay: '0.2s' }}>
-              {[
-                { icon: Brain,       text: 'Google + AI Engine SEO' },
-                { icon: ShieldCheck, text: 'No Fluff. Just Results.' },
-                { icon: TrendingUp,  text: 'Technical · On-Page · GEO' },
-              ].map(({ icon: Icon, text }) => (
-                <span key={text} className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-border bg-secondary/30 text-muted-foreground">
-                  <Icon className="h-3 w-3 text-primary" />{text}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="animate-fade-up" style={{ animationDelay: '0.1s' }}>
-            <TrustPanel />
           </div>
         </div>
       </section>
 
-      {/* BRAND STRIP */}
-      <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 mb-10">
-        <div className="relative rounded-3xl overflow-hidden border border-border shadow-card min-h-[300px]">
-          <img src="/manavseo.jpg" alt="Manav" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: '75% 15%' }} />
-          <div className="absolute inset-0 bg-gradient-to-r from-background from-40% via-background/85 via-60% to-transparent" />
-          <div className="relative z-10 p-8 sm:p-10 max-w-lg">
-            <Quote className="h-6 w-6 text-primary mb-3 opacity-80" />
-            <p className="text-xl sm:text-2xl font-semibold text-foreground leading-snug mb-4">
-              "Most SEO agencies sell you reports.<br />
-              <span className="text-gradient-primary">I sell you rankings."</span>
-            </p>
-            <div className="flex items-center gap-3">
-              <div>
-                <div className="font-bold text-sm text-foreground">Manav</div>
-                <div className="text-xs text-muted-foreground">SEO Strategist · Fiverr Top Rated · 500+ Clients</div>
-              </div>
-              <div className="flex items-center gap-0.5 ml-2">
-                {[...Array(5)].map((_, i) => <Star key={i} className="h-3 w-3 text-yellow-400 fill-yellow-400" />)}
-              </div>
-            </div>
-          </div>
+      {/* CTA */}
+      <section className="py-16 border-t border-border">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <h2 className="text-3xl font-bold mb-4">Ready to Stop Guessing?</h2>
+          <p className="text-muted-foreground mb-8">
+            Join brands that are winning in AI-native search. Your growth dashboard is waiting.
+          </p>
+          <Button size="lg" onClick={handleSignInClick}
+            className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold h-12 px-10">
+            {user && isApproved ? 'Go to My Dashboard' : 'Request Client Portal Access'}
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
         </div>
       </section>
-
-      {/* Scroll hint */}
-      <div className="relative z-10 flex flex-col items-center gap-1 text-xs text-muted-foreground mb-6 animate-bounce">
-        <span className="font-mono">Run your audit below</span>
-        <ChevronDown className="h-4 w-4 text-primary" />
-      </div>
-
-      {/* TOOL — gated by auth + approval */}
-      {approved ? (
-        <SeoEngine />
-      ) : (
-        <LockedOverlay onSignIn={() => setShowAuth(true)} />
-      )}
 
       {/* FOOTER */}
-      <footer className="relative z-10 mt-20 py-6 text-center text-xs text-muted-foreground border-t border-border">
-        <p className="mb-1">Built by <span className="text-primary font-semibold">Manav</span> — Fiverr Top Rated SEO Strategist</p>
-        <p>© 2026 SEO Season — Digital Marketing Operating System</p>
+      <footer className="border-t border-border py-8">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <img src="/manav.jpg" alt="Manav"
+              className="h-8 w-8 rounded-full object-cover ring-2 ring-primary"
+              style={{ objectPosition: 'center 20%' }} />
+            <div>
+              <div className="font-bold text-sm">SEO Season by Manav</div>
+              <div className="text-xs text-muted-foreground">I Don't Do Vanity SEO</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5"><Star className="h-3 w-3 text-primary" />Fiverr Top Rated</span>
+            <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-primary" />All data private</span>
+            <span className="flex items-center gap-1.5"><Globe className="h-3 w-3 text-primary" />AI-Native SEO</span>
+          </div>
+          <div className="text-xs text-muted-foreground">© 2026 SEO Season</div>
+        </div>
       </footer>
-    </main>
-  );
-};
 
-export default Index;
+    </div>
+  );
+}
