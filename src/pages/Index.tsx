@@ -2,7 +2,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState, useRef } from 'react';
 import { Sparkles, Zap, Star, TrendingUp, Brain, ShieldCheck, ChevronDown, Quote, CheckCircle, Globe, BarChart3, Search, Cpu, Lock, LogOut, User } from 'lucide-react';
 import { SeoEngine } from '@/components/SeoEngine';
-import { AuthModal } from '@/components/AuthModal';
+import AuthModal from '@/components/AuthModal';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
