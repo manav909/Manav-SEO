@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
+import { BarChart3 } from 'lucide-react';
 import {
   Users, Plus, Globe, CheckCircle,
   ChevronDown, ChevronUp, Zap, DollarSign,
@@ -436,9 +437,17 @@ export default function Admin() {
               <div className="text-xs text-muted-foreground">SEO Season by Manav</div>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => navigate('/')} className="border-border text-xs">
-            <ArrowLeft className="h-3 w-3 mr-1.5" />Back to Site
-          </Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate('/dashboard')} className="border-border text-xs">
+              <BarChart3 className="h-3 w-3 mr-1.5" />Dashboard
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/launchpad')} className="border-border text-xs">
+              <Sparkles className="h-3 w-3 mr-1.5" />Launchpad
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/')} className="border-border text-xs">
+              <ArrowLeft className="h-3 w-3 mr-1.5" />Home
+            </Button>
+          </div>
         </div>
       </div>
 
