@@ -7,7 +7,8 @@ import { toast } from '@/hooks/use-toast';
 import {
   Users, Plus, Globe, CheckCircle,
   ChevronDown, ChevronUp, Zap, DollarSign,
-  ArrowLeft, Sparkles, Save, RefreshCw, AlertCircle
+  ArrowLeft, Sparkles, Save, RefreshCw,
+  AlertCircle, Rocket
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -23,17 +24,32 @@ const EMPTY_FORM = {
 
 export default function Admin() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'clients' | 'metrics' | 'upsells' | 'approve'>('clients');
-  const [clients, setClients] = useState<any[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
+
+  /* ── tabs ── */
+  const [tab, setTab] = useState<'clients' | 'metrics' | 'upsells' | 'launchpad' | 'approve'>('clients');
+
+  /* ── data ── */
+  const [clients, setClients]           = useState<any[]>([]);
+  const [projects, setProjects]         = useState<any[]>([]);
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
-  const [selectedClient, setSelectedClient] = useState('');
+
+  /* ── selection ── */
+  const [selectedClient,  setSelectedClient]  = useState('');
   const [selectedProject, setSelectedProject] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [fetchingAI, setFetchingAI] = useState(false);
+
+  /* ── loading flags ── */
+  const [loading,             setLoading]             = useState(false);
+  const [fetchingAI,          setFetchingAI]          = useState(false);
+  const [generatingLaunchpad, setGeneratingLaunchpad] = useState(false);
+
+  /* ── UI state ── */
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
-  const [aiResult, setAiResult] = useState<any>(null);
+  const [aiResult,       setAiResult]       = useState<any>(null);
+  const [launchpadPreview, setLaunchpadPreview] = useState<any>(null);
+
+  /* ── forms ── */
   const [metricsForm, setMetricsForm] = useState<any>(EMPTY_FORM);
+
   const [clientForm, setClientForm] = useState({
     name: '', company: '', industry: '', website: '', email: '', retainer_amount: '',
   });
@@ -44,6 +60,14 @@ export default function Admin() {
     title: '', description: '', price: '', potential_impact: '',
   });
 
+  /* ── launchpad form ── */
+  const [launchpadPhase,   setLaunchpadPhase]   = useState(1);
+  const [launchpadContext, setLaunchpadContext] = useState('');
+  const [launchpadMonths,  setLaunchpadMonths]  = useState(1);
+
+  /* ══════════════════════════════════════════
+     DATA FETCHING
+  ══════════════════════════════════════════ */
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
@@ -55,6 +79,9 @@ export default function Admin() {
     setPendingUsers(u || []);
   };
 
+  /* ══════════════════════════════════════════
+     HELPERS
+  ══════════════════════════════════════════ */
   const populateForm = (a: any) => {
     setMetricsForm({
       llm_visibility_score:    a.llm_visibility_score?.toString()    ?? '',
@@ -83,6 +110,7 @@ export default function Admin() {
   const handleSelectProject = (projId: string) => {
     setSelectedProject(projId);
     setAiResult(null);
+    setLaunchpadPreview(null);
     if (!projId) { setMetricsForm(EMPTY_FORM); return; }
     const proj = projects.find(p => p.id === projId);
     if (proj?.last_analysis) {
@@ -91,8 +119,28 @@ export default function Admin() {
     } else {
       setMetricsForm(EMPTY_FORM);
     }
+    if (proj?.current_phase)   setLaunchpadPhase(proj.current_phase);
+    if (proj?.launchpad_data)  setLaunchpadPreview(proj.launchpad_data);
   };
 
+  const getLastAnalysisInfo = () => {
+    if (!selectedProject) return null;
+    const proj = projects.find(p => p.id === selectedProject);
+    if (!proj?.last_analysis_at) return null;
+    const ms  = Date.now() - new Date(proj.last_analysis_at).getTime();
+    const hrs = Math.round(ms / (1000 * 60 * 60));
+    const ago = hrs < 1 ? 'just now' : hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`;
+    return {
+      dateStr: new Date(proj.last_analysis_at).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      }),
+      ago,
+    };
+  };
+
+  /* ══════════════════════════════════════════
+     ACTIONS
+  ══════════════════════════════════════════ */
   const runAIAnalysis = async () => {
     const proj = projects.find(p => p.id === selectedProject);
     if (!proj) return toast({ title: 'Select a project first', variant: 'destructive' });
@@ -103,9 +151,9 @@ export default function Admin() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          url: proj.url,
+          url:        proj.url,
           competitors: proj.competitors || [],
-          keywords: proj.keywords || [],
+          keywords:   proj.keywords    || [],
           brand_name: clients.find(c => c.id === proj.client_id)?.company || '',
         }),
       });
@@ -113,14 +161,14 @@ export default function Admin() {
       if (!data.success) throw new Error(data.error || 'Analysis failed');
 
       await supabase.from('projects').update({
-        last_analysis: data,
+        last_analysis:    data,
         last_analysis_at: new Date().toISOString(),
       }).eq('id', selectedProject);
 
       fetchAll();
       setAiResult(data);
       populateForm(data.analysis);
-      toast({ title: 'Analysis complete!', description: 'Saved. Review all fields then save to dashboard.' });
+      toast({ title: 'Analysis complete!', description: 'Saved to project. Review fields then save to dashboard.' });
     } catch (err: any) {
       toast({ title: 'Analysis failed', description: err.message, variant: 'destructive' });
     }
@@ -177,7 +225,8 @@ export default function Admin() {
   };
 
   const createProject = async () => {
-    if (!selectedClient || !projectForm.name || !projectForm.url) return toast({ title: 'Missing fields', variant: 'destructive' });
+    if (!selectedClient || !projectForm.name || !projectForm.url)
+      return toast({ title: 'Missing fields', variant: 'destructive' });
     setLoading(true);
     const { error } = await supabase.from('projects').insert({
       client_id:   selectedClient,
@@ -196,10 +245,11 @@ export default function Admin() {
   };
 
   const createUpsell = async () => {
-    if (!selectedProject || !upsellForm.title || !upsellForm.price) return toast({ title: 'Missing fields', variant: 'destructive' });
+    if (!selectedProject || !upsellForm.title || !upsellForm.price)
+      return toast({ title: 'Missing fields', variant: 'destructive' });
     setLoading(true);
     const { error } = await supabase.from('upsells').insert({
-      project_id: selectedProject,
+      project_id:       selectedProject,
       title:            upsellForm.title,
       description:      upsellForm.description,
       price:            parseFloat(upsellForm.price),
@@ -222,23 +272,62 @@ export default function Admin() {
     else { toast({ title: 'User approved!' }); fetchAll(); }
   };
 
-  const getLastAnalysisInfo = () => {
-    if (!selectedProject) return null;
+  const generateLaunchpad = async () => {
     const proj = projects.find(p => p.id === selectedProject);
-    if (!proj?.last_analysis_at) return null;
-    const ms  = Date.now() - new Date(proj.last_analysis_at).getTime();
-    const hrs = Math.round(ms / (1000 * 60 * 60));
-    const ago = hrs < 1 ? 'just now' : hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`;
-    return {
-      dateStr: new Date(proj.last_analysis_at).toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-      }),
-      ago,
-    };
+    if (!proj) return toast({ title: 'Select a project first', variant: 'destructive' });
+    setGeneratingLaunchpad(true);
+    setLaunchpadPreview(null);
+    try {
+      const clientData = clients.find(c => c.id === proj.client_id);
+      const { data: metrics } = await supabase
+        .from('metrics').select('*')
+        .eq('project_id', proj.id)
+        .order('recorded_at', { ascending: false })
+        .limit(1);
+      const latest = metrics?.[0] || {};
+
+      const res = await fetch('/api/launchpad', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name:      clientData?.name             || '',
+          company:          clientData?.company          || '',
+          industry:         clientData?.industry         || '',
+          website:          proj.url,
+          keywords:         proj.keywords                || [],
+          competitors:      proj.competitors             || [],
+          current_phase:    launchpadPhase,
+          phase_context:    launchpadContext,
+          latest_metrics:   latest,
+          keyword_rankings: latest.keyword_rankings      || [],
+          retainer_amount:  clientData?.retainer_amount  || 0,
+          months_active:    launchpadMonths,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      await supabase.from('projects').update({
+        launchpad_data:         data,
+        launchpad_generated_at: data.generated_at,
+        current_phase:          launchpadPhase,
+      }).eq('id', selectedProject);
+
+      fetchAll();
+      setLaunchpadPreview(data);
+      toast({ title: 'Launchpad generated!', description: 'Live on client portal immediately.' });
+    } catch (err: any) {
+      toast({ title: 'Failed to generate launchpad', description: err.message, variant: 'destructive' });
+    }
+    setGeneratingLaunchpad(false);
   };
 
-  const ic = "h-10 bg-background/60 border-border text-sm";
-  const lc = "text-xs font-medium text-muted-foreground uppercase tracking-wider";
+  /* ══════════════════════════════════════════
+     SHARED COMPONENTS
+  ══════════════════════════════════════════ */
+  const ic = 'h-10 bg-background/60 border-border text-sm';
+  const lc = 'text-xs font-medium text-muted-foreground uppercase tracking-wider';
+
   const lastInfo = getLastAnalysisInfo();
 
   const ProjectSelector = () => (
@@ -268,12 +357,16 @@ export default function Admin() {
   );
 
   const tabs = [
-    { id: 'clients', label: 'Clients',       icon: Users },
-    { id: 'metrics', label: 'Run Analysis',  icon: Sparkles },
-    { id: 'upsells', label: 'Upsells',       icon: Zap },
-    { id: 'approve', label: `Approvals${pendingUsers.length > 0 ? ` (${pendingUsers.length})` : ''}`, icon: CheckCircle },
+    { id: 'clients',   label: 'Clients',       icon: Users },
+    { id: 'metrics',   label: 'Run Analysis',  icon: Sparkles },
+    { id: 'upsells',   label: 'Upsells',       icon: Zap },
+    { id: 'launchpad', label: 'Launchpad',      icon: Rocket },
+    { id: 'approve',   label: `Approvals${pendingUsers.length > 0 ? ` (${pendingUsers.length})` : ''}`, icon: CheckCircle },
   ];
 
+  /* ══════════════════════════════════════════
+     RENDER
+  ══════════════════════════════════════════ */
   return (
     <div className="min-h-screen bg-background text-foreground">
 
@@ -286,7 +379,7 @@ export default function Admin() {
               style={{ objectPosition: 'center 20%' }} />
             <div>
               <div className="font-bold text-sm">Admin Panel</div>
-              <div className="text-xs text-muted-foreground">SEO Seasons by Manav</div>
+              <div className="text-xs text-muted-foreground">SEO Season by Manav</div>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={() => navigate('/')} className="border-border text-xs">
@@ -381,7 +474,7 @@ export default function Admin() {
             <div className="lg:col-span-2 rounded-2xl border border-border bg-card/60 p-6">
               <h2 className="font-bold text-base mb-4">All Clients ({clients.length})</h2>
               {clients.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-6">No clients yet. Register your first client above.</p>
+                <p className="text-sm text-muted-foreground text-center py-6">No clients yet.</p>
               )}
               <div className="space-y-2">
                 {clients.map(client => (
@@ -419,13 +512,16 @@ export default function Admin() {
                               <span>—</span>
                               <span>{p.url}</span>
                             </div>
-                            {p.last_analysis_at ? (
-                              <span className="text-xs text-green-400 font-mono shrink-0">
-                                ✓ {Math.round((Date.now() - new Date(p.last_analysis_at).getTime()) / (1000 * 60 * 60 * 24))}d ago
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground font-mono shrink-0">no analysis</span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {p.last_analysis_at && (
+                                <span className="text-xs text-green-400 font-mono">
+                                  ✓ {Math.round((Date.now() - new Date(p.last_analysis_at).getTime()) / (1000 * 60 * 60 * 24))}d ago
+                                </span>
+                              )}
+                              {p.launchpad_generated_at && (
+                                <span className="text-xs text-purple-400 font-mono">🚀 launchpad</span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -443,7 +539,6 @@ export default function Admin() {
         {tab === 'metrics' && (
           <div className="max-w-3xl space-y-5">
 
-            {/* Step 1 */}
             <div className="rounded-2xl border border-border bg-card/60 p-6">
               <h2 className="font-bold text-base mb-1 flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />AI Website Analysis
@@ -455,7 +550,6 @@ export default function Admin() {
               <div className="space-y-3">
                 <ProjectSelector />
 
-                {/* Last analysis badge */}
                 {lastInfo && (
                   <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-3 flex items-center justify-between">
                     <div>
@@ -495,26 +589,24 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Step 2 — Results */}
+            {/* AI result */}
             {aiResult && (
               <div className="space-y-4">
 
-                {/* Warning */}
                 <div className="rounded-xl border border-yellow-400/30 bg-yellow-400/5 p-4">
                   <div className="flex items-start gap-3">
                     <AlertCircle className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
                     <div>
-                      <div className="text-sm font-semibold text-yellow-400 mb-1">Review Before Saving</div>
+                      <div className="text-sm font-semibold text-yellow-400 mb-1">Review Before Saving to Dashboard</div>
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         <span className="text-green-400 font-semibold">Green fields</span> = 0–100 content quality scores (reliable).
                         <span className="text-cyan-400 font-semibold ml-2">Cyan fields</span> = verified live data (pages, rankings, citations).
-                        Edit any value, then save to push to the client dashboard.
+                        Edit any value, then save.
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Preview */}
                 <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 space-y-4">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="h-4 w-4 text-green-400" />
@@ -533,7 +625,6 @@ export default function Admin() {
                     </div>
                   )}
 
-                  {/* Scores */}
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                     {[
                       { label: 'LLM Score',     v: aiResult.analysis?.llm_visibility_score },
@@ -543,9 +634,7 @@ export default function Admin() {
                       { label: 'Growth',        v: aiResult.analysis?.overall_growth_score },
                     ].map(({ label, v }) => {
                       const col = v == null ? 'text-muted-foreground'
-                        : v >= 70 ? 'text-green-400'
-                        : v >= 40 ? 'text-yellow-400'
-                        : 'text-orange-400';
+                        : v >= 70 ? 'text-green-400' : v >= 40 ? 'text-yellow-400' : 'text-orange-400';
                       return (
                         <div key={label} className="rounded-xl border border-border bg-background/40 p-3 text-center">
                           <div className={`text-xl font-bold ${col}`}>{v ?? '—'}</div>
@@ -555,7 +644,6 @@ export default function Admin() {
                     })}
                   </div>
 
-                  {/* Keyword Rankings */}
                   {aiResult.analysis?.keyword_rankings?.length > 0 && (
                     <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-4">
                       <div className="text-xs font-mono text-cyan-400 uppercase tracking-wider mb-3">
@@ -565,8 +653,7 @@ export default function Admin() {
                         {aiResult.analysis.keyword_rankings.map((k: any, i: number) => {
                           const col = !k.found ? 'text-orange-400'
                             : k.page === 1 ? 'text-green-400'
-                            : k.page === 2 ? 'text-yellow-400'
-                            : 'text-orange-400';
+                            : k.page === 2 ? 'text-yellow-400' : 'text-orange-400';
                           const bg = !k.found ? 'bg-orange-400/5 border-orange-400/20'
                             : k.page === 1 ? 'bg-green-400/5 border-green-400/20'
                             : k.page === 2 ? 'bg-yellow-400/5 border-yellow-400/20'
@@ -574,10 +661,8 @@ export default function Admin() {
                           return (
                             <div key={i} className={`rounded-lg border ${bg} px-3 py-2 flex items-center justify-between`}>
                               <div className="min-w-0 flex-1">
-                                <div className="text-xs font-semibold text-foreground truncate">"{k.keyword}"</div>
-                                {k.snippet && (
-                                  <div className="text-xs text-muted-foreground mt-0.5 truncate">{k.snippet}</div>
-                                )}
+                                <div className="text-xs font-semibold truncate">"{k.keyword}"</div>
+                                {k.snippet && <div className="text-xs text-muted-foreground mt-0.5 truncate">{k.snippet}</div>}
                               </div>
                               <div className={`text-xs font-mono font-bold ${col} shrink-0 ml-3`}>
                                 {k.positionLabel || (k.found ? `~${k.position}` : 'Not in top 30')}
@@ -589,7 +674,6 @@ export default function Admin() {
                     </div>
                   )}
 
-                  {/* Big win */}
                   {aiResult.analysis?.milestone && (
                     <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
                       <div className="text-xs font-mono text-yellow-400 uppercase tracking-wider mb-1">Big Win Found</div>
@@ -600,7 +684,6 @@ export default function Admin() {
                     </div>
                   )}
 
-                  {/* Strengths + Opportunities */}
                   <div className="grid sm:grid-cols-2 gap-3">
                     {aiResult.analysis?.verified_strengths?.length > 0 && (
                       <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-3">
@@ -632,17 +715,15 @@ export default function Admin() {
                   )}
                 </div>
 
-                {/* Edit + Save */}
+                {/* Edit + Save form */}
                 <div className="rounded-2xl border border-border bg-card/60 p-6 space-y-5">
                   <h3 className="font-semibold text-sm flex items-center gap-2">
                     <Save className="h-4 w-4 text-primary" />Review and Save to Dashboard
                   </h3>
 
-                  {/* Reliable scores — green */}
                   <div>
                     <div className="text-xs font-mono text-green-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-green-400" />
-                      Content Quality Scores — reliable analysis
+                      <span className="h-2 w-2 rounded-full bg-green-400" />Content Quality Scores — reliable
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       {[
@@ -662,17 +743,15 @@ export default function Admin() {
                     </div>
                   </div>
 
-                  {/* Verified live data — cyan */}
                   <div>
                     <div className="text-xs font-mono text-cyan-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-cyan-400" />
-                      Verified Live Data — fetched from real sources
+                      <span className="h-2 w-2 rounded-full bg-cyan-400" />Verified Live Data
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       {[
                         { key: 'pages_indexed',        label: 'Pages Indexed (Google)' },
                         { key: 'pages_submitted',      label: 'Pages in Sitemap' },
-                        { key: 'brand_mentions',       label: 'Brand Mentions (Web)' },
+                        { key: 'brand_mentions',       label: 'Brand Mentions' },
                         { key: 'perplexity_citations', label: 'Perplexity Appearances' },
                         { key: 'google_ai_citations',  label: 'Google AI Overview' },
                         { key: 'chatgpt_citations',    label: 'ChatGPT (estimated)' },
@@ -689,13 +768,12 @@ export default function Admin() {
                     </div>
                   </div>
 
-                  {/* Text fields */}
                   <div className="space-y-3">
                     {[
-                      { key: 'llm_platforms',       label: 'LLM Platforms (comma separated)',     placeholder: 'ChatGPT, Perplexity, Google AI Overviews' },
-                      { key: 'competitor_gap_note', label: 'Competitive Insight (shown to client)', placeholder: 'Now outranking competitor.com for 3 target keywords' },
-                      { key: 'milestone',           label: 'Big Win Headline',                     placeholder: 'Featured in Google AI Overviews for main keyword' },
-                      { key: 'milestone_impact',    label: 'Why It Matters',                       placeholder: 'Buyers find your brand through AI without paying for ads' },
+                      { key: 'llm_platforms',       label: 'LLM Platforms (comma separated)',      placeholder: 'ChatGPT, Perplexity, Google AI' },
+                      { key: 'competitor_gap_note', label: 'Competitive Insight (shown to client)',  placeholder: 'Now outranking competitor.com for 3 keywords' },
+                      { key: 'milestone',           label: 'Big Win Headline',                      placeholder: 'Featured in Google AI Overviews' },
+                      { key: 'milestone_impact',    label: 'Why It Matters',                        placeholder: 'Buyers find your brand through AI' },
                     ].map(({ key, label, placeholder }) => (
                       <div key={key} className="space-y-1">
                         <Label className={lc}>{label}</Label>
@@ -737,9 +815,9 @@ export default function Admin() {
                 <ProjectSelector />
                 {[
                   { key: 'title',            label: 'Offer Title',       placeholder: 'AI Search Domination Package' },
-                  { key: 'description',      label: 'Description',       placeholder: 'You are visible in 3 AI platforms. With this package we target 8 more...' },
+                  { key: 'description',      label: 'Description',       placeholder: 'You are visible in 3 AI platforms...' },
                   { key: 'price',            label: 'Price ($)',          placeholder: '499' },
-                  { key: 'potential_impact', label: 'What Client Gains',  placeholder: 'Featured in ChatGPT answers for 50+ buyer queries' },
+                  { key: 'potential_impact', label: 'What Client Gains',  placeholder: 'Featured in ChatGPT for 50+ queries' },
                 ].map(({ key, label, placeholder }) => (
                   <div key={key} className="space-y-1">
                     <Label className={lc}>{label}</Label>
@@ -753,6 +831,188 @@ export default function Admin() {
                 </Button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════
+            LAUNCHPAD
+        ════════════════════════════════════════ */}
+        {tab === 'launchpad' && (
+          <div className="max-w-2xl space-y-5">
+            <div className="rounded-2xl border border-border bg-card/60 p-6">
+              <h2 className="font-bold text-base mb-1 flex items-center gap-2">
+                <Rocket className="h-4 w-4 text-primary" />Executive Strategy Launchpad Generator
+              </h2>
+              <p className="text-xs text-muted-foreground mb-5">
+                Generates a premium executive strategy report for the client portal. Shows campaign phase, value realized, and AI-identified accelerator opportunities. Publishes immediately to the client launchpad.
+              </p>
+
+              <div className="space-y-4">
+                <ProjectSelector />
+
+                {/* Phase selector */}
+                <div className="space-y-2">
+                  <Label className={lc}>Current Campaign Phase (1–5)</Label>
+                  <div className="grid grid-cols-5 gap-2">
+                    {[
+                      { n: 1, label: 'Foundation' },
+                      { n: 2, label: 'Architecture' },
+                      { n: 3, label: 'Authority' },
+                      { n: 4, label: 'Validation' },
+                      { n: 5, label: 'Dominance' },
+                    ].map(({ n, label }) => (
+                      <button key={n} onClick={() => setLaunchpadPhase(n)}
+                        className={`rounded-xl border p-3 text-center transition-all ${
+                          launchpadPhase === n
+                            ? 'border-primary bg-primary/10 text-primary shadow-[0_0_12px_hsl(var(--primary)/0.2)]'
+                            : 'border-border bg-background/40 text-muted-foreground hover:border-primary/50'
+                        }`}>
+                        <div className="text-lg font-bold">{n}</div>
+                        <div className="text-xs leading-tight">{label}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {[
+                      'Discovery, technical setup, initial audit',
+                      'Content architecture, keyword mapping, structure',
+                      'Link building, citations, E-E-A-T signals',
+                      'Performance validation, scaling what works',
+                      'Market dominance, defending position, compounding',
+                    ][launchpadPhase - 1]}
+                  </div>
+                </div>
+
+                {/* Months active */}
+                <div className="space-y-1">
+                  <Label className={lc}>Months Active with This Client</Label>
+                  <Input type="number" min="1" max="36"
+                    value={launchpadMonths}
+                    onChange={e => setLaunchpadMonths(parseInt(e.target.value) || 1)}
+                    className={ic} placeholder="1" />
+                </div>
+
+                {/* Phase context */}
+                <div className="space-y-1">
+                  <Label className={lc}>What You're Actually Doing Right Now (Phase Context)</Label>
+                  <textarea
+                    value={launchpadContext}
+                    onChange={e => setLaunchpadContext(e.target.value)}
+                    rows={4}
+                    placeholder={`e.g. Completed competitor content gap audit this month. Currently building out FAQ pages for the top 5 target keywords. Identified that competitor.com has 40+ AI Overview appearances while client has 0 — closing that gap is the active priority. Technical indexing issues with 3 service pages have been resolved.`}
+                    className="w-full rounded-lg border border-border bg-background/60 text-sm px-3 py-2.5 text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/50"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The more specific you are, the better the AI can craft authoritative accelerator pitches.
+                  </p>
+                </div>
+
+                <Button onClick={generateLaunchpad} disabled={generatingLaunchpad || !selectedProject}
+                  className="w-full h-12 bg-gradient-to-r from-primary to-purple-500 text-white font-semibold">
+                  {generatingLaunchpad ? (
+                    <span className="flex items-center gap-3">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Generating executive strategy report...
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Rocket className="h-4 w-4" />
+                      Generate & Publish Launchpad
+                    </span>
+                  )}
+                </Button>
+
+                {generatingLaunchpad && (
+                  <div className="text-xs text-center text-muted-foreground font-mono animate-pulse">
+                    Analysing campaign data · Identifying gaps · Crafting accelerator opportunities...
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Preview */}
+            {launchpadPreview && launchpadPreview.dashboard && (
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-400" />
+                  <span className="font-semibold text-sm">
+                    {launchpadPreview.generated_at ? 'Generated & Live on Client Portal' : 'Saved Launchpad'}
+                  </span>
+                  {launchpadPreview.generated_at && (
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {new Date(launchpadPreview.generated_at).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+
+                {launchpadPreview.dashboard?.executive_dashboard?.strategic_timeline && (
+                  <div className="rounded-xl border border-border bg-background/60 p-4">
+                    <div className="text-xs font-mono text-primary uppercase tracking-wider mb-2">Strategic Timeline</div>
+                    <div className="font-bold text-sm">
+                      {launchpadPreview.dashboard.executive_dashboard.strategic_timeline.current_phase_name}
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-0.5">
+                      {launchpadPreview.dashboard.executive_dashboard.strategic_timeline.completion_percentage}% complete
+                      · {launchpadPreview.dashboard.executive_dashboard.strategic_timeline.status_label}
+                    </div>
+                    {launchpadPreview.dashboard.executive_dashboard.strategic_timeline.active_focus && (
+                      <div className="text-xs text-muted-foreground mt-1.5 italic">
+                        Active: {launchpadPreview.dashboard.executive_dashboard.strategic_timeline.active_focus}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {launchpadPreview.dashboard?.executive_dashboard?.value_realized && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      {
+                        label: 'Risks Neutralized',
+                        value: launchpadPreview.dashboard.executive_dashboard.value_realized.technical_risks_neutralized,
+                      },
+                      {
+                        label: 'Capital Protected',
+                        value: `$${(launchpadPreview.dashboard.executive_dashboard.value_realized.estimated_capital_saved || 0).toLocaleString()}`,
+                      },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="rounded-xl border border-border bg-background/40 p-3 text-center">
+                        <div className="text-xl font-bold text-primary">{value}</div>
+                        <div className="text-xs text-muted-foreground">{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {launchpadPreview.dashboard?.executive_dashboard?.accelerator_upsells?.length > 0 && (
+                  <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
+                    <div className="text-xs font-mono text-yellow-400 uppercase tracking-wider mb-3">
+                      {launchpadPreview.dashboard.executive_dashboard.accelerator_upsells.length} Accelerator Sprints Generated
+                    </div>
+                    {launchpadPreview.dashboard.executive_dashboard.accelerator_upsells.map((u: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                        <div>
+                          <div className="text-sm font-medium">{u.opportunity_name}</div>
+                          <div className="text-xs text-muted-foreground">{u.opportunity_category} · {u.timeline}</div>
+                        </div>
+                        <span className="text-sm text-primary font-mono font-bold">${u.investment_price?.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-center gap-4 pt-1">
+                  <a href="/launchpad" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-mono">
+                    <Rocket className="h-3.5 w-3.5" />View Client Launchpad
+                  </a>
+                  <span className="text-muted-foreground text-xs">·</span>
+                  <a href="/dashboard" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-mono">
+                    View Growth Dashboard
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
