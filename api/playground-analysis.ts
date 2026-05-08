@@ -3,6 +3,35 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { maxDuration: 300 };
 
+/* ─────────────────────────────────────────────────────────────────
+   Attempt to close truncated JSON by counting open brackets/braces
+───────────────────────────────────────────────────────────────── */
+function tryRecoverJson(raw: string): any | null {
+  let openBraces   = 0;
+  let openBrackets = 0;
+  let inString     = false;
+  let escaped      = false;
+
+  for (const ch of raw) {
+    if (escaped)             { escaped = false; continue; }
+    if (ch === '\\' && inString) { escaped = true;  continue; }
+    if (ch === '"')          { inString = !inString; continue; }
+    if (inString)            continue;
+    if      (ch === '{') openBraces++;
+    else if (ch === '}') openBraces--;
+    else if (ch === '[') openBrackets++;
+    else if (ch === ']') openBrackets--;
+  }
+
+  // If we're still inside a string, close it first
+  let closing = inString ? '"' : '';
+  while (openBrackets > 0) { closing += ']'; openBrackets--; }
+  while (openBraces   > 0) { closing += '}'; openBraces--;   }
+
+  try   { return JSON.parse(raw + closing); }
+  catch { return null; }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -11,251 +40,264 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     auditReports = [], competitors = [], allKeywords = [],
   } = req.body;
 
-  const metricsHistory = metrics.slice(0, 4);
-  const latest = metricsHistory[0] ?? null;
+  const metricsHistory = (metrics as any[]).slice(0, 4);
+  const latest         = metricsHistory[0] ?? null;
 
-  // Build a rich data brief for Claude
+  /* ── Safe text helper ── */
+  const safeStr = (v: any): string =>
+    typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v);
+
+  /* ── Build data brief ── */
   const dataBrief = `
-═══════════════════════════════════════════════════════
-COMPLETE PROJECT DATA BRIEF
-═══════════════════════════════════════════════════════
+══════════════════════════════════════════════════
+COMPLETE PROJECT INTELLIGENCE BRIEF
+══════════════════════════════════════════════════
 
 CLIENT & PROJECT
-Company:  ${clientData?.company ?? "Unknown"}
-Industry: ${clientData?.industry ?? "Unknown"}
-Website:  ${project?.url ?? "Unknown"}
+Company:  ${clientData?.company ?? 'Unknown'}
+Industry: ${clientData?.industry ?? 'Unknown'}
+Website:  ${project?.url ?? 'Unknown'}
 Retainer: $${clientData?.retainer_amount ?? 0}/mo
 
 TRACKED KEYWORDS (${allKeywords.length})
-${allKeywords.map((k: string, i: number) => `  ${i + 1}. "${k}"`).join("\n") || "  None set"}
+${(allKeywords as string[]).map((k, i) => `  ${i + 1}. "${k}"`).join('\n') || '  None set'}
 
 COMPETITORS
-${competitors.map((c: string, i: number) => `  ${i + 1}. ${c}`).join("\n") || "  None set"}
+${(competitors as string[]).map((c, i) => `  ${i + 1}. ${c}`).join('\n') || '  None set'}
 
-LATEST HEALTH SCORES ${latest ? `(${(latest.recorded_at || "").split("T")[0]})` : "(no data)"}
+LATEST SCORES ${latest ? `(${(latest.recorded_at || '').split('T')[0]})` : '(no data yet)'}
 ${latest ? `
-  LLM Visibility:    ${latest.llm_visibility_score ?? "–"}/100
-  Google Health:     ${latest.algorithm_health_score ?? "–"}/100
-  E-E-A-T:           ${latest.eeat_score ?? "–"}/100
-  Content Authority: ${latest.content_authority_score ?? "–"}/100
-  Overall Growth:    ${latest.overall_growth_score ?? "–"}/100
-  Pages Indexed:     ${latest.pages_indexed ?? "–"} of ${latest.pages_submitted ?? "–"}
-  Brand Mentions:    ${latest.brand_mentions ?? "–"}
+  LLM Visibility:    ${latest.llm_visibility_score ?? '–'}/100
+  Google Health:     ${latest.algorithm_health_score ?? '–'}/100
+  E-E-A-T:           ${latest.eeat_score ?? '–'}/100
+  Content Authority: ${latest.content_authority_score ?? '–'}/100
+  Overall Growth:    ${latest.overall_growth_score ?? '–'}/100
+  Pages Indexed:     ${latest.pages_indexed ?? '–'} of ${latest.pages_submitted ?? '–'}
+  Brand Mentions:    ${latest.brand_mentions ?? '–'}
   Perplexity:        ${latest.perplexity_citations ?? 0} citations
   Google AI:         ${latest.google_ai_citations ?? 0} citations
-  ChatGPT:           ${latest.chatgpt_citations ?? 0} citations
-  Competitor Rank:   #${latest.competitor_rank ?? "–"}
-  Milestone:         ${latest.milestone ?? "None"}
-` : "  No metrics available yet"}
+  ChatGPT:           ${latest.chatgpt_citations ?? 0} citations (estimated)
+  Competitor Rank:   #${latest.competitor_rank ?? '–'}
+  Milestone:         ${latest.milestone ?? 'None recorded'}
+` : '  No metrics available yet — base strategy on audit content and best practices'}
 
-METRICS TREND (last ${metricsHistory.length} reports)
-${metricsHistory.map((m: any, i: number) => `  [${(m.recorded_at || "").split("T")[0]}] Overall:${m.overall_growth_score ?? 0} LLM:${m.llm_visibility_score ?? 0} Health:${m.algorithm_health_score ?? 0} EEAT:${m.eeat_score ?? 0}`).join("\n") || "  No history"}
+SCORE TREND (${metricsHistory.length} data points)
+${metricsHistory.map((m: any) =>
+  `  [${(m.recorded_at||'').split('T')[0]}] Overall:${m.overall_growth_score??0} LLM:${m.llm_visibility_score??0} Health:${m.algorithm_health_score??0} EEAT:${m.eeat_score??0}`
+).join('\n') || '  No trend data'}
 
 LIVE KEYWORD RANKINGS
-${keywordRankings.map((k: any) => `  "${k.keyword}": ${k.found ? k.positionLabel : "Not ranking"} ${k.snippet ? `— "${k.snippet.slice(0, 80)}"` : ""}`).join("\n") || "  No ranking data"}
+${(keywordRankings as any[]).map(k =>
+  `  "${k.keyword}": ${k.found ? k.positionLabel : 'Not in top 30'}${k.snippet ? ` — "${k.snippet.slice(0, 60)}"` : ''}`
+).join('\n') || '  No ranking data'}
 
-AUDIT REPORTS (${auditReports.length} saved)
-${auditReports.map((a: any) => {
+AUDIT REPORTS (${(auditReports as any[]).length} saved)
+${(auditReports as any[]).map((a: any) => {
   const types = Object.keys(a.sections || {});
   return types.map(type => {
-    const content = (a.sections[type] || "").slice(0, 1500);
-    return `\n[${type} Audit — ${(a.created_at || "").split("T")[0]}]\n${content}${content.length >= 1500 ? "..." : ""}`;
-  }).join("\n");
-}).join("\n\n") || "  No audit reports saved yet"}
+    const content = safeStr(a.sections[type]).slice(0, 1000);
+    return `\n[${type} — ${(a.created_at || '').split('T')[0]}]\n${content}${content.length >= 1000 ? '…' : ''}`;
+  }).join('\n');
+}).join('\n\n') || '  No audit reports saved yet'}
 `.trim();
 
+  /* ── Prompt ── */
   const prompt = `
-You are an elite SEO and digital marketing strategist with 20 years of experience. You have been given complete access to a client's SEO data. Your job is to produce the most comprehensive, actionable, and insightful strategic analysis possible.
+You are an elite SEO strategist. Analyse the complete project data below and produce a comprehensive strategic brief.
 
-Think deeply. Cross-reference every data point. Find patterns. Identify the highest-leverage opportunities. Be specific — reference actual data from the brief. Don't be generic.
+Be specific — reference actual scores, keywords, competitors, and audit findings by name.
+If data is limited, build the best possible strategy from what exists.
 
 ${dataBrief}
 
-Return ONLY a valid JSON object (no markdown, no explanation outside the JSON) with EXACTLY this structure. Every array must have meaningful, specific items based on the real data above — never generic placeholder text:
+Return ONLY a single valid JSON object. No markdown. No text outside the JSON. Follow this exact schema:
 
 {
-  "executive_summary": "<3-4 sentence strategic overview — reference specific scores, keywords, and findings from the data>",
-  "overall_health": "<Excellent|Strong|Building|Needs Work|Critical>",
-  "biggest_opportunity": "<The single most impactful thing this site could do right now — specific and referenced>",
-  "biggest_risk": "<The most urgent issue that needs addressing — specific>",
-  "data_quality_note": "<Note on data completeness and confidence>",
+  "executive_summary": "3-4 sentence overview referencing specific data points",
+  "overall_health": "Excellent|Strong|Building|Needs Work|Critical",
+  "biggest_opportunity": "Single most impactful action — specific and evidenced",
+  "biggest_risk": "Most urgent issue — specific",
 
   "quick_wins": [
     {
       "id": "qw1",
-      "title": "<specific action title>",
-      "description": "<what to do exactly, referenced to actual findings>",
-      "effort": "low",
-      "impact": "high",
-      "timeframe": "<1-3 days>",
-      "category": "technical|content|geo|links|local",
-      "evidence": "<exact finding from the audit/data that supports this>"
+      "title": "Action title",
+      "description": "What to do exactly, referencing actual findings",
+      "effort": "low|medium|high",
+      "impact": "high|medium|low",
+      "timeframe": "1-3 days",
+      "category": "technical|content|geo|links",
+      "evidence": "Specific finding from the data"
     }
   ],
 
   "weekly_plans": [
     {
       "week": 1,
-      "theme": "<strategic theme for the week>",
-      "focus": "<what this week accomplishes>",
+      "theme": "Week theme",
+      "focus": "What this week accomplishes",
       "tasks": [
-        {
-          "task": "<specific actionable task>",
-          "type": "technical|content|outreach|analysis|geo",
-          "effort_hours": 2,
-          "priority": "high|medium|low",
-          "expected_output": "<what this produces>"
-        }
+        { "task": "Specific task", "type": "technical|content|outreach|geo", "effort_hours": 2, "priority": "high|medium|low" }
       ],
-      "kpi_to_watch": "<which metric should move this week>",
-      "expected_outcome": "<what changes after this week>"
+      "expected_outcome": "What changes after this week"
     }
   ],
 
   "monthly_roadmap": [
     {
       "month": 1,
-      "title": "<month theme>",
-      "phase_goal": "<single most important goal this month>",
-      "goals": ["<specific goal 1>", "<specific goal 2>"],
-      "key_deliverables": ["<deliverable 1>", "<deliverable 2>"],
-      "metrics_targets": {
-        "llm_visibility": "<target or +X points>",
-        "overall_growth": "<target or +X points>",
-        "keywords_page1": "<target count>"
-      },
-      "dependencies": "<what must be done first>"
+      "title": "Month theme",
+      "phase_goal": "Single most important goal",
+      "goals": ["goal 1", "goal 2"],
+      "key_deliverables": ["deliverable 1", "deliverable 2"],
+      "metrics_targets": { "llm_visibility": "+10 pts", "overall_growth": "+8 pts" }
     }
   ],
 
   "technical_priorities": [
     {
       "id": "tp1",
-      "issue": "<specific technical issue from audit>",
-      "current_state": "<what is happening now>",
-      "impact": "<what this costs in rankings/visibility>",
-      "fix": "<exact fix instructions>",
+      "issue": "Specific technical issue from audit",
+      "fix": "Exact fix instructions",
+      "impact": "What this costs in rankings",
       "urgency": "immediate|this_week|this_month",
-      "effort": "low|medium|high",
-      "source": "<which audit/data revealed this>"
+      "effort": "low|medium|high"
     }
   ],
 
   "content_calendar": [
     {
       "id": "cc1",
-      "title": "<content piece title>",
-      "type": "blog|landing_page|faq|pillar|case_study|comparison",
-      "target_keyword": "<specific keyword from tracked list or gap>",
+      "title": "Content piece title",
+      "type": "blog|landing_page|faq|pillar",
+      "target_keyword": "keyword from tracked list",
       "search_intent": "informational|commercial|navigational|transactional",
-      "rationale": "<why this content, referenced to data>",
-      "geo_angle": "<how this helps AI visibility>",
+      "rationale": "Why this content, referenced to data",
       "suggested_week": 2,
-      "word_count": 1200,
-      "internal_links": ["<page to link to>"]
+      "word_count": 1200
     }
   ],
 
   "geo_strategy": [
     {
       "platform": "Perplexity|ChatGPT|Google AI Overview",
-      "current_status": "<exact current visibility from data>",
-      "gap": "<what is missing>",
-      "action": "<specific action to take>",
-      "content_format": "<what type of content helps here>",
-      "expected_impact": "<what changes when done>",
-      "timeframe": "<when to expect results>"
+      "current_status": "Exact status from data",
+      "action": "Specific action to take",
+      "expected_impact": "What changes when done",
+      "timeframe": "Realistic timeline"
     }
   ],
 
   "competitive_intelligence": [
     {
-      "competitor": "<domain name>",
-      "their_strength": "<what they do better based on data>",
-      "your_opportunity": "<specific gap you can close>",
-      "strategy": "<exact approach to outrank them>",
-      "timeframe": "<realistic timeline>"
+      "competitor": "domain.com",
+      "their_strength": "What they do better",
+      "your_opportunity": "Specific gap to close",
+      "strategy": "Exact approach to outrank"
     }
   ],
 
   "kpi_forecast": [
     {
-      "metric": "<metric name>",
-      "current": "<current value from data>",
-      "target_30d": "<realistic 30-day target>",
-      "target_60d": "<realistic 60-day target>",
-      "target_90d": "<realistic 90-day target>",
-      "basis": "<why this forecast is realistic>",
-      "leading_indicator": "<what to watch week-by-week>"
+      "metric": "Metric name",
+      "current": "Current value",
+      "target_30d": "30-day target",
+      "target_60d": "60-day target",
+      "target_90d": "90-day target",
+      "basis": "Why this forecast is realistic"
     }
   ],
 
   "strategic_insights": [
     {
       "id": "si1",
-      "category": "opportunity|risk|strength|pattern|recommendation",
-      "title": "<insight title>",
-      "detail": "<specific insight with evidence from data>",
-      "action": "<what to do about this>",
+      "category": "opportunity|risk|strength|pattern",
+      "title": "Insight title",
+      "detail": "Specific insight with evidence",
+      "action": "What to do about this",
       "priority": "high|medium|low"
     }
   ],
 
   "retainer_value_summary": {
-    "months_projected": 3,
-    "score_gain_projection": "<e.g. +25 points overall>",
-    "ranking_improvements": "<e.g. 3 keywords to Page 1>",
-    "roi_narrative": "<plain English ROI story based on industry and retainer>",
-    "key_milestones": ["<milestone 1>", "<milestone 2>", "<milestone 3>"]
+    "score_gain_projection": "+25 overall points in 90 days",
+    "ranking_improvements": "3 keywords to Page 1",
+    "roi_narrative": "Plain English ROI story",
+    "key_milestones": ["milestone 1", "milestone 2", "milestone 3"]
   },
 
   "canvas_blocks": [
     {
       "id": "b1",
-      "type": "quick-win|weekly|monthly|technical|content|geo|competitive|insight|kpi|metric",
-      "title": "<block title — short, max 6 words>",
-      "content": "<full detail — everything needed to act on this>",
+      "type": "quick-win|weekly|monthly|technical|content|geo|competitive|insight|kpi",
+      "title": "Block title max 6 words",
+      "content": "Full detail — everything needed to act on this block",
       "color": "#4ade80",
       "priority": "high|medium|low",
       "effort": "low|medium|high",
       "impact": "high|medium|low",
       "tags": ["tag1", "tag2"],
-      "source": "<where this came from — audit type, metric, etc>"
+      "source": "Which audit or data source"
     }
   ]
 }
 
-Rules:
-- canvas_blocks should have 15-25 items — one block per major action item, insight, or plan
-- Every item must be specific to THIS client's data — nothing generic
-- If data is limited, say so in executive_summary but still provide the best strategy possible from what exists
-- weekly_plans should have exactly 4 weeks
-- monthly_roadmap should have exactly 3 months
-- kpi_forecast should include all 5 main scores plus 2-3 specific metrics
-- Return ONLY valid JSON — no prose outside the object
-`;
+Requirements:
+- weekly_plans: exactly 4 items (one per week)
+- monthly_roadmap: exactly 3 items (one per month)
+- canvas_blocks: 15-20 items covering the most important actions from all sections
+- quick_wins: 6-8 items
+- kpi_forecast: include all 5 main scores + pages_indexed + brand_mentions
+- Every field must reference THIS client's actual data — nothing generic
+- Return ONLY the JSON object, nothing else
+`.trim();
 
   try {
     const anthropic = new Anthropic();
     const response  = await anthropic.messages.create({
       model:      "claude-sonnet-4-5",
-      max_tokens: 8000,
+      max_tokens: 16000,
       messages:   [{ role: "user", content: prompt }],
     });
 
-    const raw     = response.content[0].type === "text" ? response.content[0].text : "";
-    const first   = raw.indexOf("{");
-    const last    = raw.lastIndexOf("}");
-    const cleaned = first !== -1 && last !== -1 ? raw.slice(first, last + 1) : raw;
+    const raw   = response.content[0].type === "text" ? response.content[0].text : "";
+    const first = raw.indexOf("{");
+    const last  = raw.lastIndexOf("}");
 
-    let strategy: any;
-    try {
-      strategy = JSON.parse(cleaned);
-    } catch {
-      strategy = { executive_summary: "Analysis generated. JSON parsing issue — please retry.", canvas_blocks: [] };
+    if (first === -1) {
+      return res.status(200).json({
+        success:      true,
+        strategy:     { executive_summary: "No JSON found in response — please retry.", canvas_blocks: [] },
+        generated_at: new Date().toISOString(),
+      });
     }
 
-    return res.status(200).json({ success: true, strategy, generated_at: new Date().toISOString() });
+    const extracted = raw.slice(first, last !== -1 ? last + 1 : undefined);
+
+    /* Try full parse first, then recovery */
+    let strategy: any = null;
+    try {
+      strategy = JSON.parse(extracted);
+    } catch {
+      strategy = tryRecoverJson(extracted);
+    }
+
+    if (!strategy) {
+      /* Last resort — return whatever partial data we can from the raw text */
+      strategy = {
+        executive_summary: "Strategy was generated but the response was too large to parse completely. Try regenerating — the system will produce a complete response.",
+        biggest_opportunity: "Please retry — full analysis available.",
+        canvas_blocks: [],
+        _parse_error: true,
+      };
+    }
+
+    return res.status(200).json({
+      success:      true,
+      strategy,
+      generated_at: new Date().toISOString(),
+    });
+
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
