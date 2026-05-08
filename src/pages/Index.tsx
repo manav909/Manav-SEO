@@ -158,10 +158,7 @@ export default function Index() {
   const {user,isApproved,authChecked,loading,signOut} = useAuth();
   const [showModal, setShowModal] = useState(false);
 
-  useEffect(()=>{
-    if(authChecked&&!loading&&user&&isApproved) navigate('/dashboard');
-  },[authChecked,loading,user,isApproved,navigate]);
-
+  
   const handlePortal = () => {
     if(user&&isApproved){navigate('/dashboard');return;}
     setShowModal(true);
