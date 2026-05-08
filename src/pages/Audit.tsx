@@ -742,11 +742,12 @@ export default function Audit() {
 
             {/* SeoEngine — the streaming report generator */}
             <SeoEngine
-              key={selectedProjectId || 'standalone'}
-              projectId={selectedProjectId || undefined}
-              defaultUrl={selectedProject?.url || ''}
-              defaultKeyword={selectedProject?.keywords?.[0] || ''}
-            />
+  key={selectedProjectId || 'standalone'}
+  projectId={selectedProjectId || undefined}
+  defaultUrl={selectedProject?.url || ''}
+  defaultKeyword={selectedProject?.keywords?.[0] || ''}
+  allKeywords={selectedProject?.keywords || []}
+/>
 
             {/* Past strategy reports history */}
             {strategyReports.length > 0 && (
