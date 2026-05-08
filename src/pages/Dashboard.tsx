@@ -466,32 +466,30 @@ const KeywordCard = ({ keyword:k, insight, col, bg, bar, barW, badge, none, isP1
 
 /* ── Data Quality Panel ── */
 const DataQualityPanel = ({ latest }: { latest: any }) => {
-  const sources = latest?.data_sources || {};
   const verifiedAt = latest?.recorded_at ? fmtDate(latest.recorded_at) : null;
-
   return (
     <div className="rounded-xl border border-border bg-background/40 p-4">
       <div className="flex items-center gap-2 mb-3">
-        <ShieldCheck className="h-4 w-4 text-green-400" />
+        <ShieldCheck className="h-4 w-4 text-green-400 shrink-0" />
         <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
           Data Verification Report
         </span>
         {verifiedAt && (
-          <span className="ml-auto text-xs font-mono text-muted-foreground">
-            Analysis: {verifiedAt}
+          <span className="ml-auto text-xs font-mono text-muted-foreground whitespace-nowrap">
+            {verifiedAt}
           </span>
         )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {[
-          { label: 'Keyword Rankings',    source: 'Live Google SERP per keyword',         verified: true },
-          { label: 'Pages Indexed',       source: 'Google site: domain search',            verified: true },
-          { label: 'Sitemap Pages',       source: 'Direct sitemap.xml parse',              verified: true },
-          { label: 'Brand Mentions',      source: 'Live Google search count',              verified: true },
-          { label: 'Perplexity Citations',source: 'Live Perplexity search test',           verified: true },
-          { label: 'Google AI Overview',  source: 'Live Google AI test',                   verified: true },
-          { label: 'Content Scores',      source: 'AI analysis of live page content',      verified: true },
-          { label: 'ChatGPT Citations',   source: 'No public API — AI estimate only',      verified: false },
+          { label:'Keyword Rankings',     source:'Live Google SERP per keyword',       verified:true  },
+          { label:'Pages Indexed',        source:'Google site: domain search',         verified:true  },
+          { label:'Sitemap Pages',        source:'Direct sitemap.xml parse',           verified:true  },
+          { label:'Brand Mentions',       source:'Live Google search count',           verified:true  },
+          { label:'Perplexity Citations', source:'Live Perplexity search test',        verified:true  },
+          { label:'Google AI Overview',   source:'Live Google AI test',                verified:true  },
+          { label:'Content Scores',       source:'AI analysis of live page content',   verified:true  },
+          { label:'ChatGPT Citations',    source:'No public API — AI estimate only',   verified:false },
         ].map(({ label, source, verified }) => (
           <div key={label} className="flex items-start gap-2">
             <div className={`h-4 w-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${verified ? 'bg-green-400/20' : 'bg-yellow-400/20'}`}>
@@ -499,9 +497,9 @@ const DataQualityPanel = ({ latest }: { latest: any }) => {
                 ? <CheckCircle2 className="h-2.5 w-2.5 text-green-400" />
                 : <AlertTriangle className="h-2.5 w-2.5 text-yellow-400" />}
             </div>
-            <div>
-              <div className="text-xs font-semibold">{label}</div>
-              <div className={`text-xs ${verified ? 'text-muted-foreground' : 'text-yellow-400/80'}`}>{source}</div>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold leading-tight">{label}</div>
+              <div className={`text-xs leading-tight ${verified ? 'text-muted-foreground' : 'text-yellow-400/80'}`}>{source}</div>
             </div>
           </div>
         ))}
@@ -509,7 +507,6 @@ const DataQualityPanel = ({ latest }: { latest: any }) => {
     </div>
   );
 };
-
 /* ══════════════════════════════════════════
    MAIN DASHBOARD COMPONENT
 ══════════════════════════════════════════ */
@@ -720,12 +717,15 @@ export default function Dashboard() {
         {latest && (
           <>
             {/* Data quality notice */}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-card/40 border border-border rounded-xl px-4 py-2.5">
-              <ShieldCheck className="h-3.5 w-3.5 text-green-400 shrink-0" />
-              All scores and rankings are verified from live sources. Tap any metric for its exact verification method.
-              <span className="ml-auto text-yellow-400 flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3" />ChatGPT citations are estimated (no public API)
-              </span>
+           <div className="rounded-xl bg-card/40 border border-border px-4 py-2.5 space-y-1">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <ShieldCheck className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                All scores and rankings are verified from live sources. Tap any metric for its exact verification method.
+              </div>
+              <div className="flex items-center gap-2 text-xs text-yellow-400">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                ChatGPT citations are estimated only — no public API exists for verification.
+              </div>
             </div>
 
             {/* ─ Milestone ─ */}
