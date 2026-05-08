@@ -324,35 +324,33 @@ export default function Launchpad() {
       ) : (
         <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
-          {/* Data provenance banner */}
-          <div className="rounded-xl border border-border bg-card/40 p-4">
-            <div className="flex flex-wrap items-start gap-4">
-              <div className="flex items-start gap-2 flex-1 min-w-0">
-                <ShieldCheck className="h-4 w-4 text-green-400 shrink-0 mt-0.5"/>
-                <div>
-                  <div className="text-xs font-semibold text-green-400 mb-1">Data Source Transparency</div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    This launchpad was generated from verified audit data{sourceAnalysis ? ` (analysis: ${sourceAnalysis})` : ''}. Strategic phase, metrics narrative, and accelerator opportunities are all derived from real keyword rankings, indexing counts, and live AI visibility tests — not templates.
-                  </p>
-                </div>
+         {/* Data provenance banner */}
+          <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="text-xs font-semibold text-green-400 mb-1">Data Source Transparency</div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  This launchpad was generated from verified audit data{sourceAnalysis ? ` (analysis: ${sourceAnalysis})` : ''}. Strategic phase, metrics narrative, and accelerator opportunities are all derived from real keyword rankings, indexing counts, and live AI visibility tests — not templates.
+                </p>
               </div>
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-yellow-400 shrink-0 mt-0.5"/>
-                <div>
-                  <div className="text-xs font-semibold text-yellow-400 mb-1">Estimated Values</div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Capital saved, risks neutralised, and completion percentage are AI estimates based on real data patterns. Marked with ~ where applicable.
-                  </p>
-                </div>
-              </div>
-              {genAt && (
-                <div className="text-xs text-muted-foreground font-mono whitespace-nowrap">
-                  Launchpad: {genAt}
-                </div>
-              )}
             </div>
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="text-xs font-semibold text-yellow-400 mb-1">Estimated Values</div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Capital saved, risks neutralised, and completion percentage are AI estimates based on real data patterns. Marked with ~ where applicable.
+                </p>
+              </div>
+            </div>
+            {genAt && (
+              <div className="text-xs text-muted-foreground font-mono pt-1 border-t border-border">
+                Launchpad generated: {genAt}
+              </div>
+            )}
           </div>
-
+          
           {/* ─ Strategic Phase ─ */}
           <div className={`rounded-3xl border border-border bg-card/60 p-6 sm:p-8 ${phaseCfg.glow} overflow-hidden relative`}>
             <div className="absolute top-0 right-0 h-64 w-64 rounded-full opacity-10 blur-3xl pointer-events-none" style={{background:phaseCfg.ring}}/>
