@@ -465,12 +465,23 @@ export default function Index() {
         style={{ padding: '100px 24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
 
         {/* manavseo.jpg — right side, face visible */}
+       {/* manavseo.jpg — full scene, face + confidence + sofa */}
         <div className="cta-img-wrap">
           <img
             src="/manavseo.jpg"
             alt=""
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
+          {/* Brand atmosphere — ties image to our indigo/purple palette */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: 'linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.06) 40%, transparent 68%)',
+          }} />
+          {/* Right edge vignette — keeps image feeling contained */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: 'radial-gradient(ellipse at 85% 40%, transparent 35%, rgba(4,4,13,0.25) 70%, rgba(4,4,13,0.5) 100%)',
+          }} />
         </div>
 
         {/* Gradient overlay — seals the blend */}
