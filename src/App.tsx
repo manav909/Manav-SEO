@@ -1,14 +1,15 @@
 import React from 'react';
-import { Toaster }              from "@/components/ui/toaster";
-import { Toaster as Sonner }    from "@/components/ui/sonner";
-import { TooltipProvider }      from "@/components/ui/tooltip";
+import { Toaster }           from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider }   from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { ErrorBoundary }        from "@/components/ErrorBoundary";
+import { ErrorBoundary }     from "@/components/ErrorBoundary";
 import Index     from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Launchpad from "./pages/Launchpad";
+import Audit     from "./pages/Audit";
 import Admin     from "./pages/Admin";
 import NotFound  from "./pages/NotFound";
 
@@ -25,19 +26,10 @@ const Spinner = ({ label = 'Loading...' }: { label?: string }) => (
   </div>
 );
 
-/* Only blocks unauthenticated users — no approval check for admin */
-const AuthRequired = ({ children }: { children: React.ReactNode }) => {
-  const { user, authChecked, loading } = useAuth();
-  if (!authChecked || loading) return <Spinner label="Verifying session..." />;
-  if (!user) return <Navigate to="/" replace />;
-  return <>{children}</>;
-};
-
-/* Blocks unauthenticated + unapproved users */
 const ApprovedRequired = ({ children }: { children: React.ReactNode }) => {
   const { user, authChecked, loading, isApproved } = useAuth();
   if (!authChecked || loading) return <Spinner label="Loading portal..." />;
-  if (!user) return <Navigate to="/" replace />;
+  if (!user)       return <Navigate to="/" replace />;
   if (!isApproved) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
@@ -50,6 +42,7 @@ const AppRoutes = () => {
       <Route path="/"          element={<Index />} />
       <Route path="/dashboard" element={<ApprovedRequired><Dashboard /></ApprovedRequired>} />
       <Route path="/launchpad" element={<ApprovedRequired><Launchpad /></ApprovedRequired>} />
+      <Route path="/audit"     element={<ApprovedRequired><Audit /></ApprovedRequired>} />
       <Route path="/admin"     element={<Admin />} />
       <Route path="*"          element={<NotFound />} />
     </Routes>
@@ -60,7 +53,8 @@ const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Toaster /><Sonner />
+        <Toaster />
+        <Sonner />
         <BrowserRouter>
           <ErrorBoundary>
             <AuthProvider>
