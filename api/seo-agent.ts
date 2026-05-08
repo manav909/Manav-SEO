@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+export const config = { maxDuration: 90 };
+
 type DeliverableType = "Technical" | "On-Page" | "Off-Page" | "GEO";
 
 interface RequestBody {
@@ -34,7 +36,7 @@ async function fetchWebsiteContent(url: string): Promise<string> {
     });
 
     if (!response.ok) {
-      return `Could not fetch website. HTTP Status: ${response.status}. Please check the URL is correct and publicly accessible.`;
+      return `Could not fetch website. HTTP Status: ${response.status}.`;
     }
 
     const text = await response.text();
@@ -47,7 +49,7 @@ async function fetchWebsiteContent(url: string): Promise<string> {
 
   } catch (err) {
     if (err instanceof Error && err.name === "TimeoutError") {
-      return `Website took too long to respond (30s timeout). Try again or check if the site is accessible.`;
+      return `Website took too long to respond (30s timeout).`;
     }
     return `Could not fetch website: ${err instanceof Error ? err.message : "Unknown error"}`;
   }
@@ -58,14 +60,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Method not allowed." });
   }
 
-  // Safe body parsing
   let url: string;
   let keyword: string;
   let deliverableType: DeliverableType;
 
   try {
-    url = (req.body?.url ?? "").toString().trim();
-    keyword = (req.body?.keyword ?? "").toString().trim();
+    url             = (req.body?.url             ?? "").toString().trim();
+    keyword         = (req.body?.keyword         ?? "").toString().trim();
     deliverableType = (req.body?.deliverableType ?? "") as DeliverableType;
   } catch {
     return res.status(400).json({ error: "Could not parse request body." });
@@ -81,13 +82,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  // Fetch real website content via Jina AI
   const websiteContent = await fetchWebsiteContent(url);
 
   const today = new Date().toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
+    day: "numeric", month: "long", year: "numeric",
   });
 
   const client = new Anthropic();
@@ -116,19 +114,18 @@ Critical instructions:
 - If running long, reduce section depth but always finish all sections
   `.trim();
 
-  // Set streaming headers
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Type",      "text/plain; charset=utf-8");
   res.setHeader("X-Accel-Buffering", "no");
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Cache-Control",     "no-cache");
   res.status(200);
 
   try {
     const anthropicStream = await client.messages.stream({
-  model: "claude-sonnet-4-5",
-  max_tokens: 32000,
-  system: SYSTEM_PROMPTS[deliverableType],
-  messages: [{ role: "user", content: userMessage }],
-});
+      model:      "claude-sonnet-4-5",
+      max_tokens: 32000,
+      system:     SYSTEM_PROMPTS[deliverableType],
+      messages:   [{ role: "user", content: userMessage }],
+    });
 
     for await (const chunk of anthropicStream) {
       if (
