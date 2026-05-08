@@ -277,6 +277,249 @@ function seedBlocks(raw: any[]): Block[] {
     effort:  b.effort, impact:b.impact, tags:b.tags||[], source:b.source||'',
   }));
 }
+function buildLibraryFromStrategy(strategy: any): Block[] {
+  const seen  = new Set<string>();
+  const result: Block[] = [];
+
+  const push = (b: Omit<Block,'id'|'status'|'placed'|'color'> & {type:BType}) => {
+    const key = b.title.toLowerCase().slice(0, 50);
+    if (seen.has(key) || !b.title.trim()) return;
+    seen.add(key);
+    result.push({
+      ...b,
+      id:     uid(),
+      color:  TM[b.type]?.color || '#94a3b8',
+      status: 'todo',
+      placed: false,
+    });
+  };
+
+  const safe = (v: any) => (v == null ? '' : String(v));
+  const pri  = (v: any): Priority => v === 'high' ? 'high' : v === 'low' ? 'low' : 'medium';
+
+  /* 1 — canvas_blocks (curated summary — highest signal) */
+  for (const b of strategy.canvas_blocks || []) {
+    push({
+      type:     (b.type || 'custom') as BType,
+      title:    safe(b.title).slice(0, 70),
+      content:  safe(b.content),
+      priority: pri(b.priority),
+      week:     assignWeek(b),
+      effort:   b.effort,
+      impact:   b.impact,
+      tags:     b.tags || [],
+      source:   safe(b.source) || 'Strategy Analysis',
+    });
+  }
+
+  /* 2 — quick_wins */
+  for (const w of strategy.quick_wins || []) {
+    push({
+      type:     'quick-win',
+      title:    safe(w.title).slice(0, 70),
+      content:  [
+        safe(w.description),
+        w.timeframe  ? `Timeframe: ${w.timeframe}` : '',
+        w.evidence   ? `Evidence: ${w.evidence}`   : '',
+        w.category   ? `Category: ${w.category}`   : '',
+      ].filter(Boolean).join('
+
+'),
+      priority: w.impact === 'high' ? 'high' : w.impact === 'low' ? 'low' : 'medium',
+      week:     1,
+      effort:   w.effort,
+      impact:   w.impact,
+      tags:     [w.category, w.timeframe].filter(Boolean),
+      source:   'Quick Wins',
+    });
+  }
+
+  /* 3 — weekly plan tasks */
+  for (const wk of strategy.weekly_plans || []) {
+    const tasks: any[] = wk.tasks || [];
+    for (let i = 0; i < tasks.length; i++) {
+      const task    = tasks[i];
+      const isStr   = typeof task === 'string';
+      const title   = isStr ? task : safe(task.task);
+      const detail  = isStr
+        ? `Week ${wk.week} · ${safe(wk.theme)}
+
+${title}
+
+Expected: ${safe(wk.expected_outcome)}`
+        : `Week ${wk.week} · ${safe(wk.theme)}
+
+${safe(task.task)}
+
+Type: ${safe(task.type)}  Effort: ~${task.effort_hours || '?'}h
+
+Expected output: ${safe(task.expected_output)}`;
+      push({
+        type:     'weekly',
+        title:    title.slice(0, 70),
+        content:  detail,
+        priority: isStr ? 'medium' : pri(task.priority),
+        week:     wk.week || 1,
+        tags:     [`week-${wk.week}`, safe(wk.theme).toLowerCase().replace(/\s+/g,'-')].filter(Boolean),
+        source:   `Week ${wk.week} Plan`,
+      });
+    }
+  }
+
+  /* 4 — technical_priorities */
+  for (const t of strategy.technical_priorities || []) {
+    push({
+      type:     'technical',
+      title:    safe(t.issue).slice(0, 70) || 'Technical Fix',
+      content:  [
+        `Issue: ${safe(t.issue)}`,
+        `Fix: ${safe(t.fix)}`,
+        `Impact: ${safe(t.impact)}`,
+        `Urgency: ${safe(t.urgency)}`,
+        t.source ? `Source: ${safe(t.source)}` : '',
+      ].filter(Boolean).join('
+
+'),
+      priority: t.urgency === 'immediate' ? 'high' : t.urgency === 'this_week' ? 'high' : t.urgency === 'this_month' ? 'medium' : 'low',
+      week:     t.urgency === 'immediate' || t.urgency === 'this_week' ? 1 : 2,
+      effort:   t.effort,
+      tags:     ['technical', safe(t.urgency)].filter(Boolean),
+      source:   'Technical Audit',
+    });
+  }
+
+  /* 5 — content_calendar */
+  for (const c of strategy.content_calendar || []) {
+    push({
+      type:     'content',
+      title:    safe(c.title).slice(0, 70) || 'Content Piece',
+      content:  [
+        `Type: ${safe(c.type)}`,
+        `Target keyword: "${safe(c.target_keyword)}"`,
+        `Intent: ${safe(c.search_intent)}`,
+        safe(c.rationale) ? `
+Rationale: ${safe(c.rationale)}` : '',
+        c.geo_angle   ? `GEO angle: ${safe(c.geo_angle)}`          : '',
+        c.word_count  ? `Word count: ~${c.word_count}w`           : '',
+        c.internal_links?.length ? `Link to: ${c.internal_links.join(', ')}` : '',
+      ].filter(Boolean).join('
+'),
+      priority: 'medium',
+      week:     Math.min(c.suggested_week || 2, 4),
+      tags:     [safe(c.type), safe(c.target_keyword), `week-${c.suggested_week}`].filter(Boolean),
+      source:   'Content Calendar',
+    });
+  }
+
+  /* 6 — geo_strategy */
+  for (const g of strategy.geo_strategy || []) {
+    push({
+      type:     'geo',
+      title:    `${safe(g.platform)}: ${safe(g.action).slice(0, 45)}`,
+      content:  [
+        `Platform: ${safe(g.platform)}`,
+        `Current status: ${safe(g.current_status || g.status)}`,
+        `Gap: ${safe(g.gap || '')}`,
+        `
+Action: ${safe(g.action)}`,
+        `Content format: ${safe(g.content_format || '')}`,
+        `
+Expected impact: ${safe(g.expected_impact)}`,
+        `Timeframe: ${safe(g.timeframe)}`,
+      ].filter(s => s.replace(/^[A-Za-z ]+:\s*$/,'')).join('
+'),
+      priority: g.current_status?.toLowerCase().includes('not') ? 'high' : 'medium',
+      week:     2,
+      tags:     [safe(g.platform).toLowerCase().replace(/\s+/g,'-'), 'geo'].filter(Boolean),
+      source:   'GEO Strategy',
+    });
+  }
+
+  /* 7 — competitive_intelligence */
+  for (const c of strategy.competitive_intelligence || []) {
+    push({
+      type:     'competitive',
+      title:    `Outrank ${safe(c.competitor || 'competitor').slice(0, 40)}`,
+      content:  [
+        `Competitor: ${safe(c.competitor)}`,
+        `Their strength: ${safe(c.their_strength || c.gap)}`,
+        `
+Your opportunity: ${safe(c.your_opportunity || c.opportunity)}`,
+        `
+Strategy: ${safe(c.strategy)}`,
+        c.timeframe ? `Timeframe: ${safe(c.timeframe)}` : '',
+      ].filter(Boolean).join('
+'),
+      priority: 'medium',
+      week:     3,
+      tags:     [safe(c.competitor), 'competitive'].filter(Boolean),
+      source:   'Competitive Intelligence',
+    });
+  }
+
+  /* 8 — strategic_insights */
+  for (const ins of strategy.strategic_insights || []) {
+    push({
+      type:     'insight',
+      title:    safe(ins.title).slice(0, 70) || 'Strategic Insight',
+      content:  [
+        `Category: ${safe(ins.category)}`,
+        `
+${safe(ins.detail)}`,
+        ins.action ? `
+Action: ${safe(ins.action)}` : '',
+      ].filter(Boolean).join('
+'),
+      priority: pri(ins.priority),
+      week:     5,
+      tags:     [safe(ins.category), 'insight'].filter(Boolean),
+      source:   'Strategic Insights',
+    });
+  }
+
+  /* 9 — kpi_forecast */
+  for (const k of strategy.kpi_forecast || []) {
+    push({
+      type:     'kpi',
+      title:    `Track: ${safe(k.metric)}`,
+      content:  [
+        `Metric: ${safe(k.metric)}`,
+        `Current: ${safe(k.now ?? k.current)}`,
+        `30 days: ${safe(k.d30 ?? k.target_30d)}`,
+        `60 days: ${safe(k.d60 ?? k.target_60d)}`,
+        `90 days: ${safe(k.d90 ?? k.target_90d)}`,
+        k.basis              ? `
+Basis: ${safe(k.basis)}`               : '',
+        k.leading_indicator  ? `Leading indicator: ${safe(k.leading_indicator)}` : '',
+      ].filter(Boolean).join('
+'),
+      priority: 'low',
+      week:     5,
+      tags:     ['kpi', 'tracking'],
+      source:   'KPI Forecast',
+    });
+  }
+
+  /* 10 — retainer milestones */
+  for (const m of strategy.retainer_value_summary?.key_milestones || []) {
+    push({
+      type:     'monthly',
+      title:    safe(m).slice(0, 70),
+      content:  `Milestone: ${safe(m)}
+
+Projection: ${safe(strategy.retainer_value_summary?.projection || strategy.retainer_value_summary?.score_gain_projection)}
+
+Ranking win: ${safe(strategy.retainer_value_summary?.ranking_win || strategy.retainer_value_summary?.ranking_improvements)}`,
+      priority: 'medium',
+      week:     5,
+      tags:     ['milestone', 'monthly'],
+      source:   'Retainer Value Summary',
+    });
+  }
+
+  return result;
+}
+
 
 /* ─── sub-components ─── */
 function ChatMd({text}:{text:string}) {
@@ -359,16 +602,22 @@ export default function Playground() {
     ]);
     setReports(rr.data||[]);
     if (pr.data?.playground_strategy){setStrategy(pr.data.playground_strategy);setGenAt(pr.data.playground_generated_at||'');}
-    if (pr.data?.playground_canvas?.length) {
+    if (pr.data?.playground_strategy) {
+      // Always rebuild full library from strategy — canvas only stores placements
+      const allBlocks  = buildLibraryFromStrategy(pr.data.playground_strategy);
+      const placements = (pr.data.playground_canvas || []) as {id:string;placed:boolean;week:number;status:Status}[];
+      const placedMap  = new Map(placements.map(p => [p.id, p]));
+      const merged = allBlocks.map(b => {
+        const saved = placedMap.get(b.id);
+        return saved ? {...b, placed: saved.placed, week: saved.week, status: saved.status} : b;
+      });
+      setBlocks(merged);
+      setRecommendation(getNextRecommendation(merged.filter(b=>b.placed), merged.filter(b=>!b.placed)));
+    } else if (pr.data?.playground_canvas?.length) {
+      // Fallback: old format where full blocks were saved
       const saved = pr.data.playground_canvas as Block[];
       setBlocks(saved);
-      const placed = saved.filter(b=>b.placed);
-      const lib    = saved.filter(b=>!b.placed);
-      setRecommendation(getNextRecommendation(placed,lib));
-    } else if (pr.data?.playground_strategy?.canvas_blocks?.length) {
-      const nb = seedBlocks(pr.data.playground_strategy.canvas_blocks);
-      setBlocks(nb);
-      setRecommendation(getNextRecommendation([],nb));
+      setRecommendation(getNextRecommendation(saved.filter(b=>b.placed), saved.filter(b=>!b.placed)));
     }
   };
 
@@ -388,11 +637,11 @@ export default function Playground() {
       if(!data.success) throw new Error(data.error);
       setStrategy(data.strategy);
       setGenAt(data.generated_at);
-      const nb = seedBlocks(data.strategy.canvas_blocks||[]);
+      const nb = buildLibraryFromStrategy(data.strategy);
       setBlocks(nb);
       setRecommendation(getNextRecommendation([],nb));
-      await supabase.from('projects').update({playground_strategy:data.strategy,playground_canvas:nb,playground_generated_at:data.generated_at}).eq('id',selProjId);
-      toast({title:`Strategy ready — ${nb.length} blocks in your library!`,description:'Drag blocks from the left sidebar into weekly columns. The AI will guide each move.'});
+      await supabase.from('projects').update({playground_strategy:data.strategy,playground_canvas:[],playground_generated_at:data.generated_at}).eq('id',selProjId);
+      toast({title:`✅ ${nb.length} strategy blocks ready!`,description:'Drag blocks from the left sidebar into weekly columns. The AI will guide each move.'});
       setTab('canvas');
     } catch(e:any){toast({title:'Failed',description:e.message,variant:'destructive'});}
     setGenerating(false);
@@ -477,13 +726,17 @@ export default function Playground() {
     setChatLoading(false);
   };
 
-  const scheduleAutoSave = ()=>{
+  const scheduleAutoSave = (currentBlocks?: Block[])=>{
+    const b = currentBlocks || blocks;
     if(autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current=setTimeout(async()=>{
-      if(selProjId) await supabase.from('projects').update({playground_canvas:blocks}).eq('id',selProjId);
+      if(!selProjId) return;
+      // Save only placements — library is always rebuilt from strategy
+      const placements = b.filter(x=>x.placed).map(x=>({id:x.id,placed:x.placed,week:x.week,status:x.status}));
+      await supabase.from('projects').update({playground_canvas:placements}).eq('id',selProjId);
     },1500);
   };
-  useEffect(()=>{if(blocks.length&&selProjId) scheduleAutoSave();},[blocks]);
+  useEffect(()=>{if(blocks.length&&selProjId) scheduleAutoSave(blocks);},[blocks]);
 
   const dlReport = (r:any,t:string)=>{const b=new Blob([safeStr(r.sections?.[t])],{type:'text/markdown'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`${t}-audit-${r.created_at?.split('T')[0]}.md`;a.click();URL.revokeObjectURL(a.href);};
   const cpReport = async(r:any,t:string)=>{await navigator.clipboard.writeText(safeStr(r.sections?.[t]));toast({title:'Copied!'});};
@@ -799,8 +1052,11 @@ export default function Playground() {
 
                     {/* Toolbar */}
                     <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-xs font-mono text-muted-foreground px-1">
+                        {blocks.filter(b=>!b.placed).length} in library · {placedBlocks.length} placed
+                      </div>
                       <select value={filterType} onChange={e=>setFilterType(e.target.value as any)} className="h-8 text-xs px-2 rounded-xl border border-border bg-background/60 text-muted-foreground">
-                        <option value="all">All types ({blocks.filter(b=>!b.placed).length} in library)</option>
+                        <option value="all">All types</option>
                         {Object.entries(TM).map(([k,v])=>{
                           const count=blocks.filter(b=>!b.placed&&b.type===k).length;
                           return count>0?<option key={k} value={k}>{v.label} ({count})</option>:null;
@@ -808,7 +1064,23 @@ export default function Playground() {
                       </select>
                       <div className="flex-1"/>
                       <button onClick={()=>setShowAdd(o=>!o)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Plus size={12}/>Custom block</button>
-                      <button onClick={resetCanvas} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border bg-card/60 text-muted-foreground hover:text-foreground"><RotateCcw size={12}/>Reset</button>
+                      <button onClick={resetCanvas} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border bg-card/60 text-muted-foreground hover:text-foreground"><RotateCcw size={12}/>Reset canvas</button>
+                      {strategy && (
+                        <button
+                          onClick={() => {
+                            const rebuilt = buildLibraryFromStrategy(strategy);
+                            const placed  = blocks.filter(b => b.placed);
+                            const placedIds = new Set(placed.map(b => b.id));
+                            const newLib = rebuilt.filter(b => !placedIds.has(b.id));
+                            setBlocks([...placed, ...newLib]);
+                            setRecommendation(getNextRecommendation(placed, newLib));
+                            toast({title: `Library rebuilt — ${newLib.length} blocks ready`, description: 'All strategy sections converted to draggable blocks.'});
+                          }}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+                        >
+                          <Sparkles size={12}/>Rebuild library
+                        </button>
+                      )}
                     </div>
 
                     {/* Add custom block */}
