@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 300 };
 
 type DeliverableType = "Technical" | "On-Page" | "Off-Page" | "GEO";
 
@@ -21,7 +21,7 @@ const SYSTEM_PROMPTS: Record<DeliverableType, string> = {
 /* ─────────────────────────────────────────────────────────────────
    JINA AI FETCHER
 ───────────────────────────────────────────────────────────────── */
-async function fetchWebsiteContent(url: string): Promise<string> {
+async function fetchWebsiteContent(url: string, maxChars = 8000): Promise<string> {
   try {
     const fullUrl = url.startsWith("http") ? url : `https://${url}`;
     const response = await fetch(`https://r.jina.ai/${fullUrl}`, {
@@ -35,7 +35,7 @@ async function fetchWebsiteContent(url: string): Promise<string> {
     if (!response.ok) return `Could not fetch website. HTTP Status: ${response.status}.`;
     const text = await response.text();
     if (!text || text.trim().length < 50) return `Website returned empty content. The site may be blocking crawlers.`;
-    return text.trim().slice(0, 15000);
+    return text.trim().slice(0, maxChars);
   } catch (err) {
     if (err instanceof Error && err.name === "TimeoutError") return `Website took too long to respond (30s timeout).`;
     return `Could not fetch website: ${err instanceof Error ? err.message : "Unknown error"}`;
@@ -169,15 +169,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let url: string, keyword: string, deliverableType: DeliverableType;
   let projectContext: ProjectContext | undefined;
+  let mode: 'standard' | 'deep' = 'standard';
 
   try {
     url             = (req.body?.url             ?? "").toString().trim();
     keyword         = (req.body?.keyword         ?? "").toString().trim();
     deliverableType = (req.body?.deliverableType ?? "") as DeliverableType;
     projectContext  = req.body?.projectContext   ?? undefined;
+    mode            = req.body?.mode === 'deep' ? 'deep' : 'standard';
   } catch {
     return res.status(400).json({ error: "Could not parse request body." });
   }
+
+  // Mode-specific limits
+  const cfg = mode === 'deep'
+    ? { websiteChars: 15000, maxTokens: 16000, snippetNote: 'deep' }
+    : { websiteChars: 8000,  maxTokens: 8000,  snippetNote: 'standard' };
 
   if (!url || !keyword || !deliverableType) {
     return res.status(400).json({ error: "Missing required fields: url, keyword, deliverableType." });
@@ -186,7 +193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: `Invalid deliverableType. Must be one of: ${Object.keys(SYSTEM_PROMPTS).join(", ")}.` });
   }
 
-  const websiteContent = await fetchWebsiteContent(url);
+  const websiteContent = await fetchWebsiteContent(url, cfg.websiteChars);
 
   const today = new Date().toLocaleDateString("en-GB", {
     day: "numeric", month: "long", year: "numeric",
@@ -221,8 +228,10 @@ Critical instructions:
 - Use today's date (${today}) — never write a different year
 - Format using clear markdown: headings, bullet points, and tables where appropriate
 - Be specific, direct, and actionable
-- Write a COMPLETE report — never truncate or summarise at the end
-- If running long, reduce section depth but always finish all sections
+${mode === 'deep' ? `- DEEP MODE: Be exhaustive. Every section should have maximum detail, specific examples, numbered action items, and concrete metrics where possible. Do not abbreviate any section.` : `- STANDARD MODE: Be thorough but concise. Use tight bullet points. Cover every section but keep each focused.`}
+- Write a COMPLETE report — every section must have a conclusion, never stop mid-section
+- Never end with '...' or an incomplete sentence — always write a proper closing summary
+- If you are running long, compress bullet depth but NEVER skip or merge sections
   `.trim();
 
   res.setHeader("Content-Type",      "text/plain; charset=utf-8");
@@ -234,7 +243,7 @@ Critical instructions:
     const client = new Anthropic();
     const stream = await client.messages.stream({
       model:      "claude-sonnet-4-5",
-      max_tokens: 32000,
+      max_tokens: cfg.maxTokens,
       system:     SYSTEM_PROMPTS[deliverableType],
       messages:   [{ role: "user", content: userMessage }],
     });
