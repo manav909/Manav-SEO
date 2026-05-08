@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { BarChart3, Sparkles, LogOut, Settings, Home, Zap } from 'lucide-react';
+import { BarChart3, Sparkles, LogOut, Settings, Home, Zap, Layers } from 'lucide-react';
 
 interface Props {
   clientName?:        string;
@@ -19,10 +19,11 @@ export default function PortalNav({
   const { signOut } = useAuth();
   const path = location.pathname;
 
-  const links = [
-    { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
-    { href: '/launchpad',  label: 'Launchpad', icon: Sparkles  },
-    { href: '/audit',      label: 'Audit Tool',icon: Zap       },
+ const links = [
+    { href: '/dashboard',   label: 'Dashboard',  icon: BarChart3 },
+    { href: '/launchpad',   label: 'Launchpad',  icon: Sparkles  },
+    { href: '/audit',       label: 'Audit Tool', icon: Zap       },
+    { href: '/playground',  label: 'Playground', icon: Layers    },
   ];
 
   return (
