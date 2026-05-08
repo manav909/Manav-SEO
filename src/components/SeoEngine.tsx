@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight, Check, Copy, Download, FileDown,
   Loader2, Sparkles, Wrench, FileText, Megaphone, Bot,
-  Database
+  Database, CheckCircle2
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { toast } from '@/hooks/use-toast';
+import { Button }   from '@/components/ui/button';
+import { Input }    from '@/components/ui/input';
+import { Label }    from '@/components/ui/label';
+import { toast }    from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
 import { DELIVERABLES, LOADING_STEPS, type DeliverableType } from '@/lib/seoGenerator';
 import jsPDF from 'jspdf';
 
@@ -25,6 +26,110 @@ interface SeoEngineProps {
   allKeywords?:    string[];
 }
 
+/* ─────────────────────────────────────────────────────────────────
+   Fetch project context from Supabase (client-side)
+───────────────────────────────────────────────────────────────── */
+async function fetchProjectContext(projectId: string) {
+  try {
+    const [projRes, metricsRes, auditsRes] = await Promise.all([
+      supabase.from('projects').select('*, clients(*)').eq('id', projectId).single(),
+      supabase.from('metrics').select('*').eq('project_id', projectId).order('recorded_at', { ascending: false }).limit(1),
+      supabase.from('audit_reports').select('created_at, sections').eq('project_id', projectId).eq('saved_by', 'seo-engine').order('created_at', { ascending: false }).limit(3),
+    ]);
+
+    const project       = projRes.data;
+    const latestMetric  = metricsRes.data?.[0] ?? null;
+    const recentAudits  = auditsRes.data ?? [];
+
+    const recentAuditSummaries = recentAudits
+      .map((a: any) => {
+        const types   = Object.keys(a.sections || {});
+        const first   = Object.values(a.sections || {})[0] as string ?? '';
+        const snippet = first.slice(0, 600).replace(/\n+/g, ' ').trim();
+        return { date: (a.created_at || '').split('T')[0], types, snippet };
+      })
+      .filter(a => a.types.length > 0);
+
+    return {
+      company:              (project as any)?.clients?.company  ?? '',
+      industry:             (project as any)?.clients?.industry ?? '',
+      allKeywords:          project?.keywords      ?? [],
+      competitors:          project?.competitors   ?? [],
+      latestMetric,
+      keywordRankings:      latestMetric?.keyword_rankings ?? [],
+      recentAuditSummaries,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Save audit report to Supabase (client-side)
+───────────────────────────────────────────────────────────────── */
+async function saveAuditReport(
+  projectId:       string,
+  url:             string,
+  keyword:         string,
+  allKeywords:     string[],
+  deliverableType: DeliverableType,
+  content:         string,
+) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+
+    // Find today's seo-engine record for this project
+    const { data: existing } = await supabase
+      .from('audit_reports')
+      .select('id, sections')
+      .eq('project_id', projectId)
+      .eq('saved_by', 'seo-engine')
+      .gte('created_at', `${today}T00:00:00`)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      // Merge new section into today's record
+      await supabase
+        .from('audit_reports')
+        .update({ sections: { ...(existing[0].sections ?? {}), [deliverableType]: content } })
+        .eq('id', existing[0].id);
+    } else {
+      // Create new record
+      const keywords = Array.from(new Set([keyword, ...allKeywords])).filter(Boolean);
+      await supabase.from('audit_reports').insert({
+        project_id: projectId,
+        url,
+        keywords,
+        sections:   { [deliverableType]: content },
+        saved_by:   'seo-engine',
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    // Write lightweight summary back to projects so dashboard/launchpad see it
+    const headings = content.split('\n')
+      .filter(l => l.startsWith('#'))
+      .slice(0, 6)
+      .join(' | ');
+    const key = `audit_${deliverableType.toLowerCase().replace(/[^a-z]/g, '_')}`;
+    await supabase.from('projects').update({
+      last_analysis: {
+        [`${key}_summary`]: headings.slice(0, 400),
+        [`${key}_at`]:      new Date().toISOString(),
+      },
+    }).eq('id', projectId);
+
+    return true;
+  } catch (err) {
+    console.error('Save audit failed:', err);
+    return false;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════
+   MAIN COMPONENT
+════════════════════════════════════════════════════════ */
 export const SeoEngine = ({
   projectId,
   defaultUrl     = '',
@@ -40,11 +145,14 @@ export const SeoEngine = ({
   const [activeTab,    setActiveTab]    = useState<'rendered' | 'markdown'>('rendered');
   const [copied,       setCopied]       = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [savedOk,      setSavedOk]      = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
 
-  /* Sync when project changes */
-  useEffect(() => { if (defaultUrl)     setUrl(defaultUrl);         }, [defaultUrl]);
-  useEffect(() => { if (defaultKeyword) setKeyword(defaultKeyword); }, [defaultKeyword]);
+  /* Sync defaults when project changes */
+  useEffect(() => { setUrl(defaultUrl);         }, [defaultUrl]);
+  useEffect(() => { setKeyword(defaultKeyword); }, [defaultKeyword]);
+  /* Reset saved badge when project/type changes */
+  useEffect(() => { setSavedOk(false); }, [projectId, selected]);
 
   /* Loading step ticker */
   useEffect(() => {
@@ -60,21 +168,30 @@ export const SeoEngine = ({
       toast({ title: 'Missing fields', description: 'Please add a URL and a keyword.', variant: 'destructive' });
       return;
     }
+
     setOutput(null);
+    setSavedOk(false);
     setLoading(true);
+
     try {
+      // Fetch project context from Supabase if linked to a project
+      let projectContext: any = undefined;
+      if (projectId) {
+        projectContext = await fetchProjectContext(projectId);
+      }
+
       const res = await fetch('/api/seo-agent', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url,
           keyword,
-          deliverableType: selected,
-          ...(projectId ? { projectId } : {}),
+          deliverableType:  selected,
+          ...(projectContext ? { projectContext } : {}),
         }),
       });
 
-      if (!res.ok || !res.body) throw new Error('Request failed');
+      if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
 
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
@@ -85,7 +202,7 @@ export const SeoEngine = ({
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         if (chunk.includes('[STREAM_ERROR]')) {
-          toast({ title: 'Error', description: chunk, variant: 'destructive' });
+          toast({ title: 'Report error', description: chunk, variant: 'destructive' });
           break;
         }
         acc += chunk;
@@ -94,15 +211,24 @@ export const SeoEngine = ({
 
       setLoading(false);
       setActiveTab('rendered');
+      setTimeout(() => outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 
-      if (projectId) {
-        toast({
-          title: 'Audit saved to project',
-          description: 'This report informs your dashboard scores, launchpad, and future audits.',
-        });
+      // Save to Supabase after stream completes
+      if (projectId && acc.length > 200) {
+        const saved = await saveAuditReport(
+          projectId, url, keyword,
+          projectContext?.allKeywords ?? allKeywords,
+          selected, acc,
+        );
+        if (saved) {
+          setSavedOk(true);
+          toast({
+            title: 'Audit saved',
+            description: `${selected} report saved to project. Feeds dashboard & launchpad.`,
+          });
+        }
       }
 
-      setTimeout(() => outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     } catch (err) {
       console.error(err);
       toast({ title: 'Error', description: 'Failed to generate report.', variant: 'destructive' });
@@ -139,105 +265,73 @@ export const SeoEngine = ({
       const maxWidth   = pageWidth - margin * 2;
       let y = margin;
 
-      const checkPage = (h: number) => {
-        if (y + h > pageHeight - margin) { pdf.addPage(); y = margin; }
-      };
-
+      const checkPage = (h: number) => { if (y + h > pageHeight - margin) { pdf.addPage(); y = margin; } };
       const cl = (t: string) =>
         t.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1')
          .replace(/[–—]/g, '-').replace(/[""]/g, '"').replace(/['']/g, "'")
          .replace(/…/g, '...').replace(/•/g, '-').replace(/[^\x00-\x7F]/g, '?');
-
-      const wt = (t: string, fs: number, b: boolean, c: [number, number, number], tp = 0, bp = 2) => {
+      const wt = (t: string, fs: number, b: boolean, c: [number,number,number], tp=0, bp=2) => {
         pdf.setFontSize(fs); pdf.setFont('helvetica', b ? 'bold' : 'normal'); pdf.setTextColor(...c);
         const ls = pdf.splitTextToSize(cl(t), maxWidth);
-        const bh = ls.length * fs * 0.45 + tp + bp;
-        checkPage(bh); y += tp; pdf.text(ls, margin, y); y += ls.length * fs * 0.45 + bp;
+        const bh = ls.length * fs * 0.45 + tp + bp; checkPage(bh); y += tp;
+        pdf.text(ls, margin, y); y += ls.length * fs * 0.45 + bp;
       };
 
       let inT = false, tRows: string[][] = [], inC = false, cLines: string[] = [];
-
       const flushT = () => {
         if (tRows.length < 2) { tRows = []; inT = false; return; }
-        const cols = Math.max(...tRows.map(r => r.length));
-        const cw   = maxWidth / cols;
+        const cols = Math.max(...tRows.map(r => r.length)); const cw = maxWidth / cols;
         tRows.forEach((row, ri) => {
-          if (ri === 1) return;
-          checkPage(9);
-          const isH = ri === 0;
+          if (ri === 1) return; checkPage(9); const isH = ri === 0;
           pdf.setFontSize(8); pdf.setFont('helvetica', isH ? 'bold' : 'normal');
           pdf.setTextColor(isH ? 30 : 60, isH ? 30 : 60, isH ? 30 : 60);
-          if (isH) { pdf.setFillColor(235, 235, 245); pdf.rect(margin, y - 5, maxWidth, 7, 'F'); }
-          row.forEach((cell, ci) => pdf.text(pdf.splitTextToSize(cl(cell.trim()), cw - 2), margin + ci * cw + 1, y));
-          pdf.setDrawColor(210, 210, 220); pdf.line(margin, y + 2.5, margin + maxWidth, y + 2.5);
-          y += 7;
+          if (isH) { pdf.setFillColor(235,235,245); pdf.rect(margin, y-5, maxWidth, 7, 'F'); }
+          row.forEach((cell, ci) => pdf.text(pdf.splitTextToSize(cl(cell.trim()), cw-2), margin+ci*cw+1, y));
+          pdf.setDrawColor(210,210,220); pdf.line(margin, y+2.5, margin+maxWidth, y+2.5); y += 7;
         });
         y += 4; tRows = []; inT = false;
       };
-
       const flushC = () => {
         if (!cLines.length) { cLines = []; inC = false; return; }
-        const ct = cLines.join('\n');
-        pdf.setFontSize(7.5); pdf.setFont('courier', 'normal'); pdf.setTextColor(40, 40, 40);
-        const wl = pdf.splitTextToSize(ct, maxWidth - 6);
-        const bh = wl.length * 3.8 + 6;
-        checkPage(bh + 4);
-        pdf.setFillColor(242, 242, 248); pdf.setDrawColor(200, 200, 215);
-        pdf.roundedRect(margin, y - 3, maxWidth, bh, 2, 2, 'FD');
-        pdf.text(wl, margin + 3, y + 1);
-        y += bh + 4; cLines = []; inC = false;
+        const ct = cLines.join('\n'); pdf.setFontSize(7.5); pdf.setFont('courier','normal'); pdf.setTextColor(40,40,40);
+        const wl = pdf.splitTextToSize(ct, maxWidth-6); const bh = wl.length*3.8+6; checkPage(bh+4);
+        pdf.setFillColor(242,242,248); pdf.setDrawColor(200,200,215);
+        pdf.roundedRect(margin, y-3, maxWidth, bh, 2, 2, 'FD');
+        pdf.text(wl, margin+3, y+1); y += bh+4; cLines = []; inC = false;
       };
 
       for (const line of output.split('\n')) {
-        if (line.trim().startsWith('```')) {
-          if (inC) flushC(); else { if (inT) flushT(); inC = true; }
-          continue;
-        }
+        if (line.trim().startsWith('```')) { if (inC) flushC(); else { if (inT) flushT(); inC = true; } continue; }
         if (inC) { cLines.push(line); continue; }
-        if (line.trim().startsWith('|')) {
-          inT = true;
-          tRows.push(line.split('|').filter((_, i, a) => i > 0 && i < a.length - 1));
-          continue;
-        } else if (inT) flushT();
-
-        if      (line.startsWith('# '))    wt(line.slice(2),  18,   true,  [79, 70, 229], 6, 4);
-        else if (line.startsWith('## '))   wt(line.slice(3),  13,   true,  [30, 30, 40],  5, 3);
-        else if (line.startsWith('### '))  wt(line.slice(4),  10.5, true,  [79, 70, 229], 4, 2);
-        else if (line.startsWith('#### ')) wt(line.slice(5),  9.5,  true,  [60, 60, 80],  3, 2);
+        if (line.trim().startsWith('|')) { inT = true; tRows.push(line.split('|').filter((_,i,a) => i>0 && i<a.length-1)); continue; }
+        else if (inT) flushT();
+        if      (line.startsWith('# '))    wt(line.slice(2), 18, true, [79,70,229], 6, 4);
+        else if (line.startsWith('## '))   wt(line.slice(3), 13, true, [30,30,40],  5, 3);
+        else if (line.startsWith('### '))  wt(line.slice(4), 10.5, true, [79,70,229], 4, 2);
+        else if (line.startsWith('#### ')) wt(line.slice(5), 9.5, true, [60,60,80],  3, 2);
         else if (/^[-*]\s/.test(line.trim())) {
           const t = cl(line.trim().replace(/^[-*]\s/, ''));
-          pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(50, 50, 60);
-          const w = pdf.splitTextToSize('  •  ' + t, maxWidth - 5);
-          const h = w.length * 4.2 + 1; checkPage(h);
-          pdf.text(w, margin + 2, y); y += h;
+          pdf.setFontSize(9); pdf.setFont('helvetica','normal'); pdf.setTextColor(50,50,60);
+          const w = pdf.splitTextToSize('  •  '+t, maxWidth-5); checkPage(w.length*4.2+1);
+          pdf.text(w, margin+2, y); y += w.length*4.2+1;
         } else if (/^\d+\.\s/.test(line.trim())) {
-          pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(50, 50, 60);
-          const w = pdf.splitTextToSize(cl(line.trim()), maxWidth - 5);
-          const h = w.length * 4.2 + 1; checkPage(h);
-          pdf.text(w, margin + 4, y); y += h;
-        } else if (line.trim() === '---') {
-          checkPage(6);
-          pdf.setDrawColor(200, 200, 220);
-          pdf.line(margin, y, margin + maxWidth, y);
-          y += 6;
-        } else if (line.trim() === '') {
-          y += 2.5;
-        } else {
-          wt(line, 9, false, [50, 50, 60], 0, 1.5);
-        }
+          pdf.setFontSize(9); pdf.setFont('helvetica','normal'); pdf.setTextColor(50,50,60);
+          const w = pdf.splitTextToSize(cl(line.trim()), maxWidth-5); checkPage(w.length*4.2+1);
+          pdf.text(w, margin+4, y); y += w.length*4.2+1;
+        } else if (line.trim() === '---') { checkPage(6); pdf.setDrawColor(200,200,220); pdf.line(margin,y,margin+maxWidth,y); y+=6; }
+        else if (line.trim() === '') y += 2.5;
+        else wt(line, 9, false, [50,50,60], 0, 1.5);
       }
-      if (inT) flushT();
-      if (inC) flushC();
+      if (inT) flushT(); if (inC) flushC();
 
       const total = (pdf.internal as any).getNumberOfPages();
       const del   = DELIVERABLES.find(d => d.id === selected)!;
       for (let i = 1; i <= total; i++) {
         pdf.setPage(i);
-        pdf.setFontSize(7); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(160, 160, 180);
-        pdf.text(`SEO Report  |  ${del.title}  |  Page ${i} of ${total}`, margin, pageHeight - 8);
-        pdf.line(margin, pageHeight - 11, margin + maxWidth, pageHeight - 11);
+        pdf.setFontSize(7); pdf.setFont('helvetica','normal'); pdf.setTextColor(160,160,180);
+        pdf.text(`SEO Report  |  ${del.title}  |  Page ${i} of ${total}`, margin, pageHeight-8);
+        pdf.line(margin, pageHeight-11, margin+maxWidth, pageHeight-11);
       }
-
       pdf.save(`seo-${selected}-${Date.now()}.pdf`);
       toast({ title: 'PDF downloaded!' });
     } catch (err) {
@@ -264,8 +358,8 @@ export const SeoEngine = ({
           <div className="flex items-center gap-2 text-xs font-mono text-primary bg-primary/5 border border-primary/15 rounded-xl px-3 py-2.5 mb-6">
             <Database className="h-3.5 w-3.5 shrink-0" />
             <span>
-              Project context active — this audit uses all tracked keywords, competitor data, live health scores,
-              and previous reports. Results auto-save and feed your dashboard &amp; launchpad.
+              Project context active — audit uses tracked keywords, competitor data, health scores, and
+              previous reports. Results auto-save and feed your dashboard &amp; launchpad.
             </span>
           </div>
         )}
@@ -294,15 +388,13 @@ export const SeoEngine = ({
               value={keyword} onChange={e => setKeyword(e.target.value)} disabled={loading}
               className="h-12 text-base bg-background/60 border-border focus-visible:ring-primary focus-visible:ring-offset-0"
             />
-            {/* Clickable keyword chips from project */}
             {allKeywords.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
+                <span className="text-xs text-muted-foreground self-center mr-1">Tracked:</span>
                 {allKeywords.map((kw, i) => (
                   <button
-                    key={i}
-                    type="button"
-                    onClick={() => setKeyword(kw)}
-                    disabled={loading}
+                    key={i} type="button"
+                    onClick={() => setKeyword(kw)} disabled={loading}
                     className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
                       keyword === kw
                         ? 'border-primary bg-primary/10 text-primary shadow-[0_0_8px_hsl(var(--primary)/0.3)]'
@@ -344,9 +436,7 @@ export const SeoEngine = ({
                   </div>
                   <div className="text-sm font-semibold mb-1 leading-tight">{d.title}</div>
                   <div className="text-xs text-muted-foreground leading-snug">{d.description}</div>
-                  {active && (
-                    <div className="absolute top-3 right-3 h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
-                  )}
+                  {active && <div className="absolute top-3 right-3 h-2 w-2 rounded-full bg-primary animate-pulse-glow" />}
                 </button>
               );
             })}
@@ -372,13 +462,10 @@ export const SeoEngine = ({
           )}
         </Button>
 
-        {/* Progress bar */}
         {loading && (
           <div className="mt-4 h-1 rounded-full bg-secondary overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-500"
-              style={{ width: `${((stepIdx + 1) / LOADING_STEPS.length) * 100}%` }}
-            />
+            <div className="h-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-500"
+              style={{ width: `${((stepIdx + 1) / LOADING_STEPS.length) * 100}%` }} />
           </div>
         )}
       </form>
@@ -388,8 +475,13 @@ export const SeoEngine = ({
         <div ref={outputRef} className="mt-12 animate-fade-up">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-5">
             <div>
-              <div className="text-xs font-mono text-primary uppercase tracking-widest mb-1">
-                ✓ Report ready{projectId ? ' · saved to project' : ''}
+              <div className="flex items-center gap-2 text-xs font-mono text-primary uppercase tracking-widest mb-1">
+                <span>✓ Report ready</span>
+                {savedOk && (
+                  <span className="flex items-center gap-1 text-green-400">
+                    <CheckCircle2 className="h-3 w-3" />saved to project
+                  </span>
+                )}
               </div>
               <h2 className="text-2xl sm:text-3xl font-bold">{currentDeliverable.title}</h2>
             </div>
@@ -463,17 +555,13 @@ const RenderedMarkdown = ({ source }: { source: string }) => {
 
   const flushT = (k: string) => {
     if (tBuf.length < 2) { tBuf = []; return; }
-    const rows                = tBuf.map(r => r.split('|').map(c => c.trim()).filter(Boolean));
+    const rows = tBuf.map(r => r.split('|').map(c => c.trim()).filter(Boolean));
     const [header, , ...body] = rows;
     elements.push(
       <div key={k} className="my-5 overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="bg-secondary/60">
-            <tr>
-              {header.map((h, i) => (
-                <th key={i} className="text-left px-4 py-2.5 font-semibold">{h}</th>
-              ))}
-            </tr>
+            <tr>{header.map((h, i) => <th key={i} className="text-left px-4 py-2.5 font-semibold">{h}</th>)}</tr>
           </thead>
           <tbody>
             {body.map((row, ri) => (
@@ -493,23 +581,11 @@ const RenderedMarkdown = ({ source }: { source: string }) => {
 
   lines.forEach((line, idx) => {
     const key = `el-${idx}`;
-
-    if (line.trim().startsWith('|')) {
-      flushL(`l-${idx}`); tBuf.push(line); return;
-    } else {
-      flushT(`t-${idx}`);
-    }
-
-    if (/^[-*]\s/.test(line)) {
-      elements.push(null);
-      lBuf.push(line.replace(/^[-*]\s/, ''));
-      return;
-    } else if (/^\d+\.\s/.test(line)) {
-      lBuf.push(line.replace(/^\d+\.\s/, ''));
-      return;
-    } else {
-      flushL(`l-${idx}`);
-    }
+    if (line.trim().startsWith('|')) { flushL(`l-${idx}`); tBuf.push(line); return; }
+    else flushT(`t-${idx}`);
+    if (/^[-*]\s/.test(line))       { elements.push(null); lBuf.push(line.replace(/^[-*]\s/, '')); return; }
+    else if (/^\d+\.\s/.test(line)) { lBuf.push(line.replace(/^\d+\.\s/, '')); return; }
+    else flushL(`l-${idx}`);
 
     if      (line.startsWith('# '))    elements.push(<h1 key={key} className="text-3xl font-bold mt-2 mb-4 text-gradient-primary">{line.slice(2)}</h1>);
     else if (line.startsWith('## '))   elements.push(<h2 key={key} className="text-xl font-bold mt-8 mb-3 text-foreground">{line.slice(3)}</h2>);
