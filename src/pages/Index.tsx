@@ -166,8 +166,8 @@ export default function Index() {
       ══════════════════════════════════════ */}
       <section style={{
         position: 'relative',
-        height: '100vh',
-        minHeight: 640,
+        height: '68vh',
+        minHeight: 520,
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'flex-end',
@@ -182,7 +182,7 @@ export default function Index() {
             position: 'absolute', inset: 0, zIndex: 1,
             width: '100%', height: '100%',
             objectFit: 'cover',
-            objectPosition: '50% 12%',
+            objectPosition: '50% 10%',
           }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
@@ -213,7 +213,7 @@ export default function Index() {
         }} />
 
         {/* Text — over the face, centered, cinematic */}
-        <div style={{ position: 'relative', zIndex: 10, width: '100%', padding: '0 24px 52px', textAlign: 'center' }}>
+       <div style={{ position: 'relative', zIndex: 10, width: '100%', padding: '0 24px 36px', textAlign: 'center' }}>
           <div style={{ maxWidth: 720, margin: '0 auto' }}>
 
             {/* Name badge */}
@@ -228,7 +228,7 @@ export default function Index() {
             <h1 style={{
               fontWeight: 900, lineHeight: 1.05, letterSpacing: '-0.03em',
               marginBottom: 16, color: '#fff',
-              fontSize: 'clamp(2.8rem, 6.5vw, 5rem)',
+              fontSize: 'clamp(2.2rem, 4.5vw, 3.6rem)',
             }}>
               I'm Manav.
             </h1>
@@ -258,7 +258,7 @@ export default function Index() {
             </div>
 
             {/* Star rating */}
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4, marginTop: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4, marginTop: 18 }}>
               {[1,2,3,4,5].map(i => <Star key={i} size={13} style={{ fill: '#facc15', color: '#facc15' }} />)}
               <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', marginLeft: 8 }}>500+ five-star reviews on Fiverr</span>
             </div>
