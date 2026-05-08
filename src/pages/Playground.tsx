@@ -461,14 +461,29 @@ export default function Playground() {
                       <div className="flex items-center gap-4"><span className="text-sm font-semibold">{fmtDate(report.created_at)}</span><div className="flex gap-1.5">{types.map(t=><span key={t} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/40 text-muted-foreground font-mono">{t}</span>)}</div>{report.synced_to_metrics&&<span className="text-xs text-green-400 font-mono flex items-center gap-1"><CheckCircle2 size={10}/>Synced</span>}</div>
                       {exp?<ChevronUp size={14}/>:<ChevronDown size={14}/>}
                     </button>
-                    {exp&&<div className="border-t border-border px-5 py-4 space-y-4">{types.map(type=>(
-                      <div key={type} className="rounded-xl border border-border bg-background/40 overflow-hidden">
-                        <div className="flex items-center justify-between px-4 py-2.5 bg-secondary/30 border-b border-border"><span className="text-xs font-semibold font-mono">{type} Audit</span><div className="flex gap-2"><button onClick={()=>cpReport(report,type)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-border bg-background/60"><Copy size={10}/>Copy</button><button onClick={()=>dlReport(report,type)} className="flex items-center gap-1 text-xs text-primary px-2 py-1 rounded border border-primary/30 bg-primary/5"><Download size={10}/>Download .md</button></div></div>
-                        <div className="p-4 max-h-72 overflow-y-auto"><pre className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed font-mono">{safeStr(report.sections[type]).slice(0,3000)}{safeStr(report.sections[type]).length>3000?'\n\n[truncated — download for full]':''}</pre></div>
+                    {exp && (
+                      <div className="border-t border-border px-5 py-4 space-y-4">
+                        {types.map(type => (
+                          <div key={type} className="rounded-xl border border-border bg-background/40 overflow-hidden">
+                            <div className="flex items-center justify-between px-4 py-2.5 bg-secondary/30 border-b border-border">
+                              <span className="text-xs font-semibold font-mono">{type} Audit</span>
+                              <div className="flex gap-2">
+                                <button onClick={() => cpReport(report, type)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-border bg-background/60"><Copy size={10}/>Copy</button>
+                                <button onClick={() => dlReport(report, type)} className="flex items-center gap-1 text-xs text-primary px-2 py-1 rounded border border-primary/30 bg-primary/5"><Download size={10}/>Download .md</button>
+                              </div>
+                            </div>
+                            <div className="p-4 max-h-72 overflow-y-auto">
+                              <pre className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed font-mono">
+                                {safeStr(report.sections[type]).slice(0, 3000)}
+                                {safeStr(report.sections[type]).length > 3000 ? '\n\n[truncated — download for full]' : ''}
+                              </pre>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}</div>}
+                    )}
                   </div>
-                );}
+                );})}
               </div>
             )}
 
