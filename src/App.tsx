@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import Launchpad from "./pages/Launchpad";
 import Audit     from "./pages/Audit";
 import Admin     from "./pages/Admin";
+import Playground from './pages/Playground';
 import NotFound  from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -44,6 +45,7 @@ const AppRoutes = () => {
       <Route path="/launchpad" element={<ApprovedRequired><Launchpad /></ApprovedRequired>} />
       <Route path="/audit"     element={<ApprovedRequired><Audit /></ApprovedRequired>} />
       <Route path="/admin"     element={<Admin />} />
+      <Route path="/playground" element={<Playground />} />
       <Route path="*"          element={<NotFound />} />
     </Routes>
   );
