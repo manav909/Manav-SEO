@@ -59,6 +59,12 @@ const PRIORITY_COLOR: Record<Priority, string> = {
 const uid = () => Math.random().toString(36).slice(2, 9);
 const snap = (v: number, grid = 16) => Math.max(0, Math.round(v / grid) * grid);
 
+const safeText = (v: any): string => {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  return JSON.stringify(v, null, 2);
+};
+
 function fmtDate(raw: string) {
   if (!raw) return '';
   const d = new Date(raw);
@@ -191,7 +197,7 @@ export default function Playground() {
       const auditContent = reports.map(r => ({
         created_at: r.created_at,
         sections:   Object.fromEntries(
-          Object.entries(r.sections || {}).map(([k, v]) => [k, (v as string).slice(0, 1200)])
+          Object.entries(r.sections || {}).map(([k, v]) => [k, safeText(v).slice(0, 1200)])
         ),
       }));
 
@@ -347,7 +353,7 @@ export default function Playground() {
 
   /* ── Download report ── */
   const downloadReport = (report: any, type: string) => {
-    const content = report.sections?.[type] || '';
+    const content = safeText(report.sections?.[type]);
     const blob = new Blob([content], { type: 'text/markdown' });
     const a    = document.createElement('a');
     a.href     = URL.createObjectURL(blob);
@@ -357,7 +363,7 @@ export default function Playground() {
   };
 
   const copyReport = async (report: any, type: string) => {
-    const content = report.sections?.[type] || '';
+    const content = safeText(report.sections?.[type]);
     await navigator.clipboard.writeText(content);
     toast({ title: 'Copied to clipboard!' });
   };
@@ -535,7 +541,7 @@ export default function Playground() {
                                 </div>
                                 <div className="p-4 max-h-80 overflow-y-auto">
                                   <pre className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed font-mono">
-                                    {(report.sections[type] || '').slice(0, 3000)}{(report.sections[type] || '').length > 3000 ? '\n\n[... truncated for preview — download for full report]' : ''}
+                                    {safeText(report.sections[type]).slice(0, 3000)}{(report.sections[type] || '').length > 3000 ? '\n\n[... truncated for preview — download for full report]' : ''}
                                   </pre>
                                 </div>
                               </div>
