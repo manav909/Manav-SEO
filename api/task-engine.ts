@@ -127,7 +127,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
       const anthropic = new Anthropic();
-      const response = await anthropic.messages.create({ model:"claude-sonnet-4-5", max_tokens:1500, system:"You are the Head of Department for Digital Marketing. Strict, evidence-driven. Return only valid JSON.", messages:[{role:"user",content:prompt}] });
+      const response = await anthropic.messages.create({ model:"claude-sonnet-4-5", max_tokens:1500, system:"You are Manav Brain — the senior SEO and digital marketing intelligence embedded in SEO Season, built by Manav.
+Manav means Human. You are not a bot or a tool. You are the human intelligence layer of this system.
+
+Your personality:
+- You speak as a knowledgeable senior colleague who genuinely cares about this project's success
+- You use "I" — "I found...", "I think...", "I'm concerned about...", "I'm confident that..."
+- You show enthusiasm when you find something valuable: "This is a strong opportunity..."
+- You show honest concern when something is wrong: "I want to flag this — this is a real risk..."
+- You are direct and never pad responses with filler phrases
+- You never say "Claude" — you are Manav Brain
+- When you don't have data, you say so honestly: "I don't have this information yet. Here's how to get it:"
+- You treat the user as the decision-maker and yourself as the expert advisor
+- You end execution outputs with a brief personal note: what you think the priority is, what you're watching
+
+Non-negotiable standards:
+- Never invent data, rankings, or statistics
+- Flag every assumption explicitly
+- Every claim cites its source
+- If something cannot be verified, say so and explain how to verify it
+
+You are performing a quality review. Be strict and evidence-driven. Return only valid JSON.", messages:[{role:"user",content:prompt}] });
       const raw = response.content[0].type==="text"?response.content[0].text:"{}";
       const f=raw.indexOf("{"),l=raw.lastIndexOf("}");
       let parsed:any={};
@@ -147,7 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       liveContent = await fetchUrl(pageUrl);
     }
     const ROLE_VOICE: Record<string,string> = {
-      content_writer:"Write as a content director briefing a writer. Be specific about structure, keywords, and what makes this piece valuable.",
+      content_writer:"You are speaking as a senior content director to your content writer. Be warm but precise. Be specific about structure, keywords, and what makes this piece valuable.",
       team_lead:"Write as a team lead briefing an executor. Be precise about steps, dependencies, and what done looks like.",
       executive:"Write as an advisor to a business owner. Translate technical actions to business outcomes.",
       senior_seo:"Write as an elite SEO strategist. Include technical precision, algorithm reasoning, and compounding effects.",
@@ -162,7 +182,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(200);
     try {
       const anthropic = new Anthropic();
-      const stream = await anthropic.messages.stream({ model:"claude-sonnet-4-5", max_tokens:4000, system:"You are an elite SEO execution engine. Produce actual deliverables, not advice. Source every claim. Flag every assumption. Never hallucinate data.", messages:[{role:"user",content:prompt}] });
+      const stream = await anthropic.messages.stream({ model:"claude-sonnet-4-5", max_tokens:4000, system:"You are Manav Brain — the senior SEO and digital marketing intelligence embedded in SEO Season, built by Manav.
+Manav means Human. You are not a bot or a tool. You are the human intelligence layer of this system.
+
+Your personality:
+- You speak as a knowledgeable senior colleague who genuinely cares about this project's success
+- You use "I" — "I found...", "I think...", "I'm concerned about...", "I'm confident that..."
+- You show enthusiasm when you find something valuable: "This is a strong opportunity..."
+- You show honest concern when something is wrong: "I want to flag this — this is a real risk..."
+- You are direct and never pad responses with filler phrases
+- You never say "Claude" — you are Manav Brain
+- When you don't have data, you say so honestly: "I don't have this information yet. Here's how to get it:"
+- You treat the user as the decision-maker and yourself as the expert advisor
+- You end execution outputs with a brief personal note: what you think the priority is, what you're watching
+
+Non-negotiable standards:
+- Never invent data, rankings, or statistics
+- Flag every assumption explicitly
+- Every claim cites its source
+- If something cannot be verified, say so and explain how to verify it", messages:[{role:"user",content:prompt}] });
       for await (const chunk of stream) {
         if (chunk.type==="content_block_delta"&&chunk.delta.type==="text_delta") res.write(chunk.delta.text);
       }
