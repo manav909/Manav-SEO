@@ -913,6 +913,352 @@ function getAICap(blockType: string): AICap {
   return AI_CAPABILITIES[blockType] || AI_CAPABILITIES.weekly;
 }
 
+
+/* ════════════════════════════════════════════════════
+   InlineTaskExecutor
+   Full AI execution panel — no imports, self-contained
+════════════════════════════════════════════════════ */
+const EXEC_ROLES = [
+  { id:'senior_seo',      label:'Senior SEO Strategist' },
+  { id:'content_writer',  label:'Content Writer'         },
+  { id:'team_lead',       label:'Team Lead'              },
+  { id:'project_manager', label:'Project Manager'        },
+  { id:'executive',       label:'Executive'              },
+  { id:'biz_dev',         label:'Biz Dev Manager'        },
+];
+
+function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose, onVerify }: {
+  block:          { id:string; type:string; title:string; content:string; priority:string; impact?:string };
+  projectId:      string;
+  siteUrl:        string;
+  projectSummary: string;
+  onClose:        ()=>void;
+  onVerify:       (block:any)=>void;
+}) {
+  const [phase,       setPhase]       = useState<'loading'|'requirements'|'executing'|'done'>('loading');
+  const [role,        setRole]        = useState('senior_seo');
+  const [blueprint,   setBlueprint]   = useState<any>(null);
+  const [available,   setAvailable]   = useState<any[]>([]);
+  const [missing,     setMissing]     = useState<any[]>([]);
+  const [dataGaps,    setDataGaps]    = useState<string[]>([]);
+  const [userInputs,  setUserInputs]  = useState<Record<string,string>>({});
+  const [context,     setContext]     = useState<any>(null);
+  const [output,      setOutput]      = useState('');
+  const [copied,      setCopied]      = useState(false);
+  const cap = getAICap(block.type);
+
+  // Load requirements on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        // 1. Get full project context
+        const ctxRes = await fetch('/api/control', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get_context', projectId }),
+        });
+        const ctxData = await ctxRes.json();
+        const ctx = ctxData.context || {};
+        setContext(ctx);
+
+        // 2. Get requirements for this task type
+        const reqRes = await fetch('/api/task-engine', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'requirements', card: block, context: ctx }),
+        });
+        const req = await reqRes.json();
+        setBlueprint(req.blueprint || {});
+        setAvailable(req.available || []);
+        setMissing(req.missing || []);
+        setDataGaps(req.data_room_gaps || []);
+        setPhase('requirements');
+      } catch(e:any) {
+        setBlueprint({ what_ai_produces: 'Could not load requirements — check your API connection.', review_checklist: [], verification_method: '' });
+        setPhase('requirements');
+      }
+    })();
+  }, []);
+
+  const execute = async () => {
+    setPhase('executing');
+    setOutput('');
+    try {
+      const res = await fetch('/api/task-engine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'execute', card: block, context, userInputs, role }),
+      });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const dec    = new TextDecoder();
+      let   acc    = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += dec.decode(value, { stream: true });
+        setOutput(acc);
+      }
+      setPhase('done');
+    } catch(e:any) {
+      setOutput(`Error: ${(e as Error).message}`);
+      setPhase('done');
+    }
+  };
+
+  const copyOutput = async () => {
+    await navigator.clipboard.writeText(output);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm"/>
+      <div className="relative w-full max-w-3xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{maxHeight:'94vh'}} onClick={e=>e.stopPropagation()}>
+
+        {/* Top bar */}
+        <div className="h-1 w-full bg-gradient-to-r from-violet-600 via-primary to-violet-600"/>
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-white/8 shrink-0">
+          <Sparkles size={18} className="text-primary shrink-0"/>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-white text-sm">
+              {phase==='loading'?'Loading project intelligence...':
+               phase==='requirements'?'Review what AI will do:':
+               phase==='executing'?'AI is executing — streaming output...':
+               'Execution complete — review before delivering'}
+            </div>
+            <div className="text-xs text-white/40 truncate mt-0.5">"{block.title}"</div>
+          </div>
+          {/* Role selector */}
+          <select value={role} onChange={e=>setRole(e.target.value)} disabled={phase==='executing'}
+            className="text-xs px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-white/80 outline-none mr-1">
+            {EXEC_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+          {phase!=='executing' && (
+            <button onClick={onClose} className="h-8 w-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-white/10">
+              <X size={13} className="text-white/50"/>
+            </button>
+          )}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* Loading */}
+          {phase==='loading' && (
+            <div className="flex flex-col items-center gap-3 py-16">
+              <RefreshCw size={22} className="animate-spin text-violet-400"/>
+              <p className="text-sm text-white/50">Reading project data from Data Room, audits and metrics...</p>
+            </div>
+          )}
+
+          {/* Requirements phase */}
+          {phase==='requirements' && blueprint && (
+            <div className="p-6 space-y-4">
+
+              {/* Confidence + what AI produces */}
+              <div className="rounded-xl border border-violet-400/25 bg-violet-400/5 p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`flex flex-col items-center px-3 py-2 rounded-xl border shrink-0 ${cap.confidence>=85?'border-green-400/30 bg-green-400/5':cap.confidence>=70?'border-yellow-400/30 bg-yellow-400/5':'border-orange-400/30 bg-orange-400/5'}`}>
+                    <span className={`text-xl font-black ${cap.confidence>=85?'text-green-400':cap.confidence>=70?'text-yellow-400':'text-orange-400'}`}>{cap.confidence}%</span>
+                    <span className="text-xs text-white/40">confidence</span>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white text-sm mb-1">Claude will produce</div>
+                    <p className="text-xs text-white/60">{blueprint.what_ai_produces || cap.produces[0]}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-white/40 italic border-t border-white/8 pt-3">{cap.confidence_reason}</p>
+              </div>
+
+              {/* Data Room gaps */}
+              {dataGaps.length > 0 && (
+                <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle size={13} className="text-yellow-400"/>
+                    <span className="text-xs font-semibold text-yellow-400">Data Room incomplete — AI output will be less precise</span>
+                  </div>
+                  {dataGaps.map((g,i)=>(
+                    <div key={i} className="text-xs text-white/50 flex items-start gap-2 mb-1">
+                      <span className="text-yellow-400 shrink-0">⚠</span><span>{g}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Already has */}
+              {available.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-white/60 mb-2 flex items-center gap-1.5">
+                    <CheckCircle2 size={11} className="text-green-400"/>
+                    Information loaded from project ({available.length} inputs ready)
+                  </div>
+                  <div className="space-y-1.5">
+                    {available.map((a,i)=>(
+                      <div key={i} className="flex items-center gap-2 rounded-lg border border-green-400/15 bg-green-400/5 px-3 py-2 text-xs">
+                        <CheckCircle2 size={9} className="text-green-400 shrink-0"/>
+                        <span className="text-white/60 font-medium">{a.label}:</span>
+                        <span className="text-green-400 font-mono truncate flex-1">{String(a.value).slice(0,70)}</span>
+                        <span className="text-white/25 shrink-0">{a.source}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Needs from you */}
+              {missing.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-white mb-2 flex items-center gap-1.5">
+                    <AlertTriangle size={11} className="text-orange-400"/>
+                    Claude needs this from you — no assumptions will be made
+                  </div>
+                  <div className="space-y-3">
+                    {missing.map((m:any,i:number)=>(
+                      <div key={i} className="rounded-xl border border-orange-400/20 bg-orange-400/5 p-3">
+                        <label className="text-xs font-semibold text-white block mb-0.5">
+                          <span className="text-orange-400 mr-1">{i+1}.</span>{m.label}
+                        </label>
+                        <p className="text-xs text-white/40 mb-2">Why: {m.why}</p>
+                        <textarea
+                          value={userInputs[m.key]||''}
+                          onChange={e=>setUserInputs(prev=>({...prev,[m.key]:e.target.value}))}
+                          placeholder={`Enter ${m.label.toLowerCase()}...`}
+                          rows={2}
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {missing.filter((m:any)=>!userInputs[m.key]).length > 0 && (
+                    <p className="text-xs text-orange-400/70 mt-2">
+                      {missing.filter((m:any)=>!userInputs[m.key]).length} input{missing.filter((m:any)=>!userInputs[m.key]).length!==1?'s':''} empty — Claude will note gaps in output and you must resolve before delivering
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Cannot do */}
+              <div className="rounded-xl border border-white/8 bg-white/3 p-4">
+                <div className="text-xs font-mono text-orange-400 uppercase mb-2">Human required for these — Claude will not attempt them</div>
+                <div className="space-y-1">
+                  {cap.cannot_do.map((c2,i)=>(
+                    <div key={i} className="flex items-start gap-2 text-xs text-white/50">
+                      <AlertTriangle size={9} className="text-orange-400 shrink-0 mt-0.5"/>
+                      <span>{c2}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Executing — streaming */}
+          {(phase==='executing'||phase==='done') && (
+            <div className="p-6 space-y-4">
+              {phase==='executing' && (
+                <div className="flex items-center gap-2 text-sm text-white/50">
+                  <RefreshCw size={14} className="animate-spin text-violet-400"/>
+                  Executing as {EXEC_ROLES.find(r=>r.id===role)?.label}...
+                </div>
+              )}
+              <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/8 bg-white/3">
+                  <span className="text-xs font-semibold text-white">
+                    {phase==='executing'?'Streaming output...':'Output — review every section before delivering'}
+                  </span>
+                  {phase==='done' && (
+                    <button onClick={copyOutput} className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-white/10 text-white/50 hover:text-white/80">
+                      <Copy size={10}/>{copied?'Copied!':'Copy all'}
+                    </button>
+                  )}
+                </div>
+                <div className="p-4 max-h-80 overflow-y-auto">
+                  {output ? (
+                    <pre className="text-xs text-white/70 whitespace-pre-wrap leading-relaxed font-mono">{output}</pre>
+                  ) : (
+                    <div className="flex items-center gap-2 text-white/30 text-xs py-4">
+                      <RefreshCw size={12} className="animate-spin"/>Starting...
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Verification checklist after done */}
+              {phase==='done' && (
+                <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Shield size={14} className="text-yellow-400"/>
+                    <span className="text-sm font-bold text-yellow-400">Check every item before delivering</span>
+                  </div>
+                  <div className="space-y-2">
+                    {cap.verify_steps.map((v,i)=>(
+                      <VerifyCheckItem key={i} index={i+1} step={v.step} tool={v.tool} pass={v.pass}/>
+                    ))}
+                  </div>
+                  {blueprint?.verification_method && (
+                    <div className="mt-3 pt-3 border-t border-yellow-400/15 text-xs text-yellow-400/70">
+                      <span className="font-semibold">Final verification: </span>{blueprint.verification_method}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-white/8 shrink-0">
+          {phase==='requirements' && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={execute}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm transition-all bg-gradient-to-r from-violet-600 to-primary hover:from-violet-500 hover:to-primary/90">
+                <Sparkles size={14}/>Execute Task Now
+              </button>
+              <div className="text-xs text-white/40">
+                <span className="text-white/60">{cap.time_ai} min</span> estimated · as {EXEC_ROLES.find(r=>r.id===role)?.label}
+              </div>
+            </div>
+          )}
+          {phase==='executing' && (
+            <p className="text-xs text-white/40">AI is working... do not close this window</p>
+          )}
+          {phase==='done' && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={()=>onVerify(block)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors">
+                <CheckCircle2 size={14}/>I reviewed everything — Submit for Verification
+              </button>
+              <button onClick={()=>{setPhase('requirements');setOutput('');}}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 text-sm text-white/60 hover:text-white/80 transition-colors">
+                <RefreshCw size={13}/>Re-execute with changes
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VerifyCheckItem({ index, step, tool, pass }: { index:number; step:string; tool:string; pass:string }) {
+  const [checked, setChecked] = useState(false);
+  return (
+    <div onClick={()=>setChecked(!checked)} className={`rounded-lg p-3 cursor-pointer transition-colors ${checked?'bg-green-400/5 border border-green-400/15':'border border-white/8 bg-white/3 hover:bg-white/5'}`}>
+      <div className="flex items-start gap-2">
+        <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 mt-0.5 ${checked?'bg-green-500 border-green-500':'border-white/20'}`}>
+          {checked && <CheckCircle2 size={10} className="text-white"/>}
+        </div>
+        <div className="flex-1 space-y-0.5">
+          <div className={`text-xs font-medium ${checked?'line-through text-white/30':'text-white/80'}`}>{index}. {step}</div>
+          <div className="text-xs text-white/40"><span className="text-white/30">Tool:</span> {tool}</div>
+          <div className="text-xs text-green-400/80"><span className="font-medium">Pass:</span> {pass}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════════════
    InlineVerifyModal — self-contained, no imports needed
 ════════════════════════════════════════════════════ */
@@ -2985,48 +3331,22 @@ Please try again — if the problem persists, check your network connection.`);
         </div>
       )}
 
-      {/* ── AI Task Executor (inline) ── */}
+      {/* ── AI Task Executor ── */}
       {activeExecBlock && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={()=>setActiveExecBlock(null)}>
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"/>
-          <div className="relative w-full max-w-2xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{maxHeight:'90vh'}} onClick={e=>e.stopPropagation()}>
-            <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-primary to-violet-500"/>
-            <div className="flex items-center gap-3 px-6 py-4 border-b border-white/8">
-              <Sparkles size={18} className="text-primary shrink-0"/>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-white">Execute with AI</div>
-                <div className="text-xs text-white/40 truncate">"{activeExecBlock.title}"</div>
-              </div>
-              <button onClick={()=>setActiveExecBlock(null)} className="h-8 w-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-white/10">
-                <X size={13} className="text-white/50"/>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-              <div className="rounded-xl border border-white/8 bg-white/3 p-4">
-                <div className="text-xs font-mono text-white/40 uppercase mb-2">Task</div>
-                <p className="text-sm text-white/80 leading-relaxed">{activeExecBlock.content}</p>
-                <div className="flex gap-2 mt-3 flex-wrap">
-                  <span className="text-xs px-2 py-0.5 rounded border border-white/10 text-white/40">{activeExecBlock.type}</span>
-                  {activeExecBlock.impact&&<span className="text-xs px-2 py-0.5 rounded border border-orange-400/30 text-orange-400">Impact: {activeExecBlock.impact}</span>}
-                </div>
-              </div>
-              <div className="rounded-xl border border-violet-400/20 bg-violet-400/5 p-4 space-y-2">
-                <div className="text-xs font-mono text-violet-400 uppercase">To execute with AI</div>
-                <p className="text-xs text-white/60">1. Go to the <strong className="text-white">Pipeline tab</strong> → Role-Based Chat</p>
-                <p className="text-xs text-white/60">2. Select your role, ask: "Help me execute: {activeExecBlock.title}"</p>
-                <p className="text-xs text-white/60">3. AI asks what it needs, then produces the deliverable</p>
-                <p className="text-xs text-white/60">4. Come back here to verify and mark complete</p>
-              </div>
-              <button onClick={()=>{setActiveExecBlock(null);setActiveVerifyBlock(activeExecBlock);}}
-                className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-semibold text-sm transition-colors">
-                Skip to Verification →
-              </button>
-            </div>
-          </div>
-        </div>
+        <InlineTaskExecutor
+          block={activeExecBlock}
+          projectId={selProjId}
+          siteUrl={selProj?.url || ''}
+          projectSummary={`${selProj?.name || ''} | ${selProj?.url || ''} | ${selProj?.keywords?.slice(0,5).join(', ') || ''}`}
+          onClose={() => setActiveExecBlock(null)}
+          onVerify={(block) => {
+            setActiveExecBlock(null);
+            setActiveVerifyBlock(block);
+          }}
+        />
       )}
 
-      {/* ── Inline Verify Modal ── */}
+{/* ── Inline Verify Modal ── */}
       {activeVerifyBlock && (
         <InlineVerifyModal
           block={activeVerifyBlock}
