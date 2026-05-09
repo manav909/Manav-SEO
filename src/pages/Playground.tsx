@@ -710,7 +710,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
   block:{id:string;type:string;title:string;content:string;priority:string;impact?:string;assignee?:string};
   siteUrl:string; onApprove:(b:any)=>void; onWait:(b:any,days:number)=>void; onClose:()=>void;
 }) {
-  const [step,           setStep]           = useState as unknown as <T>(v:T)=>T(1);
+  const [step,           setStep]           = useState(1);
   const [completionNote, setCompletionNote] = useState('');
   const [evidenceData,   setEvidenceData]   = useState('');
   const [completedDate,  setCompletedDate]  = useState(new Date().toISOString().split('T')[0]);
