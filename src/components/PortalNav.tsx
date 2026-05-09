@@ -24,6 +24,7 @@ export default function PortalNav({
     { href: '/launchpad',   label: 'Launchpad',  icon: Sparkles  },
     { href: '/audit',       label: 'Audit Tool', icon: Zap       },
     { href: '/playground',  label: 'Playground', icon: Layers    },
+   { href: '/data-room', label: 'Data Room', icon: Database },
   ];
 
   return (
