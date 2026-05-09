@@ -1039,6 +1039,19 @@ export default function Playground() {
       setAgendaText(prev => ({ ...prev, [week]: `Error: ${e.message}` }));
     }
     setAgendaLoading(null);
+    // Save completed agenda to Supabase
+    setAgendaText(prev => {
+      const text = prev[week];
+      if (text && text.length > 100 && !text.startsWith('Error') && selProjId) {
+        supabase.from('ai_content_cache').upsert({
+          project_id: selProjId,
+          content_type: `agenda_${week}`,
+          content: text,
+          status: 'complete',
+        }, { onConflict: 'project_id,content_type' });
+      }
+      return prev;
+    });
   };
 
   // Mark agenda stale when cards in that week change
@@ -1053,33 +1066,46 @@ export default function Playground() {
       focusBlockId: focusId || null, mode,
       checkUrl: url || null, projectId: selProjId };
 
+    const streamTo = async (
+      setter: (v: string) => void,
+      setLoading: (v: boolean) => void,
+      cacheKey?: string
+    ) => {
+      setter(''); setLoading(true);
+      let acc = '';
+      try {
+        const res = await fetch('/api/pipeline-chat', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        if (!res.ok || !res.body) throw new Error(`Server error ${res.status}`);
+        const reader = res.body.getReader(); const dec = new TextDecoder();
+        while (true) {
+          const {done, value} = await reader.read(); if (done) break;
+          acc += dec.decode(value, {stream: true}); setter(acc);
+        }
+        // Save to Supabase cache
+        if (cacheKey && selProjId && acc.length > 100 && !acc.includes('[Generation error')) {
+          supabase.from('ai_content_cache').upsert({
+            project_id: selProjId, content_type: cacheKey,
+            content: acc, status: 'complete',
+          }, { onConflict: 'project_id,content_type' });
+        }
+      } catch(e: any) {
+        setter(`Error generating content: ${(e as Error).message}
+
+Please try again — if the problem persists, check your network connection.`);
+      }
+      setLoading(false);
+    };
+
     if (mode === 'pipeline') {
-      setPipelineText(''); setPipelineLoading(true);
-      try {
-        const res = await fetch('/api/pipeline-chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        if (!res.ok || !res.body) throw new Error('failed');
-        const reader = res.body.getReader(); const dec = new TextDecoder(); let acc = '';
-        while (true) { const {done,value} = await reader.read(); if (done) break; acc += dec.decode(value,{stream:true}); setPipelineText(acc); }
-      } catch(e:any) { setPipelineText(`Error: ${e.message}`); }
-      setPipelineLoading(false);
+      await streamTo(setPipelineText, setPipelineLoading, 'pipeline');
     } else if (mode === 'dependencies') {
-      setDepText(''); setDepLoading(true); setDepFocusId(focusId||null);
-      try {
-        const res = await fetch('/api/pipeline-chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        if (!res.ok || !res.body) throw new Error('failed');
-        const reader = res.body.getReader(); const dec = new TextDecoder(); let acc = '';
-        while (true) { const {done,value} = await reader.read(); if (done) break; acc += dec.decode(value,{stream:true}); setDepText(acc); }
-      } catch(e:any) { setDepText(`Error: ${e.message}`); }
-      setDepLoading(false);
+      setDepFocusId(focusId||null);
+      await streamTo(setDepText, setDepLoading, `deps_${focusId||'all'}`);
     } else {
-      setRoleChat(''); setRoleChatLoading(true);
-      try {
-        const res = await fetch('/api/pipeline-chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-        if (!res.ok || !res.body) throw new Error('failed');
-        const reader = res.body.getReader(); const dec = new TextDecoder(); let acc = '';
-        while (true) { const {done,value} = await reader.read(); if (done) break; acc += dec.decode(value,{stream:true}); setRoleChat(acc); }
-      } catch(e:any) { setRoleChat(`Error: ${e.message}`); }
-      setRoleChatLoading(false);
+      await streamTo(setRoleChat, setRoleChatLoading);
     }
   };
 
