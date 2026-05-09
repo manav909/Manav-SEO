@@ -57,18 +57,18 @@ export default function TaskExecutor({ block, projectId, role: initRole, onClose
 
     try {
       // 1. Get full project context
-      const ctxRes = await fetch('/api/project-context', {
+      const ctxRes = await fetch('/api/control', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ action: 'get_context', projectId }),
       });
       const ctxData = await ctxRes.json();
       const ctx = ctxData.context || {};
       setContext(ctx);
 
       // 2. Get requirements for this task type
-      const reqRes = await fetch('/api/execute-task', {
+      const reqRes = await fetch('/api/task-engine', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ card:block, context:ctx, phase:'requirements' }),
+        body: JSON.stringify({ action:'requirements', card:block, context:ctx }),
       });
       const reqData = await reqRes.json();
       setBlueprint(reqData.blueprint);
@@ -87,9 +87,9 @@ export default function TaskExecutor({ block, projectId, role: initRole, onClose
     setOutput('');
 
     try {
-      const res = await fetch('/api/execute-task', {
+      const res = await fetch('/api/task-engine', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ card:block, context, userInputs, role, phase:'execute' }),
+        body: JSON.stringify({ action:'execute', card:block, context, userInputs, role }),
       });
       if (!res.ok || !res.body) throw new Error(`Server error ${res.status}`);
 
