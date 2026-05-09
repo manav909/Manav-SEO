@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { BarChart3, Sparkles, LogOut, Settings, Home, Zap, Layers } from 'lucide-react';
+import { BarChart3, Sparkles, LogOut, Settings, Home, Zap, Layers, Database } from 'lucide-react';
 
 interface Props {
   clientName?:        string;
