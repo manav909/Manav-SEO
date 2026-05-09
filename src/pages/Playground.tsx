@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
   Sparkles, FileText, Download, Copy, Plus, RefreshCw,
-  ChevronDown, ChevronUp, Zap, Brain, Globe, Shield,
+  ChevronDown, ChevronUp, Zap, Brain, Globe, Shield, Lock,
   Trophy, TrendingUp, Calendar, Layers, X, Tag,
   CheckCircle2, Maximize2, Star, Send, MessageSquare,
   Clock, AlertTriangle, ChevronRight, RotateCcw, GripVertical,
@@ -16,7 +16,7 @@ import {
 /* ─── types ─── */
 type BType    = 'quick-win'|'weekly'|'monthly'|'technical'|'content'|'geo'|'competitive'|'insight'|'kpi'|'custom';
 type Priority = 'high'|'medium'|'low';
-type Status   = 'todo'|'doing'|'done';
+type Status   = 'todo'|'doing'|'review'|'waiting'|'verified'|'done';
 type Tab      = 'reports'|'strategy'|'canvas'|'pipeline';
 type SugLevel = 'best'|'good'|'ok'|'caution';
 
@@ -123,11 +123,14 @@ const PM: Record<Priority,{dot:string;badge:string}> = {
   low:    {dot:'bg-green-400', badge:'text-green-400 bg-green-400/10 border-green-400/20'},
 };
 
-const SC: Record<Status,Status> = {todo:'doing',doing:'done',done:'todo'};
-const SM: Record<Status,{label:string;icon:any}> = {
-  todo:  {label:'To Do',      icon:Clock       },
-  doing: {label:'In Progress',icon:RefreshCw   },
-  done:  {label:'Done',       icon:CheckCircle2},
+const SC: Record<Status,Status> = {todo:'doing',doing:'review',review:'todo',waiting:'review',verified:'todo',done:'todo'};
+const SM: Record<Status,{label:string;icon:any;color:string}> = {
+  todo:     {label:'To Do',       icon:Clock,        color:'text-muted-foreground'},
+  doing:    {label:'In Progress', icon:RefreshCw,    color:'text-blue-400'       },
+  review:   {label:'Pending Check',icon:AlertTriangle,color:'text-yellow-400'    },
+  waiting:  {label:'Waiting',     icon:Clock,        color:'text-orange-400'     },
+  verified: {label:'Verified ✓',  icon:CheckCircle2, color:'text-green-400'      },
+  done:     {label:'Done',        icon:CheckCircle2, color:'text-green-400'      },
 };
 
 const SL: Record<SugLevel,{ring:string;badge:string;icon:any;label:string}> = {
@@ -727,6 +730,12 @@ export default function Playground() {
   const [cacheLoaded,  setCacheLoaded]   = useState(false);
   const [batchStatus,  setBatchStatus]   = useState<Record<string,string>>({});
   const [failedBatches,setFailedBatches] = useState<number[]>([]);
+  const [verifyBlock,  setVerifyBlock]   = useState<Block|null>(null);
+  const [verifyResult, setVerifyResult]  = useState<any>(null);
+  const [verifyLoading,setVerifyLoading] = useState(false);
+  const [completedDates,setCompletedDates] = useState<Record<string,string>>({});
+  const [nextTaskPrompt,setNextTaskPrompt] = useState<Block|null>(null);
+  const [nextConfirmed, setNextConfirmed]  = useState(false);
   const [activeRole,   setActiveRole]   = useState('team_lead');
   const [roleChat,     setRoleChat]     = useState('');
   const [roleChatQ,    setRoleChatQ]    = useState('');
@@ -915,11 +924,79 @@ export default function Playground() {
     });
     setLastImpact(null);
   };
-  const toggleStatus = (id:string)=>{
-    setBlocks(prev=>{
-      const updated = prev.map(b=>b.id===id?{...b,status:SC[b.status]}:b);
+  const toggleStatus = (id: string) => {
+    const block = blocks.find(b => b.id === id);
+    if (!block) return;
+
+    // Going from 'doing' → normally would be 'done'
+    // Gate it: open verification modal instead
+    if (block.status === 'doing') {
+      // Record when they clicked done
+      const now = new Date().toISOString();
+      setCompletedDates(prev => ({ ...prev, [id]: now }));
+      setVerifyBlock(block);
+      setVerifyResult(null);
+      return; // Do not change status yet — open verify modal
+    }
+
+    // All other transitions (todo→doing, review→todo, etc.) happen immediately
+    setBlocks(prev => {
+      const updated = prev.map(b => b.id === id ? { ...b, status: SC[b.status] } : b);
       scheduleAutoSave(updated);
       return updated;
+    });
+  };
+
+  const runVerification = async (block: Block, checkType: 'guidance' | 'live_check') => {
+    setVerifyLoading(true);
+    setVerifyResult(null);
+    try {
+      const res = await fetch('/api/verify-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          card:        block,
+          siteUrl:     selProj?.url || '',
+          completedAt: completedDates[block.id] || new Date().toISOString(),
+          checkType,
+        }),
+      });
+      const data = await res.json();
+      setVerifyResult(data);
+    } catch (e: any) {
+      setVerifyResult({ success: false, error: e.message });
+    }
+    setVerifyLoading(false);
+  };
+
+  const approveBlock = (block: Block) => {
+    setBlocks(prev => {
+      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'verified' as Status } : b);
+      scheduleAutoSave(updated);
+      // Show next task after approval
+      const placed = updated.filter(b => b.placed);
+      const lib    = updated.filter(b => !b.placed);
+      const rec    = getNextRecommendation(placed, lib);
+      if (rec) setNextTaskPrompt(rec.block);
+      return updated;
+    });
+    setVerifyBlock(null);
+    setVerifyResult(null);
+    setNextConfirmed(false);
+    toast({ title: '✓ Task verified and approved!' });
+  };
+
+  const sendToWaiting = (block: Block, daysRemaining: number) => {
+    setBlocks(prev => {
+      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'waiting' as Status } : b);
+      scheduleAutoSave(updated);
+      return updated;
+    });
+    setVerifyBlock(null);
+    setVerifyResult(null);
+    toast({
+      title: `⏳ Waiting period: ${daysRemaining} days`,
+      description: 'Card marked as waiting. Come back when the SEO signals have had time to propagate.',
     });
   };
   const resetCanvas  = ()=>{
@@ -1776,7 +1853,26 @@ Please try again — if the problem persists, check your network connection.`);
                                   <p className="text-xs text-muted-foreground px-3 pb-2">Generate a client-ready agenda with tasks, outcomes, and verification steps.</p>
                                 )}
                               </div>
-                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const m    = TM[block.type]||TM.custom;                                const Icon = m.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div                                    key={block.id}                                    draggable                                    onDragStart={e=>onDragStart(e,block.id)}                                    onDragEnd={onDragEnd}                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab group transition-all ${draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md'} ${block.status==='done'?'opacity-60':''}`}                                  >                                    <div className="flex items-start gap-2 mb-2">                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>                                      <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='done'?'line-through text-muted-foreground':''}`}>{block.title}</p>                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">                                        <button onClick={()=>deepDive(block)} title="AI Deep Dive" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-primary/20 text-muted-foreground hover:text-primary"><Brain size={9}/></button>                                        <button onClick={()=>setExpandedBlock(block)} title="Expand" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground"><Maximize2 size={9}/></button>                                        <button onClick={()=>returnToLib(block.id)} title="Return to library" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-red-400/20 text-muted-foreground hover:text-red-400"><X size={9}/></button>                                      </div>                                    </div>                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>                                    <div className="flex items-center justify-between gap-1 mt-1">                                      <div className="flex items-center gap-1">                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>                                        <span className="text-xs text-muted-foreground">{block.priority}</span>                                      </div>                                      <button onClick={()=>toggleStatus(block.id)}                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${                                          block.status==='done'  ? 'text-green-400 bg-green-400/10 border-green-400/20 hover:bg-green-400/20' :                                          block.status==='doing' ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/20' :                                          'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-primary'                                        }`}                                        title="Click to change status: To Do → In Progress → Done"                                      >                                        <SI size={8} className={block.status==='doing'?'animate-spin':''}/>                                        <span>{sm2.label}</span>                                      </button>                                    </div>                                    {/* Assignee row */}                                    <div className="flex items-center justify-between gap-1 mt-1.5">                                      <button onClick={()=>setShowAssignModal(block.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors" title="Assign to team member">                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}                                        </div>                                        <span className="truncate max-w-[55px]">{block.assignee || 'Assign'}</span>                                      </button>                                      <span className="text-xs font-mono text-muted-foreground/60" title="Estimated effort">~{formatHours(estimateHours(block))}</span>                                    </div>                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
+                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const m    = TM[block.type]||TM.custom;                                const Icon = m.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div                                    key={block.id}                                    draggable                                    onDragStart={e=>onDragStart(e,block.id)}                                    onDragEnd={onDragEnd}                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab group transition-all ${draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md'} ${block.status==='done'||block.status==='verified'?'opacity-60':''}`}                                  >                                    <div className="flex items-start gap-2 mb-2">                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>                                      <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='done'||block.status==='verified'?'line-through text-muted-foreground':''}`}>{block.title}</p>                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">                                        <button onClick={()=>deepDive(block)} title="AI Deep Dive" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-primary/20 text-muted-foreground hover:text-primary"><Brain size={9}/></button>                                        <button onClick={()=>setExpandedBlock(block)} title="Expand" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground"><Maximize2 size={9}/></button>                                        <button onClick={()=>returnToLib(block.id)} title="Return to library" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-red-400/20 text-muted-foreground hover:text-red-400"><X size={9}/></button>                                      </div>                                    </div>                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>                                    <div className="flex items-center justify-between gap-1 mt-1">                                      <div className="flex items-center gap-1">                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>                                        <span className="text-xs text-muted-foreground">{block.priority}</span>                                      </div>                                      <button
+                                        onClick={()=>toggleStatus(block.id)}
+                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${
+                                          block.status==='verified' ? 'text-green-400 bg-green-400/10 border-green-400/20' :
+                                          block.status==='done'     ? 'text-green-400 bg-green-400/10 border-green-400/20' :
+                                          block.status==='doing'    ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/20' :
+                                          block.status==='review'   ? 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20' :
+                                          block.status==='waiting'  ? 'text-orange-400 bg-orange-400/10 border-orange-400/20' :
+                                          'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-primary'
+                                        }`}
+                                        title={block.status==='doing'?'Submit for verification':block.status==='verified'?'Verified — click to reset':'Advance status'}
+                                      >
+                                        <SI size={8} className={block.status==='doing'?'animate-spin':''}/>
+                                        <span>{sm2.label}</span>
+                                      </button>
+                                      {block.status==='waiting' && (
+                                        <button onClick={()=>{setVerifyBlock(block);setVerifyResult(null);}} className="text-xs px-1 py-0.5 rounded border border-orange-400/30 text-orange-400 hover:bg-orange-400/10 ml-0.5">
+                                          Check
+                                        </button>
+                                      )}                                    </div>                                    {/* Assignee row */}                                    <div className="flex items-center justify-between gap-1 mt-1.5">                                      <button onClick={()=>setShowAssignModal(block.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors" title="Assign to team member">                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}                                        </div>                                        <span className="truncate max-w-[55px]">{block.assignee || 'Assign'}</span>                                      </button>                                      <span className="text-xs font-mono text-muted-foreground/60" title="Estimated effort">~{formatHours(estimateHours(block))}</span>                                    </div>                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
 
             {/* ══ PIPELINE TAB ══ */}
             {tab==='pipeline' && (
@@ -1902,7 +1998,225 @@ Please try again — if the problem persists, check your network connection.`);
                 </div>
 
               </div>
-            )}</>        )}      </div>      {/* Block expand modal */}      {expandedBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setExpandedBlock(null)}/>          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">              {(()=>{const m=TM[expandedBlock.type]||TM.custom;const Icon=m.icon;return(<><div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}><Icon size={13} style={{color:m.color}}/></div><div className="flex-1"><div className="font-bold text-sm">{expandedBlock.title}</div><div className="text-xs font-mono" style={{color:m.color}}>{m.label}</div></div></>);})()}              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${PM[expandedBlock.priority].badge}`}>{expandedBlock.priority}</span>              <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"><Brain size={11}/>Deep Dive</button>              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>            </div>            <div className="px-5 py-4 space-y-3">              <div className="rounded-xl border border-border bg-background/60 p-4"><p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p></div>              {expandedBlock.tags&&expandedBlock.tags.length>0 && (                <div className="flex flex-wrap gap-1.5">{expandedBlock.tags.map((t,i)=><span key={i} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/30 text-muted-foreground flex items-center gap-1"><Tag size={8}/>{t}</span>)}</div>              )}              <div className="flex gap-2 flex-wrap">                {expandedBlock.effort && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">effort: {expandedBlock.effort}</span>}                {expandedBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">impact: {expandedBlock.impact}</span>}              </div>              <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy content</button>            </div>          </div>        </div>      )}      {/* Deep Dive modal */}      {ddBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>{if(!ddLoading)setDdBlock(null);}}/>          <div className="relative w-full max-w-2xl rounded-2xl border border-primary/30 bg-card/95 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">              <Brain className="h-4 w-4 text-primary"/>              <div className="flex-1"><div className="font-semibold text-sm">AI Deep Dive</div><div className="text-xs text-muted-foreground truncate">{ddBlock.title}</div></div>              {ddLoading && <RefreshCw size={14} className="animate-spin text-primary"/>}              {!ddLoading && <button onClick={()=>setDdBlock(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={12}/></button>}            </div>            <div className="flex-1 overflow-y-auto px-5 py-4">              {ddLoading&&!ddText && <div className="flex items-center gap-2 text-xs text-muted-foreground py-8 justify-center"><RefreshCw size={14} className="animate-spin text-primary"/>Analysing this block in depth…</div>}              {ddText && <div className="rounded-xl border border-border bg-background/60 p-4"><ChatMd text={ddText}/></div>}            </div>            {ddText&&!ddLoading && (              <div className="px-5 py-3 border-t border-border shrink-0 flex gap-2">                <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>                <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>              </div>            )}          </div>        </div>      )}      {/* Assign modal */}      {showAssignModal && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setShowAssignModal(null)}/>          <div className="relative w-80 rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="px-5 py-4 border-b border-border">              <div className="font-semibold text-sm">Assign block</div>              <div className="text-xs text-muted-foreground truncate mt-0.5">                {blocks.find(b=>b.id===showAssignModal)?.title}              </div>            </div>            <div className="px-5 py-4 space-y-2">              {/* Unassign */}              <button onClick={()=>assignBlock(showAssignModal,'')}                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                <div className="h-7 w-7 rounded-full bg-secondary/60 flex items-center justify-center text-xs text-muted-foreground">—</div>                <span className="text-sm text-muted-foreground">Unassigned</span>                {!blocks.find(b=>b.id===showAssignModal)?.assignee && <CheckCircle2 size={13} className="text-primary ml-auto"/>}              </button>              {/* Team members */}              {teamMembers.map(member => (                <button key={member} onClick={()=>assignBlock(showAssignModal,member)}                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{member[0].toUpperCase()}</div>                  <span className="text-sm">{member}</span>                  {blocks.find(b=>b.id===showAssignModal)?.assignee===member && <CheckCircle2 size={13} className="text-primary ml-auto"/>}                </button>              ))}              {/* Add custom member */}              <div className="pt-2 border-t border-border">                <input                  placeholder="Add new team member…"                  className="w-full h-8 text-xs px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"                  onKeyDown={e => {                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {                      const name = (e.target as HTMLInputElement).value.trim();                      setTeamMembers(tm => [...tm, name]);                      assignBlock(showAssignModal, name);                    }                  }}                />                <p className="text-xs text-muted-foreground mt-1">Press Enter to add and assign</p>              </div>            </div>          </div>        </div>      )}
+            )}</>        )}      </div>      {/* Block expand modal */}      {expandedBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setExpandedBlock(null)}/>          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">              {(()=>{const m=TM[expandedBlock.type]||TM.custom;const Icon=m.icon;return(<><div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}><Icon size={13} style={{color:m.color}}/></div><div className="flex-1"><div className="font-bold text-sm">{expandedBlock.title}</div><div className="text-xs font-mono" style={{color:m.color}}>{m.label}</div></div></>);})()}              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${PM[expandedBlock.priority].badge}`}>{expandedBlock.priority}</span>              <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"><Brain size={11}/>Deep Dive</button>              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>            </div>            <div className="px-5 py-4 space-y-3">              <div className="rounded-xl border border-border bg-background/60 p-4"><p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p></div>              {expandedBlock.tags&&expandedBlock.tags.length>0 && (                <div className="flex flex-wrap gap-1.5">{expandedBlock.tags.map((t,i)=><span key={i} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/30 text-muted-foreground flex items-center gap-1"><Tag size={8}/>{t}</span>)}</div>              )}              <div className="flex gap-2 flex-wrap">                {expandedBlock.effort && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">effort: {expandedBlock.effort}</span>}                {expandedBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">impact: {expandedBlock.impact}</span>}              </div>              <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy content</button>            </div>          </div>        </div>      )}      {/* Deep Dive modal */}      {ddBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>{if(!ddLoading)setDdBlock(null);}}/>          <div className="relative w-full max-w-2xl rounded-2xl border border-primary/30 bg-card/95 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">              <Brain className="h-4 w-4 text-primary"/>              <div className="flex-1"><div className="font-semibold text-sm">AI Deep Dive</div><div className="text-xs text-muted-foreground truncate">{ddBlock.title}</div></div>              {ddLoading && <RefreshCw size={14} className="animate-spin text-primary"/>}              {!ddLoading && <button onClick={()=>setDdBlock(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={12}/></button>}            </div>            <div className="flex-1 overflow-y-auto px-5 py-4">              {ddLoading&&!ddText && <div className="flex items-center gap-2 text-xs text-muted-foreground py-8 justify-center"><RefreshCw size={14} className="animate-spin text-primary"/>Analysing this block in depth…</div>}              {ddText && <div className="rounded-xl border border-border bg-background/60 p-4"><ChatMd text={ddText}/></div>}            </div>            {ddText&&!ddLoading && (              <div className="px-5 py-3 border-t border-border shrink-0 flex gap-2">                <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>                <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>              </div>            )}          </div>     
+
+      {/* ── Verification Gate Modal ── */}
+      {verifyBlock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/85 backdrop-blur-sm" onClick={()=>{if(!verifyLoading){setVerifyBlock(null);setVerifyResult(null);}}}/>
+          <div className="relative w-full max-w-2xl rounded-2xl border border-border bg-card shadow-2xl flex flex-col" style={{maxHeight:'90vh'}}>
+            <div className="h-px w-full bg-gradient-to-r from-transparent via-yellow-400 to-transparent"/>
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-border shrink-0">
+              <div className="h-9 w-9 rounded-xl bg-yellow-400/15 border border-yellow-400/30 flex items-center justify-center shrink-0">
+                <Shield size={16} className="text-yellow-400"/>
+              </div>
+              <div className="flex-1">
+                <div className="font-bold">Verification Required</div>
+                <div className="text-xs text-muted-foreground truncate">Before marking done: {verifyBlock.title}</div>
+              </div>
+              {!verifyLoading && <button onClick={()=>{setVerifyBlock(null);setVerifyResult(null);}} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>}
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              <div className="rounded-xl border border-border bg-background/60 p-4">
+                <div className="text-xs font-mono text-muted-foreground uppercase mb-2">What was supposed to happen</div>
+                <p className="text-sm leading-relaxed">{verifyBlock.content}</p>
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">{verifyBlock.type}</span>
+                  {verifyBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">Expected impact: {verifyBlock.impact}</span>}
+                  {verifyBlock.assignee && <span className="text-xs px-2 py-0.5 rounded border border-primary/20 text-primary">Assigned: {verifyBlock.assignee}</span>}
+                </div>
+              </div>
+
+              {(()=>{
+                const WAIT: Record<string,number> = {'technical':5,'content':14,'geo':7,'quick-win':3,'competitive':21,'weekly':3,'monthly':30,'kpi':7,'custom':5};
+                const waitDays  = WAIT[verifyBlock.type] || 5;
+                const compDate  = completedDates[verifyBlock.id] ? new Date(completedDates[verifyBlock.id]) : new Date();
+                const daysSince = Math.floor((Date.now()-compDate.getTime())/(1000*60*60*24));
+                const remaining = Math.max(0, waitDays - daysSince);
+                const expired   = remaining === 0;
+                return (
+                  <div className={`rounded-xl border p-4 ${expired ? 'border-green-400/25 bg-green-400/5' : 'border-orange-400/25 bg-orange-400/5'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock size={13} className={expired?'text-green-400':'text-orange-400'}/>
+                      <span className={`text-sm font-semibold ${expired?'text-green-400':'text-orange-400'}`}>
+                        {expired ? `Waiting period complete (${waitDays}-day minimum passed)` : `${remaining} day${remaining!==1?'s':''} remaining before verification is meaningful`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {expired
+                        ? `${daysSince} days since completion. SEO signals have had time to propagate — verification can proceed.`
+                        : `${verifyBlock.type} changes need ~${waitDays} days to register in Google. Checking earlier gives false negatives.`}
+                    </p>
+                    {!expired && !verifyResult && (
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={()=>sendToWaiting(verifyBlock, remaining)} className="text-xs px-3 py-1.5 rounded-lg border border-orange-400/30 bg-orange-400/10 text-orange-400 hover:bg-orange-400/20 font-medium">
+                          Set to Waiting — check in {remaining} days
+                        </button>
+                        <button onClick={()=>runVerification(verifyBlock,'guidance')} className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground">
+                          Show me what to verify anyway
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {!verifyResult && (
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={()=>runVerification(verifyBlock,'live_check')} disabled={verifyLoading||!selProj?.url}
+                    className="flex items-center gap-2 text-sm px-4 py-2 rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 disabled:opacity-50 font-medium">
+                    {verifyLoading ? <><RefreshCw size={13} className="animate-spin"/>Checking live site…</> : <><Globe size={13}/>Check live site + verify impact</>}
+                  </button>
+                  <button onClick={()=>runVerification(verifyBlock,'guidance')} disabled={verifyLoading}
+                    className="flex items-center gap-2 text-sm px-4 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground disabled:opacity-50">
+                    <Brain size={13}/>Get manual verification checklist
+                  </button>
+                  {!selProj?.url && <p className="text-xs text-muted-foreground self-center">Add website URL to project to enable live checking.</p>}
+                </div>
+              )}
+
+              {verifyLoading && !verifyResult && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
+                  <RefreshCw size={16} className="animate-spin text-primary"/>Fetching live site and analysing evidence…
+                </div>
+              )}
+
+              {verifyResult && !verifyLoading && (
+                <div className={`rounded-xl border p-4 space-y-3 ${
+                  verifyResult.verdict==='verified'?'border-green-400/30 bg-green-400/5':
+                  verifyResult.verdict==='partial'?'border-yellow-400/30 bg-yellow-400/5':
+                  'border-red-400/30 bg-red-400/5'}`}>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className={verifyResult.verdict==='verified'?'text-green-400':verifyResult.verdict==='partial'?'text-yellow-400':'text-orange-400'}/>
+                    <span className="font-semibold capitalize">{(verifyResult.verdict||'unknown').replace('_',' ')}</span>
+                    {verifyResult.confidence>0 && <span className="text-xs text-muted-foreground ml-auto">{verifyResult.confidence}% confidence</span>}
+                    {verifyResult.live_data_used && <span className="text-xs text-primary font-mono">· live site verified</span>}
+                  </div>
+
+                  {verifyResult.evidence_found?.length>0 && (
+                    <div>
+                      <div className="text-xs font-mono text-green-400 uppercase mb-1.5">Evidence Confirmed</div>
+                      {verifyResult.evidence_found.map((e:string,i:number)=>(
+                        <div key={i} className="flex items-start gap-2 text-xs mb-1">
+                          <CheckCircle2 size={10} className="text-green-400 shrink-0 mt-0.5"/><span>{e}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {verifyResult.evidence_missing?.length>0 && (
+                    <div>
+                      <div className="text-xs font-mono text-red-400 uppercase mb-1.5">Not Yet Visible</div>
+                      {verifyResult.evidence_missing.map((e:string,i:number)=>(
+                        <div key={i} className="flex items-start gap-2 text-xs mb-1">
+                          <AlertTriangle size={10} className="text-red-400 shrink-0 mt-0.5"/><span>{e}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {verifyResult.what_to_check?.length>0 && (
+                    <div>
+                      <div className="text-xs font-mono text-primary uppercase mb-2">Manual Verification Steps</div>
+                      {verifyResult.what_to_check.map((c:any,i:number)=>(
+                        <div key={i} className="rounded-lg border border-border bg-background/60 p-3 mb-2 text-xs space-y-1">
+                          <div className="font-semibold text-primary">{c.tool}</div>
+                          <div><span className="text-muted-foreground">Action: </span>{c.action}</div>
+                          <div><span className="text-muted-foreground">Look for: </span>{c.what_to_look_for}</div>
+                          <div className="text-green-400/80"><span className="font-medium">Pass: </span>{c.pass_condition}</div>
+                          <div className="text-red-400/80"><span className="font-medium">Fail: </span>{c.fail_condition}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {verifyResult.next_action && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs">
+                      <div className="font-mono text-primary uppercase mb-1">Next Action</div>
+                      <p>{verifyResult.next_action}</p>
+                    </div>
+                  )}
+                  {verifyResult.timeline_note && <p className="text-xs text-muted-foreground italic">{verifyResult.timeline_note}</p>}
+                  {verifyResult.approval_blocked && verifyResult.verdict!=='verified' && (
+                    <div className="rounded-lg border border-red-400/20 bg-red-400/5 p-3 text-xs">
+                      <div className="font-mono text-red-400 uppercase mb-1">Approval Blocked</div>
+                      <p>{verifyResult.approval_blocked}</p>
+                    </div>
+                  )}
+                  {verifyResult.roles?.who_should_verify && (
+                    <p className="text-xs text-muted-foreground">
+                      Verify: <span className="font-medium">{verifyResult.roles.who_should_verify}</span>
+                      {verifyResult.roles.escalate_to && <> · Escalate to: <span className="font-medium">{verifyResult.roles.escalate_to}</span></>}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-border shrink-0 flex gap-2 flex-wrap items-center">
+              {verifyResult?.verdict==='verified' && (
+                <button onClick={()=>approveBlock(verifyBlock)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-500 text-white font-bold text-sm hover:bg-green-600">
+                  <CheckCircle2 size={15}/>Approve & Mark Verified
+                </button>
+              )}
+              {verifyResult && verifyResult.verdict!=='verified' && (
+                <>
+                  <button onClick={()=>{setVerifyBlock(null);setVerifyResult(null);}} className="text-sm px-4 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground">
+                    Back to In Progress
+                  </button>
+                  {(verifyResult.waiting_status?.daysRemaining||0)>0 && (
+                    <button onClick={()=>sendToWaiting(verifyBlock,verifyResult.waiting_status.daysRemaining)} className="flex items-center gap-2 text-sm px-4 py-2 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400 hover:bg-orange-400/20">
+                      <Clock size={13}/>Mark as Waiting
+                    </button>
+                  )}
+                  <button onClick={()=>runVerification(verifyBlock,'live_check')} disabled={verifyLoading} className="text-xs px-3 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground">
+                    Re-check
+                  </button>
+                  <button onClick={()=>approveBlock(verifyBlock)} className="text-xs px-3 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground ml-auto">
+                    Override — approve anyway
+                  </button>
+                </>
+              )}
+              {!verifyResult && !verifyLoading && (
+                <button onClick={()=>{setVerifyBlock(null);setVerifyResult(null);}} className="text-sm text-muted-foreground hover:text-foreground">Cancel</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Next Task Prompt ── */}
+      {nextTaskPrompt && !nextConfirmed && (
+        <div className="fixed bottom-6 right-6 z-40 w-80 rounded-2xl border border-primary/30 bg-card shadow-2xl overflow-hidden">
+          <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-green-400"/>
+              <span className="text-xs font-semibold text-green-400">Task Verified!</span>
+              <button onClick={()=>setNextTaskPrompt(null)} className="ml-auto text-muted-foreground hover:text-foreground"><X size={12}/></button>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Recommended next:</p>
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <div className="font-semibold text-xs mb-1">{nextTaskPrompt.title}</div>
+                <p className="text-xs text-muted-foreground line-clamp-2">{nextTaskPrompt.content}</p>
+              </div>
+            </div>
+            <p className="text-xs font-medium">Have you fully completed the previous task before starting this?</p>
+            <div className="flex gap-2">
+              <button onClick={()=>{setNextConfirmed(true);highlightBlock(nextTaskPrompt.id);setNextTaskPrompt(null);}} className="flex-1 text-xs py-2 rounded-lg bg-primary text-primary-foreground font-medium">
+                Yes — show me this task
+              </button>
+              <button onClick={()=>setNextTaskPrompt(null)} className="text-xs px-3 py-2 rounded-lg border border-border text-muted-foreground">
+                Not yet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+   </div>      )}      {/* Assign modal */}      {showAssignModal && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setShowAssignModal(null)}/>          <div className="relative w-80 rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="px-5 py-4 border-b border-border">              <div className="font-semibold text-sm">Assign block</div>              <div className="text-xs text-muted-foreground truncate mt-0.5">                {blocks.find(b=>b.id===showAssignModal)?.title}              </div>            </div>            <div className="px-5 py-4 space-y-2">              {/* Unassign */}              <button onClick={()=>assignBlock(showAssignModal,'')}                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                <div className="h-7 w-7 rounded-full bg-secondary/60 flex items-center justify-center text-xs text-muted-foreground">—</div>                <span className="text-sm text-muted-foreground">Unassigned</span>                {!blocks.find(b=>b.id===showAssignModal)?.assignee && <CheckCircle2 size={13} className="text-primary ml-auto"/>}              </button>              {/* Team members */}              {teamMembers.map(member => (                <button key={member} onClick={()=>assignBlock(showAssignModal,member)}                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{member[0].toUpperCase()}</div>                  <span className="text-sm">{member}</span>                  {blocks.find(b=>b.id===showAssignModal)?.assignee===member && <CheckCircle2 size={13} className="text-primary ml-auto"/>}                </button>              ))}              {/* Add custom member */}              <div className="pt-2 border-t border-border">                <input                  placeholder="Add new team member…"                  className="w-full h-8 text-xs px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"                  onKeyDown={e => {                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {                      const name = (e.target as HTMLInputElement).value.trim();                      setTeamMembers(tm => [...tm, name]);                      assignBlock(showAssignModal, name);                    }                  }}                />                <p className="text-xs text-muted-foreground mt-1">Press Enter to add and assign</p>              </div>            </div>          </div>        </div>      )}
 
       {/* Full Agenda Modal */}
       {agendaExpanded !== null && (
