@@ -288,7 +288,7 @@ export default function DataRoom() {
       await supabase.from('project_knowledge').upsert(row, { onConflict: 'project_id,category,field_key' });
       // Log change to system control
       if (existing !== row.field_value) {
-        fetch('/api/system-control', {
+        fetch('/api/control', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             action: 'log_change', projectId: selProjId,
@@ -339,9 +339,10 @@ export default function DataRoom() {
         toast({ title: `${file.name} uploaded — extracting data...` });
 
         // Extract via API
-        const res = await fetch('/api/extract-document', {
+        const res = await fetch('/api/analysis', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            action:         'extract',
             content:        text.slice(0, 15000),
             fileName:       file.name,
             docType:        uploadDocType,
