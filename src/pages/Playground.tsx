@@ -2118,37 +2118,65 @@ Please try again — if the problem persists, check your network connection.`);
                                   <p className="text-xs text-muted-foreground px-3 pb-2">Generate a client-ready agenda with tasks, outcomes, and verification steps.</p>
                                 )}
                               </div>
-                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const m    = TM[block.type]||TM.custom;                                const Icon = m.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div                                    key={block.id}                                    draggable                                    onDragStart={e=>{if((e.target as HTMLElement).closest('button')){e.preventDefault();return;}onDragStart(e,block.id);}}                                    onDragEnd={onDragEnd}                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab group transition-all ${draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md'} ${block.status==='done'||block.status==='verified'?'opacity-60':''}`}                                  >                                    <div className="flex items-start gap-2 mb-2">                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>                                      <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='done'||block.status==='verified'?'line-through text-muted-foreground':''}`}>{block.title}</p>                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">                                        <button onClick={e=>{e.stopPropagation();setActiveExecBlock(block);}} title="Execute with AI — get AI to do this task" className="h-5 w-5 rounded flex items-center justify-center bg-primary/15 hover:bg-primary/30 text-primary" draggable={false}><Sparkles size={9}/></button>
-                                        <button onClick={e=>{e.stopPropagation();deepDive(block);}} title="AI Deep Dive" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-primary/20 text-muted-foreground hover:text-primary"><Brain size={9}/></button>                                        <button onClick={e=>{e.stopPropagation();setExpandedBlock(block);}} title="Expand" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground"><Maximize2 size={9}/></button>                                        <button onClick={e=>{e.stopPropagation();returnToLib(block.id);}} title="Return to library" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-red-400/20 text-muted-foreground hover:text-red-400"><X size={9}/></button>                                      </div>                                    </div>                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>                                    <div className="flex items-center justify-between gap-1 mt-1">                                      <div className="flex items-center gap-1">                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>                                        <span className="text-xs text-muted-foreground">{block.priority}</span>                                      </div>                                      <button
-                                        onClick={e=>{e.stopPropagation();toggleStatus(block.id);}}
-                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${
-                                          block.status==='verified' ? 'text-green-400 bg-green-400/10 border-green-400/20' :
-                                          block.status==='done'     ? 'text-green-400 bg-green-400/10 border-green-400/20' :
-                                          block.status==='doing'    ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/20' :
-                                          block.status==='review'   ? 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20' :
-                                          block.status==='waiting'  ? 'text-orange-400 bg-orange-400/10 border-orange-400/20' :
-                                          'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-primary'
-                                        }`}
-                                        title={block.status==='doing'?'Done with this? Click to open the 3-step verification wizard':block.status==='verified'?'Verified ✓ — click to reset to To Do':block.status==='todo'?'Click to mark as In Progress':'Click to change status'}
+                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const m    = TM[block.type]||TM.custom;                                const Icon = m.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div
+                                    key={block.id}
+                                    draggable
+                                    onDragStart={e=>{
+                                      if((e.target as HTMLElement).closest('button')){e.preventDefault();return;}
+                                      onDragStart(e,block.id);
+                                    }}
+                                    onDragEnd={onDragEnd}
+                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab transition-all select-none ${
+                                      draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md hover:border-opacity-60'
+                                    } ${block.status==='verified'||block.status==='done'?'opacity-55':''}`}
+                                  >
+                                    {/* Top row: icon + title + expand */}
+                                    <div className="flex items-start gap-2 mb-2">
+                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>
+                                      <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='verified'||block.status==='done'?'line-through text-muted-foreground':''}`}>
+                                        {block.title}
+                                      </p>
+                                      <button
+                                        onClick={e=>{e.stopPropagation();setExpandedBlock(block);}}
+                                        title="Open task panel"
+                                        className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-foreground hover:bg-secondary/60 transition-all shrink-0 ml-0.5"
+                                        draggable={false}
                                       >
-                                        <SI size={8} className={block.status==='doing'?'animate-spin':''}/>
+                                        <Maximize2 size={9}/>
+                                      </button>
+                                    </div>
+
+                                    {/* Content preview */}
+                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2.5">
+                                      {block.content}
+                                    </p>
+
+                                    {/* Bottom row: priority + status */}
+                                    <div className="flex items-center justify-between gap-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>
+                                        <span className="text-xs text-muted-foreground">{block.priority}</span>
+                                        {block.assignee && (
+                                          <span className="text-xs font-medium text-primary/70 ml-1">
+                                            {block.assignee.split(' ')[0]}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={e=>{e.stopPropagation();toggleStatus(block.id);}}
+                                        draggable={false}
+                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${
+                                          block.status==='verified'||block.status==='done' ? 'text-green-400 bg-green-400/10 border-green-400/20' :
+                                          block.status==='doing'   ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/25 animate-pulse' :
+                                          block.status==='waiting' ? 'text-orange-400 bg-orange-400/10 border-orange-400/20' :
+                                          'text-muted-foreground border-border/50 hover:border-primary/40 hover:text-primary'
+                                        }`}
+                                      >
+                                        <SI size={8}/>
                                         <span>{sm2.label}</span>
                                       </button>
-                                      {block.status==='waiting' && (
-                                        <button onClick={()=>{setVerifyBlock(block);setVerifyResult(null);}} className="text-xs px-1 py-0.5 rounded border border-orange-400/30 text-orange-400 hover:bg-orange-400/10 ml-0.5">
-                                          Check
-                                        </button>
-                                      )}                                    </div>                                    {/* Assignee row */}                                    <div className="flex items-center justify-between gap-1 mt-1.5">                                      <button onClick={e=>{e.stopPropagation();setShowAssignModal(block.id);}} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors" title="Assign to team member">                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}                                        </div>                                        <span className="truncate max-w-[55px]">{block.assignee || 'Assign'}</span>                                      </button>                                      <div className="flex items-center gap-1">
-                                        <span className="text-xs font-mono text-muted-foreground/60">
-                                          ~{block.aiAssisted?formatHours(estimateHours(block)*0.4):formatHours(estimateHours(block))}
-                                          {block.aiAssisted&&<span className="text-primary text-xs"> AI</span>}
-                                        </span>
-                                        <button
-                                          onClick={e=>{e.stopPropagation();setBlocks(prev=>{const u=prev.map(b=>b.id===block.id?{...b,aiAssisted:!b.aiAssisted}:b);scheduleAutoSave(u);return u;});}}
-                                          title={block.aiAssisted?"AI assistance ON — click to turn off":"Turn on AI assistance to cut time by ~60%"}
-                                          className={`text-xs px-1 py-0.5 rounded border transition-all ${block.aiAssisted?'bg-primary/15 border-primary/40 text-primary':'border-border/30 text-muted-foreground/30 hover:text-muted-foreground hover:border-border/60'}`}
-                                        ><Brain size={7}/></button>
-                                      </div>                                    </div>                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* ── Verification & AI Assist Panel ── */}
+                                    </div>
+                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* ── Verification & AI Assist Panel ── */}
                     {placedBlocks.some(b=>b.status==='doing'||b.status==='waiting') && (
                       <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
                         <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/10">
@@ -2457,7 +2485,225 @@ Please try again — if the problem persists, check your network connection.`);
                 </div>
 
               </div>
-            )}</>        )}      </div>      {/* Block expand modal */}      {expandedBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setExpandedBlock(null)}/>          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">              {(()=>{const m=TM[expandedBlock.type]||TM.custom;const Icon=m.icon;return(<><div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}><Icon size={13} style={{color:m.color}}/></div><div className="flex-1"><div className="font-bold text-sm">{expandedBlock.title}</div><div className="text-xs font-mono" style={{color:m.color}}>{m.label}</div></div></>);})()}              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${PM[expandedBlock.priority].badge}`}>{expandedBlock.priority}</span>              <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"><Brain size={11}/>Deep Dive</button>              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>            </div>            <div className="px-5 py-4 space-y-3">              <div className="rounded-xl border border-border bg-background/60 p-4"><p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p></div>              {expandedBlock.tags&&expandedBlock.tags.length>0 && (                <div className="flex flex-wrap gap-1.5">{expandedBlock.tags.map((t,i)=><span key={i} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/30 text-muted-foreground flex items-center gap-1"><Tag size={8}/>{t}</span>)}</div>              )}              <div className="flex gap-2 flex-wrap">                {expandedBlock.effort && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">effort: {expandedBlock.effort}</span>}                {expandedBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">impact: {expandedBlock.impact}</span>}              </div>              <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy content</button>            </div>          </div>        </div>      )}      {/* Deep Dive modal */}      {ddBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>{if(!ddLoading)setDdBlock(null);}}/>          <div className="relative w-full max-w-2xl rounded-2xl border border-primary/30 bg-card/95 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">              <Brain className="h-4 w-4 text-primary"/>              <div className="flex-1"><div className="font-semibold text-sm">AI Deep Dive</div><div className="text-xs text-muted-foreground truncate">{ddBlock.title}</div></div>              {ddLoading && <RefreshCw size={14} className="animate-spin text-primary"/>}              {!ddLoading && <button onClick={()=>setDdBlock(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={12}/></button>}            </div>            <div className="flex-1 overflow-y-auto px-5 py-4">              {ddLoading&&!ddText && <div className="flex items-center gap-2 text-xs text-muted-foreground py-8 justify-center"><RefreshCw size={14} className="animate-spin text-primary"/>Analysing this block in depth…</div>}              {ddText && <div className="rounded-xl border border-border bg-background/60 p-4"><ChatMd text={ddText}/></div>}            </div>            {ddText&&!ddLoading && (              <div className="px-5 py-3 border-t border-border shrink-0 flex gap-2">                <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>                <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>              </div>            )}          </div>     
+            )}</>        )}      </div>      {/* Block expand modal */}      {expandedBlock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={()=>setExpandedBlock(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"/>
+          <div
+            className="relative w-full max-w-xl bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{maxHeight:'88vh'}}
+            onClick={e=>e.stopPropagation()}
+          >
+            {/* Colour bar */}
+            {(()=>{const m=TM[expandedBlock.type]||TM.custom;return <div className="h-1 w-full" style={{background:`linear-gradient(90deg,${m.color},transparent)`}}/>;})()}
+
+            {/* Header */}
+            {(()=>{
+              const m=TM[expandedBlock.type]||TM.custom;
+              const EIcon=m.icon;
+              return (
+                <div className="flex items-start gap-3 px-5 py-4 border-b border-border shrink-0">
+                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}>
+                    <EIcon size={14} style={{color:m.color}}/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm leading-snug">{expandedBlock.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+                      <span className="font-mono" style={{color:m.color}}>{m.label}</span>
+                      <span className={`px-1.5 py-0.5 rounded-full border text-xs font-mono ${PM[expandedBlock.priority]?.badge||'border-border text-muted-foreground'}`}>{expandedBlock.priority}</span>
+                      <span className="text-muted-foreground">Week {expandedBlock.week===5?'Backlog':expandedBlock.week}</span>
+                    </div>
+                  </div>
+                  <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50 shrink-0">
+                    <X size={13}/>
+                  </button>
+                </div>
+              );
+            })()}
+
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+              {/* Description */}
+              <div className="rounded-xl border border-border bg-background/60 p-4">
+                <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Task Description</div>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p>
+                {expandedBlock.impact && (
+                  <div className="mt-3 text-xs text-orange-400 flex items-center gap-1.5">
+                    <span className="font-mono uppercase">Expected impact:</span>
+                    <span>{expandedBlock.impact}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Status control */}
+              <div className="rounded-xl border border-border bg-background/60 p-4 space-y-3">
+                <div className="text-xs font-mono text-muted-foreground uppercase">Status</div>
+                <div className="flex gap-2 flex-wrap">
+                  {(['todo','doing','waiting','verified'] as const).map(s => {
+                    const active = expandedBlock.status === s;
+                    const labels: Record<string,string> = {todo:'To Do',doing:'In Progress',waiting:'Waiting',verified:'Verified'};
+                    const colors: Record<string,string> = {
+                      todo:     active?'bg-secondary text-foreground border-border':'text-muted-foreground border-border/50 hover:border-border',
+                      doing:    active?'bg-blue-400/15 text-blue-400 border-blue-400/30':'text-muted-foreground border-border/50 hover:border-blue-400/30 hover:text-blue-400',
+                      waiting:  active?'bg-orange-400/15 text-orange-400 border-orange-400/30':'text-muted-foreground border-border/50 hover:border-orange-400/30 hover:text-orange-400',
+                      verified: active?'bg-green-400/15 text-green-400 border-green-400/30':'text-muted-foreground border-border/50 hover:border-green-400/30 hover:text-green-400',
+                    };
+                    return (
+                      <button key={s} onClick={()=>{
+                        setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?{...b,status:s as Status}:b);scheduleAutoSave(u);return u;});
+                        setExpandedBlock({...expandedBlock,status:s as Status});
+                      }}
+                        className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${colors[s]}`}
+                      >{labels[s]}</button>
+                    );
+                  })}
+                </div>
+                {expandedBlock.status==='doing' && (
+                  <button onClick={()=>{setExpandedBlock(null);setActiveVerifyBlock(expandedBlock);}}
+                    className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
+                    <Shield size={14}/>Submit for Verification →
+                  </button>
+                )}
+              </div>
+
+              {/* Assignee */}
+              <div className="rounded-xl border border-border bg-background/60 p-4 space-y-2">
+                <div className="text-xs font-mono text-muted-foreground uppercase">Assigned To</div>
+                <button onClick={()=>{setExpandedBlock(null);setShowAssignModal(expandedBlock.id);}}
+                  className="flex items-center gap-2 text-sm hover:text-primary transition-colors">
+                  <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${expandedBlock.assignee?'bg-primary/20 text-primary':'bg-secondary/60 text-muted-foreground/60'}`}>
+                    {expandedBlock.assignee?expandedBlock.assignee[0].toUpperCase():'+'}
+                  </div>
+                  <span>{expandedBlock.assignee||'Click to assign'}</span>
+                </button>
+              </div>
+
+              {/* Effort + AI assist */}
+              <div className="rounded-xl border border-border bg-background/60 p-4 space-y-3">
+                <div className="text-xs font-mono text-muted-foreground uppercase">Effort Estimate</div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-lg font-black text-foreground">
+                      ~{expandedBlock.aiAssisted?formatHours(estimateHours(expandedBlock)*0.4):formatHours(estimateHours(expandedBlock))}
+                    </div>
+                    {expandedBlock.aiAssisted && (
+                      <div className="text-xs text-primary">AI saves ~60% — was {formatHours(estimateHours(expandedBlock))}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={()=>{
+                      const updated={...expandedBlock,aiAssisted:!expandedBlock.aiAssisted};
+                      setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?updated:b);scheduleAutoSave(u);return u;});
+                      setExpandedBlock(updated);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${expandedBlock.aiAssisted?'bg-primary/15 border-primary/40 text-primary':'border-border text-muted-foreground hover:border-primary/30 hover:text-primary'}`}
+                  >
+                    <Brain size={13}/>
+                    {expandedBlock.aiAssisted?'AI Assist: ON':'AI Assist: OFF'}
+                  </button>
+                </div>
+                {!expandedBlock.aiAssisted && (
+                  <p className="text-xs text-muted-foreground">Turn on AI Assist to see how much time Claude can save on this task.</p>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={()=>{setExpandedBlock(null);setActiveExecBlock(expandedBlock);}}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium hover:bg-primary/20 transition-colors">
+                  <Sparkles size={13}/>Execute with AI
+                </button>
+                <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
+                  <Brain size={13}/>AI Deep Dive
+                </button>
+                <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}}
+                  className="flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <Copy size={11}/>Copy task
+                </button>
+                <button onClick={()=>{returnToLib(expandedBlock.id);setExpandedBlock(null);}}
+                  className="flex items-center justify-center gap-2 py-2 rounded-xl border border-red-400/20 text-xs text-red-400/70 hover:text-red-400 hover:bg-red-400/10 transition-colors">
+                  <X size={11}/>Remove from canvas
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Deep Dive Panel ── */}
+      {ddBlock && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={()=>setDdBlock(null)}>
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm"/>
+          <div className="relative w-full sm:max-w-2xl bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{maxHeight:'85vh'}} onClick={e=>e.stopPropagation()}>
+            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">
+              <Brain size={16} className="text-primary shrink-0"/>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm">AI Deep Dive</div>
+                <div className="text-xs text-muted-foreground truncate">"{ddBlock.title}"</div>
+              </div>
+              <button onClick={()=>setDdBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {ddLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+                  <RefreshCw size={16} className="animate-spin text-primary"/>Analysing...
+                </div>
+              )}
+              {ddText && !ddLoading && (
+                <div className="prose prose-sm prose-invert max-w-none">
+                  <pre className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed font-mono">{ddText}</pre>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-border flex gap-2 shrink-0">
+              <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>
+              <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── AI Task Executor (inline) ── */}
+      {activeExecBlock && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={()=>setActiveExecBlock(null)}>
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"/>
+          <div className="relative w-full max-w-2xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{maxHeight:'90vh'}} onClick={e=>e.stopPropagation()}>
+            <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-primary to-violet-500"/>
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-white/8">
+              <Sparkles size={18} className="text-primary shrink-0"/>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-white">Execute with AI</div>
+                <div className="text-xs text-white/40 truncate">"{activeExecBlock.title}"</div>
+              </div>
+              <button onClick={()=>setActiveExecBlock(null)} className="h-8 w-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-white/10">
+                <X size={13} className="text-white/50"/>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+              <div className="rounded-xl border border-white/8 bg-white/3 p-4">
+                <div className="text-xs font-mono text-white/40 uppercase mb-2">Task</div>
+                <p className="text-sm text-white/80 leading-relaxed">{activeExecBlock.content}</p>
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  <span className="text-xs px-2 py-0.5 rounded border border-white/10 text-white/40">{activeExecBlock.type}</span>
+                  {activeExecBlock.impact&&<span className="text-xs px-2 py-0.5 rounded border border-orange-400/30 text-orange-400">Impact: {activeExecBlock.impact}</span>}
+                </div>
+              </div>
+              <div className="rounded-xl border border-violet-400/20 bg-violet-400/5 p-4 space-y-2">
+                <div className="text-xs font-mono text-violet-400 uppercase">To execute with AI</div>
+                <p className="text-xs text-white/60">1. Go to the <strong className="text-white">Pipeline tab</strong> → Role-Based Chat</p>
+                <p className="text-xs text-white/60">2. Select your role, ask: "Help me execute: {activeExecBlock.title}"</p>
+                <p className="text-xs text-white/60">3. AI asks what it needs, then produces the deliverable</p>
+                <p className="text-xs text-white/60">4. Come back here to verify and mark complete</p>
+              </div>
+              <button onClick={()=>{setActiveExecBlock(null);setActiveVerifyBlock(activeExecBlock);}}
+                className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-semibold text-sm transition-colors">
+                Skip to Verification →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Inline Verify Modal ── */}
       {activeVerifyBlock && (
@@ -2496,351 +2742,70 @@ Please try again — if the problem persists, check your network connection.`);
               <span className="text-xs font-semibold text-green-400">Task Verified!</span>
               <button onClick={()=>setNextTaskPrompt(null)} className="ml-auto text-muted-foreground hover:text-foreground"><X size={12}/></button>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Recommended next:</p>
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-                <div className="font-semibold text-xs mb-1">{nextTaskPrompt.title}</div>
-                <p className="text-xs text-muted-foreground line-clamp-2">{nextTaskPrompt.content}</p>
-              </div>
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+              <div className="font-semibold text-xs mb-1">{nextTaskPrompt.title}</div>
+              <p className="text-xs text-muted-foreground line-clamp-2">{nextTaskPrompt.content}</p>
             </div>
-            <p className="text-xs font-medium">Have you fully completed the previous task before starting this?</p>
+            <p className="text-xs font-medium">Have you fully completed the previous task?</p>
             <div className="flex gap-2">
-              <button onClick={()=>{setNextConfirmed(true);highlightBlock(nextTaskPrompt.id);setNextTaskPrompt(null);}} className="flex-1 text-xs py-2 rounded-lg bg-primary text-primary-foreground font-medium">
-                Yes — show me this task
-              </button>
-              <button onClick={()=>setNextTaskPrompt(null)} className="text-xs px-3 py-2 rounded-lg border border-border text-muted-foreground">
-                Not yet
-              </button>
+              <button onClick={()=>{setNextConfirmed(true);setNextTaskPrompt(null);}} className="flex-1 text-xs py-2 rounded-lg bg-primary text-primary-foreground font-medium">Yes — move on</button>
+              <button onClick={()=>setNextTaskPrompt(null)} className="text-xs px-3 py-2 rounded-lg border border-border text-muted-foreground">Not yet</button>
             </div>
           </div>
         </div>
       )}
 
-   </div>      )}      {/* Assign modal */}      {showAssignModal && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setShowAssignModal(null)}/>          <div className="relative w-80 rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="px-5 py-4 border-b border-border">              <div className="font-semibold text-sm">Assign block</div>              <div className="text-xs text-muted-foreground truncate mt-0.5">                {blocks.find(b=>b.id===showAssignModal)?.title}              </div>            </div>            <div className="px-5 py-4 space-y-2">              {/* Unassign */}              <button onClick={()=>assignBlock(showAssignModal,'')}                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                <div className="h-7 w-7 rounded-full bg-secondary/60 flex items-center justify-center text-xs text-muted-foreground">—</div>                <span className="text-sm text-muted-foreground">Unassigned</span>                {!blocks.find(b=>b.id===showAssignModal)?.assignee && <CheckCircle2 size={13} className="text-primary ml-auto"/>}              </button>              {/* Team members */}              {teamMembers.map(member => (                <button key={member} onClick={()=>assignBlock(showAssignModal,member)}                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{member[0].toUpperCase()}</div>                  <span className="text-sm">{member}</span>                  {blocks.find(b=>b.id===showAssignModal)?.assignee===member && <CheckCircle2 size={13} className="text-primary ml-auto"/>}                </button>              ))}              {/* Add custom member */}              <div className="pt-2 border-t border-border">                <input                  placeholder="Add new team member…"                  className="w-full h-8 text-xs px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"                  onKeyDown={e => {                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {                      const name = (e.target as HTMLInputElement).value.trim();                      setTeamMembers(tm => [...tm, name]);                      assignBlock(showAssignModal, name);                    }                  }}                />                <p className="text-xs text-muted-foreground mt-1">Press Enter to add and assign</p>              </div>            </div>          </div>        </div>      )}
-
-      {/* Full Agenda Modal */}
-      {agendaExpanded !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-background/85 backdrop-blur-sm" onClick={()=>setAgendaExpanded(null)}/>
-          <div className="relative w-full max-w-3xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col" style={{maxHeight:'90vh'}}>
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>
-            <div className="flex items-center gap-3 px-6 py-4 border-b border-border shrink-0">
-              <FileText className="h-4 w-4 text-primary"/>
-              <div className="flex-1">
-                <div className="font-bold text-sm">{agendaExpanded === 5 ? 'Backlog' : `Week ${agendaExpanded}`} — Full Agenda</div>
-                {(()=>{
-                  const wCards = blocks.filter(b=>b.placed&&b.week===agendaExpanded);
-                  const hrs    = colTotalHours(wCards);
-                  const wl     = workloadLabel(hrs);
-                  return (
-                    <div className="flex items-center gap-3 mt-0.5">
-                      <span className="text-xs text-muted-foreground">{wCards.length} tasks</span>
-                      <span className={`text-xs font-mono font-semibold ${wl.color}`}>{formatHours(hrs)} total</span>
-                      <span className={`text-xs ${wl.color} opacity-70`}>{wl.label}</span>
-                    </div>
-                  );
-                })()}
-              </div>
-              <div className="flex gap-2 shrink-0">
-                <button onClick={()=>generateAgenda(agendaExpanded!)} disabled={agendaLoading===agendaExpanded}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border disabled:opacity-50 ${agendaStale.has(agendaExpanded!) ? 'bg-yellow-400/10 text-yellow-400 border-yellow-400/30 hover:bg-yellow-400/20' : 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/20'}`}>
-                  <RefreshCw size={11} className={agendaLoading===agendaExpanded?'animate-spin':''}/>
-                  {agendaLoading===agendaExpanded ? 'Generating...' : agendaStale.has(agendaExpanded!) ? 'Refresh (stale)' : agendaText[agendaExpanded!] ? 'Refresh' : 'Generate'}
+      {/* ── Assign Modal ── */}
+      {showAssignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={()=>setShowAssignModal(null)}>
+          <div className="absolute inset-0 bg-background/70 backdrop-blur-sm"/>
+          <div className="relative w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl p-5" onClick={e=>e.stopPropagation()}>
+            <div className="font-bold mb-4">Assign Task</div>
+            <div className="space-y-2 mb-4">
+              {(selProj?.team_members||['Content Writer','Team Lead','Senior SEO','Developer','PM']).map((m: string)=>(
+                <button key={m} onClick={()=>{
+                  setBlocks(prev=>{const u=prev.map(b=>b.id===showAssignModal?{...b,assignee:m}:b);scheduleAutoSave(u);return u;});
+                  setShowAssignModal(null);
+                  toast({title:`Assigned to ${m}`});
+                }} className="w-full text-left px-3 py-2 rounded-xl border border-border hover:bg-secondary/50 text-sm transition-colors">
+                  {m}
                 </button>
-                {agendaText[agendaExpanded!] && (
-                  <button onClick={async()=>{await navigator.clipboard.writeText(agendaText[agendaExpanded!]);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-secondary/40 text-muted-foreground hover:text-foreground">
-                    <Copy size={11}/>Copy
-                  </button>
-                )}
-                <button onClick={()=>setAgendaExpanded(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={14}/></button>
-              </div>
+              ))}
+              <button onClick={()=>{
+                setBlocks(prev=>{const u=prev.map(b=>b.id===showAssignModal?{...b,assignee:undefined}:b);scheduleAutoSave(u);return u;});
+                setShowAssignModal(null);
+              }} className="w-full text-left px-3 py-2 rounded-xl border border-red-400/20 text-red-400/70 hover:bg-red-400/10 text-sm transition-colors">
+                Unassign
+              </button>
             </div>
+            <button onClick={()=>setShowAssignModal(null)} className="w-full py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground">Cancel</button>
+          </div>
+        </div>
+      )}
 
-            {/* Time + assignee breakdown */}
-            {(()=>{
-              const wCards = blocks.filter(b=>b.placed&&b.week===agendaExpanded);
-              if (!wCards.length) return null;
-              const total    = colTotalHours(wCards);
-              const byType   = Object.entries(wCards.reduce((acc:any,b)=>{acc[b.type]=(acc[b.type]||0)+estimateHours(b);return acc;},{})) as [string,number][];
-              const byPerson = Object.entries(wCards.reduce((acc:any,b)=>{const k=b.assignee||'Unassigned';acc[k]=(acc[k]||0)+estimateHours(b);return acc;},{})) as [string,number][];
-              return (
-                <div className="px-6 py-3 border-b border-border/40 bg-secondary/10 shrink-0 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold">Time breakdown</span>
-                    <span className="text-xs font-mono text-primary font-bold">{formatHours(total)} total estimated</span>
-                  </div>
-                  <div className="flex rounded-lg overflow-hidden h-2.5 gap-px">
-                    {byType.sort((a,b)=>b[1]-a[1]).map(([type,hrs])=>{
-                      const m=TM[type as BType]||TM.custom;
-                      const pct=total>0?(hrs/total)*100:0;
-                      return pct>1?<div key={type} title={`${m.label}: ${formatHours(hrs)}`} style={{width:`${pct}%`,background:m.color,opacity:0.75}} className="h-full"/>:null;
-                    })}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {byType.filter(([,h])=>h>0).sort((a,b)=>b[1]-a[1]).map(([type,hrs])=>{
-                      const m=TM[type as BType]||TM.custom;
-                      return <span key={type} className="flex items-center gap-1 text-xs text-muted-foreground"><span className="h-2 w-2 rounded-full" style={{background:m.color,opacity:0.75}}/>{m.label}: {formatHours(hrs)}</span>;
-                    })}
-                  </div>
-                  <div className="flex flex-wrap gap-3 pt-1 border-t border-border/30">
-                    <span className="text-xs font-semibold text-foreground w-full">Who is doing what this week:</span>
-                    {byPerson.sort((a,b)=>b[1]-a[1]).map(([name,hrs])=>(
-                      <div key={name} className="flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 py-1.5">
-                        <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">{name[0].toUpperCase()}</div>
-                        <div>
-                          <div className="text-xs font-medium text-foreground">{name}</div>
-                          <div className="text-xs font-mono text-primary">{formatHours(hrs as number)} estimated</div>
-                        </div>
-                        <div className="ml-1 text-xs text-muted-foreground">{wCards.filter(b=>(b.assignee||'Unassigned')===name).length} tasks</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
-
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              {agendaLoading===agendaExpanded && !agendaText[agendaExpanded!] && (
-                <div className="flex flex-col items-center gap-3 py-16">
-                  <RefreshCw size={24} className="animate-spin text-primary"/>
-                  <p className="text-sm text-muted-foreground">Analysing every card, cross-referencing data, writing your agenda...</p>
-                </div>
-              )}
-              {agendaText[agendaExpanded!] ? (
-                <AgendaMarkdown text={agendaText[agendaExpanded!]}/>
-              ) : agendaLoading!==agendaExpanded && (
-                <div className="text-center py-16">
-                  <FileText size={48} className="text-muted-foreground/15 mx-auto mb-4"/>
-                  <h3 className="font-bold text-lg mb-2">No agenda yet</h3>
-                  <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">Generate a fact-based, client-ready agenda with task breakdown, expected outcomes, verification steps, gap analysis, and a report template.</p>
-                  <Button onClick={()=>generateAgenda(agendaExpanded!)} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground">
-                    <Sparkles className="h-4 w-4 mr-2"/>Generate Agenda
-                  </Button>
-                </div>
-              )}
+      {/* ── Agenda Expanded ── */}
+      {agendaExpanded !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={()=>setAgendaExpanded(null)}>
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm"/>
+          <div className="relative w-full max-w-2xl bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{maxHeight:'85vh'}} onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">
+              <Calendar size={15} className="text-primary"/>
+              <div className="font-bold flex-1">{COLUMNS[agendaExpanded]?.label} Agenda</div>
+              <button onClick={()=>setAgendaExpanded(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed font-mono">
+                {agendaText[agendaExpanded] || 'No agenda generated yet. Click the Agenda button in the column header.'}
+              </pre>
+            </div>
+            <div className="px-5 py-3 border-t border-border flex gap-2 shrink-0">
+              <button onClick={async()=>{await navigator.clipboard.writeText(agendaText[agendaExpanded]||'');toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>
+              <button onClick={()=>setAgendaExpanded(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground ml-auto">Close</button>
             </div>
           </div>
         </div>
       )}
-    </div>  );}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    </div>
+  );
+}
