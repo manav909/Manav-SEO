@@ -64,7 +64,7 @@ export default function SystemControl() {
   const loadState = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/system-control', {
+      const res = await fetch('/api/control', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ action:'get_state', projectId:selProjId }),
       });
@@ -316,9 +316,9 @@ function AwarenessReport({ projectId }: { projectId: string }) {
   const [loading,   setLoading]   = useState(true);
 
   useEffect(() => {
-    fetch('/api/project-context', {
+    fetch('/api/control', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ projectId }),
+      body: JSON.stringify({ action: 'get_context', projectId }),
     }).then(r=>r.json()).then(d=>{
       setAwareness(d.context);
       setLoading(false);
