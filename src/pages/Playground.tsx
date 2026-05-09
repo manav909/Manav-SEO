@@ -2284,10 +2284,10 @@ Please try again — if the problem persists, check your network connection.`);
                           <span className="text-sm font-semibold text-foreground">Manav Brain </span>
                           <span className="text-sm text-muted-foreground">
                             {placedBlocks.filter(b=>b.status==='doing').length > 0
-                              ? `— ${placedBlocks.filter(b=>b.status==='doing').length} task${placedBlocks.filter(b=>b.status==='doing').length!==1?'s are':' is'} in progress. When done, click the status pill to submit for verification.`
+                              ? `— ${placedBlocks.filter(b=>b.status==='doing').length} task${placedBlocks.filter(b=>b.status==='doing').length!==1?' are':' is'} in progress. When done, click the status pill to submit for verification.`
                               : done > 0
-                              ? `— ${done} task${done!==1?'s':''s'} verified. ${placedBlocks.filter(b=>b.status==='todo').length} remaining. ${progress >= 80 ? "You're close to the finish line." : "Keep going."}`
-                              : '— Ready. Click any card's status pill to mark it In Progress.'}
+                              ? `— ${done} task${done!==1?'s':''} verified. ${placedBlocks.filter(b=>b.status==='todo').length} remaining. ${progress >= 80 ? 'Close to the finish line.' : 'Keep going.'}`
+                              : '— Ready. Click the status pill on any card to mark it In Progress.'}
                           </span>
                         </div>
                       </div>
