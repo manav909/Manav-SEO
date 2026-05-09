@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import PortalNav from '@/components/PortalNav';
-import VerifyModal from '@/components/VerifyModal';
-import TaskExecutor from '@/components/TaskExecutor';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -687,6 +685,214 @@ function AgendaMarkdown({ text }: { text: string }) {
           return <div key={i} className="font-bold text-sm text-gradient-primary mt-2">{line.slice(2)}</div>;
         return <p key={i} className="text-muted-foreground my-0.5" dangerouslySetInnerHTML={{__html: line.replace(/\*\*(.+?)\*\*/g,'<strong class=\"text-foreground\">$1</strong>')}}/>;
       })}
+    </div>
+  );
+}
+
+
+/* ════════════════════════════════════════════════════
+   InlineVerifyModal — self-contained, no imports needed
+════════════════════════════════════════════════════ */
+const VERIFY_WAIT_DAYS: Record<string,number> = {
+  technical:5, content:14, geo:7, 'quick-win':3,
+  competitive:21, insight:0, weekly:3, monthly:30, kpi:7, custom:5,
+};
+
+const VERIFY_EVIDENCE: Record<string,{tool:string;what:string}[]> = {
+  technical:   [{tool:'Google Search Console',what:'Coverage report — indexed pages before vs after'},{tool:'Browser DevTools',what:'HTTP status codes of affected URLs'}],
+  content:     [{tool:'Browser — live URL',  what:'Confirm page is published and content is live'},{tool:'Google Search Console',what:'Performance → target keyword impressions/position'}],
+  geo:         [{tool:'Perplexity.ai',       what:'Search your target query — is your site cited?'},{tool:'ChatGPT',what:'Ask relevant question — is your brand mentioned?'}],
+  'quick-win': [{tool:'Google Search Console',what:'CTR and average position for affected URLs before vs after'}],
+  competitive: [{tool:'Semrush or Ahrefs',   what:'Your ranking position vs competitor for target keyword'},{tool:'Google incognito',what:'Manual SERP check'}],
+};
+
+function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
+  block:{id:string;type:string;title:string;content:string;priority:string;impact?:string;assignee?:string};
+  siteUrl:string; onApprove:(b:any)=>void; onWait:(b:any,days:number)=>void; onClose:()=>void;
+}) {
+  const [step,           setStep]           = useState as unknown as <T>(v:T)=>T(1);
+  const [completionNote, setCompletionNote] = useState('');
+  const [evidenceData,   setEvidenceData]   = useState('');
+  const [completedDate,  setCompletedDate]  = useState(new Date().toISOString().split('T')[0]);
+  const [loading,        setLoading]        = useState(false);
+  const [result,         setResult]         = useState<any>(null);
+
+  const waitDays  = VERIFY_WAIT_DAYS[block.type] || 5;
+  const daysSince = Math.floor((Date.now()-new Date(completedDate).getTime())/86400000);
+  const daysLeft  = Math.max(0, waitDays-daysSince);
+  const waitReady = daysLeft === 0;
+  const evReqs    = VERIFY_EVIDENCE[block.type] || VERIFY_EVIDENCE['quick-win'];
+
+  const runCheck = async (checkType: string) => {
+    setLoading(true); setResult(null); setStep(3);
+    try {
+      const res = await fetch('/api/task-engine', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'verify',card:block,siteUrl,completedAt:new Date(completedDate).toISOString(),checkType,completionNote,evidenceData}),
+      });
+      const data = await res.json();
+      setResult(data.success ? data : {verdict:'cannot_determine',next_action:'Server error — try again.',evidence_found:[],evidence_missing:[],what_to_check:[]});
+    } catch(e:any) {
+      setResult({verdict:'cannot_determine',next_action:`Error: ${(e as Error).message}`,evidence_found:[],evidence_missing:[],what_to_check:[]});
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm"/>
+      <div className="relative w-full max-w-2xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{maxHeight:'92vh'}} onClick={e=>e.stopPropagation()}>
+        <div className="h-1 w-full bg-gradient-to-r from-yellow-500 via-violet-500 to-green-500"/>
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-white/8 shrink-0">
+          <div className="h-9 w-9 rounded-xl bg-yellow-400/15 border border-yellow-400/25 flex items-center justify-center shrink-0">
+            <Shield size={16} className="text-yellow-400"/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-white">Task Verification — Step {step} of 3</div>
+            <div className="text-xs text-white/40 truncate">"{block.title}"</div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {([1,2,3] as const).map(n=>(
+              <div key={n} onClick={()=>n<step?setStep(n):undefined} className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all cursor-pointer ${step>n?'bg-green-500 border-green-500 text-white':step===n?'bg-violet-500 border-violet-500 text-white':'bg-white/5 border-white/10 text-white/30'}`}>{step>n?'✓':n}</div>
+            ))}
+          </div>
+          {!loading && <button onClick={onClose} className="h-8 w-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-white/10 ml-1"><X size={13} className="text-white/50"/></button>}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+          {/* Step 1 */}
+          {step===1 && (<>
+            <div className="rounded-xl border border-white/8 bg-white/3 p-4">
+              <div className="text-xs font-mono text-white/40 uppercase mb-2">Task submitted for approval</div>
+              <p className="text-sm text-white/80">{block.content}</p>
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <span className="text-xs px-2 py-0.5 rounded border border-white/10 text-white/40">{block.type}</span>
+                {block.impact&&<span className="text-xs px-2 py-0.5 rounded border border-orange-400/30 text-orange-400">Expected: {block.impact}</span>}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-white flex justify-between mb-1">
+                <span><span className="text-red-400">*</span> What exactly did you do to complete this?</span>
+                <span className="text-white/30 font-normal">{completionNote.length}/50 min</span>
+              </label>
+              <textarea value={completionNote} onChange={e=>setCompletionNote(e.target.value)} rows={4}
+              <textarea value={completionNote} onChange={e=>setCompletionNote(e.target.value)} rows={4}
+                placeholder="Describe what was done: which pages/files/settings changed, which tools used, before/after state."
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-white mb-1 block">When did you finish?</label>
+              <input type="date" value={completedDate} onChange={e=>setCompletedDate(e.target.value)} max={new Date().toISOString().split('T')[0]}
+                className="h-9 text-sm px-3 rounded-xl border border-white/10 bg-white/3 text-white outline-none focus:border-violet-400/50"/>
+            </div>
+          </>)}
+
+          {/* Step 2 */}
+          {step===2 && (<>
+            <div className={`rounded-xl border p-3 ${waitReady?'border-green-400/25 bg-green-400/5':'border-orange-400/25 bg-orange-400/5'}`}>
+              <div className={`text-sm font-semibold ${waitReady?'text-green-400':'text-orange-400'} mb-1`}>
+                {waitReady?`Waiting period complete (${waitDays} days passed)`:`${daysLeft} day${daysLeft!==1?'s':''} remaining before verification is reliable`}
+              </div>
+              <p className="text-xs text-white/50">{waitReady?`${block.type} changes have had time to propagate in Google.`:`${block.type} changes take ~${waitDays} days to appear in search tools.`}</p>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-white mb-3">Required evidence for <span className="text-violet-400">{block.type}</span> tasks:</div>
+              {evReqs.map((r,i)=>(
+                <div key={i} className="rounded-xl border border-white/8 bg-white/3 p-3 mb-2">
+                  <div className="text-xs font-semibold text-violet-400 mb-1">{i+1}. {r.tool}</div>
+                  <div className="text-xs text-white/50">→ {r.what}</div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-white block mb-1">Paste your data from the tools above:</label>
+              <textarea value={evidenceData} onChange={e=>setEvidenceData(e.target.value)} rows={4}
+                placeholder="Paste evidence data. E.g.: GSC Indexed = 847 (was 823). /old-url 301 confirmed. OR: Keyword pos 8 (was 14) Semrush Jan 2024."
+                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none font-mono"
+              />
+            </div>
+          </>)}
+
+          {/* Step 3 */}
+          {step===3 && (<>
+            {loading && (
+              <div className="flex flex-col items-center gap-3 py-12">
+                <RefreshCw size={24} className="animate-spin text-violet-400"/>
+                <p className="text-sm text-white/50 text-center">{siteUrl?'Fetching live site + analysing evidence...':'Analysing your evidence...'}</p>
+              </div>
+            )}
+            {result && !loading && (
+              <div className="space-y-3">
+                <div className={`rounded-xl border p-4 ${result.verdict==='verified'?'border-green-400/30 bg-green-400/5':result.verdict==='partial'?'border-yellow-400/30 bg-yellow-400/5':'border-red-400/30 bg-red-400/5'}`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-black text-sm ${result.verdict==='verified'?'bg-green-500 text-white':result.verdict==='partial'?'bg-yellow-500 text-black':'bg-red-500/20 border border-red-500/30 text-red-400'}`}>
+                      {result.verdict==='verified'?'✓':result.verdict==='partial'?'~':'!'}
+                    </div>
+                    <div>
+                      <div className="font-bold text-white capitalize">{(result.verdict||'unknown').replace(/_/g,' ')}</div>
+                      {result.confidence>0&&<div className="text-xs text-white/40">{result.confidence}% confidence{result.live_data_used?' · live site checked':''}</div>}
+                    </div>
+                  </div>
+                  {result.evidence_found?.length>0&&<div className="mb-3">{result.evidence_found.map((e:string,i:number)=><div key={i} className="flex gap-2 text-xs text-white/70 mb-1"><span className="text-green-400">✓</span><span>{e}</span></div>)}</div>}
+                  {result.evidence_missing?.length>0&&<div className="mb-3">{result.evidence_missing.map((e:string,i:number)=><div key={i} className="flex gap-2 text-xs text-white/70 mb-1"><span className="text-red-400">✗</span><span>{e}</span></div>)}</div>}
+                  {result.approval_blocked&&result.verdict!=='verified'&&<div className="rounded-lg border border-red-400/20 bg-red-400/5 p-3 text-xs text-white/60">{result.approval_blocked}</div>}
+                </div>
+                {result.what_to_check?.length>0&&result.what_to_check.map((c:any,i:number)=>(
+                  <div key={i} className="rounded-xl border border-white/8 bg-white/3 p-3 space-y-1 text-xs">
+                    <div className="font-semibold text-violet-400">{c.tool}</div>
+                    <div className="text-white/50">Action: {c.action}</div>
+                    <div className="text-green-400/80">Pass: {c.pass_condition}</div>
+                    <div className="text-red-400/80">Fail: {c.fail_condition}</div>
+                  </div>
+                ))}
+                {result.next_action&&<div className="rounded-xl border border-violet-400/20 bg-violet-400/5 p-3 text-sm text-white font-medium">{result.next_action}</div>}
+              </div>
+            )}
+          </>)}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-white/8 shrink-0 flex gap-2 flex-wrap items-center">
+          {step===1&&(
+            <>
+              <button onClick={()=>{if(completionNote.trim().length<50){alert('Please describe what was done in at least 50 characters.');return;}setStep(2);}}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-colors">
+                Next: Collect Evidence →
+              </button>
+              <button onClick={onClose} className="text-sm text-white/40 hover:text-white/70 px-3">Cancel</button>
+              <span className="text-xs text-white/25 ml-auto">{completionNote.length}/50</span>
+            </>
+          )}
+          {step===2&&(
+            <>
+              <button onClick={()=>setStep(1)} className="text-sm text-white/40 hover:text-white/70 px-3">← Back</button>
+              <button onClick={()=>runCheck('live_check')} disabled={loading||!siteUrl}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white font-semibold text-sm transition-colors">
+                <Globe size={14}/>{siteUrl?'Run Live Check':'Add URL to project first'}
+              </button>
+              <button onClick={()=>runCheck('guidance')} disabled={loading}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 hover:bg-white/5 disabled:opacity-40 text-white/70 text-sm transition-colors">
+                <Brain size={14}/>Get Checklist Only
+              </button>
+              {!waitReady&&<button onClick={()=>onWait(block,daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400 hover:bg-orange-400/15 ml-auto"><Clock size={13}/>Wait {daysLeft} more days</button>}
+            </>
+          )}
+          {step===3&&!loading&&result&&(
+            <>
+              {result.verdict==='verified'
+                ?<button onClick={()=>onApprove(block)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors"><CheckCircle2 size={15}/>Approve & Mark Verified</button>
+                :<><button onClick={()=>{setStep(2);setResult(null);}} className="text-sm px-4 py-2.5 rounded-xl border border-white/10 hover:bg-white/5 text-white/70 transition-colors">← Add More Evidence</button>
+                  {(result.waiting_status?.daysLeft||0)>0&&<button onClick={()=>onWait(block,result.waiting_status.daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400"><Clock size={13}/>Mark as Waiting</button>}
+                  <button onClick={()=>onApprove(block)} className="text-xs px-3 py-2 rounded-xl border border-white/10 text-white/30 hover:text-white/60 ml-auto">Override — approve anyway</button>
+                </>
+              }
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1548,7 +1754,7 @@ Please try again — if the problem persists, check your network connection.`);
                           </div>
                           <div className="flex gap-2 flex-wrap">
                             {placedBlocks.filter(b=>b.status==='doing').map(b=>(
-                              <button key={b.id} onClick={()=>openVerifyModal(b)}
+                              <button key={b.id} onClick={e=>{e.stopPropagation();openVerifyModal(b);}}
                                 className="text-xs px-2.5 py-1 rounded-lg border border-blue-400/30 bg-blue-400/10 text-blue-400 hover:bg-blue-400/20 font-medium truncate max-w-[160px]">
                                 Verify: {b.title.slice(0,25)}{b.title.length>25?'…':''}
                               </button>
@@ -1979,7 +2185,7 @@ Please try again — if the problem persists, check your network connection.`);
                                     </span>
                                   )}
                                   <button
-                                    onClick={()=>openVerifyModal(b)}
+                                    onClick={e=>{e.stopPropagation();openVerifyModal(b);}}
                                     className={`text-sm px-4 py-2 rounded-xl font-semibold transition-all ${
                                       ready||b.status==='doing'
                                         ?'bg-primary text-primary-foreground hover:bg-primary/90'
@@ -2253,430 +2459,28 @@ Please try again — if the problem persists, check your network connection.`);
               </div>
             )}</>        )}      </div>      {/* Block expand modal */}      {expandedBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setExpandedBlock(null)}/>          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">              {(()=>{const m=TM[expandedBlock.type]||TM.custom;const Icon=m.icon;return(<><div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}><Icon size={13} style={{color:m.color}}/></div><div className="flex-1"><div className="font-bold text-sm">{expandedBlock.title}</div><div className="text-xs font-mono" style={{color:m.color}}>{m.label}</div></div></>);})()}              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${PM[expandedBlock.priority].badge}`}>{expandedBlock.priority}</span>              <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"><Brain size={11}/>Deep Dive</button>              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>            </div>            <div className="px-5 py-4 space-y-3">              <div className="rounded-xl border border-border bg-background/60 p-4"><p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p></div>              {expandedBlock.tags&&expandedBlock.tags.length>0 && (                <div className="flex flex-wrap gap-1.5">{expandedBlock.tags.map((t,i)=><span key={i} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/30 text-muted-foreground flex items-center gap-1"><Tag size={8}/>{t}</span>)}</div>              )}              <div className="flex gap-2 flex-wrap">                {expandedBlock.effort && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">effort: {expandedBlock.effort}</span>}                {expandedBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">impact: {expandedBlock.impact}</span>}              </div>              <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy content</button>            </div>          </div>        </div>      )}      {/* Deep Dive modal */}      {ddBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>{if(!ddLoading)setDdBlock(null);}}/>          <div className="relative w-full max-w-2xl rounded-2xl border border-primary/30 bg-card/95 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">              <Brain className="h-4 w-4 text-primary"/>              <div className="flex-1"><div className="font-semibold text-sm">AI Deep Dive</div><div className="text-xs text-muted-foreground truncate">{ddBlock.title}</div></div>              {ddLoading && <RefreshCw size={14} className="animate-spin text-primary"/>}              {!ddLoading && <button onClick={()=>setDdBlock(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={12}/></button>}            </div>            <div className="flex-1 overflow-y-auto px-5 py-4">              {ddLoading&&!ddText && <div className="flex items-center gap-2 text-xs text-muted-foreground py-8 justify-center"><RefreshCw size={14} className="animate-spin text-primary"/>Analysing this block in depth…</div>}              {ddText && <div className="rounded-xl border border-border bg-background/60 p-4"><ChatMd text={ddText}/></div>}            </div>            {ddText&&!ddLoading && (              <div className="px-5 py-3 border-t border-border shrink-0 flex gap-2">                <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>                <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>              </div>            )}          </div>     
 
-      {/* ── Verification Gate Modal ── */}
-      {verifyBlock && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-background/90 backdrop-blur-sm"/>
-          <div className="relative w-full max-w-2xl rounded-2xl border border-border bg-card shadow-2xl flex flex-col" style={{maxHeight:'92vh'}}>
-            <div className="h-1 w-full bg-gradient-to-r from-yellow-500 via-primary to-green-500 rounded-t-2xl"/>
-
-            {/* Header with step indicator */}
-            <div className="flex items-center gap-3 px-6 py-4 border-b border-border shrink-0">
-              <Shield size={18} className="text-yellow-400 shrink-0"/>
-              <div className="flex-1">
-                <div className="font-bold text-sm">Task Verification — Step {verifyStep} of 3</div>
-                <div className="text-xs text-muted-foreground truncate mt-0.5">"{verifyBlock.title}"</div>
-              </div>
-              {/* Step pills */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                {([1,2,3] as const).map(n=>(
-                  <div key={n} className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all ${
-                    verifyStep>n  ? 'bg-green-500 border-green-500 text-white' :
-                    verifyStep===n? 'bg-primary border-primary text-primary-foreground' :
-                    'bg-secondary/40 border-border text-muted-foreground'
-                  }`}>{verifyStep>n?'✓':n}</div>
-                ))}
-              </div>
-              {!verifyLoading && verifyStep===1 && (
-                <button onClick={()=>{setVerifyBlock(null);setVerifyResult(null);setVerifyStep(1);}} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50 ml-1"><X size={13}/></button>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-
-              {/* ══ STEP 1: Confirm what was done ══ */}
-              {verifyStep===1 && (
-                <div className="space-y-4">
-                  <div className="rounded-xl border border-yellow-400/25 bg-yellow-400/5 p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="h-6 w-6 rounded-full bg-yellow-400 text-black flex items-center justify-center text-xs font-black shrink-0">1</div>
-                      <span className="font-semibold text-sm">Confirm Completion</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      As Head of Department, I require a written record of exactly what was done before this task can enter the verification queue. No exceptions.
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="text-xs font-semibold text-foreground mb-1 flex items-center gap-1">
-                      <span className="text-red-400">*</span> What exactly did you do to complete this task?
-                    </div>
-                    <textarea
-                      value={completionNote}
-                      onChange={e=>setCompletionNote(e.target.value)}
-                      placeholder={`Describe precisely what was done:
-- What pages/files/settings were changed
-- What tools were used
-- What the before/after state looks like
-
-Example: "Fixed 3 broken redirect chains in .htaccess — URLs /old-page-1, /old-page-2, /old-page-3 now return 301 → /correct-destination. Tested in browser and Screaming Frog confirmed 301 status."`}
-                      className="w-full h-36 text-sm px-3 py-2 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50 resize-none"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">{completionNote.length} chars — minimum 50 chars required</p>
-                  </div>
-
-                  <div>
-                    <div className="text-xs font-semibold text-foreground mb-1">When did you finish?</div>
-                    <input
-                      type="date"
-                      value={completedAt}
-                      onChange={e=>setCompletedAt(e.target.value)}
-                      max={new Date().toISOString().split('T')[0]}
-                      className="h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"
-                    />
-                  </div>
-
-                  <div className="rounded-xl border border-border bg-background/60 p-4">
-                    <div className="text-xs font-mono text-muted-foreground uppercase mb-2">What this task was supposed to achieve</div>
-                    <p className="text-sm">{verifyBlock.content}</p>
-                    <div className="flex gap-2 mt-2 flex-wrap">
-                      <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">{verifyBlock.type}</span>
-                      {verifyBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-orange-400/30 text-orange-400">Expected impact: {verifyBlock.impact}</span>}
-                      {verifyBlock.assignee && <span className="text-xs px-2 py-0.5 rounded border border-primary/20 text-primary">Completed by: {verifyBlock.assignee}</span>}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ══ STEP 2: Evidence collection ══ */}
-              {verifyStep===2 && (
-                <div className="space-y-4">
-                  {(()=>{
-                    const WAIT: Record<string,number> = {'technical':5,'content':14,'geo':7,'quick-win':3,'competitive':21,'weekly':3,'monthly':30,'kpi':7,'custom':5};
-                    const EVIDENCE_REQ: Record<string,{title:string;items:{tool:string;what:string;paste:string}[]}> = {
-                      'technical': {
-                        title:'Technical tasks require search tool verification',
-                        items:[
-                          {tool:'Google Search Console', what:'Coverage report: Pages Indexed count (before vs after)', paste:'Paste the indexed page count or error count from GSC Coverage report'},
-                          {tool:'GSC or Screaming Frog', what:'Confirm affected URLs return correct HTTP status codes', paste:'Paste 3-5 URLs with their before/after HTTP status codes'},
-                          {tool:'Chrome DevTools / PageSpeed Insights', what:'If speed/Core Web Vitals task: paste LCP, CLS, FID scores', paste:'Paste performance scores (before and after if available)'},
-                        ]
-                      },
-                      'content': {
-                        title:'Content tasks require Google Search Console performance data',
-                        items:[
-                          {tool:'Google Search Console', what:'Performance report: Target keyword impressions and position', paste:'Paste keyword, impressions, clicks, avg position from GSC (needs 14+ days to show)'},
-                          {tool:'Google', what:'Search your target keyword — is the page appearing?', paste:'Paste: keyword searched, result position found (or not found)'},
-                          {tool:'Browser', what:'Open the published URL — is all content live and correct?', paste:'Paste the live URL and confirm: title, meta description, H1, word count'},
-                        ]
-                      },
-                      'geo': {
-                        title:'GEO tasks require AI platform verification',
-                        items:[
-                          {tool:'Perplexity.ai', what:'Search your target query — is the site cited as a source?', paste:'Paste the query used + whether your site appeared as a citation (yes/no + URL if yes)'},
-                          {tool:'ChatGPT', what:'Ask a question where your content should be authoritative — does it reference your site?', paste:'Paste the question + ChatGPT response (cite any mention of your brand/URL)'},
-                          {tool:'Google AI Overview', what:'Search the target keyword in Google — does an AI overview appear citing your content?', paste:'Paste: keyword searched + whether AI overview appeared + if your site was cited'},
-                        ]
-                      },
-                      'quick-win': {
-                        title:'Quick wins require before/after metric evidence',
-                        items:[
-                          {tool:'Relevant tool for this quick win', what:'The specific metric this quick win was supposed to move', paste:'Paste: metric name, value BEFORE, value NOW, date of measurement'},
-                          {tool:'Google Search Console', what:'Check if the change is reflected in search data', paste:'Paste any relevant GSC data showing the quick win impact'},
-                        ]
-                      },
-                      'competitive': {
-                        title:'Competitive tasks require ranking position data',
-                        items:[
-                          {tool:'Ahrefs / Semrush / SerpAPI', what:'Current ranking position for the target keyword vs competitor', paste:'Paste: keyword, your current position, competitor current position, date checked'},
-                          {tool:'Google Search (incognito)', what:'Search the target keyword — where do you rank vs the competitor?', paste:'Paste: keyword, your position, competitor position'},
-                        ]
-                      },
-                    };
-                    const req = EVIDENCE_REQ[verifyBlock.type] || EVIDENCE_REQ['technical'];
-                    const waitDays = WAIT[verifyBlock.type] || 5;
-                    const compDate = completedAt ? new Date(completedAt) : new Date();
-                    const daysSince = Math.floor((Date.now()-compDate.getTime())/86400000);
-                    const daysLeft  = Math.max(0, waitDays-daysSince);
-                    return (
-                      <>
-                        <div className={`rounded-xl border p-4 ${daysLeft===0?'border-green-400/25 bg-green-400/5':'border-orange-400/25 bg-orange-400/5'}`}>
-                          <div className="flex items-center gap-2 mb-1">
-                            <Clock size={13} className={daysLeft===0?'text-green-400':'text-orange-400'}/>
-                            <span className={`text-sm font-semibold ${daysLeft===0?'text-green-400':'text-orange-400'}`}>
-                              {daysLeft===0 ? `Waiting period complete (${waitDays} days minimum passed)` : `${daysLeft} day${daysLeft!==1?'s':''} remaining — evidence may not be visible yet`}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {daysLeft===0
-                              ? 'Sufficient time has passed for search tools to reflect this change. Evidence should now be visible.'
-                              : `${verifyBlock.type} changes take ~${waitDays} days to appear in search tools. You can still proceed but evidence may not be measurable yet.`}
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-black shrink-0">2</div>
-                            <span className="font-semibold text-sm">{req.title}</span>
-                          </div>
-                          <div className="space-y-3">
-                            {req.items.map((item,i)=>(
-                              <div key={i} className="rounded-lg border border-border bg-background/60 p-3">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs font-semibold text-primary">{item.tool}</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground mb-2">{item.what}</p>
-                                <div className="text-xs font-medium text-foreground mb-1">→ {item.paste}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-xs font-semibold mb-1 flex items-center gap-1">
-                            Paste your evidence data here
-                            <span className="text-muted-foreground font-normal">(copy from the tools above)</span>
-                          </div>
-                          <textarea
-                            value={evidenceData}
-                            onChange={e=>setEvidenceData(e.target.value)}
-                            placeholder="Paste raw data from the tools listed above. Examples:&#10;&#10;GSC Coverage: Indexed pages = 847 (was 823 before fix)&#10;URL /old-page: 404 → 301 redirect to /new-page confirmed&#10;&#10;OR:&#10;&#10;Keyword 'best seo agency london': Position 8 (was 14) — checked 2024-01-15 via Semrush"
-                            className="w-full h-32 text-sm px-3 py-2 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50 resize-none font-mono"
-                          />
-                          <p className="text-xs text-muted-foreground mt-1">The more specific your data, the more accurate the verification verdict.</p>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* ══ STEP 3: Verdict ══ */}
-              {verifyStep===3 && (
-                <div className="space-y-4">
-                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-black shrink-0">3</div>
-                      <span className="font-semibold text-sm">Verification Analysis</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {verifyLoading
-                        ? (selProj?.url ? 'Fetching live site data and cross-referencing your evidence...' : 'Analysing your evidence and providing verification guidance...')
-                        : 'Review the verdict below. Approval requires either a "verified" verdict from live check, or your acknowledgement of the manual checklist.'}
-                    </p>
-                  </div>
-
-                  {verifyLoading && (
-                    <div className="flex flex-col items-center gap-3 py-8">
-                      <RefreshCw size={24} className="animate-spin text-primary"/>
-                      <p className="text-sm text-muted-foreground text-center">
-                        {selProj?.url ? 'Fetching live site + analysing evidence...' : 'Analysing evidence against task requirements...'}
-                      </p>
-                    </div>
-                  )}
-
-                  {verifyResult && !verifyLoading && (
-                    <div className="space-y-3">
-                      <div className={`rounded-xl border p-4 ${
-                        verifyResult.verdict==='verified' ? 'border-green-400/30 bg-green-400/5' :
-                        verifyResult.verdict==='partial'  ? 'border-yellow-400/30 bg-yellow-400/5' :
-                        'border-red-400/30 bg-red-400/5'
-                      }`}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className={`h-8 w-8 rounded-full flex items-center justify-center font-black text-sm ${
-                            verifyResult.verdict==='verified' ? 'bg-green-500 text-white' :
-                            verifyResult.verdict==='partial'  ? 'bg-yellow-500 text-black' :
-                            'bg-red-500/20 border border-red-500/30 text-red-400'
-                          }`}>
-                            {verifyResult.verdict==='verified'?'✓':verifyResult.verdict==='partial'?'~':'!'}
-                          </div>
-                          <div>
-                            <div className="font-bold text-sm capitalize">{(verifyResult.verdict||'unknown').replace(/_/g,' ')}</div>
-                            {verifyResult.confidence>0 && <div className="text-xs text-muted-foreground">{verifyResult.confidence}% confidence{verifyResult.live_data_used?' · live site checked':''}</div>}
-                          </div>
-                        </div>
-
-                        {verifyResult.evidence_found?.length>0 && (
-                          <div className="mb-3">
-                            <div className="text-xs font-mono text-green-400 uppercase mb-2">Evidence Confirmed</div>
-                            {verifyResult.evidence_found.map((e:string,i:number)=>(
-                              <div key={i} className="flex items-start gap-2 text-xs mb-1.5">
-                                <span className="text-green-400 shrink-0 font-bold">✓</span><span>{e}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {verifyResult.evidence_missing?.length>0 && (
-                          <div className="mb-3">
-                            <div className="text-xs font-mono text-red-400 uppercase mb-2">Not Confirmed</div>
-                            {verifyResult.evidence_missing.map((e:string,i:number)=>(
-                              <div key={i} className="flex items-start gap-2 text-xs mb-1.5">
-                                <span className="text-red-400 shrink-0 font-bold">✗</span><span>{e}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {verifyResult.approval_blocked && verifyResult.verdict!=='verified' && (
-                          <div className="rounded-lg border border-red-400/20 bg-red-400/5 p-3 mb-3">
-                            <div className="text-xs font-mono text-red-400 uppercase mb-1">Approval Blocked</div>
-                            <p className="text-xs">{verifyResult.approval_blocked}</p>
-                          </div>
-                        )}
-                      </div>
-
-                      {verifyResult.what_to_check?.length>0 && (
-                        <div>
-                          <div className="text-xs font-mono text-primary uppercase mb-2">Manual Verification Checklist</div>
-                          {verifyResult.what_to_check.map((c:any,i:number)=>(
-                            <div key={i} className="rounded-lg border border-border bg-background/60 p-3 mb-2 space-y-1 text-xs">
-                              <div className="font-semibold text-primary text-sm">{c.tool}</div>
-                              <div><span className="text-muted-foreground">Action: </span>{c.action}</div>
-                              <div><span className="text-muted-foreground">Look for: </span>{c.what_to_look_for}</div>
-                              <div className="text-green-400/90 font-medium">Pass: {c.pass_condition}</div>
-                              <div className="text-red-400/90 font-medium">Fail: {c.fail_condition}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {verifyResult.next_action && (
-                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                          <div className="text-xs font-mono text-primary uppercase mb-1">Required Next Action</div>
-                          <p className="text-sm font-medium">{verifyResult.next_action}</p>
-                        </div>
-                      )}
-                      {verifyResult.hod_note && (
-                        <div className="rounded-xl border border-border bg-secondary/20 p-3 mt-2">
-                          <div className="text-xs font-mono text-muted-foreground uppercase mb-1">HoD Review Note</div>
-                          <p className="text-xs italic">{verifyResult.hod_note}</p>
-                        </div>
-                      )}
-                      {verifyResult.timeline_note && (
-                        <p className="text-xs text-muted-foreground italic px-1">{verifyResult.timeline_note}</p>
-                      )}
-                      {verifyResult.roles?.who_should_verify && (
-                        <p className="text-xs text-muted-foreground px-1">
-                          <span className="font-medium">Who should verify:</span> {verifyResult.roles.who_should_verify}
-                          {verifyResult.roles.escalate_to && <> · <span className="font-medium">Escalate to:</span> {verifyResult.roles.escalate_to}</>}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-border shrink-0 bg-secondary/10">
-              {verifyStep===1 && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={()=>{
-                      if(completionNote.trim().length<50){
-                        toast({title:'Required',description:'Please describe what was done in at least 50 characters.',variant:'destructive'});
-                        return;
-                      }
-                      setVerifyStep(2);
-                    }}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90"
-                  >
-                    Next: Collect Evidence →
-                  </button>
-                  <button onClick={()=>{setVerifyBlock(null);setVerifyResult(null);setVerifyStep(1);}} className="text-sm text-muted-foreground hover:text-foreground px-3">
-                    Cancel
-                  </button>
-                  <p className="text-xs text-muted-foreground ml-auto">{completionNote.length}/50 minimum</p>
-                </div>
-              )}
-
-              {verifyStep===2 && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button onClick={()=>setVerifyStep(1)} className="text-sm text-muted-foreground hover:text-foreground px-3">← Back</button>
-                  <button
-                    onClick={()=>runVerification(verifyBlock,'live_check')}
-                    disabled={verifyLoading || !selProj?.url}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    <Globe size={14}/>{selProj?.url?'Run Live Check + Analyse':'No URL — add to project'}
-                  </button>
-                  <button
-                    onClick={()=>runVerification(verifyBlock,'guidance')}
-                    disabled={verifyLoading}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  >
-                    <Brain size={14}/>Get Manual Checklist
-                  </button>
-                  {(()=>{
-                    const WAIT: Record<string,number> = {'technical':5,'content':14,'geo':7,'quick-win':3,'competitive':21,'weekly':3,'monthly':30,'kpi':7,'custom':5};
-                    const waitDays = WAIT[verifyBlock.type]||5;
-                    const compDate = completedAt?new Date(completedAt):new Date();
-                    const daysLeft = Math.max(0,waitDays-Math.floor((Date.now()-compDate.getTime())/86400000));
-                    return daysLeft>0?(
-                      <button onClick={()=>sendToWaiting(verifyBlock,daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400 hover:bg-orange-400/20">
-                        <Clock size={13}/>Set to Waiting ({daysLeft}d)
-                      </button>
-                    ):null;
-                  })()}
-                </div>
-              )}
-
-              {verifyStep===3 && !verifyLoading && verifyResult && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  {verifyResult.verdict==='verified' ? (
-                    <button onClick={()=>approveBlock(verifyBlock)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-500 text-white font-bold text-sm hover:bg-green-600">
-                      <CheckCircle2 size={15}/>Approve & Mark Verified
-                    </button>
-                  ) : (
-                    <>
-                      <button onClick={()=>{setVerifyStep(2);setVerifyResult(null);}} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground">
-                        ← Add more evidence
-                      </button>
-                      <button onClick={()=>{setBlocks(prev=>{const u=prev.map(b=>b.id===verifyBlock.id?{...b,status:'doing' as Status}:b);scheduleAutoSave(u);return u;});setVerifyBlock(null);setVerifyResult(null);setVerifyStep(1);}} className="text-sm px-4 py-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground">
-                        Back to In Progress
-                      </button>
-                      {(verifyResult.waiting_status?.daysLeft||0)>0 && (
-                        <button onClick={()=>sendToWaiting(verifyBlock,verifyResult.waiting_status.daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400">
-                          <Clock size={13}/>Mark as Waiting
-                        </button>
-                      )}
-                      <button onClick={()=>approveBlock(verifyBlock)} className="text-xs px-3 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground ml-auto" title="Use only if you have verified manually outside this system">
-                        Override — approve anyway
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Isolated Verification Modal ── */}
-      {/* ── AI Task Executor ── */}
-      {activeExecBlock && (
-        <TaskExecutor
-          block={activeExecBlock}
-          projectId={selProjId}
-          onClose={()=>setActiveExecBlock(null)}
-          onMarkForVerification={(b)=>{setActiveExecBlock(null);setActiveVerifyBlock(b);}}
-        />
-      )}
-
+      {/* ── Inline Verify Modal ── */}
       {activeVerifyBlock && (
-        <VerifyModal
+        <InlineVerifyModal
           block={activeVerifyBlock}
           siteUrl={selProj?.url || ''}
-          onApprove={(block) => {
+          onApprove={(b) => {
             setBlocks(prev => {
-              const updated = prev.map(b => b.id === block.id ? { ...b, status: 'verified' as Status } : b);
-              scheduleAutoSave(updated);
-              const placed = updated.filter(b => b.placed);
-              const lib    = updated.filter(b => !b.placed);
-              const rec    = getNextRecommendation(placed, lib);
-              if (rec) setNextTaskPrompt(rec.block);
-              return updated;
+              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'verified' as Status} : bl);
+              scheduleAutoSave(upd);
+              return upd;
             });
             setActiveVerifyBlock(null);
             toast({ title: '✓ Task verified and approved!' });
           }}
-          onWait={(block, days) => {
+          onWait={(b, days) => {
             setBlocks(prev => {
-              const updated = prev.map(b => b.id === block.id ? { ...b, status: 'waiting' as Status } : b);
-              scheduleAutoSave(updated);
-              return updated;
+              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'waiting' as Status} : bl);
+              scheduleAutoSave(upd);
+              return upd;
             });
             setActiveVerifyBlock(null);
-            toast({ title: `⏳ Set to Waiting — ${days} day${days!==1?'s':''} remaining` });
+            toast({ title: `Set to Waiting — ${days} day${days !== 1 ? 's' : ''} remaining` });
           }}
           onClose={() => setActiveVerifyBlock(null)}
         />
