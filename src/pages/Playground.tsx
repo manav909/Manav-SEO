@@ -540,6 +540,50 @@ function Section({title,icon:Icon,color,children,defaultOpen=false}:{title:strin
   );
 }
 
+/* ─── AgendaMarkdown — renders the streamed agenda text ─── */
+function AgendaMarkdown({ text }: { text: string }) {
+  return (
+    <div className="text-xs leading-relaxed space-y-1">
+      {text.split('\n').map((line, i) => {
+
+        if (line.startsWith('## '))
+          return <div key={i} className="font-bold text-sm text-foreground mt-3 mb-1 pb-1 border-b border-border/40">{line.slice(3)}</div>;
+        if (line.startsWith('### '))
+          return <div key={i} className="font-semibold text-xs text-primary mt-2 mb-0.5">{line.slice(4)}</div>;
+        if (line.startsWith('#### '))
+          return <div key={i} className="font-semibold text-xs text-muted-foreground mt-1.5">{line.slice(5)}</div>;
+        if (line.startsWith('**') && line.endsWith('**') && !line.slice(2,-2).includes('**'))
+          return <div key={i} className="font-semibold text-xs text-foreground mt-1">{line.slice(2,-2)}</div>;
+        if (/^\*\*(.+?)\*\*:/.test(line)) {
+          const [, label, rest] = line.match(/^\*\*(.+?)\*\*:(.*)$/) || [];
+          if (label) return <div key={i} className="flex gap-1 my-0.5"><span className="font-semibold text-foreground shrink-0">{label}:</span><span className="text-muted-foreground" dangerouslySetInnerHTML={{__html: (rest||'').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')}}/></div>;
+        }
+        if (line.startsWith('- ') || line.startsWith('* '))
+          return <div key={i} className="flex gap-1.5 my-0.5 ml-1"><span className="text-primary shrink-0 mt-0.5">•</span><span className="text-muted-foreground" dangerouslySetInnerHTML={{__html: line.slice(2).replace(/\*\*(.+?)\*\*/g,'<strong class=\"text-foreground\">$1</strong>')}}/></div>;
+        if (line.startsWith('| ') && line.includes(' | ')) {
+          const cols = line.split('|').map(c => c.trim()).filter(Boolean);
+          const isHeader = i < text.split('\n').length - 1 && text.split('\n')[i+1]?.match(/^\|[-| ]+\|/);
+
+
+          if (line.match(/^\|[-| ]+\|/)) return null; // separator row
+          return (
+            <div key={i} className={`flex gap-0 text-xs border-b border-border/30 ${isHeader ? 'font-semibold bg-secondary/30' : ''}`}>
+              {cols.map((col, ci) => (
+                <div key={ci} className="px-2 py-1 flex-1 min-w-0" dangerouslySetInnerHTML={{__html: col.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')}}/>
+              ))}
+            </div>
+          );
+        }
+        if (line.startsWith('---')) return <hr key={i} className="border-border/30 my-2"/>;
+        if (!line.trim()) return <div key={i} className="h-1"/>;
+        if (line.startsWith('# '))
+          return <div key={i} className="font-bold text-sm text-gradient-primary mt-2">{line.slice(2)}</div>;
+        return <p key={i} className="text-muted-foreground my-0.5" dangerouslySetInnerHTML={{__html: line.replace(/\*\*(.+?)\*\*/g,'<strong class=\"text-foreground\">$1</strong>')}}/>;
+      })}
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════
    MAIN COMPONENT
 ═══════════════════════════════════════════════════ */
@@ -573,6 +617,10 @@ export default function Playground() {
   const [autoFilling,   setAutoFilling]   = useState(false);
   const [teamMembers,   setTeamMembers]   = useState<string[]>(['Manav','Client','Agency']);
   const [showAssignModal,setShowAssignModal] = useState<string|null>(null);
+  const [agendaWeek,    setAgendaWeek]    = useState<number|null>(null);
+  const [agendaText,    setAgendaText]    = useState<Record<number,string>>({});
+  const [agendaLoading, setAgendaLoading] = useState<number|null>(null);
+  const [agendaStale,   setAgendaStale]   = useState<Set<number>>(new Set());
   const chatEndRef    = useRef<HTMLDivElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -655,6 +703,7 @@ export default function Playground() {
       const dropped  = updated.find(b=>b.id===id);
       if (dropped) setLastImpact({title:dropped.title,week,metric:getDropImpact(dropped,week)});
       setRecommendation(getNextRecommendation(placed,lib));
+      markAgendaStale(week);
       scheduleAutoSave(updated);
       return updated;
     });
@@ -744,6 +793,59 @@ export default function Playground() {
     const sug=suggestWeekForCustom(custTitle,custContent,blocks);
     toast({title:'Block added to library!',description:`Suggested: ${sug.week===5?'Backlog':`Week ${sug.week}`} — ${sug.reason}`});
     scheduleAutoSave(blocks);
+  };
+
+  const generateAgenda = async (week: number) => {
+    const weekLabel = week === 5 ? 'Backlog' : `Week ${week}`;
+    const weekCards = blocks.filter(b => b.placed && b.week === week);
+    if (weekCards.length === 0) {
+      toast({ title: 'No cards in this week', description: 'Drag some cards into this week first.' });
+      return;
+    }
+    setAgendaWeek(week);
+    setAgendaLoading(week);
+    setAgendaText(prev => ({ ...prev, [week]: '' }));
+    setAgendaStale(prev => { const n = new Set(prev); n.delete(week); return n; });
+
+    const proj = {
+      company:  client?.company  || '',
+      industry: client?.industry || '',
+      url:      selProj?.url     || '',
+      scores:   '',
+    };
+
+    try {
+      const res = await fetch('/api/week-agenda', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          week,
+          weekLabel,
+          weekCards,
+          allPlacedCards: blocks.filter(b => b.placed),
+          libraryCards:   blocks.filter(b => !b.placed),
+          projectContext: proj,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error('Request failed');
+      const reader = res.body.getReader();
+      const dec    = new TextDecoder();
+      let acc = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += dec.decode(value, { stream: true });
+        setAgendaText(prev => ({ ...prev, [week]: acc }));
+      }
+    } catch (e: any) {
+      setAgendaText(prev => ({ ...prev, [week]: `Error: ${e.message}` }));
+    }
+    setAgendaLoading(null);
+  };
+
+  // Mark agenda stale when cards in that week change
+  const markAgendaStale = (week: number) => {
+    setAgendaStale(prev => new Set([...prev, week]));
   };
 
   const deepDive = async(block:Block)=>{
@@ -1268,12 +1370,32 @@ export default function Playground() {
                                   </div>
                                   <div className="text-xs text-muted-foreground">{col.sub}</div>
                                 </div>
-                                <div className="text-right">
-                                  <div className="text-xs font-mono text-muted-foreground">{colDone}/{colBlocks.length}</div>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="text-right">
+                                    <div className="text-xs font-mono text-muted-foreground">{colDone}/{colBlocks.length}</div>
+                                    {colBlocks.length > 0 && (
+                                      <div className="h-1 w-12 rounded-full bg-secondary overflow-hidden mt-0.5">
+                                        <div className="h-full bg-green-400/70 transition-all" style={{width:`${Math.round((colDone/colBlocks.length)*100)}%`}}/>
+                                      </div>
+                                    )}
+                                  </div>
                                   {colBlocks.length > 0 && (
-                                    <div className="h-1 w-12 rounded-full bg-secondary overflow-hidden mt-0.5">
-                                      <div className="h-full bg-green-400/70 transition-all" style={{width:`${Math.round((colDone/colBlocks.length)*100)}%`}}/>
-                                    </div>
+                                    <button
+                                      onClick={() => { setAgendaWeek(agendaWeek===col.week?null:col.week); }}
+                                      title="View / generate week agenda"
+                                      className={`h-6 px-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
+                                        agendaWeek===col.week
+                                          ? 'bg-primary text-primary-foreground'
+                                          : agendaStale.has(col.week) && agendaText[col.week]
+                                          ? 'bg-yellow-400/15 text-yellow-400 border border-yellow-400/30'
+                                          : agendaText[col.week]
+                                          ? 'bg-primary/10 text-primary border border-primary/20'
+                                          : 'bg-secondary/60 text-muted-foreground border border-border hover:text-foreground'
+                                      }`}
+                                    >
+                                      <FileText size={9}/>
+                                      {agendaLoading===col.week ? '…' : agendaStale.has(col.week) && agendaText[col.week] ? '⚡' : agendaText[col.week] ? '✓' : 'Agenda'}
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -1322,211 +1444,259 @@ export default function Playground() {
                               )}
                             </div>
 
-                            {/* Cards */}
-                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: 340}}>
-                              {colBlocks.length===0&&!isOver && (
-                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>
-                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>
-                                </div>
-                              )}
-                              {colBlocks.map(block=>{
-                                const m    = TM[block.type]||TM.custom;
-                                const Icon = m.icon;
-                                const pm2  = PM[block.priority];
-                                const sm2  = SM[block.status];
-                                const SI   = sm2.icon;
-                                return (
-                                  <div
-                                    key={block.id}
-                                    draggable
-                                    onDragStart={e=>onDragStart(e,block.id)}
-                                    onDragEnd={onDragEnd}
-                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab group transition-all ${draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md'} ${block.status==='done'?'opacity-60':''}`}
-                                  >
-                                    <div className="flex items-start gap-2 mb-2">
-                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>
-                                      <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='done'?'line-through text-muted-foreground':''}`}>{block.title}</p>
-                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                        <button onClick={()=>deepDive(block)} title="AI Deep Dive" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-primary/20 text-muted-foreground hover:text-primary"><Brain size={9}/></button>
-                                        <button onClick={()=>setExpandedBlock(block)} title="Expand" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground"><Maximize2 size={9}/></button>
-                                        <button onClick={()=>returnToLib(block.id)} title="Return to library" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-red-400/20 text-muted-foreground hover:text-red-400"><X size={9}/></button>
-                                      </div>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>
-                                    <div className="flex items-center justify-between gap-1 mt-1">
-                                      <div className="flex items-center gap-1">
-                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>
-                                        <span className="text-xs text-muted-foreground">{block.priority}</span>
-                                      </div>
-                                      <button onClick={()=>toggleStatus(block.id)}
-                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${
-                                          block.status==='done'  ? 'text-green-400 bg-green-400/10 border-green-400/20 hover:bg-green-400/20' :
-                                          block.status==='doing' ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/20' :
-                                          'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-primary'
-                                        }`}
-                                        title="Click to change status: To Do → In Progress → Done"
-                                      >
-                                        <SI size={8} className={block.status==='doing'?'animate-spin':''}/>
-                                        <span>{sm2.label}</span>
-                                      </button>
-                                    </div>
-                                    {/* Assignee row */}
-                                    <div className="flex items-center gap-1 mt-1.5">
-                                      <button
-                                        onClick={()=>setShowAssignModal(block.id)}
-                                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                        title="Assign to team member"
-                                      >
-                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>
-                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}
-                                        </div>
-                                        <span className="truncate max-w-[60px]">{block.assignee || 'Assign'}</span>
-                                      </button>
-                                    </div>
+                            {/* Agenda panel — shown when toggled */}
+                            {agendaWeek===col.week && (
+                              <div className="border-b border-border/50 bg-background/60 flex flex-col" style={{maxHeight:340,overflowY:'auto'}}>
+                                <div className="flex items-center justify-between px-3 py-2 border-b border-border/40 shrink-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <FileText size={11} className="text-primary"/>
+                                    <span className="text-xs font-semibold">{col.label} Agenda</span>
+                                    {agendaStale.has(col.week) && agendaText[col.week] && (
+                                      <span className="text-xs text-yellow-400 font-mono">· cards changed</span>
+                                    )}
                                   </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                                  <div className="flex gap-1 shrink-0">
+                                    <button
+                                      onClick={() => generateAgenda(col.week)}
+                                      disabled={agendaLoading===col.week}
+                                      className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 disabled:opacity-50"
+                                    >
+                                      {agendaLoading===col.week
+                                        ? <><RefreshCw size={9} className="animate-spin"/>Generating…</>
+                                        : agendaText[col.week] ? <><RefreshCw size={9}/>Refresh</> : <><Sparkles size={9}/>Generate</>
+                                      }
+                                    </button>
+                                    <button onClick={async()=>{if(agendaText[col.week]){await navigator.clipboard.writeText(agendaText[col.week]);toast({title:'Agenda copied!'});}}} title="Copy agenda" className="h-5 w-5 rounded flex items-center justify-center bg-secondary/40 text-muted-foreground hover:text-foreground">
+                                      <Copy size={9}/>
+                                    </button>
+                                    <button onClick={()=>setAgendaWeek(null)} className="h-5 w-5 rounded flex items-center justify-center bg-secondary/40 text-muted-foreground hover:text-foreground"><X size={9}/></button>
+                                  </div>
+                                </div>
+                                <div className="px-3 py-3 flex-1 overflow-y-auto">
+                                  {!agendaText[col.week] && agendaLoading!==col.week && (
+                                    <div className="text-center py-4">
+                                      <FileText size={20} className="text-muted-foreground/20 mx-auto mb-2"/>
+                                      <p className="text-xs text-muted-foreground mb-2">Generate a client-ready agenda for this week based on the cards.</p>
+                                      <p className="text-xs text-muted-foreground/60">Includes: what each task means, how to verify outcomes, and what&#39;s missing.</p>
+                                    </div>                                  )}                                  {agendaLoading===col.week && !agendaText[col.week] && (                                    <div className="flex items-center gap-2 text-xs text-muted-foreground py-4 justify-center">                                      <RefreshCw size={12} className="animate-spin text-primary"/>Analysing {colBlocks.length} cards…                                    </div>                                  )}                                  {agendaText[col.week] && (                                    <AgendaMarkdown text={agendaText[col.week]}/>                                  )}                                </div>                              </div>                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const m    = TM[block.type]||TM.custom;                                const Icon = m.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div                                    key={block.id}                                    draggable                                    onDragStart={e=>onDragStart(e,block.id)}                                    onDragEnd={onDragEnd}                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab group transition-all ${draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md'} ${block.status==='done'?'opacity-60':''}`}                                  >                                    <div className="flex items-start gap-2 mb-2">                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>                                      <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='done'?'line-through text-muted-foreground':''}`}>{block.title}</p>                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">                                        <button onClick={()=>deepDive(block)} title="AI Deep Dive" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-primary/20 text-muted-foreground hover:text-primary"><Brain size={9}/></button>                                        <button onClick={()=>setExpandedBlock(block)} title="Expand" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground"><Maximize2 size={9}/></button>                                        <button onClick={()=>returnToLib(block.id)} title="Return to library" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-red-400/20 text-muted-foreground hover:text-red-400"><X size={9}/></button>                                      </div>                                    </div>                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>                                    <div className="flex items-center justify-between gap-1 mt-1">                                      <div className="flex items-center gap-1">                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>                                        <span className="text-xs text-muted-foreground">{block.priority}</span>                                      </div>                                      <button onClick={()=>toggleStatus(block.id)}                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${                                          block.status==='done'  ? 'text-green-400 bg-green-400/10 border-green-400/20 hover:bg-green-400/20' :                                          block.status==='doing' ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/20' :                                          'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-primary'                                        }`}                                        title="Click to change status: To Do → In Progress → Done"                                      >                                        <SI size={8} className={block.status==='doing'?'animate-spin':''}/>                                        <span>{sm2.label}</span>                                      </button>                                    </div>                                    {/* Assignee row */}                                    <div className="flex items-center gap-1 mt-1.5">                                      <button                                        onClick={()=>setShowAssignModal(block.id)}                                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"                                        title="Assign to team member"                                      >                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}                                        </div>                                        <span className="truncate max-w-[60px]">{block.assignee || 'Assign'}</span>                                      </button>                                    </div>                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          </>        )}      </div>      {/* Block expand modal */}      {expandedBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setExpandedBlock(null)}/>          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">              {(()=>{const m=TM[expandedBlock.type]||TM.custom;const Icon=m.icon;return(<><div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}><Icon size={13} style={{color:m.color}}/></div><div className="flex-1"><div className="font-bold text-sm">{expandedBlock.title}</div><div className="text-xs font-mono" style={{color:m.color}}>{m.label}</div></div></>);})()}              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${PM[expandedBlock.priority].badge}`}>{expandedBlock.priority}</span>              <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"><Brain size={11}/>Deep Dive</button>              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>            </div>            <div className="px-5 py-4 space-y-3">              <div className="rounded-xl border border-border bg-background/60 p-4"><p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p></div>              {expandedBlock.tags&&expandedBlock.tags.length>0 && (                <div className="flex flex-wrap gap-1.5">{expandedBlock.tags.map((t,i)=><span key={i} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/30 text-muted-foreground flex items-center gap-1"><Tag size={8}/>{t}</span>)}</div>              )}              <div className="flex gap-2 flex-wrap">                {expandedBlock.effort && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">effort: {expandedBlock.effort}</span>}                {expandedBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">impact: {expandedBlock.impact}</span>}              </div>              <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy content</button>            </div>          </div>        </div>      )}      {/* Deep Dive modal */}      {ddBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>{if(!ddLoading)setDdBlock(null);}}/>          <div className="relative w-full max-w-2xl rounded-2xl border border-primary/30 bg-card/95 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">              <Brain className="h-4 w-4 text-primary"/>              <div className="flex-1"><div className="font-semibold text-sm">AI Deep Dive</div><div className="text-xs text-muted-foreground truncate">{ddBlock.title}</div></div>              {ddLoading && <RefreshCw size={14} className="animate-spin text-primary"/>}              {!ddLoading && <button onClick={()=>setDdBlock(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={12}/></button>}            </div>            <div className="flex-1 overflow-y-auto px-5 py-4">              {ddLoading&&!ddText && <div className="flex items-center gap-2 text-xs text-muted-foreground py-8 justify-center"><RefreshCw size={14} className="animate-spin text-primary"/>Analysing this block in depth…</div>}              {ddText && <div className="rounded-xl border border-border bg-background/60 p-4"><ChatMd text={ddText}/></div>}            </div>            {ddText&&!ddLoading && (              <div className="px-5 py-3 border-t border-border shrink-0 flex gap-2">                <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>                <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>              </div>            )}          </div>        </div>      )}      {/* Assign modal */}      {showAssignModal && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setShowAssignModal(null)}/>          <div className="relative w-80 rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="px-5 py-4 border-b border-border">              <div className="font-semibold text-sm">Assign block</div>              <div className="text-xs text-muted-foreground truncate mt-0.5">                {blocks.find(b=>b.id===showAssignModal)?.title}              </div>            </div>            <div className="px-5 py-4 space-y-2">              {/* Unassign */}              <button onClick={()=>assignBlock(showAssignModal,'')}                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                <div className="h-7 w-7 rounded-full bg-secondary/60 flex items-center justify-center text-xs text-muted-foreground">—</div>                <span className="text-sm text-muted-foreground">Unassigned</span>                {!blocks.find(b=>b.id===showAssignModal)?.assignee && <CheckCircle2 size={13} className="text-primary ml-auto"/>}              </button>              {/* Team members */}              {teamMembers.map(member => (                <button key={member} onClick={()=>assignBlock(showAssignModal,member)}                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{member[0].toUpperCase()}</div>                  <span className="text-sm">{member}</span>                  {blocks.find(b=>b.id===showAssignModal)?.assignee===member && <CheckCircle2 size={13} className="text-primary ml-auto"/>}                </button>              ))}              {/* Add custom member */}              <div className="pt-2 border-t border-border">                <input                  placeholder="Add new team member…"                  className="w-full h-8 text-xs px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"                  onKeyDown={e => {                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {                      const name = (e.target as HTMLInputElement).value.trim();                      setTeamMembers(tm => [...tm, name]);                      assignBlock(showAssignModal, name);                    }                  }}                />                <p className="text-xs text-muted-foreground mt-1">Press Enter to add and assign</p>              </div>            </div>          </div>        </div>      )}    </div>  );}
 
-                    {/* Ask the Canvas */}
-                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
-                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">
-                        <MessageSquare className="h-4 w-4 text-primary"/>
-                        <span className="font-semibold text-sm">Ask the Canvas</span>
-                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>
-                      </div>
-                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">
-                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?'].map(q=>(
-                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>
-                        ))}
-                      </div>
-                      <div className="px-5 pb-3 flex gap-2">
-                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>
-                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">
-                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}
-                        </Button>
-                      </div>
-                      {(chatResp||chatLoading) && (
-                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">
-                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}
-                          {chatResp && <ChatMd text={chatResp}/>}
-                          <div ref={chatEndRef}/>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
 
-      {/* Block expand modal */}
-      {expandedBlock && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setExpandedBlock(null)}/>
-          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto">
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>
-            <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">
-              {(()=>{const m=TM[expandedBlock.type]||TM.custom;const Icon=m.icon;return(<><div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}><Icon size={13} style={{color:m.color}}/></div><div className="flex-1"><div className="font-bold text-sm">{expandedBlock.title}</div><div className="text-xs font-mono" style={{color:m.color}}>{m.label}</div></div></>);})()}
-              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${PM[expandedBlock.priority].badge}`}>{expandedBlock.priority}</span>
-              <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"><Brain size={11}/>Deep Dive</button>
-              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>
-            </div>
-            <div className="px-5 py-4 space-y-3">
-              <div className="rounded-xl border border-border bg-background/60 p-4"><p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p></div>
-              {expandedBlock.tags&&expandedBlock.tags.length>0 && (
-                <div className="flex flex-wrap gap-1.5">{expandedBlock.tags.map((t,i)=><span key={i} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/30 text-muted-foreground flex items-center gap-1"><Tag size={8}/>{t}</span>)}</div>
-              )}
-              <div className="flex gap-2 flex-wrap">
-                {expandedBlock.effort && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">effort: {expandedBlock.effort}</span>}
-                {expandedBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">impact: {expandedBlock.impact}</span>}
-              </div>
-              <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy content</button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Deep Dive modal */}
-      {ddBlock && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>{if(!ddLoading)setDdBlock(null);}}/>
-          <div className="relative w-full max-w-2xl rounded-2xl border border-primary/30 bg-card/95 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">
-              <Brain className="h-4 w-4 text-primary"/>
-              <div className="flex-1"><div className="font-semibold text-sm">AI Deep Dive</div><div className="text-xs text-muted-foreground truncate">{ddBlock.title}</div></div>
-              {ddLoading && <RefreshCw size={14} className="animate-spin text-primary"/>}
-              {!ddLoading && <button onClick={()=>setDdBlock(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={12}/></button>}
-            </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              {ddLoading&&!ddText && <div className="flex items-center gap-2 text-xs text-muted-foreground py-8 justify-center"><RefreshCw size={14} className="animate-spin text-primary"/>Analysing this block in depth…</div>}
-              {ddText && <div className="rounded-xl border border-border bg-background/60 p-4"><ChatMd text={ddText}/></div>}
-            </div>
-            {ddText&&!ddLoading && (
-              <div className="px-5 py-3 border-t border-border shrink-0 flex gap-2">
-                <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>
-                <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* Assign modal */}
-      {showAssignModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setShowAssignModal(null)}/>
-          <div className="relative w-80 rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden">
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>
-            <div className="px-5 py-4 border-b border-border">
-              <div className="font-semibold text-sm">Assign block</div>
-              <div className="text-xs text-muted-foreground truncate mt-0.5">
-                {blocks.find(b=>b.id===showAssignModal)?.title}
-              </div>
-            </div>
-            <div className="px-5 py-4 space-y-2">
-              {/* Unassign */}
-              <button onClick={()=>assignBlock(showAssignModal,'')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">
-                <div className="h-7 w-7 rounded-full bg-secondary/60 flex items-center justify-center text-xs text-muted-foreground">—</div>
-                <span className="text-sm text-muted-foreground">Unassigned</span>
-                {!blocks.find(b=>b.id===showAssignModal)?.assignee && <CheckCircle2 size={13} className="text-primary ml-auto"/>}
-              </button>
-              {/* Team members */}
-              {teamMembers.map(member => (
-                <button key={member} onClick={()=>assignBlock(showAssignModal,member)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">
-                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{member[0].toUpperCase()}</div>
-                  <span className="text-sm">{member}</span>
-                  {blocks.find(b=>b.id===showAssignModal)?.assignee===member && <CheckCircle2 size={13} className="text-primary ml-auto"/>}
-                </button>
-              ))}
-              {/* Add custom member */}
-              <div className="pt-2 border-t border-border">
-                <input
-                  placeholder="Add new team member…"
-                  className="w-full h-8 text-xs px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
-                      const name = (e.target as HTMLInputElement).value.trim();
-                      setTeamMembers(tm => [...tm, name]);
-                      assignBlock(showAssignModal, name);
-                    }
-                  }}
-                />
-                <p className="text-xs text-muted-foreground mt-1">Press Enter to add and assign</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
