@@ -711,13 +711,13 @@ interface AICap {
 const AI_CAPABILITIES: Record<string, AICap> = {
   technical: {
     confidence: 95,
-    confidence_reason: "Code and configuration have right/wrong answers. Claude generates exact, testable output — redirects, schema, robots.txt — that can be validated in a browser or validator tool before deployment.",
+    confidence_reason: "Code and configuration have right/wrong answers. Manav Brain generates exact, testable output — redirects, schema, robots.txt — that can be validated in a browser or validator tool before deployment.",
     time_human: 240,
     time_ai: 20,
     time_breakdown: [
-      "5 min — Claude reads the live page and identifies the exact issue",
-      "10 min — Claude generates complete, copy-paste ready code/config",
-      "5 min — Claude writes step-by-step deployment instructions + rollback plan",
+      "5 min — Manav Brain reads the live page and identifies the exact issue",
+      "10 min — Manav Brain generates complete, copy-paste ready code/config",
+      "5 min — Manav Brain writes step-by-step deployment instructions + rollback plan",
     ],
     produces: [
       "Exact .htaccess / nginx rules OR CMS settings changes — copy-paste ready",
@@ -745,13 +745,13 @@ const AI_CAPABILITIES: Record<string, AICap> = {
   },
   content: {
     confidence: 80,
-    confidence_reason: "Claude produces a complete, well-structured draft with correct keyword placement. Confidence is 80 not 100 because brand-specific facts, client stories, and proprietary data must come from you. The draft is ready to edit, not ready to publish without review.",
+    confidence_reason: "Manav Brain produces a complete, well-structured draft with correct keyword placement. Confidence is 80 not 100 because brand-specific facts, client stories, and proprietary data must come from you. The draft is ready to edit, not ready to publish without review.",
     time_human: 480,
     time_ai: 15,
     time_breakdown: [
       "3 min — Claude analyses search intent and top-ranking pages for target keyword",
-      "8 min — Claude writes the full draft including H1-H3 structure",
-      "4 min — Claude writes meta title, meta description, schema markup, internal link map",
+      "8 min — Manav Brain writes the full draft including H1-H3 structure",
+      "4 min — Manav Brain writes meta title, meta description, schema markup, internal link map",
     ],
     produces: [
       "Full content draft (exact word count you specify)",
@@ -784,13 +784,13 @@ const AI_CAPABILITIES: Record<string, AICap> = {
   },
   geo: {
     confidence: 70,
-    confidence_reason: "Claude restructures existing content for AI citation using proven entity and FAQ patterns. Confidence is 70 because AI platform citation cannot be guaranteed — Perplexity and ChatGPT citation depends on many factors beyond content structure. Claude guarantees the structural changes; citation outcome must be measured after.",
+    confidence_reason: "Manav Brain restructures existing content for AI citation using proven entity and FAQ patterns. Confidence is 70 because AI platform citation cannot be guaranteed — Perplexity and ChatGPT citation depends on many factors beyond content structure. Claude guarantees the structural changes; citation outcome must be measured after.",
     time_human: 180,
     time_ai: 12,
     time_breakdown: [
-      "4 min — Claude reads existing page content",
+      "4 min — Manav Brain reads existing page content",
       "5 min — Claude rewrites sections with entity-rich language and citation-ready summaries",
-      "3 min — Claude generates FAQ schema and structured summary block",
+      "3 min — Manav Brain generates FAQ schema and structured summary block",
     ],
     produces: [
       "Rewritten introduction paragraph — direct answer format for AI extraction",
@@ -805,7 +805,7 @@ const AI_CAPABILITIES: Record<string, AICap> = {
       "Replace content that requires proprietary data or original research",
     ],
     needs_from_you: [
-      "Current page URL (Claude will fetch and read it)",
+      "Current page URL (Manav Brain will fetch and read it)",
       "Exact query you want to appear for in Perplexity / ChatGPT / Google AI Overview",
       "Target AI platform (Perplexity / ChatGPT / Google AI Overview)",
     ],
@@ -818,12 +818,12 @@ const AI_CAPABILITIES: Record<string, AICap> = {
   },
   "quick-win": {
     confidence: 90,
-    confidence_reason: "Meta titles, descriptions, and heading tags are precise, verifiable outputs. Claude generates specific before/after for each URL — you can check each change in a browser within minutes of deployment.",
+    confidence_reason: "Meta titles, descriptions, and heading tags are precise, verifiable outputs. Manav Brain generates specific before/after for each URL — you can check each change in a browser within minutes of deployment.",
     time_human: 60,
     time_ai: 5,
     time_breakdown: [
-      "2 min — Claude fetches and reads each URL",
-      "3 min — Claude generates specific before/after for every element",
+      "2 min — Manav Brain fetches and reads each URL",
+      "3 min — Manav Brain generates specific before/after for every element",
     ],
     produces: [
       "Meta title — before and after for each URL (under 60 chars)",
@@ -853,9 +853,9 @@ const AI_CAPABILITIES: Record<string, AICap> = {
     time_human: 300,
     time_ai: 20,
     time_breakdown: [
-      "5 min — Claude fetches and reads competitor pages",
+      "5 min — Manav Brain fetches and reads competitor pages",
       "10 min — Claude maps content gaps and keyword opportunities",
-      "5 min — Claude writes specific action plan with prioritised content to create",
+      "5 min — Manav Brain writes specific action plan with prioritised content to create",
     ],
     produces: [
       "Gap analysis table: topics competitor ranks for that you do not",
@@ -882,12 +882,12 @@ const AI_CAPABILITIES: Record<string, AICap> = {
   },
   weekly: {
     confidence: 75,
-    confidence_reason: "Claude generates specific execution briefs and templates. Confidence varies by task. Writing and analysis tasks: 85%. Technical deployment: 50% (requires human to deploy). Creative decisions: 60% (requires client input).",
+    confidence_reason: "Manav Brain generates specific execution briefs and templates. Confidence varies by task. Writing and analysis tasks: 85%. Technical deployment: 50% (requires human to deploy). Creative decisions: 60% (requires client input).",
     time_human: 120,
     time_ai: 10,
     time_breakdown: [
-      "3 min — Claude reads task context and project data",
-      "7 min — Claude writes complete brief with step-by-step instructions",
+      "3 min — Manav Brain reads task context and project data",
+      "7 min — Manav Brain writes complete brief with step-by-step instructions",
     ],
     produces: [
       "Step-by-step execution instructions (numbered)",
@@ -1024,8 +1024,8 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
             <div className="font-bold text-white text-sm">
               {phase==='loading'?'Loading project intelligence...':
                phase==='requirements'?'Review what AI will do:':
-               phase==='executing'?'AI is executing — streaming output...':
-               'Execution complete — review before delivering'}
+               phase==='executing'?'Manav Brain is working on this...':
+               'Manav Brain finished — review before delivering'}
             </div>
             <div className="text-xs text-white/40 truncate mt-0.5">"{block.title}"</div>
           </div>
@@ -1064,7 +1064,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                     <span className="text-xs text-white/40">confidence</span>
                   </div>
                   <div>
-                    <div className="font-semibold text-white text-sm mb-1">Claude will produce</div>
+                    <div className="font-semibold text-white text-sm mb-1">Manav Brain will produce</div>
                     <p className="text-xs text-white/60">{blueprint.what_ai_produces || cap.produces[0]}</p>
                   </div>
                 </div>
@@ -1091,7 +1091,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div>
                   <div className="text-xs font-semibold text-white/60 mb-2 flex items-center gap-1.5">
                     <CheckCircle2 size={11} className="text-green-400"/>
-                    Information loaded from project ({available.length} inputs ready)
+                    Manav Brain found this in your project ({available.length} inputs ready)
                   </div>
                   <div className="space-y-1.5">
                     {available.map((a,i)=>(
@@ -1111,7 +1111,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div>
                   <div className="text-xs font-semibold text-white mb-2 flex items-center gap-1.5">
                     <AlertTriangle size={11} className="text-orange-400"/>
-                    Claude needs this from you — no assumptions will be made
+                    Manav Brain needs this from you — no assumptions will be made
                   </div>
                   <div className="space-y-3">
                     {missing.map((m:any,i:number)=>(
@@ -1132,7 +1132,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                   </div>
                   {missing.filter((m:any)=>!userInputs[m.key]).length > 0 && (
                     <p className="text-xs text-orange-400/70 mt-2">
-                      {missing.filter((m:any)=>!userInputs[m.key]).length} input{missing.filter((m:any)=>!userInputs[m.key]).length!==1?'s':''} empty — Claude will note gaps in output and you must resolve before delivering
+                      {missing.filter((m:any)=>!userInputs[m.key]).length} input{missing.filter((m:any)=>!userInputs[m.key]).length!==1?'s':''} empty — Manav Brain will note gaps in output and you must resolve before delivering
                     </p>
                   )}
                 </div>
@@ -1140,7 +1140,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
               {/* Cannot do */}
               <div className="rounded-xl border border-white/8 bg-white/3 p-4">
-                <div className="text-xs font-mono text-orange-400 uppercase mb-2">Human required for these — Claude will not attempt them</div>
+                <div className="text-xs font-mono text-orange-400 uppercase mb-2">Human required for these — Manav Brain will not attempt them</div>
                 <div className="space-y-1">
                   {cap.cannot_do.map((c2,i)=>(
                     <div key={i} className="flex items-start gap-2 text-xs text-white/50">
@@ -1159,7 +1159,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
               {phase==='executing' && (
                 <div className="flex items-center gap-2 text-sm text-white/50">
                   <RefreshCw size={14} className="animate-spin text-violet-400"/>
-                  Executing as {EXEC_ROLES.find(r=>r.id===role)?.label}...
+                  Manav Brain thinking as {EXEC_ROLES.find(r=>r.id===role)?.label}...
                 </div>
               )}
               <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
@@ -1221,7 +1221,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
             </div>
           )}
           {phase==='executing' && (
-            <p className="text-xs text-white/40">AI is working... do not close this window</p>
+            <p className="text-xs text-white/40">Manav Brain is working... please keep this open</p>
           )}
           {phase==='done' && (
             <div className="flex items-center gap-3 flex-wrap">
@@ -2160,9 +2160,9 @@ Please try again — if the problem persists, check your network connection.`);
                 {!strategy ? (
                   <div className="rounded-2xl border border-border bg-card/60 p-10 text-center">
                     <Brain className="h-12 w-12 text-primary/30 mx-auto mb-4" />
-                    <h3 className="font-bold text-lg mb-2">Generate Your Deep Strategy</h3>
-                    <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">Claude analyses every audit, metric, keyword, and competitor gap then produces a complete strategic brief plus 12-16 canvas blocks ready to drag and plan with.</p>
-                    <Button onClick={generate} disabled={generating} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground"><Brain className="h-4 w-4 mr-2"/>Generate Strategy</Button>
+                    <h3 className="font-bold text-lg mb-2">Ask Manav Brain for Strategy</h3>
+                    <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">Manav Brain analyses every audit, metric, keyword, and competitor gap then produces a complete strategic brief plus 12-16 canvas blocks ready to drag and plan with.</p>
+                    <Button onClick={generate} disabled={generating} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground"><Brain className="h-4 w-4 mr-2"/>Generate with Manav Brain</Button>
                   </div>
                 ) : (
                   <>
@@ -2271,11 +2271,28 @@ Please try again — if the problem persists, check your network connection.`);
                   <div className="rounded-2xl border border-dashed border-border bg-card/40 p-12 text-center">
                     <Layers size={48} className="text-muted-foreground/20 mx-auto mb-4"/>
                     <h3 className="font-bold text-lg mb-2">Canvas is empty</h3>
-                    <p className="text-sm text-muted-foreground mb-5">Generate a strategy — Claude will analyse all your data and create task blocks from goals, audit findings, and growth opportunities.</p>
-                    <Button onClick={generate} disabled={generating} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground"><Brain className="h-4 w-4 mr-2"/>Generate Strategy</Button>
+                    <p className="text-sm text-muted-foreground mb-5">Generate a strategy — Manav Brain will analyse all your data and create task blocks from goals, audit findings, and growth opportunities.</p>
+                    <Button onClick={generate} disabled={generating} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground"><Brain className="h-4 w-4 mr-2"/>Generate with Manav Brain</Button>
                   </div>
                 ) : (
                   <>
+                    {/* Manav Brain greeting banner */}
+                    {placedBlocks.length > 0 && (
+                      <div className="rounded-2xl border border-primary/15 bg-primary/5 px-5 py-3 flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 text-sm font-black text-primary">M</div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-semibold text-foreground">Manav Brain </span>
+                          <span className="text-sm text-muted-foreground">
+                            {placedBlocks.filter(b=>b.status==='doing').length > 0
+                              ? `— ${placedBlocks.filter(b=>b.status==='doing').length} task${placedBlocks.filter(b=>b.status==='doing').length!==1?'s are':' is'} in progress. When done, click the status pill to submit for verification.`
+                              : done > 0
+                              ? `— ${done} task${done!==1?'s':''s'} verified. ${placedBlocks.filter(b=>b.status==='todo').length} remaining. ${progress >= 80 ? "You're close to the finish line." : "Keep going."}`
+                              : '— Ready. Click any card's status pill to mark it In Progress.'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Progress bar */}
                     <div className="rounded-2xl border border-border bg-card/60 p-4">
                       <div className="flex items-center justify-between mb-2">
@@ -2745,7 +2762,7 @@ Please try again — if the problem persists, check your network connection.`);
                                         <span>{sm2.label}</span>
                                       </button>
                                     </div>
-                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* ── Verification & AI Assist Panel ── */}
+                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* ── Verification & Manav Brain Assist Panel ── */}
                     {placedBlocks.some(b=>b.status==='doing'||b.status==='waiting') && (
                       <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
                         <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/10">
@@ -2799,7 +2816,7 @@ Please try again — if the problem persists, check your network connection.`);
                       </div>
                     )}
 
-                    {/* ── AI Assist + Effort Guide ── */}
+                    {/* ── Manav Brain Assist + Effort Guide ── */}
                     {placedBlocks.length > 0 && (
                       <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
                         <button
@@ -2807,7 +2824,7 @@ Please try again — if the problem persists, check your network connection.`);
                           className="w-full flex items-center gap-3 px-5 py-3 hover:bg-secondary/20 transition-colors"
                         >
                           <Brain size={15} className="text-primary"/>
-                          <span className="font-semibold text-sm">AI Assistance & Effort Guide</span>
+                          <span className="font-semibold text-sm">Manav Brain Assistance & Effort Guide</span>
                           <span className="text-xs text-muted-foreground ml-2">Why these hours? How can AI cut them?</span>
                           <ChevronDown size={14} className="text-muted-foreground ml-auto"/>
                         </button>
@@ -2928,7 +2945,7 @@ Please try again — if the problem persists, check your network connection.`);
                       </div>
                     )}
 
-                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
+                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Manav Brain answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
 
             {/* ══ PIPELINE TAB ══ */}
             {tab==='pipeline' && (
@@ -2940,7 +2957,7 @@ Please try again — if the problem persists, check your network connection.`);
                     <Globe className="h-4 w-4 text-primary shrink-0 mt-0.5"/>
                     <div className="flex-1">
                       <div className="font-semibold text-sm mb-1">Live Website Check (optional)</div>
-                      <p className="text-xs text-muted-foreground">Claude will fetch live content from the site to ground all analysis in reality — not assumptions.</p>
+                      <p className="text-xs text-muted-foreground">Manav Brain will fetch live content from the site to ground all analysis in reality — not assumptions.</p>
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -2995,10 +3012,10 @@ Please try again — if the problem persists, check your network connection.`);
                   {!depText&&!depLoading&&placedBlocks.length>0&&<div className="p-6 text-center"><p className="text-sm text-muted-foreground">Click Analyse Dependencies to map the full chain.</p></div>}
                 </div>
 
-                {/* Role-Based Intelligence */}
+                {/* Ask Manav Brain */}
                 <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
                   <div className="px-5 py-4 border-b border-border">
-                    <div className="font-semibold text-sm mb-3 flex items-center gap-2"><MessageSquare className="h-4 w-4 text-primary"/>Role-Based Intelligence</div>
+                    <div className="font-semibold text-sm mb-3 flex items-center gap-2"><MessageSquare className="h-4 w-4 text-primary"/>Ask Manav Brain</div>
                     <div className="flex flex-wrap gap-2">
                       {ROLES.map(role=>{
                         const RIcon = role.icon;
@@ -3199,9 +3216,9 @@ Please try again — if the problem persists, check your network connection.`);
                           <p className="text-muted-foreground leading-relaxed">{cap.confidence_reason}</p>
                         </div>
 
-                        {/* What Claude will produce */}
+                        {/* What Manav Brain will produce */}
                         <div>
-                          <div className="text-xs font-mono text-primary uppercase mb-2">What Claude produces</div>
+                          <div className="text-xs font-mono text-primary uppercase mb-2">What Manav Brain will produce</div>
                           <div className="space-y-1">
                             {cap.produces.map((p2,i)=>(
                               <div key={i} className="flex items-start gap-2 text-xs">
@@ -3225,9 +3242,9 @@ Please try again — if the problem persists, check your network connection.`);
                           </div>
                         </div>
 
-                        {/* What Claude cannot do */}
+                        {/* What Manav Brain cannot do */}
                         <div>
-                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">Claude cannot do these — human required</div>
+                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">Manav Brain cannot do these — human required</div>
                           <div className="space-y-1">
                             {cap.cannot_do.map((c2,i)=>(
                               <div key={i} className="flex items-start gap-2 text-xs">
@@ -3238,7 +3255,7 @@ Please try again — if the problem persists, check your network connection.`);
                           </div>
                         </div>
 
-                        {/* What Claude needs from you */}
+                        {/* What Manav Brain needs from you */}
                         <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
                           <div className="text-xs font-mono text-primary uppercase mb-2">Required from you before execution</div>
                           <div className="space-y-1">
@@ -3253,7 +3270,7 @@ Please try again — if the problem persists, check your network connection.`);
 
                         {/* Verification steps */}
                         <div>
-                          <div className="text-xs font-mono text-yellow-400 uppercase mb-2">How to verify Claude's work is correct</div>
+                          <div className="text-xs font-mono text-yellow-400 uppercase mb-2">How to verify Manav Brain's work is correct</div>
                           <div className="space-y-2">
                             {cap.verify_steps.map((v,i)=>(
                               <div key={i} className="rounded-lg border border-border bg-background/60 p-3 text-xs space-y-1">
@@ -3277,7 +3294,7 @@ Please try again — if the problem persists, check your network connection.`);
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={()=>{setExpandedBlock(null);setActiveExecBlock(expandedBlock);}}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium hover:bg-primary/20 transition-colors">
-                  <Sparkles size={13}/>Execute with AI
+                  <Sparkles size={13}/>Ask Manav Brain
                 </button>
                 <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
@@ -3306,7 +3323,7 @@ Please try again — if the problem persists, check your network connection.`);
             <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">
               <Brain size={16} className="text-primary shrink-0"/>
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm">AI Deep Dive</div>
+                <div className="font-bold text-sm">Ask Manav</div>
                 <div className="text-xs text-muted-foreground truncate">"{ddBlock.title}"</div>
               </div>
               <button onClick={()=>setDdBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>
@@ -3331,7 +3348,7 @@ Please try again — if the problem persists, check your network connection.`);
         </div>
       )}
 
-      {/* ── AI Task Executor ── */}
+      {/* ── Manav Brain Executor ── */}
       {activeExecBlock && (
         <InlineTaskExecutor
           block={activeExecBlock}
