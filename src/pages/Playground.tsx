@@ -964,7 +964,7 @@ export default function Playground() {
     setVerifyResult(null);
     setVerifyStep(3);
     try {
-      const res = await fetch('/api/verify-task', {
+      const res = await fetch('/api/task-engine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1106,10 +1106,11 @@ export default function Playground() {
     };
 
     try {
-      const res = await fetch('/api/week-agenda', {
+      const res = await fetch('/api/intelligence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          mode: 'agenda',
           week,
           weekLabel,
           weekCards,
@@ -1168,7 +1169,7 @@ export default function Playground() {
       setter(''); setLoading(true);
       let acc = '';
       try {
-        const res = await fetch('/api/pipeline-chat', {
+        const res = await fetch('/api/intelligence', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(body),
         });
@@ -1207,7 +1208,7 @@ Please try again — if the problem persists, check your network connection.`);
     setDdBlock(block);setDdText('');setDdLoading(true);
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
-      const res=await fetch('/api/canvas-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({focusBlockId:block.id,blocks,projectSummary:proj})});
+      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({focusBlockId:block.id,blocks,projectSummary:proj})});
       if(!res.ok||!res.body) throw new Error('Request failed');
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setDdText(acc);}
@@ -1220,7 +1221,7 @@ Please try again — if the problem persists, check your network connection.`);
     setChatLoading(true);setChatResp('');
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
-      const res=await fetch('/api/canvas-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj})});
+      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj})});
       if(!res.ok||!res.body) throw new Error('failed');
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setChatResp(acc);chatEndRef.current?.scrollIntoView({behavior:'smooth'});}
