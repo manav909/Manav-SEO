@@ -652,10 +652,10 @@ export default function Playground() {
       const dropped  = updated.find(b=>b.id===id);
       if (dropped) setLastImpact({title:dropped.title,week,metric:getDropImpact(dropped,week)});
       setRecommendation(getNextRecommendation(placed,lib));
+      scheduleAutoSave(updated);
       return updated;
     });
     setDraggingId(null);setDragOverWeek(null);
-    scheduleAutoSave();
   };
   const onDragEnd  = ()=>{setDraggingId(null);setDragOverWeek(null);};
   const returnToLib = (id:string)=>{
@@ -665,13 +665,17 @@ export default function Playground() {
       return updated;
     });
     setLastImpact(null);
-    scheduleAutoSave();
   };
-  const toggleStatus = (id:string)=>{setBlocks(bs=>bs.map(b=>b.id===id?{...b,status:SC[b.status]}:b));scheduleAutoSave();};
+  const toggleStatus = (id:string)=>{
+    setBlocks(prev=>{
+      const updated = prev.map(b=>b.id===id?{...b,status:SC[b.status]}:b);
+      scheduleAutoSave(updated);
+      return updated;
+    });
+  };
   const resetCanvas  = ()=>{
-    setBlocks(bs=>{const r=bs.map(b=>({...b,placed:false,status:'todo' as Status}));setRecommendation(getNextRecommendation([],r));return r;});
+    setBlocks(bs=>{const r=bs.map(b=>({...b,placed:false,status:'todo' as Status}));setRecommendation(getNextRecommendation([],r));scheduleAutoSave(r);return r;});
     setLastImpact(null);
-    scheduleAutoSave();
     toast({title:'Canvas reset'});
   };
 
@@ -689,7 +693,7 @@ export default function Playground() {
     setCustTitle('');setCustContent('');setShowAdd(false);setCustSuggest(null);
     const sug=suggestWeekForCustom(custTitle,custContent,blocks);
     toast({title:'Block added to library!',description:`Suggested: ${sug.week===5?'Backlog':`Week ${sug.week}`} — ${sug.reason}`});
-    scheduleAutoSave();
+    scheduleAutoSave(blocks);
   };
 
   const deepDive = async(block:Block)=>{
@@ -717,17 +721,22 @@ export default function Playground() {
     setChatLoading(false);
   };
 
-  const scheduleAutoSave = (currentBlocks?: Block[])=>{
-    const b = currentBlocks || blocks;
-    if(autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current=setTimeout(async()=>{
-      if(!selProjId) return;
-      // Save only placements — library is always rebuilt from strategy
-      const placements = b.filter(x=>x.placed).map(x=>({id:x.id,placed:x.placed,week:x.week,status:x.status}));
+  const saveCanvas = async (currentBlocks: Block[]) => {
+    if (!selProjId) return;
+    const placements = currentBlocks.filter(x=>x.placed).map(x=>({id:x.id,placed:x.placed,week:x.week,status:x.status}));
+    try {
       await supabase.from('projects').update({playground_canvas:placements}).eq('id',selProjId);
-    },1500);
+    } catch(e) { /* silent */ }
   };
-  useEffect(()=>{if(blocks.length&&selProjId) scheduleAutoSave(blocks);},[blocks]);
+
+  const scheduleAutoSave = (currentBlocks: Block[]) => {
+    if(autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => saveCanvas(currentBlocks), 800);
+  };
+
+  useEffect(() => {
+    if (blocks.length && selProjId) scheduleAutoSave(blocks);
+  }, [blocks]);
 
   const dlReport = (r:any,t:string)=>{const b=new Blob([safeStr(r.sections?.[t])],{type:'text/markdown'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`${t}-audit-${r.created_at?.split('T')[0]}.md`;a.click();URL.revokeObjectURL(a.href);};
   const cpReport = async(r:any,t:string)=>{await navigator.clipboard.writeText(safeStr(r.sections?.[t]));toast({title:'Copied!'});};
@@ -1102,11 +1111,11 @@ export default function Playground() {
                     )}
 
                     {/* Main canvas: library + columns */}
-                    <div className="flex gap-3 overflow-x-auto pb-2" style={{minHeight:500}}>
+                    <div className="flex gap-3 overflow-x-auto pb-2">
 
                       {/* Block Library Sidebar */}
                       <div
-                        className="w-60 shrink-0 rounded-2xl border border-border bg-card/60 flex flex-col"
+                        className="w-60 shrink-0 rounded-2xl border border-border bg-card/60 flex flex-col" style={{height: 520}}
                         onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';}}
                         onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData('blockId');if(id)returnToLib(id);}}
                       >
@@ -1185,7 +1194,8 @@ export default function Playground() {
                             onDragOver={e=>onDragOver(e,col.week)}
                             onDrop={e=>onDrop(e,col.week)}
                             onDragLeave={()=>setDragOverWeek(null)}
-                            className={`flex-1 min-w-[185px] max-w-[230px] rounded-2xl border flex flex-col transition-all duration-150 ${isOver&&slStyle?`${slStyle.ring} border-transparent`:isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border bg-card/40'}`}
+                            className={`flex-1 min-w-[175px] max-w-[220px] rounded-2xl border flex flex-col transition-all duration-150 ${isOver&&slStyle?`${slStyle.ring} border-transparent`:isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border bg-card/40'}`}
+                            style={{height: 520}}
                           >
                             {/* Column header */}
                             <div className={`px-3 py-3 border-b border-border/50 shrink-0 rounded-t-2xl ${isOver?'bg-card/80':''}`}>
@@ -1225,7 +1235,7 @@ export default function Playground() {
                             </div>
 
                             {/* Cards */}
-                            <div className="flex-1 p-2 space-y-2 min-h-[280px]">
+                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: 340}}>
                               {colBlocks.length===0&&!isOver && (
                                 <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>
                                   <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>
