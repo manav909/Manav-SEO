@@ -1348,7 +1348,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
                 <span className="text-white/30 font-normal">{completionNote.length}/50 min</span>
               </label>
               <textarea value={completionNote} onChange={e=>setCompletionNote(e.target.value)} rows={4}
-                placeholder="Tell me what changed — e.g. "Fixed 3 broken redirects, tested in browser, all returning 301""
+                placeholder="Tell me what changed — e.g. Fixed 3 broken redirects, tested in browser, all returning 301"
                 className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none"
               />
             </div>
@@ -1379,7 +1379,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
             <div>
               <label className="text-xs font-semibold text-white block mb-1">Paste in the numbers — whatever the tool showed you</label>
               <textarea value={evidenceData} onChange={e=>setEvidenceData(e.target.value)} rows={4}
-                placeholder="E.g. GSC indexed pages went from 823 to 847. Or: keyword moved from position 14 to 8 in Semrush."
+                placeholder="E.g. GSC indexed pages went from 823 to 847. Or: keyword moved from pos 14 to 8 in Semrush."
                 className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none font-mono"
               />
             </div>
