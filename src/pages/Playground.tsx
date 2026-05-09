@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import PortalNav from '@/components/PortalNav';
+import VerifyModal from '@/components/VerifyModal';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -740,6 +741,8 @@ export default function Playground() {
   const [completionNote,  setCompletionNote]  = useState('');
   const [evidenceData,    setEvidenceData]    = useState('');
   const [completedAt,     setCompletedAt]     = useState('');
+  /* ── Isolated verify modal state ── */
+  const [activeVerifyBlock, setActiveVerifyBlock] = useState<Block|null>(null);
   const [activeRole,   setActiveRole]   = useState('team_lead');
   const [roleChat,     setRoleChat]     = useState('');
   const [roleChatQ,    setRoleChatQ]    = useState('');
@@ -929,14 +932,7 @@ export default function Playground() {
     setLastImpact(null);
   };
   const openVerifyModal = (block: Block) => {
-    const now = new Date().toISOString();
-    setCompletedDates(prev => ({ ...prev, [block.id]: now }));
-    setCompletedAt(now.split('T')[0]);
-    setVerifyBlock(block);
-    setVerifyResult(null);
-    setVerifyStep(1);
-    setCompletionNote('');
-    setEvidenceData('');
+    setActiveVerifyBlock(block);
   };
 
   const toggleStatus = (id: string) => {
@@ -998,6 +994,7 @@ export default function Playground() {
       return updated;
     });
     setVerifyBlock(null);
+    setActiveVerifyBlock(null);
     setVerifyResult(null);
     setNextConfirmed(false);
     toast({ title: '✓ Task verified and approved!' });
@@ -1010,6 +1007,7 @@ export default function Playground() {
       return updated;
     });
     setVerifyBlock(null);
+    setActiveVerifyBlock(null);
     setVerifyResult(null);
     toast({
       title: `⏳ Waiting period: ${daysRemaining} days`,
@@ -2640,6 +2638,37 @@ Example: "Fixed 3 broken redirect chains in .htaccess — URLs /old-page-1, /old
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Isolated Verification Modal ── */}
+      {activeVerifyBlock && (
+        <VerifyModal
+          block={activeVerifyBlock}
+          siteUrl={selProj?.url || ''}
+          onApprove={(block) => {
+            setBlocks(prev => {
+              const updated = prev.map(b => b.id === block.id ? { ...b, status: 'verified' as Status } : b);
+              scheduleAutoSave(updated);
+              const placed = updated.filter(b => b.placed);
+              const lib    = updated.filter(b => !b.placed);
+              const rec    = getNextRecommendation(placed, lib);
+              if (rec) setNextTaskPrompt(rec.block);
+              return updated;
+            });
+            setActiveVerifyBlock(null);
+            toast({ title: '✓ Task verified and approved!' });
+          }}
+          onWait={(block, days) => {
+            setBlocks(prev => {
+              const updated = prev.map(b => b.id === block.id ? { ...b, status: 'waiting' as Status } : b);
+              scheduleAutoSave(updated);
+              return updated;
+            });
+            setActiveVerifyBlock(null);
+            toast({ title: `⏳ Set to Waiting — ${days} day${days!==1?'s':''} remaining` });
+          }}
+          onClose={() => setActiveVerifyBlock(null)}
+        />
       )}
 
       {/* ── Next Task Prompt ── */}
