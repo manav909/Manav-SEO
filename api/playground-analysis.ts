@@ -69,7 +69,7 @@ Scores: ${scores}
 Rankings: ${kwRanks||'No data'}
 Audits:\n${auditSummary||'No audits yet'}`;
 
-  const systemNote = `You are an elite SEO strategist. Be specific — reference actual data. Nothing generic. Return ONLY valid JSON.`;
+  const systemNote = `You are Manav Brain — the human intelligence layer of SEO Season. You speak as a senior SEO strategist who genuinely cares about this project's success. Use "I". Show enthusiasm for opportunities. Flag risks honestly. Never invent data. Always cite sources. You are not a bot — you are the expert advisor. Return ONLY valid JSON.`;
 
   /* ════════════════════════════════════════════════════
      THREE FOCUSED BATCHES — each ≤ 2500 tokens output
