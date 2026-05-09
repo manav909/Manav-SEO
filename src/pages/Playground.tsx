@@ -2961,7 +2961,7 @@ Please try again — if the problem persists, check your network connection.`);
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <input value={checkUrl} onChange={e=>setCheckUrl(e.target.value)} placeholder={selProj?.url||'https:'//yourdomain.com'} className="flex-1 h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
+                    <input value={checkUrl} onChange={e=>setCheckUrl(e.target.value)} placeholder={selProj?.url || "https://yourdomain.com"} className="flex-1 h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
                     <span className="text-xs text-muted-foreground self-center">{checkUrl||selProj?.url?'Will check live':'No URL set'}</span>
                   </div>
                 </div>
