@@ -1140,7 +1140,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
               {/* Cannot do */}
               <div className="rounded-xl border border-white/8 bg-white/3 p-4">
-                <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your hands — I'll be honest about where I stop</div>
+                <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your hands — I'll be honest about where I stop</div>'
                 <div className="space-y-1">
                   {cap.cannot_do.map((c2,i)=>(
                     <div key={i} className="flex items-start gap-2 text-xs text-white/50">
@@ -1189,7 +1189,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Shield size={14} className="text-yellow-400"/>
-                    <span className="text-sm font-bold text-yellow-400">Before this goes out — let's check it together</span>
+                    <span className="text-sm font-bold text-yellow-400">Before this goes out — let's check it together</span>'
                   </div>
                   <div className="space-y-2">
                     {cap.verify_steps.map((v,i)=>(
@@ -1221,13 +1221,13 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
             </div>
           )}
           {phase==='executing' && (
-            <p className="text-xs text-white/40">I'm on it — working through this now. Please keep this open.</p>
+            <p className="text-xs text-white/40">I'm on it — working through this now. Please keep this open.</p>'
           )}
           {phase==='done' && (
             <div className="flex items-center gap-3 flex-wrap">
               <button onClick={()=>onVerify(block)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors">
-                <CheckCircle2 size={14}/>Looks good to me — let's get it verified
+                <CheckCircle2 size={14}/>Looks good to me — let's get it verified'
               </button>
               <button onClick={()=>{setPhase('requirements');setOutput('');}}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 text-sm text-white/60 hover:text-white/80 transition-colors">
@@ -1368,7 +1368,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
               <p className="text-xs text-white/50">{waitReady?`${block.type} changes have had time to propagate in Google.`:`${block.type} changes take ~${waitDays} days to appear in search tools.`}</p>
             </div>
             <div>
-              <div className="text-xs font-semibold text-white mb-3">Here's what I need to see for <span className="text-violet-400">{block.type}</span> tasks:</div>
+              <div className="text-xs font-semibold text-white mb-3">Here's what I need to see for <span className="text-violet-400">{block.type}</span> tasks:</div>'
               {evReqs.map((r,i)=>(
                 <div key={i} className="rounded-xl border border-white/8 bg-white/3 p-3 mb-2">
                   <div className="text-xs font-semibold text-violet-400 mb-1">{i+1}. {r.tool}</div>
@@ -1429,7 +1429,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
             <>
               <button onClick={()=>{if(completionNote.trim().length<50){alert('Please describe what was done in at least 50 characters.');return;}setStep(2);}}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-colors">
-                Good — now let's gather the proof →
+                Good — now let's gather the proof →'
               </button>
               <button onClick={onClose} className="text-sm text-white/40 hover:text-white/70 px-3">Cancel</button>
               <span className="text-xs text-white/25 ml-auto">{completionNote.length}/50</span>
@@ -1454,8 +1454,8 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
               {result.verdict==='verified'
                 ?<button onClick={()=>onApprove(block)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors"><CheckCircle2 size={15}/>✓ Verified — mark it done</button>
                 :<><button onClick={()=>{setStep(2);setResult(null);}} className="text-sm px-4 py-2.5 rounded-xl border border-white/10 hover:bg-white/5 text-white/70 transition-colors">← Let me add more data</button>
-                  {(result.waiting_status?.daysLeft||0)>0&&<button onClick={()=>onWait(block,result.waiting_status.daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400"><Clock size={13}/>Not ready yet — I'll wait</button>}
-                  <button onClick={()=>onApprove(block)} className="text-xs px-3 py-2 rounded-xl border border-white/10 text-white/30 hover:text-white/60 ml-auto">I'll approve this myself</button>
+                  {(result.waiting_status?.daysLeft||0)>0&&<button onClick={()=>onWait(block,result.waiting_status.daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400"><Clock size={13}/>Not ready yet — I'll wait</button>}'
+                  <button onClick={()=>onApprove(block)} className="text-xs px-3 py-2 rounded-xl border border-white/10 text-white/30 hover:text-white/60 ml-auto">I'll approve this myself</button>'
                 </>
               }
             </>
@@ -2336,7 +2336,7 @@ Please try again — if the problem persists, check your network connection.`);
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground flex-1">
-                            When done: <span className="font-medium text-foreground">scroll down to the Verification Queue below</span> and click <span className="font-medium text-primary">I'm done — please verify →</span> to open the 3-step wizard
+                            When done: <span className="font-medium text-foreground">scroll down to the Verification Queue below</span> and click <span className="font-medium text-primary">I'm done — please verify →</span> to open the 3-step wizard'
                           </div>
                           <div className="flex gap-2 flex-wrap">
                             {placedBlocks.filter(b=>b.status==='doing').map(b=>(
@@ -2806,7 +2806,7 @@ Please try again — if the problem persists, check your network connection.`);
                                         :'border border-border text-muted-foreground hover:text-foreground'
                                     }`}
                                   >
-                                    {b.status==='waiting'&&!ready?'Check early':'I'm done — please verify →'}
+                                    {b.status==='waiting'&&!ready?'Check early':"Done — please verify →"}'
                                   </button>
                                 </div>
                               </div>
@@ -2961,7 +2961,7 @@ Please try again — if the problem persists, check your network connection.`);
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <input value={checkUrl} onChange={e=>setCheckUrl(e.target.value)} placeholder={selProj?.url||'https://yourdomain.com'} className="flex-1 h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
+                    <input value={checkUrl} onChange={e=>setCheckUrl(e.target.value)} placeholder={selProj?.url||'https:'//yourdomain.com'} className="flex-1 h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
                     <span className="text-xs text-muted-foreground self-center">{checkUrl||selProj?.url?'Will check live':'No URL set'}</span>
                   </div>
                 </div>
@@ -3146,7 +3146,7 @@ Please try again — if the problem persists, check your network connection.`);
                 {expandedBlock.status==='doing' && (
                   <button onClick={()=>{setExpandedBlock(null);setActiveVerifyBlock(expandedBlock);}}
                     className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
-                    <Shield size={14}/>I'm done — please verify →
+                    <Shield size={14}/>I'm done — please verify →'
                   </button>
                 )}
               </div>
@@ -3211,7 +3211,7 @@ Please try again — if the problem persists, check your network connection.`);
                         {/* Confidence explanation */}
                         <div className={`rounded-xl p-3 text-xs ${cap.confidence>=85?'bg-green-400/5 border border-green-400/15':cap.confidence>=70?'bg-yellow-400/5 border border-yellow-400/15':'bg-orange-400/5 border border-orange-400/15'}`}>
                           <div className={`font-semibold mb-1 ${cap.confidence>=85?'text-green-400':cap.confidence>=70?'text-yellow-400':'text-orange-400'}`}>
-                            Why I'm {cap.confidence}% confident on this
+                            Why I'm {cap.confidence}% confident on this'
                           </div>
                           <p className="text-muted-foreground leading-relaxed">{cap.confidence_reason}</p>
                         </div>
@@ -3231,7 +3231,7 @@ Please try again — if the problem persists, check your network connection.`);
 
                         {/* Time breakdown */}
                         <div>
-                          <div className="text-xs font-mono text-muted-foreground uppercase mb-2">How I'm spending those {cap.time_ai} minutes</div>
+                          <div className="text-xs font-mono text-muted-foreground uppercase mb-2">How I'm spending those {cap.time_ai} minutes</div>'
                           <div className="space-y-1">
                             {cap.time_breakdown.map((t,i)=>(
                               <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -3244,7 +3244,7 @@ Please try again — if the problem persists, check your network connection.`);
 
                         {/* What Manav Brain cannot do */}
                         <div>
-                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your touch — I'm being upfront</div>
+                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your touch — I'm being upfront</div>'
                           <div className="space-y-1">
                             {cap.cannot_do.map((c2,i)=>(
                               <div key={i} className="flex items-start gap-2 text-xs">
