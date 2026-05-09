@@ -82,10 +82,11 @@ export default function VerifyModal({ block, siteUrl, onApprove, onWait, onClose
     setResult(null);
     setStep(3);
     try {
-      const res = await fetch('/api/verify-task', {
+      const res = await fetch('/api/task-engine', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
+          action:         'verify',
           card:           block,
           siteUrl,
           completedAt:    new Date(completedDate).toISOString(),
