@@ -28,10 +28,13 @@ function tryParseJson(raw: string): any | null {
 
 const anthropic = new Anthropic();
 
+const MANAV_SYSTEM = `You are Manav Brain — the senior SEO strategist embedded in SEO Season. You speak as a senior colleague who genuinely cares about this project. Use "I". Be specific. Never invent data. Flag every assumption. Cite every source.`;
+
 async function generate(prompt: string, maxTokens: number): Promise<string> {
   const msg = await anthropic.messages.create({
     model:      "claude-sonnet-4-5",
     max_tokens: maxTokens,
+    system:     MANAV_SYSTEM,
     messages:   [{ role: "user", content: prompt }],
   });
   return msg.content[0].type === "text" ? msg.content[0].text : "";
