@@ -690,6 +690,229 @@ function AgendaMarkdown({ text }: { text: string }) {
 }
 
 
+
+/* ════════════════════════════════════════════════════
+   AI Capability Registry
+   Exact declaration of what Claude does, its confidence,
+   time breakdown, and how to verify it.
+════════════════════════════════════════════════════ */
+interface AICap {
+  confidence:        number;   // 0-100 — only claim what Claude can guarantee
+  confidence_reason: string;
+  time_human:        number;   // minutes without AI
+  time_ai:           number;   // minutes with AI (Claude's work time)
+  time_breakdown:    string[]; // what those AI minutes include
+  produces:          string[]; // exactly what Claude outputs — copy-paste ready
+  cannot_do:         string[]; // honest limits — human must handle these
+  needs_from_you:    string[]; // required inputs before Claude can start
+  verify_steps: { step: string; tool: string; pass: string }[]; // exact verification
+}
+
+const AI_CAPABILITIES: Record<string, AICap> = {
+  technical: {
+    confidence: 95,
+    confidence_reason: "Code and configuration have right/wrong answers. Claude generates exact, testable output — redirects, schema, robots.txt — that can be validated in a browser or validator tool before deployment.",
+    time_human: 240,
+    time_ai: 20,
+    time_breakdown: [
+      "5 min — Claude reads the live page and identifies the exact issue",
+      "10 min — Claude generates complete, copy-paste ready code/config",
+      "5 min — Claude writes step-by-step deployment instructions + rollback plan",
+    ],
+    produces: [
+      "Exact .htaccess / nginx rules OR CMS settings changes — copy-paste ready",
+      "Schema markup JSON-LD — validated syntax, ready to paste into <head>",
+      "Step-by-step deployment instructions numbered 1 to N",
+      "Test commands to run after deployment",
+      "Rollback plan if something breaks",
+    ],
+    cannot_do: [
+      "Deploy the changes to your server (requires credentials)",
+      "Access your CMS admin panel (requires login)",
+      "Guarantee Google re-crawls within a specific timeframe",
+    ],
+    needs_from_you: [
+      "Affected URL(s) — paste 1-5 specific URLs",
+      "What's currently broken — exact error or behaviour",
+      "Your CMS type (WordPress / Shopify / etc.) — from Data Room",
+    ],
+    verify_steps: [
+      { step: "Open each affected URL in browser", tool: "Browser DevTools → Network tab", pass: "Status code matches expected (200/301/etc.)" },
+      { step: "Validate schema markup", tool: "validator.schema.org → paste the code", pass: "Zero errors, all required fields present" },
+      { step: "Check GSC Coverage report 5 days after deployment", tool: "Google Search Console → Coverage", pass: "Affected pages appear in Indexed, no new errors" },
+      { step: "Run Screaming Frog spider on affected URLs", tool: "Screaming Frog — Internal tab", pass: "All URLs return correct status codes, no redirect chains" },
+    ],
+  },
+  content: {
+    confidence: 80,
+    confidence_reason: "Claude produces a complete, well-structured draft with correct keyword placement. Confidence is 80 not 100 because brand-specific facts, client stories, and proprietary data must come from you. The draft is ready to edit, not ready to publish without review.",
+    time_human: 480,
+    time_ai: 15,
+    time_breakdown: [
+      "3 min — Claude analyses search intent and top-ranking pages for target keyword",
+      "8 min — Claude writes the full draft including H1-H3 structure",
+      "4 min — Claude writes meta title, meta description, schema markup, internal link map",
+    ],
+    produces: [
+      "Full content draft (exact word count you specify)",
+      "H1, H2, H3 heading structure with keyword placement noted",
+      "Meta title (under 60 chars) and meta description (under 160 chars)",
+      "Article Schema or FAQPage Schema markup — ready to paste",
+      "Internal link suggestions with anchor text and target URLs",
+      "Readability notes (sentences to simplify, passive voice to fix)",
+    ],
+    cannot_do: [
+      "Source original statistics — you must supply or Claude uses publicly known data",
+      "Source images or graphics",
+      "Match client-specific brand voice without an example to follow",
+      "Know what the client has already published (without access to their site)",
+      "Create new data or conduct original research",
+    ],
+    needs_from_you: [
+      "Target keyword (primary) + 3-5 secondary keywords",
+      "Search intent — informational / commercial / transactional",
+      "Target word count",
+      "One example of brand writing style (URL or paste a paragraph)",
+    ],
+    verify_steps: [
+      { step: "Fact-check every statistic against its primary source", tool: "Google each claim individually", pass: "Every number/date/claim verified against original source" },
+      { step: "Check meta title length", tool: "SERP Simulator (seomofo.com)", pass: "Title under 60 chars, not truncated in preview" },
+      { step: "Verify all internal links point to live pages", tool: "Open each link in browser", pass: "Every internal link returns 200, no 404s" },
+      { step: "Check keyword density is natural (not forced)", tool: "Read the draft aloud", pass: "Keyword appears naturally, no awkward repetition" },
+      { step: "Validate schema markup", tool: "validator.schema.org", pass: "Zero errors, zero warnings" },
+    ],
+  },
+  geo: {
+    confidence: 70,
+    confidence_reason: "Claude restructures existing content for AI citation using proven entity and FAQ patterns. Confidence is 70 because AI platform citation cannot be guaranteed — Perplexity and ChatGPT citation depends on many factors beyond content structure. Claude guarantees the structural changes; citation outcome must be measured after.",
+    time_human: 180,
+    time_ai: 12,
+    time_breakdown: [
+      "4 min — Claude reads existing page content",
+      "5 min — Claude rewrites sections with entity-rich language and citation-ready summaries",
+      "3 min — Claude generates FAQ schema and structured summary block",
+    ],
+    produces: [
+      "Rewritten introduction paragraph — direct answer format for AI extraction",
+      "FAQ section (5-8 questions) with concise answers — FAQPage schema included",
+      "Entity-rich summary block (150-200 words) optimised for AI citation",
+      "FAQPage JSON-LD schema markup",
+      "List of entities and their correct descriptions to include on the page",
+    ],
+    cannot_do: [
+      "Guarantee Perplexity or ChatGPT will cite the page",
+      "Check live AI platforms for current citations (requires browser session)",
+      "Replace content that requires proprietary data or original research",
+    ],
+    needs_from_you: [
+      "Current page URL (Claude will fetch and read it)",
+      "Exact query you want to appear for in Perplexity / ChatGPT / Google AI Overview",
+      "Target AI platform (Perplexity / ChatGPT / Google AI Overview)",
+    ],
+    verify_steps: [
+      { step: "Search target query in Perplexity before publishing", tool: "perplexity.ai — note current result", pass: "Screenshot taken to compare after" },
+      { step: "Validate FAQPage schema", tool: "validator.schema.org", pass: "Zero errors" },
+      { step: "Search target query 7 days after publishing", tool: "perplexity.ai", pass: "Site appears as cited source" },
+      { step: "Check Google AI Overview for target query", tool: "Google.com (logged out)", pass: "Site mentioned or page linked in AI Overview" },
+    ],
+  },
+  "quick-win": {
+    confidence: 90,
+    confidence_reason: "Meta titles, descriptions, and heading tags are precise, verifiable outputs. Claude generates specific before/after for each URL — you can check each change in a browser within minutes of deployment.",
+    time_human: 60,
+    time_ai: 5,
+    time_breakdown: [
+      "2 min — Claude fetches and reads each URL",
+      "3 min — Claude generates specific before/after for every element",
+    ],
+    produces: [
+      "Meta title — before and after for each URL (under 60 chars)",
+      "Meta description — before and after for each URL (under 160 chars)",
+      "H1 rewrite if needed",
+      "Image alt text rewrites if applicable",
+      "Implementation instructions per CMS type",
+    ],
+    cannot_do: [
+      "Apply changes directly in your CMS",
+      "Guarantee click-through rate improvement (improvement is measurable, not guaranteed)",
+    ],
+    needs_from_you: [
+      "Target URLs (paste 1-10)",
+      "Target keyword or goal for each page",
+    ],
+    verify_steps: [
+      { step: "Check title tag length in browser", tool: "Browser → View Source (Ctrl+U)", pass: "Title under 60 chars" },
+      { step: "Check meta description length", tool: "Browser → View Source (Ctrl+U)", pass: "Description under 160 chars" },
+      { step: "Check GSC CTR 7 days after change", tool: "Google Search Console → Performance → Pages", pass: "CTR same or improved vs prior 7 days" },
+      { step: "Validate page in SERP preview", tool: "seomofo.com SERP Simulator", pass: "Title and description display correctly, not truncated" },
+    ],
+  },
+  competitive: {
+    confidence: 65,
+    confidence_reason: "Competitive analysis depends on data quality. With Semrush/Ahrefs export data provided, confidence is 85%. Without it, Claude analyses competitor pages from live fetch only — confidence drops to 65%. Rankings and domain metrics cannot be invented.",
+    time_human: 300,
+    time_ai: 20,
+    time_breakdown: [
+      "5 min — Claude fetches and reads competitor pages",
+      "10 min — Claude maps content gaps and keyword opportunities",
+      "5 min — Claude writes specific action plan with prioritised content to create",
+    ],
+    produces: [
+      "Gap analysis table: topics competitor ranks for that you do not",
+      "Content brief for the highest-opportunity gap page",
+      "Keyword targeting list with priority order",
+      "Specific pages on your site to improve to compete",
+      "Estimated difficulty and time per opportunity",
+    ],
+    cannot_do: [
+      "Access paid competitor data without Semrush/Ahrefs export",
+      "Guarantee ranking improvements from content creation",
+      "Build backlinks",
+    ],
+    needs_from_you: [
+      "Competitor domain(s)",
+      "Target keywords to compete on",
+      "Semrush or Ahrefs export (optional but raises confidence to 85%)",
+    ],
+    verify_steps: [
+      { step: "Cross-check gap keywords in Semrush/Ahrefs", tool: "Semrush → Keyword Gap tool", pass: "Suggested keywords confirmed as opportunities" },
+      { step: "Manually search top 3 gap keywords", tool: "Google.com incognito", pass: "Competitor appears on page 1, your site does not yet" },
+      { step: "Check 30 days after content creation", tool: "GSC → Performance → Queries", pass: "New impressions for target keywords" },
+    ],
+  },
+  weekly: {
+    confidence: 75,
+    confidence_reason: "Claude generates specific execution briefs and templates. Confidence varies by task. Writing and analysis tasks: 85%. Technical deployment: 50% (requires human to deploy). Creative decisions: 60% (requires client input).",
+    time_human: 120,
+    time_ai: 10,
+    time_breakdown: [
+      "3 min — Claude reads task context and project data",
+      "7 min — Claude writes complete brief with step-by-step instructions",
+    ],
+    produces: [
+      "Step-by-step execution instructions (numbered)",
+      "Required tools and where to find each setting",
+      "Expected output/deliverable specification",
+      "Time estimate per step",
+      "Definition of done — exactly what to check",
+    ],
+    cannot_do: [
+      "Execute tasks requiring CMS login or server access",
+      "Make creative decisions requiring client approval",
+    ],
+    needs_from_you: [
+      "Specific context about what needs doing",
+    ],
+    verify_steps: [
+      { step: "Review deliverable against the brief", tool: "Compare output to step-by-step instructions", pass: "Every step is complete, output matches specification" },
+    ],
+  },
+};
+
+function getAICap(blockType: string): AICap {
+  return AI_CAPABILITIES[blockType] || AI_CAPABILITIES.weekly;
+}
+
 /* ════════════════════════════════════════════════════
    InlineVerifyModal — self-contained, no imports needed
 ════════════════════════════════════════════════════ */
@@ -2577,35 +2800,133 @@ Please try again — if the problem persists, check your network connection.`);
                 </button>
               </div>
 
-              {/* Effort + AI assist */}
-              <div className="rounded-xl border border-border bg-background/60 p-4 space-y-3">
-                <div className="text-xs font-mono text-muted-foreground uppercase">Effort Estimate</div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-lg font-black text-foreground">
-                      ~{expandedBlock.aiAssisted?formatHours(estimateHours(expandedBlock)*0.4):formatHours(estimateHours(expandedBlock))}
+              {/* AI Capability Panel */}
+              {(()=>{
+                const cap = getAICap(expandedBlock.type);
+                const toggled = expandedBlock.aiAssisted;
+                return (
+                  <div className="rounded-xl border border-border bg-background/60 overflow-hidden">
+
+                    {/* Header row */}
+                    <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+                      <div className="flex-1">
+                        <div className="text-xs font-mono text-muted-foreground uppercase mb-0.5">Effort & AI Capability</div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-xl font-black text-foreground">
+                            ~{toggled ? formatHours(cap.time_ai/60) : formatHours(cap.time_human/60)}
+                          </div>
+                          {toggled && (
+                            <div className="text-xs text-muted-foreground">
+                              <span className="line-through mr-1">{formatHours(cap.time_human/60)}</span>
+                              <span className="text-green-400 font-semibold">{Math.round((1-cap.time_ai/cap.time_human)*100)}% saved</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className={`flex flex-col items-center px-3 py-1.5 rounded-xl border ${cap.confidence>=85?'border-green-400/30 bg-green-400/5':cap.confidence>=70?'border-yellow-400/30 bg-yellow-400/5':'border-orange-400/30 bg-orange-400/5'}`}>
+                          <span className={`text-lg font-black ${cap.confidence>=85?'text-green-400':cap.confidence>=70?'text-yellow-400':'text-orange-400'}`}>{cap.confidence}%</span>
+                          <span className="text-xs text-muted-foreground">confidence</span>
+                        </div>
+                        <button
+                          onClick={()=>{
+                            const updated={...expandedBlock,aiAssisted:!expandedBlock.aiAssisted};
+                            setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?updated:b);scheduleAutoSave(u);return u;});
+                            setExpandedBlock(updated);
+                          }}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${toggled?'bg-primary/15 border-primary/40 text-primary':'border-border text-muted-foreground hover:border-primary/30 hover:text-primary'}`}
+                        >
+                          <Brain size={13}/>
+                          {toggled?'AI: ON':'AI: OFF'}
+                        </button>
+                      </div>
                     </div>
-                    {expandedBlock.aiAssisted && (
-                      <div className="text-xs text-primary">AI saves ~60% — was {formatHours(estimateHours(expandedBlock))}</div>
+
+                    {toggled && (
+                      <div className="px-4 py-3 space-y-3">
+
+                        {/* Confidence explanation */}
+                        <div className={`rounded-xl p-3 text-xs ${cap.confidence>=85?'bg-green-400/5 border border-green-400/15':cap.confidence>=70?'bg-yellow-400/5 border border-yellow-400/15':'bg-orange-400/5 border border-orange-400/15'}`}>
+                          <div className={`font-semibold mb-1 ${cap.confidence>=85?'text-green-400':cap.confidence>=70?'text-yellow-400':'text-orange-400'}`}>
+                            Why {cap.confidence}% confident
+                          </div>
+                          <p className="text-muted-foreground leading-relaxed">{cap.confidence_reason}</p>
+                        </div>
+
+                        {/* What Claude will produce */}
+                        <div>
+                          <div className="text-xs font-mono text-primary uppercase mb-2">What Claude produces</div>
+                          <div className="space-y-1">
+                            {cap.produces.map((p2,i)=>(
+                              <div key={i} className="flex items-start gap-2 text-xs">
+                                <CheckCircle2 size={10} className="text-green-400 shrink-0 mt-0.5"/>
+                                <span className="text-muted-foreground">{p2}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Time breakdown */}
+                        <div>
+                          <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Time breakdown ({cap.time_ai} min total)</div>
+                          <div className="space-y-1">
+                            {cap.time_breakdown.map((t,i)=>(
+                              <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                                <Clock size={9} className="shrink-0 mt-0.5 text-primary/60"/>
+                                <span>{t}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* What Claude cannot do */}
+                        <div>
+                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">Claude cannot do these — human required</div>
+                          <div className="space-y-1">
+                            {cap.cannot_do.map((c2,i)=>(
+                              <div key={i} className="flex items-start gap-2 text-xs">
+                                <AlertTriangle size={10} className="text-orange-400 shrink-0 mt-0.5"/>
+                                <span className="text-muted-foreground">{c2}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* What Claude needs from you */}
+                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                          <div className="text-xs font-mono text-primary uppercase mb-2">Required from you before execution</div>
+                          <div className="space-y-1">
+                            {cap.needs_from_you.map((n,i)=>(
+                              <div key={i} className="flex items-start gap-2 text-xs">
+                                <ChevronRight size={10} className="text-primary shrink-0 mt-0.5"/>
+                                <span className="text-muted-foreground">{n}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Verification steps */}
+                        <div>
+                          <div className="text-xs font-mono text-yellow-400 uppercase mb-2">How to verify Claude's work is correct</div>
+                          <div className="space-y-2">
+                            {cap.verify_steps.map((v,i)=>(
+                              <div key={i} className="rounded-lg border border-border bg-background/60 p-3 text-xs space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="h-4 w-4 rounded-full bg-yellow-400/15 text-yellow-400 flex items-center justify-center font-bold text-xs shrink-0">{i+1}</span>
+                                  <span className="font-medium text-foreground">{v.step}</span>
+                                </div>
+                                <div className="pl-6 text-muted-foreground"><span className="font-medium">Tool: </span>{v.tool}</div>
+                                <div className="pl-6 text-green-400"><span className="font-medium">Pass: </span>{v.pass}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                      </div>
                     )}
                   </div>
-                  <button
-                    onClick={()=>{
-                      const updated={...expandedBlock,aiAssisted:!expandedBlock.aiAssisted};
-                      setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?updated:b);scheduleAutoSave(u);return u;});
-                      setExpandedBlock(updated);
-                    }}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${expandedBlock.aiAssisted?'bg-primary/15 border-primary/40 text-primary':'border-border text-muted-foreground hover:border-primary/30 hover:text-primary'}`}
-                  >
-                    <Brain size={13}/>
-                    {expandedBlock.aiAssisted?'AI Assist: ON':'AI Assist: OFF'}
-                  </button>
-                </div>
-                {!expandedBlock.aiAssisted && (
-                  <p className="text-xs text-muted-foreground">Turn on AI Assist to see how much time Claude can save on this task.</p>
-                )}
-              </div>
-
+                );
+              })()}
               {/* Actions */}
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={()=>{setExpandedBlock(null);setActiveExecBlock(expandedBlock);}}
