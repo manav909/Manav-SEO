@@ -24,7 +24,7 @@ interface Block {
   id: string; type: BType; title: string; content: string;
   color: string; priority: Priority; status: Status;
   week: number; placed: boolean;
-  effort?: string; impact?: string; tags?: string[]; source?: string; assignee?: string;
+  effort?: string; impact?: string; tags?: string[]; source?: string; assignee?: string; aiAssisted?: boolean;
 }
 
 interface Suggestion {
@@ -943,9 +943,14 @@ export default function Playground() {
     const block = blocks.find(b => b.id === id);
     if (!block) return;
 
+    // 'doing' → back to todo (simple toggle — verification is in the panel below)
     if (block.status === 'doing') {
-      openVerifyModal(block);
-      return; // Do not change status yet — open verify wizard
+      setBlocks(prev => {
+        const updated = prev.map(b => b.id === id ? {...b, status: 'todo' as Status} : b);
+        scheduleAutoSave(updated);
+        return updated;
+      });
+      return;
     }
 
     // All other transitions (todo→doing, review→todo, etc.) happen immediately
@@ -1541,7 +1546,7 @@ Please try again — if the problem persists, check your network connection.`);
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground flex-1">
-                            When done: <span className="font-medium text-foreground">click the blue status pill on the card</span> → 3-step verification wizard opens → describe what you did → paste tool data → get verdict
+                            When done: <span className="font-medium text-foreground">scroll down to the Verification Queue below</span> and click <span className="font-medium text-primary">Submit for Verification →</span> to open the 3-step wizard
                           </div>
                           <div className="flex gap-2 flex-wrap">
                             {placedBlocks.filter(b=>b.status==='doing').map(b=>(
@@ -1928,7 +1933,200 @@ Please try again — if the problem persists, check your network connection.`);
                                         <button onClick={()=>{setVerifyBlock(block);setVerifyResult(null);}} className="text-xs px-1 py-0.5 rounded border border-orange-400/30 text-orange-400 hover:bg-orange-400/10 ml-0.5">
                                           Check
                                         </button>
-                                      )}                                    </div>                                    {/* Assignee row */}                                    <div className="flex items-center justify-between gap-1 mt-1.5">                                      <button onClick={e=>{e.stopPropagation();setShowAssignModal(block.id);}} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors" title="Assign to team member">                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}                                        </div>                                        <span className="truncate max-w-[55px]">{block.assignee || 'Assign'}</span>                                      </button>                                      <span className="text-xs font-mono text-muted-foreground/60" title="Estimated effort">~{formatHours(estimateHours(block))}</span>                                    </div>                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
+                                      )}                                    </div>                                    {/* Assignee row */}                                    <div className="flex items-center justify-between gap-1 mt-1.5">                                      <button onClick={e=>{e.stopPropagation();setShowAssignModal(block.id);}} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors" title="Assign to team member">                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}                                        </div>                                        <span className="truncate max-w-[55px]">{block.assignee || 'Assign'}</span>                                      </button>                                      <div className="flex items-center gap-1">
+                                        <span className="text-xs font-mono text-muted-foreground/60">
+                                          ~{block.aiAssisted?formatHours(estimateHours(block)*0.4):formatHours(estimateHours(block))}
+                                          {block.aiAssisted&&<span className="text-primary text-xs"> AI</span>}
+                                        </span>
+                                        <button
+                                          onClick={e=>{e.stopPropagation();setBlocks(prev=>{const u=prev.map(b=>b.id===block.id?{...b,aiAssisted:!b.aiAssisted}:b);scheduleAutoSave(u);return u;});}}
+                                          title={block.aiAssisted?"AI assistance ON — click to turn off":"Turn on AI assistance to cut time by ~60%"}
+                                          className={`text-xs px-1 py-0.5 rounded border transition-all ${block.aiAssisted?'bg-primary/15 border-primary/40 text-primary':'border-border/30 text-muted-foreground/30 hover:text-muted-foreground hover:border-border/60'}`}
+                                        ><Brain size={7}/></button>
+                                      </div>                                    </div>                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* ── Verification & AI Assist Panel ── */}
+                    {placedBlocks.some(b=>b.status==='doing'||b.status==='waiting') && (
+                      <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                        <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/10">
+                          <Shield size={15} className="text-yellow-400"/>
+                          <span className="font-semibold text-sm">Verification Queue</span>
+                          <span className="text-xs text-muted-foreground">Click any card below to open the 3-step verification wizard</span>
+                        </div>
+                        <div className="p-4 space-y-2">
+                          {placedBlocks.filter(b=>b.status==='doing'||b.status==='waiting').map(b=>{
+                            const m = TM[b.type]||TM.custom;
+                            const WAIT: Record<string,number> = {'technical':5,'content':14,'geo':7,'quick-win':3,'competitive':21,'weekly':3,'monthly':30,'kpi':7,'custom':5};
+                            const wDays = WAIT[b.type]||5;
+                            const comp  = completedDates[b.id]?new Date(completedDates[b.id]):null;
+                            const dLeft = comp?Math.max(0,wDays-Math.floor((Date.now()-comp.getTime())/86400000)):wDays;
+                            const ready = dLeft===0;
+                            return (
+                              <div key={b.id} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-background/60 hover:border-primary/30 transition-colors">
+                                <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}>
+                                  <m.icon size={13} style={{color:m.color}}/>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-sm truncate">{b.title}</div>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <span>Week {b.week===5?'Backlog':b.week}</span>
+                                    {b.assignee&&<span>· {b.assignee}</span>}
+                                    {b.status==='waiting'&&!ready&&<span className="text-orange-400">· {dLeft}d remaining</span>}
+                                    {b.status==='waiting'&&ready&&<span className="text-green-400">· Ready to verify</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {b.status==='waiting'&&!ready&&(
+                                    <span className="text-xs px-2 py-1 rounded-lg border border-orange-400/30 bg-orange-400/10 text-orange-400">
+                                      Waiting {dLeft}d
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={()=>openVerifyModal(b)}
+                                    className={`text-sm px-4 py-2 rounded-xl font-semibold transition-all ${
+                                      ready||b.status==='doing'
+                                        ?'bg-primary text-primary-foreground hover:bg-primary/90'
+                                        :'border border-border text-muted-foreground hover:text-foreground'
+                                    }`}
+                                  >
+                                    {b.status==='waiting'&&!ready?'Check early':'Submit for Verification →'}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── AI Assist + Effort Guide ── */}
+                    {placedBlocks.length > 0 && (
+                      <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                        <button
+                          onClick={()=>document.getElementById('ai-assist-panel')?.classList.toggle('hidden')}
+                          className="w-full flex items-center gap-3 px-5 py-3 hover:bg-secondary/20 transition-colors"
+                        >
+                          <Brain size={15} className="text-primary"/>
+                          <span className="font-semibold text-sm">AI Assistance & Effort Guide</span>
+                          <span className="text-xs text-muted-foreground ml-2">Why these hours? How can AI cut them?</span>
+                          <ChevronDown size={14} className="text-muted-foreground ml-auto"/>
+                        </button>
+                        <div id="ai-assist-panel" className="hidden border-t border-border px-5 py-4 space-y-4">
+
+                          {/* Effort explanation */}
+                          <div className="rounded-xl border border-border bg-background/60 p-4">
+                            <div className="font-semibold text-sm mb-3">How Hours Are Calculated</div>
+                            <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                              Base hours are industry benchmarks for each task type and priority. They represent human time for a competent SEO professional working without AI assistance.
+                              These are estimates — your actual time will vary based on site size, CMS complexity, and how much existing content/data is available.
+                            </p>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead><tr className="border-b border-border text-muted-foreground">
+                                  <th className="text-left py-1.5 pr-3">Task Type</th>
+                                  <th className="text-center py-1.5 px-2">High</th>
+                                  <th className="text-center py-1.5 px-2">Medium</th>
+                                  <th className="text-center py-1.5 px-2">Low</th>
+                                  <th className="text-center py-1.5 px-2 text-primary">With AI</th>
+                                  <th className="text-left py-1.5 pl-2 text-muted-foreground">What&#39;s included</th>
+                                </tr></thead>
+                                <tbody>
+                                  {[
+                                    {type:'Technical',    h:8,  m:4,   l:2,   basis:'Audit+fix+test cycle. High=major crawl overhaul. Medium=redirects+schema. Low=single fix.'},
+                                    {type:'Content',      h:10, m:6,   l:3,   basis:'Research+brief+write+optimise+publish. High=pillar (2000w+). Medium=blog (1000w). Low=short.'},
+                                    {type:'GEO',          h:5,  m:3,   l:1.5, basis:'Platform research+content optimisation+citation check. High=full GEO audit+fix.'},
+                                    {type:'Quick Win',    h:3,  m:1.5, l:0.5, basis:'Identify+implement+verify. High=multiple URLs. Low=single meta tag fix.'},
+                                    {type:'Competitive',  h:6,  m:3,   l:1.5, basis:'Competitor crawl+gap analysis+strategy. High=full SERP analysis.'},
+                                    {type:'Weekly Task',  h:4,  m:2,   l:1,   basis:'Average weekly deliverable. Adjust per actual task.'},
+                                  ].map(r=>(
+                                    <tr key={r.type} className="border-b border-border/40 align-top">
+                                      <td className="py-2 pr-3 font-medium">{r.type}</td>
+                                      <td className="text-center py-2 px-2">{r.h}h</td>
+                                      <td className="text-center py-2 px-2">{r.m}h</td>
+                                      <td className="text-center py-2 px-2">{r.l}h</td>
+                                      <td className="text-center py-2 px-2 text-primary font-semibold">~{Math.round(r.m*0.4*10)/10}h</td>
+                                      <td className="text-left py-2 pl-2 text-muted-foreground leading-tight">{r.basis}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          {/* AI assistance guide */}
+                          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                            <div className="font-semibold text-sm mb-3 flex items-center gap-2">
+                              <Brain size={13} className="text-primary"/>What AI Can Genuinely Cut Time On (60% reduction realistic)
+                            </div>
+                            <div className="grid sm:grid-cols-2 gap-3 text-xs">
+                              {[
+                                {label:'Content Writing',    can:"First draft (800-1200w in 3 min), keyword research, meta tags, schema markup, FAQ generation, internal link suggestions",   cannot:"Fact-checking, brand voice matching, original data/quotes, images, client-specific examples"},
+                                {label:'Technical Audit',    can:"Crawl data interpretation, issue prioritisation, fix instructions, redirect mapping, schema code generation",                 cannot:"Actually applying fixes to CMS, testing after deployment, verifying server-side changes"},
+                                {label:'GEO Optimisation',  can:"Content restructuring for AI citation, FAQ formatting, entity markup, citation-ready summaries",                              cannot:"Checking if Perplexity actually cites you (needs live check), measuring AI traffic"},
+                                {label:'Competitive Intel',  can:"Analysing exported competitor data, identifying content gaps, strategy recommendations from rankings data",                  cannot:"Live SERP scraping (needs tool), verifying competitor changes, DR scores (needs Ahrefs)"},
+                                {label:'Reporting',          can:"Interpreting GSC/GA4 exports, writing client-ready commentary, identifying trends, recommending next actions",               cannot:"Pulling the raw data (needs tool access), creating charts, client meeting delivery"},
+                              ].map(r=>(
+                                <div key={r.label} className="space-y-1.5">
+                                  <div className="font-semibold text-foreground">{r.label}</div>
+                                  <div><span className="text-green-400 font-medium">✓ AI can: </span><span className="text-muted-foreground">{r.can}</span></div>
+                                  <div><span className="text-red-400 font-medium">✗ Still needs human: </span><span className="text-muted-foreground">{r.cannot}</span></div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Human review checklist */}
+                          <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
+                            <div className="font-semibold text-sm mb-3 flex items-center gap-2 text-yellow-400">
+                              <AlertTriangle size={13}/>Even With AI: Human Review Required Before Publishing
+                            </div>
+                            <div className="text-xs space-y-1.5">
+                              {[
+                                "Read every AI-generated paragraph — hallucinations appear as confident-sounding wrong facts",
+                                "Check all statistics, dates, and named claims against the original source",
+                                "Verify internal links actually point to real, live pages",
+                                "Confirm keyword placement feels natural, not forced",
+                                "Check brand voice — AI writes generically, clients have specific tone requirements",
+                                "Technical fixes: always test in staging before live deployment",
+                                "Schema markup: validate at schema.org/SchemaApp before applying",
+                                "After any technical change: re-crawl affected URLs in GSC or Screaming Frog",
+                              ].map((item,i)=>(
+                                <div key={i} className="flex items-start gap-2">
+                                  <span className="text-yellow-400 shrink-0 font-bold">{i+1}.</span>
+                                  <span>{item}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Current canvas AI summary */}
+                          {placedBlocks.length > 0 && (
+                            <div className="rounded-xl border border-border bg-background/60 p-4">
+                              <div className="font-semibold text-sm mb-3">Your Current Canvas — Time Summary</div>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                {(()=>{
+                                  const total    = placedBlocks.reduce((s,b)=>s+estimateHours(b),0);
+                                  const aiCards  = placedBlocks.filter(b=>b.aiAssisted);
+                                  const aiSaved  = aiCards.reduce((s,b)=>s+estimateHours(b)*0.6,0);
+                                  const effective= total - aiSaved;
+                                  return [
+                                    {label:'Total estimated',  val:formatHours(Math.round(total*10)/10),     color:'text-foreground'},
+                                    {label:'AI-assisted cards', val:String(aiCards.length)+' cards',         color:'text-primary'},
+                                    {label:'Time AI saves',    val:formatHours(Math.round(aiSaved*10)/10),   color:'text-green-400'},
+                                    {label:'Actual human time',val:formatHours(Math.round(effective*10)/10), color:'text-yellow-400'},
+                                  ].map(stat=>(
+                                    <div key={stat.label} className="text-center">
+                                      <div className={`text-lg font-black ${stat.color}`}>{stat.val}</div>
+                                      <div className="text-xs text-muted-foreground">{stat.label}</div>
+                                    </div>
+                                  ));
+                                })()}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
 
             {/* ══ PIPELINE TAB ══ */}
             {tab==='pipeline' && (
