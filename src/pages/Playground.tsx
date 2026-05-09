@@ -724,6 +724,9 @@ export default function Playground() {
   const [agendaLoading, setAgendaLoading] = useState<number|null>(null);
   const [agendaStale,   setAgendaStale]   = useState<Set<number>>(new Set());
   const [agendaExpanded,setAgendaExpanded]= useState<number|null>(null);
+  const [cacheLoaded,  setCacheLoaded]   = useState(false);
+  const [batchStatus,  setBatchStatus]   = useState<Record<string,string>>({});
+  const [failedBatches,setFailedBatches] = useState<number[]>([]);
   const [activeRole,   setActiveRole]   = useState('team_lead');
   const [roleChat,     setRoleChat]     = useState('');
   const [roleChatQ,    setRoleChatQ]    = useState('');
@@ -758,7 +761,6 @@ export default function Playground() {
     setReports(rr.data||[]);
     if (pr.data?.playground_strategy){setStrategy(pr.data.playground_strategy);setGenAt(pr.data.playground_generated_at||'');}
     if (pr.data?.playground_strategy) {
-      // Always rebuild full library from strategy — canvas only stores placements
       const allBlocks  = buildLibraryFromStrategy(pr.data.playground_strategy);
       const placements = (pr.data.playground_canvas || []) as {id:string;placed:boolean;week:number;status:Status}[];
       const placedMap  = new Map(placements.map(p => [p.id, p]));
@@ -769,11 +771,34 @@ export default function Playground() {
       setBlocks(merged);
       setRecommendation(getNextRecommendation(merged.filter(b=>b.placed), merged.filter(b=>!b.placed)));
     } else if (pr.data?.playground_canvas?.length) {
-      // Fallback: old format where full blocks were saved
       const saved = pr.data.playground_canvas as Block[];
       setBlocks(saved);
       setRecommendation(getNextRecommendation(saved.filter(b=>b.placed), saved.filter(b=>!b.placed)));
     }
+
+    // Load all cached AI content from Supabase
+    const { data: cacheRows } = await supabase
+      .from('ai_content_cache')
+      .select('content_type,content,status,updated_at')
+      .eq('project_id', selProjId);
+    if (cacheRows?.length) {
+      const newAgendaText: Record<number,string> = {};
+      let newPipeline = ''; let newDeps = '';
+      for (const row of cacheRows) {
+        if (row.content_type.startsWith('agenda_')) {
+          const w = parseInt(row.content_type.replace('agenda_',''));
+          if (!isNaN(w)) newAgendaText[w] = row.content;
+        } else if (row.content_type === 'pipeline') {
+          newPipeline = row.content;
+        } else if (row.content_type.startsWith('deps_')) {
+          newDeps = row.content;
+        }
+      }
+      if (Object.keys(newAgendaText).length) setAgendaText(newAgendaText);
+      if (newPipeline) setPipelineText(newPipeline);
+      if (newDeps)     setDepText(newDeps);
+    }
+    setCacheLoaded(true);
   };
 
   const generate = async () => {
@@ -786,19 +811,78 @@ export default function Playground() {
         supabase.from('metrics').select('keyword_rankings').eq('project_id',selProjId).order('recorded_at',{ascending:false}).limit(1),
       ]);
       const audits = reports.map(r=>({created_at:r.created_at,sections:Object.fromEntries(Object.entries(r.sections||{}).map(([k,v])=>[k,safeStr(v).slice(0,300)]))}));
-      const res = await fetch('/api/playground-analysis',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({project:selProj,client:cl,metrics:mr.data||[],keywordRankings:rr2.data?.[0]?.keyword_rankings||[],auditReports:audits,competitors:selProj.competitors||[],allKeywords:selProj.keywords||[]})});
+      const res = await fetch('/api/playground-analysis', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          project: selProj, client: cl,
+          metrics: mr.data||[], keywordRankings: rr2.data?.[0]?.keyword_rankings||[],
+          auditReports: audits, competitors: selProj.competitors||[], allKeywords: selProj.keywords||[],
+          resumeBatch: 0, existingStrategy: strategy||undefined,
+        }),
+      });
       const data = await res.json();
-      if(!data.success) throw new Error(data.error);
-      setStrategy(data.strategy);
+      if (!data.success) throw new Error(data.error);
+
+      setBatchStatus(Object.fromEntries(Object.entries(data.batch_status||{}).map(([k,v])=>[k,String(v)])));
+      setFailedBatches(data.failed_batches||[]);
+
+      const mergedStrategy = {...(strategy||{}), ...data.strategy};
+      setStrategy(mergedStrategy);
       setGenAt(data.generated_at);
-      const nb = buildLibraryFromStrategy(data.strategy);
+      const nb = buildLibraryFromStrategy(mergedStrategy);
       setBlocks(nb);
       setRecommendation(getNextRecommendation([],nb));
-      await supabase.from('projects').update({playground_strategy:data.strategy,playground_canvas:[],playground_generated_at:data.generated_at}).eq('id',selProjId);
-      toast({title:`✅ ${nb.length} strategy blocks ready!`,description:'Drag blocks from the left sidebar into weekly columns. The AI will guide each move.'});
+      await supabase.from('projects').update({
+        playground_strategy: mergedStrategy,
+        playground_canvas: [],
+        playground_generated_at: data.generated_at,
+      }).eq('id', selProjId);
+
+      if (data.failed_batches?.length) {
+        toast({title: `Strategy ${3-data.failed_batches.length}/3 sections done`, description: 'Some sections hit token limits. Use Resume to complete.', variant:'destructive'});
+      } else {
+        toast({title: `${nb.length} blocks ready!`, description: 'All 3 sections complete. Drag into your canvas.'});
+      }
       setTab('canvas');
     } catch(e:any){toast({title:'Failed',description:e.message,variant:'destructive'});}
+    setGenerating(false);
+  };
+
+  const resumeMissingBatches = async () => {
+    if (!selProj || !failedBatches.length) return;
+    setGenerating(true);
+    try {
+      const cl = clients.find(c => c.id === selProj.client_id);
+      const [mr, rr2] = await Promise.all([
+        supabase.from('metrics').select('*').eq('project_id', selProjId).order('recorded_at', {ascending: false}).limit(4),
+        supabase.from('metrics').select('keyword_rankings').eq('project_id', selProjId).order('recorded_at', {ascending: false}).limit(1),
+      ]);
+      const audits = reports.map(r => ({ created_at: r.created_at, sections: Object.fromEntries(Object.entries(r.sections||{}).map(([k,v])=>[k,safeStr(v).slice(0,300)])) }));
+
+      for (const batchNum of failedBatches) {
+        try {
+          const res = await fetch('/api/playground-analysis', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              project: selProj, client: cl,
+              metrics: mr.data||[], keywordRankings: rr2.data?.[0]?.keyword_rankings||[],
+              auditReports: audits, competitors: selProj.competitors||[], allKeywords: selProj.keywords||[],
+              resumeBatch: batchNum, existingStrategy: strategy,
+            }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            const merged = {...(strategy||{}), ...data.strategy};
+            setStrategy(merged);
+            setBlocks(buildLibraryFromStrategy(merged));
+            setBatchStatus(prev => ({...prev, [String(batchNum)]: 'ok'}));
+            setFailedBatches(prev => prev.filter(n => n !== batchNum));
+            await supabase.from('projects').update({playground_strategy: merged}).eq('id', selProjId);
+          }
+        } catch {}
+      }
+      toast({title: 'Resume complete!', description: failedBatches.length === 0 ? 'All sections now complete.' : `${failedBatches.length} sections still need retry.`});
+    } catch(e:any) { toast({title:'Resume failed', description:e.message, variant:'destructive'}); }
     setGenerating(false);
   };
 
@@ -938,6 +1022,7 @@ export default function Playground() {
           allPlacedCards: blocks.filter(b => b.placed),
           libraryCards:   blocks.filter(b => !b.placed),
           projectContext: proj,
+          projectId: selProjId,
         }),
       });
       if (!res.ok || !res.body) throw new Error('Request failed');
@@ -966,7 +1051,7 @@ export default function Playground() {
     const url  = (checkUrl.trim() || selProj?.url || '').trim();
     const body = { question: q, role: activeRole, blocks, projectSummary: proj,
       focusBlockId: focusId || null, mode,
-      checkUrl: url || null };
+      checkUrl: url || null, projectId: selProjId };
 
     if (mode === 'pipeline') {
       setPipelineText(''); setPipelineLoading(true);
@@ -1058,9 +1143,27 @@ export default function Playground() {
           </div>
           <div className="flex items-center gap-3">
             {genAt && <span className="text-xs font-mono text-muted-foreground">Updated {fmtDate(genAt)}</span>}
-            <Button onClick={generate} disabled={generating||!selProjId} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
+            <div className="flex items-center gap-2">
+              {failedBatches.length > 0 && (
+                <button onClick={resumeMissingBatches} disabled={generating}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-yellow-400/30 bg-yellow-400/10 text-yellow-400 hover:bg-yellow-400/20 font-medium">
+                  <RefreshCw size={12} className={generating?'animate-spin':''}/>Resume {failedBatches.length} section{failedBatches.length!==1?'s':''}
+                </button>
+              )}
+              {Object.keys(batchStatus).length > 0 && (
+                <div className="flex items-center gap-1 text-xs">
+                  {[1,2,3].map(n=>(
+                    <span key={n} title={`Batch ${n}: ${batchStatus[String(n)]||'pending'}`}
+                      className={`px-1.5 py-0.5 rounded font-mono ${batchStatus[String(n)]==='ok'?'bg-green-400/15 text-green-400':batchStatus[String(n)]==='failed'?'bg-red-400/15 text-red-400':'bg-secondary/40 text-muted-foreground'}`}>
+                      B{n}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Button onClick={generate} disabled={generating||!selProjId} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
               {generating ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Analysing…</> : <><Brain className="h-4 w-4 mr-2" />{strategy?'Regenerate':'Generate Strategy'}</>}
             </Button>
+            </div>
           </div>
         </div>
 
