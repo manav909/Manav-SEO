@@ -736,7 +736,7 @@ export default function Playground() {
   const [completedDates,  setCompletedDates]  = useState<Record<string,string>>({});
   const [nextTaskPrompt,  setNextTaskPrompt]  = useState<Block|null>(null);
   const [nextConfirmed,   setNextConfirmed]   = useState(false);
-  const [verifyStep,      setVerifyStep]      = useState<1|2|3>(1);
+  const [verifyStep,      setVerifyStep]      = useState(1);
   const [completionNote,  setCompletionNote]  = useState('');
   const [evidenceData,    setEvidenceData]    = useState('');
   const [completedAt,     setCompletedAt]     = useState('');
@@ -928,21 +928,23 @@ export default function Playground() {
     });
     setLastImpact(null);
   };
+  const openVerifyModal = (block: Block) => {
+    const now = new Date().toISOString();
+    setCompletedDates(prev => ({ ...prev, [block.id]: now }));
+    setCompletedAt(now.split('T')[0]);
+    setVerifyBlock(block);
+    setVerifyResult(null);
+    setVerifyStep(1);
+    setCompletionNote('');
+    setEvidenceData('');
+  };
+
   const toggleStatus = (id: string) => {
     const block = blocks.find(b => b.id === id);
     if (!block) return;
 
-    // Going from 'doing' → normally would be 'done'
-    // Gate it: open verification modal instead
     if (block.status === 'doing') {
-      const now = new Date().toISOString();
-      setCompletedDates(prev => ({ ...prev, [id]: now }));
-      setCompletedAt(now.split('T')[0]); // default to today
-      setVerifyBlock(block);
-      setVerifyResult(null);
-      setVerifyStep(1);
-      setCompletionNote('');
-      setEvidenceData('');
+      openVerifyModal(block);
       return; // Do not change status yet — open verify wizard
     }
 
@@ -1543,7 +1545,7 @@ Please try again — if the problem persists, check your network connection.`);
                           </div>
                           <div className="flex gap-2 flex-wrap">
                             {placedBlocks.filter(b=>b.status==='doing').map(b=>(
-                              <button key={b.id} onClick={()=>{const now=new Date().toISOString();setCompletedDates(prev=>({...prev,[b.id]:now}));setCompletedAt(now.split('T')[0]);setVerifyBlock(b);setVerifyResult(null);setVerifyStep(1);setCompletionNote('');setEvidenceData('');}}
+                              <button key={b.id} onClick={()=>openVerifyModal(b)}
                                 className="text-xs px-2.5 py-1 rounded-lg border border-blue-400/30 bg-blue-400/10 text-blue-400 hover:bg-blue-400/20 font-medium truncate max-w-[160px]">
                                 Verify: {b.title.slice(0,25)}{b.title.length>25?'…':''}
                               </button>
@@ -1563,7 +1565,7 @@ Please try again — if the problem persists, check your network connection.`);
                         <span className="text-xs text-muted-foreground flex-1">SEO signals need time to propagate. Come back and verify when the timer expires.</span>
                         <div className="flex gap-1.5 flex-wrap">
                           {placedBlocks.filter(b=>b.status==='waiting').map(b=>(
-                            <button key={b.id} onClick={()=>{setVerifyBlock(b);setVerifyResult(null);setVerifyStep(2);setCompletionNote('Marked as waiting previously');setEvidenceData('');}}
+                            <button key={b.id} onClick={()=>{setVerifyBlock(b);setVerifyResult(null);setVerifyStep(2);setCompletionNote('Marked as waiting previously — re-checking now');setEvidenceData('');}}
                               className="text-xs px-2 py-1 rounded border border-orange-400/30 text-orange-400 hover:bg-orange-400/10">
                               Check: {b.title.slice(0,20)}…
                             </button>
