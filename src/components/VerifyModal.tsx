@@ -111,7 +111,7 @@ export default function VerifyModal({ block, siteUrl, onApprove, onWait, onClose
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"/>
       <div
         className="relative w-full max-w-2xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
