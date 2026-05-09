@@ -16,13 +16,13 @@ import {
 /* ─── types ─── */
 type BType    = 'quick-win'|'weekly'|'monthly'|'technical'|'content'|'geo'|'competitive'|'insight'|'kpi'|'custom';
 type Priority = 'high'|'medium'|'low';
-type Status   = 'todo'|'doing'|'review'|'waiting'|'verified'|'done';
+type Where we are   = 'todo'|'doing'|'review'|'waiting'|'verified'|'done';
 type Tab      = 'reports'|'strategy'|'canvas'|'pipeline';
 type SugLevel = 'best'|'good'|'ok'|'caution';
 
 interface Block {
   id: string; type: BType; title: string; content: string;
-  color: string; priority: Priority; status: Status;
+  color: string; priority: Priority; status: Where we are;
   week: number; placed: boolean;
   effort?: string; impact?: string; tags?: string[]; source?: string; assignee?: string; aiAssisted?: boolean;
 }
@@ -123,8 +123,8 @@ const PM: Record<Priority,{dot:string;badge:string}> = {
   low:    {dot:'bg-green-400', badge:'text-green-400 bg-green-400/10 border-green-400/20'},
 };
 
-const SC: Record<Status,Status> = {todo:'doing',doing:'review',review:'todo',waiting:'review',verified:'todo',done:'todo'};
-const SM: Record<Status,{label:string;icon:any;color:string}> = {
+const SC: Record<Where we are,Where we are> = {todo:'doing',doing:'review',review:'todo',waiting:'review',verified:'todo',done:'todo'};
+const SM: Record<Where we are,{label:string;icon:any;color:string}> = {
   todo:     {label:'To Do',       icon:Clock,        color:'text-muted-foreground'},
   doing:    {label:'In Progress', icon:RefreshCw,    color:'text-blue-400'       },
   review:   {label:'Pending Check',icon:AlertTriangle,color:'text-yellow-400'    },
@@ -378,7 +378,7 @@ function seedBlocks(raw: any[]): Block[] {
     id:      b.id||uid(), type:(b.type||'custom') as BType,
     title:   b.title||'Untitled', content:safeStr(b.content),
     color:   b.color||'#94a3b8', priority:(b.priority||'medium') as Priority,
-    status:  'todo' as Status, week:assignWeek(b), placed:false,
+    status:  'todo' as Where we are, week:assignWeek(b), placed:false,
     effort:  b.effort, impact:b.impact, tags:b.tags||[], source:b.source||'',
   }));
 }
@@ -727,20 +727,20 @@ const AI_CAPABILITIES: Record<string, AICap> = {
       "Rollback plan if something breaks",
     ],
     cannot_do: [
-      "Deploy the changes to your server (requires credentials)",
-      "Access your CMS admin panel (requires login)",
-      "Guarantee Google re-crawls within a specific timeframe",
+      "Push the changes live — that needs your login, which you should keep to yourself",
+      "Log into your CMS — you'll need to apply the changes yourself once I hand them over",
+      "Tell Google when to re-crawl — we can request it in GSC but I can't control the timeline",
     ],
     needs_from_you: [
-      "Affected URL(s) — paste 1-5 specific URLs",
-      "What's currently broken — exact error or behaviour",
-      "Your CMS type (WordPress / Shopify / etc.) — from Data Room",
+      "The specific URLs where this is happening — paste 1-5 and I'll look at each one",
+      "What you're seeing right now — the exact error, wrong status code, or broken behaviour",
+      "Your CMS — WordPress, Shopify, Webflow? (I'll check your Data Room, but worth confirming)",
     ],
     verify_steps: [
-      { step: "Open each affected URL in browser", tool: "Browser DevTools → Network tab", pass: "Status code matches expected (200/301/etc.)" },
-      { step: "Validate schema markup", tool: "validator.schema.org → paste the code", pass: "Zero errors, all required fields present" },
-      { step: "Check GSC Coverage report 5 days after deployment", tool: "Google Search Console → Coverage", pass: "Affected pages appear in Indexed, no new errors" },
-      { step: "Run Screaming Frog spider on affected URLs", tool: "Screaming Frog — Internal tab", pass: "All URLs return correct status codes, no redirect chains" },
+      { step: "Open each affected URL in browser", tool: "Browser DevTools → Network tab", pass: "Where we are code matches expected (200/301/etc.)" },
+      { step: "Paste the schema into the validator — just to be sure", tool: "validator.schema.org — free, 30 seconds", pass: "Zero errors. If there's a warning, flag it to me." },
+      { step: "Check GSC Coverage 5 days later — let Google catch up first", tool: "Google Search Console → Coverage report", pass: "Pages are showing as Indexed with no new errors. If you see new errors, send them to me." },
+      { step: "Quick Screaming Frog crawl on the affected URLs", tool: "Screaming Frog → paste URLs → start", pass: "All correct status codes, no redirect chains. Chains are a red flag." },
     ],
   },
   content: {
@@ -762,23 +762,23 @@ const AI_CAPABILITIES: Record<string, AICap> = {
       "Readability notes (sentences to simplify, passive voice to fix)",
     ],
     cannot_do: [
-      "Source original statistics — you must supply or Claude uses publicly known data",
-      "Source images or graphics",
-      "Match client-specific brand voice without an example to follow",
-      "Know what the client has already published (without access to their site)",
-      "Create new data or conduct original research",
+      "Find original statistics — if you have internal data, share it and I'll weave it in. Otherwise I use publicly known figures",
+      "Source images — that's your creative team's job",
+      "Match your client's exact voice without an example — just give me one paragraph of their writing and I'll follow it",
+      "Know what your client has already published — paste the URL and I'll read it before I start",
+      "Conduct original research or create new data — I work with what exists",
     ],
     needs_from_you: [
-      "Target keyword (primary) + 3-5 secondary keywords",
-      "Search intent — informational / commercial / transactional",
+      "The main keyword you're targeting, plus 3-5 related ones you'd like to rank for",
+      "What the reader actually wants — are they looking to learn, compare, or buy?",
       "Target word count",
-      "One example of brand writing style (URL or paste a paragraph)",
+      "One example of how this brand writes — a URL or a paragraph is enough. This is the most important input.",
     ],
     verify_steps: [
-      { step: "Fact-check every statistic against its primary source", tool: "Google each claim individually", pass: "Every number/date/claim verified against original source" },
-      { step: "Check meta title length", tool: "SERP Simulator (seomofo.com)", pass: "Title under 60 chars, not truncated in preview" },
-      { step: "Verify all internal links point to live pages", tool: "Open each link in browser", pass: "Every internal link returns 200, no 404s" },
-      { step: "Check keyword density is natural (not forced)", tool: "Read the draft aloud", pass: "Keyword appears naturally, no awkward repetition" },
+      { step: "Check every number and claim — this is the most important step", tool: "Google each stat individually, find the original source", pass: "Every figure traces back to a real source. If one doesn't, remove it or replace it." },
+      { step: "Preview how it looks in Google", tool: "seomofo.com SERP Simulator — free", pass: "Title shows fully, not cut off. Looks good in the preview." },
+      { step: "Click every internal link I've suggested", tool: "Browser — just click each one", pass: "They all load. No 404s. Even one broken link is too many." },
+      { step: "Read it aloud — this is the best test", tool: "Your voice. Seriously.", pass: "It flows naturally. If you stumble on a sentence, I've forced the keyword. Tell me and I'll rewrite it." },
       { step: "Validate schema markup", tool: "validator.schema.org", pass: "Zero errors, zero warnings" },
     ],
   },
@@ -800,20 +800,20 @@ const AI_CAPABILITIES: Record<string, AICap> = {
       "List of entities and their correct descriptions to include on the page",
     ],
     cannot_do: [
-      "Guarantee Perplexity or ChatGPT will cite the page",
-      "Check live AI platforms for current citations (requires browser session)",
-      "Replace content that requires proprietary data or original research",
+      "Promise you'll get cited — I wish I could, but citation depends on too many moving parts",
+      "Check Perplexity in real-time — you'll need to open it yourself and search the query",
+      "Replace sections that need your proprietary knowledge — I'll write around them and flag exactly where your input goes",
     ],
     needs_from_you: [
       "Current page URL (Manav Brain will fetch and read it)",
-      "Exact query you want to appear for in Perplexity / ChatGPT / Google AI Overview",
-      "Target AI platform (Perplexity / ChatGPT / Google AI Overview)",
+      "The exact question someone would type into Perplexity or ChatGPT that you want to show up for",
+      "Which platform matters most to you right now — Perplexity, ChatGPT, or Google AI Overview?",
     ],
     verify_steps: [
-      { step: "Search target query in Perplexity before publishing", tool: "perplexity.ai — note current result", pass: "Screenshot taken to compare after" },
+      { step: "Search the query in Perplexity right now — before you publish", tool: "perplexity.ai", pass: "Screenshot what it shows today. We'll compare after to see the movement." },
       { step: "Validate FAQPage schema", tool: "validator.schema.org", pass: "Zero errors" },
-      { step: "Search target query 7 days after publishing", tool: "perplexity.ai", pass: "Site appears as cited source" },
-      { step: "Check Google AI Overview for target query", tool: "Google.com (logged out)", pass: "Site mentioned or page linked in AI Overview" },
+      { step: "Check Perplexity again 7 days later", tool: "perplexity.ai — same query", pass: "Your site is cited. If not, come back to me and we'll look at what to adjust." },
+      { step: "Search in Google — check if there's an AI Overview", tool: "Google.com in incognito tab", pass: "Your page is mentioned or linked. This can take a few weeks — be patient with this one." },
     ],
   },
   "quick-win": {
@@ -833,23 +833,23 @@ const AI_CAPABILITIES: Record<string, AICap> = {
       "Implementation instructions per CMS type",
     ],
     cannot_do: [
-      "Apply changes directly in your CMS",
-      "Guarantee click-through rate improvement (improvement is measurable, not guaranteed)",
+      "Apply the changes in your CMS — I'll give you exact instructions so it takes about 2 minutes",
+      "Guarantee a CTR lift — but we'll measure it together 7 days after and adjust if needed",
     ],
     needs_from_you: [
       "Target URLs (paste 1-10)",
       "Target keyword or goal for each page",
     ],
     verify_steps: [
-      { step: "Check title tag length in browser", tool: "Browser → View Source (Ctrl+U)", pass: "Title under 60 chars" },
+      { step: "Check the title tag is live", tool: "Browser → View Source (Ctrl+U) → search for <title>", pass: "Under 60 chars, matches what I gave you" },
       { step: "Check meta description length", tool: "Browser → View Source (Ctrl+U)", pass: "Description under 160 chars" },
-      { step: "Check GSC CTR 7 days after change", tool: "Google Search Console → Performance → Pages", pass: "CTR same or improved vs prior 7 days" },
+      { step: "Check GSC 7 days later — we'll see the CTR movement", tool: "GSC → Performance → Pages filter → compare dates", pass: "CTR is holding or improving. Even a 0.5% lift on high-traffic pages adds up." },
       { step: "Validate page in SERP preview", tool: "seomofo.com SERP Simulator", pass: "Title and description display correctly, not truncated" },
     ],
   },
   competitive: {
     confidence: 65,
-    confidence_reason: "Competitive analysis depends on data quality. With Semrush/Ahrefs export data provided, confidence is 85%. Without it, Claude analyses competitor pages from live fetch only — confidence drops to 65%. Rankings and domain metrics cannot be invented.",
+    confidence_reason: "This one depends on what data you can share with me. If you drop in a Semrush or Ahrefs export, I'm at 85% — I can do real analysis. Without it, I'm fetching competitor pages live and working from what I can see, which gives us 65%. I won't make up ranking numbers — I'd rather tell you what I don't know.",
     time_human: 300,
     time_ai: 20,
     time_breakdown: [
@@ -865,14 +865,14 @@ const AI_CAPABILITIES: Record<string, AICap> = {
       "Estimated difficulty and time per opportunity",
     ],
     cannot_do: [
-      "Access paid competitor data without Semrush/Ahrefs export",
-      "Guarantee ranking improvements from content creation",
-      "Build backlinks",
+      "See Semrush/Ahrefs data without an export — if you can share it, the quality goes up significantly",
+      "Promise ranking changes — but I'll give you the best possible shot based on what I see",
+      "Build backlinks — that's relationship work that needs a human",
     ],
     needs_from_you: [
-      "Competitor domain(s)",
-      "Target keywords to compete on",
-      "Semrush or Ahrefs export (optional but raises confidence to 85%)",
+      "The competitor domain(s) you want to beat — I'll read their pages",
+      "The keywords where you want to outrank them",
+      "A Semrush or Ahrefs export if you have one — completely optional, but it makes a real difference",
     ],
     verify_steps: [
       { step: "Cross-check gap keywords in Semrush/Ahrefs", tool: "Semrush → Keyword Gap tool", pass: "Suggested keywords confirmed as opportunities" },
@@ -897,11 +897,11 @@ const AI_CAPABILITIES: Record<string, AICap> = {
       "Definition of done — exactly what to check",
     ],
     cannot_do: [
-      "Execute tasks requiring CMS login or server access",
-      "Make creative decisions requiring client approval",
+      "Do the actual clicking inside your CMS — I'll prepare everything, you execute",
+      "Make final creative calls that need client sign-off — I'll give you options",
     ],
     needs_from_you: [
-      "Specific context about what needs doing",
+      "A bit more context about this one — what exactly needs to happen?",
     ],
     verify_steps: [
       { step: "Review deliverable against the brief", tool: "Compare output to step-by-step instructions", pass: "Every step is complete, output matches specification" },
@@ -1025,7 +1025,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
               {phase==='loading'?'Loading project intelligence...':
                phase==='requirements'?'Review what AI will do:':
                phase==='executing'?'Manav Brain is working on this...':
-               'Manav Brain finished — review before delivering'}
+               "Done — take a look before this goes anywhere."}
             </div>
             <div className="text-xs text-white/40 truncate mt-0.5">"{block.title}"</div>
           </div>
@@ -1048,7 +1048,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
           {phase==='loading' && (
             <div className="flex flex-col items-center gap-3 py-16">
               <RefreshCw size={22} className="animate-spin text-violet-400"/>
-              <p className="text-sm text-white/50">Reading project data from Data Room, audits and metrics...</p>
+              <p className="text-sm text-white/50">Give me a moment — I'm catching up on everything you've shared so far...</p>
             </div>
           )}
 
@@ -1064,7 +1064,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                     <span className="text-xs text-white/40">confidence</span>
                   </div>
                   <div>
-                    <div className="font-semibold text-white text-sm mb-1">Manav Brain will produce</div>
+                    <div className="font-semibold text-white text-sm mb-1">Here's what I'm going to take off your plate</div>
                     <p className="text-xs text-white/60">{blueprint.what_ai_produces || cap.produces[0]}</p>
                   </div>
                 </div>
@@ -1076,7 +1076,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <AlertTriangle size={13} className="text-yellow-400"/>
-                    <span className="text-xs font-semibold text-yellow-400">Data Room incomplete — AI output will be less precise</span>
+                    <span className="text-xs font-semibold text-yellow-400">Your Data Room has some gaps — no worries, we work with what we have — the more you fill in, the better I can do</span>
                   </div>
                   {dataGaps.map((g,i)=>(
                     <div key={i} className="text-xs text-white/50 flex items-start gap-2 mb-1">
@@ -1091,7 +1091,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div>
                   <div className="text-xs font-semibold text-white/60 mb-2 flex items-center gap-1.5">
                     <CheckCircle2 size={11} className="text-green-400"/>
-                    Manav Brain found this in your project ({available.length} inputs ready)
+                    Good news — I already have some of this ({available.length} inputs ready)
                   </div>
                   <div className="space-y-1.5">
                     {available.map((a,i)=>(
@@ -1111,7 +1111,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div>
                   <div className="text-xs font-semibold text-white mb-2 flex items-center gap-1.5">
                     <AlertTriangle size={11} className="text-orange-400"/>
-                    Manav Brain needs this from you — no assumptions will be made
+                    Just a couple of things I need from you first — I promise I won't guess — just tell me and I'll get it right
                   </div>
                   <div className="space-y-3">
                     {missing.map((m:any,i:number)=>(
@@ -1140,7 +1140,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
               {/* Cannot do */}
               <div className="rounded-xl border border-white/8 bg-white/3 p-4">
-                <div className="text-xs font-mono text-orange-400 uppercase mb-2">Human required for these — Manav Brain will not attempt them</div>
+                <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your hands — I'll be honest about where I stop</div>
                 <div className="space-y-1">
                   {cap.cannot_do.map((c2,i)=>(
                     <div key={i} className="flex items-start gap-2 text-xs text-white/50">
@@ -1159,7 +1159,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
               {phase==='executing' && (
                 <div className="flex items-center gap-2 text-sm text-white/50">
                   <RefreshCw size={14} className="animate-spin text-violet-400"/>
-                  Manav Brain thinking as {EXEC_ROLES.find(r=>r.id===role)?.label}...
+                  Thinking as {EXEC_ROLES.find(r=>r.id===role)?.label}...
                 </div>
               )}
               <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
@@ -1189,7 +1189,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Shield size={14} className="text-yellow-400"/>
-                    <span className="text-sm font-bold text-yellow-400">Check every item before delivering</span>
+                    <span className="text-sm font-bold text-yellow-400">Before this goes out — let's check it together</span>
                   </div>
                   <div className="space-y-2">
                     {cap.verify_steps.map((v,i)=>(
@@ -1198,7 +1198,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                   </div>
                   {blueprint?.verification_method && (
                     <div className="mt-3 pt-3 border-t border-yellow-400/15 text-xs text-yellow-400/70">
-                      <span className="font-semibold">Final verification: </span>{blueprint.verification_method}
+                      <span className="font-semibold">And the final check that matters most: </span>{blueprint.verification_method}
                     </div>
                   )}
                 </div>
@@ -1221,17 +1221,17 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
             </div>
           )}
           {phase==='executing' && (
-            <p className="text-xs text-white/40">Manav Brain is working... please keep this open</p>
+            <p className="text-xs text-white/40">I'm on it — working through this now. Please keep this open.</p>
           )}
           {phase==='done' && (
             <div className="flex items-center gap-3 flex-wrap">
               <button onClick={()=>onVerify(block)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors">
-                <CheckCircle2 size={14}/>I reviewed everything — Submit for Verification
+                <CheckCircle2 size={14}/>Looks good to me — let's get it verified
               </button>
               <button onClick={()=>{setPhase('requirements');setOutput('');}}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 text-sm text-white/60 hover:text-white/80 transition-colors">
-                <RefreshCw size={13}/>Re-execute with changes
+                <RefreshCw size={13}/>Let me redo this with your notes
               </button>
             </div>
           )}
@@ -1335,7 +1335,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
           {/* Step 1 */}
           {step===1 && (<>
             <div className="rounded-xl border border-white/8 bg-white/3 p-4">
-              <div className="text-xs font-mono text-white/40 uppercase mb-2">Task submitted for approval</div>
+              <div className="text-xs font-mono text-white/40 uppercase mb-2">Okay, let me look at this properly</div>
               <p className="text-sm text-white/80">{block.content}</p>
               <div className="flex gap-2 mt-2 flex-wrap">
                 <span className="text-xs px-2 py-0.5 rounded border border-white/10 text-white/40">{block.type}</span>
@@ -1344,16 +1344,16 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
             </div>
             <div>
               <label className="text-xs font-semibold text-white flex justify-between mb-1">
-                <span><span className="text-red-400">*</span> What exactly did you do to complete this?</span>
+                <span><span className="text-red-400">*</span> Walk me through what you did — the more detail, the better I can verify</span>
                 <span className="text-white/30 font-normal">{completionNote.length}/50 min</span>
               </label>
               <textarea value={completionNote} onChange={e=>setCompletionNote(e.target.value)} rows={4}
-                placeholder="Describe what was done: which files/settings changed, which tools used, before/after state."
+                placeholder="Tell me what changed — e.g. "Fixed 3 broken redirects, tested in browser, all returning 301""
                 className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none"
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-white mb-1 block">When did you finish?</label>
+              <label className="text-xs font-semibold text-white mb-1 block">When did you wrap this up?</label>
               <input type="date" value={completedDate} onChange={e=>setCompletedDate(e.target.value)} max={new Date().toISOString().split('T')[0]}
                 className="h-9 text-sm px-3 rounded-xl border border-white/10 bg-white/3 text-white outline-none focus:border-violet-400/50"/>
             </div>
@@ -1368,7 +1368,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
               <p className="text-xs text-white/50">{waitReady?`${block.type} changes have had time to propagate in Google.`:`${block.type} changes take ~${waitDays} days to appear in search tools.`}</p>
             </div>
             <div>
-              <div className="text-xs font-semibold text-white mb-3">Required evidence for <span className="text-violet-400">{block.type}</span> tasks:</div>
+              <div className="text-xs font-semibold text-white mb-3">Here's what I need to see for <span className="text-violet-400">{block.type}</span> tasks:</div>
               {evReqs.map((r,i)=>(
                 <div key={i} className="rounded-xl border border-white/8 bg-white/3 p-3 mb-2">
                   <div className="text-xs font-semibold text-violet-400 mb-1">{i+1}. {r.tool}</div>
@@ -1377,9 +1377,9 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
               ))}
             </div>
             <div>
-              <label className="text-xs font-semibold text-white block mb-1">Paste your data from the tools above:</label>
+              <label className="text-xs font-semibold text-white block mb-1">Paste in the numbers — whatever the tool showed you</label>
               <textarea value={evidenceData} onChange={e=>setEvidenceData(e.target.value)} rows={4}
-                placeholder="Paste evidence data. E.g.: GSC Indexed = 847 (was 823). /old-url 301 confirmed. OR: Keyword pos 8 (was 14) Semrush Jan 2024."
+                placeholder="E.g. GSC indexed pages went from 823 to 847. Or: keyword moved from position 14 to 8 in Semrush."
                 className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none font-mono"
               />
             </div>
@@ -1429,7 +1429,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
             <>
               <button onClick={()=>{if(completionNote.trim().length<50){alert('Please describe what was done in at least 50 characters.');return;}setStep(2);}}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-colors">
-                Next: Collect Evidence →
+                Good — now let's gather the proof →
               </button>
               <button onClick={onClose} className="text-sm text-white/40 hover:text-white/70 px-3">Cancel</button>
               <span className="text-xs text-white/25 ml-auto">{completionNote.length}/50</span>
@@ -1437,14 +1437,14 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
           )}
           {step===2&&(
             <>
-              <button onClick={()=>setStep(1)} className="text-sm text-white/40 hover:text-white/70 px-3">← Back</button>
+              <button onClick={()=>setStep(1)} className="text-sm text-white/40 hover:text-white/70 px-3">← Go back</button>
               <button onClick={()=>runCheck('live_check')} disabled={loading||!siteUrl}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white font-semibold text-sm transition-colors">
-                <Globe size={14}/>{siteUrl?'Run Live Check':'Add URL to project first'}
+                <Globe size={14}/>{siteUrl?'Check the live site now':'Add your site URL in project settings first'}
               </button>
               <button onClick={()=>runCheck('guidance')} disabled={loading}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 hover:bg-white/5 disabled:opacity-40 text-white/70 text-sm transition-colors">
-                <Brain size={14}/>Get Checklist Only
+                <Brain size={14}/>Show me what to check manually
               </button>
               {!waitReady&&<button onClick={()=>onWait(block,daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400 hover:bg-orange-400/15 ml-auto"><Clock size={13}/>Wait {daysLeft} more days</button>}
             </>
@@ -1452,10 +1452,10 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
           {step===3&&!loading&&result&&(
             <>
               {result.verdict==='verified'
-                ?<button onClick={()=>onApprove(block)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors"><CheckCircle2 size={15}/>Approve & Mark Verified</button>
-                :<><button onClick={()=>{setStep(2);setResult(null);}} className="text-sm px-4 py-2.5 rounded-xl border border-white/10 hover:bg-white/5 text-white/70 transition-colors">← Add More Evidence</button>
-                  {(result.waiting_status?.daysLeft||0)>0&&<button onClick={()=>onWait(block,result.waiting_status.daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400"><Clock size={13}/>Mark as Waiting</button>}
-                  <button onClick={()=>onApprove(block)} className="text-xs px-3 py-2 rounded-xl border border-white/10 text-white/30 hover:text-white/60 ml-auto">Override — approve anyway</button>
+                ?<button onClick={()=>onApprove(block)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors"><CheckCircle2 size={15}/>✓ Verified — mark it done</button>
+                :<><button onClick={()=>{setStep(2);setResult(null);}} className="text-sm px-4 py-2.5 rounded-xl border border-white/10 hover:bg-white/5 text-white/70 transition-colors">← Let me add more data</button>
+                  {(result.waiting_status?.daysLeft||0)>0&&<button onClick={()=>onWait(block,result.waiting_status.daysLeft)} className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl border border-orange-400/30 bg-orange-400/10 text-orange-400"><Clock size={13}/>Not ready yet — I'll wait</button>}
+                  <button onClick={()=>onApprove(block)} className="text-xs px-3 py-2 rounded-xl border border-white/10 text-white/30 hover:text-white/60 ml-auto">I'll approve this myself</button>
                 </>
               }
             </>
@@ -1505,7 +1505,7 @@ export default function Playground() {
   const [agendaStale,   setAgendaStale]   = useState<Set<number>>(new Set());
   const [agendaExpanded,setAgendaExpanded]= useState<number|null>(null);
   const [cacheLoaded,  setCacheLoaded]   = useState(false);
-  const [batchStatus,  setBatchStatus]   = useState<Record<string,string>>({});
+  const [batchWhere we are,  setBatchWhere we are]   = useState<Record<string,string>>({});
   const [failedBatches,setFailedBatches] = useState<number[]>([]);
   const [verifyBlock,     setVerifyBlock]     = useState<Block|null>(null);
   const [verifyResult,    setVerifyResult]    = useState<any>(null);
@@ -1555,7 +1555,7 @@ export default function Playground() {
     if (pr.data?.playground_strategy){setStrategy(pr.data.playground_strategy);setGenAt(pr.data.playground_generated_at||'');}
     if (pr.data?.playground_strategy) {
       const allBlocks  = buildLibraryFromStrategy(pr.data.playground_strategy);
-      const placements = (pr.data.playground_canvas || []) as {id:string;placed:boolean;week:number;status:Status}[];
+      const placements = (pr.data.playground_canvas || []) as {id:string;placed:boolean;week:number;status:Where we are}[];
       const placedMap  = new Map(placements.map(p => [p.id, p]));
       const merged = allBlocks.map(b => {
         const saved = placedMap.get(b.id);
@@ -1616,7 +1616,7 @@ export default function Playground() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
-      setBatchStatus(Object.fromEntries(Object.entries(data.batch_status||{}).map(([k,v])=>[k,String(v)])));
+      setBatchWhere we are(Object.fromEntries(Object.entries(data.batch_status||{}).map(([k,v])=>[k,String(v)])));
       setFailedBatches(data.failed_batches||[]);
 
       const mergedStrategy = {...(strategy||{}), ...data.strategy};
@@ -1668,7 +1668,7 @@ export default function Playground() {
             const merged = {...(strategy||{}), ...data.strategy};
             setStrategy(merged);
             setBlocks(buildLibraryFromStrategy(merged));
-            setBatchStatus(prev => ({...prev, [String(batchNum)]: 'ok'}));
+            setBatchWhere we are(prev => ({...prev, [String(batchNum)]: 'ok'}));
             setFailedBatches(prev => prev.filter(n => n !== batchNum));
             await supabase.from('projects').update({playground_strategy: merged}).eq('id', selProjId);
           }
@@ -1712,7 +1712,7 @@ export default function Playground() {
     setActiveVerifyBlock(block);
   };
 
-  const toggleStatus = (id: string) => {
+  const toggleWhere we are = (id: string) => {
     const block = blocks.find(b => b.id === id);
     if (!block) return;
 
@@ -1758,7 +1758,7 @@ export default function Playground() {
 
   const approveBlock = (block: Block) => {
     setBlocks(prev => {
-      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'verified' as Status } : b);
+      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'verified' as Where we are } : b);
       scheduleAutoSave(updated);
       // Show next task after approval
       const placed = updated.filter(b => b.placed);
@@ -1776,7 +1776,7 @@ export default function Playground() {
 
   const sendToWaiting = (block: Block, daysRemaining: number) => {
     setBlocks(prev => {
-      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'waiting' as Status } : b);
+      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'waiting' as Where we are } : b);
       scheduleAutoSave(updated);
       return updated;
     });
@@ -1789,7 +1789,7 @@ export default function Playground() {
     });
   };
   const resetCanvas  = ()=>{
-    setBlocks(bs=>{const r=bs.map(b=>({...b,placed:false,status:'todo' as Status}));setRecommendation(getNextRecommendation([],r));scheduleAutoSave(r);return r;});
+    setBlocks(bs=>{const r=bs.map(b=>({...b,placed:false,status:'todo' as Where we are}));setRecommendation(getNextRecommendation([],r));scheduleAutoSave(r);return r;});
     setLastImpact(null);
     toast({title:'Canvas reset'});
   };
@@ -2043,11 +2043,11 @@ Please try again — if the problem persists, check your network connection.`);
                   <RefreshCw size={12} className={generating?'animate-spin':''}/>Resume {failedBatches.length} section{failedBatches.length!==1?'s':''}
                 </button>
               )}
-              {Object.keys(batchStatus).length > 0 && (
+              {Object.keys(batchWhere we are).length > 0 && (
                 <div className="flex items-center gap-1 text-xs">
                   {[1,2,3].map(n=>(
-                    <span key={n} title={`Batch ${n}: ${batchStatus[String(n)]||'pending'}`}
-                      className={`px-1.5 py-0.5 rounded font-mono ${batchStatus[String(n)]==='ok'?'bg-green-400/15 text-green-400':batchStatus[String(n)]==='failed'?'bg-red-400/15 text-red-400':'bg-secondary/40 text-muted-foreground'}`}>
+                    <span key={n} title={`Batch ${n}: ${batchWhere we are[String(n)]||'pending'}`}
+                      className={`px-1.5 py-0.5 rounded font-mono ${batchWhere we are[String(n)]==='ok'?'bg-green-400/15 text-green-400':batchWhere we are[String(n)]==='failed'?'bg-red-400/15 text-red-400':'bg-secondary/40 text-muted-foreground'}`}>
                       B{n}
                     </span>
                   ))}
@@ -2287,7 +2287,7 @@ Please try again — if the problem persists, check your network connection.`);
                               ? `— ${placedBlocks.filter(b=>b.status==='doing').length} task${placedBlocks.filter(b=>b.status==='doing').length!==1?' are':' is'} in progress. When done, click the status pill to submit for verification.`
                               : done > 0
                               ? `— ${done} task${done!==1?'s':''} verified. ${placedBlocks.filter(b=>b.status==='todo').length} remaining. ${progress >= 80 ? 'Close to the finish line.' : 'Keep going.'}`
-                              : '— Ready. Click the status pill on any card to mark it In Progress.'}
+                              : '— Ready when you are. Pick a card and let's get started.'}
                           </span>
                         </div>
                       </div>
@@ -2336,7 +2336,7 @@ Please try again — if the problem persists, check your network connection.`);
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground flex-1">
-                            When done: <span className="font-medium text-foreground">scroll down to the Verification Queue below</span> and click <span className="font-medium text-primary">Submit for Verification →</span> to open the 3-step wizard
+                            When done: <span className="font-medium text-foreground">scroll down to the Verification Queue below</span> and click <span className="font-medium text-primary">I'm done — please verify →</span> to open the 3-step wizard
                           </div>
                           <div className="flex gap-2 flex-wrap">
                             {placedBlocks.filter(b=>b.status==='doing').map(b=>(
@@ -2623,7 +2623,7 @@ Please try again — if the problem persists, check your network connection.`);
                                   )}
                                 </div>
                               </div>
-                              {/* Status summary pills */}
+                              {/* Where we are summary pills */}
                               {colBlocks.length > 0 && (
                                 <div className="flex gap-1 flex-wrap mb-1">
                                   {colBlocks.filter(b=>b.status==='doing').length > 0 && (
@@ -2749,7 +2749,7 @@ Please try again — if the problem persists, check your network connection.`);
                                         )}
                                       </div>
                                       <button
-                                        onClick={e=>{e.stopPropagation();toggleStatus(block.id);}}
+                                        onClick={e=>{e.stopPropagation();toggleWhere we are(block.id);}}
                                         draggable={false}
                                         className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${
                                           block.status==='verified'||block.status==='done' ? 'text-green-400 bg-green-400/10 border-green-400/20' :
@@ -2806,7 +2806,7 @@ Please try again — if the problem persists, check your network connection.`);
                                         :'border border-border text-muted-foreground hover:text-foreground'
                                     }`}
                                   >
-                                    {b.status==='waiting'&&!ready?'Check early':'Submit for Verification →'}
+                                    {b.status==='waiting'&&!ready?'Check early':'I'm done — please verify →'}
                                   </button>
                                 </div>
                               </div>
@@ -3110,7 +3110,7 @@ Please try again — if the problem persists, check your network connection.`);
 
               {/* Description */}
               <div className="rounded-xl border border-border bg-background/60 p-4">
-                <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Task Description</div>
+                <div className="text-xs font-mono text-muted-foreground uppercase mb-2">What this is about</div>
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p>
                 {expandedBlock.impact && (
                   <div className="mt-3 text-xs text-orange-400 flex items-center gap-1.5">
@@ -3120,9 +3120,9 @@ Please try again — if the problem persists, check your network connection.`);
                 )}
               </div>
 
-              {/* Status control */}
+              {/* Where we are control */}
               <div className="rounded-xl border border-border bg-background/60 p-4 space-y-3">
-                <div className="text-xs font-mono text-muted-foreground uppercase">Status</div>
+                <div className="text-xs font-mono text-muted-foreground uppercase">Where we are</div>
                 <div className="flex gap-2 flex-wrap">
                   {(['todo','doing','waiting','verified'] as const).map(s => {
                     const active = expandedBlock.status === s;
@@ -3135,8 +3135,8 @@ Please try again — if the problem persists, check your network connection.`);
                     };
                     return (
                       <button key={s} onClick={()=>{
-                        setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?{...b,status:s as Status}:b);scheduleAutoSave(u);return u;});
-                        setExpandedBlock({...expandedBlock,status:s as Status});
+                        setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?{...b,status:s as Where we are}:b);scheduleAutoSave(u);return u;});
+                        setExpandedBlock({...expandedBlock,status:s as Where we are});
                       }}
                         className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${colors[s]}`}
                       >{labels[s]}</button>
@@ -3146,20 +3146,20 @@ Please try again — if the problem persists, check your network connection.`);
                 {expandedBlock.status==='doing' && (
                   <button onClick={()=>{setExpandedBlock(null);setActiveVerifyBlock(expandedBlock);}}
                     className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
-                    <Shield size={14}/>Submit for Verification →
+                    <Shield size={14}/>I'm done — please verify →
                   </button>
                 )}
               </div>
 
               {/* Assignee */}
               <div className="rounded-xl border border-border bg-background/60 p-4 space-y-2">
-                <div className="text-xs font-mono text-muted-foreground uppercase">Assigned To</div>
+                <div className="text-xs font-mono text-muted-foreground uppercase">Who owns this</div>
                 <button onClick={()=>{setExpandedBlock(null);setShowAssignModal(expandedBlock.id);}}
                   className="flex items-center gap-2 text-sm hover:text-primary transition-colors">
                   <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold ${expandedBlock.assignee?'bg-primary/20 text-primary':'bg-secondary/60 text-muted-foreground/60'}`}>
                     {expandedBlock.assignee?expandedBlock.assignee[0].toUpperCase():'+'}
                   </div>
-                  <span>{expandedBlock.assignee||'Click to assign'}</span>
+                  <span>{expandedBlock.assignee||'Assign to someone'}</span>
                 </button>
               </div>
 
@@ -3173,7 +3173,7 @@ Please try again — if the problem persists, check your network connection.`);
                     {/* Header row */}
                     <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
                       <div className="flex-1">
-                        <div className="text-xs font-mono text-muted-foreground uppercase mb-0.5">Effort & AI Capability</div>
+                        <div className="text-xs font-mono text-muted-foreground uppercase mb-0.5">Time & what Manav can do</div>
                         <div className="flex items-center gap-3">
                           <div className="text-xl font-black text-foreground">
                             ~{toggled ? formatHours(cap.time_ai/60) : formatHours(cap.time_human/60)}
@@ -3211,14 +3211,14 @@ Please try again — if the problem persists, check your network connection.`);
                         {/* Confidence explanation */}
                         <div className={`rounded-xl p-3 text-xs ${cap.confidence>=85?'bg-green-400/5 border border-green-400/15':cap.confidence>=70?'bg-yellow-400/5 border border-yellow-400/15':'bg-orange-400/5 border border-orange-400/15'}`}>
                           <div className={`font-semibold mb-1 ${cap.confidence>=85?'text-green-400':cap.confidence>=70?'text-yellow-400':'text-orange-400'}`}>
-                            Why {cap.confidence}% confident
+                            Why I'm {cap.confidence}% confident on this
                           </div>
                           <p className="text-muted-foreground leading-relaxed">{cap.confidence_reason}</p>
                         </div>
 
-                        {/* What Manav Brain will produce */}
+                        {/* What Here's what I'm going to take off your plate */}
                         <div>
-                          <div className="text-xs font-mono text-primary uppercase mb-2">What Manav Brain will produce</div>
+                          <div className="text-xs font-mono text-primary uppercase mb-2">What Here's what I'm going to take off your plate</div>
                           <div className="space-y-1">
                             {cap.produces.map((p2,i)=>(
                               <div key={i} className="flex items-start gap-2 text-xs">
@@ -3231,7 +3231,7 @@ Please try again — if the problem persists, check your network connection.`);
 
                         {/* Time breakdown */}
                         <div>
-                          <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Time breakdown ({cap.time_ai} min total)</div>
+                          <div className="text-xs font-mono text-muted-foreground uppercase mb-2">How I'm spending those {cap.time_ai} minutes</div>
                           <div className="space-y-1">
                             {cap.time_breakdown.map((t,i)=>(
                               <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -3244,7 +3244,7 @@ Please try again — if the problem persists, check your network connection.`);
 
                         {/* What Manav Brain cannot do */}
                         <div>
-                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">Manav Brain cannot do these — human required</div>
+                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your touch — I'm being upfront</div>
                           <div className="space-y-1">
                             {cap.cannot_do.map((c2,i)=>(
                               <div key={i} className="flex items-start gap-2 text-xs">
@@ -3257,7 +3257,7 @@ Please try again — if the problem persists, check your network connection.`);
 
                         {/* What Manav Brain needs from you */}
                         <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-                          <div className="text-xs font-mono text-primary uppercase mb-2">Required from you before execution</div>
+                          <div className="text-xs font-mono text-primary uppercase mb-2">Just need a couple of things from you first</div>
                           <div className="space-y-1">
                             {cap.needs_from_you.map((n,i)=>(
                               <div key={i} className="flex items-start gap-2 text-xs">
@@ -3270,7 +3270,7 @@ Please try again — if the problem persists, check your network connection.`);
 
                         {/* Verification steps */}
                         <div>
-                          <div className="text-xs font-mono text-yellow-400 uppercase mb-2">How to verify Manav Brain's work is correct</div>
+                          <div className="text-xs font-mono text-yellow-400 uppercase mb-2">How to check my work — please do this before delivering</div>
                           <div className="space-y-2">
                             {cap.verify_steps.map((v,i)=>(
                               <div key={i} className="rounded-lg border border-border bg-background/60 p-3 text-xs space-y-1">
@@ -3370,7 +3370,7 @@ Please try again — if the problem persists, check your network connection.`);
           siteUrl={selProj?.url || ''}
           onApprove={(b) => {
             setBlocks(prev => {
-              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'verified' as Status} : bl);
+              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'verified' as Where we are} : bl);
               scheduleAutoSave(upd);
               return upd;
             });
@@ -3379,7 +3379,7 @@ Please try again — if the problem persists, check your network connection.`);
           }}
           onWait={(b, days) => {
             setBlocks(prev => {
-              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'waiting' as Status} : bl);
+              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'waiting' as Where we are} : bl);
               scheduleAutoSave(upd);
               return upd;
             });
