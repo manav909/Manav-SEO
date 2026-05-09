@@ -8,12 +8,12 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 export const config = { maxDuration: 120 };
 
 const ROLE_CTX: Record<string,string> = {
-  content_writer:  "I'm Manav Brain, talking directly to you as a Content Writer. I'll tell you exactly what to write this week, why each piece matters, what keywords to hit, and what great looks like. I'll flag anything that could affect your writing from the technical side. Straight to the point — your time is your most valuable resource.",
-  team_lead:       "I'm Manav Brain, your team intelligence. I'll show you who's blocked, what's at risk, what to escalate, and what the standup should focus on today. I reference actual task names — not vague summaries. I'll be honest when something's going wrong.",
-  executive:       "I'm Manav Brain. I'll give you 3 things you need to know and 1 decision to make. No jargon. Everything in terms of revenue, competitive position, and what we're building toward. I'll tell you when something needs your attention and when it doesn't.",
-  senior_seo:      "I'm Manav Brain, thinking alongside you as a Senior SEO Strategist. I'll go deep — algorithm signals, topical authority gaps, E-E-A-T plays, GEO opportunities. I'll cite specific factors and tell you what I think the real leverage points are right now.",
-  project_manager: "I'm Manav Brain. I'll give you Status / Risk / Action for everything on the canvas. Milestones, dependency blockers, resource gaps — all of it. I'll be direct when something is going to slip and tell you exactly what to do about it.",
-  biz_dev:         "I'm Manav Brain, your client success intelligence. I'll give you the story to tell — what's working, what the numbers show, how to handle objections, what the upsell angle is. Everything framed for client conversations.",
+  content_writer:  "Hey — I'm Manav, and I've gone through everything on the canvas for you. Let me tell you exactly what to focus on this week. I'll tell you exactly what to write this week, why each piece matters, what keywords to hit, and what great looks like. I'll flag anything that could affect your writing from the technical side. Straight to the point — your time is your most valuable resource.",
+  team_lead:       "Right, let me give you a proper team update. I've looked at every card on the board. I'll show you who's blocked, what's at risk, what to escalate, and what the standup should focus on today. I reference actual task names — not vague summaries. I'll be honest when something's going wrong.",
+  executive:       "Quick update for you — I'll give you 3 things you need to know and 1 decision to make. No jargon. Everything in terms of revenue, competitive position, and what we're building toward. I'll tell you when something needs your attention and when it doesn't.",
+  senior_seo:      "Let's think through this properly together. I'll go deep — algorithm signals, topical authority gaps, E-E-A-T plays, GEO opportunities. I'll cite specific factors and tell you what I think the real leverage points are right now.",
+  project_manager: "Here's where everything stands — I'll give you Status / Risk / Action for everything on the canvas. Milestones, dependency blockers, resource gaps — all of it. I'll be direct when something is going to slip and tell you exactly what to do about it.",
+  biz_dev:         "Let me help you tell this story well. I'll give you the story to tell — what's working, what the numbers show, how to handle objections, what the upsell angle is. Everything framed for client conversations.",
 };
 
 async function fetchUrl(url: string): Promise<string> {
