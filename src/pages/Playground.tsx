@@ -16,13 +16,13 @@ import {
 /* ─── types ─── */
 type BType    = 'quick-win'|'weekly'|'monthly'|'technical'|'content'|'geo'|'competitive'|'insight'|'kpi'|'custom';
 type Priority = 'high'|'medium'|'low';
-type Where we are   = 'todo'|'doing'|'review'|'waiting'|'verified'|'done';
+type Status   = 'todo'|'doing'|'review'|'waiting'|'verified'|'done';
 type Tab      = 'reports'|'strategy'|'canvas'|'pipeline';
 type SugLevel = 'best'|'good'|'ok'|'caution';
 
 interface Block {
   id: string; type: BType; title: string; content: string;
-  color: string; priority: Priority; status: Where we are;
+  color: string; priority: Priority; status: Status;
   week: number; placed: boolean;
   effort?: string; impact?: string; tags?: string[]; source?: string; assignee?: string; aiAssisted?: boolean;
 }
@@ -123,8 +123,8 @@ const PM: Record<Priority,{dot:string;badge:string}> = {
   low:    {dot:'bg-green-400', badge:'text-green-400 bg-green-400/10 border-green-400/20'},
 };
 
-const SC: Record<Where we are,Where we are> = {todo:'doing',doing:'review',review:'todo',waiting:'review',verified:'todo',done:'todo'};
-const SM: Record<Where we are,{label:string;icon:any;color:string}> = {
+const SC: Record<Status,Status> = {todo:'doing',doing:'review',review:'todo',waiting:'review',verified:'todo',done:'todo'};
+const SM: Record<Status,{label:string;icon:any;color:string}> = {
   todo:     {label:'To Do',       icon:Clock,        color:'text-muted-foreground'},
   doing:    {label:'In Progress', icon:RefreshCw,    color:'text-blue-400'       },
   review:   {label:'Pending Check',icon:AlertTriangle,color:'text-yellow-400'    },
@@ -378,7 +378,7 @@ function seedBlocks(raw: any[]): Block[] {
     id:      b.id||uid(), type:(b.type||'custom') as BType,
     title:   b.title||'Untitled', content:safeStr(b.content),
     color:   b.color||'#94a3b8', priority:(b.priority||'medium') as Priority,
-    status:  'todo' as Where we are, week:assignWeek(b), placed:false,
+    status:  'todo' as Status, week:assignWeek(b), placed:false,
     effort:  b.effort, impact:b.impact, tags:b.tags||[], source:b.source||'',
   }));
 }
@@ -737,7 +737,7 @@ const AI_CAPABILITIES: Record<string, AICap> = {
       "Your CMS — WordPress, Shopify, Webflow? (I'll check your Data Room, but worth confirming)",
     ],
     verify_steps: [
-      { step: "Open each affected URL in browser", tool: "Browser DevTools → Network tab", pass: "Where we are code matches expected (200/301/etc.)" },
+      { step: "Open each affected URL in browser", tool: "Browser DevTools → Network tab", pass: "Status code matches expected (200/301/etc.)" },
       { step: "Paste the schema into the validator — just to be sure", tool: "validator.schema.org — free, 30 seconds", pass: "Zero errors. If there's a warning, flag it to me." },
       { step: "Check GSC Coverage 5 days later — let Google catch up first", tool: "Google Search Console → Coverage report", pass: "Pages are showing as Indexed with no new errors. If you see new errors, send them to me." },
       { step: "Quick Screaming Frog crawl on the affected URLs", tool: "Screaming Frog → paste URLs → start", pass: "All correct status codes, no redirect chains. Chains are a red flag." },
@@ -1505,7 +1505,7 @@ export default function Playground() {
   const [agendaStale,   setAgendaStale]   = useState<Set<number>>(new Set());
   const [agendaExpanded,setAgendaExpanded]= useState<number|null>(null);
   const [cacheLoaded,  setCacheLoaded]   = useState(false);
-  const [batchWhere we are,  setBatchWhere we are]   = useState<Record<string,string>>({});
+  const [batchStatus,  setBatchStatus]   = useState<Record<string,string>>({});
   const [failedBatches,setFailedBatches] = useState<number[]>([]);
   const [verifyBlock,     setVerifyBlock]     = useState<Block|null>(null);
   const [verifyResult,    setVerifyResult]    = useState<any>(null);
@@ -1555,7 +1555,7 @@ export default function Playground() {
     if (pr.data?.playground_strategy){setStrategy(pr.data.playground_strategy);setGenAt(pr.data.playground_generated_at||'');}
     if (pr.data?.playground_strategy) {
       const allBlocks  = buildLibraryFromStrategy(pr.data.playground_strategy);
-      const placements = (pr.data.playground_canvas || []) as {id:string;placed:boolean;week:number;status:Where we are}[];
+      const placements = (pr.data.playground_canvas || []) as {id:string;placed:boolean;week:number;status:Status}[];
       const placedMap  = new Map(placements.map(p => [p.id, p]));
       const merged = allBlocks.map(b => {
         const saved = placedMap.get(b.id);
@@ -1616,7 +1616,7 @@ export default function Playground() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
-      setBatchWhere we are(Object.fromEntries(Object.entries(data.batch_status||{}).map(([k,v])=>[k,String(v)])));
+      setBatchStatus(Object.fromEntries(Object.entries(data.batch_status||{}).map(([k,v])=>[k,String(v)])));
       setFailedBatches(data.failed_batches||[]);
 
       const mergedStrategy = {...(strategy||{}), ...data.strategy};
@@ -1668,7 +1668,7 @@ export default function Playground() {
             const merged = {...(strategy||{}), ...data.strategy};
             setStrategy(merged);
             setBlocks(buildLibraryFromStrategy(merged));
-            setBatchWhere we are(prev => ({...prev, [String(batchNum)]: 'ok'}));
+            setBatchStatus(prev => ({...prev, [String(batchNum)]: 'ok'}));
             setFailedBatches(prev => prev.filter(n => n !== batchNum));
             await supabase.from('projects').update({playground_strategy: merged}).eq('id', selProjId);
           }
@@ -1712,7 +1712,7 @@ export default function Playground() {
     setActiveVerifyBlock(block);
   };
 
-  const toggleWhere we are = (id: string) => {
+  const toggleStatus = (id: string) => {
     const block = blocks.find(b => b.id === id);
     if (!block) return;
 
@@ -1758,7 +1758,7 @@ export default function Playground() {
 
   const approveBlock = (block: Block) => {
     setBlocks(prev => {
-      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'verified' as Where we are } : b);
+      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'verified' as Status } : b);
       scheduleAutoSave(updated);
       // Show next task after approval
       const placed = updated.filter(b => b.placed);
@@ -1776,7 +1776,7 @@ export default function Playground() {
 
   const sendToWaiting = (block: Block, daysRemaining: number) => {
     setBlocks(prev => {
-      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'waiting' as Where we are } : b);
+      const updated = prev.map(b => b.id === block.id ? { ...b, status: 'waiting' as Status } : b);
       scheduleAutoSave(updated);
       return updated;
     });
@@ -1789,7 +1789,7 @@ export default function Playground() {
     });
   };
   const resetCanvas  = ()=>{
-    setBlocks(bs=>{const r=bs.map(b=>({...b,placed:false,status:'todo' as Where we are}));setRecommendation(getNextRecommendation([],r));scheduleAutoSave(r);return r;});
+    setBlocks(bs=>{const r=bs.map(b=>({...b,placed:false,status:'todo' as Status}));setRecommendation(getNextRecommendation([],r));scheduleAutoSave(r);return r;});
     setLastImpact(null);
     toast({title:'Canvas reset'});
   };
@@ -2043,11 +2043,11 @@ Please try again — if the problem persists, check your network connection.`);
                   <RefreshCw size={12} className={generating?'animate-spin':''}/>Resume {failedBatches.length} section{failedBatches.length!==1?'s':''}
                 </button>
               )}
-              {Object.keys(batchWhere we are).length > 0 && (
+              {Object.keys(batchStatus).length > 0 && (
                 <div className="flex items-center gap-1 text-xs">
                   {[1,2,3].map(n=>(
-                    <span key={n} title={`Batch ${n}: ${batchWhere we are[String(n)]||'pending'}`}
-                      className={`px-1.5 py-0.5 rounded font-mono ${batchWhere we are[String(n)]==='ok'?'bg-green-400/15 text-green-400':batchWhere we are[String(n)]==='failed'?'bg-red-400/15 text-red-400':'bg-secondary/40 text-muted-foreground'}`}>
+                    <span key={n} title={`Batch ${n}: ${batchStatus[String(n)]||'pending'}`}
+                      className={`px-1.5 py-0.5 rounded font-mono ${batchStatus[String(n)]==='ok'?'bg-green-400/15 text-green-400':batchStatus[String(n)]==='failed'?'bg-red-400/15 text-red-400':'bg-secondary/40 text-muted-foreground'}`}>
                       B{n}
                     </span>
                   ))}
@@ -2749,7 +2749,7 @@ Please try again — if the problem persists, check your network connection.`);
                                         )}
                                       </div>
                                       <button
-                                        onClick={e=>{e.stopPropagation();toggleWhere we are(block.id);}}
+                                        onClick={e=>{e.stopPropagation();toggleStatus(block.id);}}
                                         draggable={false}
                                         className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${
                                           block.status==='verified'||block.status==='done' ? 'text-green-400 bg-green-400/10 border-green-400/20' :
@@ -3135,8 +3135,8 @@ Please try again — if the problem persists, check your network connection.`);
                     };
                     return (
                       <button key={s} onClick={()=>{
-                        setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?{...b,status:s as Where we are}:b);scheduleAutoSave(u);return u;});
-                        setExpandedBlock({...expandedBlock,status:s as Where we are});
+                        setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?{...b,status:s as Status}:b);scheduleAutoSave(u);return u;});
+                        setExpandedBlock({...expandedBlock,status:s as Status});
                       }}
                         className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${colors[s]}`}
                       >{labels[s]}</button>
@@ -3370,7 +3370,7 @@ Please try again — if the problem persists, check your network connection.`);
           siteUrl={selProj?.url || ''}
           onApprove={(b) => {
             setBlocks(prev => {
-              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'verified' as Where we are} : bl);
+              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'verified' as Status} : bl);
               scheduleAutoSave(upd);
               return upd;
             });
@@ -3379,7 +3379,7 @@ Please try again — if the problem persists, check your network connection.`);
           }}
           onWait={(b, days) => {
             setBlocks(prev => {
-              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'waiting' as Where we are} : bl);
+              const upd = prev.map(bl => bl.id === b.id ? {...bl, status: 'waiting' as Status} : bl);
               scheduleAutoSave(upd);
               return upd;
             });
