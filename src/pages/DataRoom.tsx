@@ -284,7 +284,24 @@ export default function DataRoom() {
     if (!toSave.length) { setSaving(false); return; }
 
     for (const row of toSave) {
+      const existing = knowledge[category]?.[row.field_key]?.field_value;
       await supabase.from('project_knowledge').upsert(row, { onConflict: 'project_id,category,field_key' });
+      // Log change to system control
+      if (existing !== row.field_value) {
+        fetch('/api/system-control', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            action: 'log_change', projectId: selProjId,
+            payload: {
+              changeType: 'data_room',
+              fieldPath: `${category}.${row.field_key}`,
+              oldValue: existing || null,
+              newValue: row.field_value,
+              sourceName: 'Data Room manual entry',
+            },
+          }),
+        }).catch(() => {});
+      }
     }
 
     setPendingFields(prev => {
