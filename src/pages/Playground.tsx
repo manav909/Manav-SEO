@@ -24,7 +24,7 @@ interface Block {
   id: string; type: BType; title: string; content: string;
   color: string; priority: Priority; status: Status;
   week: number; placed: boolean;
-  effort?: string; impact?: string; tags?: string[]; source?: string;
+  effort?: string; impact?: string; tags?: string[]; source?: string; assignee?: string;
 }
 
 interface Suggestion {
@@ -570,6 +570,9 @@ export default function Playground() {
   const [recommendation,setRecommendation]= useState<Recommendation|null>(null);
   const [lastImpact,    setLastImpact]    = useState<{title:string;week:number;metric:string}|null>(null);
   const [highlightId,   setHighlightId]   = useState<string|null>(null);
+  const [autoFilling,   setAutoFilling]   = useState(false);
+  const [teamMembers,   setTeamMembers]   = useState<string[]>(['Manav','Client','Agency']);
+  const [showAssignModal,setShowAssignModal] = useState<string|null>(null);
   const chatEndRef    = useRef<HTMLDivElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -677,6 +680,53 @@ export default function Playground() {
     setBlocks(bs=>{const r=bs.map(b=>({...b,placed:false,status:'todo' as Status}));setRecommendation(getNextRecommendation([],r));scheduleAutoSave(r);return r;});
     setLastImpact(null);
     toast({title:'Canvas reset'});
+  };
+
+  const autoFillCanvas = async () => {
+    if (!blocks.some(b => !b.placed)) {
+      toast({title:'All blocks already placed!', description:'Reset canvas first to re-fill.'});
+      return;
+    }
+    setAutoFilling(true);
+    await new Promise(r => setTimeout(r, 100)); // let UI update
+    setBlocks(prev => {
+      const updated = [...prev];
+      const weekCaps = {1:4, 2:4, 3:4, 4:4, 5:99};
+      const weekCounts: Record<number,number> = {};
+      // Count existing placed per week
+      prev.filter(b=>b.placed).forEach(b => { weekCounts[b.week] = (weekCounts[b.week]||0)+1; });
+      // Sort library blocks by expert order: technical > quick-win > content > geo > competitive > weekly > insight > kpi > monthly > custom
+      const typeOrder: Record<BType,number> = {'technical':0,'quick-win':1,'content':2,'geo':3,'competitive':4,'weekly':5,'insight':6,'kpi':7,'monthly':8,'custom':9};
+      const priOrder:  Record<Priority,number> = {'high':0,'medium':1,'low':2};
+      const lib = prev.filter(b=>!b.placed)
+        .sort((a,b)=> typeOrder[a.type]-typeOrder[b.type] || priOrder[a.priority]-priOrder[b.priority]);
+      for (const block of lib) {
+        const targetWeek = assignWeek(block);
+        // Find best week with space
+        const weeks = [targetWeek, ...([1,2,3,4,5].filter(w=>w!==targetWeek))];
+        for (const w of weeks) {
+          if ((weekCounts[w]||0) < weekCaps[w]) {
+            const idx2 = updated.findIndex(b=>b.id===block.id);
+            if (idx2>=0) updated[idx2] = {...updated[idx2], placed:true, week:w};
+            weekCounts[w] = (weekCounts[w]||0)+1;
+            break;
+          }
+        }
+      }
+      scheduleAutoSave(updated);
+      return updated;
+    });
+    setAutoFilling(false);
+    toast({title:'Canvas auto-filled!', description:'All blocks placed by AI recommendation. Drag to adjust.'});
+  };
+
+  const assignBlock = (blockId: string, assignee: string) => {
+    setBlocks(prev => {
+      const updated = prev.map(b => b.id===blockId ? {...b, assignee} : b);
+      scheduleAutoSave(updated);
+      return updated;
+    });
+    setShowAssignModal(null);
   };
 
   const highlightBlock = (id:string)=>{
@@ -975,10 +1025,12 @@ export default function Playground() {
                     {/* Progress bar */}
                     <div className="rounded-2xl border border-border bg-card/60 p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-semibold">Progress</span>
-                          <span className="text-xs font-mono text-primary">{done}/{placedBlocks.length} done</span>
-                          <span className="text-xs font-mono text-muted-foreground">{libBlocks.length} in library</span>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-sm font-semibold">Overall Progress</span>
+                          <span className="text-xs font-mono text-green-400">{done} done</span>
+                          <span className="text-xs font-mono text-blue-400">{placedBlocks.filter(b=>b.status==='doing').length} in progress</span>
+                          <span className="text-xs font-mono text-muted-foreground">{placedBlocks.filter(b=>b.status==='todo').length} todo</span>
+                          <span className="text-xs font-mono text-muted-foreground">· {libBlocks.length} unplaced</span>
                         </div>
                         <span className="text-2xl font-black text-primary">{progress}%</span>
                       </div>
@@ -1064,7 +1116,10 @@ export default function Playground() {
                       </select>
                       <div className="flex-1"/>
                       <button onClick={()=>setShowAdd(o=>!o)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Plus size={12}/>Custom block</button>
-                      <button onClick={resetCanvas} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border bg-card/60 text-muted-foreground hover:text-foreground"><RotateCcw size={12}/>Reset canvas</button>
+                      <button onClick={autoFillCanvas} disabled={autoFilling} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 font-medium">
+                        {autoFilling ? <><RefreshCw size={12} className="animate-spin"/>Filling…</> : <><Sparkles size={12}/>Auto-fill canvas</>}
+                      </button>
+                      <button onClick={resetCanvas} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border bg-card/60 text-muted-foreground hover:text-foreground"><RotateCcw size={12}/>Reset</button>
                       {strategy && (
                         <button
                           onClick={() => {
@@ -1078,7 +1133,7 @@ export default function Playground() {
                           }}
                           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
                         >
-                          <Sparkles size={12}/>Rebuild library
+                          <RefreshCw size={12}/>Rebuild library
                         </button>
                       )}
                     </div>
@@ -1172,6 +1227,12 @@ export default function Playground() {
                                     {block.tags.slice(0,3).map((t,i)=><span key={i} className="text-xs px-1.5 py-0.5 rounded-full border border-border/50 bg-background/40 text-muted-foreground/60">{t}</span>)}
                                   </div>
                                 )}
+                                {block.assignee && (
+                                  <div className="flex items-center gap-1 mt-1.5">
+                                    <div className="h-3.5 w-3.5 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{block.assignee[0].toUpperCase()}</div>
+                                    <span className="text-xs text-muted-foreground">{block.assignee}</span>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -1199,7 +1260,7 @@ export default function Playground() {
                           >
                             {/* Column header */}
                             <div className={`px-3 py-3 border-b border-border/50 shrink-0 rounded-t-2xl ${isOver?'bg-card/80':''}`}>
-                              <div className="flex items-center justify-between mb-0.5">
+                              <div className="flex items-center justify-between mb-1">
                                 <div>
                                   <div className="flex items-center gap-1.5">
                                     <div className="text-xs font-bold text-foreground">{col.label}</div>
@@ -1207,8 +1268,35 @@ export default function Playground() {
                                   </div>
                                   <div className="text-xs text-muted-foreground">{col.sub}</div>
                                 </div>
-                                <span className="text-xs font-mono text-muted-foreground">{colDone}/{colBlocks.length}</span>
+                                <div className="text-right">
+                                  <div className="text-xs font-mono text-muted-foreground">{colDone}/{colBlocks.length}</div>
+                                  {colBlocks.length > 0 && (
+                                    <div className="h-1 w-12 rounded-full bg-secondary overflow-hidden mt-0.5">
+                                      <div className="h-full bg-green-400/70 transition-all" style={{width:`${Math.round((colDone/colBlocks.length)*100)}%`}}/>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
+                              {/* Status summary pills */}
+                              {colBlocks.length > 0 && (
+                                <div className="flex gap-1 flex-wrap mb-1">
+                                  {colBlocks.filter(b=>b.status==='doing').length > 0 && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-400/10 text-blue-400 font-mono">
+                                      {colBlocks.filter(b=>b.status==='doing').length} doing
+                                    </span>
+                                  )}
+                                  {colBlocks.filter(b=>b.status==='done').length > 0 && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-400/10 text-green-400 font-mono">
+                                      {colBlocks.filter(b=>b.status==='done').length} done
+                                    </span>
+                                  )}
+                                  {colBlocks.filter(b=>b.status==='todo').length > 0 && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-secondary/60 text-muted-foreground font-mono">
+                                      {colBlocks.filter(b=>b.status==='todo').length} todo
+                                    </span>
+                                  )}
+                                </div>
+                              )}
 
                               {/* Suggestion when hovering */}
                               {isOver&&sug&&slStyle&&SugIcon && (
@@ -1265,14 +1353,34 @@ export default function Playground() {
                                       </div>
                                     </div>
                                     <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>
-                                    <div className="flex items-center justify-between gap-1">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className={`h-1.5 w-1.5 rounded-full ${pm2.dot}`}/>
+                                    <div className="flex items-center justify-between gap-1 mt-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>
                                         <span className="text-xs text-muted-foreground">{block.priority}</span>
                                       </div>
-                                      <button onClick={()=>toggleStatus(block.id)} className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border transition-colors ${block.status==='done'?'text-green-400 bg-green-400/10 border-green-400/20':block.status==='doing'?'text-blue-400 bg-blue-400/10 border-blue-400/20':'text-muted-foreground border-border/50 hover:border-primary/30'}`}>
+                                      <button onClick={()=>toggleStatus(block.id)}
+                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${
+                                          block.status==='done'  ? 'text-green-400 bg-green-400/10 border-green-400/20 hover:bg-green-400/20' :
+                                          block.status==='doing' ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/20' :
+                                          'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-primary'
+                                        }`}
+                                        title="Click to change status: To Do → In Progress → Done"
+                                      >
                                         <SI size={8} className={block.status==='doing'?'animate-spin':''}/>
                                         <span>{sm2.label}</span>
+                                      </button>
+                                    </div>
+                                    {/* Assignee row */}
+                                    <div className="flex items-center gap-1 mt-1.5">
+                                      <button
+                                        onClick={()=>setShowAssignModal(block.id)}
+                                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                        title="Assign to team member"
+                                      >
+                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>
+                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}
+                                        </div>
+                                        <span className="truncate max-w-[60px]">{block.assignee || 'Assign'}</span>
                                       </button>
                                     </div>
                                   </div>
@@ -1367,6 +1475,55 @@ export default function Playground() {
                 <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Assign modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setShowAssignModal(null)}/>
+          <div className="relative w-80 rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden">
+            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>
+            <div className="px-5 py-4 border-b border-border">
+              <div className="font-semibold text-sm">Assign block</div>
+              <div className="text-xs text-muted-foreground truncate mt-0.5">
+                {blocks.find(b=>b.id===showAssignModal)?.title}
+              </div>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              {/* Unassign */}
+              <button onClick={()=>assignBlock(showAssignModal,'')}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">
+                <div className="h-7 w-7 rounded-full bg-secondary/60 flex items-center justify-center text-xs text-muted-foreground">—</div>
+                <span className="text-sm text-muted-foreground">Unassigned</span>
+                {!blocks.find(b=>b.id===showAssignModal)?.assignee && <CheckCircle2 size={13} className="text-primary ml-auto"/>}
+              </button>
+              {/* Team members */}
+              {teamMembers.map(member => (
+                <button key={member} onClick={()=>assignBlock(showAssignModal,member)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">
+                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{member[0].toUpperCase()}</div>
+                  <span className="text-sm">{member}</span>
+                  {blocks.find(b=>b.id===showAssignModal)?.assignee===member && <CheckCircle2 size={13} className="text-primary ml-auto"/>}
+                </button>
+              ))}
+              {/* Add custom member */}
+              <div className="pt-2 border-t border-border">
+                <input
+                  placeholder="Add new team member…"
+                  className="w-full h-8 text-xs px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                      const name = (e.target as HTMLInputElement).value.trim();
+                      setTeamMembers(tm => [...tm, name]);
+                      assignBlock(showAssignModal, name);
+                    }
+                  }}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Press Enter to add and assign</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
