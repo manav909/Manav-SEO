@@ -2287,7 +2287,7 @@ Please try again — if the problem persists, check your network connection.`);
                               ? `— ${placedBlocks.filter(b=>b.status==='doing').length} task${placedBlocks.filter(b=>b.status==='doing').length!==1?' are':' is'} in progress. When done, click the status pill to submit for verification.`
                               : done > 0
                               ? `— ${done} task${done!==1?'s':''} verified. ${placedBlocks.filter(b=>b.status==='todo').length} remaining. ${progress >= 80 ? 'Close to the finish line.' : 'Keep going.'}`
-                              : '— Ready when you are. Pick a card and let's get started.'}
+                              : "— Ready when you are. Pick a card and let's get started."}
                           </span>
                         </div>
                       </div>
