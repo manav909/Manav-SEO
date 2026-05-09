@@ -5,11 +5,29 @@ import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
-  Database, Upload, CheckCircle2, AlertTriangle, X, Plus,
-  FileText, Globe, Target, Layers, RefreshCw, ChevronDown,
-  ChevronUp, Copy, Trash2, Save, Brain, Info, Star,
-  Shield, BarChart3, Link, Code, Settings, Calendar,
-  Sparkles, ChevronRight, ExternalLink, Package,
+  Layers,
+  Upload,
+  CheckCircle2,
+  AlertTriangle,
+  X,
+  Plus,
+  FileText,
+  Globe,
+  Target,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Trash2,
+  Save,
+  Brain,
+  Star,
+  Shield,
+  BarChart3,
+  Settings,
+  Calendar,
+  Sparkles,
+  ChevronRight,
 } from 'lucide-react';
 
 /* ─── types ─── */
@@ -32,7 +50,7 @@ const DATA_REQUIREMENTS = [
     ]
   },
   {
-    category: 'cms' as KCategory, label: 'CMS & Tech Stack', icon: Code, color: '#06b6d4',
+    category: 'cms' as KCategory, label: 'CMS & Tech Stack', icon: Settings, color: '#06b6d4',
     fields: [
       {key:'cms',          label:'CMS / Platform',          type:'select', options:['WordPress','Shopify','Webflow','Wix','Squarespace','Magento','Drupal','Joomla','Next.js/Custom','Other'], required:true},
       {key:'cms_version',  label:'CMS Version',             type:'text',   placeholder:'e.g. WordPress 6.4.2'},
@@ -77,7 +95,7 @@ const DATA_REQUIREMENTS = [
       {key:'pages_indexed',        label:'Pages Indexed (GSC)',      type:'text', placeholder:'e.g. 847 from GSC Coverage report'},
       {key:'pages_submitted',      label:'Pages Submitted (Sitemap)',type:'text', placeholder:'e.g. 1,200'},
       {key:'crawl_errors',         label:'Known Crawl Errors',       type:'text', placeholder:'e.g. 23 404s, 5 redirect chains'},
-      {key:'broken_links',         label:'Broken Internal Links',    type:'text', placeholder:'e.g. 12 broken links (from Screaming Frog)'},
+      {key:'broken_links',         label:'Broken Internal Globes',    type:'text', placeholder:'e.g. 12 broken links (from Screaming Frog)'},
       {key:'duplicate_content',    label:'Duplicate Content Issues', type:'text', placeholder:'e.g. 8 duplicate title tags'},
       {key:'schema_markup',        label:'Schema Markup Present',    type:'select', options:['Yes — comprehensive','Partial','None','Unknown']},
       {key:'sitemap_url',          label:'Sitemap URL',              type:'text', placeholder:'e.g. https://domain.com/sitemap.xml'},
@@ -484,7 +502,7 @@ export default function DataRoom() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold mb-1 flex items-center gap-2">
-              <Database className="h-5 w-5 text-primary"/>
+              <Layers className="h-5 w-5 text-primary"/>
               Client Knowledge Base
             </h1>
             <p className="text-sm text-muted-foreground">
@@ -496,7 +514,7 @@ export default function DataRoom() {
         {/* Project picker */}
         {!selProjId && (
           <div className="rounded-2xl border border-border bg-card/60 p-10 text-center">
-            <Database className="h-12 w-12 text-primary/30 mx-auto mb-4"/>
+            <Layers className="h-12 w-12 text-primary/30 mx-auto mb-4"/>
             <h3 className="font-bold text-lg mb-3">Select a project to open its data room</h3>
             <select value={selProjId} onChange={e=>setSelProjId(e.target.value)} className="h-10 rounded-lg border border-border bg-background/60 text-sm px-4">
               <option value="">— Choose project —</option>
@@ -518,9 +536,9 @@ export default function DataRoom() {
             {/* Tab nav */}
             <div className="flex gap-1 border-b border-border overflow-x-auto">
               {[
-                {id:'overview',    label:'Overview',      icon:Database   },
+                {id:'overview',    label:'Overview',      icon:Layers   },
                 {id:'goals',       label:'Goals',         icon:Target     },
-                {id:'cms',         label:'CMS & Tech',    icon:Code       },
+                {id:'cms',         label:'CMS & Tech',    icon:Settings       },
                 {id:'access',      label:'Tool Access',   icon:Shield     },
                 {id:'analytics',   label:'Analytics',     icon:BarChart3  },
                 {id:'technical',   label:'Technical',     icon:Settings   },
@@ -596,12 +614,12 @@ export default function DataRoom() {
 
                 {/* Where data comes from */}
                 <div className="rounded-2xl border border-border bg-card/60 p-5">
-                  <div className="font-semibold mb-4 flex items-center gap-2"><Info size={15} className="text-primary"/>Where Does Claude Get Its Data?</div>
+                  <div className="font-semibold mb-4 flex items-center gap-2"><AlertTriangle size={15} className="text-primary"/>Where Does Claude Get Its Data?</div>
                   <div className="space-y-3 text-sm">
                     {[
                       {icon:BarChart3,color:'#34d399',label:'Metrics Dashboard', desc:'Scores you enter manually in the Metrics section — LLM Visibility, Algorithm Health, E-E-A-T, Content Authority, Overall Growth, Indexed Pages, Brand Mentions, Perplexity/ChatGPT citations.'},
                       {icon:FileText, color:'#60a5fa',label:'Audit Reports',     desc:'AI-generated reports from the Audit Tool. These are Claude\'s analysis of your site — not raw tool data. They inform strategy but are estimates without hard data.'},
-                      {icon:Database, color:'#a78bfa',label:'This Data Room',    desc:'Every field you fill here — goals, CMS, analytics baseline, technical state, competitor data. This is the hard fact-check layer that makes all AI output reliable.'},
+                      {icon:Layers, color:'#a78bfa',label:'This Data Room',    desc:'Every field you fill here — goals, CMS, analytics baseline, technical state, competitor data. This is the hard fact-check layer that makes all AI output reliable.'},
                       {icon:Upload,   color:'#facc15',label:'Uploaded Documents',desc:'CSV/TXT exports from GSC, Screaming Frog, Semrush, Ahrefs, GA4. Claude extracts data automatically and stores it here for permanent access.'},
                       {icon:Globe,    color:'#f472b6',label:'Live Site Checks',  desc:'When you run verification checks or pipeline analysis, Claude fetches your live site via Jina AI to cross-reference what\'s actually published vs what\'s planned.'},
                     ].map(({icon:Icon,color,label,desc}) => (
@@ -677,7 +695,7 @@ export default function DataRoom() {
                   </div>
                   {UPLOAD_GUIDES[uploadDocType] && (
                     <button onClick={()=>setShowGuide(showGuide===uploadDocType?null:uploadDocType)} className="text-xs text-primary hover:underline flex items-center gap-1 mx-auto">
-                      <Info size={11}/>How to export from this tool
+                      <AlertTriangle size={11}/>How to export from this tool
                     </button>
                   )}
                   {showGuide === uploadDocType && UPLOAD_GUIDES[uploadDocType] && (
