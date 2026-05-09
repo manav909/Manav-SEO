@@ -17,7 +17,7 @@ import {
 type BType    = 'quick-win'|'weekly'|'monthly'|'technical'|'content'|'geo'|'competitive'|'insight'|'kpi'|'custom';
 type Priority = 'high'|'medium'|'low';
 type Status   = 'todo'|'doing'|'done';
-type Tab      = 'reports'|'strategy'|'canvas';
+type Tab      = 'reports'|'strategy'|'canvas'|'pipeline';
 type SugLevel = 'best'|'good'|'ok'|'caution';
 
 interface Block {
@@ -40,6 +40,70 @@ interface Recommendation {
 }
 
 /* ─── type meta ─── */
+/* ─── Role definitions ─── */
+const ROLES = [
+  { id:'content_writer', label:'Content Writer',    icon:FileText,  color:'#facc15', questions:[
+    'What should I write this week and in what order?',
+    'What keywords must appear in each piece?',
+    'What is the ideal structure for the pillar page?',
+    'Which content piece has the highest ranking chance right now?',
+    'What tone and style should I use for this client?',
+    'Are there any content gaps I should fill before Week 3?',
+    'What internal links should I add to the new article?',
+    'How do I make this content GEO-ready for AI citation?',
+  ]},
+  { id:'team_lead',       label:'Team Lead',          icon:Target,    color:'#60a5fa', questions:[
+    'Who is blocked right now and what is the exact blocker?',
+    'What is the critical path this week?',
+    'What risks should I escalate today?',
+    'Is the team capacity realistic for this week?',
+    'What should be the focus of today&#39;s standup?',
+    'Which task if delayed will cause the most damage?',
+    'Are there any dependency conflicts in the current plan?',
+    'What should be moved to backlog to reduce overload?',
+  ]},
+  { id:'executive',       label:'Executive',           icon:Trophy,    color:'#a78bfa', questions:[
+    'What is the business impact of this week&#39;s work in plain terms?',
+    'Are we on track to hit the 90-day targets?',
+    'What is the one decision I need to make this week?',
+    'How do we compare to competitors right now?',
+    'What does the client see as progress this month?',
+    'What is the ROI projection from the current plan?',
+    'What would delay results and what does that cost us?',
+    'What is the single highest-leverage action we can take?',
+  ]},
+  { id:'senior_seo',      label:'Senior SEO',          icon:Brain,     color:'#f472b6', questions:[
+    'What is the topical authority gap we need to close first?',
+    'Which technical issues are most likely causing ranking suppression?',
+    'How is the E-E-A-T signal building across the site?',
+    'What GEO optimisation should be prioritised for Perplexity?',
+    'Is the content structure supporting topical clusters correctly?',
+    'What algorithm signals are we ignoring in the current plan?',
+    'Which competitor is outranking us and what exactly are they doing differently?',
+    'What is the indexing health and how does it affect our timeline?',
+  ]},
+  { id:'project_manager', label:'Project Manager',    icon:Calendar,  color:'#34d399', questions:[
+    'What is the current project status in RAG (Red/Amber/Green)?',
+    'Are all milestones on track for this sprint?',
+    'What is in the risk register that needs updating?',
+    'Who needs to sign off on what before work can start?',
+    'What has slipped and what is the revised timeline?',
+    'What resources are needed that we do not currently have?',
+    'What is the dependency chain for the critical deliverable?',
+    'How do I communicate this week&#39;s progress to stakeholders?',
+  ]},
+  { id:'biz_dev',         label:'Biz Dev Manager',    icon:Sparkles,  color:'#fb923c', questions:[
+    'How do I present this week&#39;s progress to the client in a compelling way?',
+    'The client says they are not seeing results — what do I tell them?',
+    'What upsell opportunity does the current campaign create?',
+    'How do I position the retainer renewal based on the data?',
+    'What proof points do I have for the next client meeting?',
+    'How do I handle the objection that SEO takes too long?',
+    'What competitive wins can I show the client right now?',
+    'How do I justify the campaign investment with the current metrics?',
+  ]},
+];
+
 const TM: Record<BType,{label:string;icon:any;color:string;bg:string;border:string}> = {
   'quick-win':   {label:'Quick Win',   icon:Zap,       color:'#4ade80',bg:'bg-green-400/10', border:'border-green-400/25'},
   'weekly':      {label:'Weekly',      icon:Calendar,  color:'#60a5fa',bg:'bg-blue-400/10',  border:'border-blue-400/25' },
@@ -660,6 +724,16 @@ export default function Playground() {
   const [agendaLoading, setAgendaLoading] = useState<number|null>(null);
   const [agendaStale,   setAgendaStale]   = useState<Set<number>>(new Set());
   const [agendaExpanded,setAgendaExpanded]= useState<number|null>(null);
+  const [activeRole,   setActiveRole]   = useState('team_lead');
+  const [roleChat,     setRoleChat]     = useState('');
+  const [roleChatQ,    setRoleChatQ]    = useState('');
+  const [roleChatLoading,setRoleChatLoading] = useState(false);
+  const [checkUrl,     setCheckUrl]     = useState('');
+  const [pipelineText, setPipelineText] = useState('');
+  const [pipelineLoading,setPipelineLoading] = useState(false);
+  const [depText,      setDepText]      = useState('');
+  const [depLoading,   setDepLoading]   = useState(false);
+  const [depFocusId,   setDepFocusId]   = useState<string|null>(null);
   const chatEndRef    = useRef<HTMLDivElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -887,6 +961,43 @@ export default function Playground() {
     setAgendaStale(prev => new Set([...prev, week]));
   };
 
+  const callPipelineChat = async (q: string, mode: string, focusId?: string|null) => {
+    const proj = `${client?.company||''} | ${selProj?.url||''} | ${client?.industry||''}`;
+    const url  = (checkUrl.trim() || selProj?.url || '').trim();
+    const body = { question: q, role: activeRole, blocks, projectSummary: proj,
+      focusBlockId: focusId || null, mode,
+      checkUrl: url || null };
+
+    if (mode === 'pipeline') {
+      setPipelineText(''); setPipelineLoading(true);
+      try {
+        const res = await fetch('/api/pipeline-chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        if (!res.ok || !res.body) throw new Error('failed');
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let acc = '';
+        while (true) { const {done,value} = await reader.read(); if (done) break; acc += dec.decode(value,{stream:true}); setPipelineText(acc); }
+      } catch(e:any) { setPipelineText(`Error: ${e.message}`); }
+      setPipelineLoading(false);
+    } else if (mode === 'dependencies') {
+      setDepText(''); setDepLoading(true); setDepFocusId(focusId||null);
+      try {
+        const res = await fetch('/api/pipeline-chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        if (!res.ok || !res.body) throw new Error('failed');
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let acc = '';
+        while (true) { const {done,value} = await reader.read(); if (done) break; acc += dec.decode(value,{stream:true}); setDepText(acc); }
+      } catch(e:any) { setDepText(`Error: ${e.message}`); }
+      setDepLoading(false);
+    } else {
+      setRoleChat(''); setRoleChatLoading(true);
+      try {
+        const res = await fetch('/api/pipeline-chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        if (!res.ok || !res.body) throw new Error('failed');
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let acc = '';
+        while (true) { const {done,value} = await reader.read(); if (done) break; acc += dec.decode(value,{stream:true}); setRoleChat(acc); }
+      } catch(e:any) { setRoleChat(`Error: ${e.message}`); }
+      setRoleChatLoading(false);
+    }
+  };
+
   const deepDive = async(block:Block)=>{
     setDdBlock(block);setDdText('');setDdLoading(true);
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
@@ -977,13 +1088,19 @@ export default function Playground() {
           <>
             {/* Tabs */}
             <div className="flex gap-1 border-b border-border">
-              {(['reports','strategy','canvas'] as Tab[]).map(t=>(
-                <button key={t} onClick={()=>setTab(t)} className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab===t?'border-primary text-foreground':'border-transparent text-muted-foreground hover:text-foreground'}`}>
-                  {t==='reports'?<FileText size={14}/>:t==='strategy'?<Brain size={14}/>:<Layers size={14}/>}
-                  {t==='reports'?'Reports Library':t==='strategy'?'Strategy Intelligence':'Strategy Canvas'}
-                  {t==='canvas'&&blocks.length>0&&<span className="text-xs bg-primary/10 text-primary rounded-full px-1.5">{blocks.length}</span>}
-                </button>
-              ))}
+              
+                {[
+                  {id:'reports',   label:'Reports',    icon:FileText},
+                  {id:'strategy',  label:'Strategy',   icon:Brain  },
+                  {id:'canvas',    label:'Canvas',     icon:Layers },
+                  {id:'pipeline',  label:'Pipeline',   icon:Target },
+                ].map(({id,label,icon:Icon})=>(
+                  <button key={id} onClick={()=>setTab(id as Tab)} className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab===id?'border-primary text-foreground':'border-transparent text-muted-foreground hover:text-foreground'}`}>
+                    <Icon size={14}/>
+                    <span className="hidden sm:inline">{label}</span>
+                    {id==='canvas'&&blocks.length>0&&<span className="text-xs bg-primary/10 text-primary rounded-full px-1.5">{blocks.length}</span>}
+                  </button>
+                ))}
             </div>
 
             {/* ── REPORTS ── */}
@@ -1530,7 +1647,133 @@ export default function Playground() {
                                   <p className="text-xs text-muted-foreground px-3 pb-2">Generate a client-ready agenda with tasks, outcomes, and verification steps.</p>
                                 )}
                               </div>
-                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const m    = TM[block.type]||TM.custom;                                const Icon = m.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div                                    key={block.id}                                    draggable                                    onDragStart={e=>onDragStart(e,block.id)}                                    onDragEnd={onDragEnd}                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab group transition-all ${draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md'} ${block.status==='done'?'opacity-60':''}`}                                  >                                    <div className="flex items-start gap-2 mb-2">                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>                                      <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='done'?'line-through text-muted-foreground':''}`}>{block.title}</p>                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">                                        <button onClick={()=>deepDive(block)} title="AI Deep Dive" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-primary/20 text-muted-foreground hover:text-primary"><Brain size={9}/></button>                                        <button onClick={()=>setExpandedBlock(block)} title="Expand" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground"><Maximize2 size={9}/></button>                                        <button onClick={()=>returnToLib(block.id)} title="Return to library" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-red-400/20 text-muted-foreground hover:text-red-400"><X size={9}/></button>                                      </div>                                    </div>                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>                                    <div className="flex items-center justify-between gap-1 mt-1">                                      <div className="flex items-center gap-1">                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>                                        <span className="text-xs text-muted-foreground">{block.priority}</span>                                      </div>                                      <button onClick={()=>toggleStatus(block.id)}                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${                                          block.status==='done'  ? 'text-green-400 bg-green-400/10 border-green-400/20 hover:bg-green-400/20' :                                          block.status==='doing' ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/20' :                                          'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-primary'                                        }`}                                        title="Click to change status: To Do → In Progress → Done"                                      >                                        <SI size={8} className={block.status==='doing'?'animate-spin':''}/>                                        <span>{sm2.label}</span>                                      </button>                                    </div>                                    {/* Assignee row */}                                    <div className="flex items-center justify-between gap-1 mt-1.5">                                      <button onClick={()=>setShowAssignModal(block.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors" title="Assign to team member">                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}                                        </div>                                        <span className="truncate max-w-[55px]">{block.assignee || 'Assign'}</span>                                      </button>                                      <span className="text-xs font-mono text-muted-foreground/60" title="Estimated effort">~{formatHours(estimateHours(block))}</span>                                    </div>                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          </>        )}      </div>      {/* Block expand modal */}      {expandedBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setExpandedBlock(null)}/>          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">              {(()=>{const m=TM[expandedBlock.type]||TM.custom;const Icon=m.icon;return(<><div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}><Icon size={13} style={{color:m.color}}/></div><div className="flex-1"><div className="font-bold text-sm">{expandedBlock.title}</div><div className="text-xs font-mono" style={{color:m.color}}>{m.label}</div></div></>);})()}              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${PM[expandedBlock.priority].badge}`}>{expandedBlock.priority}</span>              <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"><Brain size={11}/>Deep Dive</button>              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>            </div>            <div className="px-5 py-4 space-y-3">              <div className="rounded-xl border border-border bg-background/60 p-4"><p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p></div>              {expandedBlock.tags&&expandedBlock.tags.length>0 && (                <div className="flex flex-wrap gap-1.5">{expandedBlock.tags.map((t,i)=><span key={i} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/30 text-muted-foreground flex items-center gap-1"><Tag size={8}/>{t}</span>)}</div>              )}              <div className="flex gap-2 flex-wrap">                {expandedBlock.effort && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">effort: {expandedBlock.effort}</span>}                {expandedBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">impact: {expandedBlock.impact}</span>}              </div>              <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy content</button>            </div>          </div>        </div>      )}      {/* Deep Dive modal */}      {ddBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>{if(!ddLoading)setDdBlock(null);}}/>          <div className="relative w-full max-w-2xl rounded-2xl border border-primary/30 bg-card/95 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">              <Brain className="h-4 w-4 text-primary"/>              <div className="flex-1"><div className="font-semibold text-sm">AI Deep Dive</div><div className="text-xs text-muted-foreground truncate">{ddBlock.title}</div></div>              {ddLoading && <RefreshCw size={14} className="animate-spin text-primary"/>}              {!ddLoading && <button onClick={()=>setDdBlock(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={12}/></button>}            </div>            <div className="flex-1 overflow-y-auto px-5 py-4">              {ddLoading&&!ddText && <div className="flex items-center gap-2 text-xs text-muted-foreground py-8 justify-center"><RefreshCw size={14} className="animate-spin text-primary"/>Analysing this block in depth…</div>}              {ddText && <div className="rounded-xl border border-border bg-background/60 p-4"><ChatMd text={ddText}/></div>}            </div>            {ddText&&!ddLoading && (              <div className="px-5 py-3 border-t border-border shrink-0 flex gap-2">                <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>                <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>              </div>            )}          </div>        </div>      )}      {/* Assign modal */}      {showAssignModal && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setShowAssignModal(null)}/>          <div className="relative w-80 rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="px-5 py-4 border-b border-border">              <div className="font-semibold text-sm">Assign block</div>              <div className="text-xs text-muted-foreground truncate mt-0.5">                {blocks.find(b=>b.id===showAssignModal)?.title}              </div>            </div>            <div className="px-5 py-4 space-y-2">              {/* Unassign */}              <button onClick={()=>assignBlock(showAssignModal,'')}                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                <div className="h-7 w-7 rounded-full bg-secondary/60 flex items-center justify-center text-xs text-muted-foreground">—</div>                <span className="text-sm text-muted-foreground">Unassigned</span>                {!blocks.find(b=>b.id===showAssignModal)?.assignee && <CheckCircle2 size={13} className="text-primary ml-auto"/>}              </button>              {/* Team members */}              {teamMembers.map(member => (                <button key={member} onClick={()=>assignBlock(showAssignModal,member)}                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{member[0].toUpperCase()}</div>                  <span className="text-sm">{member}</span>                  {blocks.find(b=>b.id===showAssignModal)?.assignee===member && <CheckCircle2 size={13} className="text-primary ml-auto"/>}                </button>              ))}              {/* Add custom member */}              <div className="pt-2 border-t border-border">                <input                  placeholder="Add new team member…"                  className="w-full h-8 text-xs px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"                  onKeyDown={e => {                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {                      const name = (e.target as HTMLInputElement).value.trim();                      setTeamMembers(tm => [...tm, name]);                      assignBlock(showAssignModal, name);                    }                  }}                />                <p className="text-xs text-muted-foreground mt-1">Press Enter to add and assign</p>              </div>            </div>          </div>        </div>      )}
+                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const m    = TM[block.type]||TM.custom;                                const Icon = m.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div                                    key={block.id}                                    draggable                                    onDragStart={e=>onDragStart(e,block.id)}                                    onDragEnd={onDragEnd}                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab group transition-all ${draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md'} ${block.status==='done'?'opacity-60':''}`}                                  >                                    <div className="flex items-start gap-2 mb-2">                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>                                      <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='done'?'line-through text-muted-foreground':''}`}>{block.title}</p>                                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">                                        <button onClick={()=>deepDive(block)} title="AI Deep Dive" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-primary/20 text-muted-foreground hover:text-primary"><Brain size={9}/></button>                                        <button onClick={()=>setExpandedBlock(block)} title="Expand" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-background text-muted-foreground hover:text-foreground"><Maximize2 size={9}/></button>                                        <button onClick={()=>returnToLib(block.id)} title="Return to library" className="h-5 w-5 rounded flex items-center justify-center bg-background/60 hover:bg-red-400/20 text-muted-foreground hover:text-red-400"><X size={9}/></button>                                      </div>                                    </div>                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>                                    <div className="flex items-center justify-between gap-1 mt-1">                                      <div className="flex items-center gap-1">                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>                                        <span className="text-xs text-muted-foreground">{block.priority}</span>                                      </div>                                      <button onClick={()=>toggleStatus(block.id)}                                        className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border font-medium transition-all ${                                          block.status==='done'  ? 'text-green-400 bg-green-400/10 border-green-400/20 hover:bg-green-400/20' :                                          block.status==='doing' ? 'text-blue-400 bg-blue-400/10 border-blue-400/20 hover:bg-blue-400/20' :                                          'text-muted-foreground border-border/60 hover:border-primary/40 hover:text-primary'                                        }`}                                        title="Click to change status: To Do → In Progress → Done"                                      >                                        <SI size={8} className={block.status==='doing'?'animate-spin':''}/>                                        <span>{sm2.label}</span>                                      </button>                                    </div>                                    {/* Assignee row */}                                    <div className="flex items-center justify-between gap-1 mt-1.5">                                      <button onClick={()=>setShowAssignModal(block.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors" title="Assign to team member">                                        <div className={`h-4 w-4 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${block.assignee ? 'bg-primary/20 text-primary' : 'bg-secondary/60 text-muted-foreground/40'}`}>                                          {block.assignee ? block.assignee[0].toUpperCase() : '+'}                                        </div>                                        <span className="truncate max-w-[55px]">{block.assignee || 'Assign'}</span>                                      </button>                                      <span className="text-xs font-mono text-muted-foreground/60" title="Estimated effort">~{formatHours(estimateHours(block))}</span>                                    </div>                                  </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Claude answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
+
+            {/* ══ PIPELINE TAB ══ */}
+            {tab==='pipeline' && (
+              <div className="space-y-5">
+
+                {/* URL check */}
+                <div className="rounded-2xl border border-border bg-card/60 p-4">
+                  <div className="flex items-start gap-3 mb-3">
+                    <Globe className="h-4 w-4 text-primary shrink-0 mt-0.5"/>
+                    <div className="flex-1">
+                      <div className="font-semibold text-sm mb-1">Live Website Check (optional)</div>
+                      <p className="text-xs text-muted-foreground">Claude will fetch live content from the site to ground all analysis in reality — not assumptions.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <input value={checkUrl} onChange={e=>setCheckUrl(e.target.value)} placeholder={selProj?.url||'https://yourdomain.com'} className="flex-1 h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
+                    <span className="text-xs text-muted-foreground self-center">{checkUrl||selProj?.url?'Will check live':'No URL set'}</span>
+                  </div>
+                </div>
+
+                {/* Execution Pipeline */}
+                <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                  <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
+                    <Target className="h-4 w-4 text-primary"/>
+                    <div className="flex-1">
+                      <div className="font-semibold text-sm">Full Execution Pipeline</div>
+                      <div className="text-xs text-muted-foreground">Critical path, dependencies, risk register, capacity check, what to do in what order</div>
+                    </div>
+                    <button onClick={()=>callPipelineChat('','pipeline')} disabled={pipelineLoading||!placedBlocks.length}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 disabled:opacity-50 font-medium">
+                      {pipelineLoading?<><RefreshCw size={11} className="animate-spin"/>Generating...</>:<><Sparkles size={11}/>{pipelineText?'Refresh':'Generate Pipeline'}</>}
+                    </button>
+                  </div>
+                  {!placedBlocks.length&&<div className="p-8 text-center"><p className="text-sm text-muted-foreground">Place cards on the canvas first.</p></div>}
+                  {pipelineLoading&&!pipelineText&&<div className="flex items-center gap-2 text-sm text-muted-foreground p-8 justify-center"><RefreshCw size={16} className="animate-spin text-primary"/>Analysing {placedBlocks.length} tasks{checkUrl||selProj?.url?' + live site data':''}...</div>}
+                  {pipelineText&&<div className="p-5 max-h-[600px] overflow-y-auto"><AgendaMarkdown text={pipelineText}/></div>}
+                </div>
+
+                {/* Dependency Analysis */}
+                <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                  <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
+                    <ChevronRight className="h-4 w-4 text-primary"/>
+                    <div className="flex-1">
+                      <div className="font-semibold text-sm">Dependency Analysis</div>
+                      <div className="text-xs text-muted-foreground">What blocks what, prerequisite chain, what can run in parallel, cascade impact of delays</div>
+                    </div>
+                    <button onClick={()=>callPipelineChat('','dependencies',depFocusId)} disabled={depLoading||!placedBlocks.length}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 disabled:opacity-50 font-medium">
+                      {depLoading?<><RefreshCw size={11} className="animate-spin"/>Analysing...</>:<><Brain size={11}/>{depText?'Refresh':'Analyse Dependencies'}</>}
+                    </button>
+                  </div>
+                  {placedBlocks.length>0&&(
+                    <div className="px-5 py-3 border-b border-border/40 bg-secondary/10">
+                      <div className="text-xs text-muted-foreground mb-2">Focus on a specific task (optional):</div>
+                      <select value={depFocusId||''} onChange={e=>setDepFocusId(e.target.value||null)} className="h-8 text-xs px-2 rounded-xl border border-border bg-background/60 text-muted-foreground w-full max-w-sm">
+                        <option value="">All tasks</option>
+                        {placedBlocks.map(b=><option key={b.id} value={b.id}>[W{b.week===5?'BL':b.week}] {b.title.slice(0,55)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {!placedBlocks.length&&<div className="p-6 text-center"><p className="text-sm text-muted-foreground">Place cards on the canvas first.</p></div>}
+                  {depLoading&&!depText&&<div className="flex items-center gap-2 text-sm text-muted-foreground p-8 justify-center"><RefreshCw size={16} className="animate-spin text-primary"/>Mapping dependencies...</div>}
+                  {depText&&<div className="p-5 max-h-[600px] overflow-y-auto"><AgendaMarkdown text={depText}/></div>}
+                  {!depText&&!depLoading&&placedBlocks.length>0&&<div className="p-6 text-center"><p className="text-sm text-muted-foreground">Click Analyse Dependencies to map the full chain.</p></div>}
+                </div>
+
+                {/* Role-Based Intelligence */}
+                <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-border">
+                    <div className="font-semibold text-sm mb-3 flex items-center gap-2"><MessageSquare className="h-4 w-4 text-primary"/>Role-Based Intelligence</div>
+                    <div className="flex flex-wrap gap-2">
+                      {ROLES.map(role=>{
+                        const RIcon = role.icon;
+                        return (
+                          <button key={role.id} onClick={()=>{setActiveRole(role.id);setRoleChat('');setRoleChatQ('');}}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${activeRole===role.id?'font-semibold':'border-border bg-secondary/30 text-muted-foreground hover:text-foreground'}`}
+                            style={activeRole===role.id?{background:role.color+'22',borderColor:role.color+'55',color:role.color}:{}}
+                          >
+                            <RIcon size={11}/>{role.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {(()=>{
+                    const role = ROLES.find(r=>r.id===activeRole);
+                    if(!role) return null;
+                    const RIcon = role.icon;
+                    return (
+                      <>
+                        <div className="px-5 py-2.5 border-b border-border/40 flex items-center gap-2" style={{background:role.color+'0a'}}>
+                          <RIcon size={12} style={{color:role.color}}/>
+                          <p className="text-xs text-muted-foreground">Answering for a <span className="font-semibold" style={{color:role.color}}>{role.label}</span> — framed and prioritised for what this role needs.</p>
+                        </div>
+                        <div className="px-5 py-3 border-b border-border/40">
+                          <div className="text-xs font-medium text-muted-foreground mb-2">Suggested questions:</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {role.questions.map((q,i)=>(
+                              <button key={i} onClick={()=>setRoleChatQ(q)}
+                                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${roleChatQ===q?'border-primary bg-primary/10 text-primary':'border-border bg-secondary/30 text-muted-foreground hover:text-foreground hover:border-primary/40'}`}>
+                                {q}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  <div className="px-5 py-3 flex gap-2">
+                    <input value={roleChatQ} onChange={e=>setRoleChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&roleChatQ.trim()&&callPipelineChat(roleChatQ,'chat')}
+                      placeholder={`Ask as ${ROLES.find(r=>r.id===activeRole)?.label||'team member'}...`}
+                      className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>
+                    <Button onClick={()=>roleChatQ.trim()&&callPipelineChat(roleChatQ,'chat')} disabled={roleChatLoading||!roleChatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">
+                      {roleChatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}
+                    </Button>
+                  </div>
+                  {(roleChat||roleChatLoading)&&(
+                    <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4 max-h-[500px] overflow-y-auto">
+                      {roleChatLoading&&!roleChat&&<div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking as {ROLES.find(r=>r.id===activeRole)?.label}...</div>}
+                      {roleChat&&<AgendaMarkdown text={roleChat}/>}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}</>        )}      </div>      {/* Block expand modal */}      {expandedBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setExpandedBlock(null)}/>          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden max-h-[80vh] overflow-y-auto">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border sticky top-0 bg-card/95 backdrop-blur z-10">              {(()=>{const m=TM[expandedBlock.type]||TM.custom;const Icon=m.icon;return(<><div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}><Icon size={13} style={{color:m.color}}/></div><div className="flex-1"><div className="font-bold text-sm">{expandedBlock.title}</div><div className="text-xs font-mono" style={{color:m.color}}>{m.label}</div></div></>);})()}              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${PM[expandedBlock.priority].badge}`}>{expandedBlock.priority}</span>              <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"><Brain size={11}/>Deep Dive</button>              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={13}/></button>            </div>            <div className="px-5 py-4 space-y-3">              <div className="rounded-xl border border-border bg-background/60 p-4"><p className="text-sm leading-relaxed whitespace-pre-wrap">{expandedBlock.content}</p></div>              {expandedBlock.tags&&expandedBlock.tags.length>0 && (                <div className="flex flex-wrap gap-1.5">{expandedBlock.tags.map((t,i)=><span key={i} className="text-xs px-2 py-0.5 rounded-full border border-border bg-secondary/30 text-muted-foreground flex items-center gap-1"><Tag size={8}/>{t}</span>)}</div>              )}              <div className="flex gap-2 flex-wrap">                {expandedBlock.effort && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">effort: {expandedBlock.effort}</span>}                {expandedBlock.impact && <span className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground">impact: {expandedBlock.impact}</span>}              </div>              <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy content</button>            </div>          </div>        </div>      )}      {/* Deep Dive modal */}      {ddBlock && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>{if(!ddLoading)setDdBlock(null);}}/>          <div className="relative w-full max-w-2xl rounded-2xl border border-primary/30 bg-card/95 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="flex items-center gap-3 px-5 py-4 border-b border-border shrink-0">              <Brain className="h-4 w-4 text-primary"/>              <div className="flex-1"><div className="font-semibold text-sm">AI Deep Dive</div><div className="text-xs text-muted-foreground truncate">{ddBlock.title}</div></div>              {ddLoading && <RefreshCw size={14} className="animate-spin text-primary"/>}              {!ddLoading && <button onClick={()=>setDdBlock(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50"><X size={12}/></button>}            </div>            <div className="flex-1 overflow-y-auto px-5 py-4">              {ddLoading&&!ddText && <div className="flex items-center gap-2 text-xs text-muted-foreground py-8 justify-center"><RefreshCw size={14} className="animate-spin text-primary"/>Analysing this block in depth…</div>}              {ddText && <div className="rounded-xl border border-border bg-background/60 p-4"><ChatMd text={ddText}/></div>}            </div>            {ddText&&!ddLoading && (              <div className="px-5 py-3 border-t border-border shrink-0 flex gap-2">                <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>                <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>              </div>            )}          </div>        </div>      )}      {/* Assign modal */}      {showAssignModal && (        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={()=>setShowAssignModal(null)}/>          <div className="relative w-80 rounded-2xl border border-border bg-card/95 shadow-2xl overflow-hidden">            <div className="h-px w-full bg-gradient-to-r from-transparent via-primary to-transparent"/>            <div className="px-5 py-4 border-b border-border">              <div className="font-semibold text-sm">Assign block</div>              <div className="text-xs text-muted-foreground truncate mt-0.5">                {blocks.find(b=>b.id===showAssignModal)?.title}              </div>            </div>            <div className="px-5 py-4 space-y-2">              {/* Unassign */}              <button onClick={()=>assignBlock(showAssignModal,'')}                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                <div className="h-7 w-7 rounded-full bg-secondary/60 flex items-center justify-center text-xs text-muted-foreground">—</div>                <span className="text-sm text-muted-foreground">Unassigned</span>                {!blocks.find(b=>b.id===showAssignModal)?.assignee && <CheckCircle2 size={13} className="text-primary ml-auto"/>}              </button>              {/* Team members */}              {teamMembers.map(member => (                <button key={member} onClick={()=>assignBlock(showAssignModal,member)}                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left">                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">{member[0].toUpperCase()}</div>                  <span className="text-sm">{member}</span>                  {blocks.find(b=>b.id===showAssignModal)?.assignee===member && <CheckCircle2 size={13} className="text-primary ml-auto"/>}                </button>              ))}              {/* Add custom member */}              <div className="pt-2 border-t border-border">                <input                  placeholder="Add new team member…"                  className="w-full h-8 text-xs px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"                  onKeyDown={e => {                    if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {                      const name = (e.target as HTMLInputElement).value.trim();                      setTeamMembers(tm => [...tm, name]);                      assignBlock(showAssignModal, name);                    }                  }}                />                <p className="text-xs text-muted-foreground mt-1">Press Enter to add and assign</p>              </div>            </div>          </div>        </div>      )}
 
       {/* Full Agenda Modal */}
       {agendaExpanded !== null && (
