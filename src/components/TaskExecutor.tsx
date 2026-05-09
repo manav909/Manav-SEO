@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
 import {
   Brain, ChevronRight, AlertTriangle, CheckCircle2,
   RefreshCw, X, Copy, Save, Sparkles, Target,
@@ -119,9 +120,6 @@ export default function TaskExecutor({ block, projectId, role: initRole, onClose
   const saveToCache = async () => {
     if (!output || !projectId) return;
     try {
-      const { createClient } = await import('@supabase/supabase-js');
-      // Frontend Supabase save
-      const { supabase } = await import('@/lib/supabase');
       await supabase.from('ai_content_cache').upsert({
         project_id:   projectId,
         content_type: `execution_${block.id}`,
@@ -129,7 +127,9 @@ export default function TaskExecutor({ block, projectId, role: initRole, onClose
         status:       'complete',
       }, { onConflict: 'project_id,content_type' });
       toast({ title: 'Saved to project cache' });
-    } catch { toast({ title: 'Saved locally (Supabase unavailable)' }); }
+    } catch {
+      toast({ title: 'Could not save — check Supabase connection' });
+    }
   };
 
   const color = TYPE_ICONS[block.type] || '#94a3b8';
