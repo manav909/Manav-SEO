@@ -964,36 +964,139 @@ const EXEC_ROLES = [
   },
 ];
 
-const CLIENT_INPUTS: Record<string, { key: string; label: string; why: string; placeholder: string }[]> = {
+/* Base questions (always shown for this card type) + role-specific extras */
+const CLIENT_INPUTS_BASE: Record<string, { key: string; label: string; why: string; placeholder: string }[]> = {
   technical: [
-    { key: "affected_urls",    label: "Which URLs are affected?",                      why: "I need the exact paths to generate the correct fix",                                    placeholder: "e.g. /old-page, /broken-redirect, /missing-page" },
-    { key: "current_behavior", label: "What is currently happening (the problem)?",   why: "The error type tells me which approach to take",                                       placeholder: "e.g. 404 on /old-page, redirect loop, schema not validating" },
+    { key: "affected_urls",    label: "Which URLs are affected?",                    why: "I need the exact paths to generate the correct fix",              placeholder: "e.g. /old-page, /broken-redirect, /missing-page" },
+    { key: "current_behavior", label: "What is currently happening — the problem?",  why: "The error type tells me which fix approach to take",              placeholder: "e.g. 404 on /old-page, redirect loop, schema not validating" },
   ],
   content: [
-    { key: "target_keyword",      label: "Primary keyword + 3-5 related ones",        why: "Everything I write is built around these",                                              placeholder: "e.g. mobile forms app, online form builder, mobile form creator" },
-    { key: "search_intent",       label: "What is the reader trying to do?",          why: "Informational, commercial, or transactional each need a completely different structure", placeholder: "e.g. compare options (commercial), learn how to (informational), buy/sign up (transactional)" },
-    { key: "word_count_target",   label: "Target word count",                         why: "This determines how deep I go",                                                         placeholder: "e.g. 1200 words" },
-    { key: "brand_voice_example", label: "One example of how this brand writes",      why: "Without this my output will be generic — paste a URL or a paragraph",                  placeholder: "Paste a URL to an existing page, or paste a paragraph of their writing style" },
+    { key: "target_keyword",      label: "Primary keyword + 3-5 related ones",      why: "Everything I write is built around these",                        placeholder: "e.g. mobile forms app, online form builder, mobile form creator" },
+    { key: "search_intent",       label: "What is the reader trying to do?",        why: "Informational, commercial, or transactional each need a completely different structure", placeholder: "e.g. compare options (commercial), learn how to (informational), buy/sign up (transactional)" },
+    { key: "word_count_target",   label: "Target word count",                       why: "This determines how deep I go",                                   placeholder: "e.g. 1200 words" },
+    { key: "brand_voice_example", label: "One example of how this brand writes",    why: "Without this my output will be generic — paste a URL or a paragraph", placeholder: "Paste a URL or a paragraph of their writing style" },
   ],
   geo: [
-    { key: "target_query",    label: "Exact query to appear for in AI search",         why: "GEO strategy is completely query-specific",                                             placeholder: "e.g. best mobile form app for small business" },
-    { key: "ai_platform",     label: "Which platform matters most?",                  why: "Perplexity, ChatGPT, and Google AI Overview each cite differently",                     placeholder: "e.g. Perplexity, ChatGPT, or Google AI Overview" },
+    { key: "target_query",  label: "Exact query to appear for in AI search",        why: "GEO strategy is completely query-specific",                       placeholder: "e.g. best mobile form app for small business" },
+    { key: "ai_platform",   label: "Which platform matters most?",                  why: "Perplexity, ChatGPT, and Google AI Overview cite differently",    placeholder: "e.g. Perplexity, ChatGPT, Google AI Overview" },
   ],
   "quick-win": [
-    { key: "target_urls",   label: "URLs to optimise (paste 1-10)",                    why: "I will fetch each page and generate specific before/after improvements",                placeholder: "e.g. https://yourdomain.com/page-1\nhttps://yourdomain.com/page-2" },
-    { key: "target_metric", label: "What metric are we trying to move?",               why: "CTR, rankings, and impressions each need different approaches",                         placeholder: "e.g. click-through rate, average position, impressions" },
+    { key: "target_urls",   label: "URLs to optimise — paste 1 to 10",             why: "I will fetch each and generate specific before/after improvements", placeholder: "https://yourdomain.com/page-1" },
+    { key: "target_metric", label: "What metric are we trying to move?",            why: "CTR, rankings, and impressions each need different approaches",   placeholder: "e.g. click-through rate, average position, impressions" },
   ],
   competitive: [
-    { key: "competitor_url",  label: "Competitor domain to analyse",                   why: "I will fetch their pages to find the exact gaps",                                       placeholder: "e.g. competitor.com" },
-    { key: "target_keywords", label: "Keywords you want to outrank them on",           why: "Without a focus the analysis is too broad to act on",                                  placeholder: "e.g. mobile form builder, online form app" },
+    { key: "competitor_url",  label: "Competitor domain to analyse",               why: "I will fetch their pages to find the exact gaps",                 placeholder: "e.g. competitor.com" },
+    { key: "target_keywords", label: "Keywords you want to outrank them on",       why: "Without a focus the analysis is too broad to act on",             placeholder: "e.g. mobile form builder, online form app" },
   ],
   insight: [
-    { key: "specific_question", label: "What specifically do you want me to analyse?", why: "A focused question gives a useful answer — a broad one does not",                      placeholder: "e.g. Why are we losing rankings for X? What should we prioritise in Month 2?" },
+    { key: "specific_question", label: "What do you want me to analyse?",          why: "A focused question gives a useful answer — a broad one does not", placeholder: "e.g. Why are we losing rankings for X? What should we prioritise next month?" },
   ],
   weekly: [
-    { key: "task_context", label: "More context about what needs doing",               why: "Weekly tasks vary — context determines the right approach",                             placeholder: "Describe what specifically needs to happen this week" },
+    { key: "task_context", label: "More context about what needs doing",            why: "Weekly tasks vary — context determines the right approach",       placeholder: "Describe what specifically needs to happen" },
   ],
 };
+
+/* Role-specific extra questions — appended after the base questions */
+const CLIENT_INPUTS_ROLE_EXTRA: Record<string, Record<string, { key: string; label: string; why: string; placeholder: string }[]>> = {
+  content: {
+    senior_seo: [
+      { key: "competing_pages",    label: "Top 3 competing pages to beat",          why: "I will structure content to out-depth them specifically",          placeholder: "e.g. competitor.com/blog/mobile-forms, site2.com/forms-guide" },
+      { key: "topical_depth",      label: "Subtopics to cover for topical authority", why: "Covering related subtopics signals expertise to Google",         placeholder: "e.g. form validation, offline forms, form analytics" },
+    ],
+    content_writer: [
+      { key: "key_points",         label: "Key points or angles to include",        why: "Tells me what the client specifically wants to communicate",       placeholder: "e.g. emphasise ease of use, mention the free plan, cover mobile-first design" },
+      { key: "tone_notes",         label: "Tone — professional, casual, technical?",why: "This shapes every sentence I write",                              placeholder: "e.g. friendly but professional, avoid jargon, write for non-technical founders" },
+    ],
+    executive: [
+      { key: "business_goal",      label: "What business goal does this content serve?", why: "I frame everything around the outcome that matters commercially", placeholder: "e.g. generate trial signups, rank for buyer-intent keywords, support sales team" },
+      { key: "target_audience",    label: "Who is the target reader?",              why: "Job title, company size, and pain point shape the whole piece",    placeholder: "e.g. operations managers at SMBs, non-technical founders" },
+    ],
+    project_manager: [
+      { key: "deadline",           label: "When does this need to be published?",   why: "I will flag if the brief is too large for the timeline",           placeholder: "e.g. end of this week, next Monday" },
+      { key: "reviewer",           label: "Who reviews before it goes live?",       why: "I will note what the reviewer will likely scrutinise",             placeholder: "e.g. client, SEO lead, legal team" },
+    ],
+    team_lead: [
+      { key: "assigned_writer",    label: "Who is writing this?",                   why: "I tailor the brief to their skill level and context",              placeholder: "e.g. in-house writer, freelancer, AI-assisted" },
+    ],
+    biz_dev: [
+      { key: "client_differentiators", label: "What makes the client stand out?",  why: "I weave this into the content as proof points",                   placeholder: "e.g. fastest setup, only tool with offline support, used by 10k businesses" },
+    ],
+  },
+  technical: {
+    senior_seo: [
+      { key: "expected_fix_type",  label: "What kind of fix do you expect is needed?", why: "Redirect, schema, robots.txt, and canonical each need different code", placeholder: "e.g. 301 redirect, fix schema markup, update robots.txt" },
+    ],
+    team_lead: [
+      { key: "who_deploys",        label: "Who will apply the changes?",            why: "I write deployment instructions at the right technical level",     placeholder: "e.g. developer, I do it myself via CMS, agency" },
+    ],
+    project_manager: [
+      { key: "urgency",            label: "How urgent is this fix?",                why: "Critical vs routine issues need different documentation formats",  placeholder: "e.g. blocking indexation (urgent), nice-to-have improvement" },
+    ],
+  },
+  competitive: {
+    senior_seo: [
+      { key: "ranking_data",       label: "Semrush or Ahrefs export — optional but raises accuracy to 85%", why: "Without data I work from live page fetches only", placeholder: "Paste top rows from a keyword gap or domain overview export" },
+    ],
+    executive: [
+      { key: "business_context",   label: "Why does beating this competitor matter now?", why: "I frame the analysis around the business case, not just rankings", placeholder: "e.g. they are winning deals we should be closing, they recently launched a new product" },
+    ],
+  },
+  geo: {
+    senior_seo: [
+      { key: "current_url",        label: "Page URL to optimise for GEO",           why: "I fetch and read the current page before rewriting",              placeholder: "e.g. https://yourdomain.com/page" },
+    ],
+  },
+  insight: {
+    senior_seo: [
+      { key: "data_to_reference",  label: "Specific data you want me to analyse",   why: "Point me at the right audit, report, or metric",                  placeholder: "e.g. the March GSC export, the Screaming Frog crawl from Data Room" },
+    ],
+    executive: [
+      { key: "decision_context",   label: "What decision does this analysis inform?", why: "I focus the output on evidence that supports or challenges that specific decision", placeholder: "e.g. whether to invest in content vs technical SEO this quarter" },
+    ],
+  },
+};
+
+function getClientInputs(blockType: string, role: string) {
+  const base  = CLIENT_INPUTS_BASE[blockType]  || CLIENT_INPUTS_BASE.weekly;
+  const extra = (CLIENT_INPUTS_ROLE_EXTRA[blockType] || {})[role] || [];
+  return [...base, ...extra];
+}
+
+/* Manav suggestions — smart hints based on loaded context */
+function getManavSuggestions(blockType: string, role: string, ctx: any): { key: string; hint: string }[] {
+  if (!ctx) return [];
+  const hints: { key: string; hint: string }[] = [];
+  const kw  = ctx.goals?.keywords || (ctx.project?.keywords || [])[0] || '';
+  const cms = ctx.tech?.cms || '';
+  const url = ctx.project?.url || '';
+  const goal= ctx.goals?.primary || '';
+  const comp= ctx.competitors?.c1 || '';
+  const organic = ctx.analytics?.organicMonthly;
+
+  if (blockType === 'content') {
+    if (kw)     hints.push({ key: 'target_keyword',      hint: `I already know your primary keyword is "${kw}" from your Data Room — pre-filled.` });
+    if (goal)   hints.push({ key: 'search_intent',       hint: `Your campaign goal is "${goal}" — that suggests ${goal.toLowerCase().includes('sign') || goal.toLowerCase().includes('trial') ? 'commercial or transactional' : 'informational'} intent is likely the right call.` });
+    if (organic) hints.push({ key: 'word_count_target',  hint: `With ${organic} monthly organic sessions, a 1,500-2,000 word piece will compete well. Shorter risks being outranked.` });
+  }
+  if (blockType === 'technical') {
+    if (cms) hints.push({ key: 'current_behavior', hint: `You are on ${cms} — I know exactly which settings panel to reference in the fix instructions.` });
+    if (url) hints.push({ key: 'affected_urls',    hint: `I can fetch live pages from ${url} to see the issue directly if you paste the paths.` });
+  }
+  if (blockType === 'competitive') {
+    if (comp) hints.push({ key: 'competitor_url',   hint: `Your Data Room lists "${comp}" as your main competitor — pre-filled, but add more if you want a wider comparison.` });
+    if (kw)   hints.push({ key: 'target_keywords',  hint: `Your target keywords from Data Room are "${kw}" — good starting point, refine if this task is for a specific cluster.` });
+  }
+  if (blockType === 'geo') {
+    if (url)  hints.push({ key: 'current_url',      hint: `I will fetch ${url} before rewriting — paste the specific page path below.` });
+  }
+  if (role === 'executive' && blockType === 'content') {
+    hints.push({ key: 'business_goal', hint: `For an executive output I frame everything in revenue and competitive position — tell me the conversion goal so I can tie the content to it.` });
+  }
+  if (role === 'senior_seo' && blockType === 'content') {
+    hints.push({ key: 'competing_pages', hint: `I recommend pasting 2-3 competitor URLs here — I will read them and structure your content to out-depth each one specifically.` });
+  }
+  return hints;
+}
 
 function getClientInputs(blockType: string) {
   return CLIENT_INPUTS[blockType] || CLIENT_INPUTS.weekly;
@@ -1024,7 +1127,8 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
   onVerify:       (block:any)=>void;
 }) {
   const cap           = getAICap(block.type);
-  const clientInputs  = getClientInputs(block.type);
+  const clientInputs  = React.useMemo(() => getClientInputs(block.type, role), [block.type, role]);
+  const suggestions   = React.useMemo(() => getManavSuggestions(block.type, role, context), [block.type, role, context]);
 
   const [phase,        setPhase]        = useState<'loading'|'inputs'|'executing'|'done'>('loading');
   const [role,         setRole]         = useState('senior_seo');
@@ -1239,6 +1343,9 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
           <div className="px-6 py-2 border-b border-white/6 flex flex-wrap gap-x-5 gap-y-0.5">
             <span className="text-xs text-white/35"><span className="text-violet-400 font-medium">Focus:</span> {roleInfo.focus}</span>
             <span className="text-xs text-white/35"><span className="text-green-400 font-medium">Output:</span> {roleInfo.output}</span>
+            {(CLIENT_INPUTS_ROLE_EXTRA[block.type]||{})[role]?.length > 0 && (
+              <span className="text-xs text-violet-400/70">+ {(CLIENT_INPUTS_ROLE_EXTRA[block.type]||{})[role].length} role-specific question{(CLIENT_INPUTS_ROLE_EXTRA[block.type]||{})[role].length!==1?'s':''} added</span>
+            )}
           </div>
         )}
 
@@ -1360,7 +1467,13 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                           {inp.label}
                           {isAutoFilled && <span className="ml-2 text-green-400 font-normal text-xs">· pre-filled from Data Room</span>}
                         </label>
-                        <p className="text-xs text-white/35 mb-1.5">{inp.why}</p>
+                        <p className="text-xs text-white/35 mb-1">{inp.why}</p>
+                        {suggestions.find(s=>s.key===inp.key) && (
+                          <div className="flex items-start gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 mb-1.5">
+                            <div className="h-4 w-4 rounded-full bg-primary/25 flex items-center justify-center font-black text-primary text-xs shrink-0 mt-0.5">M</div>
+                            <p className="text-xs text-primary/80 leading-relaxed">{suggestions.find(s=>s.key===inp.key)!.hint}</p>
+                          </div>
+                        )}
                         <textarea
                           value={currentValue}
                           onChange={e=>setUserInputs(prev=>({...prev,[inp.key]:e.target.value}))}
