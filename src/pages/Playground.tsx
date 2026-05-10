@@ -2916,10 +2916,10 @@ Please try again — if the problem persists, check your network connection.`);
                             </div>
                           ) : libBlocks.map(block=>{
                             
-                            const Icon = gT(block.type).icon;
-                            const pm   = PM[block.priority];
-                            const isRecommended = recommendation?.block.id===block.id;
-                            const isHighlighted = highlightId===block.id;
+                            const LibIcon = gT(block.type).icon;
+                            const libPm  = PM[block.priority];
+                            const libIsRec  = recommendation?.block.id===block.id;
+                            const libIsHigh = highlightId===block.id;
                             return (
                               <div
                                 id={`lib-block-${block.id}`}
@@ -2927,10 +2927,10 @@ Please try again — if the problem persists, check your network connection.`);
                                 draggable
                                 onDragStart={e=>onDragStart(e,block.id)}
                                 onDragEnd={onDragEnd}
-                                className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing group hover:shadow-md transition-all ${draggingId===block.id?'opacity-40 scale-95':''} ${isHighlighted?'ring-2 ring-yellow-400 border-yellow-400/40 bg-yellow-400/10':isRecommended?`ring-1 ring-yellow-400/60 ${gT(block.type).border} ${gT(block.type).bg}`:`${gT(block.type).border} ${gT(block.type).bg}`}`}
+                                className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing group hover:shadow-md transition-all ${draggingId===block.id?'opacity-40 scale-95':''} ${libIsHigh?'ring-2 ring-yellow-400 border-yellow-400/40 bg-yellow-400/10':libIsRec?`ring-1 ring-yellow-400/60 ${gT(block.type).border} ${gT(block.type).bg}`:`${gT(block.type).border} ${gT(block.type).bg}`}`}
                               >
                                 {/* recommended badge */}
-                                {isRecommended && (
+                                {libIsRec && (
                                   <div className="flex items-center gap-1 mb-2">
                                     <Lightbulb size={9} className="text-yellow-400"/>
                                     <span className="text-xs font-mono text-yellow-400">Next recommended</span>
@@ -2938,13 +2938,13 @@ Please try again — if the problem persists, check your network connection.`);
                                 )}
                                 <div className="flex items-center gap-1.5 mb-1.5">
                                   <GripVertical size={10} className="text-muted-foreground/30 shrink-0"/>
-                                  <Icon size={10} style={{color:gT(block.type).color}} className="shrink-0"/>
+                                  <LibIcon size={10} style={{color:gT(block.type).color}} className="shrink-0"/>
                                   <span className="text-xs font-semibold flex-1 leading-tight">{block.title}</span>
                                 </div>
                                 <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>
                                 <div className="flex items-center justify-between gap-1">
                                   <div className="flex items-center gap-1">
-                                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${pm.dot}`}/>
+                                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${libPm.dot}`}/>
                                     <span className="text-xs text-muted-foreground">{block.priority}</span>
                                   </div>
                                   <div className="flex items-center gap-1.5">
@@ -3119,7 +3119,7 @@ Please try again — if the problem persists, check your network connection.`);
                                   <p className="text-xs text-muted-foreground px-3 pb-2">Generate a client-ready agenda with tasks, outcomes, and verification steps.</p>
                                 )}
                               </div>
-                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const Icon = gT(block.type).icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div
+                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const ColIcon = gT(block.type).icon;                                const colPm   = PM[block.priority];                                const colSm   = SM[block.status];                                const StatusIcon = colSm.icon;                                return (                                  <div
                                     key={block.id}
                                     draggable
                                     onDragStart={e=>{
@@ -3133,7 +3133,7 @@ Please try again — if the problem persists, check your network connection.`);
                                   >
                                     {/* Top row: icon + title + expand */}
                                     <div className="flex items-start gap-2 mb-2">
-                                      <Icon size={11} style={{color:gT(block.type).color}} className="shrink-0 mt-0.5"/>
+                                      <ColIcon size={11} style={{color:gT(block.type).color}} className="shrink-0 mt-0.5"/>
                                       <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='verified'||block.status==='done'?'line-through text-muted-foreground':''}`}>
                                         {block.title}
                                       </p>
@@ -3155,7 +3155,7 @@ Please try again — if the problem persists, check your network connection.`);
                                     {/* Bottom row: priority + status */}
                                     <div className="flex items-center justify-between gap-1">
                                       <div className="flex items-center gap-1">
-                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${pm2.dot}`}/>
+                                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${colPm.dot}`}/>
                                         <span className="text-xs text-muted-foreground">{block.priority}</span>
                                         {block.assignee && (
                                           <span className="text-xs font-medium text-primary/70 ml-1">
@@ -3173,8 +3173,8 @@ Please try again — if the problem persists, check your network connection.`);
                                           'text-muted-foreground border-border/50 hover:border-primary/40 hover:text-primary'
                                         }`}
                                       >
-                                        <SI size={8}/>
-                                        <span>{sm2.label}</span>
+                                        <StatusIcon size={8}/>
+                                        <span>{colSm.label}</span>
                                       </button>
                                     </div>
                                   </div>                                );                              })}                            </div>                          </div>                        );                      })}                    </div>                    {/* ── Verification & Manav Brain Assist Panel ── */}
