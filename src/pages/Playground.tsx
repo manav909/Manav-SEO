@@ -597,11 +597,11 @@ Basis: ${safe(k.basis)}`               : '',
   }
 
   /* 10 — retainer milestones */
-  for (const m of strategy.retainer_value_summary?.key_milestones || []) {
+  for (const ms of strategy.retainer_value_summary?.key_milestones || []) {
     push({
       type:     'monthly',
-      title:    safe(m).slice(0, 70),
-      content:  `Milestone: ${safe(m)}
+      title:    safe(ms).slice(0, 70),
+      content:  `Milestone: ${safe(ms)}
 
 Projection: ${safe(strategy.retainer_value_summary?.projection || strategy.retainer_value_summary?.score_gain_projection)}
 
@@ -2911,8 +2911,8 @@ Please try again — if the problem persists, check your network connection.`);
                               <p className="text-xs text-muted-foreground">{blocks.length===0?'Generate a strategy to populate blocks':'All blocks placed! Drag from columns back here to unplace.'}</p>
                             </div>
                           ) : libBlocks.map(block=>{
-                            const m    = TM[block.type]||TM.custom;
-                            const Icon = m.icon;
+                            const tm   = TM[block.type]||TM.custom;
+                            const Icon = tm.icon;
                             const pm   = PM[block.priority];
                             const isRecommended = recommendation?.block.id===block.id;
                             const isHighlighted = highlightId===block.id;
@@ -2923,7 +2923,7 @@ Please try again — if the problem persists, check your network connection.`);
                                 draggable
                                 onDragStart={e=>onDragStart(e,block.id)}
                                 onDragEnd={onDragEnd}
-                                className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing group hover:shadow-md transition-all ${draggingId===block.id?'opacity-40 scale-95':''} ${isHighlighted?'ring-2 ring-yellow-400 border-yellow-400/40 bg-yellow-400/10':isRecommended?`ring-1 ring-yellow-400/60 ${m.border} ${m.bg}`:`${m.border} ${m.bg}`}`}
+                                className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing group hover:shadow-md transition-all ${draggingId===block.id?'opacity-40 scale-95':''} ${isHighlighted?'ring-2 ring-yellow-400 border-yellow-400/40 bg-yellow-400/10':isRecommended?`ring-1 ring-yellow-400/60 ${tm.border} ${tm.bg}`:`${tm.border} ${tm.bg}`}`}
                               >
                                 {/* recommended badge */}
                                 {isRecommended && (
@@ -2934,7 +2934,7 @@ Please try again — if the problem persists, check your network connection.`);
                                 )}
                                 <div className="flex items-center gap-1.5 mb-1.5">
                                   <GripVertical size={10} className="text-muted-foreground/30 shrink-0"/>
-                                  <Icon size={10} style={{color:m.color}} className="shrink-0"/>
+                                  <Icon size={10} style={{color:tm.color}} className="shrink-0"/>
                                   <span className="text-xs font-semibold flex-1 leading-tight">{block.title}</span>
                                 </div>
                                 <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>
@@ -2945,7 +2945,7 @@ Please try again — if the problem persists, check your network connection.`);
                                   </div>
                                   <div className="flex items-center gap-1.5">
                                     {block.effort && <span className="text-xs font-mono text-muted-foreground/60">{block.effort}</span>}
-                                    <span className="text-xs font-mono" style={{color:m.color}}>{m.label}</span>
+                                    <span className="text-xs font-mono" style={{color:tm.color}}>{tm.label}</span>
                                   </div>
                                 </div>
                                 {block.tags && block.tags.length > 0 && (
@@ -3115,7 +3115,7 @@ Please try again — if the problem persists, check your network connection.`);
                                   <p className="text-xs text-muted-foreground px-3 pb-2">Generate a client-ready agenda with tasks, outcomes, and verification steps.</p>
                                 )}
                               </div>
-                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const m    = TM[block.type]||TM.custom;                                const Icon = m.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div
+                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const tm   = TM[block.type]||TM.custom;                                const Icon = tm.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div
                                     key={block.id}
                                     draggable
                                     onDragStart={e=>{
@@ -3123,13 +3123,13 @@ Please try again — if the problem persists, check your network connection.`);
                                       onDragStart(e,block.id);
                                     }}
                                     onDragEnd={onDragEnd}
-                                    className={`rounded-xl border ${m.border} ${m.bg} p-3 cursor-grab transition-all select-none ${
+                                    className={`rounded-xl border ${tm.border} ${tm.bg} p-3 cursor-grab transition-all select-none ${
                                       draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md hover:border-opacity-60'
                                     } ${block.status==='verified'||block.status==='done'?'opacity-55':''}`}
                                   >
                                     {/* Top row: icon + title + expand */}
                                     <div className="flex items-start gap-2 mb-2">
-                                      <Icon size={11} style={{color:m.color}} className="shrink-0 mt-0.5"/>
+                                      <Icon size={11} style={{color:tm.color}} className="shrink-0 mt-0.5"/>
                                       <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='verified'||block.status==='done'?'line-through text-muted-foreground':''}`}>
                                         {block.title}
                                       </p>
@@ -3183,7 +3183,7 @@ Please try again — if the problem persists, check your network connection.`);
                         </div>
                         <div className="p-4 space-y-2">
                           {placedBlocks.filter(b=>b.status==='doing'||b.status==='waiting').map(b=>{
-                            const m = TM[b.type]||TM.custom;
+                            const tm = TM[b.type]||TM.custom;
                             const WAIT: Record<string,number> = {'technical':5,'content':14,'geo':7,'quick-win':3,'competitive':21,'weekly':3,'monthly':30,'kpi':7,'custom':5};
                             const wDays = WAIT[b.type]||5;
                             const comp  = completedDates[b.id]?new Date(completedDates[b.id]):null;
@@ -3191,8 +3191,8 @@ Please try again — if the problem persists, check your network connection.`);
                             const ready = dLeft===0;
                             return (
                               <div key={b.id} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-background/60 hover:border-primary/30 transition-colors">
-                                <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}>
-                                  <m.icon size={13} style={{color:m.color}}/>
+                                <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${tm.color}18`,border:`1px solid ${tm.color}28`}}>
+                                  <tm.icon size={13} style={{color:tm.color}}/>
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="font-medium text-sm truncate">{b.title}</div>
@@ -3442,19 +3442,19 @@ Please try again — if the problem persists, check your network connection.`);
                     </div>
                   </div>
                   {(()=>{
-                    const role = ROLES.find(r=>r.id===activeRole);
-                    if(!role) return null;
-                    const RIcon = role.icon;
+                    const pipelineRole = ROLES.find(r=>r.id===activeRole);
+                    if(!pipelineRole) return null;
+                    const RIcon = pipelineRole.icon;
                     return (
                       <>
-                        <div className="px-5 py-2.5 border-b border-border/40 flex items-center gap-2" style={{background:role.color+'0a'}}>
-                          <RIcon size={12} style={{color:role.color}}/>
-                          <p className="text-xs text-muted-foreground">Answering for a <span className="font-semibold" style={{color:role.color}}>{role.label}</span> — framed and prioritised for what this role needs.</p>
+                        <div className="px-5 py-2.5 border-b border-border/40 flex items-center gap-2" style={{background:pipelineRole.color+'0a'}}>
+                          <RIcon size={12} style={{color:pipelineRole.color}}/>
+                          <p className="text-xs text-muted-foreground">Answering for a <span className="font-semibold" style={{color:pipelineRole.color}}>{pipelineRole.label}</span> — framed and prioritised for what this role needs.</p>
                         </div>
                         <div className="px-5 py-3 border-b border-border/40">
                           <div className="text-xs font-medium text-muted-foreground mb-2">Suggested questions:</div>
                           <div className="flex flex-wrap gap-1.5">
-                            {role.questions.map((q,i)=>(
+                            {pipelineRole.questions.map((q,i)=>(
                               <button key={i} onClick={()=>setRoleChatQ(q)}
                                 className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${roleChatQ===q?'border-primary bg-primary/10 text-primary':'border-border bg-secondary/30 text-muted-foreground hover:text-foreground hover:border-primary/40'}`}>
                                 {q}
@@ -3491,21 +3491,21 @@ Please try again — if the problem persists, check your network connection.`);
             onClick={e=>e.stopPropagation()}
           >
             {/* Colour bar */}
-            {(()=>{const m=TM[expandedBlock.type]||TM.custom;return <div className="h-1 w-full" style={{background:`linear-gradient(90deg,${m.color},transparent)`}}/>;})()}
+            {(()=>{const tm=TM[expandedBlock.type]||TM.custom;return <div className="h-1 w-full" style={{background:`linear-gradient(90deg,${m.color},transparent)`}}/>;})()}
 
             {/* Header */}
             {(()=>{
-              const m=TM[expandedBlock.type]||TM.custom;
+              const tm=TM[expandedBlock.type]||TM.custom;
               const EIcon=m.icon;
               return (
                 <div className="flex items-start gap-3 px-5 py-4 border-b border-border shrink-0">
-                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{background:`${m.color}18`,border:`1px solid ${m.color}28`}}>
+                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{background:`${tm.color}18`,border:`1px solid ${tm.color}28`}}>
                     <EIcon size={14} style={{color:m.color}}/>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-sm leading-snug">{expandedBlock.title}</div>
                     <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                      <span className="font-mono" style={{color:m.color}}>{m.label}</span>
+                      <span className="font-mono" style={{color:m.color}}>{tm.label}</span>
                       <span className={`px-1.5 py-0.5 rounded-full border text-xs font-mono ${PM[expandedBlock.priority]?.badge||'border-border text-muted-foreground'}`}>{expandedBlock.priority}</span>
                       <span className="text-muted-foreground">Week {expandedBlock.week===5?'Backlog':expandedBlock.week}</span>
                     </div>
