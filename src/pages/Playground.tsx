@@ -919,12 +919,42 @@ function getAICap(blockType: string): AICap {
    Full AI execution panel — no imports, self-contained
 ════════════════════════════════════════════════════ */
 const EXEC_ROLES = [
-  { id:'senior_seo',      label:'Senior SEO Strategist' },
-  { id:'content_writer',  label:'Content Writer'         },
-  { id:'team_lead',       label:'Team Lead'              },
-  { id:'project_manager', label:'Project Manager'        },
-  { id:'executive',       label:'Executive'              },
-  { id:'biz_dev',         label:'Biz Dev Manager'        },
+  {
+    id: 'senior_seo', label: 'Senior SEO Strategist',
+    focus: 'Technical depth, algorithm reasoning, ranking factors, E-E-A-T, GEO strategy',
+    output: 'Detailed SEO rationale with specific ranking signals, compounding effects, and risk analysis',
+    best_for: 'Technical tasks, content strategy, audit analysis, competitive intelligence',
+  },
+  {
+    id: 'content_writer', label: 'Content Writer',
+    focus: 'What to write, structure, keywords, tone, internal links, GEO readiness',
+    output: 'Writer-ready brief with exact headings, keywords to place, tone guidance, and word targets',
+    best_for: 'Content tasks, GEO optimisation, on-page quick wins',
+  },
+  {
+    id: 'team_lead', label: 'Team Lead',
+    focus: 'What needs doing, who owns it, blockers, dependencies, definition of done',
+    output: 'Clear execution instructions with numbered steps, owner assignment, and done criteria',
+    best_for: 'Weekly tasks, pipeline planning, task delegation',
+  },
+  {
+    id: 'project_manager', label: 'Project Manager',
+    focus: 'Deliverable spec, acceptance criteria, timeline, dependencies, risk',
+    output: 'Formal work order with milestones, acceptance criteria, and risk register',
+    best_for: 'Complex multi-step tasks, sprint planning, client deliverables',
+  },
+  {
+    id: 'executive', label: 'Executive',
+    focus: 'Business outcomes, ROI, competitive position, what to decide',
+    output: 'Plain English business summary — 3 things to know, 1 decision to make, no jargon',
+    best_for: 'Strategic insights, KPI forecasting, competitive analysis',
+  },
+  {
+    id: 'biz_dev', label: 'Biz Dev Manager',
+    focus: 'Client value, proof points, upsell angles, objection handling, renewal talking points',
+    output: 'Client-ready narrative with results framing and commercial context',
+    best_for: 'Monthly reports, insight tasks, competitive positioning',
+  },
 ];
 
 function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose, onVerify }: {
@@ -1041,6 +1071,28 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
           )}
         </div>
 
+        {/* Role context strip — shows what changes based on selected role */}
+        {(()=>{
+          const r = EXEC_ROLES.find(r=>r.id===role);
+          if (!r) return null;
+          return (
+            <div className="px-6 py-3 border-b border-white/6 bg-white/2 flex flex-wrap gap-x-6 gap-y-1">
+              <div className="text-xs text-white/40 flex items-center gap-2">
+                <span className="text-violet-400 font-medium">Focus:</span>
+                <span>{r.focus}</span>
+              </div>
+              <div className="text-xs text-white/40 flex items-center gap-2">
+                <span className="text-green-400 font-medium">Output:</span>
+                <span>{r.output}</span>
+              </div>
+              <div className="text-xs text-white/30 flex items-center gap-2">
+                <span className="text-white/40 font-medium">Best for:</span>
+                <span>{r.best_for}</span>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
 
@@ -1125,7 +1177,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                           onChange={e=>setUserInputs(prev=>({...prev,[m.key]:e.target.value}))}
                           placeholder={`Enter ${m.label.toLowerCase()}...`}
                           rows={2}
-                          className="w-full text-sm px-3 py-2 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none"
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-white/15 bg-[#1a1a24] text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none"
                         />
                       </div>
                     ))}
@@ -1216,7 +1268,11 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <Sparkles size={14}/>Execute Task Now
               </button>
               <div className="text-xs text-white/40">
-                <span className="text-white/60">{cap.time_ai} min</span> estimated · as {EXEC_ROLES.find(r=>r.id===role)?.label}
+                <span className="text-white/60">{cap.time_ai} min</span> estimated
+                <span className="mx-1.5">·</span>
+                <span className="text-violet-400">{EXEC_ROLES.find(r=>r.id===role)?.label}</span>
+                <span className="mx-1.5">·</span>
+                <span>output shaped for {EXEC_ROLES.find(r=>r.id===role)?.best_for?.split(',')[0]}</span>
               </div>
             </div>
           )}
@@ -1349,7 +1405,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
               </label>
               <textarea value={completionNote} onChange={e=>setCompletionNote(e.target.value)} rows={4}
                 placeholder="Tell me what changed — e.g. Fixed 3 broken redirects, tested in browser, all returning 301"
-                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none"
+                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/15 bg-[#1a1a24] text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none"
               />
             </div>
             <div>
@@ -1380,7 +1436,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
               <label className="text-xs font-semibold text-white block mb-1">Paste in the numbers — whatever the tool showed you</label>
               <textarea value={evidenceData} onChange={e=>setEvidenceData(e.target.value)} rows={4}
                 placeholder="E.g. GSC indexed pages went from 823 to 847. Or: keyword moved from pos 14 to 8 in Semrush."
-                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/10 bg-white/3 text-white placeholder-white/20 outline-none focus:border-violet-400/50 resize-none font-mono"
+                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/15 bg-[#1a1a24] text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none font-mono"
               />
             </div>
           </>)}
