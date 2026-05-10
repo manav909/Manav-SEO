@@ -1098,9 +1098,7 @@ function getManavSuggestions(blockType: string, role: string, ctx: any): { key: 
   return hints;
 }
 
-function getClientInputs(blockType: string) {
-  return CLIENT_INPUTS[blockType] || CLIENT_INPUTS.weekly;
-}
+
 
 /* ════════════════════════════════════════════════════
    VERSION HISTORY TYPE
