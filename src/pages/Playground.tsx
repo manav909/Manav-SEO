@@ -3491,21 +3491,21 @@ Please try again — if the problem persists, check your network connection.`);
             onClick={e=>e.stopPropagation()}
           >
             {/* Colour bar */}
-            {(()=>{const tm=TM[expandedBlock.type]||TM.custom;return <div className="h-1 w-full" style={{background:`linear-gradient(90deg,${m.color},transparent)`}}/>;})()}
+            {(()=>{const tm=TM[expandedBlock.type]||TM.custom;return <div className="h-1 w-full" style={{background:`linear-gradient(90deg,${tm.color},transparent)`}}/>;})()}
 
             {/* Header */}
             {(()=>{
               const tm=TM[expandedBlock.type]||TM.custom;
-              const EIcon=m.icon;
+              const EIcon=tm.icon;
               return (
                 <div className="flex items-start gap-3 px-5 py-4 border-b border-border shrink-0">
                   <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{background:`${tm.color}18`,border:`1px solid ${tm.color}28`}}>
-                    <EIcon size={14} style={{color:m.color}}/>
+                    <EIcon size={14} style={{color:tm.color}}/>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-sm leading-snug">{expandedBlock.title}</div>
                     <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                      <span className="font-mono" style={{color:m.color}}>{tm.label}</span>
+                      <span className="font-mono" style={{color:tm.color}}>{tm.label}</span>
                       <span className={`px-1.5 py-0.5 rounded-full border text-xs font-mono ${PM[expandedBlock.priority]?.badge||'border-border text-muted-foreground'}`}>{expandedBlock.priority}</span>
                       <span className="text-muted-foreground">Week {expandedBlock.week===5?'Backlog':expandedBlock.week}</span>
                     </div>
