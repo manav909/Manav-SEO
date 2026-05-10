@@ -918,6 +918,9 @@ function getAICap(blockType: string): AICap {
    InlineTaskExecutor
    Full AI execution panel — no imports, self-contained
 ════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════
+   InlineTaskExecutor — with version history, self-evaluation, redo
+════════════════════════════════════════════════════ */
 const EXEC_ROLES = [
   {
     id: 'senior_seo', label: 'Senior SEO Strategist',
@@ -957,6 +960,16 @@ const EXEC_ROLES = [
   },
 ];
 
+interface ExecVersion {
+  id:             string;
+  role:           string;
+  userInputs:     Record<string, string>;
+  output:         string;
+  criteriaLabel:  string;
+  evaluation:     any;
+  createdAt:      string;
+}
+
 function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose, onVerify }: {
   block:          { id:string; type:string; title:string; content:string; priority:string; impact?:string };
   projectId:      string;
@@ -965,52 +978,138 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
   onClose:        ()=>void;
   onVerify:       (block:any)=>void;
 }) {
-  const [phase,       setPhase]       = useState<'loading'|'requirements'|'executing'|'done'>('loading');
-  const [role,        setRole]        = useState('senior_seo');
-  const [blueprint,   setBlueprint]   = useState<any>(null);
-  const [available,   setAvailable]   = useState<any[]>([]);
-  const [missing,     setMissing]     = useState<any[]>([]);
-  const [dataGaps,    setDataGaps]    = useState<string[]>([]);
-  const [userInputs,  setUserInputs]  = useState<Record<string,string>>({});
-  const [context,     setContext]     = useState<any>(null);
-  const [output,      setOutput]      = useState('');
-  const [copied,      setCopied]      = useState(false);
+  const [phase,        setPhase]        = useState<'loading'|'requirements'|'executing'|'done'>('loading');
+  const [role,         setRole]         = useState('senior_seo');
+  const [blueprint,    setBlueprint]    = useState<any>(null);
+  const [available,    setAvailable]    = useState<any[]>([]);
+  const [missing,      setMissing]      = useState<any[]>([]);
+  const [dataGaps,     setDataGaps]     = useState<string[]>([]);
+  const [userInputs,   setUserInputs]   = useState<Record<string,string>>({});
+  const [context,      setContext]      = useState<any>(null);
+  const [output,       setOutput]       = useState('');
+  const [copied,       setCopied]       = useState(false);
+  const [evaluation,   setEvaluation]   = useState<any>(null);
+  const [evaluating,   setEvaluating]   = useState(false);
+  const [versions,     setVersions]     = useState<ExecVersion[]>([]);
+  const [activeVersion,setActiveVersion]= useState<string|null>(null);
+  const [showHistory,  setShowHistory]  = useState(false);
+  const [redoFrom,     setRedoFrom]     = useState<ExecVersion|null>(null);
+  const [showCritDiff, setShowCritDiff] = useState(false);
   const cap = getAICap(block.type);
 
-  // Load requirements on mount
   useEffect(() => {
-    (async () => {
-      try {
-        // 1. Get full project context
-        const ctxRes = await fetch('/api/control', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'get_context', projectId }),
-        });
-        const ctxData = await ctxRes.json();
-        const ctx = ctxData.context || {};
-        setContext(ctx);
-
-        // 2. Get requirements for this task type
-        const reqRes = await fetch('/api/task-engine', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'requirements', card: block, context: ctx }),
-        });
-        const req = await reqRes.json();
-        setBlueprint(req.blueprint || {});
-        setAvailable(req.available || []);
-        setMissing(req.missing || []);
-        setDataGaps(req.data_room_gaps || []);
-        setPhase('requirements');
-      } catch(e:any) {
-        setBlueprint({ what_ai_produces: 'Could not load requirements — check your API connection.', review_checklist: [], verification_method: '' });
-        setPhase('requirements');
-      }
-    })();
+    loadRequirements();
+    loadVersionHistory();
   }, []);
+
+  const loadRequirements = async () => {
+    setPhase('loading');
+    try {
+      const ctxRes  = await fetch('/api/control', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get_context', projectId }),
+      });
+      const ctxData = await ctxRes.json();
+      const ctx     = ctxData.context || {};
+      setContext(ctx);
+
+      const reqRes  = await fetch('/api/task-engine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'requirements', card: block, context: ctx }),
+      });
+      const req     = await reqRes.json();
+      setBlueprint(req.blueprint || {});
+      setAvailable(req.available || []);
+      setMissing(req.missing || []);
+      setDataGaps(req.data_room_gaps || []);
+      setPhase('requirements');
+    } catch {
+      setBlueprint({ what_ai_produces: 'Could not load requirements — check your connection.', review_checklist: [], verification_method: '' });
+      setPhase('requirements');
+    }
+  };
+
+  const loadVersionHistory = async () => {
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      const { data } = await supabase
+        .from('task_executions')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('card_id', block.id)
+        .order('created_at', { ascending: false })
+        .limit(3);
+      if (data) setVersions(data.map((d: any) => ({
+        id:            d.id,
+        role:          d.role,
+        userInputs:    d.user_inputs || {},
+        output:        d.output || '',
+        criteriaLabel: d.criteria_label || '',
+        evaluation:    d.manav_evaluation || {},
+        createdAt:     d.created_at,
+      })));
+    } catch { /* no history yet */ }
+  };
+
+  const makeCriteriaLabel = (r: string, inputs: Record<string,string>) => {
+    const roleName = EXEC_ROLES.find(x=>x.id===r)?.label || r;
+    const inputSummary = Object.entries(inputs)
+      .filter(([,v]) => v)
+      .map(([k,v]) => `${k}: ${String(v).slice(0,20)}`)
+      .slice(0,3)
+      .join(' · ');
+    return `${roleName}${inputSummary ? ' · ' + inputSummary : ''}`;
+  };
+
+  const saveVersion = async (out: string, eval_: any) => {
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      const label = makeCriteriaLabel(role, userInputs);
+      const { data } = await supabase.from('task_executions').insert({
+        project_id:       projectId,
+        card_id:          block.id,
+        card_title:       block.title,
+        card_type:        block.type,
+        role,
+        user_inputs:      userInputs,
+        context_snapshot: { goals: context?.goals, tech: context?.tech, analytics: context?.analytics },
+        output:           out,
+        criteria_label:   label,
+        manav_evaluation: eval_,
+      }).select().single();
+      if (data) {
+        setVersions(prev => [
+          { id: data.id, role, userInputs, output: out, criteriaLabel: label, evaluation: eval_, createdAt: data.created_at },
+          ...prev.slice(0, 2),
+        ]);
+        setActiveVersion(data.id);
+      }
+    } catch { /* save failed silently */ }
+  };
+
+  const evaluate = async (out: string) => {
+    setEvaluating(true);
+    try {
+      const res  = await fetch('/api/task-engine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'evaluate', card: block,
+          output: out, executedRole: role, executedInputs: userInputs,
+        }),
+      });
+      const data = await res.json();
+      const ev   = data.evaluation || {};
+      setEvaluation(ev);
+      await saveVersion(out, ev);
+    } catch { setEvaluation(null); }
+    setEvaluating(false);
+  };
 
   const execute = async () => {
     setPhase('executing');
     setOutput('');
+    setEvaluation(null);
+    setShowHistory(false);
     try {
       const res = await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1027,24 +1126,52 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
         setOutput(acc);
       }
       setPhase('done');
-    } catch(e:any) {
+      await evaluate(acc);
+    } catch (e: any) {
       setOutput(`Error: ${(e as Error).message}`);
       setPhase('done');
     }
   };
 
-  const copyOutput = async () => {
-    await navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const loadFromVersion = (v: ExecVersion) => {
+    setRedoFrom(v);
+    setRole(v.role);
+    setUserInputs(v.userInputs);
+    setShowCritDiff(true);
+    setShowHistory(false);
+    setPhase('requirements');
+    setOutput('');
+    setEvaluation(null);
   };
+
+  const getCritDiff = () => {
+    if (!redoFrom) return [];
+    const diffs: { field: string; old: string; new_: string; impact: string }[] = [];
+    if (redoFrom.role !== role) {
+      const oldRole = EXEC_ROLES.find(r=>r.id===redoFrom.role);
+      const newRole = EXEC_ROLES.find(r=>r.id===role);
+      diffs.push({ field: 'Role', old: oldRole?.label||redoFrom.role, new_: newRole?.label||role, impact: `Output framing changes from "${oldRole?.focus?.split(',')[0]}" to "${newRole?.focus?.split(',')[0]}"` });
+    }
+    for (const [k,v] of Object.entries(userInputs)) {
+      const oldVal = redoFrom.userInputs[k] || '';
+      if (oldVal !== v && v) {
+        diffs.push({ field: k.replace(/_/g,' '), old: oldVal||'(empty)', new_: String(v).slice(0,40), impact: 'Will change the specific output for this input' });
+      }
+    }
+    return diffs;
+  };
+
+  const roleInfo = EXEC_ROLES.find(r=>r.id===role);
+  const critDiff = getCritDiff();
 
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/75 backdrop-blur-sm"/>
-      <div className="relative w-full max-w-3xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{maxHeight:'94vh'}} onClick={e=>e.stopPropagation()}>
-
-        {/* Top bar */}
+      <div
+        className="relative w-full max-w-3xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        style={{maxHeight:'94vh'}}
+        onClick={e=>e.stopPropagation()}
+      >
         <div className="h-1 w-full bg-gradient-to-r from-violet-600 via-primary to-violet-600"/>
 
         {/* Header */}
@@ -1052,59 +1179,126 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
           <Sparkles size={18} className="text-primary shrink-0"/>
           <div className="flex-1 min-w-0">
             <div className="font-bold text-white text-sm">
-              {phase==='loading'?'Loading project intelligence...':
-               phase==='requirements'?'Review what AI will do:':
-               phase==='executing'?'Manav Brain is working on this...':
-               "Done — take a look before this goes anywhere."}
+              {phase==='loading'     ? 'Catching up on your project...' :
+               phase==='requirements'? (redoFrom ? 'Redo — what would you like to change?' : 'Here is what I am going to do') :
+               phase==='executing'   ? 'Working on it — please keep this open' :
+               'Done — review before delivering'}
             </div>
             <div className="text-xs text-white/40 truncate mt-0.5">"{block.title}"</div>
           </div>
-          {/* Role selector */}
-          <select value={role} onChange={e=>setRole(e.target.value)} disabled={phase==='executing'}
-            className="text-xs px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-white/80 outline-none mr-1">
-            {EXEC_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
-          </select>
-          {phase!=='executing' && (
-            <button onClick={onClose} className="h-8 w-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-white/10">
-              <X size={13} className="text-white/50"/>
-            </button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Version history button */}
+            {versions.length > 0 && phase !== 'executing' && (
+              <button
+                onClick={()=>setShowHistory(!showHistory)}
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border transition-all ${showHistory?'border-violet-400/40 bg-violet-400/10 text-violet-400':'border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'}`}
+              >
+                <RotateCcw size={11}/>
+                {versions.length} saved
+              </button>
+            )}
+            {/* Role selector */}
+            <select value={role} onChange={e=>setRole(e.target.value)} disabled={phase==='executing'}
+              className="text-xs px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-white/80 outline-none">
+              {EXEC_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
+            </select>
+            {phase!=='executing' && (
+              <button onClick={onClose} className="h-8 w-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-white/10">
+                <X size={13} className="text-white/50"/>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Role context strip — shows what changes based on selected role */}
-        {(()=>{
-          const r = EXEC_ROLES.find(r=>r.id===role);
-          if (!r) return null;
-          return (
-            <div className="px-6 py-3 border-b border-white/6 bg-white/2 flex flex-wrap gap-x-6 gap-y-1">
-              <div className="text-xs text-white/40 flex items-center gap-2">
-                <span className="text-violet-400 font-medium">Focus:</span>
-                <span>{r.focus}</span>
-              </div>
-              <div className="text-xs text-white/40 flex items-center gap-2">
-                <span className="text-green-400 font-medium">Output:</span>
-                <span>{r.output}</span>
-              </div>
-              <div className="text-xs text-white/30 flex items-center gap-2">
-                <span className="text-white/40 font-medium">Best for:</span>
-                <span>{r.best_for}</span>
-              </div>
+        {/* Role context strip */}
+        {roleInfo && phase !== 'executing' && (
+          <div className="px-6 py-2.5 border-b border-white/6 bg-white/2 flex flex-wrap gap-x-5 gap-y-1">
+            <div className="text-xs text-white/40 flex items-center gap-1.5">
+              <span className="text-violet-400 font-medium">Focus:</span>{roleInfo.focus}
             </div>
-          );
-        })()}
+            <div className="text-xs text-white/40 flex items-center gap-1.5">
+              <span className="text-green-400 font-medium">Output:</span>{roleInfo.output}
+            </div>
+          </div>
+        )}
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto">
+
+          {/* Version history panel */}
+          {showHistory && versions.length > 0 && (
+            <div className="border-b border-white/8 bg-[#0d0d18] px-6 py-4 space-y-3">
+              <div className="text-xs font-mono text-violet-400 uppercase mb-2">Last {versions.length} execution{versions.length!==1?'s':''} — click to redo with changes</div>
+              {versions.map((v,i)=>{
+                const ev    = v.evaluation;
+                const score = ev?.quality_score;
+                const isActive = v.id === activeVersion;
+                return (
+                  <div key={v.id} className={`rounded-xl border p-3 transition-all ${isActive?'border-violet-400/30 bg-violet-400/5':'border-white/8 bg-white/2 hover:border-white/15'}`}>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className={`h-7 w-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${score>=80?'bg-green-500/20 text-green-400':score>=60?'bg-yellow-500/20 text-yellow-400':'bg-red-500/20 text-red-400'}`}>
+                        {score || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium text-white truncate">{v.criteriaLabel}</div>
+                        <div className="text-xs text-white/30">{new Date(v.createdAt).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+                      </div>
+                      <button
+                        onClick={()=>loadFromVersion(v)}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-violet-400/30 bg-violet-400/10 text-violet-400 hover:bg-violet-400/20 shrink-0"
+                      >
+                        <RotateCcw size={10}/>Redo
+                      </button>
+                    </div>
+                    {ev?.manav_note && (
+                      <p className="text-xs text-white/40 italic ml-10">{ev.manav_note}</p>
+                    )}
+                    {ev?.redo_reason && (
+                      <div className="mt-2 ml-10 rounded-lg border border-yellow-400/15 bg-yellow-400/5 px-2.5 py-1.5">
+                        <span className="text-xs text-yellow-400 font-medium">If I could redo this: </span>
+                        <span className="text-xs text-white/50">{ev.redo_reason}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Criteria diff when redoing */}
+          {showCritDiff && redoFrom && critDiff.length > 0 && (
+            <div className="border-b border-white/8 bg-[#0d0d18] px-6 py-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-5 w-5 rounded bg-yellow-400/15 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={10} className="text-yellow-400"/>
+                </div>
+                <span className="text-xs font-semibold text-yellow-400">What will change in this redo</span>
+              </div>
+              {critDiff.map((d,i)=>(
+                <div key={i} className="flex items-start gap-3 text-xs mb-2">
+                  <span className="font-medium text-white/60 w-24 shrink-0">{d.field}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="line-through text-white/25">{d.old}</span>
+                    <ChevronRight size={10} className="text-violet-400 shrink-0"/>
+                    <span className="text-violet-400 font-medium">{d.new_}</span>
+                  </div>
+                  <span className="text-white/30 ml-auto shrink-0">{d.impact}</span>
+                </div>
+              ))}
+              {critDiff.length === 0 && (
+                <p className="text-xs text-white/40">No criteria changed — this will produce the same output as before.</p>
+              )}
+            </div>
+          )}
 
           {/* Loading */}
           {phase==='loading' && (
             <div className="flex flex-col items-center gap-3 py-16">
               <RefreshCw size={22} className="animate-spin text-violet-400"/>
-              <p className="text-sm text-white/50">Give me a moment — I'm catching up on everything you've shared so far...</p>
+              <p className="text-sm text-white/50">Catching up on everything in your project...</p>
             </div>
           )}
 
-          {/* Requirements phase */}
+          {/* Requirements */}
           {phase==='requirements' && blueprint && (
             <div className="p-6 space-y-4">
 
@@ -1116,19 +1310,54 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                     <span className="text-xs text-white/40">confidence</span>
                   </div>
                   <div>
-                    <div className="font-semibold text-white text-sm mb-1">Here's what I'm going to take off your plate</div>
+                    <div className="font-semibold text-white text-sm mb-1">Here is what I am going to take off your plate</div>
                     <p className="text-xs text-white/60">{blueprint.what_ai_produces || cap.produces[0]}</p>
                   </div>
                 </div>
-                <p className="text-xs text-white/40 italic border-t border-white/8 pt-3">{cap.confidence_reason}</p>
+                <p className="text-xs text-white/35 italic border-t border-white/8 pt-3">{cap.confidence_reason}</p>
               </div>
+
+              {/* Manav's redo suggestion from previous run */}
+              {redoFrom?.evaluation?.redo_reason && (
+                <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="h-6 w-6 rounded-full bg-yellow-400/15 flex items-center justify-center shrink-0 text-sm font-black text-yellow-400">M</div>
+                    <span className="text-xs font-semibold text-yellow-400">What I would do differently this time</span>
+                  </div>
+                  <p className="text-xs text-white/60 leading-relaxed">{redoFrom.evaluation.redo_reason}</p>
+                  {redoFrom.evaluation.better_role && redoFrom.evaluation.better_role !== role && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-white/40">Suggested role:</span>
+                      <button onClick={()=>setRole(EXEC_ROLES.find(r=>r.label===redoFrom.evaluation.better_role||r.id===redoFrom.evaluation.better_role)?.id||role)}
+                        className="text-xs px-2 py-0.5 rounded border border-violet-400/30 text-violet-400 hover:bg-violet-400/10">
+                        Switch to {redoFrom.evaluation.better_role}
+                      </button>
+                    </div>
+                  )}
+                  {Object.keys(redoFrom.evaluation.suggested_inputs||{}).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <span className="text-xs text-white/40">I suggest adding:</span>
+                      {Object.entries(redoFrom.evaluation.suggested_inputs||{}).map(([k,v]:any)=>(
+                        <div key={k} className="flex items-center gap-2">
+                          <button
+                            onClick={()=>setUserInputs(prev=>({...prev,[k]:v}))}
+                            className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-violet-400/25 bg-violet-400/8 text-violet-400 hover:bg-violet-400/15"
+                          >
+                            <Plus size={9}/>{k.replace(/_/g,' ')}: {String(v).slice(0,40)}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Data Room gaps */}
               {dataGaps.length > 0 && (
                 <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <AlertTriangle size={13} className="text-yellow-400"/>
-                    <span className="text-xs font-semibold text-yellow-400">Your Data Room has some gaps — no worries, we work with what we have — the more you fill in, the better I can do</span>
+                    <span className="text-xs font-semibold text-yellow-400">Your Data Room has some gaps — no worries, we work with what we have</span>
                   </div>
                   {dataGaps.map((g,i)=>(
                     <div key={i} className="text-xs text-white/50 flex items-start gap-2 mb-1">
@@ -1143,7 +1372,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div>
                   <div className="text-xs font-semibold text-white/60 mb-2 flex items-center gap-1.5">
                     <CheckCircle2 size={11} className="text-green-400"/>
-                    Good news — I already have some of this ({available.length} inputs ready)
+                    Good news — I already have {available.length} thing{available.length!==1?'s':''} from your project
                   </div>
                   <div className="space-y-1.5">
                     {available.map((a,i)=>(
@@ -1163,7 +1392,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                 <div>
                   <div className="text-xs font-semibold text-white mb-2 flex items-center gap-1.5">
                     <AlertTriangle size={11} className="text-orange-400"/>
-                    Just a couple of things I need from you first — I promise I won't guess — just tell me and I'll get it right
+                    Just a couple of things I need from you — I promise I will not guess
                   </div>
                   <div className="space-y-3">
                     {missing.map((m:any,i:number)=>(
@@ -1182,19 +1411,14 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                       </div>
                     ))}
                   </div>
-                  {missing.filter((m:any)=>!userInputs[m.key]).length > 0 && (
-                    <p className="text-xs text-orange-400/70 mt-2">
-                      {missing.filter((m:any)=>!userInputs[m.key]).length} input{missing.filter((m:any)=>!userInputs[m.key]).length!==1?'s':''} empty — Manav Brain will note gaps in output and you must resolve before delivering
-                    </p>
-                  )}
                 </div>
               )}
 
               {/* Cannot do */}
-              <div className="rounded-xl border border-white/8 bg-white/3 p-4">
-                <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your hands — I'll be honest about where I stop</div>
+              <div className="rounded-xl border border-white/8 bg-white/2 p-4">
+                <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your hands — I will not attempt them</div>
                 <div className="space-y-1">
-                  {cap.cannot_do.map((c2,i)=>(
+                  {cap.cannot_do.map((c2:string,i:number)=>(
                     <div key={i} className="flex items-start gap-2 text-xs text-white/50">
                       <AlertTriangle size={9} className="text-orange-400 shrink-0 mt-0.5"/>
                       <span>{c2}</span>
@@ -1205,7 +1429,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
             </div>
           )}
 
-          {/* Executing — streaming */}
+          {/* Executing */}
           {(phase==='executing'||phase==='done') && (
             <div className="p-6 space-y-4">
               {phase==='executing' && (
@@ -1217,41 +1441,125 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
               <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/8 bg-white/3">
                   <span className="text-xs font-semibold text-white">
-                    {phase==='executing'?'Streaming output...':'Output — review every section before delivering'}
+                    {phase==='executing' ? 'Streaming output...' : 'Output — review every section before delivering'}
                   </span>
                   {phase==='done' && (
-                    <button onClick={copyOutput} className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-white/10 text-white/50 hover:text-white/80">
-                      <Copy size={10}/>{copied?'Copied!':'Copy all'}
-                    </button>
-                  )}
-                </div>
-                <div className="p-4 max-h-80 overflow-y-auto">
-                  {output ? (
-                    <pre className="text-xs text-white/70 whitespace-pre-wrap leading-relaxed font-mono">{output}</pre>
-                  ) : (
-                    <div className="flex items-center gap-2 text-white/30 text-xs py-4">
-                      <RefreshCw size={12} className="animate-spin"/>Starting...
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-white/30">{makeCriteriaLabel(role, userInputs)}</span>
+                      <button onClick={async()=>{await navigator.clipboard.writeText(output);setCopied(true);setTimeout(()=>setCopied(false),2000);}}
+                        className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-white/10 text-white/50 hover:text-white/80">
+                        <Copy size={10}/>{copied?'Copied!':'Copy'}
+                      </button>
                     </div>
                   )}
+                </div>
+                <div className="p-4 max-h-72 overflow-y-auto">
+                  {output
+                    ? <pre className="text-xs text-white/70 whitespace-pre-wrap leading-relaxed font-mono">{output}</pre>
+                    : <div className="flex items-center gap-2 text-white/30 text-xs py-4"><RefreshCw size={12} className="animate-spin"/>Starting...</div>
+                  }
                 </div>
               </div>
 
-              {/* Verification checklist after done */}
+              {/* Manav self-evaluation */}
               {phase==='done' && (
+                <div>
+                  {evaluating && (
+                    <div className="flex items-center gap-2 text-xs text-white/40 py-2">
+                      <RefreshCw size={11} className="animate-spin text-violet-400"/>
+                      Manav is reviewing his own work...
+                    </div>
+                  )}
+                  {evaluation && !evaluating && (
+                    <div className="rounded-xl border border-white/8 bg-[#0d0d18] overflow-hidden">
+                      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/8">
+                        <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 text-sm font-black text-primary">M</div>
+                        <div>
+                          <div className="text-xs font-semibold text-white">Manav reviewing his own output</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <div className={`text-xs font-black ${(evaluation.quality_score||0)>=80?'text-green-400':(evaluation.quality_score||0)>=60?'text-yellow-400':'text-red-400'}`}>
+                              {evaluation.quality_score||'?'}/100
+                            </div>
+                            <span className="text-white/30 text-xs">quality score</span>
+                            {evaluation.confidence_actual && (
+                              <>
+                                <span className="text-white/20 text-xs mx-1">·</span>
+                                <span className="text-white/30 text-xs">{evaluation.confidence_actual}% confident in this specific output</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-4 py-3 space-y-3">
+                        {evaluation.manav_note && (
+                          <p className="text-xs text-white/60 italic leading-relaxed">{evaluation.manav_note}</p>
+                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                          {evaluation.what_worked?.length > 0 && (
+                            <div>
+                              <div className="text-xs font-mono text-green-400 uppercase mb-1.5">What worked</div>
+                              {evaluation.what_worked.map((w:string,i:number)=>(
+                                <div key={i} className="flex items-start gap-1.5 text-xs text-white/50 mb-1">
+                                  <span className="text-green-400 shrink-0">✓</span><span>{w}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {evaluation.what_missed?.length > 0 && (
+                            <div>
+                              <div className="text-xs font-mono text-orange-400 uppercase mb-1.5">What I missed</div>
+                              {evaluation.what_missed.map((w:string,i:number)=>(
+                                <div key={i} className="flex items-start gap-1.5 text-xs text-white/50 mb-1">
+                                  <span className="text-orange-400 shrink-0">!</span><span>{w}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {evaluation.redo_reason && (
+                          <div className="rounded-lg border border-yellow-400/15 bg-yellow-400/5 px-3 py-2">
+                            <span className="text-xs text-yellow-400 font-semibold">If I could redo this: </span>
+                            <span className="text-xs text-white/50">{evaluation.redo_reason}</span>
+                          </div>
+                        )}
+                        <div className="flex gap-2 flex-wrap pt-1">
+                          <button
+                            onClick={()=>{setPhase('requirements');setShowCritDiff(false);}}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-violet-400/30 bg-violet-400/10 text-violet-400 hover:bg-violet-400/20"
+                          >
+                            <RotateCcw size={10}/>Redo with changes
+                          </button>
+                          {evaluation.better_role && evaluation.better_role !== role && (
+                            <button
+                              onClick={()=>{setRole(EXEC_ROLES.find(r=>r.label===evaluation.better_role||r.id===evaluation.better_role)?.id||role);setPhase('requirements');}}
+                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-white/10 text-white/50 hover:text-white/80"
+                            >
+                              Try as {evaluation.better_role} instead
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Verification checklist */}
+              {phase==='done' && blueprint?.review_checklist && (
                 <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Shield size={14} className="text-yellow-400"/>
-                    <span className="text-sm font-bold text-yellow-400">Before this goes out — let's check it together</span>
+                    <span className="text-sm font-bold text-yellow-400">Check every item before delivering</span>
                   </div>
                   <div className="space-y-2">
-                    {cap.verify_steps.map((v,i)=>(
-                      <VerifyCheckItem key={i} index={i+1} step={v.step} tool={v.tool} pass={v.pass}/>
+                    {blueprint.review_checklist.map((item:string,i:number)=>(
+                      <VerifyCheckItem key={i} index={i+1} step={item} tool="" pass=""/>
                     ))}
                   </div>
-                  {blueprint?.verification_method && (
-                    <div className="mt-3 pt-3 border-t border-yellow-400/15 text-xs text-yellow-400/70">
-                      <span className="font-semibold">And the final check that matters most: </span>{blueprint.verification_method}
-                    </div>
+                  {blueprint.verification_method && (
+                    <p className="text-xs text-yellow-400/60 mt-3 pt-3 border-t border-yellow-400/15">
+                      <span className="font-semibold">Final check: </span>{blueprint.verification_method}
+                    </p>
                   )}
                 </div>
               )}
@@ -1263,31 +1571,35 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
         <div className="px-6 py-4 border-t border-white/8 shrink-0">
           {phase==='requirements' && (
             <div className="flex items-center gap-3 flex-wrap">
-              <button onClick={execute}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm transition-all bg-gradient-to-r from-violet-600 to-primary hover:from-violet-500 hover:to-primary/90">
-                <Sparkles size={14}/>Execute Task Now
+              <button
+                onClick={execute}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-violet-600 to-primary hover:from-violet-500"
+              >
+                <Sparkles size={14}/>
+                {redoFrom ? 'Redo with these changes' : 'Start — I have got this'}
               </button>
               <div className="text-xs text-white/40">
-                <span className="text-white/60">{cap.time_ai} min</span> estimated
-                <span className="mx-1.5">·</span>
-                <span className="text-violet-400">{EXEC_ROLES.find(r=>r.id===role)?.label}</span>
-                <span className="mx-1.5">·</span>
-                <span>output shaped for {EXEC_ROLES.find(r=>r.id===role)?.best_for?.split(',')[0]}</span>
+                <span className="text-white/60">{cap.time_ai} min</span> · {roleInfo?.label}
               </div>
+              {redoFrom && (
+                <button onClick={()=>{setRedoFrom(null);setShowCritDiff(false);}} className="text-xs text-white/30 hover:text-white/60 ml-auto">
+                  Start fresh instead
+                </button>
+              )}
             </div>
           )}
           {phase==='executing' && (
-            <p className="text-xs text-white/40">I'm on it — working through this now. Please keep this open.</p>
+            <p className="text-xs text-white/40">Working... please keep this open</p>
           )}
           {phase==='done' && (
             <div className="flex items-center gap-3 flex-wrap">
               <button onClick={()=>onVerify(block)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-colors">
-                <CheckCircle2 size={14}/>Looks good to me — let's get it verified
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm">
+                <CheckCircle2 size={14}/>Reviewed — submit for verification
               </button>
-              <button onClick={()=>{setPhase('requirements');setOutput('');}}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 text-sm text-white/60 hover:text-white/80 transition-colors">
-                <RefreshCw size={13}/>Let me redo this with your notes
+              <button onClick={()=>{setPhase('requirements');setShowCritDiff(false);setRedoFrom(null);}}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 text-sm text-white/60 hover:text-white/80">
+                <RotateCcw size={13}/>Redo with changes
               </button>
             </div>
           )}
@@ -1296,6 +1608,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     </div>
   );
 }
+
 
 function VerifyCheckItem({ index, step, tool, pass }: { index:number; step:string; tool:string; pass:string }) {
   const [checked, setChecked] = useState(false);
