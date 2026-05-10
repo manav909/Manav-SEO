@@ -117,6 +117,10 @@ const TM: Record<BType,{label:string;icon:any;color:string;bg:string;border:stri
   'custom':      {label:'Custom',      icon:Star,      color:'#94a3b8',bg:'bg-slate-400/10', border:'border-slate-400/25' },
 };
 
+// Theme helper — avoids local const declarations in map callbacks (prevents minification TDZ)
+const gT = (type: string) => TM[type as BType] || TM.custom;
+
+
 const PM: Record<Priority,{dot:string;badge:string}> = {
   high:   {dot:'bg-red-400',   badge:'text-red-400 bg-red-400/10 border-red-400/20'   },
   medium: {dot:'bg-yellow-400',badge:'text-yellow-400 bg-yellow-400/10 border-yellow-400/20'},
@@ -2911,8 +2915,8 @@ Please try again — if the problem persists, check your network connection.`);
                               <p className="text-xs text-muted-foreground">{blocks.length===0?'Generate a strategy to populate blocks':'All blocks placed! Drag from columns back here to unplace.'}</p>
                             </div>
                           ) : libBlocks.map(block=>{
-                            const tm   = TM[block.type]||TM.custom;
-                            const Icon = tm.icon;
+                            
+                            const Icon = gT(block.type).icon;
                             const pm   = PM[block.priority];
                             const isRecommended = recommendation?.block.id===block.id;
                             const isHighlighted = highlightId===block.id;
@@ -2923,7 +2927,7 @@ Please try again — if the problem persists, check your network connection.`);
                                 draggable
                                 onDragStart={e=>onDragStart(e,block.id)}
                                 onDragEnd={onDragEnd}
-                                className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing group hover:shadow-md transition-all ${draggingId===block.id?'opacity-40 scale-95':''} ${isHighlighted?'ring-2 ring-yellow-400 border-yellow-400/40 bg-yellow-400/10':isRecommended?`ring-1 ring-yellow-400/60 ${tm.border} ${tm.bg}`:`${tm.border} ${tm.bg}`}`}
+                                className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing group hover:shadow-md transition-all ${draggingId===block.id?'opacity-40 scale-95':''} ${isHighlighted?'ring-2 ring-yellow-400 border-yellow-400/40 bg-yellow-400/10':isRecommended?`ring-1 ring-yellow-400/60 ${gT(block.type).border} ${gT(block.type).bg}`:`${gT(block.type).border} ${gT(block.type).bg}`}`}
                               >
                                 {/* recommended badge */}
                                 {isRecommended && (
@@ -2934,7 +2938,7 @@ Please try again — if the problem persists, check your network connection.`);
                                 )}
                                 <div className="flex items-center gap-1.5 mb-1.5">
                                   <GripVertical size={10} className="text-muted-foreground/30 shrink-0"/>
-                                  <Icon size={10} style={{color:tm.color}} className="shrink-0"/>
+                                  <Icon size={10} style={{color:gT(block.type).color}} className="shrink-0"/>
                                   <span className="text-xs font-semibold flex-1 leading-tight">{block.title}</span>
                                 </div>
                                 <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-2">{block.content}</p>
@@ -2945,7 +2949,7 @@ Please try again — if the problem persists, check your network connection.`);
                                   </div>
                                   <div className="flex items-center gap-1.5">
                                     {block.effort && <span className="text-xs font-mono text-muted-foreground/60">{block.effort}</span>}
-                                    <span className="text-xs font-mono" style={{color:tm.color}}>{tm.label}</span>
+                                    <span className="text-xs font-mono" style={{color:gT(block.type).color}}>{gT(block.type).label}</span>
                                   </div>
                                 </div>
                                 {block.tags && block.tags.length > 0 && (
@@ -2998,11 +3002,11 @@ Please try again — if the problem persists, check your network connection.`);
                                   {/* Time estimate */}
                                   {colBlocks.length > 0 && (() => {
                                     const hrs = colTotalHours(colBlocks);
-                                    const wl  = workloadLabel(hrs);
+                                    const workload = workloadLabel(hrs);
                                     return (
                                       <div className="flex items-center gap-1.5">
-                                        <span className={`text-xs font-mono font-semibold ${wl.color}`}>{formatHours(hrs)}</span>
-                                        <span className={`text-xs ${wl.color} opacity-70`}>{wl.label}</span>
+                                        <span className={`text-xs font-mono font-semibold ${workload.color}`}>{formatHours(hrs)}</span>
+                                        <span className={`text-xs ${workload.color} opacity-70`}>{workload.label}</span>
                                       </div>
                                     );
                                   })()}
@@ -3115,7 +3119,7 @@ Please try again — if the problem persists, check your network connection.`);
                                   <p className="text-xs text-muted-foreground px-3 pb-2">Generate a client-ready agenda with tasks, outcomes, and verification steps.</p>
                                 )}
                               </div>
-                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const tm   = TM[block.type]||TM.custom;                                const Icon = tm.icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div
+                            )}                            {/* Cards */}                            <div className="flex-1 p-2 space-y-2 overflow-y-auto" style={{maxHeight: agendaWeek===col.week ? 160 : 340}}>                              {colBlocks.length===0&&!isOver && (                                <div className={`h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${isRecCol&&!draggingBlock?'border-yellow-400/30 bg-yellow-400/3':'border-border/25'}`}>                                  <p className="text-xs text-muted-foreground/30">{isRecCol&&!draggingBlock?'← recommended slot':'Drop here'}</p>                                </div>                              )}                              {colBlocks.map(block=>{                                const Icon = gT(block.type).icon;                                const pm2  = PM[block.priority];                                const sm2  = SM[block.status];                                const SI   = sm2.icon;                                return (                                  <div
                                     key={block.id}
                                     draggable
                                     onDragStart={e=>{
@@ -3123,13 +3127,13 @@ Please try again — if the problem persists, check your network connection.`);
                                       onDragStart(e,block.id);
                                     }}
                                     onDragEnd={onDragEnd}
-                                    className={`rounded-xl border ${tm.border} ${tm.bg} p-3 cursor-grab transition-all select-none ${
+                                    className={`rounded-xl border ${gT(block.type).border} ${gT(block.type).bg} p-3 cursor-grab transition-all select-none ${
                                       draggingId===block.id?'opacity-40 scale-95':'hover:shadow-md hover:border-opacity-60'
                                     } ${block.status==='verified'||block.status==='done'?'opacity-55':''}`}
                                   >
                                     {/* Top row: icon + title + expand */}
                                     <div className="flex items-start gap-2 mb-2">
-                                      <Icon size={11} style={{color:tm.color}} className="shrink-0 mt-0.5"/>
+                                      <Icon size={11} style={{color:gT(block.type).color}} className="shrink-0 mt-0.5"/>
                                       <p className={`text-xs font-semibold flex-1 leading-tight ${block.status==='verified'||block.status==='done'?'line-through text-muted-foreground':''}`}>
                                         {block.title}
                                       </p>
@@ -3183,7 +3187,7 @@ Please try again — if the problem persists, check your network connection.`);
                         </div>
                         <div className="p-4 space-y-2">
                           {placedBlocks.filter(b=>b.status==='doing'||b.status==='waiting').map(b=>{
-                            const tm = TM[b.type]||TM.custom;
+                            
                             const WAIT: Record<string,number> = {'technical':5,'content':14,'geo':7,'quick-win':3,'competitive':21,'weekly':3,'monthly':30,'kpi':7,'custom':5};
                             const wDays = WAIT[b.type]||5;
                             const comp  = completedDates[b.id]?new Date(completedDates[b.id]):null;
@@ -3191,8 +3195,8 @@ Please try again — if the problem persists, check your network connection.`);
                             const ready = dLeft===0;
                             return (
                               <div key={b.id} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-background/60 hover:border-primary/30 transition-colors">
-                                <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${tm.color}18`,border:`1px solid ${tm.color}28`}}>
-                                  <tm.icon size={13} style={{color:tm.color}}/>
+                                <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{background:`${gT(b.type).color}18`,border:`1px solid ${gT(b.type).color}28`}}>
+                                  {React.createElement(gT(b.type).icon, {size:13, style:{color:gT(b.type).color}})}<icon size={13} style={{color:gT(b.type).color}}/>
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="font-medium text-sm truncate">{b.title}</div>
