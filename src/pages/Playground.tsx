@@ -1128,10 +1128,6 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
   onClose:        ()=>void;
   onVerify:       (block:any)=>void;
 }) {
-  const cap           = getAICap(block.type);
-  const clientInputs  = React.useMemo(() => getClientInputs(block.type, role), [block.type, role]);
-  const suggestions   = React.useMemo(() => getManavSuggestions(block.type, role, context), [block.type, role, context]);
-
   const [phase,        setPhase]        = useState<'loading'|'inputs'|'executing'|'done'>('loading');
   const [role,         setRole]         = useState('senior_seo');
   const [userInputs,   setUserInputs]   = useState<Record<string,string>>({});
@@ -1146,6 +1142,11 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
   const [activeVersion,setActiveVersion]= useState<string|null>(null);
   const [showHistory,  setShowHistory]  = useState(false);
   const [redoFrom,     setRedoFrom]     = useState<ExecVersion|null>(null);
+
+  // Derived values — declared AFTER state so they can reference state variables
+  const cap           = getAICap(block.type);
+  const clientInputs  = React.useMemo(() => getClientInputs(block.type, role), [block.type, role]);
+  const suggestions   = React.useMemo(() => getManavSuggestions(block.type, role, context), [block.type, role, context]);
 
   useEffect(() => {
     loadContext();
