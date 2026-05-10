@@ -307,5 +307,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+
+  /* ── EVALUATE — Manav reviews his own output ── */
+  if (action === "evaluate") {
+    const { output: executedOutput, executedRole, executedInputs, cardContext } = req.body;
+    if (!executedOutput) return res.status(400).json({ error: "No output to evaluate" });
+
+    const evaluatePrompt = [
+      "You just produced the following output for a task. Now evaluate it honestly.",
+      "You are Manav Brain reviewing your own work — be genuinely critical, not defensive.",
+      "",
+      "TASK:",
+      `Type: ${card.type} | Title: ${card.title}`,
+      `Role used: ${executedRole}`,
+      `Inputs provided: ${JSON.stringify(executedInputs)}`,
+      "",
+      "YOUR OUTPUT:",
+      String(executedOutput).slice(0, 6000),
+      "",
+      "Evaluate honestly. Return ONLY valid JSON:",
+      JSON.stringify({
+        quality_score: "0-100 — how good is this output really",
+        what_worked: ["specific thing that is genuinely strong"],
+        what_missed: ["specific gap or weakness in the output"],
+        was_role_right: "yes or no",
+        better_role: "which role would have produced better output and why",
+        inputs_that_mattered: ["which user inputs most shaped this output"],
+        inputs_that_would_help: ["what additional input would have made this significantly better"],
+        suggested_inputs: { "key": "what I would have asked for" },
+        redo_reason: "One honest sentence: if I could redo this, here is what I would change and why",
+        confidence_actual: "0-100 — honestly, how confident am I in this specific output given what I had to work with",
+        manav_note: "A personal note to the team — what to watch out for in this output, what I am proud of, what needs their eyes"
+      }),
+    ].join("
+");
+
+    try {
+      const anthropic = new Anthropic();
+      const response  = await anthropic.messages.create({
+        model: "claude-sonnet-4-5", max_tokens: 1200,
+        system: SYSTEM + " You are evaluating your own work. Be honest, specific, and constructive. Return only valid JSON.",
+        messages: [{ role: "user", content: evaluatePrompt }],
+      });
+      const raw = response.content[0].type === "text" ? response.content[0].text : "{}";
+      const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
+      let parsed: any = {};
+      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch { /* ignore */ }
+      return res.status(200).json({ success: true, evaluation: parsed });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   return res.status(400).json({ error: `Unknown action: ${action}` });
 }
