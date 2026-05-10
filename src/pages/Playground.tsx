@@ -1031,7 +1031,6 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
   const loadVersionHistory = async () => {
     try {
-      const { supabase } = await import('@/lib/supabase');
       const { data } = await supabase
         .from('task_executions')
         .select('*')
@@ -1063,7 +1062,6 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
   const saveVersion = async (out: string, eval_: any) => {
     try {
-      const { supabase } = await import('@/lib/supabase');
       const label = makeCriteriaLabel(role, userInputs);
       const { data } = await supabase.from('task_executions').insert({
         project_id:       projectId,
