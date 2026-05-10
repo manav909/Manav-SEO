@@ -153,20 +153,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fb = focusBlockId
       ? placed.find((b: any) => b.id === focusBlockId) || library.find((b: any) => b.id === focusBlockId)
       : null;
-    systemPrompt = SYSTEM;
+    systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.senior_seo) + " " + SYSTEM;
     userPrompt = [
       `PROJECT: ${projectSummary}`,
       "",
       fb ? [
-        "CARD TO ANALYSE:",
+        "CARD TO ANALYSE IN DEPTH:",
         `"${fb.title}" [${fb.type}|${fb.priority}|${fb.status}]`,
         fb.content,
         `Assigned: ${fb.assignee || "Unassigned"} | Effort: ${fb.effort || "unknown"} | Impact: ${fb.impact || "unknown"}`,
-        "",
-        "CANVAS CONTEXT:",
-        byWeek,
-      ].join("\n") : question,
-    ].join("\n");
+      ].join("\n") : `QUESTION: ${question}`,
+      "",
+      "FULL CANVAS CONTEXT:",
+      byWeek || "No cards placed yet.",
+      liveContent ? `\nLIVE SITE:\n${liveContent}` : "",
+      "",
+      "Provide a deep strategic analysis:",
+      "## Why This Card Matters",
+      "## Detailed Execution Plan (specific steps)",
+      "## Dependencies and Risks",
+      "## Expected Outcomes (measurable)",
+      "## What I Would Do Differently",
+    ].filter(l => l !== "").join("\n");
 
   } else {
     // chat or canvas_chat
