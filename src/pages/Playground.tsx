@@ -921,45 +921,48 @@ function getAICap(blockType: string): AICap {
 /* ════════════════════════════════════════════════════
    InlineTaskExecutor — with version history, self-evaluation, redo
 ════════════════════════════════════════════════════ */
-const EXEC_ROLES = [
-  {
-    id: 'senior_seo', label: 'Senior SEO Strategist',
-    focus: 'Technical depth, algorithm reasoning, ranking factors, E-E-A-T, GEO strategy',
-    output: 'Detailed SEO rationale with specific ranking signals, compounding effects, and risk analysis',
-    best_for: 'Technical tasks, content strategy, audit analysis, competitive intelligence',
-  },
-  {
-    id: 'content_writer', label: 'Content Writer',
-    focus: 'What to write, structure, keywords, tone, internal links, GEO readiness',
-    output: 'Writer-ready brief with exact headings, keywords to place, tone guidance, and word targets',
-    best_for: 'Content tasks, GEO optimisation, on-page quick wins',
-  },
-  {
-    id: 'team_lead', label: 'Team Lead',
-    focus: 'What needs doing, who owns it, blockers, dependencies, definition of done',
-    output: 'Clear execution instructions with numbered steps, owner assignment, and done criteria',
-    best_for: 'Weekly tasks, pipeline planning, task delegation',
-  },
-  {
-    id: 'project_manager', label: 'Project Manager',
-    focus: 'Deliverable spec, acceptance criteria, timeline, dependencies, risk',
-    output: 'Formal work order with milestones, acceptance criteria, and risk register',
-    best_for: 'Complex multi-step tasks, sprint planning, client deliverables',
-  },
-  {
-    id: 'executive', label: 'Executive',
-    focus: 'Business outcomes, ROI, competitive position, what to decide',
-    output: 'Plain English business summary — 3 things to know, 1 decision to make, no jargon',
-    best_for: 'Strategic insights, KPI forecasting, competitive analysis',
-  },
-  {
-    id: 'biz_dev', label: 'Biz Dev Manager',
-    focus: 'Client value, proof points, upsell angles, objection handling, renewal talking points',
-    output: 'Client-ready narrative with results framing and commercial context',
-    best_for: 'Monthly reports, insight tasks, competitive positioning',
-  },
-];
+/* ════════════════════════════════════════════════════
+   CLIENT-SIDE REQUIRED INPUTS
+   Defined here so questions ALWAYS show, no API dependency
+════════════════════════════════════════════════════ */
+const CLIENT_INPUTS: Record<string, { key: string; label: string; why: string; placeholder: string }[]> = {
+  technical: [
+    { key: "affected_urls",    label: "Which URLs are affected?",                      why: "I need the exact paths to generate the correct fix",                                    placeholder: "e.g. /old-page, /broken-redirect, /missing-page" },
+    { key: "current_behavior", label: "What is currently happening (the problem)?",   why: "The error type tells me which approach to take",                                       placeholder: "e.g. 404 on /old-page, redirect loop, schema not validating" },
+  ],
+  content: [
+    { key: "target_keyword",      label: "Primary keyword + 3-5 related ones",        why: "Everything I write is built around these",                                              placeholder: "e.g. mobile forms app, online form builder, mobile form creator" },
+    { key: "search_intent",       label: "What is the reader trying to do?",          why: "Informational, commercial, or transactional each need a completely different structure", placeholder: "e.g. compare options (commercial), learn how to (informational), buy/sign up (transactional)" },
+    { key: "word_count_target",   label: "Target word count",                         why: "This determines how deep I go",                                                         placeholder: "e.g. 1200 words" },
+    { key: "brand_voice_example", label: "One example of how this brand writes",      why: "Without this my output will be generic — paste a URL or a paragraph",                  placeholder: "Paste a URL to an existing page, or paste a paragraph of their writing style" },
+  ],
+  geo: [
+    { key: "target_query",    label: "Exact query to appear for in AI search",         why: "GEO strategy is completely query-specific",                                             placeholder: "e.g. best mobile form app for small business" },
+    { key: "ai_platform",     label: "Which platform matters most?",                  why: "Perplexity, ChatGPT, and Google AI Overview each cite differently",                     placeholder: "e.g. Perplexity, ChatGPT, or Google AI Overview" },
+  ],
+  "quick-win": [
+    { key: "target_urls",   label: "URLs to optimise (paste 1-10)",                    why: "I will fetch each page and generate specific before/after improvements",                placeholder: "e.g. https://yourdomain.com/page-1\nhttps://yourdomain.com/page-2" },
+    { key: "target_metric", label: "What metric are we trying to move?",               why: "CTR, rankings, and impressions each need different approaches",                         placeholder: "e.g. click-through rate, average position, impressions" },
+  ],
+  competitive: [
+    { key: "competitor_url",  label: "Competitor domain to analyse",                   why: "I will fetch their pages to find the exact gaps",                                       placeholder: "e.g. competitor.com" },
+    { key: "target_keywords", label: "Keywords you want to outrank them on",           why: "Without a focus the analysis is too broad to act on",                                  placeholder: "e.g. mobile form builder, online form app" },
+  ],
+  insight: [
+    { key: "specific_question", label: "What specifically do you want me to analyse?", why: "A focused question gives a useful answer — a broad one does not",                      placeholder: "e.g. Why are we losing rankings for X? What should we prioritise in Month 2?" },
+  ],
+  weekly: [
+    { key: "task_context", label: "More context about what needs doing",               why: "Weekly tasks vary — context determines the right approach",                             placeholder: "Describe what specifically needs to happen this week" },
+  ],
+};
 
+function getClientInputs(blockType: string) {
+  return CLIENT_INPUTS[blockType] || CLIENT_INPUTS.weekly;
+}
+
+/* ════════════════════════════════════════════════════
+   VERSION HISTORY TYPE
+════════════════════════════════════════════════════ */
 interface ExecVersion {
   id:             string;
   role:           string;
@@ -970,6 +973,9 @@ interface ExecVersion {
   createdAt:      string;
 }
 
+/* ════════════════════════════════════════════════════
+   InlineTaskExecutor
+════════════════════════════════════════════════════ */
 function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose, onVerify }: {
   block:          { id:string; type:string; title:string; content:string; priority:string; impact?:string };
   projectId:      string;
@@ -978,13 +984,14 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
   onClose:        ()=>void;
   onVerify:       (block:any)=>void;
 }) {
-  const [phase,        setPhase]        = useState<'loading'|'requirements'|'executing'|'done'>('loading');
+  const cap           = getAICap(block.type);
+  const clientInputs  = getClientInputs(block.type);
+
+  const [phase,        setPhase]        = useState<'loading'|'inputs'|'executing'|'done'>('loading');
   const [role,         setRole]         = useState('senior_seo');
-  const [blueprint,    setBlueprint]    = useState<any>(null);
-  const [available,    setAvailable]    = useState<any[]>([]);
-  const [missing,      setMissing]      = useState<any[]>([]);
-  const [dataGaps,     setDataGaps]     = useState<string[]>([]);
   const [userInputs,   setUserInputs]   = useState<Record<string,string>>({});
+  const [autoFilled,   setAutoFilled]   = useState<Record<string,string>>({}); // pre-filled from Data Room
+  const [dataGaps,     setDataGaps]     = useState<string[]>([]);
   const [context,      setContext]      = useState<any>(null);
   const [output,       setOutput]       = useState('');
   const [copied,       setCopied]       = useState(false);
@@ -994,41 +1001,45 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
   const [activeVersion,setActiveVersion]= useState<string|null>(null);
   const [showHistory,  setShowHistory]  = useState(false);
   const [redoFrom,     setRedoFrom]     = useState<ExecVersion|null>(null);
-  const [showCritDiff, setShowCritDiff] = useState(false);
-  const cap = getAICap(block.type);
 
   useEffect(() => {
-    loadRequirements();
+    loadContext();
     loadVersionHistory();
   }, []);
 
-  const loadRequirements = async () => {
+  /* Load project context to pre-fill what we can */
+  const loadContext = async () => {
     setPhase('loading');
     try {
-      const ctxRes  = await fetch('/api/control', {
+      const res  = await fetch('/api/control', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_context', projectId }),
       });
-      const ctxData = await ctxRes.json();
-      const ctx     = ctxData.context || {};
+      const data = await res.json();
+      const ctx  = data.context || {};
       setContext(ctx);
 
-      const reqRes  = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'requirements', card: block, context: ctx }),
-      });
-      const req     = await reqRes.json();
-      setBlueprint(req.blueprint || {});
-      setAvailable(req.available || []);
-      setMissing(req.missing || []);
-      setDataGaps(req.data_room_gaps || []);
-      setPhase('requirements');
+      // Pre-fill whatever we can from Data Room
+      const prefilled: Record<string,string> = {};
+      const kw = ctx.goals?.keywords || (ctx.project?.keywords||[])[0] || '';
+      if (kw) prefilled.target_keyword    = kw;
+      if (ctx.competitors?.c1) prefilled.competitor_url = ctx.competitors.c1;
+      if (ctx.project?.url)    prefilled.target_urls    = ctx.project.url;
+      setAutoFilled(prefilled);
+
+      const gaps: string[] = [];
+      if (ctx.gaps?.noGoal)      gaps.push("No campaign goal set — strategy direction is unclear");
+      if (ctx.gaps?.noCMS)       gaps.push("CMS not recorded — technical output will be generic");
+      if (ctx.gaps?.noAnalytics) gaps.push("No analytics baseline — cannot forecast impact");
+      if (ctx.gaps?.noDocuments) gaps.push("No tool exports uploaded — working from estimates only");
+      setDataGaps(gaps);
     } catch {
-      setBlueprint({ what_ai_produces: 'Could not load requirements — check your connection.', review_checklist: [], verification_method: '' });
-      setPhase('requirements');
+      /* continue without context — questions still show */
     }
+    setPhase('inputs');
   };
 
+  /* Load version history */
   const loadVersionHistory = async () => {
     try {
       const { data } = await supabase
@@ -1047,42 +1058,43 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
         evaluation:    d.manav_evaluation || {},
         createdAt:     d.created_at,
       })));
-    } catch { /* no history yet */ }
+    } catch { /* table may not exist yet */ }
   };
 
-  const makeCriteriaLabel = (r: string, inputs: Record<string,string>) => {
-    const roleName = EXEC_ROLES.find(x=>x.id===r)?.label || r;
-    const inputSummary = Object.entries(inputs)
-      .filter(([,v]) => v)
-      .map(([k,v]) => `${k}: ${String(v).slice(0,20)}`)
-      .slice(0,3)
-      .join(' · ');
-    return `${roleName}${inputSummary ? ' · ' + inputSummary : ''}`;
+  /* Merge auto-filled + user typed */
+  const getMergedInputs = () => ({ ...autoFilled, ...userInputs });
+
+  const makeCriteriaLabel = () => {
+    const roleName = EXEC_ROLES.find(r=>r.id===role)?.label || role;
+    const merged   = getMergedInputs();
+    const summary  = Object.entries(merged).filter(([,v])=>v).map(([k,v])=>`${k}: ${String(v).slice(0,20)}`).slice(0,2).join(' · ');
+    return `${roleName}${summary ? ' · ' + summary : ''}`;
   };
 
-  const saveVersion = async (out: string, eval_: any) => {
+  const saveVersion = async (out: string, ev: any) => {
     try {
-      const label = makeCriteriaLabel(role, userInputs);
+      const label   = makeCriteriaLabel();
+      const merged  = getMergedInputs();
       const { data } = await supabase.from('task_executions').insert({
         project_id:       projectId,
         card_id:          block.id,
         card_title:       block.title,
         card_type:        block.type,
         role,
-        user_inputs:      userInputs,
-        context_snapshot: { goals: context?.goals, tech: context?.tech, analytics: context?.analytics },
+        user_inputs:      merged,
+        context_snapshot: { goals: context?.goals, tech: context?.tech },
         output:           out,
         criteria_label:   label,
-        manav_evaluation: eval_,
+        manav_evaluation: ev,
       }).select().single();
       if (data) {
-        setVersions(prev => [
-          { id: data.id, role, userInputs, output: out, criteriaLabel: label, evaluation: eval_, createdAt: data.created_at },
-          ...prev.slice(0, 2),
+        setVersions(prev=>[
+          { id: data.id, role, userInputs: merged, output: out, criteriaLabel: label, evaluation: ev, createdAt: data.created_at },
+          ...prev.slice(0,2),
         ]);
         setActiveVersion(data.id);
       }
-    } catch { /* save failed silently */ }
+    } catch { /* save failed */ }
   };
 
   const evaluate = async (out: string) => {
@@ -1090,10 +1102,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     try {
       const res  = await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'evaluate', card: block,
-          output: out, executedRole: role, executedInputs: userInputs,
-        }),
+        body: JSON.stringify({ action: 'evaluate', card: block, output: out, executedRole: role, executedInputs: getMergedInputs() }),
       });
       const data = await res.json();
       const ev   = data.evaluation || {};
@@ -1111,7 +1120,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     try {
       const res = await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'execute', card: block, context, userInputs, role }),
+        body: JSON.stringify({ action: 'execute', card: block, context, userInputs: getMergedInputs(), role }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -1135,32 +1144,13 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     setRedoFrom(v);
     setRole(v.role);
     setUserInputs(v.userInputs);
-    setShowCritDiff(true);
     setShowHistory(false);
-    setPhase('requirements');
+    setPhase('inputs');
     setOutput('');
     setEvaluation(null);
   };
 
-  const getCritDiff = () => {
-    if (!redoFrom) return [];
-    const diffs: { field: string; old: string; new_: string; impact: string }[] = [];
-    if (redoFrom.role !== role) {
-      const oldRole = EXEC_ROLES.find(r=>r.id===redoFrom.role);
-      const newRole = EXEC_ROLES.find(r=>r.id===role);
-      diffs.push({ field: 'Role', old: oldRole?.label||redoFrom.role, new_: newRole?.label||role, impact: `Output framing changes from "${oldRole?.focus?.split(',')[0]}" to "${newRole?.focus?.split(',')[0]}"` });
-    }
-    for (const [k,v] of Object.entries(userInputs)) {
-      const oldVal = redoFrom.userInputs[k] || '';
-      if (oldVal !== v && v) {
-        diffs.push({ field: k.replace(/_/g,' '), old: oldVal||'(empty)', new_: String(v).slice(0,40), impact: 'Will change the specific output for this input' });
-      }
-    }
-    return diffs;
-  };
-
   const roleInfo = EXEC_ROLES.find(r=>r.id===role);
-  const critDiff = getCritDiff();
 
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center p-4" onClick={onClose}>
@@ -1177,30 +1167,27 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
           <Sparkles size={18} className="text-primary shrink-0"/>
           <div className="flex-1 min-w-0">
             <div className="font-bold text-white text-sm">
-              {phase==='loading'     ? 'Catching up on your project...' :
-               phase==='requirements'? (redoFrom ? 'Redo — what would you like to change?' : 'Here is what I am going to do') :
-               phase==='executing'   ? 'Working on it — please keep this open' :
+              {phase==='loading'   ? 'Catching up on your project...' :
+               phase==='inputs'    ? (redoFrom ? 'Redo — what would you like to change?' : 'Before I start — just a few things') :
+               phase==='executing' ? 'Working on it — please keep this open' :
                'Done — review before delivering'}
             </div>
             <div className="text-xs text-white/40 truncate mt-0.5">"{block.title}"</div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {/* Version history button */}
             {versions.length > 0 && phase !== 'executing' && (
               <button
                 onClick={()=>setShowHistory(!showHistory)}
-                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border transition-all ${showHistory?'border-violet-400/40 bg-violet-400/10 text-violet-400':'border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'}`}
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border transition-all ${showHistory?'border-violet-400/40 bg-violet-400/10 text-violet-400':'border-white/10 text-white/40 hover:text-white/70'}`}
               >
-                <RotateCcw size={11}/>
-                {versions.length} saved
+                <RotateCcw size={11}/>{versions.length} saved
               </button>
             )}
-            {/* Role selector */}
             <select value={role} onChange={e=>setRole(e.target.value)} disabled={phase==='executing'}
               className="text-xs px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-white/80 outline-none">
               {EXEC_ROLES.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
-            {phase!=='executing' && (
+            {phase !== 'executing' && (
               <button onClick={onClose} className="h-8 w-8 rounded-full border border-white/10 flex items-center justify-center hover:bg-white/10">
                 <X size={13} className="text-white/50"/>
               </button>
@@ -1210,51 +1197,36 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
         {/* Role context strip */}
         {roleInfo && phase !== 'executing' && (
-          <div className="px-6 py-2.5 border-b border-white/6 bg-white/2 flex flex-wrap gap-x-5 gap-y-1">
-            <div className="text-xs text-white/40 flex items-center gap-1.5">
-              <span className="text-violet-400 font-medium">Focus:</span>{roleInfo.focus}
-            </div>
-            <div className="text-xs text-white/40 flex items-center gap-1.5">
-              <span className="text-green-400 font-medium">Output:</span>{roleInfo.output}
-            </div>
+          <div className="px-6 py-2 border-b border-white/6 flex flex-wrap gap-x-5 gap-y-0.5">
+            <span className="text-xs text-white/35"><span className="text-violet-400 font-medium">Focus:</span> {roleInfo.focus}</span>
+            <span className="text-xs text-white/35"><span className="text-green-400 font-medium">Output:</span> {roleInfo.output}</span>
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto">
 
-          {/* Version history panel */}
+          {/* Version history */}
           {showHistory && versions.length > 0 && (
-            <div className="border-b border-white/8 bg-zinc-950 px-6 py-4 space-y-3">
-              <div className="text-xs font-mono text-violet-400 uppercase mb-2">Last {versions.length} execution{versions.length!==1?'s':''} — click to redo with changes</div>
-              {versions.map((v,i)=>{
-                const ev    = v.evaluation;
-                const score = ev?.quality_score;
-                const isActive = v.id === activeVersion;
+            <div className="border-b border-white/8 bg-zinc-950 px-6 py-4 space-y-2">
+              <div className="text-xs font-semibold text-violet-400 mb-3">Last {versions.length} run{versions.length!==1?'s':''} — click Redo to load criteria</div>
+              {versions.map(v=>{
+                const score = v.evaluation?.quality_score;
                 return (
-                  <div key={v.id} className={`rounded-xl border p-3 transition-all ${isActive?'border-violet-400/30 bg-violet-400/5':'border-white/8 bg-white/2 hover:border-white/15'}`}>
-                    <div className="flex items-center gap-3 mb-2">
+                  <div key={v.id} className={`rounded-xl border p-3 ${v.id===activeVersion?'border-violet-400/30 bg-violet-400/5':'border-white/8 bg-white/2'}`}>
+                    <div className="flex items-center gap-3">
                       <div className={`h-7 w-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${score>=80?'bg-green-500/20 text-green-400':score>=60?'bg-yellow-500/20 text-yellow-400':'bg-red-500/20 text-red-400'}`}>
-                        {score || '?'}
+                        {score||'?'}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium text-white truncate">{v.criteriaLabel}</div>
                         <div className="text-xs text-white/30">{new Date(v.createdAt).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
                       </div>
-                      <button
-                        onClick={()=>loadFromVersion(v)}
-                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-violet-400/30 bg-violet-400/10 text-violet-400 hover:bg-violet-400/20 shrink-0"
-                      >
+                      <button onClick={()=>loadFromVersion(v)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-violet-400/30 bg-violet-400/10 text-violet-400 hover:bg-violet-400/20 shrink-0">
                         <RotateCcw size={10}/>Redo
                       </button>
                     </div>
-                    {ev?.manav_note && (
-                      <p className="text-xs text-white/40 italic ml-10">{ev.manav_note}</p>
-                    )}
-                    {ev?.redo_reason && (
-                      <div className="mt-2 ml-10 rounded-lg border border-yellow-400/15 bg-yellow-400/5 px-2.5 py-1.5">
-                        <span className="text-xs text-yellow-400 font-medium">If I could redo this: </span>
-                        <span className="text-xs text-white/50">{ev.redo_reason}</span>
-                      </div>
+                    {v.evaluation?.redo_reason && (
+                      <div className="mt-2 ml-10 text-xs text-yellow-400/70 italic">If I could redo: {v.evaluation.redo_reason}</div>
                     )}
                   </div>
                 );
@@ -1262,164 +1234,114 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
             </div>
           )}
 
-          {/* Criteria diff when redoing */}
-          {showCritDiff && redoFrom && critDiff.length > 0 && (
-            <div className="border-b border-white/8 bg-zinc-950 px-6 py-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="h-5 w-5 rounded bg-yellow-400/15 flex items-center justify-center shrink-0">
-                  <AlertTriangle size={10} className="text-yellow-400"/>
-                </div>
-                <span className="text-xs font-semibold text-yellow-400">What will change in this redo</span>
-              </div>
-              {critDiff.map((d,i)=>(
-                <div key={i} className="flex items-start gap-3 text-xs mb-2">
-                  <span className="font-medium text-white/60 w-24 shrink-0">{d.field}</span>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="line-through text-white/25">{d.old}</span>
-                    <ChevronRight size={10} className="text-violet-400 shrink-0"/>
-                    <span className="text-violet-400 font-medium">{d.new_}</span>
-                  </div>
-                  <span className="text-white/30 ml-auto shrink-0">{d.impact}</span>
-                </div>
-              ))}
-              {critDiff.length === 0 && (
-                <p className="text-xs text-white/40">No criteria changed — this will produce the same output as before.</p>
-              )}
-            </div>
-          )}
-
           {/* Loading */}
           {phase==='loading' && (
             <div className="flex flex-col items-center gap-3 py-16">
               <RefreshCw size={22} className="animate-spin text-violet-400"/>
-              <p className="text-sm text-white/50">Catching up on everything in your project...</p>
+              <p className="text-sm text-white/50">Checking your Data Room for anything I already know...</p>
             </div>
           )}
 
-          {/* Requirements */}
-          {phase==='requirements' && blueprint && (
+          {/* Inputs phase */}
+          {phase==='inputs' && (
             <div className="p-6 space-y-4">
 
-              {/* Confidence + what AI produces */}
+              {/* What I'll produce */}
               <div className="rounded-xl border border-violet-400/25 bg-violet-400/5 p-4">
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center gap-3 mb-2">
                   <div className={`flex flex-col items-center px-3 py-2 rounded-xl border shrink-0 ${cap.confidence>=85?'border-green-400/30 bg-green-400/5':cap.confidence>=70?'border-yellow-400/30 bg-yellow-400/5':'border-orange-400/30 bg-orange-400/5'}`}>
                     <span className={`text-xl font-black ${cap.confidence>=85?'text-green-400':cap.confidence>=70?'text-yellow-400':'text-orange-400'}`}>{cap.confidence}%</span>
                     <span className="text-xs text-white/40">confidence</span>
                   </div>
                   <div>
                     <div className="font-semibold text-white text-sm mb-1">Here is what I am going to take off your plate</div>
-                    <p className="text-xs text-white/60">{blueprint.what_ai_produces || cap.produces[0]}</p>
+                    <p className="text-xs text-white/60">{cap.produces[0]}</p>
                   </div>
                 </div>
-                <p className="text-xs text-white/35 italic border-t border-white/8 pt-3">{cap.confidence_reason}</p>
+                <p className="text-xs text-white/35 italic border-t border-white/8 pt-2">{cap.confidence_reason}</p>
               </div>
 
-              {/* Manav's redo suggestion from previous run */}
+              {/* Redo suggestion from previous run */}
               {redoFrom?.evaluation?.redo_reason && (
                 <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="h-6 w-6 rounded-full bg-yellow-400/15 flex items-center justify-center shrink-0 text-sm font-black text-yellow-400">M</div>
+                    <div className="h-6 w-6 rounded-full bg-yellow-400/15 flex items-center justify-center font-black text-yellow-400 text-sm shrink-0">M</div>
                     <span className="text-xs font-semibold text-yellow-400">What I would do differently this time</span>
                   </div>
-                  <p className="text-xs text-white/60 leading-relaxed">{redoFrom.evaluation.redo_reason}</p>
-                  {redoFrom.evaluation.better_role && redoFrom.evaluation.better_role !== role && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="text-xs text-white/40">Suggested role:</span>
-                      <button onClick={()=>setRole(EXEC_ROLES.find(r=>r.label===redoFrom.evaluation.better_role||r.id===redoFrom.evaluation.better_role)?.id||role)}
-                        className="text-xs px-2 py-0.5 rounded border border-violet-400/30 text-violet-400 hover:bg-violet-400/10">
-                        Switch to {redoFrom.evaluation.better_role}
-                      </button>
-                    </div>
-                  )}
-                  {Object.keys(redoFrom.evaluation.suggested_inputs||{}).length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      <span className="text-xs text-white/40">I suggest adding:</span>
-                      {Object.entries(redoFrom.evaluation.suggested_inputs||{}).map(([k,v]:any)=>(
-                        <div key={k} className="flex items-center gap-2">
-                          <button
-                            onClick={()=>setUserInputs(prev=>({...prev,[k]:v}))}
-                            className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-violet-400/25 bg-violet-400/8 text-violet-400 hover:bg-violet-400/15"
-                          >
-                            <Plus size={9}/>{k.replace(/_/g,' ')}: {String(v).slice(0,40)}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <p className="text-xs text-white/60">{redoFrom.evaluation.redo_reason}</p>
                 </div>
               )}
 
               {/* Data Room gaps */}
               {dataGaps.length > 0 && (
-                <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle size={13} className="text-yellow-400"/>
-                    <span className="text-xs font-semibold text-yellow-400">Your Data Room has some gaps — no worries, we work with what we have</span>
+                <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertTriangle size={12} className="text-yellow-400 shrink-0"/>
+                    <span className="text-xs font-semibold text-yellow-400">Your Data Room has some gaps — we work with what we have</span>
                   </div>
                   {dataGaps.map((g,i)=>(
-                    <div key={i} className="text-xs text-white/50 flex items-start gap-2 mb-1">
-                      <span className="text-yellow-400 shrink-0">⚠</span><span>{g}</span>
+                    <div key={i} className="text-xs text-white/50 flex items-start gap-1.5 mt-1">
+                      <span className="text-yellow-400 shrink-0">·</span><span>{g}</span>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Already has */}
-              {available.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold text-white/60 mb-2 flex items-center gap-1.5">
+              {/* Auto-filled from Data Room */}
+              {Object.keys(autoFilled).length > 0 && (
+                <div className="rounded-xl border border-green-400/15 bg-green-400/5 px-4 py-3">
+                  <div className="flex items-center gap-1.5 mb-2">
                     <CheckCircle2 size={11} className="text-green-400"/>
-                    Good news — I already have {available.length} thing{available.length!==1?'s':''} from your project
+                    <span className="text-xs font-semibold text-white/60">Already found in your project — pre-filled for you</span>
                   </div>
-                  <div className="space-y-1.5">
-                    {available.map((a,i)=>(
-                      <div key={i} className="flex items-center gap-2 rounded-lg border border-green-400/15 bg-green-400/5 px-3 py-2 text-xs">
-                        <CheckCircle2 size={9} className="text-green-400 shrink-0"/>
-                        <span className="text-white/60 font-medium">{a.label}:</span>
-                        <span className="text-green-400 font-mono truncate flex-1">{String(a.value).slice(0,70)}</span>
-                        <span className="text-white/25 shrink-0">{a.source}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {Object.entries(autoFilled).map(([k,v])=>(
+                    <div key={k} className="flex items-center gap-2 text-xs mb-1">
+                      <CheckCircle2 size={9} className="text-green-400 shrink-0"/>
+                      <span className="text-white/50 font-medium">{k.replace(/_/g,' ')}:</span>
+                      <span className="text-green-400 font-mono truncate">{String(v).slice(0,60)}</span>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {/* Needs from you */}
-              {missing.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold text-white mb-2 flex items-center gap-1.5">
-                    <AlertTriangle size={11} className="text-orange-400"/>
-                    Just a couple of things I need from you — I promise I will not guess
-                  </div>
-                  <div className="space-y-3">
-                    {missing.map((m:any,i:number)=>(
-                      <div key={i} className="rounded-xl border border-orange-400/20 bg-orange-400/5 p-3">
+              {/* ── THE QUESTIONS — always shown, client-side defined ── */}
+              <div className="rounded-xl border border-white/10 bg-white/2 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/8 bg-white/3">
+                  <div className="h-6 w-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center font-black text-primary text-sm shrink-0">M</div>
+                  <span className="text-sm font-semibold text-white">Just a couple of things I need before I start</span>
+                </div>
+                <div className="p-4 space-y-4">
+                  {clientInputs.map((inp, i) => {
+                    const isAutoFilled = inp.key in autoFilled && !userInputs[inp.key];
+                    const currentValue = userInputs[inp.key] || '';
+                    return (
+                      <div key={inp.key}>
                         <label className="text-xs font-semibold text-white block mb-0.5">
-                          <span className="text-orange-400 mr-1">{i+1}.</span>{m.label}
+                          <span className="text-violet-400 mr-1.5">{i+1}.</span>
+                          {inp.label}
+                          {isAutoFilled && <span className="ml-2 text-green-400 font-normal text-xs">· pre-filled from Data Room</span>}
                         </label>
-                        <p className="text-xs text-white/40 mb-2">Why: {m.why}</p>
+                        <p className="text-xs text-white/35 mb-1.5">{inp.why}</p>
                         <textarea
-                          value={userInputs[m.key]||''}
-                          onChange={e=>setUserInputs(prev=>({...prev,[m.key]:e.target.value}))}
-                          placeholder={`Enter ${m.label.toLowerCase()}...`}
+                          value={currentValue}
+                          onChange={e=>setUserInputs(prev=>({...prev,[inp.key]:e.target.value}))}
+                          placeholder={isAutoFilled ? `Pre-filled: ${autoFilled[inp.key]} — edit if needed` : inp.placeholder}
                           rows={2}
-                          className="w-full text-sm px-3 py-2 rounded-xl border border-white/15 bg-zinc-900 text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none"
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-white/15 bg-zinc-900 text-white/90 placeholder-white/25 outline-none focus:border-violet-400/60 resize-none"
                         />
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
 
-              {/* Cannot do */}
-              <div className="rounded-xl border border-white/8 bg-white/2 p-4">
-                <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your hands — I will not attempt them</div>
+              {/* What I won't do */}
+              <div className="rounded-xl border border-white/8 px-4 py-3">
+                <div className="text-xs font-semibold text-orange-400 mb-2">These parts need your hands — I will flag exactly where</div>
                 <div className="space-y-1">
-                  {cap.cannot_do.map((c2:string,i:number)=>(
-                    <div key={i} className="flex items-start gap-2 text-xs text-white/50">
-                      <AlertTriangle size={9} className="text-orange-400 shrink-0 mt-0.5"/>
-                      <span>{c2}</span>
+                  {cap.cannot_do.map((c2,i)=>(
+                    <div key={i} className="flex items-start gap-1.5 text-xs text-white/40">
+                      <span className="text-orange-400 shrink-0">·</span><span>{c2}</span>
                     </div>
                   ))}
                 </div>
@@ -1427,15 +1349,16 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
             </div>
           )}
 
-          {/* Executing */}
+          {/* Executing + Done */}
           {(phase==='executing'||phase==='done') && (
             <div className="p-6 space-y-4">
               {phase==='executing' && (
                 <div className="flex items-center gap-2 text-sm text-white/50">
                   <RefreshCw size={14} className="animate-spin text-violet-400"/>
-                  Thinking as {EXEC_ROLES.find(r=>r.id===role)?.label}...
+                  Thinking as {roleInfo?.label}...
                 </div>
               )}
+
               <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/8 bg-white/3">
                   <span className="text-xs font-semibold text-white">
@@ -1443,9 +1366,9 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                   </span>
                   {phase==='done' && (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-white/30">{makeCriteriaLabel(role, userInputs)}</span>
+                      <span className="text-xs text-white/25 max-w-[160px] truncate">{makeCriteriaLabel()}</span>
                       <button onClick={async()=>{await navigator.clipboard.writeText(output);setCopied(true);setTimeout(()=>setCopied(false),2000);}}
-                        className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-white/10 text-white/50 hover:text-white/80">
+                        className="flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-white/10 text-white/40 hover:text-white/70">
                         <Copy size={10}/>{copied?'Copied!':'Copy'}
                       </button>
                     </div>
@@ -1460,105 +1383,81 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
               </div>
 
               {/* Manav self-evaluation */}
-              {phase==='done' && (
-                <div>
-                  {evaluating && (
-                    <div className="flex items-center gap-2 text-xs text-white/40 py-2">
-                      <RefreshCw size={11} className="animate-spin text-violet-400"/>
-                      Manav is reviewing his own work...
+              {phase==='done' && (evaluating || evaluation) && (
+                <div className="rounded-xl border border-white/8 bg-zinc-950 overflow-hidden">
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-white/8">
+                    <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center font-black text-primary text-sm shrink-0">M</div>
+                    <div className="flex-1">
+                      <div className="text-xs font-semibold text-white">Manav reviewing his own output</div>
+                      {evaluation && (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-xs font-black ${(evaluation.quality_score||0)>=80?'text-green-400':(evaluation.quality_score||0)>=60?'text-yellow-400':'text-red-400'}`}>{evaluation.quality_score||'?'}/100</span>
+                          <span className="text-white/25 text-xs">quality</span>
+                          {evaluation.confidence_actual && <span className="text-white/25 text-xs">· {evaluation.confidence_actual}% confident</span>}
+                        </div>
+                      )}
                     </div>
-                  )}
+                    {evaluating && <RefreshCw size={13} className="animate-spin text-violet-400 shrink-0"/>}
+                  </div>
                   {evaluation && !evaluating && (
-                    <div className="rounded-xl border border-white/8 bg-zinc-950 overflow-hidden">
-                      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/8">
-                        <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 text-sm font-black text-primary">M</div>
-                        <div>
-                          <div className="text-xs font-semibold text-white">Manav reviewing his own output</div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <div className={`text-xs font-black ${(evaluation.quality_score||0)>=80?'text-green-400':(evaluation.quality_score||0)>=60?'text-yellow-400':'text-red-400'}`}>
-                              {evaluation.quality_score||'?'}/100
-                            </div>
-                            <span className="text-white/30 text-xs">quality score</span>
-                            {evaluation.confidence_actual && (
-                              <>
-                                <span className="text-white/20 text-xs mx-1">·</span>
-                                <span className="text-white/30 text-xs">{evaluation.confidence_actual}% confident in this specific output</span>
-                              </>
-                            )}
+                    <div className="px-4 py-3 space-y-3">
+                      {evaluation.manav_note && <p className="text-xs text-white/55 italic">{evaluation.manav_note}</p>}
+                      <div className="grid grid-cols-2 gap-3">
+                        {evaluation.what_worked?.length>0 && (
+                          <div>
+                            <div className="text-xs font-mono text-green-400 uppercase mb-1">What worked</div>
+                            {evaluation.what_worked.map((w:string,i:number)=>(
+                              <div key={i} className="text-xs text-white/45 flex gap-1.5 mb-0.5"><span className="text-green-400 shrink-0">✓</span>{w}</div>
+                            ))}
                           </div>
-                        </div>
+                        )}
+                        {evaluation.what_missed?.length>0 && (
+                          <div>
+                            <div className="text-xs font-mono text-orange-400 uppercase mb-1">What I missed</div>
+                            {evaluation.what_missed.map((w:string,i:number)=>(
+                              <div key={i} className="text-xs text-white/45 flex gap-1.5 mb-0.5"><span className="text-orange-400 shrink-0">!</span>{w}</div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="px-4 py-3 space-y-3">
-                        {evaluation.manav_note && (
-                          <p className="text-xs text-white/60 italic leading-relaxed">{evaluation.manav_note}</p>
-                        )}
-                        <div className="grid grid-cols-2 gap-3">
-                          {evaluation.what_worked?.length > 0 && (
-                            <div>
-                              <div className="text-xs font-mono text-green-400 uppercase mb-1.5">What worked</div>
-                              {evaluation.what_worked.map((w:string,i:number)=>(
-                                <div key={i} className="flex items-start gap-1.5 text-xs text-white/50 mb-1">
-                                  <span className="text-green-400 shrink-0">✓</span><span>{w}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {evaluation.what_missed?.length > 0 && (
-                            <div>
-                              <div className="text-xs font-mono text-orange-400 uppercase mb-1.5">What I missed</div>
-                              {evaluation.what_missed.map((w:string,i:number)=>(
-                                <div key={i} className="flex items-start gap-1.5 text-xs text-white/50 mb-1">
-                                  <span className="text-orange-400 shrink-0">!</span><span>{w}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                      {evaluation.redo_reason && (
+                        <div className="rounded-lg border border-yellow-400/15 bg-yellow-400/5 px-3 py-2">
+                          <span className="text-xs text-yellow-400 font-semibold">If I could redo this: </span>
+                          <span className="text-xs text-white/50">{evaluation.redo_reason}</span>
                         </div>
-                        {evaluation.redo_reason && (
-                          <div className="rounded-lg border border-yellow-400/15 bg-yellow-400/5 px-3 py-2">
-                            <span className="text-xs text-yellow-400 font-semibold">If I could redo this: </span>
-                            <span className="text-xs text-white/50">{evaluation.redo_reason}</span>
-                          </div>
-                        )}
-                        <div className="flex gap-2 flex-wrap pt-1">
-                          <button
-                            onClick={()=>{setPhase('requirements');setShowCritDiff(false);}}
-                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-violet-400/30 bg-violet-400/10 text-violet-400 hover:bg-violet-400/20"
-                          >
-                            <RotateCcw size={10}/>Redo with changes
+                      )}
+                      <div className="flex gap-2 flex-wrap pt-1">
+                        <button onClick={()=>{setPhase('inputs');setRedoFrom(null);}}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-violet-400/30 bg-violet-400/10 text-violet-400 hover:bg-violet-400/20">
+                          <RotateCcw size={10}/>Redo with changes
+                        </button>
+                        {evaluation.better_role && evaluation.better_role !== role && (
+                          <button onClick={()=>{setRole(EXEC_ROLES.find(r=>r.label===evaluation.better_role||r.id===evaluation.better_role)?.id||role);setPhase('inputs');}}
+                            className="text-xs px-3 py-1.5 rounded-xl border border-white/10 text-white/45 hover:text-white/70">
+                            Try as {evaluation.better_role}
                           </button>
-                          {evaluation.better_role && evaluation.better_role !== role && (
-                            <button
-                              onClick={()=>{setRole(EXEC_ROLES.find(r=>r.label===evaluation.better_role||r.id===evaluation.better_role)?.id||role);setPhase('requirements');}}
-                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-white/10 text-white/50 hover:text-white/80"
-                            >
-                              Try as {evaluation.better_role} instead
-                            </button>
-                          )}
-                        </div>
+                        )}
                       </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Verification checklist */}
-              {phase==='done' && blueprint?.review_checklist && (
+              {/* Review checklist */}
+              {phase==='done' && cap.verify_steps?.length>0 && (
                 <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
                   <div className="flex items-center gap-2 mb-3">
                     <Shield size={14} className="text-yellow-400"/>
-                    <span className="text-sm font-bold text-yellow-400">Check every item before delivering</span>
+                    <span className="text-sm font-bold text-yellow-400">Check these before delivering</span>
                   </div>
                   <div className="space-y-2">
-                    {blueprint.review_checklist.map((item:string,i:number)=>(
-                      <VerifyCheckItem key={i} index={i+1} step={item} tool="" pass=""/>
+                    {cap.verify_steps.map((v,i)=>(
+                      <VerifyCheckItem key={i} index={i+1} step={v.step} tool={v.tool} pass={v.pass}/>
                     ))}
                   </div>
-                  {blueprint.verification_method && (
-                    <p className="text-xs text-yellow-400/60 mt-3 pt-3 border-t border-yellow-400/15">
-                      <span className="font-semibold">Final check: </span>{blueprint.verification_method}
-                    </p>
-                  )}
+                  <p className="text-xs text-yellow-400/55 mt-3 pt-3 border-t border-yellow-400/15">
+                    <span className="font-semibold">Final check: </span>{cap.verify_steps[cap.verify_steps.length-1]?.pass}
+                  </p>
                 </div>
               )}
             </div>
@@ -1567,36 +1466,32 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-white/8 shrink-0">
-          {phase==='requirements' && (
+          {phase==='inputs' && (
             <div className="flex items-center gap-3 flex-wrap">
-              <button
-                onClick={execute}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-violet-600 to-primary hover:from-violet-500"
-              >
+              <button onClick={execute}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-violet-600 to-primary hover:from-violet-500">
                 <Sparkles size={14}/>
-                {redoFrom ? 'Redo with these changes' : 'Start — I have got this'}
+                {redoFrom ? 'Redo with these inputs' : 'Start — I have got this'}
               </button>
-              <div className="text-xs text-white/40">
-                <span className="text-white/60">{cap.time_ai} min</span> · {roleInfo?.label}
+              <div className="text-xs text-white/35">
+                ~{cap.time_ai} min · as {roleInfo?.label}
               </div>
               {redoFrom && (
-                <button onClick={()=>{setRedoFrom(null);setShowCritDiff(false);}} className="text-xs text-white/30 hover:text-white/60 ml-auto">
-                  Start fresh instead
+                <button onClick={()=>{setRedoFrom(null);setUserInputs({});}} className="text-xs text-white/25 hover:text-white/50 ml-auto">
+                  Start fresh
                 </button>
               )}
             </div>
           )}
-          {phase==='executing' && (
-            <p className="text-xs text-white/40">Working... please keep this open</p>
-          )}
+          {phase==='executing' && <p className="text-xs text-white/35">Working... please keep this open</p>}
           {phase==='done' && (
             <div className="flex items-center gap-3 flex-wrap">
               <button onClick={()=>onVerify(block)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm">
                 <CheckCircle2 size={14}/>Reviewed — submit for verification
               </button>
-              <button onClick={()=>{setPhase('requirements');setShowCritDiff(false);setRedoFrom(null);}}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 text-sm text-white/60 hover:text-white/80">
+              <button onClick={()=>{setPhase('inputs');setRedoFrom(null);}}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 text-sm text-white/55 hover:text-white/80">
                 <RotateCcw size={13}/>Redo with changes
               </button>
             </div>
@@ -1606,7 +1501,6 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     </div>
   );
 }
-
 
 function VerifyCheckItem({ index, step, tool, pass }: { index:number; step:string; tool:string; pass:string }) {
   const [checked, setChecked] = useState(false);
