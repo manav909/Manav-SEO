@@ -1168,7 +1168,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     <div className="fixed inset-0 z-[250] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/75 backdrop-blur-sm"/>
       <div
-        className="relative w-full max-w-3xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full max-w-3xl bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         style={{maxHeight:'94vh'}}
         onClick={e=>e.stopPropagation()}
       >
@@ -1226,7 +1226,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
           {/* Version history panel */}
           {showHistory && versions.length > 0 && (
-            <div className="border-b border-white/8 bg-[#0d0d18] px-6 py-4 space-y-3">
+            <div className="border-b border-white/8 bg-zinc-950 px-6 py-4 space-y-3">
               <div className="text-xs font-mono text-violet-400 uppercase mb-2">Last {versions.length} execution{versions.length!==1?'s':''} — click to redo with changes</div>
               {versions.map((v,i)=>{
                 const ev    = v.evaluation;
@@ -1266,7 +1266,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
           {/* Criteria diff when redoing */}
           {showCritDiff && redoFrom && critDiff.length > 0 && (
-            <div className="border-b border-white/8 bg-[#0d0d18] px-6 py-4">
+            <div className="border-b border-white/8 bg-zinc-950 px-6 py-4">
               <div className="flex items-center gap-2 mb-3">
                 <div className="h-5 w-5 rounded bg-yellow-400/15 flex items-center justify-center shrink-0">
                   <AlertTriangle size={10} className="text-yellow-400"/>
@@ -1406,7 +1406,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                           onChange={e=>setUserInputs(prev=>({...prev,[m.key]:e.target.value}))}
                           placeholder={`Enter ${m.label.toLowerCase()}...`}
                           rows={2}
-                          className="w-full text-sm px-3 py-2 rounded-xl border border-white/15 bg-[#1a1a24] text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none"
+                          className="w-full text-sm px-3 py-2 rounded-xl border border-white/15 bg-zinc-900 text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none"
                         />
                       </div>
                     ))}
@@ -1471,7 +1471,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                     </div>
                   )}
                   {evaluation && !evaluating && (
-                    <div className="rounded-xl border border-white/8 bg-[#0d0d18] overflow-hidden">
+                    <div className="rounded-xl border border-white/8 bg-zinc-950 overflow-hidden">
                       <div className="flex items-center gap-3 px-4 py-3 border-b border-white/8">
                         <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 text-sm font-black text-primary">M</div>
                         <div>
@@ -1679,7 +1679,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/75 backdrop-blur-sm"/>
-      <div className="relative w-full max-w-2xl bg-[#0f0f13] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{maxHeight:'92vh'}} onClick={e=>e.stopPropagation()}>
+      <div className="relative w-full max-w-2xl bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{maxHeight:'92vh'}} onClick={e=>e.stopPropagation()}>
         <div className="h-1 w-full bg-gradient-to-r from-yellow-500 via-violet-500 to-green-500"/>
 
         {/* Header */}
@@ -1718,13 +1718,13 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
               </label>
               <textarea value={completionNote} onChange={e=>setCompletionNote(e.target.value)} rows={4}
                 placeholder="Tell me what changed — e.g. Fixed 3 broken redirects, tested in browser, all returning 301"
-                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/15 bg-[#1a1a24] text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none"
+                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/15 bg-zinc-900 text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none"
               />
             </div>
             <div>
               <label className="text-xs font-semibold text-white mb-1 block">When did you wrap this up?</label>
               <input type="date" value={completedDate} onChange={e=>setCompletedDate(e.target.value)} max={new Date().toISOString().split('T')[0]}
-                className="h-9 text-sm px-3 rounded-xl border border-white/10 bg-white/3 text-white outline-none focus:border-violet-400/50"/>
+                className="h-9 text-sm px-3 rounded-xl border border-white/10 bg-zinc-900 text-white/90 outline-none focus:border-violet-400/50"/>
             </div>
           </>)}
 
@@ -1749,7 +1749,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
               <label className="text-xs font-semibold text-white block mb-1">Paste in the numbers — whatever the tool showed you</label>
               <textarea value={evidenceData} onChange={e=>setEvidenceData(e.target.value)} rows={4}
                 placeholder="E.g. GSC indexed pages went from 823 to 847. Or: keyword moved from pos 14 to 8 in Semrush."
-                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/15 bg-[#1a1a24] text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none font-mono"
+                className="w-full text-sm px-3 py-2.5 rounded-xl border border-white/15 bg-zinc-900 text-white/90 placeholder-white/30 outline-none focus:border-violet-400/60 resize-none font-mono"
               />
             </div>
           </>)}
