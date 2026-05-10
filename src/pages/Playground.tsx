@@ -1240,7 +1240,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
         ]);
         setActiveVersion(data.id);
       }
-    } catch { /* save failed */ }
+    } catch (e) { console.warn('[SEO Season] Version save failed:', e); }
   };
 
   const evaluate = async (out: string) => {
@@ -1607,7 +1607,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                   </div>
                   <div className="space-y-2">
                     {cap.verify_steps.map((v,i)=>(
-                      <VerifyCheckItem key={i} index={i+1} step={v.step} tool={v.tool} pass={v.pass}/>
+                      <React.Fragment key={i}><VerifyCheckItem index={i+1} step={v.step} tool={v.tool} pass={v.pass}/></React.Fragment>
                     ))}
                   </div>
                   <p className="text-xs text-yellow-400/55 mt-3 pt-3 border-t border-yellow-400/15">
@@ -2156,12 +2156,13 @@ export default function Playground() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action:         'verify',
           card:           block,
           siteUrl:        selProj?.url || '',
           completedAt:    completedDates[block.id] || new Date().toISOString(),
           checkType,
-          completionNote, // what the user says they did
-          evidenceData,   // any pasted report data
+          completionNote,
+          evidenceData,
         }),
       });
       const data = await res.json();
@@ -2396,7 +2397,7 @@ Please try again — if the problem persists, check your network connection.`);
     setDdBlock(block);setDdText('');setDdLoading(true);
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
-      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({focusBlockId:block.id,blocks,projectSummary:proj})});
+      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'deep_dive',focusBlockId:block.id,blocks,projectSummary:proj})});
       if(!res.ok||!res.body) throw new Error('Request failed');
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setDdText(acc);}
@@ -2409,7 +2410,7 @@ Please try again — if the problem persists, check your network connection.`);
     setChatLoading(true);setChatResp('');
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
-      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj})});
+      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj,role:activeRole})});
       if(!res.ok||!res.body) throw new Error('failed');
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setChatResp(acc);chatEndRef.current?.scrollIntoView({behavior:'smooth'});}
@@ -3694,7 +3695,7 @@ Please try again — if the problem persists, check your network connection.`);
       )}
 
       {/* ── Manav Brain Executor ── */}
-      {activeExecBlock && (
+      {activeExecBlock && selProjId && (
         <InlineTaskExecutor
           block={activeExecBlock}
           projectId={selProjId}
