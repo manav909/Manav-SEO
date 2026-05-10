@@ -925,6 +925,45 @@ function getAICap(blockType: string): AICap {
    CLIENT-SIDE REQUIRED INPUTS
    Defined here so questions ALWAYS show, no API dependency
 ════════════════════════════════════════════════════ */
+const EXEC_ROLES = [
+  {
+    id: 'senior_seo', label: 'Senior SEO Strategist',
+    focus: 'Technical depth, algorithm reasoning, ranking factors, E-E-A-T, GEO strategy',
+    output: 'Detailed SEO rationale with specific ranking signals, compounding effects, and risk analysis',
+    best_for: 'Technical tasks, content strategy, audit analysis, competitive intelligence',
+  },
+  {
+    id: 'content_writer', label: 'Content Writer',
+    focus: 'What to write, structure, keywords, tone, internal links, GEO readiness',
+    output: 'Writer-ready brief with exact headings, keywords to place, tone guidance, and word targets',
+    best_for: 'Content tasks, GEO optimisation, on-page quick wins',
+  },
+  {
+    id: 'team_lead', label: 'Team Lead',
+    focus: 'What needs doing, who owns it, blockers, dependencies, definition of done',
+    output: 'Clear execution instructions with numbered steps, owner assignment, and done criteria',
+    best_for: 'Weekly tasks, pipeline planning, task delegation',
+  },
+  {
+    id: 'project_manager', label: 'Project Manager',
+    focus: 'Deliverable spec, acceptance criteria, timeline, dependencies, risk',
+    output: 'Formal work order with milestones, acceptance criteria, and risk register',
+    best_for: 'Complex multi-step tasks, sprint planning, client deliverables',
+  },
+  {
+    id: 'executive', label: 'Executive',
+    focus: 'Business outcomes, ROI, competitive position, what to decide',
+    output: 'Plain English business summary — 3 things to know, 1 decision to make, no jargon',
+    best_for: 'Strategic insights, KPI forecasting, competitive analysis',
+  },
+  {
+    id: 'biz_dev', label: 'Biz Dev Manager',
+    focus: 'Client value, proof points, upsell angles, objection handling, renewal talking points',
+    output: 'Client-ready narrative with results framing and commercial context',
+    best_for: 'Monthly reports, insight tasks, competitive positioning',
+  },
+];
+
 const CLIENT_INPUTS: Record<string, { key: string; label: string; why: string; placeholder: string }[]> = {
   technical: [
     { key: "affected_urls",    label: "Which URLs are affected?",                      why: "I need the exact paths to generate the correct fix",                                    placeholder: "e.g. /old-page, /broken-redirect, /missing-page" },
