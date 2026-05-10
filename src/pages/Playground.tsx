@@ -3490,32 +3490,27 @@ Please try again — if the problem persists, check your network connection.`);
             style={{maxHeight:'88vh'}}
             onClick={e=>e.stopPropagation()}
           >
-            {/* Colour bar */}
-            {(()=>{const tm=TM[expandedBlock.type]||TM.custom;return <div className="h-1 w-full" style={{background:`linear-gradient(90deg,${tm.color},transparent)`}}/>;})()}
+            {/* Colour bar — inline, no IIFE */}
+            <div className="h-1 w-full" style={{background:`linear-gradient(90deg,${(TM[expandedBlock.type]||TM.custom).color},transparent)`}}/>
 
-            {/* Header */}
-            {(()=>{
-              const tm=TM[expandedBlock.type]||TM.custom;
-              const EIcon=tm.icon;
-              return (
-                <div className="flex items-start gap-3 px-5 py-4 border-b border-border shrink-0">
-                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{background:`${tm.color}18`,border:`1px solid ${tm.color}28`}}>
-                    <EIcon size={14} style={{color:tm.color}}/>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-sm leading-snug">{expandedBlock.title}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                      <span className="font-mono" style={{color:tm.color}}>{tm.label}</span>
-                      <span className={`px-1.5 py-0.5 rounded-full border text-xs font-mono ${PM[expandedBlock.priority]?.badge||'border-border text-muted-foreground'}`}>{expandedBlock.priority}</span>
-                      <span className="text-muted-foreground">Week {expandedBlock.week===5?'Backlog':expandedBlock.week}</span>
-                    </div>
-                  </div>
-                  <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50 shrink-0">
-                    <X size={13}/>
-                  </button>
+            {/* Header — all values inlined */}
+            <div className="flex items-start gap-3 px-5 py-4 border-b border-border shrink-0">
+              <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
+                style={{background:`${(TM[expandedBlock.type]||TM.custom).color}18`,border:`1px solid ${(TM[expandedBlock.type]||TM.custom).color}28`}}>
+                {React.createElement(TM[expandedBlock.type]?.icon||TM.custom.icon, {size:14, style:{color:(TM[expandedBlock.type]||TM.custom).color}})}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm leading-snug">{expandedBlock.title}</div>
+                <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+                  <span className="font-mono" style={{color:(TM[expandedBlock.type]||TM.custom).color}}>{(TM[expandedBlock.type]||TM.custom).label}</span>
+                  <span className={`px-1.5 py-0.5 rounded-full border text-xs font-mono ${PM[expandedBlock.priority]?.badge||'border-border text-muted-foreground'}`}>{expandedBlock.priority}</span>
+                  <span className="text-muted-foreground">Week {expandedBlock.week===5?'Backlog':expandedBlock.week}</span>
                 </div>
-              );
-            })()}
+              </div>
+              <button onClick={()=>setExpandedBlock(null)} className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50 shrink-0">
+                <X size={13}/>
+              </button>
+            </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
@@ -3531,26 +3526,26 @@ Please try again — if the problem persists, check your network connection.`);
                 )}
               </div>
 
-              {/* Where we are control */}
+              {/* Status */}
               <div className="rounded-xl border border-border bg-background/60 p-4 space-y-3">
                 <div className="text-xs font-mono text-muted-foreground uppercase">Where we are</div>
                 <div className="flex gap-2 flex-wrap">
-                  {(['todo','doing','waiting','verified'] as const).map(s => {
-                    const active = expandedBlock.status === s;
-                    const labels: Record<string,string> = {todo:'To Do',doing:'In Progress',waiting:'Waiting',verified:'Verified'};
-                    const colors: Record<string,string> = {
-                      todo:     active?'bg-secondary text-foreground border-border':'text-muted-foreground border-border/50 hover:border-border',
-                      doing:    active?'bg-blue-400/15 text-blue-400 border-blue-400/30':'text-muted-foreground border-border/50 hover:border-blue-400/30 hover:text-blue-400',
-                      waiting:  active?'bg-orange-400/15 text-orange-400 border-orange-400/30':'text-muted-foreground border-border/50 hover:border-orange-400/30 hover:text-orange-400',
-                      verified: active?'bg-green-400/15 text-green-400 border-green-400/30':'text-muted-foreground border-border/50 hover:border-green-400/30 hover:text-green-400',
+                  {(['todo','doing','waiting','verified'] as const).map(s=>{
+                    const isActive = expandedBlock.status === s;
+                    const labelMap: Record<string,string> = {todo:'To Do',doing:'In Progress',waiting:'Waiting',verified:'Verified'};
+                    const colorMap: Record<string,string> = {
+                      todo:     isActive?'bg-secondary text-foreground border-border':'text-muted-foreground border-border/50 hover:border-border',
+                      doing:    isActive?'bg-blue-400/15 text-blue-400 border-blue-400/30':'text-muted-foreground border-border/50 hover:border-blue-400/30 hover:text-blue-400',
+                      waiting:  isActive?'bg-orange-400/15 text-orange-400 border-orange-400/30':'text-muted-foreground border-border/50 hover:border-orange-400/30 hover:text-orange-400',
+                      verified: isActive?'bg-green-400/15 text-green-400 border-green-400/30':'text-muted-foreground border-border/50 hover:border-green-400/30 hover:text-green-400',
                     };
                     return (
                       <button key={s} onClick={()=>{
                         setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?{...b,status:s as Status}:b);scheduleAutoSave(u);return u;});
                         setExpandedBlock({...expandedBlock,status:s as Status});
-                      }}
-                        className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${colors[s]}`}
-                      >{labels[s]}</button>
+                      }} className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${colorMap[s]}`}>
+                        {labelMap[s]}
+                      </button>
                     );
                   })}
                 </div>
@@ -3574,133 +3569,68 @@ Please try again — if the problem persists, check your network connection.`);
                 </button>
               </div>
 
-              {/* AI Capability Panel */}
-              {(()=>{
-                const cap = getAICap(expandedBlock.type);
-                const toggled = expandedBlock.aiAssisted;
-                return (
-                  <div className="rounded-xl border border-border bg-background/60 overflow-hidden">
-
-                    {/* Header row */}
-                    <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-                      <div className="flex-1">
-                        <div className="text-xs font-mono text-muted-foreground uppercase mb-0.5">Time & what Manav can do</div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-xl font-black text-foreground">
-                            ~{toggled ? formatHours(cap.time_ai/60) : formatHours(cap.time_human/60)}
-                          </div>
-                          {toggled && (
-                            <div className="text-xs text-muted-foreground">
-                              <span className="line-through mr-1">{formatHours(cap.time_human/60)}</span>
-                              <span className="text-green-400 font-semibold">{Math.round((1-cap.time_ai/cap.time_human)*100)}% saved</span>
-                            </div>
-                          )}
-                        </div>
+              {/* Effort + Manav capability */}
+              <div className="rounded-xl border border-border bg-background/60 overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+                  <div className="flex-1">
+                    <div className="text-xs font-mono text-muted-foreground uppercase mb-0.5">Time & what Manav can do</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-xl font-black">
+                        ~{expandedBlock.aiAssisted ? formatHours(getAICap(expandedBlock.type).time_ai/60) : formatHours(getAICap(expandedBlock.type).time_human/60)}
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className={`flex flex-col items-center px-3 py-1.5 rounded-xl border ${cap.confidence>=85?'border-green-400/30 bg-green-400/5':cap.confidence>=70?'border-yellow-400/30 bg-yellow-400/5':'border-orange-400/30 bg-orange-400/5'}`}>
-                          <span className={`text-lg font-black ${cap.confidence>=85?'text-green-400':cap.confidence>=70?'text-yellow-400':'text-orange-400'}`}>{cap.confidence}%</span>
-                          <span className="text-xs text-muted-foreground">confidence</span>
+                      {expandedBlock.aiAssisted && (
+                        <div className="text-xs text-muted-foreground">
+                          <span className="line-through mr-1">{formatHours(getAICap(expandedBlock.type).time_human/60)}</span>
+                          <span className="text-green-400 font-semibold">{Math.round((1-getAICap(expandedBlock.type).time_ai/getAICap(expandedBlock.type).time_human)*100)}% saved</span>
                         </div>
-                        <button
-                          onClick={()=>{
-                            const updated={...expandedBlock,aiAssisted:!expandedBlock.aiAssisted};
-                            setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?updated:b);scheduleAutoSave(u);return u;});
-                            setExpandedBlock(updated);
-                          }}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${toggled?'bg-primary/15 border-primary/40 text-primary':'border-border text-muted-foreground hover:border-primary/30 hover:text-primary'}`}
-                        >
-                          <Brain size={13}/>
-                          {toggled?'AI: ON':'AI: OFF'}
-                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className={`flex flex-col items-center px-3 py-1.5 rounded-xl border ${getAICap(expandedBlock.type).confidence>=85?'border-green-400/30 bg-green-400/5':getAICap(expandedBlock.type).confidence>=70?'border-yellow-400/30 bg-yellow-400/5':'border-orange-400/30 bg-orange-400/5'}`}>
+                    <span className={`text-lg font-black ${getAICap(expandedBlock.type).confidence>=85?'text-green-400':getAICap(expandedBlock.type).confidence>=70?'text-yellow-400':'text-orange-400'}`}>{getAICap(expandedBlock.type).confidence}%</span>
+                    <span className="text-xs text-muted-foreground">confidence</span>
+                  </div>
+                  <button
+                    onClick={()=>{
+                      const updated={...expandedBlock,aiAssisted:!expandedBlock.aiAssisted};
+                      setBlocks(prev=>{const u=prev.map(b=>b.id===expandedBlock.id?updated:b);scheduleAutoSave(u);return u;});
+                      setExpandedBlock(updated);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${expandedBlock.aiAssisted?'bg-primary/15 border-primary/40 text-primary':'border-border text-muted-foreground hover:border-primary/30 hover:text-primary'}`}
+                  >
+                    <Brain size={13}/>
+                    {expandedBlock.aiAssisted?'Manav: ON':'Manav: OFF'}
+                  </button>
+                </div>
+                {expandedBlock.aiAssisted && (
+                  <div className="px-4 py-3 space-y-3">
+                    <p className="text-xs text-muted-foreground/70 italic">{getAICap(expandedBlock.type).confidence_reason}</p>
+                    <div>
+                      <div className="text-xs font-mono text-primary uppercase mb-2">Here's what I'm going to take off your plate</div>
+                      <div className="space-y-1">
+                        {getAICap(expandedBlock.type).produces.map((p2,i)=>(
+                          <div key={i} className="flex items-start gap-2 text-xs">
+                            <CheckCircle2 size={10} className="text-green-400 shrink-0 mt-0.5"/>
+                            <span className="text-muted-foreground">{p2}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
-
-                    {toggled && (
-                      <div className="px-4 py-3 space-y-3">
-
-                        {/* Confidence explanation */}
-                        <div className={`rounded-xl p-3 text-xs ${cap.confidence>=85?'bg-green-400/5 border border-green-400/15':cap.confidence>=70?'bg-yellow-400/5 border border-yellow-400/15':'bg-orange-400/5 border border-orange-400/15'}`}>
-                          <div className={`font-semibold mb-1 ${cap.confidence>=85?'text-green-400':cap.confidence>=70?'text-yellow-400':'text-orange-400'}`}>
-                            Why I'm {cap.confidence}% confident on this
+                    <div>
+                      <div className="text-xs font-mono text-orange-400 uppercase mb-1">These parts need your hands</div>
+                      <div className="space-y-1">
+                        {getAICap(expandedBlock.type).cannot_do.map((c2,i)=>(
+                          <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <AlertTriangle size={9} className="text-orange-400 shrink-0 mt-0.5"/>
+                            <span>{c2}</span>
                           </div>
-                          <p className="text-muted-foreground leading-relaxed">{cap.confidence_reason}</p>
-                        </div>
-
-                        {/* What Here's what I'm going to take off your plate */}
-                        <div>
-                          <div className="text-xs font-mono text-primary uppercase mb-2">What Here's what I'm going to take off your plate</div>
-                          <div className="space-y-1">
-                            {cap.produces.map((p2,i)=>(
-                              <div key={i} className="flex items-start gap-2 text-xs">
-                                <CheckCircle2 size={10} className="text-green-400 shrink-0 mt-0.5"/>
-                                <span className="text-muted-foreground">{p2}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Time breakdown */}
-                        <div>
-                          <div className="text-xs font-mono text-muted-foreground uppercase mb-2">How I'm spending those {cap.time_ai} minutes</div>
-                          <div className="space-y-1">
-                            {cap.time_breakdown.map((t,i)=>(
-                              <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                                <Clock size={9} className="shrink-0 mt-0.5 text-primary/60"/>
-                                <span>{t}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* What Manav Brain cannot do */}
-                        <div>
-                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">These parts need your touch — I'm being upfront</div>
-                          <div className="space-y-1">
-                            {cap.cannot_do.map((c2,i)=>(
-                              <div key={i} className="flex items-start gap-2 text-xs">
-                                <AlertTriangle size={10} className="text-orange-400 shrink-0 mt-0.5"/>
-                                <span className="text-muted-foreground">{c2}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* What Manav Brain needs from you */}
-                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-                          <div className="text-xs font-mono text-primary uppercase mb-2">Just need a couple of things from you first</div>
-                          <div className="space-y-1">
-                            {cap.needs_from_you.map((n,i)=>(
-                              <div key={i} className="flex items-start gap-2 text-xs">
-                                <ChevronRight size={10} className="text-primary shrink-0 mt-0.5"/>
-                                <span className="text-muted-foreground">{n}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Verification steps */}
-                        <div>
-                          <div className="text-xs font-mono text-yellow-400 uppercase mb-2">How to check my work — please do this before delivering</div>
-                          <div className="space-y-2">
-                            {cap.verify_steps.map((v,i)=>(
-                              <div key={i} className="rounded-lg border border-border bg-background/60 p-3 text-xs space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="h-4 w-4 rounded-full bg-yellow-400/15 text-yellow-400 flex items-center justify-center font-bold text-xs shrink-0">{i+1}</span>
-                                  <span className="font-medium text-foreground">{v.step}</span>
-                                </div>
-                                <div className="pl-6 text-muted-foreground"><span className="font-medium">Tool: </span>{v.tool}</div>
-                                <div className="pl-6 text-green-400"><span className="font-medium">Pass: </span>{v.pass}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
+                        ))}
                       </div>
-                    )}
+                    </div>
                   </div>
-                );
-              })()}
+                )}
+              </div>
+
               {/* Actions */}
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={()=>{setExpandedBlock(null);setActiveExecBlock(expandedBlock);}}
@@ -3709,7 +3639,7 @@ Please try again — if the problem persists, check your network connection.`);
                 </button>
                 <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
-                  <Brain size={13}/>AI Deep Dive
+                  <Brain size={13}/>Ask Manav
                 </button>
                 <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}}
                   className="flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">
@@ -3717,14 +3647,13 @@ Please try again — if the problem persists, check your network connection.`);
                 </button>
                 <button onClick={()=>{returnToLib(expandedBlock.id);setExpandedBlock(null);}}
                   className="flex items-center justify-center gap-2 py-2 rounded-xl border border-red-400/20 text-xs text-red-400/70 hover:text-red-400 hover:bg-red-400/10 transition-colors">
-                  <X size={11}/>Remove from canvas
+                  <X size={11}/>Remove
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
-
       {/* ── Deep Dive Panel ── */}
       {ddBlock && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={()=>setDdBlock(null)}>
