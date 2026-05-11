@@ -1634,15 +1634,15 @@ Evidence: ${c.data_basis}` : ''}`,
                             {id:'gaps',         label:'Gaps',           badge:null},
                             {id:'cards',        label:'Cards',          badge:compareResult.card_proposals?.length||null},
                           ]:[]),
-                        ] as const).map(({id,label,badge}:any)=>(
-                          <button key={id} onClick={()=>setCompareTab(id)}
+                        ].map((tab:any)=>(
+                          <button key={tab.id} onClick={()=>setCompareTab(tab.id)}
                             className={`px-3 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1.5 ${
-                              compareTab===id?'border-primary text-primary':'border-transparent text-muted-foreground hover:text-foreground'
+                              compareTab===tab.id?'border-primary text-primary':'border-transparent text-muted-foreground hover:text-foreground'
                             }`}>
-                            {label}
-                            {badge!=null && <span className={`px-1.5 py-0.5 rounded-full text-xs font-mono ${compareTab===id?'bg-primary/20 text-primary':'bg-secondary text-muted-foreground'}`}>{badge}</span>}
+                            {tab.label}
+                            {tab.badge!=null && <span className={`px-1.5 py-0.5 rounded-full text-xs font-mono ${compareTab===tab.id?'bg-primary/20 text-primary':'bg-secondary text-muted-foreground'}`}>{tab.badge}</span>}
                           </button>
-                        ))}
+                        )))}
                       </div>
 
                       {/* ════════ PAGE RESULTS TAB ════════ */}
