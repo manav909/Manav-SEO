@@ -198,14 +198,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const stream = await anthropic.messages.stream({
-      model: "claude-sonnet-4-5", max_tokens: 3500,
+      model: "claude-sonnet-4-5", max_tokens: 6000,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     });
+    let stopReason = "";
     for await (const chunk of stream) {
       if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
         res.write(chunk.delta.text);
       }
+      if (chunk.type === "message_delta" && chunk.delta.stop_reason) {
+        stopReason = chunk.delta.stop_reason;
+      }
+    }
+    if (stopReason === "max_tokens") {
+      console.warn(`[SEO Season] intelligence.ts hit max_tokens — mode: ${mode}, role: ${role}`);
+      res.write("\n\n---\n⚠️ Analysis reached the length limit. Use the deep dive or ask a more focused question to get the full detail on a specific area.");
     }
   } catch (streamErr: any) {
     res.write(`\nError: ${streamErr.message}`);
