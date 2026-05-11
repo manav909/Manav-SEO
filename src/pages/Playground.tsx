@@ -5,7 +5,7 @@ import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
-  Sparkles, FileText, Download, Copy, Plus, RefreshCw, Trash2,
+  Sparkles, FileText, Download, Copy, Plus, RefreshCw, Trash2, ListChecks,
   ChevronDown, ChevronUp, Zap, Brain, Globe, Shield, Lock,
   Trophy, TrendingUp, Calendar, Layers, X, Tag,
   CheckCircle2, Maximize2, Star, Send, MessageSquare,
@@ -947,194 +947,69 @@ function getAICap(blockType: string): AICap {
 }
 
 
+
 /* ════════════════════════════════════════════════════
-   InlineTaskExecutor
-   Full AI execution panel — no imports, self-contained
+   AddRequirementInline — inline requirement entry
 ════════════════════════════════════════════════════ */
-/* ════════════════════════════════════════════════════
-   InlineTaskExecutor — with version history, self-evaluation, redo
-════════════════════════════════════════════════════ */
-/* ════════════════════════════════════════════════════
-   CLIENT-SIDE REQUIRED INPUTS
-   Defined here so questions ALWAYS show, no API dependency
-════════════════════════════════════════════════════ */
-const EXEC_ROLES = [
-  {
-    id: 'senior_seo', label: 'Senior SEO Strategist',
-    focus: 'Technical depth, algorithm reasoning, ranking factors, E-E-A-T, GEO strategy',
-    output: 'Detailed SEO rationale with specific ranking signals, compounding effects, and risk analysis',
-    best_for: 'Technical tasks, content strategy, audit analysis, competitive intelligence',
-  },
-  {
-    id: 'content_writer', label: 'Content Writer',
-    focus: 'What to write, structure, keywords, tone, internal links, GEO readiness',
-    output: 'Writer-ready brief with exact headings, keywords to place, tone guidance, and word targets',
-    best_for: 'Content tasks, GEO optimisation, on-page quick wins',
-  },
-  {
-    id: 'team_lead', label: 'Team Lead',
-    focus: 'What needs doing, who owns it, blockers, dependencies, definition of done',
-    output: 'Clear execution instructions with numbered steps, owner assignment, and done criteria',
-    best_for: 'Weekly tasks, pipeline planning, task delegation',
-  },
-  {
-    id: 'project_manager', label: 'Project Manager',
-    focus: 'Deliverable spec, acceptance criteria, timeline, dependencies, risk',
-    output: 'Formal work order with milestones, acceptance criteria, and risk register',
-    best_for: 'Complex multi-step tasks, sprint planning, client deliverables',
-  },
-  {
-    id: 'executive', label: 'Executive',
-    focus: 'Business outcomes, ROI, competitive position, what to decide',
-    output: 'Plain English business summary — 3 things to know, 1 decision to make, no jargon',
-    best_for: 'Strategic insights, KPI forecasting, competitive analysis',
-  },
-  {
-    id: 'biz_dev', label: 'Biz Dev Manager',
-    focus: 'Client value, proof points, upsell angles, objection handling, renewal talking points',
-    output: 'Client-ready narrative with results framing and commercial context',
-    best_for: 'Monthly reports, insight tasks, competitive positioning',
-  },
-];
+function AddRequirementInline({ cardId, cardTitle, onSave }: {
+  cardId:    string;
+  cardTitle: string;
+  onSave:    (cardId:string, cardTitle:string, req:string, cat:string) => Promise<void>;
+}) {
+  const [text,     setText]     = useState('');
+  const [category, setCategory] = useState('general');
+  const [saving,   setSaving]   = useState(false);
 
-/* Base questions (always shown for this card type) + role-specific extras */
-const CLIENT_INPUTS_BASE: Record<string, { key: string; label: string; why: string; placeholder: string }[]> = {
-  technical: [
-    { key: "affected_urls",    label: "Which URLs are affected?",                    why: "I need the exact paths to generate the correct fix",              placeholder: "e.g. /old-page, /broken-redirect, /missing-page" },
-    { key: "current_behavior", label: "What is currently happening — the problem?",  why: "The error type tells me which fix approach to take",              placeholder: "e.g. 404 on /old-page, redirect loop, schema not validating" },
-  ],
-  content: [
-    { key: "target_keyword",      label: "Primary keyword + 3-5 related ones",      why: "Everything I write is built around these",                        placeholder: "e.g. mobile forms app, online form builder, mobile form creator" },
-    { key: "search_intent",       label: "What is the reader trying to do?",        why: "Informational, commercial, or transactional each need a completely different structure", placeholder: "e.g. compare options (commercial), learn how to (informational), buy/sign up (transactional)" },
-    { key: "word_count_target",   label: "Target word count",                       why: "This determines how deep I go",                                   placeholder: "e.g. 1200 words" },
-    { key: "brand_voice_example", label: "One example of how this brand writes",    why: "Without this my output will be generic — paste a URL or a paragraph", placeholder: "Paste a URL or a paragraph of their writing style" },
-  ],
-  geo: [
-    { key: "target_query",  label: "Exact query to appear for in AI search",        why: "GEO strategy is completely query-specific",                       placeholder: "e.g. best mobile form app for small business" },
-    { key: "ai_platform",   label: "Which platform matters most?",                  why: "Perplexity, ChatGPT, and Google AI Overview cite differently",    placeholder: "e.g. Perplexity, ChatGPT, Google AI Overview" },
-  ],
-  "quick-win": [
-    { key: "target_urls",   label: "URLs to optimise — paste 1 to 10",             why: "I will fetch each and generate specific before/after improvements", placeholder: "https://yourdomain.com/page-1" },
-    { key: "target_metric", label: "What metric are we trying to move?",            why: "CTR, rankings, and impressions each need different approaches",   placeholder: "e.g. click-through rate, average position, impressions" },
-  ],
-  competitive: [
-    { key: "competitor_url",  label: "Competitor domain to analyse",               why: "I will fetch their pages to find the exact gaps",                 placeholder: "e.g. competitor.com" },
-    { key: "target_keywords", label: "Keywords you want to outrank them on",       why: "Without a focus the analysis is too broad to act on",             placeholder: "e.g. mobile form builder, online form app" },
-  ],
-  insight: [
-    { key: "specific_question", label: "What do you want me to analyse?",          why: "A focused question gives a useful answer — a broad one does not", placeholder: "e.g. Why are we losing rankings for X? What should we prioritise next month?" },
-  ],
-  weekly: [
-    { key: "task_context", label: "More context about what needs doing",            why: "Weekly tasks vary — context determines the right approach",       placeholder: "Describe what specifically needs to happen" },
-  ],
-};
+  const REQ_CATS = [
+    { value:'general',   label:'General' },
+    { value:'data',      label:'Data / metric' },
+    { value:'access',    label:'Access / login' },
+    { value:'content',   label:'Content / copy' },
+    { value:'technical', label:'Technical' },
+  ];
 
-/* Role-specific extra questions — appended after the base questions */
-const CLIENT_INPUTS_ROLE_EXTRA: Record<string, Record<string, { key: string; label: string; why: string; placeholder: string }[]>> = {
-  content: {
-    senior_seo: [
-      { key: "competing_pages",    label: "Top 3 competing pages to beat",          why: "I will structure content to out-depth them specifically",          placeholder: "e.g. competitor.com/blog/mobile-forms, site2.com/forms-guide" },
-      { key: "topical_depth",      label: "Subtopics to cover for topical authority", why: "Covering related subtopics signals expertise to Google",         placeholder: "e.g. form validation, offline forms, form analytics" },
-    ],
-    content_writer: [
-      { key: "key_points",         label: "Key points or angles to include",        why: "Tells me what the client specifically wants to communicate",       placeholder: "e.g. emphasise ease of use, mention the free plan, cover mobile-first design" },
-      { key: "tone_notes",         label: "Tone — professional, casual, technical?",why: "This shapes every sentence I write",                              placeholder: "e.g. friendly but professional, avoid jargon, write for non-technical founders" },
-    ],
-    executive: [
-      { key: "business_goal",      label: "What business goal does this content serve?", why: "I frame everything around the outcome that matters commercially", placeholder: "e.g. generate trial signups, rank for buyer-intent keywords, support sales team" },
-      { key: "target_audience",    label: "Who is the target reader?",              why: "Job title, company size, and pain point shape the whole piece",    placeholder: "e.g. operations managers at SMBs, non-technical founders" },
-    ],
-    project_manager: [
-      { key: "deadline",           label: "When does this need to be published?",   why: "I will flag if the brief is too large for the timeline",           placeholder: "e.g. end of this week, next Monday" },
-      { key: "reviewer",           label: "Who reviews before it goes live?",       why: "I will note what the reviewer will likely scrutinise",             placeholder: "e.g. client, SEO lead, legal team" },
-    ],
-    team_lead: [
-      { key: "assigned_writer",    label: "Who is writing this?",                   why: "I tailor the brief to their skill level and context",              placeholder: "e.g. in-house writer, freelancer, AI-assisted" },
-    ],
-    biz_dev: [
-      { key: "client_differentiators", label: "What makes the client stand out?",  why: "I weave this into the content as proof points",                   placeholder: "e.g. fastest setup, only tool with offline support, used by 10k businesses" },
-    ],
-  },
-  technical: {
-    senior_seo: [
-      { key: "expected_fix_type",  label: "What kind of fix do you expect is needed?", why: "Redirect, schema, robots.txt, and canonical each need different code", placeholder: "e.g. 301 redirect, fix schema markup, update robots.txt" },
-    ],
-    team_lead: [
-      { key: "who_deploys",        label: "Who will apply the changes?",            why: "I write deployment instructions at the right technical level",     placeholder: "e.g. developer, I do it myself via CMS, agency" },
-    ],
-    project_manager: [
-      { key: "urgency",            label: "How urgent is this fix?",                why: "Critical vs routine issues need different documentation formats",  placeholder: "e.g. blocking indexation (urgent), nice-to-have improvement" },
-    ],
-  },
-  competitive: {
-    senior_seo: [
-      { key: "ranking_data",       label: "Semrush or Ahrefs export — optional but raises accuracy to 85%", why: "Without data I work from live page fetches only", placeholder: "Paste top rows from a keyword gap or domain overview export" },
-    ],
-    executive: [
-      { key: "business_context",   label: "Why does beating this competitor matter now?", why: "I frame the analysis around the business case, not just rankings", placeholder: "e.g. they are winning deals we should be closing, they recently launched a new product" },
-    ],
-  },
-  geo: {
-    senior_seo: [
-      { key: "current_url",        label: "Page URL to optimise for GEO",           why: "I fetch and read the current page before rewriting",              placeholder: "e.g. https://yourdomain.com/page" },
-    ],
-  },
-  insight: {
-    senior_seo: [
-      { key: "data_to_reference",  label: "Specific data you want me to analyse",   why: "Point me at the right audit, report, or metric",                  placeholder: "e.g. the March GSC export, the Screaming Frog crawl from Data Room" },
-    ],
-    executive: [
-      { key: "decision_context",   label: "What decision does this analysis inform?", why: "I focus the output on evidence that supports or challenges that specific decision", placeholder: "e.g. whether to invest in content vs technical SEO this quarter" },
-    ],
-  },
-};
+  const submit = async () => {
+    if (!text.trim()) return;
+    setSaving(true);
+    await onSave(cardId, cardTitle, text, category);
+    setText('');
+    setSaving(false);
+  };
 
-function getClientInputs(blockType: string, role: string) {
-  const base  = CLIENT_INPUTS_BASE[blockType]  || CLIENT_INPUTS_BASE.weekly;
-  const extra = (CLIENT_INPUTS_ROLE_EXTRA[blockType] || {})[role] || [];
-  return [...base, ...extra];
-}
-
-/* Manav suggestions — smart hints based on loaded context */
-function getManavSuggestions(blockType: string, role: string, ctx: any): { key: string; hint: string }[] {
-  if (!ctx) return [];
-  const hints: { key: string; hint: string }[] = [];
-  const kw  = ctx.goals?.keywords || (ctx.project?.keywords || [])[0] || '';
-  const cms = ctx.tech?.cms || '';
-  const url = ctx.project?.url || '';
-  const goal= ctx.goals?.primary || '';
-  const comp= ctx.competitors?.c1 || '';
-  const organic = ctx.analytics?.organicMonthly;
-
-  if (blockType === 'content') {
-    if (kw)     hints.push({ key: 'target_keyword',      hint: `I already know your primary keyword is "${kw}" from your Data Room — pre-filled.` });
-    if (goal)   hints.push({ key: 'search_intent',       hint: `Your campaign goal is "${goal}" — that suggests ${goal.toLowerCase().includes('sign') || goal.toLowerCase().includes('trial') ? 'commercial or transactional' : 'informational'} intent is likely the right call.` });
-    if (organic) hints.push({ key: 'word_count_target',  hint: `With ${organic} monthly organic sessions, a 1,500-2,000 word piece will compete well. Shorter risks being outranked.` });
-  }
-  if (blockType === 'technical') {
-    if (cms) hints.push({ key: 'current_behavior', hint: `You are on ${cms} — I know exactly which settings panel to reference in the fix instructions.` });
-    if (url) hints.push({ key: 'affected_urls',    hint: `I can fetch live pages from ${url} to see the issue directly if you paste the paths.` });
-  }
-  if (blockType === 'competitive') {
-    if (comp) hints.push({ key: 'competitor_url',   hint: `Your Data Room lists "${comp}" as your main competitor — pre-filled, but add more if you want a wider comparison.` });
-    if (kw)   hints.push({ key: 'target_keywords',  hint: `Your target keywords from Data Room are "${kw}" — good starting point, refine if this task is for a specific cluster.` });
-  }
-  if (blockType === 'geo') {
-    if (url)  hints.push({ key: 'current_url',      hint: `I will fetch ${url} before rewriting — paste the specific page path below.` });
-  }
-  if (role === 'executive' && blockType === 'content') {
-    hints.push({ key: 'business_goal', hint: `For an executive output I frame everything in revenue and competitive position — tell me the conversion goal so I can tie the content to it.` });
-  }
-  if (role === 'senior_seo' && blockType === 'content') {
-    hints.push({ key: 'competing_pages', hint: `I recommend pasting 2-3 competitor URLs here — I will read them and structure your content to out-depth each one specifically.` });
-  }
-  return hints;
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-muted-foreground/60 font-medium">Add what's needed:</div>
+      <div className="flex gap-2">
+        <select
+          value={category}
+          onChange={e=>setCategory(e.target.value)}
+          className="h-8 text-xs px-2 rounded-lg border border-border bg-background/60 outline-none shrink-0"
+        >
+          {REQ_CATS.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+        <input
+          value={text}
+          onChange={e=>setText(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&submit()}
+          placeholder="e.g. GSC export for target keyword, login to CMS…"
+          className="flex-1 h-8 text-xs px-3 rounded-lg border border-border bg-background/60 outline-none focus:border-primary/50 min-w-0"
+        />
+        <button
+          onClick={submit}
+          disabled={saving||!text.trim()}
+          className="h-8 px-3 rounded-lg bg-primary/15 border border-primary/30 text-primary text-xs font-semibold hover:bg-primary/25 disabled:opacity-40 shrink-0 flex items-center gap-1"
+        >
+          {saving ? <RefreshCw size={10} className="animate-spin"/> : <Plus size={10}/>}
+          {saving ? '' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 
-
 /* ════════════════════════════════════════════════════
-   VERSION HISTORY TYPE
+   AI Executor roles + client input definitions
 ════════════════════════════════════════════════════ */
 interface ExecVersion {
   id:             string;
@@ -1144,6 +1019,65 @@ interface ExecVersion {
   criteriaLabel:  string;
   evaluation:     any;
   createdAt:      string;
+}
+
+const EXEC_ROLES = [
+  { id: 'senior_seo',      label: 'Senior SEO Strategist',  focus: 'Technical depth, algorithm reasoning, ranking factors, E-E-A-T, GEO strategy',             output: 'Detailed SEO rationale with specific ranking signals', best_for: 'Technical tasks, content strategy, audit analysis, competitive intelligence' },
+  { id: 'content_writer',  label: 'Content Writer',          focus: 'What to write, structure, keywords, tone, internal links, GEO readiness',                   output: "Writer-ready brief with exact headings, keywords, tone guidance", best_for: 'Content tasks, GEO optimisation, on-page quick wins' },
+  { id: 'team_lead',       label: 'Team Lead',               focus: 'What needs doing, who owns it, blockers, dependencies, definition of done',                  output: 'Clear execution instructions with numbered steps and done criteria', best_for: 'Weekly tasks, pipeline planning, task delegation' },
+  { id: 'project_manager', label: 'Project Manager',         focus: 'Deliverable spec, acceptance criteria, timeline, dependencies, risk',                        output: 'Formal work order with milestones, acceptance criteria, and risk register', best_for: 'Complex multi-step tasks, sprint planning, client deliverables' },
+  { id: 'executive',       label: 'Executive',               focus: 'Business outcomes, ROI, competitive position, what to decide',                               output: "Plain English business summary — 3 things to know, 1 decision to make", best_for: 'Strategic insights, KPI forecasting, competitive analysis' },
+  { id: 'biz_dev',         label: 'Biz Dev Manager',         focus: 'Client value, proof points, upsell angles, objection handling, renewal talking points',       output: 'Client-ready narrative with results framing and commercial context', best_for: 'Monthly reports, insight tasks, competitive positioning' },
+];
+
+const CLIENT_INPUTS_BASE: Record<string, { key: string; label: string; why: string; placeholder: string }[]> = {
+  technical:   [{ key:"affected_urls",    label:"Which URLs are affected?",                   why:"I need the exact paths to generate the correct fix",              placeholder:"e.g. /old-page, /broken-redirect" },{ key:"current_behavior", label:"What is currently happening?",          why:"The error type tells me which fix to take",              placeholder:"e.g. 404 on /old-page, redirect loop" }],
+  content:     [{ key:"target_keyword",   label:"Primary keyword + 3-5 related",              why:"Everything I write is built around these",                       placeholder:"e.g. mobile forms app, online form builder" },{ key:"search_intent",      label:"What is the reader trying to do?",      why:"Informational, commercial, or transactional each need different structure", placeholder:"e.g. compare options (commercial)" },{ key:"word_count_target",  label:"Target word count",                     why:"This determines how deep I go",                                  placeholder:"e.g. 1200 words" },{ key:"brand_voice_example",label:"One example of how this brand writes",  why:"Without this my output will be generic",                         placeholder:"Paste a URL or a paragraph" }],
+  geo:         [{ key:"target_query",     label:"Exact query to appear for in AI search",     why:"GEO strategy is completely query-specific",                      placeholder:"e.g. best mobile form app for small business" },{ key:"ai_platform",        label:"Which platform matters most?",          why:"Perplexity, ChatGPT, and Google AI Overview cite differently",   placeholder:"e.g. Perplexity, ChatGPT, Google AI Overview" }],
+  "quick-win": [{ key:"target_urls",      label:"URLs to optimise — paste 1 to 10",           why:"I will fetch each and generate specific before/after",            placeholder:"https://yourdomain.com/page-1" },{ key:"target_metric",     label:"What metric are we trying to move?",    why:"CTR, rankings, and impressions each need different approaches",  placeholder:"e.g. click-through rate, average position" }],
+  competitive: [{ key:"competitor_url",   label:"Competitor domain to analyse",               why:"I will fetch their pages to find the exact gaps",                placeholder:"e.g. competitor.com" },{ key:"target_keywords",    label:"Keywords you want to outrank them on",  why:"Without a focus the analysis is too broad to act on",            placeholder:"e.g. mobile form builder, online form app" }],
+  insight:     [{ key:"specific_question",label:"What do you want me to analyse?",            why:"A focused question gives a useful answer",                       placeholder:"e.g. Why are we losing rankings for X?" }],
+  weekly:      [{ key:"task_context",     label:"More context about what needs doing",        why:"Weekly tasks vary — context determines the right approach",       placeholder:"Describe what specifically needs to happen" }],
+};
+
+const CLIENT_INPUTS_ROLE_EXTRA: Record<string, Record<string, { key: string; label: string; why: string; placeholder: string }[]>> = {
+  content: { senior_seo:[{ key:"competing_pages", label:"Top 3 competing pages to beat", why:"I will structure content to out-depth them", placeholder:"e.g. competitor.com/blog/mobile-forms" }], content_writer:[{ key:"key_points", label:"Key points or angles to include", why:"Tells me what to communicate", placeholder:"e.g. emphasise ease of use" }], executive:[{ key:"business_goal", label:"What business goal does this content serve?", why:"I frame everything around the commercial outcome", placeholder:"e.g. generate trial signups" }], team_lead:[{ key:"assigned_writer", label:"Who is writing this?", why:"I tailor the brief to their skill level", placeholder:"e.g. in-house writer, freelancer" }], biz_dev:[{ key:"client_differentiators", label:"What makes the client stand out?", why:"I weave this in as proof points", placeholder:"e.g. fastest setup, used by 10k businesses" }], project_manager:[{ key:"deadline", label:"When does this need to be published?", why:"I will flag if the brief is too large for the timeline", placeholder:"e.g. end of this week" }] },
+  technical: { senior_seo:[{ key:"expected_fix_type", label:"What kind of fix do you expect?", why:"Redirect, schema, robots.txt each need different code", placeholder:"e.g. 301 redirect, fix schema markup" }], team_lead:[{ key:"who_deploys", label:"Who will apply the changes?", why:"I write deployment instructions at the right technical level", placeholder:"e.g. developer, I do it myself via CMS" }] },
+  competitive: { senior_seo:[{ key:"ranking_data", label:"Semrush or Ahrefs export — optional", why:"Without data I work from live page fetches only", placeholder:"Paste top rows from a keyword gap export" }], executive:[{ key:"business_context", label:"Why does beating this competitor matter now?", why:"I frame the analysis around the business case", placeholder:"e.g. they are winning deals we should be closing" }] },
+  geo: { senior_seo:[{ key:"current_url", label:"Page URL to optimise for GEO", why:"I fetch and read the current page before rewriting", placeholder:"e.g. https://yourdomain.com/page" }] },
+  insight: { senior_seo:[{ key:"data_to_reference", label:"Specific data you want me to analyse", why:"Point me at the right audit, report, or metric", placeholder:"e.g. the March GSC export" }], executive:[{ key:"decision_context", label:"What decision does this analysis inform?", why:"I focus the output on evidence for that specific decision", placeholder:"e.g. whether to invest in content vs technical SEO" }] },
+};
+
+function getClientInputs(blockType: string, role: string) {
+  const base  = CLIENT_INPUTS_BASE[blockType]  || CLIENT_INPUTS_BASE.weekly;
+  const extra = (CLIENT_INPUTS_ROLE_EXTRA[blockType] || {})[role] || [];
+  return [...base, ...extra];
+}
+
+function getManavSuggestions(blockType: string, role: string, ctx: any): { key: string; hint: string }[] {
+  if (!ctx) return [];
+  const hints: { key: string; hint: string }[] = [];
+  const kw   = ctx.goals?.keywords || (ctx.project?.keywords || [])[0] || "";
+  const cms  = ctx.tech?.cms || "";
+  const url  = ctx.project?.url || "";
+  const goal = ctx.goals?.primary || "";
+  const comp = ctx.competitors?.c1 || "";
+  const organic = ctx.analytics?.organicMonthly;
+  if (blockType === "content") {
+    if (kw)      hints.push({ key:"target_keyword",      hint:`Your primary keyword is "${kw}" from your Data Room — pre-filled.` });
+    if (goal)    hints.push({ key:"search_intent",       hint:`Your goal is "${goal}" — ${goal.toLowerCase().includes("sign")||goal.toLowerCase().includes("trial")?"commercial or transactional":"informational"} intent likely.` });
+    if (organic) hints.push({ key:"word_count_target",   hint:`With ${organic} monthly organic sessions, a 1,500-2,000 word piece will compete well.` });
+  }
+  if (blockType === "technical") {
+    if (cms) hints.push({ key:"current_behavior", hint:`You are on ${cms} — I know exactly which settings panel to reference.` });
+    if (url) hints.push({ key:"affected_urls",    hint:`I can fetch live pages from ${url} if you paste the paths.` });
+  }
+  if (blockType === "competitive") {
+    if (comp) hints.push({ key:"competitor_url",  hint:`Your Data Room lists "${comp}" as your main competitor — pre-filled.` });
+    if (kw)   hints.push({ key:"target_keywords", hint:`Your target keywords from Data Room are "${kw}" — good starting point.` });
+  }
+  if (blockType === "geo" && url) hints.push({ key:"current_url", hint:`I will fetch ${url} before rewriting — paste the specific page path.` });
+  return hints;
 }
 
 /* ════════════════════════════════════════════════════
@@ -1985,6 +1919,10 @@ export default function Playground() {
   const [depText,      setDepText]      = useState('');
   const [depLoading,   setDepLoading]   = useState(false);
   const [depFocusId,   setDepFocusId]   = useState<string|null>(null);
+  // Project context (Data Room knowledge — shared across deepDive/askCanvas)
+  const [projContext,   setProjContext]   = useState<any>(null);
+  // Card requirements cache: cardId → requirement[]
+  const [cardReqCache,  setCardReqCache]  = useState<Record<string,any[]>>({});
   // Stale section tracking + refresh
   const [staleSections, setStaleSections] = useState<{section:string;reason:string}[]>([]);
   const [refreshing,    setRefreshing]    = useState<string|null>(null);  // which section is refreshing
@@ -2097,8 +2035,70 @@ export default function Playground() {
       if (newDeps)     setDepText(newDeps);
     }
     setCacheLoaded(true);
-    // Load stale section status after project data is ready
+    // Load stale section status and project context after project data is ready
     loadStaleSections();
+    loadProjContext();
+  };
+
+  /* ══ Load project context (Data Room) for deepDive / askCanvas ══ */
+  const loadProjContext = async () => {
+    if (!selProjId) return;
+    try {
+      const res = await fetch('/api/control', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'get_context', projectId: selProjId }),
+      });
+      const data = await safeJson(res);
+      if (data.success) setProjContext(data.context);
+    } catch { /* silent — context enriches but doesn't block */ }
+  };
+
+  /* ══ Load saved requirements for a card ══ */
+  const loadCardRequirements = async (cardId: string) => {
+    if (!selProjId || cardReqCache[cardId]) return;
+    try {
+      const { data } = await supabase
+        .from('task_requirements')
+        .select('*')
+        .eq('project_id', selProjId)
+        .eq('card_id', cardId)
+        .order('created_at', { ascending: true });
+      if (data) setCardReqCache(prev => ({ ...prev, [cardId]: data }));
+    } catch { /* table may not exist yet */ }
+  };
+
+  /* ══ Save a requirement for a card ══ */
+  const saveCardRequirement = async (cardId: string, cardTitle: string, requirement: string, category: string) => {
+    if (!selProjId || !requirement.trim()) return;
+    try {
+      const { data, error } = await supabase.from('task_requirements').insert({
+        project_id:  selProjId,
+        card_id:     cardId,
+        card_title:  cardTitle,
+        requirement: requirement.trim(),
+        category,
+        status:      'pending',
+        created_at:  new Date().toISOString(),
+        updated_at:  new Date().toISOString(),
+      }).select().single();
+      if (data) {
+        setCardReqCache(prev => ({ ...prev, [cardId]: [...(prev[cardId] || []), data] }));
+        toast({ title: 'Requirement saved', description: 'Manav Brain will use this when executing the task.' });
+      } else if (error) {
+        toast({ title: 'Could not save requirement', description: error.message, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Save failed', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  /* ══ Update requirement status ══ */
+  const updateReqStatus = async (reqId: string, cardId: string, status: 'pending'|'provided'|'not_needed') => {
+    await supabase.from('task_requirements').update({ status, updated_at: new Date().toISOString() }).eq('id', reqId);
+    setCardReqCache(prev => ({
+      ...prev,
+      [cardId]: (prev[cardId] || []).map(r => r.id === reqId ? { ...r, status } : r),
+    }));
   };
 
   /* ══ Load stale sections from SystemControl ══ */
@@ -2592,7 +2592,7 @@ Please try again — if the problem persists, check your network connection.`);
     setDdBlock(block);setDdText('');setDdLoading(true);
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
-      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'deep_dive',focusBlockId:block.id,blocks,projectSummary:proj})});
+      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'deep_dive',focusBlockId:block.id,blocks,projectSummary:proj,role:activeRole,dataRoom:projContext,cardRequirements:cardReqCache[block.id]||[]})});
       if(!res.ok||!res.body) throw new Error('Request failed');
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setDdText(acc);}
@@ -2630,7 +2630,7 @@ Please try again — if the problem persists, check your network connection.`);
     setChatLoading(true);setChatResp('');
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
-      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj,role:activeRole})});
+      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj,role:activeRole,dataRoom:projContext})});
       if(!res.ok||!res.body) throw new Error(`Server error ${res.status} — please try again`);
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setChatResp(acc);chatEndRef.current?.scrollIntoView({behavior:'smooth'});}
@@ -4120,15 +4120,54 @@ Please try again — if the problem persists, check your network connection.`);
                 )}
               </div>
 
+              {/* Requirements for this card */}
+              {(()=>{
+                const reqs = cardReqCache[expandedBlock.id]||[];
+                return (
+                  <div className="rounded-xl border border-border bg-background/60 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                      <div className="flex items-center gap-2">
+                        <ListChecks size={12} className="text-muted-foreground"/>
+                        <span className="text-xs font-mono text-muted-foreground uppercase">What's needed to execute</span>
+                        {reqs.length>0 && <span className="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">{reqs.length}</span>}
+                      </div>
+                      <button onClick={()=>loadCardRequirements(expandedBlock.id)} className="text-xs text-muted-foreground hover:text-foreground">
+                        {cardReqCache[expandedBlock.id]?'Refresh':'Load'}
+                      </button>
+                    </div>
+                    {reqs.length>0 && (
+                      <div className="px-4 pt-3 pb-2 space-y-1.5">
+                        {reqs.map((req:any)=>(
+                          <div key={req.id} className="flex items-start gap-2 text-xs">
+                            <button
+                              onClick={()=>updateReqStatus(req.id,expandedBlock.id,req.status==='pending'?'provided':'pending')}
+                              className={`mt-0.5 h-3.5 w-3.5 rounded border shrink-0 flex items-center justify-center ${req.status==='provided'?'bg-green-500 border-green-500':'border-border hover:border-primary'}`}
+                            >{req.status==='provided'&&<CheckCircle2 size={9} className="text-white"/>}</button>
+                            <div className="flex-1 min-w-0">
+                              <span className={req.status==='provided'?'line-through text-muted-foreground':req.status==='not_needed'?'text-muted-foreground/40':''}>{req.requirement}</span>
+                              {req.category!=='general'&&<span className="ml-1.5 text-muted-foreground/50">[{req.category}]</span>}
+                            </div>
+                            <button onClick={()=>updateReqStatus(req.id,expandedBlock.id,'not_needed')} className="text-muted-foreground/30 hover:text-muted-foreground shrink-0" title="Not needed"><X size={9}/></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="px-4 pb-3 pt-2">
+                      <AddRequirementInline cardId={expandedBlock.id} cardTitle={expandedBlock.title} onSave={saveCardRequirement}/>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Actions */}
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={()=>{setExpandedBlock(null);setActiveExecBlock(expandedBlock);}}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium hover:bg-primary/20 transition-colors">
                   <Sparkles size={13}/>Ask Manav Brain
                 </button>
-                <button onClick={()=>{deepDive(expandedBlock);setExpandedBlock(null);}}
-                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
-                  <Brain size={13}/>Ask Manav
+                <button onClick={()=>{loadCardRequirements(expandedBlock.id);deepDive(expandedBlock);setExpandedBlock(null);}}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/30 hover:text-primary transition-colors">
+                  <Brain size={13}/>Deep Dive + Suggestions
                 </button>
                 <button onClick={async()=>{await navigator.clipboard.writeText(expandedBlock.content);toast({title:'Copied!'});}}
                   className="flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">
@@ -4171,21 +4210,56 @@ Please try again — if the problem persists, check your network connection.`);
             </div>
             <div className="px-5 py-3 border-t border-border flex gap-2 shrink-0 flex-wrap">
               {ddText && !ddLoading && (
-                <button
-                  onClick={()=>{
-                    setCreateCardFrom({text:ddText,source:'deep_dive'});
-                    setCreateCardForm({
-                      title: ddBlock?.title ? `Deep dive: ${ddBlock.title}`.slice(0,70) : 'Deep dive insight',
-                      type:  (ddBlock?.type || 'insight') as BType,
-                      week:  ddBlock?.week || 2,
-                      priority: (ddBlock?.priority || 'medium') as Priority,
-                      content: ddText.split('\n').filter(Boolean).slice(0,4).join('\n').slice(0,300),
-                    });
-                  }}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15 font-medium"
-                >
-                  <Plus size={11}/>Create card
-                </button>
+                <>
+                  {/* Parse card suggestions from deep dive response */}
+                  {(()=>{
+                    const cardSection = ddText.match(/##\s*Canvas Cards to Create([\s\S]*?)(?:##|$)/);
+                    if (!cardSection) return (
+                      <button
+                        onClick={()=>{
+                          setCreateCardFrom({text:ddText,source:'deep_dive'});
+                          setCreateCardForm({title:ddBlock?.title?`Deep dive: ${ddBlock.title}`.slice(0,70):'Deep dive insight',type:(ddBlock?.type||'insight') as BType,week:ddBlock?.week||2,priority:(ddBlock?.priority||'medium') as Priority,content:ddText.split(String.fromCharCode(10)).filter(Boolean).slice(0,4).join(String.fromCharCode(10)).slice(0,300)});
+                        }}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15 font-medium"
+                      >
+                        <Plus size={11}/>Create card from this
+                      </button>
+                    );
+                    // Parse individual card suggestions
+                    const suggestions = cardSection[1].split(/(?=\d+\.|[-*])/).filter(Boolean).slice(0,4);
+                    return (
+                      <div className="space-y-2">
+                        <div className="text-xs font-mono text-primary uppercase">Suggested canvas cards</div>
+                        {suggestions.map((sug,i)=>{
+                          const titleMatch = sug.match(/\*\*([^*]+)\*\*|^\d+\.\s*([^\n]+)/);
+                          const sugTitle = (titleMatch?.[1]||titleMatch?.[2]||sug).replace(/^[-*\d.\s]+/,'').split(String.fromCharCode(10))[0].slice(0,60).trim();
+                          const typeMatch = sug.match(/type[:\s]+(\w[\w-]*)/i);
+                          const weekMatch = sug.match(/week[:\s]+(\d|backlog)/i);
+                          const priMatch  = sug.match(/priority[:\s]+(high|medium|low)/i);
+                          const sugType   = (typeMatch?.[1]||'insight').toLowerCase() as BType;
+                          const sugWeek   = weekMatch?.[1]?.toLowerCase()==='backlog'?5:parseInt(weekMatch?.[1]||'2')||2;
+                          const sugPri    = (priMatch?.[1]||'medium') as Priority;
+                          if (!sugTitle) return null;
+                          return (
+                            <button key={i}
+                              onClick={()=>{
+                                setCreateCardFrom({text:ddText,source:'deep_dive'});
+                                setCreateCardForm({title:sugTitle,type:sugType,week:sugWeek,priority:sugPri,content:sug.trim().slice(0,400)});
+                              }}
+                              className="w-full text-left flex items-center gap-2 text-xs px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors"
+                            >
+                              <Plus size={10} className="text-primary shrink-0"/>
+                              <div className="min-w-0">
+                                <span className="font-medium text-foreground">{sugTitle}</span>
+                                <span className="ml-2 text-muted-foreground">{sugType} · Wk {sugWeek===5?'BL':sugWeek} · {sugPri}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </>
               )}
               <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>
               <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>
