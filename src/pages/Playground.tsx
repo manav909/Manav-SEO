@@ -1862,7 +1862,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
 ═══════════════════════════════════════════════════ */
 export default function Playground() {
   const {clients,projects} = useAuth();
-  const [selProjId,  setSelProjId]  = useState('');
+  const [selProjId,  setSelProjId]  = useState<string>(() => localStorage.getItem('seo_season_proj') || '');
   const [tab,        setTab]        = useState<Tab>('reports');
   const [reports,    setReports]    = useState<any[]>([]);
   const [strategy,   setStrategy]   = useState<any>(null);
@@ -1949,10 +1949,27 @@ export default function Playground() {
   const done          = placedBlocks.filter(b=>b.status==='done').length;
   const progress      = placedBlocks.length>0?Math.round((done/placedBlocks.length)*100):0;
 
-  useEffect(()=>{
-    if(!selProjId){setReports([]);setStrategy(null);setBlocks([]);setRecommendation(null);return;}
-    loadProject();
-  },[selProjId]);
+  // Auto-select first project if nothing is stored (first visit or cleared storage)
+  useEffect(() => {
+    if (!selProjId && projects && projects.length > 0) {
+      setSelProjId(projects[0].id);
+    }
+  }, [projects]);
+
+  // Persist the selected project so navigation doesn't lose it
+  useEffect(() => {
+    if (selProjId) {
+      localStorage.setItem('seo_season_proj', selProjId);
+      loadProject();
+    } else {
+      // Only clear blocks if explicitly deselected (not on initial mount with empty string)
+      // Don't clear if we have blocks already — protects against race conditions
+      setReports([]);
+      setStrategy(null);
+      if (blocks.length === 0) setBlocks([]);
+      setRecommendation(null);
+    }
+  }, [selProjId]);
 
   const loadProject = async () => {
     const [rr,pr] = await Promise.all([
@@ -2711,6 +2728,7 @@ Please try again — if the problem persists, check your network connection.`);
 
   const saveCanvas = async (currentBlocks: Block[]) => {
     if (!selProjId) return;
+    if (currentBlocks.length === 0) return; // never overwrite with empty
     // Save FULL block state for all blocks so nothing is lost on reload.
     // Placed blocks keep their position/status/assignee/aiAssisted/etc.
     // Library blocks keep their current state too (tags, edits, etc.)
@@ -2745,8 +2763,8 @@ Please try again — if the problem persists, check your network connection.`);
   };
 
   useEffect(() => {
-    if (blocks.length && selProjId) scheduleAutoSave(blocks);
-  }, [blocks]);
+    if (blocks.length > 0 && selProjId) scheduleAutoSave(blocks);
+  }, [blocks, selProjId]);
 
   const dlReport = (r:any,t:string)=>{const b=new Blob([safeStr(r.sections?.[t])],{type:'text/markdown'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`${t}-audit-${r.created_at?.split('T')[0]}.md`;a.click();URL.revokeObjectURL(a.href);};
   const cpReport = async(r:any,t:string)=>{await navigator.clipboard.writeText(safeStr(r.sections?.[t]));toast({title:'Copied!'});};
