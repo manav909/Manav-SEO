@@ -32,7 +32,7 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
-  ScanLine,
+  
   ArrowRight,
 } from 'lucide-react';
 
@@ -927,6 +927,7 @@ export default function DataRoom() {
                 {id:'technical',   label:'Technical',     icon:Settings   },
                 {id:'competitors', label:'Competitors',   icon:Star       },
                 {id:'documents',   label:'Documents',     icon:FileText   },
+                {id:'crawl',       label:'URL Crawler',   icon:Globe      },
               ].map(({id,label,icon:Icon})=>{
                 const catKey = id === 'overview' || id === 'documents' ? null :
                                id === 'goals' ? 'goal' : id === 'competitors' ? 'competitor' : id as KCategory;
@@ -1059,7 +1060,7 @@ export default function DataRoom() {
                 <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5">
                   <div className="flex items-start gap-3">
                     <div className="h-9 w-9 rounded-xl bg-cyan-400/15 border border-cyan-400/25 flex items-center justify-center shrink-0">
-                      <ScanLine size={16} className="text-cyan-400"/>
+                      <Globe size={16} className="text-cyan-400"/>
                     </div>
                     <div>
                       <h3 className="font-bold text-sm mb-1">URL Crawler — fetch live data from your pages</h3>
@@ -1072,19 +1073,54 @@ export default function DataRoom() {
                 </div>
 
                 <div className="rounded-2xl border border-border bg-card/60 p-5 space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                       <div className="font-semibold text-sm">Pages to crawl</div>
                       <div className="text-xs text-muted-foreground mt-0.5">One URL per line · max 10</div>
                     </div>
-                    {selProj?.url && (
-                      <button
-                        onClick={()=>setCrawlUrls(v=>v ? (v+String.fromCharCode(10)+selProj!.url) : selProj!.url)}
-                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border text-muted-foreground hover:text-foreground"
-                      >
-                        <Plus size={10}/>Add project root
-                      </button>
-                    )}
+                    {/* Quick-add buttons from existing knowledge */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {selProj?.url && (
+                        <button
+                          onClick={()=>setCrawlUrls(v=>{const u=selProj!.url;return v&&!v.includes(u)?v+String.fromCharCode(10)+u:v||u;})}
+                          className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+                        >
+                          <Plus size={9}/>Project root
+                        </button>
+                      )}
+                      {/* Landing pages from analytics knowledge */}
+                      {getField('analytics','top_landing_pages') && getField('analytics','top_landing_pages').split(',').filter(Boolean).slice(0,5).map((url:string,i:number)=>{
+                        const u = url.trim();
+                        if (!u) return null;
+                        const full = u.startsWith('http') ? u : (selProj?.url ? selProj.url.replace(/\/+$/,'')+'/'+u.replace(/^\/+/,'') : u);
+                        return (
+                          <button key={i}
+                            onClick={()=>setCrawlUrls(v=>{return v&&!v.includes(full)?v+String.fromCharCode(10)+full:v||full;})}
+                            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors max-w-[160px]"
+                            title={full}
+                          >
+                            <Plus size={9}/>
+                            <span className="truncate">{full.replace(/https?:\/\/[^/]+/,'').slice(0,25)||'/'}</span>
+                          </button>
+                        );
+                      })}
+                      {/* Competitors from knowledge */}
+                      {['competitor_1','competitor_2','competitor_3'].map(key=>{
+                        const comp = getField('competitor', key);
+                        if (!comp) return null;
+                        const full = comp.startsWith('http') ? comp : `https://${comp}`;
+                        return (
+                          <button key={key}
+                            onClick={()=>setCrawlUrls(v=>{return v&&!v.includes(full)?v+String.fromCharCode(10)+full:v||full;})}
+                            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-orange-400/20 text-orange-400/70 hover:text-orange-400 hover:border-orange-400/40 transition-colors max-w-[160px]"
+                            title={`Competitor: ${full}`}
+                          >
+                            <Plus size={9}/>
+                            <span className="truncate">{comp.replace(/https?:\/\//,'').slice(0,20)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <textarea
                     value={crawlUrls}
@@ -1119,6 +1155,29 @@ export default function DataRoom() {
                     </div>
                   )}
 
+                  {/* Load all known URLs if textarea is empty */}
+                  {!crawlUrls.trim() && (selProj?.url || getField('analytics','top_landing_pages') || getField('competitor','competitor_1')) && (
+                    <button
+                      onClick={()=>{
+                        const parts: string[] = [];
+                        if (selProj?.url && !parts.includes(selProj.url)) parts.push(selProj.url);
+                        const pages = getField('analytics','top_landing_pages');
+                        if (pages) pages.split(',').filter(Boolean).slice(0,4).forEach((u:string)=>{
+                          const t = u.trim(); if (!t) return;
+                          const full = t.startsWith('http')?t:(selProj?.url?selProj.url.replace(/\/+$/,'')+'/'+t.replace(/^\/+/,''):t);
+                          if (!parts.includes(full)) parts.push(full);
+                        });
+                        ['competitor_1','competitor_2','competitor_3'].forEach((k:string)=>{
+                          const c = getField('competitor',k);
+                          if (c) { const full = c.startsWith('http')?c:`https://${c}`; if (!parts.includes(full)) parts.push(full); }
+                        });
+                        setCrawlUrls(parts.join(String.fromCharCode(10)));
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/30 bg-primary/8 text-primary text-sm font-medium hover:bg-primary/15 transition-colors w-full justify-center"
+                    >
+                      <Globe size={13}/>Load all known URLs (project + landing pages + competitors)
+                    </button>
+                  )}
                   <div className="flex items-center gap-3 flex-wrap">
                     <button
                       onClick={runCrawl}
@@ -1127,7 +1186,7 @@ export default function DataRoom() {
                     >
                       {crawlRunning
                         ? <><Loader2 size={14} className="animate-spin"/>Crawling…</>
-                        : <><ScanLine size={14}/>Crawl {crawlUrls.split(String.fromCharCode(10)).filter(Boolean).slice(0,10).length||''} page{crawlUrls.split(String.fromCharCode(10)).filter(Boolean).length!==1?'s':''}</>}
+                        : <><Globe size={14}/>Crawl {crawlUrls.split(String.fromCharCode(10)).filter(Boolean).slice(0,10).length||''} page{crawlUrls.split(String.fromCharCode(10)).filter(Boolean).length!==1?'s':''}</>}
                     </button>
                     {crawlUrls.trim()&&!crawlRunning && (
                       <button
