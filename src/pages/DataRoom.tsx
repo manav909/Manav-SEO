@@ -263,12 +263,19 @@ export default function DataRoom() {
   const [uploadError,    setUploadError]    = useState('');
   const [reExtractingId, setReExtractingId] = useState<string|null>(null);
   // URL Crawler state
-  const [crawlUrls,         setCrawlUrls]         = useState('');     // textarea — one URL per line
+  const [crawlUrls,         setCrawlUrls]         = useState('');
   const [crawlRunning,      setCrawlRunning]       = useState(false);
   const [crawlResults,      setCrawlResults]       = useState<any>(null);
   const [crawlSaving,       setCrawlSaving]        = useState(false);
   const [crawlSaved,        setCrawlSaved]         = useState(false);
-  const [crawlPreview,      setCrawlPreview]       = useState<Record<string,any>>({});  // url→{status,preview}
+  const [crawlPreview,      setCrawlPreview]       = useState<Record<string,any>>({});
+  // Comparison analysis state
+  const [compareRunning,    setCompareRunning]     = useState(false);
+  const [compareResult,     setCompareResult]      = useState<any>(null);
+  const [compareTab,        setCompareTab]         = useState<'matrix'|'errors'|'opportunities'|'gaps'|'cards'>('matrix');
+  // Card proposal approval state: cardIdx → 'pending'|'approved'|'merged'|'rejected'
+  const [cardApprovals,     setCardApprovals]      = useState<Record<number,string>>({});
+  const [pendingCards,      setPendingCards]       = useState<any[]>([]);  // approved cards waiting to go to canvas
   // Conflict notifications: fields where new value differs from existing stored value
   const [pendingConflicts, setPendingConflicts] = useState<{
     field: string; label: string; category: string;
@@ -679,6 +686,100 @@ export default function DataRoom() {
       title: `${saved.length} data point${saved.length !== 1 ? 's' : ''} saved to knowledge base`,
       description: 'Strategy will show as stale — regenerate to apply the new data.',
     });
+  };
+
+  // ══ Run Manav Brain comparison analysis on crawl results ══
+  const runCompareAnalysis = async () => {
+    if (!crawlResults || !selProjId) return;
+    setCompareRunning(true);
+    setCompareResult(null);
+    setCardApprovals({});
+
+    try {
+      // Fetch existing canvas blocks from project for merge detection
+      const { data: projData } = await supabase
+        .from('projects')
+        .select('playground_canvas,playground_strategy')
+        .eq('id', selProjId)
+        .single();
+      const existingBlocks = (projData?.playground_canvas || []) as any[];
+
+      const res = await fetch('/api/crawl', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action:         'compare_analysis',
+          crawlResults,
+          projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
+          existingBlocks,
+        }),
+      });
+      const data = await safeJson(res);
+      if (data.success) {
+        setCompareResult(data.analysis);
+        setCompareTab('matrix');
+        toast({ title: 'Manav Brain analysis complete', description: `${data.analysis?.card_proposals?.length || 0} card proposals ready for review.` });
+      } else {
+        toast({ title: 'Analysis failed', description: data.error, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Analysis error', description: e.message, variant: 'destructive' });
+    }
+    setCompareRunning(false);
+  };
+
+  // ══ Send approved cards to Playground canvas ══
+  const sendApprovedCardsToCanvas = async () => {
+    if (!pendingCards.length || !selProjId) return;
+    try {
+      // Fetch existing canvas to append
+      const { data: projData } = await supabase.from('projects').select('playground_canvas').eq('id', selProjId).single();
+      const existing = (projData?.playground_canvas || []) as any[];
+
+      const uid = () => Math.random().toString(36).slice(2, 10);
+      const normT = (t: string) => (t||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim().slice(0,40);
+      const existingTitles = new Set(existing.map((b: any) => normT(b.title || '')));
+
+      const newCards = pendingCards
+        .filter(c => !existingTitles.has(normT(c.title)))
+        .map(c => ({
+          id:        uid(),
+          type:      c.type || 'quick-win',
+          title:     (c.title || 'Crawl insight').slice(0, 70),
+          content:   `${c.content || ''}${c.data_basis ? `
+
+Evidence: ${c.data_basis}` : ''}`,
+          priority:  c.priority || 'medium',
+          week:      c.week || 1,
+          placed:    true,
+          status:    'todo',
+          color:     '#94a3b8',
+          tags:      ['from-crawl', '✓ hard-data'],
+          source:    'URL Crawler Analysis',
+          effort:    c.effort || null,
+          impact:    c.impact || null,
+        }));
+
+      if (!newCards.length) {
+        toast({ title: 'No new cards to add', description: 'All approved cards already exist on the canvas.' });
+        return;
+      }
+
+      await supabase.from('projects').update({
+        playground_canvas: [...existing, ...newCards],
+      }).eq('id', selProjId);
+
+      // Mark strategy stale
+      fetch('/api/control', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'log_change', projectId: selProjId, payload: { changeType: 'canvas', fieldPath: 'canvas.crawl_cards', oldValue: null, newValue: `${newCards.length} cards from URL crawler`, sourceName: 'URL Crawler' } }),
+      }).catch(() => {});
+
+      toast({ title: `${newCards.length} card${newCards.length !== 1 ? 's' : ''} sent to Playground canvas`, description: 'Open the Canvas tab to see them placed.' });
+      setPendingCards([]);
+      setCardApprovals({});
+    } catch (e: any) {
+      toast({ title: 'Failed to send cards', description: e.message, variant: 'destructive' });
+    }
   };
 
   // Re-extract an already-uploaded document
@@ -1200,108 +1301,448 @@ export default function DataRoom() {
 
                 {crawlResults && (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-border bg-card/60 p-5">
-                      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+
+                    {/* ── Summary bar + save ── */}
+                    <div className="rounded-2xl border border-border bg-card/60 p-4">
+                      <div className="flex items-center justify-between flex-wrap gap-3">
                         <div>
                           <div className="font-bold text-sm">
-                            {crawlResults.urls_crawled} page{crawlResults.urls_crawled!==1?'s':''} analysed
+                            {crawlResults.urls_crawled} page{crawlResults.urls_crawled!==1?'s':''} crawled
                             {crawlResults.aggregated_knowledge?.length>0 && <span className="text-primary ml-2">· {crawlResults.aggregated_knowledge.length} data points</span>}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
-                            {crawlResults.cross_page_issues?.length||0} issues · {crawlResults.cross_page_opportunities?.length||0} opportunities
+                            {crawlResults.cross_page_issues?.length||0} issues · {crawlResults.cross_page_opportunities?.length||0} opportunities across all pages
                           </div>
                         </div>
-                        {!crawlSaved && crawlResults.aggregated_knowledge?.length>0 && (
-                          <button onClick={saveCrawlToKnowledge} disabled={crawlSaving}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 disabled:opacity-50">
-                            {crawlSaving ? <><Loader2 size={13} className="animate-spin"/>Saving…</> : <><Save size={13}/>Save {crawlResults.aggregated_knowledge.length} fields to Data Room</>}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {!crawlSaved && crawlResults.aggregated_knowledge?.length>0 && (
+                            <button onClick={saveCrawlToKnowledge} disabled={crawlSaving}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-border/80 disabled:opacity-50">
+                              {crawlSaving ? <><Loader2 size={12} className="animate-spin"/>Saving…</> : <><Save size={12}/>Save to Data Room</>}
+                            </button>
+                          )}
+                          {crawlSaved && <div className="flex items-center gap-1.5 text-green-400 text-xs font-semibold"><CheckCircle size={12}/>Saved</div>}
+                          <button
+                            onClick={runCompareAnalysis}
+                            disabled={compareRunning}
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-primary text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
+                          >
+                            {compareRunning
+                              ? <><Loader2 size={14} className="animate-spin"/>Manav Brain analysing…</>
+                              : <><Brain size={14}/>Ask Manav Brain to compare</>}
                           </button>
-                        )}
-                        {crawlSaved && <div className="flex items-center gap-2 text-green-400 text-sm font-semibold"><CheckCircle size={14}/>Saved · Strategy marked stale</div>}
-                      </div>
-
-                      {crawlResults.aggregated_knowledge?.length>0 && (
-                        <div className="border-t border-border/50 pt-3">
-                          <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Data points ready to save</div>
-                          <div className="grid sm:grid-cols-2 gap-1.5">
-                            {crawlResults.aggregated_knowledge.map((kf:any,i:number)=>(
-                              <div key={i} className="flex items-start gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2">
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-xs font-medium">{kf.key.replace(/_/g,' ')}</div>
-                                  <div className="text-xs text-primary truncate">{kf.value}</div>
-                                  {kf.source_url && <div className="text-xs text-muted-foreground/50 truncate">{kf.source_url.replace('https://','')}</div>}
-                                </div>
-                                <span className="text-xs px-1.5 py-0.5 rounded-full border border-border/50 text-muted-foreground/60 shrink-0">{kf.category}</span>
-                              </div>
-                            ))}
-                          </div>
                         </div>
-                      )}
+                      </div>
                     </div>
 
-                    {crawlResults.results?.map((r:any,i:number)=>(
-                      <details key={i} className="rounded-2xl border border-border bg-card/40 overflow-hidden">
-                        <summary className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-secondary/20 list-none">
-                          <div className={`h-2 w-2 rounded-full shrink-0 ${r.status===200?'bg-green-400':r.error?'bg-red-400':'bg-yellow-400'}`}/>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-mono truncate">{r.url}</div>
-                            {r.page_analysis?.title_tag && <div className="text-xs text-muted-foreground truncate mt-0.5">{r.page_analysis.title_tag}</div>}
+                    {/* ── Per-page quick cards ── */}
+                    <div className="grid gap-2" style={{gridTemplateColumns:`repeat(${Math.min(crawlResults.urls_crawled,3)},1fr)`}}>
+                      {crawlResults.results?.map((r:any,i:number)=>(
+                        <div key={i} className={`rounded-xl border p-3 space-y-2 ${r.status===200?'border-border bg-card/40':'border-red-400/20 bg-red-400/5'}`}>
+                          <div className="flex items-center gap-2">
+                            <div className={`h-2 w-2 rounded-full shrink-0 ${r.status===200?'bg-green-400':r.error?'bg-red-400':'bg-yellow-400'}`}/>
+                            <div className="text-xs font-mono truncate flex-1">{r.url.replace(/https?:\/\//,'').slice(0,40)}</div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {r.page_analysis?.issues?.length>0 && <span className="text-xs px-2 py-0.5 rounded-full bg-red-400/10 text-red-400 border border-red-400/20">{r.page_analysis.issues.length} issue{r.page_analysis.issues.length!==1?'s':''}</span>}
-                            {r.page_analysis?.opportunities?.length>0 && <span className="text-xs px-2 py-0.5 rounded-full bg-green-400/10 text-green-400 border border-green-400/20">{r.page_analysis.opportunities.length} opp{r.page_analysis.opportunities.length!==1?'s':''}</span>}
-                            <ChevronDown size={12} className="text-muted-foreground"/>
-                          </div>
-                        </summary>
-                        <div className="px-4 pb-4 space-y-3 border-t border-border/50">
-                          {r.error && <div className="text-xs text-red-400 mt-2">{r.error}</div>}
                           {r.page_analysis && (
                             <>
-                              <div className="grid grid-cols-2 gap-2 mt-3">
-                                {[
-                                  {label:'Title', value:r.page_analysis.title_tag, meta:r.page_analysis.title_length>0?`${r.page_analysis.title_length}ch`:null},
-                                  {label:'H1', value:r.page_analysis.h1},
-                                  {label:'Meta', value:r.page_analysis.meta_description, meta:r.page_analysis.meta_desc_length>0?`${r.page_analysis.meta_desc_length}ch`:null},
-                                  {label:'Schema', value:r.page_analysis.schema_types?.join(', ')||'None'},
-                                  {label:'Int. links', value:r.page_analysis.internal_links>0?String(r.page_analysis.internal_links):null},
-                                  {label:'Words', value:r.page_analysis.word_count>0?`~${r.page_analysis.word_count}`:null},
-                                ].filter(it=>it.value).map((it,j)=>(
-                                  <div key={j} className="rounded-lg border border-border/40 bg-background/30 px-2.5 py-2">
-                                    <div className="text-xs text-muted-foreground">{it.label}{it.meta&&<span className="ml-1 opacity-60">{it.meta}</span>}</div>
-                                    <div className="text-xs font-medium truncate">{it.value}</div>
-                                  </div>
+                              <div className="text-xs text-muted-foreground truncate">{r.page_analysis.title_tag}</div>
+                              <div className="flex flex-wrap gap-1">
+                                {r.page_analysis.issues?.slice(0,3).map((issue:any,j:number)=>(
+                                  <span key={j} className={`text-xs px-1.5 py-0.5 rounded-full border ${
+                                    issue.severity==='critical'?'border-red-400/25 bg-red-400/8 text-red-400':
+                                    issue.severity==='high'?'border-orange-400/25 bg-orange-400/8 text-orange-400':
+                                    'border-yellow-400/20 bg-yellow-400/5 text-yellow-400'
+                                  }`}>{issue.severity}</span>
+                                ))}
+                                {r.page_analysis.opportunities?.slice(0,2).map((opp:any,j:number)=>(
+                                  <span key={j} className="text-xs px-1.5 py-0.5 rounded-full border border-green-400/20 bg-green-400/5 text-green-400">opp</span>
                                 ))}
                               </div>
-                              {r.page_analysis.issues?.length>0 && (
-                                <div className="space-y-1">
-                                  <div className="text-xs font-mono text-red-400 uppercase">Issues</div>
-                                  {r.page_analysis.issues.map((issue:any,k:number)=>(
-                                    <div key={k} className={`flex items-start gap-2 text-xs rounded-lg px-2.5 py-2 border ${issue.severity==='critical'?'border-red-400/25 bg-red-400/5 text-red-400':issue.severity==='high'?'border-orange-400/25 bg-orange-400/5 text-orange-400':'border-yellow-400/20 bg-yellow-400/5 text-yellow-400'}`}>
-                                      <span className="font-semibold shrink-0 capitalize">[{issue.severity}]</span>
-                                      <span>{issue.detail||issue.type}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {r.page_analysis.opportunities?.length>0 && (
-                                <div className="space-y-1">
-                                  <div className="text-xs font-mono text-green-400 uppercase">Opportunities</div>
-                                  {r.page_analysis.opportunities.map((opp:any,k:number)=>(
-                                    <div key={k} className="flex items-start gap-2 text-xs rounded-lg px-2.5 py-2 border border-green-400/15 bg-green-400/5">
-                                      <ArrowRight size={10} className="text-green-400 mt-0.5 shrink-0"/>
-                                      <span className="text-foreground font-medium">{opp.action}</span>
-                                      {opp.impact&&<span className="text-muted-foreground ml-1">→ {opp.impact}</span>}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
                             </>
                           )}
+                          {r.error && <div className="text-xs text-red-400">{r.error}</div>}
                         </div>
-                      </details>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+
+                    {/* ══ Manav Brain Comparison Analysis ══ */}
+                    {compareRunning && (
+                      <div className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-8 flex flex-col items-center gap-3">
+                        <Loader2 size={28} className="animate-spin text-violet-400"/>
+                        <div className="font-semibold text-sm">Manav Brain is comparing all pages…</div>
+                        <div className="text-xs text-muted-foreground text-center max-w-sm">
+                          Building comparison matrix · Identifying gaps · Ranking opportunities · Generating canvas card proposals
+                        </div>
+                      </div>
+                    )}
+
+                    {compareResult && !compareRunning && (
+                      <div className="rounded-2xl border border-violet-400/20 bg-card/60 overflow-hidden">
+
+                        {/* Analysis header */}
+                        <div className="px-5 py-4 border-b border-border bg-violet-400/5">
+                          <div className="flex items-start gap-3">
+                            <div className="h-9 w-9 rounded-xl bg-violet-400/15 border border-violet-400/25 flex items-center justify-center shrink-0">
+                              <Brain size={16} className="text-violet-400"/>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm">Manav Brain — Comparison Analysis</div>
+                              <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{compareResult.executive_summary}</div>
+                            </div>
+                            {compareResult.overall_score != null && (
+                              <div className={`flex flex-col items-center px-3 py-2 rounded-xl border shrink-0 ${
+                                compareResult.overall_score >= 70 ? 'border-green-400/30 bg-green-400/8' :
+                                compareResult.overall_score >= 40 ? 'border-yellow-400/30 bg-yellow-400/8' :
+                                'border-red-400/30 bg-red-400/8'
+                              }`}>
+                                <span className={`text-xl font-black ${
+                                  compareResult.overall_score >= 70 ? 'text-green-400' :
+                                  compareResult.overall_score >= 40 ? 'text-yellow-400' : 'text-red-400'
+                                }`}>{compareResult.overall_score}</span>
+                                <span className="text-xs text-muted-foreground">/ 100</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Sub-tabs */}
+                        <div className="flex gap-0 border-b border-border overflow-x-auto">
+                          {([
+                            {id:'matrix',       label:'Comparison Matrix', count: null},
+                            {id:'errors',        label:'Errors',           count: compareResult.errors?.length},
+                            {id:'opportunities', label:'Opportunities',    count: compareResult.opportunities?.length},
+                            {id:'gaps',          label:'Gaps & Advantages',count: (compareResult.competitive_gaps?.length||0)+(compareResult.advantages?.length||0)},
+                            {id:'cards',         label:'Card Proposals',   count: compareResult.card_proposals?.length},
+                          ] as const).map(({id,label,count})=>(
+                            <button key={id} onClick={()=>setCompareTab(id as any)}
+                              className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1.5 ${
+                                compareTab===id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+                              }`}>
+                              {label}
+                              {count!=null && count>0 && <span className={`px-1.5 py-0.5 rounded-full text-xs font-mono ${compareTab===id?'bg-primary/20 text-primary':'bg-secondary text-muted-foreground'}`}>{count}</span>}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="p-5">
+
+                          {/* ── COMPARISON MATRIX ── */}
+                          {compareTab==='matrix' && compareResult.comparison_matrix && (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs border-collapse">
+                                <thead>
+                                  <tr className="border-b border-border">
+                                    {(compareResult.comparison_matrix.headers||[]).map((h:string,i:number)=>(
+                                      <th key={i} className={`text-left py-2 font-semibold ${i===0?'pr-4 text-muted-foreground w-32':'px-3 text-muted-foreground/70 text-center'}`}>{h}</th>
+                                    ))}
+                                    <th className="px-3 text-muted-foreground/70 text-center">Best</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(compareResult.comparison_matrix.rows||[]).map((row:any,i:number)=>(
+                                    <tr key={i} className="border-b border-border/40 hover:bg-secondary/10">
+                                      <td className="py-2.5 pr-4 font-medium text-foreground">{row.signal}</td>
+                                      {(row.values||[]).map((val:string,j:number)=>{
+                                        const isOk   = /^ok|yes|present|good|comprehensive|✓/i.test(val);
+                                        const isBad  = /missing|none|no |not found|too |absent|broken|duplicate/i.test(val);
+                                        return (
+                                          <td key={j} className={`px-3 py-2.5 text-center ${
+                                            isOk?'text-green-400':isBad?'text-red-400':'text-muted-foreground'
+                                          }`}>
+                                            <span className="truncate block max-w-[140px]" title={val}>{val}</span>
+                                          </td>
+                                        );
+                                      })}
+                                      <td className="px-3 py-2.5 text-center">
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-mono ${
+                                          row.verdict==='best'?'bg-green-400/10 text-green-400':
+                                          row.verdict==='worst'?'bg-red-400/10 text-red-400':
+                                          'bg-secondary text-muted-foreground'
+                                        }`}>{row.verdict||'—'}</span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {compareResult.comparison_matrix.note && (
+                                <p className="text-xs text-muted-foreground mt-3 italic">{compareResult.comparison_matrix.note}</p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* ── ERRORS ── */}
+                          {compareTab==='errors' && (
+                            <div className="space-y-2">
+                              {(!compareResult.errors?.length) && <p className="text-sm text-muted-foreground">No errors found.</p>}
+                              {(compareResult.errors||[]).map((err:any,i:number)=>(
+                                <div key={i} className={`rounded-xl border p-3 space-y-2 ${
+                                  err.severity==='critical'?'border-red-400/30 bg-red-400/5':
+                                  err.severity==='high'?'border-orange-400/25 bg-orange-400/5':
+                                  'border-yellow-400/20 bg-yellow-400/5'
+                                }`}>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded-full ${
+                                      err.severity==='critical'?'bg-red-400/20 text-red-400':
+                                      err.severity==='high'?'bg-orange-400/20 text-orange-400':
+                                      'bg-yellow-400/15 text-yellow-400'
+                                    }`}>{err.severity}</span>
+                                    <span className="text-sm font-semibold flex-1">{err.issue}</span>
+                                    {err.quick_fix && <span className="text-xs px-2 py-0.5 rounded-full bg-green-400/10 text-green-400 border border-green-400/20">Quick fix</span>}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">{err.fix}</p>
+                                  {err.affected_urls?.length>0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {err.affected_urls.map((u:string,j:number)=>(
+                                        <span key={j} className="text-xs font-mono px-2 py-0.5 rounded-lg bg-background/60 border border-border/50 text-muted-foreground/70 truncate max-w-[200px]">{u.replace(/https?:\/\//,'')}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* ── OPPORTUNITIES ── */}
+                          {compareTab==='opportunities' && (
+                            <div className="space-y-3">
+                              {(!compareResult.opportunities?.length) && <p className="text-sm text-muted-foreground">No opportunities identified.</p>}
+                              {(compareResult.opportunities||[]).map((opp:any,i:number)=>(
+                                <div key={i} className="rounded-xl border border-border bg-background/60 p-4 space-y-2">
+                                  <div className="flex items-start gap-3">
+                                    <div className={`h-7 w-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 mt-0.5 ${
+                                      opp.impact==='high'?'bg-green-400/15 text-green-400':
+                                      opp.impact==='medium'?'bg-yellow-400/15 text-yellow-400':
+                                      'bg-muted/30 text-muted-foreground'
+                                    }`}>#{opp.rank||i+1}</div>
+                                    <div className="flex-1">
+                                      <div className="font-semibold text-sm">{opp.title}</div>
+                                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{opp.description}</p>
+                                    </div>
+                                    <div className="flex flex-col gap-1 items-end shrink-0">
+                                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${opp.impact==='high'?'border-green-400/30 text-green-400':opp.impact==='medium'?'border-yellow-400/30 text-yellow-400':'border-border text-muted-foreground'}`}>
+                                        {opp.impact} impact
+                                      </span>
+                                      <span className={`text-xs px-2 py-0.5 rounded-full border ${opp.effort==='low'?'border-green-400/20 text-green-400/70':opp.effort==='high'?'border-red-400/20 text-red-400/70':'border-border text-muted-foreground'}`}>
+                                        {opp.effort} effort
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {opp.data_basis && <p className="text-xs text-muted-foreground/60 pl-10 italic">Evidence: {opp.data_basis}</p>}
+                                  {opp.affected_urls?.length>0 && (
+                                    <div className="flex flex-wrap gap-1 pl-10">
+                                      {opp.affected_urls.map((u:string,j:number)=>(
+                                        <span key={j} className="text-xs font-mono px-2 py-0.5 rounded-lg bg-background/60 border border-border/50 text-muted-foreground/60">{u.replace(/https?:\/\//,'').slice(0,30)}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* ── GAPS & ADVANTAGES ── */}
+                          {compareTab==='gaps' && (
+                            <div className="space-y-5">
+                              {compareResult.competitive_gaps?.length>0 && (
+                                <div>
+                                  <div className="text-xs font-mono text-orange-400 uppercase mb-3 flex items-center gap-2">
+                                    <AlertTriangle size={11}/>Competitive gaps — what you're missing
+                                  </div>
+                                  <div className="space-y-2">
+                                    {compareResult.competitive_gaps.map((gap:any,i:number)=>(
+                                      <div key={i} className="rounded-xl border border-orange-400/15 bg-orange-400/5 p-3 space-y-1.5">
+                                        <div className="flex items-start gap-2">
+                                          <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 ${gap.priority==='high'?'bg-red-400/20 text-red-400':gap.priority==='medium'?'bg-orange-400/20 text-orange-400':'bg-muted/30 text-muted-foreground'}`}>{gap.priority}</span>
+                                          <div className="flex-1">
+                                            <div className="font-medium text-sm">{gap.gap}</div>
+                                            <p className="text-xs text-muted-foreground mt-0.5">{gap.evidence}</p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-start gap-1.5 pl-10">
+                                          <ArrowRight size={10} className="text-primary mt-0.5 shrink-0"/>
+                                          <span className="text-xs text-primary font-medium">{gap.action}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {compareResult.advantages?.length>0 && (
+                                <div>
+                                  <div className="text-xs font-mono text-green-400 uppercase mb-3 flex items-center gap-2">
+                                    <CheckCircle size={11}/>Advantages — what you're doing well
+                                  </div>
+                                  <div className="space-y-2">
+                                    {compareResult.advantages.map((adv:any,i:number)=>(
+                                      <div key={i} className="rounded-xl border border-green-400/15 bg-green-400/5 p-3 space-y-1.5">
+                                        <div className="font-medium text-sm text-green-400">{adv.advantage}</div>
+                                        {adv.how_to_leverage && (
+                                          <div className="flex items-start gap-1.5">
+                                            <ArrowRight size={10} className="text-green-400/70 mt-0.5 shrink-0"/>
+                                            <span className="text-xs text-muted-foreground">{adv.how_to_leverage}</span>
+                                          </div>
+                                        )}
+                                        {adv.urls?.length>0 && (
+                                          <div className="flex flex-wrap gap-1">
+                                            {adv.urls.map((u:string,j:number)=>(
+                                              <span key={j} className="text-xs font-mono px-2 py-0.5 rounded-lg bg-background/60 border border-border/50 text-muted-foreground/60">{u.replace(/https?:\/\//,'').slice(0,30)}</span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* ── CARD PROPOSALS ── */}
+                          {compareTab==='cards' && (
+                            <div className="space-y-4">
+                              {(!compareResult.card_proposals?.length) && (
+                                <p className="text-sm text-muted-foreground">No card proposals generated. Crawl more pages or ensure the analysis has sufficient data.</p>
+                              )}
+
+                              {/* Pending approved cards banner */}
+                              {pendingCards.length>0 && (
+                                <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/8 px-4 py-3">
+                                  <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                                    <CheckCircle2 size={14}/>
+                                    {pendingCards.length} card{pendingCards.length!==1?'s':''} approved — ready to send to canvas
+                                  </div>
+                                  <button onClick={sendApprovedCardsToCanvas}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90">
+                                    <Sparkles size={11}/>Send to Playground Canvas
+                                  </button>
+                                </div>
+                              )}
+
+                              {(compareResult.card_proposals||[]).map((card:any,i:number)=>{
+                                const approval = cardApprovals[i];
+                                const isMerge  = !!card.merge_candidate;
+                                return (
+                                  <div key={i} className={`rounded-xl border p-4 space-y-3 transition-all ${
+                                    approval==='approved'?'border-green-400/30 bg-green-400/5':
+                                    approval==='rejected'?'border-border/30 bg-background/30 opacity-50':
+                                    approval==='merged'?'border-yellow-400/30 bg-yellow-400/5':
+                                    'border-border bg-background/60'
+                                  }`}>
+                                    {/* Card header */}
+                                    <div className="flex items-start gap-3">
+                                      <div className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5`}
+                                        style={{background:`${(
+                                          card.type==='technical'?'#f472b6':card.type==='content'?'#60a5fa':card.type==='geo'?'#4ade80':
+                                          card.type==='quick-win'?'#facc15':card.type==='competitive'?'#f97316':'#a78bfa'
+                                        )}18`,border:`1px solid ${(
+                                          card.type==='technical'?'#f472b6':card.type==='content'?'#60a5fa':card.type==='geo'?'#4ade80':
+                                          card.type==='quick-win'?'#facc15':card.type==='competitive'?'#f97316':'#a78bfa'
+                                        )}28`}}>
+                                        <span className="text-xs font-bold" style={{color:(
+                                          card.type==='technical'?'#f472b6':card.type==='content'?'#60a5fa':card.type==='geo'?'#4ade80':
+                                          card.type==='quick-win'?'#facc15':card.type==='competitive'?'#f97316':'#a78bfa'
+                                        )}}>{(card.type||'?').slice(0,2).toUpperCase()}</span>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="font-semibold text-sm">{card.title}</div>
+                                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                          <span className="text-xs text-muted-foreground">{card.type}</span>
+                                          <span className="text-xs text-muted-foreground">· Week {card.week===5?'BL':card.week}</span>
+                                          <span className={`text-xs px-1.5 py-0.5 rounded-full border ${card.priority==='high'?'border-red-400/30 text-red-400':card.priority==='medium'?'border-yellow-400/30 text-yellow-400':'border-border text-muted-foreground'}`}>{card.priority}</span>
+                                        </div>
+                                      </div>
+                                      {approval && (
+                                        <span className={`text-xs px-2 py-1 rounded-lg font-medium shrink-0 ${
+                                          approval==='approved'?'bg-green-400/15 text-green-400':
+                                          approval==='merged'?'bg-yellow-400/15 text-yellow-400':
+                                          'bg-secondary text-muted-foreground'
+                                        }`}>{approval}</span>
+                                      )}
+                                    </div>
+
+                                    <p className="text-xs text-muted-foreground leading-relaxed">{card.content}</p>
+                                    {card.data_basis && (
+                                      <div className="flex items-start gap-1.5 rounded-lg bg-primary/5 border border-primary/15 px-3 py-2">
+                                        <span className="text-xs font-mono text-primary shrink-0">Evidence:</span>
+                                        <span className="text-xs text-muted-foreground">{card.data_basis}</span>
+                                      </div>
+                                    )}
+
+                                    {/* Merge candidate warning */}
+                                    {isMerge && (
+                                      <div className="flex items-start gap-2 rounded-lg bg-yellow-400/8 border border-yellow-400/20 px-3 py-2">
+                                        <AlertTriangle size={11} className="text-yellow-400 shrink-0 mt-0.5"/>
+                                        <div>
+                                          <span className="text-xs font-semibold text-yellow-400">Similar card exists: </span>
+                                          <span className="text-xs text-muted-foreground">"{card.merge_candidate}"</span>
+                                          {card.merge_reason && <p className="text-xs text-muted-foreground/70 mt-0.5">{card.merge_reason}</p>}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Action buttons */}
+                                    {!approval && (
+                                      <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-border/40">
+                                        <button
+                                          onClick={()=>{
+                                            setCardApprovals(p=>({...p,[i]:'approved'}));
+                                            setPendingCards(p=>[...p, card]);
+                                          }}
+                                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-green-400/30 bg-green-400/8 text-green-400 hover:bg-green-400/15 font-medium"
+                                        >
+                                          <CheckCircle2 size={10}/>Approve — add to canvas
+                                        </button>
+                                        {isMerge && (
+                                          <button
+                                            onClick={()=>{
+                                              setCardApprovals(p=>({...p,[i]:'merged'}));
+                                              setPendingCards(p=>[...p, {...card, title: `${card.merge_candidate} [+ scope]`, content: `${card.content}
+
+--- Scope from crawler ---
+${card.data_basis||''}` }]);
+                                            }}
+                                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-yellow-400/25 bg-yellow-400/8 text-yellow-400 hover:bg-yellow-400/15 font-medium"
+                                          >
+                                            <ArrowRight size={10}/>Merge scope into existing
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={()=>setCardApprovals(p=>({...p,[i]:'rejected'}))}
+                                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground ml-auto"
+                                        >
+                                          <X size={10}/>Reject
+                                        </button>
+                                      </div>
+                                    )}
+                                    {approval==='rejected' && (
+                                      <button onClick={()=>{setCardApprovals(p=>{const n={...p};delete n[i];return n;});}}
+                                        className="text-xs text-muted-foreground hover:text-foreground">Undo reject</button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {/* Data gaps */}
+                              {compareResult.data_gaps?.length>0 && (
+                                <div className="rounded-xl border border-border/50 bg-background/30 p-3">
+                                  <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Couldn't determine from live pages alone</div>
+                                  {compareResult.data_gaps.map((g:string,i:number)=>(
+                                    <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground/60 mb-1">
+                                      <span className="text-muted-foreground/40 shrink-0">·</span>{g}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                        </div>
+                      </div>
+                    )}
+
+                </div>
                 )}
+
               </div>
             )}
 
