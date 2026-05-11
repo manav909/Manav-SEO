@@ -231,8 +231,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   /* ── EXECUTE ── */
   if (action === "execute") {
-    const bp  = BLUEPRINTS[card.type] || BLUEPRINTS.weekly;
-    const ctx = context;
+    const bp             = BLUEPRINTS[card.type] || BLUEPRINTS.weekly;
+    const ctx            = context;
+    const brainLearnings = req.body.brainLearnings || [];
     let liveContent = "";
     if (bp.required_inputs.some(r => r.autoFetchable) && ctx.project?.url) {
       const pageUrl = userInputs.target_urls?.split("\n")[0]?.trim() || userInputs.competitor_url || ctx.project.url;
@@ -286,12 +287,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "AUDIT INTELLIGENCE:",
       ctx.audits?.slice(0, 2).map((a: any) => `${a.date}: ${Object.values(a.sections).join(" | ")}`).join("\n") || "No audits available",
       "",
+      // Manav Brain learnings — injected when available
+      brainLearnings?.length ? [
+        "",
+        "MANAV BRAIN LEARNINGS (from previous task executions — apply these to improve quality):",
+        ...brainLearnings.map((l: any, idx: number) => [
+          `  [Learning ${idx + 1}] Card type: ${l.card_type} | Task: "${l.card_title}"`,
+          l.what_missed?.length ? `    What was missed last time: ${l.what_missed.join(" | ")}` : "",
+          l.redo_reason ? `    What to do differently: ${l.redo_reason}` : "",
+          l.improvement ? `    Improvement to apply: ${l.improvement}` : "",
+        ].filter(Boolean).join("\n")),
+      ].join("\n") : "",
+      "",
       "RULES:",
       "1. Only state facts from the data above. If data is missing, say: I do not have this — check [source]",
       "2. Cite the source for every specific number",
       "3. Never invent competitor data, rankings, or statistics",
       "4. Flag every assumption with: ASSUMPTION — verify before using",
-      "5. End with a section called Manav's Take — what excites you, what to watch, one honest concern",
+      "5. Apply every MANAV BRAIN LEARNING listed above — these are hard-won improvements from previous executions",
+      "6. End with a section called Manav's Take — what excites you, what to watch, one honest concern",
       "",
       "Produce the actual deliverable — not a description of what to do, but the finished output ready to use.",
       card.type === "content"     ? "Include: Full draft, meta title, meta description, heading structure, schema markup, internal link suggestions" : "",
