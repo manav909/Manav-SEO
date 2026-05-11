@@ -1991,6 +1991,9 @@ export default function Playground() {
   // Conflict detection from DataRoom changes
   const [conflicts,     setConflicts]     = useState<{field:string;oldVal:string;newVal:string;source:string;impacts:string[]}[]>([]);
   const chatEndRef    = useRef<HTMLDivElement>(null);
+  // Create-card-from-chat state
+  const [createCardFrom, setCreateCardFrom] = useState<{text:string;source:'canvas_chat'|'pipeline_chat'|'deep_dive'}|null>(null);
+  const [createCardForm, setCreateCardForm] = useState<{title:string;type:BType;week:number;priority:Priority;content:string}>({title:'',type:'quick-win',week:1,priority:'high',content:''});
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const selProj       = projects.find(p=>p.id===selProjId);
@@ -2019,6 +2022,9 @@ export default function Playground() {
         id:string; placed:boolean; week:number; status:Status;
         assignee?:string|null; aiAssisted?:boolean; tags?:string[];
         effort?:string|null; impact?:string|null;
+        // user-created card fields (strategy cards have these from buildLibraryFromStrategy)
+        title?:string; content?:string; type?:string; priority?:string;
+        color?:string; source?:string;
       }>;
       const placedMap  = new Map(placements.map(p => [p.id, p]));
       const merged = allBlocks.map(b => {
@@ -2038,8 +2044,30 @@ export default function Playground() {
           impact:     saved.impact     ?? b.impact,
         };
       });
-      setBlocks(merged);
-      setRecommendation(getNextRecommendation(merged.filter(b=>b.placed), merged.filter(b=>!b.placed)));
+      // Re-include user-created cards: any saved block whose ID isn't in allBlocks
+      // (strategy cards are covered by allBlocks.map above)
+      const strategyIds  = new Set(allBlocks.map(b => b.id));
+      const userCreated  = placements.filter(p => !strategyIds.has(p.id) && p.title && p.type);
+      const restoredUserCards: Block[] = userCreated.map((p: any) => ({
+        id:         p.id,
+        type:       p.type       as BType,
+        title:      p.title      || 'Card',
+        content:    p.content    || '',
+        color:      p.color      || TM[p.type as BType]?.color || '#94a3b8',
+        priority:   (p.priority  || 'medium') as Priority,
+        status:     (p.status    || 'todo')   as Status,
+        week:       p.week       || 1,
+        placed:     p.placed     ?? false,
+        effort:     p.effort     || null,
+        impact:     p.impact     || null,
+        tags:       p.tags       || [],
+        source:     p.source     || 'Added from chat',
+        assignee:   p.assignee   || null,
+        aiAssisted: p.aiAssisted || false,
+      }));
+      const finalBlocks = [...merged, ...restoredUserCards];
+      setBlocks(finalBlocks);
+      setRecommendation(getNextRecommendation(finalBlocks.filter(b=>b.placed), finalBlocks.filter(b=>!b.placed)));
     } else if (pr.data?.playground_canvas?.length) {
       const saved = pr.data.playground_canvas as Block[];
       setBlocks(saved);
@@ -2572,6 +2600,31 @@ Please try again — if the problem persists, check your network connection.`);
     setDdLoading(false);
   };
 
+  /* ══ Create a card from a chat response ══ */
+  const addCardFromChat = (cardData: {title:string;type:BType;week:number;priority:Priority;content:string}, source: string) => {
+    const newBlock: Block = {
+      id:         uid(),
+      type:       cardData.type,
+      title:      cardData.title.slice(0, 70),
+      content:    cardData.content,
+      color:      TM[cardData.type]?.color || '#94a3b8',
+      priority:   cardData.priority,
+      status:     'todo',
+      week:       cardData.week,
+      placed:     true,   // place it immediately in the chosen week
+      tags:       ['from-chat'],
+      source:     source || 'Added from chat',
+    };
+    setBlocks(prev => {
+      const updated = [...prev, newBlock];
+      scheduleAutoSave(updated);
+      return updated;
+    });
+    setCreateCardFrom(null);
+    toast({ title: `Card added to Week ${cardData.week === 5 ? 'Backlog' : cardData.week}`, description: `"${newBlock.title}" placed on your canvas.` });
+  };
+
+
   const askCanvas = async()=>{
     if(!chatQ.trim()||chatLoading) return;
     setChatLoading(true);setChatResp('');
@@ -2604,7 +2657,15 @@ Please try again — if the problem persists, check your network connection.`);
       tags:        b.tags        || [],
       effort:      b.effort      || null,
       impact:      b.impact      || null,
-      // title + content + type are from strategy — don't save (they'd conflict on regen)
+      // Save title/content/type/source/priority/color for user-created cards.
+      // Strategy cards regenerate these from buildLibraryFromStrategy — but
+      // manually-added cards ONLY exist here, so we must preserve them.
+      title:       b.title,
+      content:     b.content,
+      type:        b.type,
+      priority:    b.priority,
+      color:       b.color,
+      source:      b.source      || null,
     }));
     try {
       await supabase.from('projects').update({ playground_canvas: snapshot }).eq('id', selProjId);
@@ -3764,7 +3825,27 @@ Please try again — if the problem persists, check your network connection.`);
                       </div>
                     )}
 
-                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Manav Brain answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
+                    {/* Ask the Canvas */}                    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">                      <div className="flex items-center gap-3 px-5 py-3 border-b border-border bg-secondary/20">                        <MessageSquare className="h-4 w-4 text-primary"/>                        <span className="font-semibold text-sm">Ask the Canvas</span>                        <span className="text-xs text-muted-foreground">Manav Brain answers using your full canvas and project data</span>                      </div>                      <div className="px-5 pt-3 pb-2 flex flex-wrap gap-2">                        {['What should I focus on today?','Which items give best ROI?','What are Week 1 dependencies?','What happens if I skip the backlog?','Which week needs more cards to be effective?'].map(q=>(                          <button key={q} onClick={()=>setChatQ(q)} className="text-xs px-2.5 py-1 rounded-full border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">{q}</button>                        ))}                      </div>                      <div className="px-5 pb-3 flex gap-2">                        <input value={chatQ} onChange={e=>setChatQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&askCanvas()} placeholder="Ask anything about this strategy…" className="flex-1 h-10 text-sm px-4 rounded-xl border border-border bg-background/60 focus:border-primary/50 outline-none"/>                        <Button onClick={askCanvas} disabled={chatLoading||!chatQ.trim()} className="h-10 bg-primary text-primary-foreground px-4">                          {chatLoading?<RefreshCw size={14} className="animate-spin"/>:<Send size={14}/>}                        </Button>                      </div>                      {(chatResp||chatLoading) && (                        <div className="mx-5 mb-4 rounded-xl border border-border bg-background/60 p-4">                          {chatLoading&&!chatResp && <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw size={12} className="animate-spin text-primary"/>Thinking…</div>}                          {chatResp && <ChatMd text={chatResp}/>}
+                          {chatResp && !chatLoading && (
+                            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/40">
+                              <button
+                                onClick={()=>{
+                                  setCreateCardFrom({text:chatResp,source:'canvas_chat'});
+                                  setCreateCardForm({title:'',type:'quick-win',week:1,priority:'high',content:chatResp.split('\n').filter(Boolean).slice(0,3).join(' ').slice(0,200)});
+                                }}
+                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15 transition-colors font-medium"
+                              >
+                                <Plus size={11}/>Create card from this
+                              </button>
+                              <button
+                                onClick={async()=>{await navigator.clipboard.writeText(chatResp);toast({title:'Copied!'});}}
+                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                <Copy size={11}/>Copy
+                              </button>
+                            </div>
+                          )}
+                          <div ref={chatEndRef}/>                        </div>                      )}                    </div>                  </>                )}              </div>            )}          
 
             {/* ══ PIPELINE TAB ══ */}
             {tab==='pipeline' && (
@@ -4088,9 +4169,155 @@ Please try again — if the problem persists, check your network connection.`);
                 </div>
               )}
             </div>
-            <div className="px-5 py-3 border-t border-border flex gap-2 shrink-0">
+            <div className="px-5 py-3 border-t border-border flex gap-2 shrink-0 flex-wrap">
+              {ddText && !ddLoading && (
+                <button
+                  onClick={()=>{
+                    setCreateCardFrom({text:ddText,source:'deep_dive'});
+                    setCreateCardForm({
+                      title: ddBlock?.title ? `Deep dive: ${ddBlock.title}`.slice(0,70) : 'Deep dive insight',
+                      type:  (ddBlock?.type || 'insight') as BType,
+                      week:  ddBlock?.week || 2,
+                      priority: (ddBlock?.priority || 'medium') as Priority,
+                      content: ddText.split('\n').filter(Boolean).slice(0,4).join('\n').slice(0,300),
+                    });
+                  }}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15 font-medium"
+                >
+                  <Plus size={11}/>Create card
+                </button>
+              )}
               <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>
               <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Create Card from Chat Modal ══ */}
+      {createCardFrom && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" onClick={()=>setCreateCardFrom(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"/>
+          <div className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden" onClick={e=>e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
+              <div className="h-8 w-8 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
+                <Plus size={14} className="text-primary"/>
+              </div>
+              <div className="flex-1">
+                <div className="font-bold text-sm">Create a canvas card</div>
+                <div className="text-xs text-muted-foreground">From {createCardFrom.source === 'canvas_chat' ? 'canvas chat' : createCardFrom.source === 'deep_dive' ? 'deep dive analysis' : 'chat response'}</div>
+              </div>
+              <button onClick={()=>setCreateCardFrom(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50">
+                <X size={12}/>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+
+              {/* Title */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1">Card title</label>
+                <input
+                  value={createCardForm.title}
+                  onChange={e=>setCreateCardForm(f=>({...f,title:e.target.value}))}
+                  placeholder="Short, actionable title…"
+                  maxLength={70}
+                  className="w-full h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"
+                />
+              </div>
+
+              {/* Type + Priority row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">Card type</label>
+                  <select
+                    value={createCardForm.type}
+                    onChange={e=>setCreateCardForm(f=>({...f,type:e.target.value as BType}))}
+                    className="w-full h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none"
+                  >
+                    <option value="technical">🔧 Technical</option>
+                    <option value="quick-win">⚡ Quick Win</option>
+                    <option value="content">✍️ Content</option>
+                    <option value="geo">🌐 GEO</option>
+                    <option value="competitive">🎯 Competitive</option>
+                    <option value="insight">💡 Insight</option>
+                    <option value="weekly">📅 Weekly task</option>
+                    <option value="kpi">📊 KPI / Tracking</option>
+                    <option value="monthly">🗓️ Monthly milestone</option>
+                    <option value="custom">📌 Custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">Priority</label>
+                  <select
+                    value={createCardForm.priority}
+                    onChange={e=>setCreateCardForm(f=>({...f,priority:e.target.value as Priority}))}
+                    className="w-full h-9 text-sm px-3 rounded-xl border border-border bg-background/60 outline-none"
+                  >
+                    <option value="high">🔴 High</option>
+                    <option value="medium">🟡 Medium</option>
+                    <option value="low">🟢 Low</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Week */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1">Place in</label>
+                <div className="flex gap-2">
+                  {[1,2,3,4,5].map(w=>(
+                    <button
+                      key={w}
+                      onClick={()=>setCreateCardForm(f=>({...f,week:w}))}
+                      className={`flex-1 h-8 rounded-xl border text-xs font-medium transition-all ${createCardForm.week===w?'border-primary bg-primary/15 text-primary':'border-border text-muted-foreground hover:border-primary/40'}`}
+                    >
+                      {w===5?'BL':w===1?'Wk 1':w===2?'Wk 2':w===3?'Wk 3':'Wk 4'}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-1">
+                  {[1,2,3,4,5].map(w=>(
+                    <div key={w} className={`flex-1 text-center text-xs text-muted-foreground/50 ${createCardForm.week===w?'text-primary':''}`}>
+                      {w===1?'Found.':{2:'Build',3:'Accel.',4:'Comp.',5:'Backlog'}[w]}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Content preview / edit */}
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1">Card content</label>
+                <textarea
+                  value={createCardForm.content}
+                  onChange={e=>setCreateCardForm(f=>({...f,content:e.target.value}))}
+                  rows={4}
+                  className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50 resize-none text-muted-foreground"
+                  placeholder="Card details…"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-border flex items-center gap-3">
+              <button
+                onClick={()=>{
+                  if(!createCardForm.title.trim()){
+                    toast({title:'Add a title',variant:'destructive'});return;
+                  }
+                  addCardFromChat(createCardForm, createCardFrom.source === 'canvas_chat' ? 'Canvas chat' : createCardFrom.source === 'deep_dive' ? 'Deep dive analysis' : 'Chat response');
+                }}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90"
+              >
+                <Plus size={13}/>Add to Week {createCardForm.week===5?'Backlog':createCardForm.week}
+              </button>
+              <button onClick={()=>setCreateCardFrom(null)} className="text-sm text-muted-foreground hover:text-foreground px-3">
+                Cancel
+              </button>
+              <span className="text-xs text-muted-foreground ml-auto">
+                Card will be placed and saved immediately
+              </span>
             </div>
           </div>
         </div>
