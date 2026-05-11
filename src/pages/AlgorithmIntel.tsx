@@ -6,6 +6,7 @@ import {
   Zap, BookOpen, Search, Download, Star, TrendingUp, Shield, Target,
   Eye, ArrowRight, ExternalLink, Database, CheckCircle2, X, Award,
   Sparkles, Clock, ChevronDown, ChevronRight, RotateCw, Play,
+  Plus, Flame, Lightbulb,
 } from 'lucide-react';
 import PortalNav from '@/components/PortalNav';
 import { toast } from '@/hooks/use-toast';
@@ -37,9 +38,12 @@ interface CatalogTopic {
   label:     string;
   source:    string;
   group:     string;
+  added?:    string;
+  weight:    number;
   saved_id:  string | null;
   saved_at:  string | null;
   is_stale:  boolean;
+  is_custom: boolean;
 }
 
 const ENGINE_BADGE: Record<string, string> = {
@@ -87,6 +91,16 @@ export default function AlgorithmIntel() {
   const [libLoading,   setLibLoading]   = useState(false);
   const [search,       setSearch]       = useState('');
   const [filterEngine, setFilterEngine] = useState('');
+
+  // Scan for new updates state
+  const [scanning,     setScanning]     = useState(false);
+  const [scanResults,  setScanResults]  = useState<any[]>([]);
+  const [showScan,     setShowScan]     = useState(false);
+  // Add custom topic state
+  const [customLabel,  setCustomLabel]  = useState('');
+  const [customEngine, setCustomEngine] = useState('google');
+  const [addingCustom, setAddingCustom] = useState(false);
+  const [showAddCustom,setShowAddCustom]= useState(false);
 
   // Audit state
   const [auditUrl,     setAuditUrl]     = useState('');
@@ -200,6 +214,68 @@ export default function AlgorithmIntel() {
     await loadCatalog();
   };
 
+  // ── Scan for new algorithm updates not in the catalog ───────────
+  const scanForNew = async () => {
+    setScanning(true);
+    setScanResults([]);
+    try {
+      const res  = await fetch('/api/algorithm-intel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'scan_for_new' }),
+      });
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); }
+      catch { throw new Error(`Server error: ${text.slice(0, 120)}`); }
+      if (data.success) {
+        setScanResults(data.suggestions || []);
+        setShowScan(true);
+        toast({ title: `${data.suggestions?.length || 0} new updates discovered`, description: 'Review and add any that are relevant.' });
+      } else {
+        toast({ title: 'Scan failed', description: data.error, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+    setScanning(false);
+  };
+
+  // ── Add a custom topic ─────────────────────────────────────────────
+  const addCustomTopic = async () => {
+    if (!customLabel.trim()) return;
+    setAddingCustom(true);
+    try {
+      const res  = await fetch('/api/algorithm-intel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'fetch_custom_topic', label: customLabel.trim(), engine: customEngine }),
+      });
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); }
+      catch { throw new Error(`Server error: ${text.slice(0, 120)}`); }
+      if (data.success && data.item) {
+        // Save immediately
+        const saveRes = await fetch('/api/algorithm-intel', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'save_item', item: data.item }),
+        });
+        const saveData = await saveRes.json().catch(() => ({ success: false }));
+        if (saveData.success) {
+          toast({ title: 'Custom topic added', description: customLabel.trim() });
+          setCustomLabel('');
+          setShowAddCustom(false);
+          await loadCatalog();
+          await loadLibrary();
+        }
+      } else {
+        toast({ title: 'Fetch failed', description: data.error, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+    setAddingCustom(false);
+  };
+
   // ── Audit ──────────────────────────────────────────────────────────
   const runAudit = async () => {
     if (!auditUrl.trim()) return;
@@ -262,7 +338,20 @@ export default function AlgorithmIntel() {
   };
 
   // ── Derived data ───────────────────────────────────────────────────
-  const groups = [...new Set(catalog.map(t => t.group))];
+  // Weight colour: 9-10 = red (critical now), 7-8 = orange, 4-6 = yellow, 1-3 = muted
+  const weightStyle = (w: number) =>
+    w >= 9 ? 'text-red-400'    :
+    w >= 7 ? 'text-orange-400' :
+    w >= 4 ? 'text-yellow-400' : 'text-muted-foreground/40';
+
+  const weightLabel = (w: number) =>
+    w >= 9 ? 'Critical now' :
+    w >= 7 ? 'High impact'  :
+    w >= 4 ? 'Medium'       : 'Historical';
+
+  // Group order — most important groups first
+  const GROUP_ORDER = ['Content & AI Visibility','AI Search Engines','Google Core Updates','E-E-A-T & Quality','Core Web Vitals','Technical SEO','Bing & Microsoft','Custom Topics'];
+  const groups = [...new Set([...GROUP_ORDER, ...catalog.map(t => t.group)])].filter(g => catalog.some(t => t.group === g));
   const saved        = catalog.filter(t => t.saved_id).length;
   const stale        = catalog.filter(t => t.is_stale).length;
   const notFetched   = catalog.filter(t => !t.saved_id).length;
@@ -327,23 +416,106 @@ export default function AlgorithmIntel() {
         {tab === 'catalog' && (
           <div className="space-y-4">
             {/* Action bar */}
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-sm text-muted-foreground">
-                Click <span className="font-medium text-foreground">Fetch</span> on any topic to get deep knowledge.
-                Save it to your library. Topics older than 7 days show a refresh indicator.
-              </p>
-              <div className="flex gap-2">
-                <button onClick={loadCatalog} disabled={catLoading}
-                  className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground disabled:opacity-50">
-                  <RefreshCw size={11} className={catLoading ? 'animate-spin' : ''}/>Refresh status
-                </button>
-                {(notFetched > 0 || stale > 0) && (
-                  <button onClick={fetchAllNew}
-                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15 font-medium">
-                    <Download size={11}/>Fetch all new ({notFetched + stale})
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-sm text-muted-foreground">
+                  <span className="text-red-400 font-medium">Red flame = critical now.</span> Topics sorted by current impact weight.
+                  Older than 7 days shows a refresh badge.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={loadCatalog} disabled={catLoading}
+                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground disabled:opacity-50">
+                    <RefreshCw size={11} className={catLoading ? 'animate-spin' : ''}/>Status
                   </button>
-                )}
+                  <button onClick={scanForNew} disabled={scanning}
+                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-violet-400/30 bg-violet-400/8 text-violet-400 hover:bg-violet-400/15 font-medium disabled:opacity-50">
+                    {scanning ? <Loader2 size={11} className="animate-spin"/> : <Lightbulb size={11}/>}
+                    {scanning ? 'Scanning…' : 'Scan for new updates'}
+                  </button>
+                  <button onClick={() => setShowAddCustom(v => !v)}
+                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground">
+                    <Plus size={11}/>Add custom topic
+                  </button>
+                  {(notFetched > 0 || stale > 0) && (
+                    <button onClick={fetchAllNew}
+                      className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15 font-medium">
+                      <Download size={11}/>Fetch all new ({notFetched + stale})
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {/* Add custom topic panel */}
+              {showAddCustom && (
+                <div className="rounded-xl border border-border bg-card/60 p-4 space-y-3">
+                  <div className="font-semibold text-sm flex items-center gap-2"><Plus size={13} className="text-primary"/>Add Custom Topic</div>
+                  <p className="text-xs text-muted-foreground">Type any algorithm update, guideline, or SEO signal — Claude will research it and add it to your library.</p>
+                  <div className="flex gap-2">
+                    <input value={customLabel} onChange={e => setCustomLabel(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && !addingCustom && customLabel.trim() && addCustomTopic()}
+                      placeholder="e.g. Google March 2025 Spam Update, ChatGPT Memory + Search..."
+                      className="flex-1 h-9 px-3 text-sm rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
+                    <select value={customEngine} onChange={e => setCustomEngine(e.target.value)}
+                      className="h-9 px-2 text-sm rounded-xl border border-border bg-background/60 outline-none">
+                      {Object.entries(ENGINE_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                    <button onClick={addCustomTopic} disabled={addingCustom || !customLabel.trim()}
+                      className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50">
+                      {addingCustom ? <><Loader2 size={11} className="animate-spin"/>Adding…</> : <><Sparkles size={11}/>Add</>}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Scan results panel */}
+              {showScan && scanResults.length > 0 && (
+                <div className="rounded-xl border border-violet-400/20 bg-violet-400/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-sm flex items-center gap-2"><Lightbulb size={13} className="text-violet-400"/>{scanResults.length} new updates discovered</div>
+                    <button onClick={() => setShowScan(false)} className="text-muted-foreground hover:text-foreground"><X size={13}/></button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">These topics are not in your catalog. Click Add to fetch and save each one.</p>
+                  <div className="space-y-2">
+                    {scanResults.map((s, i) => (
+                      <div key={i} className="flex items-start gap-3 rounded-lg border border-border bg-background/40 px-3 py-2.5">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{s.label}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded-md border font-medium ${ENGINE_BADGE[s.engine] || ENGINE_BADGE.general}`}>{ENGINE_LABEL[s.engine] || s.engine}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{s.why_important}</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            setAddingCustom(true);
+                            try {
+                              const res = await fetch('/api/algorithm-intel', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'fetch_custom_topic', label: s.label, engine: s.engine, category: s.category, source: s.source }),
+                              });
+                              const data = await res.json().catch(() => ({ success: false }));
+                              if (data.success && data.item) {
+                                data.item.tags = [...(data.item.tags || []), 'custom'];
+                                const sr = await fetch('/api/algorithm-intel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save_item', item: data.item }) });
+                                const sd = await sr.json().catch(() => ({ success: false }));
+                                if (sd.success) {
+                                  setScanResults(r => r.filter((_, ri) => ri !== i));
+                                  toast({ title: 'Added', description: s.label });
+                                  await loadCatalog(); await loadLibrary();
+                                }
+                              }
+                            } catch { toast({ title: 'Error adding topic', variant: 'destructive' }); }
+                            setAddingCustom(false);
+                          }}
+                          disabled={addingCustom}
+                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-violet-400/30 bg-violet-400/8 text-violet-400 hover:bg-violet-400/15 font-medium shrink-0 disabled:opacity-50">
+                          {addingCustom ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {catLoading && (
@@ -361,9 +533,15 @@ export default function AlgorithmIntel() {
                   <span className="text-xs text-muted-foreground ml-1">
                     {catalog.filter(t => t.group === group && t.saved_id).length}/{catalog.filter(t => t.group === group).length} saved
                   </span>
+                  {/* Show if any critical-weight topics in this group */}
+                  {catalog.filter(t => t.group === group && t.weight >= 9).length > 0 && (
+                    <span className="ml-auto text-xs text-red-400 flex items-center gap-1">
+                      <Flame size={10}/>{catalog.filter(t => t.group === group && t.weight >= 9).length} critical
+                    </span>
+                  )}
                 </div>
                 <div className="divide-y divide-border/40">
-                  {catalog.filter(t => t.group === group).map(topic => {
+                  {catalog.filter(t => t.group === group).sort((a,b) => b.weight - a.weight).map(topic => {
                     const isFetching = fetching[topic.id];
                     const hasFetched = !!preview[topic.id];
                     const isExpanded = expanded[topic.id];
@@ -379,10 +557,15 @@ export default function AlgorithmIntel() {
                           }`}/>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
+                              {/* Weight flame indicator */}
+                              <span className={`flex items-center gap-0.5 text-xs font-bold ${weightStyle(topic.weight)}`} title={weightLabel(topic.weight)}>
+                                <Flame size={11}/>{topic.weight}
+                              </span>
                               <span className="text-sm font-medium">{topic.label}</span>
                               <span className={`text-xs px-1.5 py-0.5 rounded-md border font-medium ${ENGINE_BADGE[topic.engine] || ENGINE_BADGE.general}`}>
                                 {ENGINE_LABEL[topic.engine] || topic.engine}
                               </span>
+                              {topic.is_custom && <span className="text-xs px-1.5 py-0.5 rounded-full bg-violet-400/10 text-violet-400 border border-violet-400/20">Custom</span>}
                               {topic.is_stale && (
                                 <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 flex items-center gap-1">
                                   <Clock size={9}/>Refresh available
@@ -391,6 +574,7 @@ export default function AlgorithmIntel() {
                             </div>
                             <div className="text-xs text-muted-foreground/60 mt-0.5">
                               {topic.source}
+                              {(topic as any).added && <span className="ml-2">· added {(topic as any).added}</span>}
                               {age !== null && <span className="ml-2">· saved {age === 0 ? 'today' : `${age}d ago`}</span>}
                             </div>
                           </div>
