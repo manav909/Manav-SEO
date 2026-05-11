@@ -194,9 +194,11 @@ Return JSON with ONLY these keys:
       "tags":["tag1","tag2"],
       "source":"exact source (e.g. Audit 2024-01-15, Metrics Dashboard, Ranking data)",
       "data_basis":"REQUIRED: exact data point backing this card. E.g.: LLM score 34/100, or 23 crawl errors from audit, or keyword ranking pos 18 for X. If you cannot write a real data_basis, DO NOT include this block.",
-      "data_grade":"A|B"
+      "data_grade":"A|B",
+      "week":1
     }
   ],
+  "note_on_week_field": "Set week 1=urgent/quick, 2=content+geo, 3=competitive+authority, 4=compounding, 5=tracking. Spread blocks — do not put everything in week 1 or 5.",
   "data_gaps_blocking": ["list of block types you WANTED to create but had no data for"]
 }
 
@@ -204,9 +206,16 @@ CRITICAL CANVAS BLOCK RULES:
 1. data_basis is MANDATORY. If you cannot write a real one from the provided data, OMIT the block.
 2. data_grade C (assumption) blocks are FORBIDDEN — they will be filtered out automatically.
 3. Do NOT pad to a fixed count. 8 well-evidenced blocks beats 20 invented ones.
-4. geo_strategy: only if perplexity_citations or google_ai_citations data exists, or audit mentions GEO.
-5. competitive_intelligence: only if competitors list is non-empty AND audit or ranking data shows gaps.
-6. For each type, only generate blocks with DIRECT evidence: technical from audit, content from keywords/rankings, geo from GEO metrics.`;
+4. SPREAD BLOCKS ACROSS ALL 4 ACTIVE WEEKS — do not cluster everything in week 1.
+   - Week 1: urgent fixes, quick wins (effort=low, immediate impact)
+   - Week 2: content creation, GEO optimisation, technical follow-up
+   - Week 3: competitive moves, deeper content, authority building
+   - Week 4: compounding tasks, link building, monitoring and iteration
+   - Backlog (week 5): KPIs, long-term milestones, tracking tasks
+5. Set "week" field explicitly on every canvas block (1-5).
+6. geo_strategy: only if perplexity_citations or google_ai_citations data exists, or audit mentions GEO.
+7. competitive_intelligence: only if competitors list is non-empty AND audit or ranking data shows gaps.
+8. For each type, only generate blocks with DIRECT evidence: technical from audit, content from keywords/rankings, geo from GEO metrics.`;
 
   try {
     const batches = resumeBatch === 0 ? [1, 2, 3] : [resumeBatch].filter(n => n >= 1 && n <= 3);
