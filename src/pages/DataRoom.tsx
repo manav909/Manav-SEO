@@ -212,6 +212,21 @@ const DOC_TYPES = [
   {value:'other',           label:'Other SEO Document'},
 ];
 
+/* ─── Safe fetch-JSON helper ───────────────────────────────────────
+   Always checks res.ok. If response is not JSON (e.g. Vercel 500
+   plain-text error), throws a clean Error instead of a parse crash.
+─────────────────────────────────────────────────────────────────── */
+async function safeJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!res.ok) {
+    // Try to parse error JSON, fall back to raw text
+    try { const e = JSON.parse(text); throw new Error(e.error || e.message || text.slice(0,200)); }
+    catch (parseErr) { if (parseErr instanceof SyntaxError) throw new Error(text.slice(0,200)); throw parseErr; }
+  }
+  try { return JSON.parse(text); }
+  catch { throw new Error(`Invalid JSON from server: ${text.slice(0,120)}`); }
+}
+
 /* ─── Impact map: Data Room changes → affected Playground sections ─── */
 const IMPACT_MAP: Record<string, string[]> = {
   goal:       ['Strategy & Canvas Blocks', 'KPI Forecast', 'Execution Pipeline'],
@@ -416,16 +431,26 @@ export default function DataRoom() {
           siteUrl:        selProj?.url || '',
         }),
       });
-      const extracted = await res.json();
-
+      // Read response text first — works whether server returns JSON or plain text
+      const rawText = await res.text();
       if (!res.ok) {
-        if (extracted.error === 'binary_file') {
-          // Delete the already-saved doc row and show error
-          await supabase.from('project_documents').delete().eq('id', docRow.id);
-          throw new Error(extracted.message || 'Binary file detected — please export as CSV');
+        // Try to parse structured error, fall back to raw text
+        let errMsg = rawText.slice(0, 200);
+        try {
+          const errJson = JSON.parse(rawText);
+          if (errJson.error === 'binary_file') {
+            await supabase.from('project_documents').delete().eq('id', docRow.id);
+            throw new Error(errJson.message || 'Binary file detected — please export as CSV');
+          }
+          errMsg = errJson.error || errJson.message || errMsg;
+        } catch (pe) {
+          if (!(pe instanceof SyntaxError)) throw pe; // re-throw non-parse errors
         }
-        throw new Error(extracted.error || 'Extraction API failed');
+        throw new Error(errMsg);
       }
+      let extracted: any;
+      try { extracted = JSON.parse(rawText); }
+      catch { throw new Error(`Server returned invalid response: ${rawText.slice(0, 120)}`); }
 
       // Step 3 — save extracted data
       setUploadStatus('saving');
@@ -530,10 +555,11 @@ export default function DataRoom() {
           content:        doc.raw_content.slice(0, 15000),
           fileName:       doc.name,
           docType:        doc.doc_type,
+          siteUrl:        selProj?.url || '',
           projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
         }),
       });
-      const extracted = await res.json();
+      const extracted = await safeJson(res);
       if (extracted.success && extracted.extracted) {
         await supabase.from('project_documents').update({ extracted_data: extracted.extracted }).eq('id', doc.id);
         const savedFields: string[] = [];
