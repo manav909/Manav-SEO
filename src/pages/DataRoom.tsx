@@ -28,10 +28,16 @@ import {
   Calendar,
   Sparkles,
   ChevronRight,
+  Link2,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  ScanLine,
+  ArrowRight,
 } from 'lucide-react';
 
 /* ─── types ─── */
-type KCategory = 'goal'|'cms'|'access'|'technical'|'competitor'|'content'|'analytics'|'manual';
+type KCategory = 'goal'|'cms'|'access'|'technical'|'competitor'|'content'|'analytics'|'manual'|'crawl';
 interface KField { id?: string; category: KCategory; field_key: string; field_value: string; source: string; source_name?: string; data_date?: string; notes?: string; }
 interface DocRecord { id?: string; name: string; doc_type: string; raw_content?: string; extracted_data?: any; source_date?: string; file_size_kb?: number; created_at?: string; }
 
@@ -256,6 +262,13 @@ export default function DataRoom() {
   const [uploadStatus,   setUploadStatus]   = useState<'idle'|'uploading'|'extracting'|'saving'|'done'|'error'>('idle');
   const [uploadError,    setUploadError]    = useState('');
   const [reExtractingId, setReExtractingId] = useState<string|null>(null);
+  // URL Crawler state
+  const [crawlUrls,         setCrawlUrls]         = useState('');     // textarea — one URL per line
+  const [crawlRunning,      setCrawlRunning]       = useState(false);
+  const [crawlResults,      setCrawlResults]       = useState<any>(null);
+  const [crawlSaving,       setCrawlSaving]        = useState(false);
+  const [crawlSaved,        setCrawlSaved]         = useState(false);
+  const [crawlPreview,      setCrawlPreview]       = useState<Record<string,any>>({});  // url→{status,preview}
   // Conflict notifications: fields where new value differs from existing stored value
   const [pendingConflicts, setPendingConflicts] = useState<{
     field: string; label: string; category: string;
@@ -538,6 +551,134 @@ export default function DataRoom() {
       setTimeout(() => { setUploadStatus('idle'); setUploadError(''); }, 5000);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // ══ URL Crawler functions ══════════════════════════════════════════
+  const previewUrl = async (url: string) => {
+    const clean = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
+    setCrawlPreview(p => ({ ...p, [clean]: { status: 'loading' } }));
+    try {
+      const res  = await fetch('/api/crawl', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'preview_url', url: clean }),
+      });
+      const data = await safeJson(res);
+      setCrawlPreview(p => ({ ...p, [clean]: data }));
+    } catch (e: any) {
+      setCrawlPreview(p => ({ ...p, [clean]: { success: false, error: e.message } }));
+    }
+  };
+
+  const runCrawl = async () => {
+    if (!selProjId) return;
+    const lines = crawlUrls.split(String.fromCharCode(10)).map((l:string) => l.trim()).filter(Boolean);
+    if (!lines.length) { toast({ title: 'Add at least one URL', variant: 'destructive' }); return; }
+
+    setCrawlRunning(true);
+    setCrawlResults(null);
+    setCrawlSaved(false);
+
+    try {
+      const res  = await fetch('/api/crawl', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action:         'crawl_urls',
+          urls:            lines,
+          projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
+          projectId:       selProjId,
+        }),
+      });
+      const data = await safeJson(res);
+      if (data.success) {
+        setCrawlResults(data);
+        toast({
+          title:       `${data.urls_crawled} page${data.urls_crawled !== 1 ? 's' : ''} crawled`,
+          description: `${data.aggregated_knowledge?.length || 0} data points extracted. Review and save to knowledge base.`,
+        });
+      } else {
+        toast({ title: 'Crawl failed', description: data.error, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Crawl error', description: e.message, variant: 'destructive' });
+    }
+    setCrawlRunning(false);
+  };
+
+  const saveCrawlToKnowledge = async () => {
+    if (!crawlResults || !selProjId) return;
+    setCrawlSaving(true);
+
+    const newConflicts: typeof pendingConflicts = [];
+    const saved: string[] = [];
+
+    for (const kf of (crawlResults.aggregated_knowledge || [])) {
+      if (!kf.key || !kf.value) continue;
+
+      // Detect conflict with existing value
+      const existing = knowledge[kf.category]?.[kf.key];
+      if (existing?.field_value && existing.field_value !== String(kf.value)) {
+        newConflicts.push({
+          field:    kf.key,
+          label:    kf.key.replace(/_/g, ' '),
+          category: kf.category,
+          oldVal:   existing.field_value,
+          newVal:   String(kf.value),
+          source:   kf.source_url || 'URL Crawler',
+          impacts:  IMPACT_MAP[kf.category] || [],
+        });
+      }
+
+      await supabase.from('project_knowledge').upsert({
+        project_id:  selProjId,
+        category:    kf.category,
+        field_key:   kf.key,
+        field_value: String(kf.value),
+        source:      'crawled',
+        source_name: kf.source_url || 'URL Crawler',
+        updated_at:  new Date().toISOString(),
+      }, { onConflict: 'project_id,category,field_key' });
+      saved.push(kf.key);
+    }
+
+    // Also save crawl results as a document record
+    await supabase.from('project_documents').insert({
+      project_id:     selProjId,
+      name:           `URL Crawl — ${new Date().toLocaleDateString()} (${crawlResults.urls_crawled} pages)`,
+      doc_type:       'crawl_report',
+      raw_content:    crawlUrls,
+      extracted_data: {
+        doc_summary:      `Crawled ${crawlResults.urls_crawled} URL${crawlResults.urls_crawled !== 1 ? 's' : ''}`,
+        knowledge_fields: crawlResults.aggregated_knowledge || [],
+        cross_page_issues:       crawlResults.cross_page_issues || [],
+        cross_page_opportunities: crawlResults.cross_page_opportunities || [],
+        results:          crawlResults.results || [],
+      },
+      file_size_kb:   0,
+      source_date:    new Date().toISOString().split('T')[0],
+    });
+
+    // Mark strategy stale
+    fetch('/api/control', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'log_change', projectId: selProjId,
+        payload: { changeType: 'document', fieldPath: 'crawl', oldValue: null, newValue: `Crawl ${new Date().toLocaleDateString()}`, sourceName: 'URL Crawler' },
+      }),
+    }).catch(() => {});
+
+    await loadData();
+    setCrawlSaving(false);
+    setCrawlSaved(true);
+
+    if (newConflicts.length > 0) {
+      setPendingConflicts(newConflicts);
+      setShowConflicts(true);
+    }
+
+    toast({
+      title: `${saved.length} data point${saved.length !== 1 ? 's' : ''} saved to knowledge base`,
+      description: 'Strategy will show as stale — regenerate to apply the new data.',
+    });
   };
 
   // Re-extract an already-uploaded document
@@ -911,6 +1052,199 @@ export default function DataRoom() {
             {tab === 'analytics'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="analytics"/></div>}
             {tab === 'technical'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="technical"/></div>}
             {tab === 'competitors' && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="competitor"/></div>}
+
+            {/* ── CRAWL TAB ── */}
+            {tab === 'crawl' && (
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="h-9 w-9 rounded-xl bg-cyan-400/15 border border-cyan-400/25 flex items-center justify-center shrink-0">
+                      <ScanLine size={16} className="text-cyan-400"/>
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-sm mb-1">URL Crawler — fetch live data from your pages</h3>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Paste up to 10 URLs (one per line). Manav Brain fetches each page live via Jina AI, extracts every observable SEO signal —
+                        title tags, H1s, schema types, internal links, content quality, issues — and maps them to your knowledge base.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-card/60 p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold text-sm">Pages to crawl</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">One URL per line · max 10</div>
+                    </div>
+                    {selProj?.url && (
+                      <button
+                        onClick={()=>setCrawlUrls(v=>v ? (v+String.fromCharCode(10)+selProj!.url) : selProj!.url)}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-border text-muted-foreground hover:text-foreground"
+                      >
+                        <Plus size={10}/>Add project root
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    value={crawlUrls}
+                    onChange={e=>{setCrawlUrls(e.target.value);setCrawlResults(null);setCrawlSaved(false);}}
+                    placeholder={'https://yourdomain.com' + String.fromCharCode(10) + 'https://yourdomain.com/about' + String.fromCharCode(10) + 'https://yourdomain.com/services'}
+                    rows={6}
+                    className="w-full text-sm px-3 py-2.5 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50 resize-none font-mono text-xs"
+                  />
+
+                  {crawlUrls.trim() && (
+                    <div className="flex flex-wrap gap-2">
+                      {crawlUrls.split(String.fromCharCode(10)).map(l=>l.trim()).filter(Boolean).slice(0,10).map((url,i)=>{
+                        const clean = url.startsWith('http') ? url : `https://${url}`;
+                        const pv = crawlPreview[clean];
+                        return (
+                          <div key={i} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-mono ${
+                            pv?.status===200 ? 'border-green-400/30 bg-green-400/8 text-green-400' :
+                            pv?.status==='loading' ? 'border-primary/30 bg-primary/8 text-primary' :
+                            pv?.error ? 'border-red-400/30 bg-red-400/8 text-red-400' :
+                            'border-border text-muted-foreground'
+                          }`}>
+                            {pv?.status==='loading' && <Loader2 size={9} className="animate-spin shrink-0"/>}
+                            {pv?.status===200        && <CheckCircle size={9} className="shrink-0"/>}
+                            {pv?.error               && <XCircle size={9} className="shrink-0"/>}
+                            {!pv                     && <Globe size={9} className="shrink-0"/>}
+                            <span className="truncate max-w-[180px]">{clean.replace('https://','')}</span>
+                            {pv?.chars>0 && <span className="opacity-60">{Math.round(pv.chars/1000)}k</span>}
+                          </div>
+                        );
+                      })}
+                      {crawlUrls.split(String.fromCharCode(10)).filter(Boolean).length>10 && <div className="text-xs text-orange-400 px-2 py-1">First 10 only</div>}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                      onClick={runCrawl}
+                      disabled={crawlRunning||!crawlUrls.trim()}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-sm disabled:opacity-50 transition-colors"
+                    >
+                      {crawlRunning
+                        ? <><Loader2 size={14} className="animate-spin"/>Crawling…</>
+                        : <><ScanLine size={14}/>Crawl {crawlUrls.split(String.fromCharCode(10)).filter(Boolean).slice(0,10).length||''} page{crawlUrls.split(String.fromCharCode(10)).filter(Boolean).length!==1?'s':''}</>}
+                    </button>
+                    {crawlUrls.trim()&&!crawlRunning && (
+                      <button
+                        onClick={()=>crawlUrls.split(String.fromCharCode(10)).map(l=>l.trim()).filter(Boolean).slice(0,10).forEach(u=>{const c=u.startsWith('http')?u:`https://${u}`;if(!crawlPreview[c])previewUrl(c);})}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >Test reachability</button>
+                    )}
+                    {crawlRunning && <span className="text-xs text-muted-foreground">Fetching live + analysing with Manav Brain… ~15–30s</span>}
+                  </div>
+                </div>
+
+                {crawlResults && (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-border bg-card/60 p-5">
+                      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                        <div>
+                          <div className="font-bold text-sm">
+                            {crawlResults.urls_crawled} page{crawlResults.urls_crawled!==1?'s':''} analysed
+                            {crawlResults.aggregated_knowledge?.length>0 && <span className="text-primary ml-2">· {crawlResults.aggregated_knowledge.length} data points</span>}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {crawlResults.cross_page_issues?.length||0} issues · {crawlResults.cross_page_opportunities?.length||0} opportunities
+                          </div>
+                        </div>
+                        {!crawlSaved && crawlResults.aggregated_knowledge?.length>0 && (
+                          <button onClick={saveCrawlToKnowledge} disabled={crawlSaving}
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 disabled:opacity-50">
+                            {crawlSaving ? <><Loader2 size={13} className="animate-spin"/>Saving…</> : <><Save size={13}/>Save {crawlResults.aggregated_knowledge.length} fields to Data Room</>}
+                          </button>
+                        )}
+                        {crawlSaved && <div className="flex items-center gap-2 text-green-400 text-sm font-semibold"><CheckCircle size={14}/>Saved · Strategy marked stale</div>}
+                      </div>
+
+                      {crawlResults.aggregated_knowledge?.length>0 && (
+                        <div className="border-t border-border/50 pt-3">
+                          <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Data points ready to save</div>
+                          <div className="grid sm:grid-cols-2 gap-1.5">
+                            {crawlResults.aggregated_knowledge.map((kf:any,i:number)=>(
+                              <div key={i} className="flex items-start gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-medium">{kf.key.replace(/_/g,' ')}</div>
+                                  <div className="text-xs text-primary truncate">{kf.value}</div>
+                                  {kf.source_url && <div className="text-xs text-muted-foreground/50 truncate">{kf.source_url.replace('https://','')}</div>}
+                                </div>
+                                <span className="text-xs px-1.5 py-0.5 rounded-full border border-border/50 text-muted-foreground/60 shrink-0">{kf.category}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {crawlResults.results?.map((r:any,i:number)=>(
+                      <details key={i} className="rounded-2xl border border-border bg-card/40 overflow-hidden">
+                        <summary className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-secondary/20 list-none">
+                          <div className={`h-2 w-2 rounded-full shrink-0 ${r.status===200?'bg-green-400':r.error?'bg-red-400':'bg-yellow-400'}`}/>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-mono truncate">{r.url}</div>
+                            {r.page_analysis?.title_tag && <div className="text-xs text-muted-foreground truncate mt-0.5">{r.page_analysis.title_tag}</div>}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {r.page_analysis?.issues?.length>0 && <span className="text-xs px-2 py-0.5 rounded-full bg-red-400/10 text-red-400 border border-red-400/20">{r.page_analysis.issues.length} issue{r.page_analysis.issues.length!==1?'s':''}</span>}
+                            {r.page_analysis?.opportunities?.length>0 && <span className="text-xs px-2 py-0.5 rounded-full bg-green-400/10 text-green-400 border border-green-400/20">{r.page_analysis.opportunities.length} opp{r.page_analysis.opportunities.length!==1?'s':''}</span>}
+                            <ChevronDown size={12} className="text-muted-foreground"/>
+                          </div>
+                        </summary>
+                        <div className="px-4 pb-4 space-y-3 border-t border-border/50">
+                          {r.error && <div className="text-xs text-red-400 mt-2">{r.error}</div>}
+                          {r.page_analysis && (
+                            <>
+                              <div className="grid grid-cols-2 gap-2 mt-3">
+                                {[
+                                  {label:'Title', value:r.page_analysis.title_tag, meta:r.page_analysis.title_length>0?`${r.page_analysis.title_length}ch`:null},
+                                  {label:'H1', value:r.page_analysis.h1},
+                                  {label:'Meta', value:r.page_analysis.meta_description, meta:r.page_analysis.meta_desc_length>0?`${r.page_analysis.meta_desc_length}ch`:null},
+                                  {label:'Schema', value:r.page_analysis.schema_types?.join(', ')||'None'},
+                                  {label:'Int. links', value:r.page_analysis.internal_links>0?String(r.page_analysis.internal_links):null},
+                                  {label:'Words', value:r.page_analysis.word_count>0?`~${r.page_analysis.word_count}`:null},
+                                ].filter(it=>it.value).map((it,j)=>(
+                                  <div key={j} className="rounded-lg border border-border/40 bg-background/30 px-2.5 py-2">
+                                    <div className="text-xs text-muted-foreground">{it.label}{it.meta&&<span className="ml-1 opacity-60">{it.meta}</span>}</div>
+                                    <div className="text-xs font-medium truncate">{it.value}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              {r.page_analysis.issues?.length>0 && (
+                                <div className="space-y-1">
+                                  <div className="text-xs font-mono text-red-400 uppercase">Issues</div>
+                                  {r.page_analysis.issues.map((issue:any,k:number)=>(
+                                    <div key={k} className={`flex items-start gap-2 text-xs rounded-lg px-2.5 py-2 border ${issue.severity==='critical'?'border-red-400/25 bg-red-400/5 text-red-400':issue.severity==='high'?'border-orange-400/25 bg-orange-400/5 text-orange-400':'border-yellow-400/20 bg-yellow-400/5 text-yellow-400'}`}>
+                                      <span className="font-semibold shrink-0 capitalize">[{issue.severity}]</span>
+                                      <span>{issue.detail||issue.type}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {r.page_analysis.opportunities?.length>0 && (
+                                <div className="space-y-1">
+                                  <div className="text-xs font-mono text-green-400 uppercase">Opportunities</div>
+                                  {r.page_analysis.opportunities.map((opp:any,k:number)=>(
+                                    <div key={k} className="flex items-start gap-2 text-xs rounded-lg px-2.5 py-2 border border-green-400/15 bg-green-400/5">
+                                      <ArrowRight size={10} className="text-green-400 mt-0.5 shrink-0"/>
+                                      <span className="text-foreground font-medium">{opp.action}</span>
+                                      {opp.impact&&<span className="text-muted-foreground ml-1">→ {opp.impact}</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── DOCUMENTS ── */}
             {tab === 'documents' && (
