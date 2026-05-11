@@ -41,10 +41,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     weekCards = [],
     allPlacedCards = [],
     projectContext = {},
+    // Full Data Room knowledge — passed from Playground loadContext result
+    dataRoom = {},      // { goals, tech, analytics, technical, competitors, metrics, audits, documents }
+    cardRequirements = [],   // saved task_requirements for this card
   } = req.body;
 
   const placed  = (blocks as any[]).filter(b => b.placed);
   const library = (blocks as any[]).filter(b => !b.placed);
+
+  // Format Data Room knowledge for prompt context
+  const drContext = (() => {
+    const dr = dataRoom as any;
+    if (!dr || !Object.keys(dr).length) return "";
+    const lines: string[] = ["DATA ROOM KNOWLEDGE:"];
+    if (dr.goals?.primary)            lines.push(`  Goal: ${dr.goals.primary} | Timeline: ${dr.goals.timeline || "?"} | Keywords: ${dr.goals.keywords || "?"}`);
+    if (dr.analytics?.organicMonthly) lines.push(`  Organic sessions/mo: ${dr.analytics.organicMonthly} | GSC impressions: ${dr.analytics.gscImpressions || "?"} | Avg position: ${dr.analytics.gscAvgPos || "?"}`);
+    if (dr.technical?.pagesIndexed)   lines.push(`  Pages indexed: ${dr.technical.pagesIndexed} | Crawl errors: ${dr.technical.crawlErrors || "none"} | Schema: ${dr.technical.schema || "?"}`);
+    if (dr.competitors?.c1)           lines.push(`  Competitors: ${[dr.competitors.c1, dr.competitors.c2].filter(Boolean).join(", ")} | Our DR: ${dr.competitors.ourDR || "?"}`);
+    if (dr.tech?.cms)                 lines.push(`  CMS: ${dr.tech.cms} ${dr.tech.version || ""} | SEO plugin: ${dr.tech.seoPlugin || "?"} | PageSpeed mob: ${dr.tech.pagespdMobile || "?"}`);
+    if (dr.metrics)                   lines.push(`  Metrics: LLM ${dr.metrics.llmVisibility ?? "?"}% | Health ${dr.metrics.algorithmHealth ?? "?"}% | EEAT ${dr.metrics.eeat ?? "?"}% | Authority ${dr.metrics.authority ?? "?"}%`);
+    if (dr.audits?.length)            lines.push(`  Latest audit: ${dr.audits[0].date} — ${Object.values(dr.audits[0].sections || {}).join(" | ").slice(0, 300)}`);
+    if (dr.documents?.length)         lines.push(`  Documents (${dr.documents.length}): ${dr.documents.slice(0,3).map((d:any) => `${d.name} (${d.type})`).join(", ")}`);
+    if (cardRequirements?.length)     lines.push(`  Saved requirements: ${(cardRequirements as any[]).map((r:any) => `${r.category}: ${r.requirement}`).join(" | ")}`);
+    return lines.join("\n");
+  })();
 
   const byWeek = [1, 2, 3, 4, 5].map(w => {
     const wb = placed.filter((b: any) => b.week === w);
@@ -162,6 +182,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     userPrompt = [
       `PROJECT: ${projectSummary}`,
       "",
+      drContext,
+      "",
       fb ? [
         "CARD TO ANALYSE IN DEPTH:",
         `"${fb.title}" [${fb.type}|${fb.priority}|${fb.status}]`,
@@ -173,12 +195,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       byWeek || "No cards placed yet.",
       liveContent ? `\nLIVE SITE:\n${liveContent}` : "",
       "",
-      "Provide a deep strategic analysis:",
+      "Provide a deep strategic analysis covering:",
       "## Why This Card Matters",
-      "## Detailed Execution Plan (specific steps)",
+      "## Detailed Execution Plan (step-by-step, citing specific data from Data Room)",
+      "## Canvas Cards to Create",
+      "List 2-4 canvas cards that should be created as a result of this analysis. For each, specify: title, type (technical/content/geo/quick-win/competitive/insight/weekly), week (1-4 or Backlog), priority, and why it should be created.",
+      "## What I Need to Execute This",
+      "List the exact data, access, or documents needed to complete this card. Be specific: which GSC report, which page URL, which competitor domain, etc.",
       "## Dependencies and Risks",
       "## Expected Outcomes (measurable)",
-      "## What I Would Do Differently",
     ].filter(l => l !== "").join("\n");
 
   } else {
@@ -187,6 +212,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.senior_seo) + " " + SYSTEM;
     userPrompt = [
       `PROJECT: ${projectSummary}`,
+      drContext,
       "CANVAS:",
       byWeek || "No cards placed yet.",
       fb ? `FOCUS: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content || "").slice(0, 300)}` : "",
