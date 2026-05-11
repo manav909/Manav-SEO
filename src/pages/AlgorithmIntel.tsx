@@ -6,9 +6,10 @@ import {
   Zap, BookOpen, Search, Download, Star, TrendingUp, Shield, Target,
   Eye, ArrowRight, ExternalLink, Database, CheckCircle2, X, Award,
   Sparkles, Clock, ChevronDown, ChevronRight, RotateCw, Play,
-  Plus, Flame, Lightbulb,
+  Plus, Flame, Lightbulb, History, Send, Save, FileCheck,
 } from 'lucide-react';
 import PortalNav from '@/components/PortalNav';
+import { useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 
 type Tab = 'catalog' | 'library' | 'practices' | 'audit';
@@ -76,8 +77,9 @@ export default function AlgorithmIntel() {
   const [tab, setTab]         = useState<Tab>('catalog');
   const [selProjId, setSelProjId] = useState('');
 
-  const selProj = projects.find(p => p.id === selProjId);
-  const client  = clients.find(c => c.id === selProj?.client_id);
+  const navigate  = useNavigate();
+  const selProj   = projects.find(p => p.id === selProjId);
+  const client    = clients.find(c => c.id === selProj?.client_id);
 
   // Catalog state
   const [catalog,      setCatalog]      = useState<CatalogTopic[]>([]);
@@ -108,12 +110,29 @@ export default function AlgorithmIntel() {
   // Per-topic saving state (prevents double-save)
   const [saving,        setSaving]        = useState<Record<string, boolean>>({});
 
-  // Audit state
+  // Audit — URL input + engine
   const [auditUrl,     setAuditUrl]     = useState('');
   const [auditEngine,  setAuditEngine]  = useState('google');
   const [auditing,     setAuditing]     = useState(false);
   const [auditStep,    setAuditStep]    = useState('');
   const [auditResult,  setAuditResult]  = useState<any>(null);
+  const [auditPageTitle, setAuditPageTitle] = useState('');
+  // Cached page data — crawled once, re-used for every engine audit on the same URL
+  const [cachedPageData,  setCachedPageData]  = useState<any>(null);
+  const [cachedPageUrl,   setCachedPageUrl]   = useState('');
+  const [cachedPageMeta,  setCachedPageMeta]  = useState<{title:string;words:number;crawledAt:string}|null>(null);
+  // All audit runs for the current cached page (one per engine, auto-accumulated)
+  const [allAuditRuns,   setAllAuditRuns]   = useState<{engine:string;result:any;ranAt:string}[]>([]);
+  const [activeRunIdx,   setActiveRunIdx]   = useState(0);
+  // Audit persistence state
+  const [auditSaving,   setAuditSaving]   = useState(false);
+  const [auditSaved,    setAuditSaved]    = useState(false);
+  const [pastAudits,    setPastAudits]    = useState<any[]>([]);
+  const [auditsLoading, setAuditsLoading] = useState(false);
+  // Card proposals from audit
+  const [auditCards,         setAuditCards]         = useState<any[]>([]);
+  const [auditCardApprovals, setAuditCardApprovals] = useState<Record<number,boolean>>({});
+  const [sendingCards,       setSendingCards]        = useState(false);
 
   // ─────────────────────────────────────────────────────────────────
   // API helper — reads text, parses JSON, throws with readable message
@@ -160,6 +179,7 @@ export default function AlgorithmIntel() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadCatalog(); loadLibrary(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (tab === 'audit' && selProjId) loadPastAudits(); }, [tab, selProjId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────────────
   // Fetch a single topic from the catalog
@@ -316,86 +336,345 @@ export default function AlgorithmIntel() {
   };
 
   // ─────────────────────────────────────────────────────────────────
-  // Audit a live page against the saved knowledge library
-  // Step 1: crawl the URL (NDJSON stream via /api/crawl)
-  // Step 2: score the page against the library via /api/algorithm-intel
+  // Save an audit run to project_documents (accessible from Data Room
+  // and picked up by intelligence.ts when building card context)
   // ─────────────────────────────────────────────────────────────────
-  const runAudit = async () => {
-    if (!auditUrl.trim()) return;
-    setAuditing(true);
-    setAuditResult(null);
-    setAuditStep('Crawling page…');
+  const saveAudit = async (result: any, url: string) => {
+    if (!selProjId) {
+      toast({ title: 'Select a project first', description: 'Choose a project from the nav to save this audit.', variant: 'destructive' });
+      return;
+    }
+    setAuditSaving(true);
     try {
-      const url = auditUrl.trim().startsWith('http') ? auditUrl.trim() : `https://${auditUrl.trim()}`;
+      const shortUrl  = url.replace(/https?:\/\//, '').slice(0, 50);
+      const dateStr   = new Date().toLocaleDateString();
+      const name      = `Algorithm Audit — ${shortUrl} — ${result.grade} (${result.overall_score}/100) — ${dateStr}`;
 
-      // ── Step 1: crawl ──────────────────────────────────────────────
-      const crawlRes = await fetch('/api/crawl', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'crawl_urls',
-          urls: [url],
-          projectContext: `${client?.company || ''} | ${selProj?.url || ''}`,
-          projectId: selProjId || null,
-          forceRefresh: true,
-        }),
+      // knowledge_fields extracted from audit for Data Room
+      const knowledge_fields = [
+        ...(result.eeat_assessment ? Object.entries(result.eeat_assessment).map(([k, v]: any) => ({
+          category: 'eeat', key: `audit_${k}`, value: String(v).split(' — ')[0],
+        })) : []),
+        result.geo_ai_readiness ? { category: 'technical', key: 'geo_ai_readiness_score', value: String(result.geo_ai_readiness.score) } : null,
+        { category: 'technical', key: 'audit_overall_score', value: String(result.overall_score) },
+      ].filter(Boolean);
+
+      const { error } = await supabase.from('project_documents').insert({
+        project_id:   selProjId,
+        name,
+        doc_type:     'algorithm_audit',
+        raw_content:  url,
+        extracted_data: {
+          doc_summary:      `Algorithm audit of ${shortUrl} scored ${result.grade} (${result.overall_score}/100) against ${auditEngine} library. ${result.critical_fails?.length || 0} critical fails, ${result.quick_wins?.length || 0} quick wins.`,
+          page_url:         url,
+          page_title:       auditPageTitle,
+          overall_score:    result.overall_score,
+          grade:            result.grade,
+          verdict:          result.verdict,
+          engine:           auditEngine,
+          audited_at:       new Date().toISOString(),
+          knowledge_items_used: library.length,
+          audit_result:     result,
+          knowledge_fields,
+          card_proposals:   auditCards,
+        },
+        file_size_kb:  0,
+        source_date:   new Date().toISOString().split('T')[0],
       });
 
-      if (!crawlRes.ok || !crawlRes.body) {
-        toast({ title: 'Crawl failed', description: 'Could not reach the crawl API.', variant: 'destructive' });
-        setAuditing(false);
+      if (error) throw new Error(error.message);
+      setAuditSaved(true);
+      toast({ title: 'Audit saved', description: 'Available in Data Room → Documents and feeds into canvas card generation.' });
+      await loadPastAudits();
+    } catch (e: any) {
+      toast({ title: 'Save failed', description: e.message, variant: 'destructive' });
+    }
+    setAuditSaving(false);
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // Load past audit runs for the selected project
+  // ─────────────────────────────────────────────────────────────────
+  const loadPastAudits = async () => {
+    if (!selProjId) return;
+    setAuditsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('project_documents')
+        .select('id,name,source_date,extracted_data,raw_content')
+        .eq('project_id', selProjId)
+        .eq('doc_type', 'algorithm_audit')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      setPastAudits(data || []);
+    } catch { /* silent */ }
+    setAuditsLoading(false);
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // Send approved audit cards to the Playground canvas
+  // ─────────────────────────────────────────────────────────────────
+  const sendAuditCards = async () => {
+    const approved = auditCards.filter((_, i) => auditCardApprovals[i]);
+    if (!approved.length) return;
+    if (!selProjId) {
+      toast({ title: 'Select a project first', variant: 'destructive' });
+      return;
+    }
+    setSendingCards(true);
+    try {
+      const { data: projData } = await supabase
+        .from('projects').select('playground_canvas').eq('id', selProjId).single();
+      const existing = (projData?.playground_canvas || []) as any[];
+
+      const uid = () => Math.random().toString(36).slice(2, 10);
+      const normT = (t: string) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+      const existingTitles = new Set(existing.map((b: any) => normT(b.title || '')));
+
+      const newCards = approved
+        .filter(c => !existingTitles.has(normT(c.title)))
+        .map(c => ({
+          id:       uid(),
+          type:     c.type || 'technical',
+          title:    c.title.slice(0, 70),
+          content:  `${c.content}\n\nAlgorithm: ${c.source_algorithm || 'Algorithm audit'}`,
+          priority: c.priority || 'medium',
+          week:     1,
+          placed:   true,
+          status:   'todo',
+          color:    '#94a3b8',
+          tags:     ['from-algorithm-audit', '✓ hard-data'],
+          source:   `Algorithm Audit — ${auditUrl.replace(/https?:\/\//, '').slice(0, 40)}`,
+        }));
+
+      if (!newCards.length) {
+        toast({ title: 'No new cards — all already on canvas' });
+        setSendingCards(false);
         return;
       }
 
-      // Read NDJSON stream
-      const reader = crawlRes.body.getReader();
-      const dec    = new TextDecoder();
-      let buf      = '';
+      await supabase.from('projects').update({
+        playground_canvas: [...existing, ...newCards],
+      }).eq('id', selProjId);
+
+      toast({ title: `${newCards.length} card${newCards.length !== 1 ? 's' : ''} sent to Canvas`, description: 'Open the Canvas tab to see them.' });
+      setAuditCardApprovals({});
+    } catch (e: any) {
+      toast({ title: 'Error sending cards', description: e.message, variant: 'destructive' });
+    }
+    setSendingCards(false);
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // Crawl a URL and return its page analysis object.
+  // Called by runAudit — separated so it can be reused.
+  // ─────────────────────────────────────────────────────────────────
+  const crawlPage = async (url: string): Promise<any | null> => {
+    setAuditStep('Crawling page…');
+    const crawlRes = await fetch('/api/crawl', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'crawl_urls', urls: [url], forceRefresh: true,
+        projectContext: `${client?.company || ''} | ${selProj?.url || ''}`,
+        projectId: selProjId || null,
+      }),
+    });
+    if (!crawlRes.ok || !crawlRes.body) return null;
+    const reader = crawlRes.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', pageData: any = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      buf += dec.decode(value ?? new Uint8Array(), { stream: !done });
+      const parts = buf.split('\n'); buf = parts.pop() ?? '';
+      for (const line of parts) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.type === 'complete' && msg.results?.[0]?.page_analysis)
+            pageData = { ...msg.results[0].page_analysis, url: msg.results[0].url };
+        } catch { /* skip */ }
+      }
+      if (done) break;
+    }
+    return pageData;
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // Build deduplicated card proposals from an audit result
+  // ─────────────────────────────────────────────────────────────────
+  const buildCardProposals = (audit: any): any[] => {
+    const proposals = [
+      ...(audit.critical_fails || []).map((f: any) => ({
+        title: f.issue.slice(0, 70), type: 'technical', priority: 'high',
+        content: `${f.issue}\n\nFix: ${f.fix}`, source_algorithm: f.algorithm, source: 'algorithm-audit',
+      })),
+      ...(audit.quick_wins || []).map((w: any) => ({
+        title: w.action.slice(0, 70), type: 'quick-win',
+        priority: w.effort === 'low' ? 'high' : 'medium',
+        content: `${w.action}\n\nExpected: ${w.score_impact} · ${w.effort} effort`,
+        source_algorithm: w.algorithm, source: 'algorithm-audit',
+      })),
+      ...(audit.priority_actions || []).map((a: any) => ({
+        title: a.action.slice(0, 70),
+        type: a.impact === 'critical' || a.impact === 'high' ? 'technical' : 'quick-win',
+        priority: a.impact === 'critical' || a.impact === 'high' ? 'high' : 'medium',
+        content: `${a.action}\n\nRequired by: ${a.why} · ${a.effort} effort`,
+        source_algorithm: a.why, source: 'algorithm-audit',
+      })),
+    ];
+    const seen = new Set<string>();
+    return proposals.filter(p => { const k = p.title.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // Run audit — crawls only if URL changed or forceRecrawl = true.
+  // Re-uses cachedPageData for multiple engine runs on the same URL.
+  // Appends to allAuditRuns so you can compare engines side-by-side.
+  // ─────────────────────────────────────────────────────────────────
+  const runAudit = async (forceRecrawl = false) => {
+    if (!auditUrl.trim()) return;
+    const url = auditUrl.trim().startsWith('http') ? auditUrl.trim() : `https://${auditUrl.trim()}`;
+    setAuditing(true);
+    setAuditResult(null);
+    setAuditSaved(false);
+    setAuditCards([]);
+    setAuditCardApprovals({});
+
+    try {
       let pageData: any = null;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        buf += dec.decode(value ?? new Uint8Array(), { stream: !done });
-        const parts = buf.split('\n'); buf = parts.pop() ?? '';
-        for (const line of parts) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line);
-            if (msg.type === 'complete' && msg.results?.[0]?.page_analysis) {
-              pageData = { ...msg.results[0].page_analysis, url: msg.results[0].url };
-            }
-          } catch { /* skip malformed NDJSON lines */ }
+      // ── Crawl or use cache ─────────────────────────────────────────
+      if (!forceRecrawl && cachedPageData && cachedPageUrl === url) {
+        pageData = cachedPageData;
+        setAuditStep(`Re-using cached page · crawled at ${cachedPageMeta?.crawledAt || 'earlier'}`);
+        await new Promise(r => setTimeout(r, 500)); // brief pause so user sees the message
+      } else {
+        pageData = await crawlPage(url);
+        if (!pageData) {
+          toast({ title: 'Crawl failed', description: 'Page could not be fetched. Ensure it is publicly accessible.', variant: 'destructive' });
+          setAuditing(false); setAuditStep(''); return;
         }
-        if (done) break;
+        setCachedPageData(pageData);
+        setCachedPageUrl(url);
+        setCachedPageMeta({ title: pageData.title_tag || url.replace(/https?:\/\//, ''), words: pageData.word_count || 0, crawledAt: new Date().toLocaleTimeString() });
+        setAuditPageTitle(pageData.title_tag || '');
+        // New URL = clear all previous runs
+        setAllAuditRuns([]);
+        setActiveRunIdx(0);
       }
 
-      if (!pageData) {
-        toast({ title: 'Crawl failed', description: 'Page could not be fetched. Check the URL is publicly accessible.', variant: 'destructive' });
-        setAuditing(false);
-        setAuditStep('');
-        return;
-      }
-
-      // ── Step 2: audit ──────────────────────────────────────────────
-      setAuditStep('Scoring against algorithm library…');
+      // ── Score against selected engine ──────────────────────────────
+      setAuditStep(`Scoring against ${ENGINE_LABEL[auditEngine] || auditEngine} library…`);
       const data = await apiFetch({
-        action: 'audit_against',
-        pageData,
+        action: 'audit_against', pageData,
         projectContext: `${client?.company || ''} | ${selProj?.url || ''}`,
         targetEngine: auditEngine,
       });
 
       if (data.success) {
+        const run = { engine: auditEngine, result: data.audit, ranAt: new Date().toLocaleTimeString() };
+        // Replace existing run for this engine, or append
+        setAllAuditRuns(prev => {
+          const idx = prev.findIndex(r => r.engine === auditEngine);
+          const next = idx >= 0 ? prev.map((r, i) => i === idx ? run : r) : [...prev, run];
+          setActiveRunIdx(next.length - 1);
+          return next;
+        });
         setAuditResult(data.audit);
-        toast({ title: `Audit complete — ${data.audit.grade} (${data.audit.overall_score}/100)` });
+        setAuditCards(buildCardProposals(data.audit));
+        toast({ title: `${ENGINE_LABEL[auditEngine]} audit — ${data.audit.grade} (${data.audit.overall_score}/100)` });
       } else {
         toast({ title: 'Audit failed', description: data.error, variant: 'destructive' });
       }
     } catch (e: any) {
       toast({ title: 'Audit error', description: e.message, variant: 'destructive' });
     }
-    setAuditing(false);
-    setAuditStep('');
+    setAuditing(false); setAuditStep('');
   };
+
+  // ─────────────────────────────────────────────────────────────────
+  // Export an audit result as a PDF via browser print dialog.
+  // Generates a fully-styled HTML report in a new window.
+  // ─────────────────────────────────────────────────────────────────
+  const exportAuditPDF = (result: any, engine: string, pageUrl: string) => {
+    const pageTitle = cachedPageMeta?.title || pageUrl.replace(/https?:\/\//, '');
+    const date      = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const scoreCol  = result.overall_score >= 80 ? '#22c55e' : result.overall_score >= 60 ? '#eab308' : result.overall_score >= 40 ? '#f97316' : '#ef4444';
+
+    const sect = (title: string, items: any[], fn: (item: any, i: number) => string) =>
+      items?.length ? `<div class="s"><h2>${title}</h2>${items.map(fn).join('')}</div>` : '';
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Algorithm Audit — ${pageTitle}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;color:#1a1a1a;background:#fff;padding:32px}
+.header{border-bottom:3px solid #7c3aed;padding-bottom:20px;margin-bottom:24px}
+.header h1{font-size:20px;font-weight:800;color:#7c3aed;margin-bottom:4px}
+.meta{color:#666;font-size:11px;margin-top:2px}
+.score-row{display:flex;gap:24px;margin-bottom:24px;align-items:center}
+.num{font-size:48px;font-weight:900;color:${scoreCol};line-height:1}
+.grade{font-size:36px;font-weight:900;color:${scoreCol}}
+.verdict{font-size:13px;color:#333;max-width:500px;margin-top:4px}
+.eng-scores{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
+.eng-s{background:#f5f5f5;border-radius:6px;padding:5px 10px;font-size:11px}
+.s{margin-bottom:24px}
+h2{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#7c3aed;border-bottom:1px solid #e5e5e5;padding-bottom:6px;margin-bottom:12px}
+.c{border:1px solid #e5e5e5;border-radius:8px;padding:10px 14px;margin-bottom:8px}
+.c.critical{border-color:#fca5a5;background:#fff5f5}
+.c.high{border-color:#fed7aa;background:#fffbf5}
+.c.pass{border-color:#bbf7d0;background:#f0fdf4}
+.ct{font-weight:700;font-size:12px;margin-bottom:4px}
+.cs{color:#666;font-size:11px}
+.cf{color:#7c3aed;font-size:11px;margin-top:4px}
+.b{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:600;margin-left:5px}
+.b-critical{background:#fee2e2;color:#dc2626}
+.b-high{background:#ffedd5;color:#ea580c}
+.b-medium{background:#fef9c3;color:#ca8a04}
+.b-low{background:#f3f4f6;color:#6b7280}
+.chk{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0;align-items:flex-start}
+.eeat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.eeat-item{background:#f9fafb;border-radius:6px;padding:8px 12px}
+.eeat-l{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#888;font-weight:600}
+.eeat-v{font-size:13px;font-weight:700;margin-top:2px}
+footer{margin-top:32px;padding-top:12px;border-top:1px solid #e5e5e5;color:#999;font-size:10px;display:flex;justify-content:space-between}
+@media print{body{padding:20px}}
+</style></head><body>
+
+<div class="header">
+  <h1>Algorithm Audit Report</h1>
+  <div class="meta">${pageTitle}&nbsp;·&nbsp;${ENGINE_LABEL[engine]||engine} library&nbsp;·&nbsp;${date}&nbsp;·&nbsp;${library.length} knowledge items</div>
+  <div class="meta" style="color:#999">${pageUrl}</div>
+</div>
+
+<div class="score-row">
+  <div><div class="num">${result.overall_score}</div><div style="color:#666;font-size:10px">/100</div></div>
+  <div>
+    <div class="grade">${result.grade}</div>
+    <div class="verdict">${result.verdict}</div>
+    ${result.engine_scores?`<div class="eng-scores">${Object.entries(result.engine_scores as Record<string,any>).map(([k,v]:any)=>`<div class="eng-s"><b>${k.replace('_',' ')}:</b> ${v.score}/100 — ${v.label}</div>`).join('')}</div>`:''}
+  </div>
+</div>
+
+${sect('Critical Fails',result.critical_fails||[],(f,i)=>`<div class="c critical"><div class="ct">${i+1}. ${f.issue}</div><div class="cs">Algorithm: ${f.algorithm}</div><div class="cf">→ ${f.fix}</div></div>`)}
+${sect('Quick Wins',result.quick_wins||[],(w)=>`<div class="c"><div class="ct">${w.score_impact}&nbsp;&nbsp;${w.action}</div><div class="cs">${w.effort} effort · ${w.algorithm}</div></div>`)}
+
+${result.checks?.length?`<div class="s"><h2>All Checks (${result.checks.length})</h2>${result.checks.map((c:any)=>`<div class="chk"><span style="font-size:14px;flex-shrink:0">${c.status==='pass'?'✅':c.status==='fail'?'❌':'⚠️'}</span><div><b>${c.check}</b><span class="b b-${c.impact}">${c.impact}</span><span class="b" style="background:#f0f0f0;color:#555">${c.algorithm}</span>${c.evidence?`<br><span style="color:#666">${c.evidence}</span>`:''}${c.fix&&c.status!=='pass'?`<br><span style="color:#7c3aed">→ ${c.fix}</span>`:''}</div></div>`).join('')}</div>`:''}
+
+${result.eeat_assessment?`<div class="s"><h2>E-E-A-T Assessment</h2><div class="eeat-grid">${Object.entries(result.eeat_assessment).map(([k,v]:any)=>{const p=v.split(' — ');const col=p[0]?.toLowerCase().includes('high')?'#16a34a':p[0]?.toLowerCase().includes('medium')?'#ca8a04':'#dc2626';return`<div class="eeat-item"><div class="eeat-l">${k}</div><div class="eeat-v" style="color:${col}">${p[0]}</div>${p[1]?`<div style="font-size:10px;color:#666;margin-top:2px">${p[1]}</div>`:''}</div>`;}).join('')}</div></div>`:''}
+
+${result.geo_ai_readiness?`<div class="s"><h2>GEO / AI Readiness — ${result.geo_ai_readiness.score}/100</h2><div class="c"><b>${result.geo_ai_readiness.ready_for_ai_citation?'✅ Ready':'❌ Not ready'} for AI citation</b>${result.geo_ai_readiness.improvements?.length?'<ul style="margin:8px 0 0 16px">'+result.geo_ai_readiness.improvements.map((i:string)=>`<li style="margin-bottom:3px">${i}</li>`).join('')+'</ul>':''}</div></div>`:''}
+
+${sect('Priority Actions',result.priority_actions||[],(a)=>`<div class="c ${a.impact}"><div class="ct">#${a.rank} ${a.action}<span class="b b-${a.impact}">${a.impact}</span></div><div class="cs">${a.why} · ${a.effort} effort</div></div>`)}
+
+<footer><span>SEO Season — Algorithm Intelligence</span><span>Generated ${date}</span></footer>
+</body></html>`;
+
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); setTimeout(()=>{win.focus();win.print();},600); }
+    else toast({ title: 'Pop-up blocked', description: 'Allow pop-ups for this site to export PDF.', variant: 'destructive' });
+  };
+
 
   // ── Derived data ───────────────────────────────────────────────────
   // Weight colour: 9-10 = red (critical now), 7-8 = orange, 4-6 = yellow, 1-3 = muted
@@ -930,30 +1209,275 @@ export default function AlgorithmIntel() {
         {/* ══════════ AUDIT TAB ══════════ */}
         {tab === 'audit' && (
           <div className="space-y-5">
+
+            {/* Warnings */}
             {library.length === 0 && (
               <div className="rounded-xl border border-orange-400/25 bg-orange-400/5 px-4 py-3 text-xs text-orange-400 flex items-center gap-2">
                 <AlertTriangle size={13}/>Library is empty. Fetch topics from the Catalog first — audit scores your page against saved knowledge.
               </div>
             )}
+            {!selProjId && (
+              <div className="rounded-xl border border-yellow-400/25 bg-yellow-400/5 px-4 py-3 text-xs text-yellow-400 flex items-center gap-2">
+                <AlertTriangle size={13}/>No project selected — select one in the nav to save audits and send cards to canvas.
+              </div>
+            )}
+
+            {/* Run audit */}
             <div className="rounded-2xl border border-border bg-card/60 p-5 space-y-4">
-              <div className="font-semibold text-sm flex items-center gap-2"><Target size={14} className="text-primary"/>Audit Page Against Your Library</div>
-              <div className="flex gap-3">
-                <input value={auditUrl} onChange={e => setAuditUrl(e.target.value)}
+              <div className="font-semibold text-sm flex items-center gap-2">
+                <Target size={14} className="text-primary"/>Audit Page Against Your Algorithm Library
+              </div>
+
+              {/* URL + engine + audit button */}
+              <div className="flex gap-3 flex-wrap">
+                <input value={auditUrl}
+                  onChange={e => {
+                    setAuditUrl(e.target.value);
+                    setAuditSaved(false);
+                    setAuditResult(null);
+                    setAuditCards([]);
+                    // Clear cache only if URL actually changed
+                    if (e.target.value !== cachedPageUrl) {
+                      setCachedPageData(null);
+                      setCachedPageMeta(null);
+                      setAllAuditRuns([]);
+                    }
+                  }}
                   onKeyDown={e => e.key === 'Enter' && !auditing && library.length > 0 && runAudit()}
                   placeholder="https://yoursite.com/page-to-audit"
-                  className="flex-1 h-10 px-3 text-sm rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50 font-mono"/>
+                  className="flex-1 min-w-[200px] h-10 px-3 text-sm rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50 font-mono"/>
                 <select value={auditEngine} onChange={e => setAuditEngine(e.target.value)}
                   className="h-10 px-3 text-sm rounded-xl border border-border bg-background/60 outline-none">
                   {Object.entries(ENGINE_LABEL).filter(([k]) => k !== 'general').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
-                <button onClick={runAudit} disabled={auditing || !auditUrl.trim() || library.length === 0}
+                <button onClick={() => runAudit(false)} disabled={auditing || !auditUrl.trim() || library.length === 0}
                   className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-primary text-white font-bold text-sm hover:opacity-90 disabled:opacity-50">
-                  {auditing ? <><Loader2 size={13} className="animate-spin"/>{auditStep || 'Auditing…'}</> : <><Sparkles size={13}/>Audit</>}
+                  {auditing
+                    ? <><Loader2 size={13} className="animate-spin"/>{auditStep || 'Auditing…'}</>
+                    : cachedPageData && cachedPageUrl === (auditUrl.trim().startsWith('http') ? auditUrl.trim() : `https://${auditUrl.trim()}`)
+                    ? <><Zap size={13}/>Re-audit (cached)</>
+                    : <><Sparkles size={13}/>Crawl & Audit</>}
                 </button>
               </div>
-              {auditing && <p className="text-xs text-muted-foreground">{auditStep}</p>}
+
+              {/* Cached page pill */}
+              {cachedPageMeta && cachedPageUrl && (
+                <div className="flex items-center gap-3 rounded-xl border border-green-400/25 bg-green-400/5 px-3 py-2">
+                  <FileCheck size={12} className="text-green-400 shrink-0"/>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-medium text-green-400">Page cached</span>
+                    <span className="text-xs text-muted-foreground ml-2 truncate">{cachedPageMeta.title} · {cachedPageMeta.words} words · crawled {cachedPageMeta.crawledAt}</span>
+                  </div>
+                  <button onClick={() => runAudit(true)} disabled={auditing}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-40 shrink-0">
+                    <RefreshCw size={9}/>Re-crawl
+                  </button>
+                </div>
+              )}
+
+              {/* Multi-engine runs summary pills */}
+              {allAuditRuns.length > 1 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground shrink-0">Runs:</span>
+                  {allAuditRuns.map((run, idx) => {
+                    const col = run.result.overall_score >= 80 ? 'border-green-400/30 bg-green-400/8 text-green-400'
+                              : run.result.overall_score >= 60 ? 'border-yellow-400/30 bg-yellow-400/8 text-yellow-400'
+                              : 'border-orange-400/30 bg-orange-400/8 text-orange-400';
+                    return (
+                      <button key={idx} onClick={() => { setActiveRunIdx(idx); setAuditResult(run.result); setAuditEngine(run.engine); setAuditCards(buildCardProposals(run.result)); setAuditCardApprovals({}); setAuditSaved(false); }}
+                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl border font-medium transition-all ${activeRunIdx === idx ? col : 'border-border text-muted-foreground hover:text-foreground'}`}>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-md border font-medium ${ENGINE_BADGE[run.engine] || ENGINE_BADGE.general}`}>{ENGINE_LABEL[run.engine] || run.engine}</span>
+                        {run.result.grade} ({run.result.overall_score})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {auditing && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Loader2 size={11} className="animate-spin text-primary"/>{auditStep}
+                </p>
+              )}
             </div>
-            {auditResult && <AuditPanel result={auditResult}/>}
+
+            {/* Audit result */}
+            {auditResult && (
+              <div className="space-y-4">
+                {/* Action bar — save + cards */}
+                <div className="rounded-2xl border border-border bg-card/60 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm">
+                      {auditPageTitle || auditUrl.replace(/https?:\/\//, '').slice(0, 50)}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Scored against {library.length} knowledge item{library.length !== 1 ? 's' : ''} · {ENGINE_LABEL[auditEngine] || auditEngine} library
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    {!auditSaved ? (
+                      <button onClick={() => saveAudit(auditResult, auditUrl)} disabled={auditSaving || !selProjId}
+                        className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15 font-medium disabled:opacity-50">
+                        {auditSaving ? <><Loader2 size={11} className="animate-spin"/>Saving…</> : <><Save size={11}/>Save to Data Room</>}
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-xs text-green-400 font-medium">
+                        <FileCheck size={12}/>Saved to Data Room
+                      </span>
+                    )}
+                    <button onClick={() => exportAuditPDF(auditResult, auditEngine, auditUrl)}
+                      className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30">
+                      <Download size={11}/>Export PDF
+                    </button>
+                    <button onClick={() => navigate('/data-room')}
+                      className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground">
+                      <ExternalLink size={11}/>Data Room
+                    </button>
+                  </div>
+                </div>
+
+                {/* Card proposals from audit */}
+                {auditCards.length > 0 && (
+                  <div className="rounded-2xl border border-violet-400/20 bg-violet-400/5 overflow-hidden">
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-violet-400/15">
+                      <div>
+                        <div className="font-semibold text-sm flex items-center gap-2">
+                          <Sparkles size={13} className="text-violet-400"/>
+                          {auditCards.length} Canvas Card Proposals
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Approve cards below, then send them to your Canvas in one click.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => {
+                          const allApproved = auditCards.every((_, i) => auditCardApprovals[i]);
+                          const next: Record<number,boolean> = {};
+                          auditCards.forEach((_, i) => { next[i] = !allApproved; });
+                          setAuditCardApprovals(next);
+                        }} className="text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground">
+                          {auditCards.every((_, i) => auditCardApprovals[i]) ? 'Deselect all' : 'Select all'}
+                        </button>
+                        {Object.values(auditCardApprovals).some(Boolean) && (
+                          <button onClick={sendAuditCards} disabled={sendingCards || !selProjId}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl bg-violet-500 text-white font-bold hover:bg-violet-400 disabled:opacity-50">
+                            {sendingCards ? <><Loader2 size={11} className="animate-spin"/>Sending…</> : <><Send size={11}/>Send {Object.values(auditCardApprovals).filter(Boolean).length} to Canvas</>}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="divide-y divide-violet-400/10">
+                      {auditCards.map((card, i) => {
+                        const approved = !!auditCardApprovals[i];
+                        return (
+                          <label key={i} className={`flex items-start gap-3 px-5 py-3 cursor-pointer transition-colors ${approved ? 'bg-violet-400/8' : 'hover:bg-secondary/20'}`}>
+                            <input type="checkbox" checked={approved}
+                              onChange={() => setAuditCardApprovals(p => ({ ...p, [i]: !approved }))}
+                              className="accent-violet-400 mt-0.5 h-4 w-4 shrink-0"/>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-semibold text-foreground leading-tight">{card.title}</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium ${IMPACT_STYLE[card.priority] || IMPACT_STYLE.low}`}>{card.type}</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium ${IMPACT_STYLE[card.priority] || IMPACT_STYLE.low}`}>{card.priority}</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{card.content.split('\n')[0]}</p>
+                              {card.source_algorithm && (
+                                <span className="text-xs text-violet-400/70 mt-0.5">Algorithm: {card.source_algorithm}</span>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Full audit result */}
+                <AuditPanel result={auditResult}/>
+              </div>
+            )}
+
+            {/* Past audit runs */}
+            {selProjId && (
+              <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-card/80">
+                  <div className="font-semibold text-sm flex items-center gap-2">
+                    <History size={13} className="text-primary"/>Past Audit Runs
+                    {pastAudits.length > 0 && <span className="text-xs text-muted-foreground font-normal">({pastAudits.length})</span>}
+                  </div>
+                  <button onClick={loadPastAudits} disabled={auditsLoading}
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-50">
+                    <RefreshCw size={10} className={auditsLoading ? 'animate-spin' : ''}/>Refresh
+                  </button>
+                </div>
+                {auditsLoading && <div className="px-5 py-4 text-xs text-muted-foreground flex items-center gap-2"><Loader2 size={12} className="animate-spin"/>Loading…</div>}
+                {!auditsLoading && pastAudits.length === 0 && (
+                  <div className="px-5 py-6 text-center text-sm text-muted-foreground">
+                    No saved audits yet. Run an audit above and click Save to Data Room.
+                  </div>
+                )}
+                {!auditsLoading && pastAudits.length > 0 && (
+                  <div className="divide-y divide-border/40">
+                    {pastAudits.map((audit, i) => {
+                      const ed = audit.extracted_data || {};
+                      const scoreColor = (ed.overall_score || 0) >= 80 ? 'text-green-400' : (ed.overall_score || 0) >= 60 ? 'text-yellow-400' : 'text-red-400';
+                      return (
+                        <div key={audit.id || i} className="flex items-center gap-4 px-5 py-3 hover:bg-secondary/20 transition-colors">
+                          <div className={`text-xl font-black shrink-0 ${scoreColor}`}>{ed.overall_score || '?'}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {ed.page_url?.replace(/https?:\/\//, '') || audit.raw_content || 'Unknown page'}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+                              <span>{ed.grade || '?'}</span>
+                              <span>·</span>
+                              <span className="capitalize">{ed.engine || 'google'}</span>
+                              <span>·</span>
+                              <span>{audit.source_date}</span>
+                              {ed.knowledge_items_used && <span>· {ed.knowledge_items_used} knowledge items</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => {
+                                if (ed.audit_result) {
+                                  setAuditResult(ed.audit_result);
+                                  setAuditUrl(ed.page_url || audit.raw_content || '');
+                                  setAuditPageTitle(ed.page_title || '');
+                                  setAuditEngine(ed.engine || 'google');
+                                  setAuditSaved(true);
+                                  // Rebuild card proposals from saved audit
+                                  const proposals: any[] = [
+                                    ...(ed.audit_result.critical_fails || []).map((f: any) => ({ title: f.issue.slice(0, 70), type: 'technical', priority: 'high', content: `${f.issue}\n\nFix: ${f.fix}`, source_algorithm: f.algorithm, source: 'algorithm-audit' })),
+                                    ...(ed.audit_result.quick_wins || []).map((w: any) => ({ title: w.action.slice(0, 70), type: 'quick-win', priority: w.effort === 'low' ? 'high' : 'medium', content: `${w.action}\n\nExpected: ${w.score_impact}`, source_algorithm: w.algorithm, source: 'algorithm-audit' })),
+                                    ...(ed.audit_result.priority_actions || []).map((a: any) => ({ title: a.action.slice(0, 70), type: a.impact === 'critical' ? 'technical' : 'quick-win', priority: a.impact === 'critical' || a.impact === 'high' ? 'high' : 'medium', content: a.action, source_algorithm: a.why, source: 'algorithm-audit' })),
+                                  ];
+                                  const seen = new Set<string>();
+                                  setAuditCards(proposals.filter(p => { const k = p.title.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }));
+                                  setAuditCardApprovals({});
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                  toast({ title: 'Past audit restored' });
+                                }
+                              }}
+                              className="text-xs px-2.5 py-1.5 rounded-lg border border-primary/25 bg-primary/8 text-primary hover:bg-primary/15 font-medium">
+                              Restore
+                            </button>
+                            <button onClick={async () => {
+                              await supabase.from('project_documents').delete().eq('id', audit.id);
+                              setPastAudits(a => a.filter(x => x.id !== audit.id));
+                              toast({ title: 'Audit deleted' });
+                            }} className="h-7 w-7 rounded-lg flex items-center justify-center border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30">
+                              <X size={12}/>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         )}
       </div>
