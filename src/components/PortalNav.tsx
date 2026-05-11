@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { BarChart3, Sparkles, LogOut, Settings, Home, Zap, Layers, Database , Activity, Brain } from 'lucide-react';
+import { BarChart3, Sparkles, LogOut, Settings, Home, Zap, Layers, Database, Activity, Brain } from 'lucide-react';
 
 interface Props {
   clientName?:        string;
@@ -19,15 +19,15 @@ export default function PortalNav({
   const { signOut } = useAuth();
   const path = location.pathname;
 
-const links = [
-  { href: '/dashboard',       label: 'Dashboard',       icon: BarChart3  },
-  { href: '/launchpad',       label: 'Launchpad',        icon: Sparkles   },
-  { href: '/audit',           label: 'Audit Tool',       icon: Zap        },
-  { href: '/playground',      label: 'Canvas',           icon: LayoutGrid },
-  { href: '/data-room',       label: 'Data Room',        icon: Database   },
-  { href: '/system-control',  label: 'Control',          icon: Activity   },
-  { href: '/algorithm-intel', label: 'Algorithms',       icon: Brain      },  // ← ADD THIS
-];
+  const links = [
+    { href: '/dashboard',       label: 'Dashboard',  icon: BarChart3 },
+    { href: '/launchpad',       label: 'Launchpad',  icon: Sparkles  },
+    { href: '/audit',           label: 'Audit Tool', icon: Zap       },
+    { href: '/playground',      label: 'Canvas',     icon: Layers    },
+    { href: '/data-room',       label: 'Data Room',  icon: Database  },
+    { href: '/system-control',  label: 'Control',    icon: Activity  },
+    { href: '/algorithm-intel', label: 'Algorithms', icon: Brain     },
+  ];
 
   return (
     <div className="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">
