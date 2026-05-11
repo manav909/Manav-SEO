@@ -144,32 +144,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select("id,title,updated_at,tags")
         .order("updated_at", { ascending: false });
 
-      const saved = new Map<string, { id: string; updated_at: string }>();
+      // Build two lookup maps:
+      //   byTopicId  — keyed by "tid:{topic_id}" tag (most reliable, title-independent)
+      //   byTitle    — keyed by lowercase title (fallback for items saved before this fix)
+      const byTopicId = new Map<string, { id: string; updated_at: string }>();
+      const byTitle   = new Map<string, { id: string; updated_at: string }>();
+
       for (const row of (data || [])) {
-        saved.set(row.title?.toLowerCase().trim(), { id: row.id, updated_at: row.updated_at });
-        // Also index by custom_ prefix for user-added topics
-        if ((row.tags || []).includes("custom")) {
-          saved.set(`custom_${row.title?.toLowerCase().trim()}`, { id: row.id, updated_at: row.updated_at });
+        byTitle.set(row.title?.toLowerCase().trim(), { id: row.id, updated_at: row.updated_at });
+        for (const tag of (row.tags || []) as string[]) {
+          if (tag.startsWith("tid:")) {
+            byTopicId.set(tag.slice(4), { id: row.id, updated_at: row.updated_at });
+          }
         }
       }
 
-      // Load any user-added custom topics from DB (tagged "custom")
+      const getMatch = (topicId: string, label: string) =>
+        byTopicId.get(topicId) || byTitle.get(label.toLowerCase().trim()) || null;
+
+      const STALE_MS = 7 * 24 * 60 * 60 * 1000;
+
+      const catalog = TOPIC_CATALOG.map(t => {
+        const match = getMatch(t.id, t.label);
+        return {
+          ...t,
+          saved_id:  match?.id || null,
+          saved_at:  match?.updated_at || null,
+          is_stale:  match ? Date.now() - new Date(match.updated_at).getTime() > STALE_MS : false,
+          is_custom: false,
+        };
+      });
+
+      // Append custom topics (tagged "custom") as extra catalog rows
       const customRows = (data || []).filter((r: any) => (r.tags || []).includes("custom"));
-
-      const catalog = TOPIC_CATALOG.map(t => ({
-        ...t,
-        saved_id: saved.get(t.label.toLowerCase().trim())?.id || null,
-        saved_at: saved.get(t.label.toLowerCase().trim())?.updated_at || null,
-        is_stale: (() => {
-          const at = saved.get(t.label.toLowerCase().trim())?.updated_at;
-          if (!at) return false;
-          return Date.now() - new Date(at).getTime() > 7 * 24 * 60 * 60 * 1000;
-        })(),
-        is_custom: false,
-      }));
-
-      // Append custom topics as catalog items
       for (const row of customRows) {
+        // Skip if title already matches a built-in catalog entry
+        if (TOPIC_CATALOG.some(t => t.label.toLowerCase().trim() === row.title?.toLowerCase().trim())) continue;
         catalog.push({
           id:        `custom_${row.id}`,
           weight:    8,
@@ -181,7 +191,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           added:     row.updated_at?.slice(0, 7) || "2025",
           saved_id:  row.id,
           saved_at:  row.updated_at,
-          is_stale:  Date.now() - new Date(row.updated_at).getTime() > 7 * 24 * 60 * 60 * 1000,
+          is_stale:  Date.now() - new Date(row.updated_at).getTime() > STALE_MS,
           is_custom: true,
         });
       }
@@ -289,9 +299,19 @@ Return ONLY this JSON:
 
     // ══ SAVE ITEM ════════════════════════════════════════════════════
     if (action === "save_item") {
-      const { item } = req.body;
+      const { item, topic_id } = req.body;
       if (!item?.title) return res.status(400).json({ error: "item required" });
 
+      // Build tags — include topic_id as "tid:{topic_id}" for reliable catalog matching.
+      // Claude generates titles that differ from catalog labels, so we can't match by title alone.
+      const tidTag  = topic_id ? `tid:${topic_id}` : null;
+      const baseTags: string[] = Array.isArray(item.tags) ? item.tags : [];
+      const cleanTags = [...new Set([...baseTags.filter((t: string) => !t.startsWith("tid:")), ...(tidTag ? [tidTag] : [])])];
+
+      // Delete any existing row for this topic_id OR this title (handles re-fetches)
+      if (topic_id) {
+        await sb.from("algorithm_knowledge").delete().contains("tags", [tidTag!]);
+      }
       await sb.from("algorithm_knowledge").delete().eq("title", item.title);
 
       const { data, error } = await sb.from("algorithm_knowledge").insert({
@@ -307,7 +327,7 @@ Return ONLY this JSON:
         source_url:      item.source_url      || null,
         source_name:     item.source_name     || null,
         published_date:  item.published_date  || null,
-        tags:            item.tags            || [],
+        tags:            cleanTags,
         updated_at:      new Date().toISOString(),
       }).select().single();
 
