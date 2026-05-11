@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sb.from("metrics").select("*").eq("project_id", projectId).order("recorded_at",{ascending:false}).limit(3),
       sb.from("audit_reports").select("id,created_at,sections").eq("project_id", projectId).order("created_at",{ascending:false}).limit(3),
       sb.from("project_knowledge").select("*").eq("project_id", projectId),
-      sb.from("project_documents").select("id,name,doc_type,extracted_data,source_date").eq("project_id", projectId).limit(10),
+      sb.from("project_documents").select("id,name,doc_type,extracted_data,source_date,created_at").eq("project_id", projectId).order("created_at",{ascending:false}).limit(15),
     ]);
     const proj = projR.data;
     const met  = metR.data?.[0] ?? null;
@@ -54,7 +54,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       competitors:{ c1:kMap.competitor?.competitor_1??"", c1dr:kMap.competitor?.competitor_1_dr??"", c2:kMap.competitor?.competitor_2??"", ourDR:kMap.competitor?.our_domain_rating??"", ourRD:kMap.competitor?.our_referring_domains??"", gaps:kMap.competitor?.content_gap_keywords??"" },
       metrics: met ? { llmVisibility:met.llm_visibility_score, algorithmHealth:met.algorithm_health_score, eeat:met.eeat_score, authority:met.content_authority_score, growth:met.overall_growth_score, indexed:met.pages_indexed, submitted:met.pages_submitted, mentions:met.brand_mentions, perplexity:met.perplexity_citations, googleAI:met.google_ai_citations, chatgpt:met.chatgpt_citations, recordedAt:met.recorded_at } : null,
       audits: (audR.data||[]).map((a:any)=>({ date:(a.created_at??"").split("T")[0], sections:Object.fromEntries(Object.entries(a.sections??{}).map(([k,v])=>[k,s(v).slice(0,400)])) })),
-      documents: (docR.data||[]).map((d:any)=>({ name:d.name, type:d.doc_type, date:d.source_date, summary:d.extracted_data?.doc_summary??"", actions:(d.extracted_data?.extracted?.action_items??[]).slice(0,5), metrics:d.extracted_data?.extracted?.metrics??{} })),
+      documents: (docR.data||[]).filter((d:any)=>d.doc_type!=='crawl_report').map((d:any)=>({ name:d.name, type:d.doc_type, date:d.source_date, summary:d.extracted_data?.doc_summary??"", actions:(d.extracted_data?.extracted?.action_items??[]).slice(0,5), metrics:d.extracted_data?.extracted?.metrics??{} })),
+      // Latest crawl results per URL — used by task-engine to boost card quality
+      crawl_data: (()=>{
+        const crawlDocs = (docR.data||[]).filter((d:any)=>d.doc_type==='crawl_report');
+        if (!crawlDocs.length) return null;
+        const latest = crawlDocs[0]; // already ordered by created_at desc
+        const results = latest.extracted_data?.results || [];
+        // Map page path → analysis summary for quick lookup in prompts
+        const pageMap: Record<string, any> = {};
+        for (const r of results) {
+          if (!r.url || !r.page_analysis) continue;
+          const path = r.url.replace(/https?:\/\/[^/]+/, '') || '/';
+          pageMap[path] = {
+            url:               r.url,
+            title:             r.page_analysis.title_tag || '',
+            h1:                r.page_analysis.h1 || '',
+            word_count:        r.page_analysis.word_count || 0,
+            schema_types:      r.page_analysis.schema_types || [],
+            faqs:              r.page_analysis.faqs_detected || [],
+            ctas:              r.page_analysis.cta_elements || [],
+            content_quality:   r.page_analysis.content_quality || '',
+            geo_readiness:     r.page_analysis.geo_readiness || {},
+            issues:            (r.page_analysis.issues || []).slice(0, 3),
+            opportunities:     (r.page_analysis.opportunities || []).slice(0, 3),
+            data_confidence:   r.page_analysis.data_confidence || 'low',
+          };
+        }
+        return { crawled_at: latest.source_date, page_count: results.length, pages: pageMap, summary: latest.extracted_data?.doc_summary || '' };
+      })(),
       gaps: { noGoal:!kMap.goal?.primary_goal, noCMS:!kMap.cms?.cms, noAnalytics:!kMap.analytics?.organic_sessions_monthly, noTechnical:!kMap.technical?.pages_indexed, noCompetitors:!kMap.competitor?.competitor_1, noMetrics:!met, noDocuments:(docR.data??[]).length===0 },
     }});
   }
