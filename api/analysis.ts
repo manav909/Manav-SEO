@@ -121,7 +121,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
       }
 
-      return res.status(200).json({ success: true, extracted: parsed });
+      // ── Live verification: cross-check extracted metrics against live site ──
+      let liveVerification: any = null;
+      const siteUrl = req.body.siteUrl || (projectContext.split("|")[1] || "").trim();
+      if (siteUrl && siteUrl.startsWith("http") && parsed?.knowledge_fields?.length > 0) {
+        try {
+          const cleanUrl = siteUrl.startsWith("http") ? siteUrl : `https://${siteUrl}`;
+          const liveRes = await fetch(`https://r.jina.ai/${cleanUrl}`, {
+            headers: { Accept: "text/plain", "X-Return-Format": "markdown", "X-Timeout": "15" },
+            signal: AbortSignal.timeout(18000),
+          });
+          const liveContent = liveRes.ok ? (await liveRes.text()).slice(0, 5000) : "";
+
+          if (liveContent) {
+            const verifyPrompt = [
+              "You extracted data from an uploaded document. Now cross-check key metrics against the live site content below.",
+              "",
+              "EXTRACTED FIELDS:",
+              (parsed.knowledge_fields as any[]).slice(0, 10).map((kf: any) => `${kf.key}: ${kf.value}`).join("
+"),
+              "",
+              "LIVE SITE CONTENT (fetched right now):",
+              liveContent,
+              "",
+              "For each extracted field, check if the live site confirms, contradicts, or cannot verify it.",
+              "Return ONLY valid JSON: {"verified":[{"key":"","extracted_value":"","live_confirms":true,"note":""}],"discrepancies":[{"key":"","extracted_value":"","live_value":"","severity":"high|medium|low","note":""}],"unverifiable":[{"key":"","reason":"why live site cannot confirm this"}]}",
+            ].join("
+");
+
+            const verifyRes = await anthropic.messages.create({
+              model: "claude-sonnet-4-5", max_tokens: 1000,
+              system: SYSTEM,
+              messages: [{ role: "user", content: verifyPrompt }],
+            });
+            const verifyRaw = verifyRes.content[0].type === "text" ? verifyRes.content[0].text : "{}";
+            const vf = verifyRaw.indexOf("{"), vl = verifyRaw.lastIndexOf("}");
+            try { liveVerification = JSON.parse(verifyRaw.slice(vf, vl + 1)); } catch { /* ignore */ }
+          }
+        } catch { /* live check failed silently — don't block extraction */ }
+      }
+
+      return res.status(200).json({ success: true, extracted: parsed, live_verification: liveVerification });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
     }
