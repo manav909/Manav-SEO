@@ -1156,11 +1156,24 @@ export default function DataRoom() {
       });
       const data = await safeJson(res);
       if (data.success) {
-        setCompareResult(data.analysis);
-        setCompareTab('matrix');
-        toast({ title: 'Manav Brain analysis complete', description: `${data.analysis?.card_proposals?.length || 0} card proposals ready for review.` });
+        // Guard against empty analysis object (indicates server-side parse failure)
+        const hasContent = data.analysis && Object.keys(data.analysis).length >= 3;
+        if (!hasContent) {
+          toast({
+            title: 'Analysis returned empty',
+            description: 'The model could not parse the response. Try again — if it repeats, reduce the number of URLs or use Force re-crawl to refresh stale data.',
+            variant: 'destructive',
+          });
+        } else {
+          setCompareResult(data.analysis);
+          setCompareTab('matrix');
+          toast({
+            title: 'Manav Brain analysis complete',
+            description: `${data.analysis?.card_proposals?.length || 0} card proposals · ${data.analysis?.errors?.length || 0} errors · ${data.analysis?.opportunities?.length || 0} opportunities`,
+          });
+        }
       } else {
-        toast({ title: 'Analysis failed', description: data.error, variant: 'destructive' });
+        toast({ title: 'Analysis failed', description: data.error || 'Unknown error', variant: 'destructive' });
       }
     } catch (e: any) {
       toast({ title: 'Analysis error', description: e.message, variant: 'destructive' });
