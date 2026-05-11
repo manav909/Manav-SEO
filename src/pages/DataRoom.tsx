@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import PortalNav from '@/components/PortalNav';
@@ -212,6 +212,17 @@ const DOC_TYPES = [
   {value:'other',           label:'Other SEO Document'},
 ];
 
+/* ─── Impact map: Data Room changes → affected Playground sections ─── */
+const IMPACT_MAP: Record<string, string[]> = {
+  goal:       ['Strategy & Canvas Blocks', 'KPI Forecast', 'Execution Pipeline'],
+  analytics:  ['Strategy & Canvas Blocks', 'KPI Forecast', 'All Week Agendas'],
+  technical:  ['Strategy & Canvas Blocks', 'Execution Pipeline', 'All Week Agendas'],
+  competitor: ['Strategy & Canvas Blocks', 'Execution Pipeline'],
+  cms:        ['Strategy & Canvas Blocks', 'Technical Quick Wins'],
+  access:     ['Execution Pipeline'],
+};
+
+
 /* ════════════════════════════════════════════════════
    MAIN COMPONENT
 ════════════════════════════════════════════════════ */
@@ -230,6 +241,13 @@ export default function DataRoom() {
   const [uploadStatus,   setUploadStatus]   = useState<'idle'|'uploading'|'extracting'|'saving'|'done'|'error'>('idle');
   const [uploadError,    setUploadError]    = useState('');
   const [reExtractingId, setReExtractingId] = useState<string|null>(null);
+  // Conflict notifications: fields where new value differs from existing stored value
+  const [pendingConflicts, setPendingConflicts] = useState<{
+    field: string; label: string; category: string;
+    oldVal: string; newVal: string; source: string;
+    impacts: string[];
+  }[]>([]);
+  const [showConflicts, setShowConflicts] = useState(false);
 
   const selProj  = projects.find(p => p.id === selProjId);
   const client   = clients.find(c => c.id === selProj?.client_id);
@@ -271,6 +289,7 @@ export default function DataRoom() {
   const saveCategory = async (category: KCategory) => {
     if (!selProjId) return;
     setSaving(true);
+
     const toSave = Object.entries(pendingFields)
       .filter(([k]) => k.startsWith(`${category}.`))
       .map(([k, v]) => ({
@@ -284,10 +303,31 @@ export default function DataRoom() {
 
     if (!toSave.length) { setSaving(false); return; }
 
+    // Detect conflicts (new value differs from existing stored value)
+    const conflicts: typeof pendingConflicts = [];
+    const catDef = DATA_REQUIREMENTS.find(c => c.category === category);
+
     for (const row of toSave) {
       const existing = knowledge[category]?.[row.field_key]?.field_value;
+      const fieldDef = catDef?.fields.find(f => f.key === row.field_key);
+
+      if (existing && existing !== row.field_value) {
+        conflicts.push({
+          field:    row.field_key,
+          label:    fieldDef?.label || row.field_key,
+          category,
+          oldVal:   existing,
+          newVal:   row.field_value,
+          source:   'Manual entry',
+          impacts:  IMPACT_MAP[category] || [],
+        });
+      }
+    }
+
+    // Save to DB
+    for (const row of toSave) {
       await supabase.from('project_knowledge').upsert(row, { onConflict: 'project_id,category,field_key' });
-      // Log change to system control
+      const existing = knowledge[category]?.[row.field_key]?.field_value;
       if (existing !== row.field_value) {
         fetch('/api/control', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -295,9 +335,9 @@ export default function DataRoom() {
             action: 'log_change', projectId: selProjId,
             payload: {
               changeType: 'data_room',
-              fieldPath: `${category}.${row.field_key}`,
-              oldValue: existing || null,
-              newValue: row.field_value,
+              fieldPath:  `${category}.${row.field_key}`,
+              oldValue:   existing || null,
+              newValue:   row.field_value,
               sourceName: 'Data Room manual entry',
             },
           }),
@@ -310,9 +350,20 @@ export default function DataRoom() {
       Object.keys(next).forEach(k => { if (k.startsWith(`${category}.`)) delete next[k]; });
       return next;
     });
+
     await loadData();
-    toast({ title: 'Saved!' });
     setSaving(false);
+
+    if (conflicts.length > 0) {
+      setPendingConflicts(conflicts);
+      setShowConflicts(true);
+      toast({
+        title: `${conflicts.length} field${conflicts.length!==1?'s':''} updated — review changes`,
+        description: 'These values replaced existing data. Check the impact summary.',
+      });
+    } else {
+      toast({ title: 'Saved!' });
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -384,9 +435,24 @@ export default function DataRoom() {
 
         // Upsert knowledge fields
         const savedFields: string[] = [];
+        const newConflicts: typeof pendingConflicts = [];
         if (extracted.extracted.knowledge_fields?.length) {
           for (const kf of extracted.extracted.knowledge_fields) {
             if (!kf.key || !kf.value) continue;
+            // Check for conflict before overwriting
+            const catKnowledge = knowledge[kf.category || 'manual'];
+            const existingField = catKnowledge?.[kf.key];
+            if (existingField?.field_value && existingField.field_value !== String(kf.value)) {
+              newConflicts.push({
+                field:   kf.key,
+                label:   kf.key.replace(/_/g,' '),
+                category: kf.category || 'manual',
+                oldVal:  existingField.field_value,
+                newVal:  String(kf.value),
+                source:  file.name,
+                impacts: IMPACT_MAP[kf.category || ''] || [],
+              });
+            }
             const { error: upsertErr } = await supabase.from('project_knowledge').upsert({
               project_id:  selProjId,
               category:    kf.category || 'manual',
@@ -419,10 +485,19 @@ export default function DataRoom() {
         }).catch(() => {});
 
         const count = savedFields.length;
-        toast({
-          title: 'Upload complete!',
-          description: `${count} data point${count !== 1 ? 's' : ''} saved to your knowledge base.${count === 0 ? ' No matching fields found — check document type.' : ''}`,
-        });
+        if (newConflicts.length > 0) {
+          setPendingConflicts(newConflicts);
+          setShowConflicts(true);
+          toast({
+            title: `Upload complete · ${newConflicts.length} data point${newConflicts.length!==1?'s':''} changed`,
+            description: 'New values differ from your existing knowledge base — review the changes.',
+          });
+        } else {
+          toast({
+            title: 'Upload complete!',
+            description: `${count} data point${count !== 1 ? 's' : ''} saved to your knowledge base.${count === 0 ? ' No matching fields found — check document type.' : ''}`,
+          });
+        }
       } else {
         toast({ title: `${file.name} saved`, description: 'Extraction returned no structured data.' });
       }
@@ -461,9 +536,24 @@ export default function DataRoom() {
       if (extracted.success && extracted.extracted) {
         await supabase.from('project_documents').update({ extracted_data: extracted.extracted }).eq('id', doc.id);
         const savedFields: string[] = [];
+        const newConflicts: typeof pendingConflicts = [];
         if (extracted.extracted.knowledge_fields?.length) {
           for (const kf of extracted.extracted.knowledge_fields) {
             if (!kf.key || !kf.value) continue;
+            // Check for conflict before overwriting
+            const catMap = knowledge[kf.category || 'manual'] || {};
+            const existingField: KField | undefined = catMap[kf.key];
+            if (existingField?.field_value && existingField.field_value !== String(kf.value)) {
+              newConflicts.push({
+                field:   kf.key,
+                label:   kf.key.replace(/_/g,' '),
+                category: kf.category || 'manual',
+                oldVal:  existingField.field_value,
+                newVal:  String(kf.value),
+                source:  doc.name,
+                impacts: IMPACT_MAP[kf.category || ''] || [],
+              });
+            }
             await supabase.from('project_knowledge').upsert({
               project_id:  selProjId,
               category:    kf.category || 'manual',
@@ -478,7 +568,13 @@ export default function DataRoom() {
           }
         }
         await loadData();
-        toast({ title: 'Re-extraction complete', description: `${savedFields.length} data points updated.` });
+        if (newConflicts.length > 0) {
+          setPendingConflicts(newConflicts);
+          setShowConflicts(true);
+          toast({ title: `${savedFields.length} fields updated · ${newConflicts.length} value changes found`, description: 'Review what changed in the conflict panel.' });
+        } else {
+          toast({ title: 'Re-extraction complete', description: `${savedFields.length} data points updated.` });
+        }
       } else {
         toast({ title: 'Re-extraction failed', description: 'No structured data returned.', variant: 'destructive' });
       }
@@ -943,6 +1039,74 @@ export default function DataRoom() {
           </>
         )}
       </div>
+
+      {/* ══ Conflict Notification Panel ══ */}
+      {showConflicts && pendingConflicts.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 pointer-events-none">
+          <div className="w-full max-w-2xl pointer-events-auto">
+            <div className="rounded-2xl border border-orange-400/40 bg-card shadow-2xl overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-orange-400/5">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-orange-400"/>
+                  <span className="font-bold text-sm">
+                    {pendingConflicts.length} data point{pendingConflicts.length!==1?'s':''} changed from existing values
+                  </span>
+                </div>
+                <button onClick={()=>setShowConflicts(false)} className="h-7 w-7 rounded-full flex items-center justify-center border border-border hover:bg-secondary/50">
+                  <X size={13}/>
+                </button>
+              </div>
+
+              {/* Conflict list */}
+              <div className="px-5 py-4 space-y-3 max-h-72 overflow-y-auto">
+                {pendingConflicts.map((c,i) => (
+                  <div key={i} className="rounded-xl border border-border bg-background/60 p-3 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="font-medium text-sm">{c.label}</span>
+                      <span className="text-xs text-muted-foreground font-mono">from {c.source}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs flex-wrap">
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-red-400/10 border border-red-400/20">
+                        <span className="text-muted-foreground">Was:</span>
+                        <span className="font-mono text-red-400 line-through">{c.oldVal}</span>
+                      </div>
+                      <ChevronRight size={12} className="text-muted-foreground shrink-0"/>
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-green-400/10 border border-green-400/20">
+                        <span className="text-muted-foreground">Now:</span>
+                        <span className="font-mono text-green-400">{c.newVal}</span>
+                      </div>
+                    </div>
+                    {c.impacts.length > 0 && (
+                      <div className="flex items-start gap-2 pt-1">
+                        <span className="text-xs text-muted-foreground shrink-0 mt-0.5">Impacts:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {c.impacts.map(imp => (
+                            <span key={imp} className="text-xs px-2 py-0.5 rounded-full bg-orange-400/10 border border-orange-400/20 text-orange-400">{imp}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="px-5 py-3 border-t border-border bg-background/40 flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-xs text-muted-foreground">
+                  The new values are already saved. Go to Playground → Canvas to refresh the sections marked above.
+                </p>
+                <button
+                  onClick={()=>setShowConflicts(false)}
+                  className="px-4 py-2 rounded-xl bg-primary/15 border border-primary/30 text-primary text-xs font-semibold hover:bg-primary/25"
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
