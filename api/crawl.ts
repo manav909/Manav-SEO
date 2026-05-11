@@ -3,29 +3,95 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { maxDuration: 300 };
 
-const SYSTEM = "You are Manav Brain, senior SEO strategist. Extract every piece of SEO-relevant data observable from the live page content provided. Only state facts visible in the content — never invent or estimate. If something cannot be determined from the content, say so explicitly.";
+const SYSTEM = "You are Manav Brain. Extract every observable SEO and content signal from the live page. Quote exact text. Only state facts visible in the content — never invent. If something is absent, say 'Not found'.";
 
-const VALID_FIELDS_MAP: Record<string, string[]> = {
-  analytics:  ["organic_sessions_monthly","organic_sessions_baseline_date","top_landing_pages","bounce_rate","avg_session_duration","conversions_monthly","gsc_total_impressions","gsc_total_clicks","gsc_avg_position"],
-  technical:  ["pages_indexed","pages_submitted","crawl_errors","broken_links","duplicate_content","schema_markup","sitemap_url","robots_txt","canonical_issues"],
-  competitor: ["competitor_1","competitor_1_dr","competitor_2","competitor_2_dr","competitor_3","our_domain_rating","our_referring_domains","content_gap_keywords"],
-  goal:       ["target_keywords"],
-  cms:        ["cms","cms_version","seo_plugin","pagespeed_mobile","pagespeed_desktop"],
-};
-const validKeySet = new Set(Object.values(VALID_FIELDS_MAP).flat());
+const VALID_KEYS = new Set([
+  "organic_sessions_monthly","organic_sessions_baseline_date","top_landing_pages",
+  "bounce_rate","avg_session_duration","conversions_monthly","gsc_total_impressions",
+  "gsc_total_clicks","gsc_avg_position","pages_indexed","pages_submitted",
+  "crawl_errors","broken_links","duplicate_content","schema_markup","sitemap_url",
+  "robots_txt","canonical_issues","competitor_1","competitor_1_dr","competitor_2",
+  "competitor_2_dr","competitor_3","our_domain_rating","our_referring_domains",
+  "content_gap_keywords","target_keywords","cms","cms_version","seo_plugin",
+  "pagespeed_mobile","pagespeed_desktop",
+]);
 
-async function fetchUrl(url: string, timeoutMs = 12000): Promise<{ content: string; status: number; error?: string }> {
+async function fetchUrl(url: string, ms = 12000): Promise<{ content: string; status: number; error?: string }> {
   try {
     const r = await fetch(`https://r.jina.ai/${url}`, {
       headers: { Accept: "text/plain", "X-Return-Format": "markdown", "X-Timeout": "10" },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(ms),
     });
     if (!r.ok) return { content: "", status: r.status, error: `HTTP ${r.status}` };
-    return { content: (await r.text()).slice(0, 12000), status: 200 };
-  } catch (err: any) {
-    return { content: "", status: 0, error: err.message };
+    return { content: (await r.text()).slice(0, 14000), status: 200 };
+  } catch (e: any) {
+    return { content: "", status: 0, error: e.message };
   }
 }
+
+// ── Deep per-page extraction schema — everything Manav Brain needs ──
+const PAGE_SCHEMA = {
+  // On-page fundamentals
+  title_tag: "exact title tag text",
+  title_length: 0,
+  title_issues: "Too long|Too short|Missing keyword|Duplicate|OK",
+  meta_description: "exact meta description text",
+  meta_desc_length: 0,
+  meta_desc_issues: "Missing|Too long|Not compelling|OK",
+  h1: "exact H1 text or 'Not found'",
+  h1_issues: "Missing|Multiple|Too generic|OK",
+  h2s: ["exact H2 texts up to 6"],
+  h3s: ["exact H3 texts up to 4"],
+  canonical_url: "canonical href or 'Self-referencing'|'Missing'|'Points elsewhere'",
+  // Content signals
+  word_count: 0,
+  content_quality: "high|medium|low",
+  reading_level: "technical|intermediate|beginner — based on vocabulary",
+  content_type: "landing_page|blog|product|service|home|about|other",
+  primary_topic: "main topic of this page in 5 words",
+  keyword_presence: ["keywords found in H1/H2/first 200 words"],
+  lsi_terms: ["related terms and entities present in content"],
+  faqs_detected: ["FAQ questions visible on page — exact text"],
+  cta_elements: ["CTAs visible: exact button/link text"],
+  brand_mentions: ["brand names mentioned beyond site owner"],
+  trust_signals: ["testimonials|certifications|awards|social proof — what is present"],
+  // Technical signals
+  schema_types: ["all JSON-LD @type values found"],
+  schema_details: { "SchemaType": "brief description of what the schema covers" },
+  internal_links: 0,
+  external_links: 0,
+  images_total: 0,
+  images_no_alt: 0,
+  images_with_alt: 0,
+  has_sitemap_link: false,
+  has_robots_meta: "index,follow|noindex|not visible",
+  has_og_tags: false,
+  has_twitter_card: false,
+  structured_data_quality: "comprehensive|partial|minimal|none",
+  // GEO / AI visibility signals
+  geo_readiness: {
+    has_direct_answer_format: false,
+    has_faq_schema: false,
+    has_howto_schema: false,
+    has_entity_definitions: false,
+    answer_format_quality: "high|medium|low|none — how well content answers questions directly",
+    perplexity_citation_likelihood: "high|medium|low — based on content structure",
+  },
+  // Page speed observable signals
+  speed_signals: ["lazy loading|minified CSS|minified JS|large unoptimised images|render blocking — what is observable"],
+  mobile_signals: ["responsive meta viewport|mobile-friendly layout signals — what is observable"],
+  // Competitive intelligence from page
+  competitor_features: ["features/sections this page has that competitor pages typically lack"],
+  content_gaps_vs_page: ["topics mentioned but not covered in depth"],
+  // Issues and opportunities
+  issues: [{ type: "issue_type", severity: "critical|high|medium|low", detail: "specific text observed", fix: "exact fix" }],
+  opportunities: [{ action: "specific actionable step", impact: "expected SEO/conversion impact", effort: "low|medium|high", evidence: "what on the page indicates this" }],
+  // Confidence assessment
+  data_confidence: "high|medium|low",
+  confidence_reason: "why confidence is high/medium/low for this page",
+  // Knowledge fields mappable to Data Room
+  knowledge_fields: [{ category: "analytics|technical|competitor|goal|cms", key: "EXACT_VALID_KEY", value: "exact value" }],
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -34,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ══ CRAWL MULTIPLE URLS ══════════════════════════════════════════════
   if (action === "crawl_urls") {
-    const { urls, projectContext = "" } = req.body;
+    const { urls, projectContext = "", taskHints = [] } = req.body;
     if (!Array.isArray(urls) || !urls.length) return res.status(400).json({ error: "No URLs provided" });
 
     const urlList = urls.slice(0, 10).map((u: string) =>
@@ -50,44 +116,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         continue;
       }
 
+      // Build task-focused extraction hints if canvas cards were passed
+      const taskContext = (taskHints as string[]).length > 0
+        ? `\nFocus especially on signals relevant to these canvas tasks:\n${(taskHints as string[]).slice(0, 5).join("\n")}`
+        : "";
+
       const prompt = [
-        `Analyse this live page for all observable SEO data.`,
+        `Deep SEO analysis of this live page. Extract every observable signal.`,
         `URL: ${url}`,
         `Project context: ${projectContext}`,
+        taskContext,
         "",
-        "PAGE CONTENT (fetched live):",
+        "PAGE CONTENT (fetched live now):",
         fetched.content,
         "",
-        "Extract everything observable. Quote exact text you see.",
+        "Extract everything observable. Quote exact text — do not paraphrase titles, H1s, CTAs.",
+        "For missing elements, say exactly 'Not found' or 'Not visible'.",
         "",
         "Return ONLY valid JSON:",
-        JSON.stringify({
-          title_tag: "exact title tag text or 'Not visible'",
-          title_length: 0,
-          meta_description: "exact meta description or 'Not visible'",
-          meta_desc_length: 0,
-          h1: "exact H1 text or 'Not found'",
-          h2s: ["up to 5 H2 texts"],
-          canonical_url: "canonical href or 'Not found'",
-          schema_types: ["list of @type values found"],
-          internal_links: 0,
-          external_links: 0,
-          word_count: 0,
-          images_total: 0,
-          images_no_alt: 0,
-          content_quality: "high|medium|low",
-          keyword_presence: ["keywords in headings/first paragraph"],
-          issues: [{ type: "issue_type", severity: "critical|high|medium|low", detail: "specific observation" }],
-          opportunities: [{ action: "specific action", impact: "expected SEO impact", effort: "low|medium|high" }],
-          knowledge_fields: [{ category: "analytics|technical|competitor|goal|cms", key: "MUST_BE_VALID_KEY", value: "exact value" }],
-        }),
+        JSON.stringify(PAGE_SCHEMA),
         "",
-        "knowledge_fields valid keys: schema_markup, robots_txt, sitemap_url, canonical_issues, cms, seo_plugin, pagespeed_mobile, pagespeed_desktop, target_keywords",
+        "knowledge_fields valid keys only:",
+        "technical: schema_markup, robots_txt, sitemap_url, canonical_issues, crawl_errors, broken_links, duplicate_content",
+        "cms: cms, seo_plugin, pagespeed_mobile, pagespeed_desktop",
+        "analytics: top_landing_pages",
+        "goal: target_keywords",
       ].join("\n");
 
       try {
         const msg = await anthropic.messages.create({
-          model: "claude-sonnet-4-5", max_tokens: 1500,
+          model: "claude-sonnet-4-5", max_tokens: 2500,
           system: SYSTEM,
           messages: [{ role: "user", content: prompt }],
         });
@@ -97,7 +155,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch {}
         if (Array.isArray(parsed.knowledge_fields)) {
           parsed.knowledge_fields = parsed.knowledge_fields.filter(
-            (kf: any) => kf.key && validKeySet.has(kf.key) && kf.value && String(kf.value).trim()
+            (kf: any) => kf.key && VALID_KEYS.has(kf.key) && kf.value && String(kf.value).trim()
           );
         } else {
           parsed.knowledge_fields = [];
@@ -118,6 +176,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       success: true,
       urls_crawled: results.length,
+      crawled_at: new Date().toISOString(),
       results,
       aggregated_knowledge: Object.values(aggregated),
       cross_page_issues: results.flatMap(r => (r.page_analysis?.issues || []).map((i: any) => ({ ...i, url: r.url }))),
@@ -127,111 +186,136 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ══ COMPARE + MANAV ANALYSIS ═════════════════════════════════════════
   if (action === "compare_analysis") {
-    const { crawlResults, projectContext = "", existingBlocks = [] } = req.body;
-
-    if (!crawlResults?.results?.length) {
-      return res.status(400).json({ error: "No crawl results to analyse" });
-    }
+    const { crawlResults, projectContext = "", existingBlocks = [], taskHints = [] } = req.body;
+    if (!crawlResults?.results?.length) return res.status(400).json({ error: "No crawl results to analyse" });
 
     const results = crawlResults.results as any[];
 
-    // Build compact per-page summary for the prompt
     const pageSummaries = results.map((r: any) => {
       const p = r.page_analysis;
       if (!p) return `URL: ${r.url}\nStatus: ${r.error || "failed"}\n`;
       return [
         `URL: ${r.url}`,
-        `Title: ${p.title_tag || "missing"} (${p.title_length || 0} chars)`,
-        `H1: ${p.h1 || "missing"}`,
-        `Meta: ${p.meta_description ? `${p.meta_desc_length || 0} chars` : "missing"}`,
-        `Schema: ${p.schema_types?.join(", ") || "none"}`,
-        `Words: ~${p.word_count || 0} | Internal links: ${p.internal_links || 0}`,
-        `Content quality: ${p.content_quality || "unknown"}`,
-        `Issues (${p.issues?.length || 0}): ${(p.issues || []).map((i: any) => `[${i.severity}] ${i.detail || i.type}`).join(" | ") || "none"}`,
-        `Opportunities (${p.opportunities?.length || 0}): ${(p.opportunities || []).map((o: any) => o.action).join(" | ") || "none"}`,
-        `Keywords present: ${p.keyword_presence?.join(", ") || "none"}`,
+        `Title: "${p.title_tag}" (${p.title_length}ch) — ${p.title_issues || ""}`,
+        `H1: "${p.h1}" — ${p.h1_issues || ""}`,
+        `Meta: ${p.meta_description ? `"${p.meta_description}" (${p.meta_desc_length}ch)` : "MISSING"}`,
+        `H2s: ${p.h2s?.join(" | ") || "none"}`,
+        `Schema: ${p.schema_types?.join(", ") || "none"} | Quality: ${p.structured_data_quality || "unknown"}`,
+        `FAQs: ${p.faqs_detected?.length ? p.faqs_detected.slice(0,2).join(" | ") : "none detected"}`,
+        `CTAs: ${p.cta_elements?.join(" | ") || "none"}`,
+        `GEO readiness: ${p.geo_readiness?.answer_format_quality || "?"} | Perplexity likelihood: ${p.geo_readiness?.perplexity_citation_likelihood || "?"}`,
+        `Words: ${p.word_count} | Quality: ${p.content_quality} | Type: ${p.content_type}`,
+        `Keywords: ${p.keyword_presence?.join(", ") || "none"}`,
+        `Issues: ${p.issues?.map((i: any) => `[${i.severity}] ${i.detail}`).join(" | ") || "none"}`,
+        `Opportunities: ${p.opportunities?.map((o: any) => o.action).join(" | ") || "none"}`,
+        `Confidence: ${p.data_confidence} — ${p.confidence_reason}`,
       ].join("\n");
     }).join("\n\n---\n\n");
 
-    // Existing canvas blocks for merge candidate detection
     const existingTitles = (existingBlocks as any[])
-      .map((b: any) => `[${b.type}|W${b.week}|${b.priority}] "${b.title}" — ${(b.content || "").slice(0, 80)}`)
-      .slice(0, 20)
-      .join("\n");
+      .map((b: any) => `[${b.type}|W${b.week}|${b.priority}|conf:${b.confidence||"?"}%] "${b.title}" — ${(b.content || "").slice(0, 80)}`)
+      .slice(0, 20).join("\n");
+
+    const taskContext = (taskHints as string[]).length > 0
+      ? `\nACTIVE CANVAS TASKS NEEDING DATA:\n${(taskHints as string[]).slice(0, 8).join("\n")}\nFor each card proposal, assess how the crawled data boosts its execution confidence.`
+      : "";
 
     const prompt = [
-      "You are Manav Brain. Perform a comprehensive multi-page SEO comparison analysis.",
+      "You are Manav Brain. Perform a comprehensive multi-page SEO comparison. Be specific, cite exact text.",
       `Project: ${projectContext}`,
+      taskContext,
       "",
-      "CRAWLED PAGES DATA:",
+      "CRAWLED PAGE DATA:",
       pageSummaries,
       "",
-      existingTitles ? `EXISTING CANVAS CARDS (for merge detection):\n${existingTitles}` : "",
+      existingTitles ? `EXISTING CANVAS CARDS:\n${existingTitles}` : "",
       "",
-      "Produce a structured analysis. Return ONLY valid JSON with these exact keys:",
+      "Return ONLY valid JSON:",
       JSON.stringify({
-        executive_summary: "2-3 sentence honest assessment of overall SEO health across all pages",
-        overall_score: "0-100 based on what you observed",
+        executive_summary: "2-3 sentences: honest SEO health assessment with specific observations",
+        overall_score: 0,
+        confidence_data_available: "high|medium|low — how much data we have to work with",
         comparison_matrix: {
-          headers: ["Signal", "...one column per URL (short label)"],
+          headers: ["Signal", "...URL labels"],
           rows: [
-            { signal: "Title tag", values: ["status per page: OK/Missing/Too long/etc"], verdict: "best|worst|mixed" },
-            { signal: "H1 present", values: [], verdict: "best|worst|mixed" },
+            { signal: "Title tag", values: ["status per page"], verdict: "best|worst|mixed" },
+            { signal: "H1", values: [], verdict: "" },
             { signal: "Meta description", values: [], verdict: "" },
             { signal: "Schema markup", values: [], verdict: "" },
+            { signal: "FAQ / Direct answers", values: [], verdict: "" },
+            { signal: "GEO readiness", values: [], verdict: "" },
             { signal: "Word count", values: [], verdict: "" },
-            { signal: "Internal linking", values: [], verdict: "" },
-            { signal: "Content quality", values: [], verdict: "" },
+            { signal: "CTAs present", values: [], verdict: "" },
+            { signal: "Internal links", values: [], verdict: "" },
+            { signal: "Images alt text", values: [], verdict: "" },
           ],
-          note: "Add more rows for any other signals found. Values array length must match headers length minus 1.",
+          note: "Add rows for all other signals found. Values array length must equal number of URLs.",
         },
         errors: [
-          { severity: "critical|high|medium|low", issue: "issue description", affected_urls: ["url1"], fix: "exact fix", quick_fix: true },
+          { severity: "critical|high|medium|low", issue: "issue", affected_urls: ["url"], fix: "exact fix", quick_fix: true }
         ],
         opportunities: [
-          { rank: 1, title: "opportunity title", description: "what + why", affected_urls: ["url1"], effort: "low|medium|high", impact: "high|medium|low", data_basis: "cite what you saw" },
+          { rank: 1, title: "title", description: "what+why", affected_urls: ["url"], effort: "low|medium|high", impact: "high|medium|low", data_basis: "cite exact observation" }
         ],
         competitive_gaps: [
-          { gap: "what competitors likely have that these pages don't", evidence: "what signals suggest this", action: "specific step to close it", priority: "high|medium|low" },
+          { gap: "what's missing", evidence: "what signals show this", action: "step to close gap", priority: "high|medium|low" }
         ],
         advantages: [
-          { advantage: "what these pages do well", urls: ["url1"], how_to_leverage: "specific suggestion" },
+          { advantage: "what's done well", urls: ["url"], how_to_leverage: "specific suggestion" }
+        ],
+        geo_analysis: {
+          overall_geo_score: "0-100",
+          pages_ready_for_ai_citation: ["url"],
+          faq_opportunities: ["page/topic that should have FAQ schema"],
+          direct_answer_gaps: ["questions these pages should answer directly but don't"],
+          entity_coverage: "assessment of brand entity presence",
+          recommendations: ["specific GEO improvement in priority order"],
+        },
+        confidence_boosters: [
+          {
+            card_title: "existing card title this data helps",
+            confidence_increase: "from X% to Y%",
+            new_data_available: "specific data now available from crawl",
+            action: "how to use this data to improve the card",
+          }
         ],
         card_proposals: [
           {
-            title: "Short actionable card title max 8 words",
+            title: "Short title max 8 words",
             type: "technical|content|geo|quick-win|competitive|insight",
             week: 1,
             priority: "high|medium|low",
-            content: "Full actionable detail. Must cite specific page data.",
-            data_basis: "exact observation from crawl (e.g. 'Missing H1 on /page', 'Schema absent on all 3 pages')",
-            affected_urls: ["url1"],
-            merge_candidate: "exact title of existing canvas card if this overlaps, or null",
-            merge_reason: "why it overlaps and what scope to add, or null",
-          },
+            content: "Full actionable detail citing specific page observations",
+            data_basis: "exact crawl observation: quoted text from title/H1/etc",
+            affected_urls: ["url"],
+            confidence: 0,
+            confidence_reason: "why this confidence level based on data available",
+            merge_candidate: "exact title of existing card if overlap, or null",
+            merge_reason: "what scope to add, or null",
+          }
         ],
-        data_gaps: ["list of things that couldn't be determined from live page content alone"],
+        data_gaps: ["what couldn't be determined from live pages alone"],
+        next_crawl_suggestions: ["specific URLs or page types to crawl next to fill gaps"],
       }),
       "",
       "RULES:",
-      "- comparison_matrix.values arrays must have exactly the same length as headers minus 1",
-      "- card_proposals: only create if there is direct evidence from the crawl data",
-      "- merge_candidate must be the EXACT title string from existing canvas cards, or null",
-      "- opportunities: rank by ROI (impact/effort ratio), highest first",
-      "- competitive_gaps: infer from missing elements competitors typically have",
+      "- comparison_matrix values arrays must have exactly the same length as URLs crawled",
+      "- card_proposals confidence must be 0-100 based on evidence quality",
+      "- quote exact page text as data_basis — never invent",
+      "- confidence_boosters: for every existing card where this crawl data improves execution confidence",
+      "- geo_analysis: required even if just noting gaps",
     ].filter(Boolean).join("\n");
 
     try {
       const msg = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 4000,
-        system: "You are Manav Brain, senior SEO strategist. Return only valid JSON. Every finding must cite specific data from the page content provided.",
+        model: "claude-sonnet-4-5", max_tokens: 5000,
+        system: "You are Manav Brain. Return only valid JSON. Quote exact text from page content. Never invent.",
         messages: [{ role: "user", content: prompt }],
       });
       const raw = msg.content[0].type === "text" ? msg.content[0].text : "{}";
       const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
       let analysis: any = {};
       try { analysis = JSON.parse(raw.slice(f, l + 1)); } catch {
-        // Try partial recovery
         try { analysis = JSON.parse(raw.slice(f) + "}"); } catch {}
       }
       return res.status(200).json({ success: true, analysis });
@@ -240,16 +324,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // ══ FETCH SINGLE URL PREVIEW ═════════════════════════════════════════
+  // ══ PREVIEW URL ══════════════════════════════════════════════════════
   if (action === "preview_url") {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: "URL required" });
     const clean = url.startsWith("http") ? url : `https://${url}`;
-    const fetched = await fetchUrl(clean, 8000);
-    return res.status(200).json({
-      success: fetched.status === 200, status: fetched.status,
-      error: fetched.error, preview: fetched.content.slice(0, 300), chars: fetched.content.length,
-    });
+    const f = await fetchUrl(clean, 8000);
+    return res.status(200).json({ success: f.status === 200, status: f.status, error: f.error, preview: f.content.slice(0, 300), chars: f.content.length });
   }
 
   return res.status(400).json({ error: "Unknown action" });
