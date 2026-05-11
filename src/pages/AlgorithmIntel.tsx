@@ -471,37 +471,46 @@ export default function AlgorithmIntel() {
   // Send approved audit cards to the Playground canvas
   // ─────────────────────────────────────────────────────────────────
   const sendAuditCards = async () => {
-    const approved = auditCards.filter((_, i) => auditCardApprovals[i]);
-    if (!approved.length) return;
     if (!selProjId) {
       toast({ title: 'Select a project first', variant: 'destructive' });
       return;
     }
+
+    // Build list of approved cards with their original indices preserved.
+    // Hard-exclude any card whose overlap status is 'duplicate' — they must
+    // never be created regardless of approval state.
+    const approvedWithIdx = auditCards
+      .map((card, i) => ({ card, i }))
+      .filter(({ i }) => auditCardApprovals[i] && cardOverlap[i]?.status !== 'duplicate');
+
+    if (!approvedWithIdx.length) {
+      toast({ title: 'Nothing to send', description: 'All selected cards are duplicates or already exist on the canvas.' });
+      return;
+    }
+
     setSendingCards(true);
     try {
       const { data: projData } = await supabase
         .from('projects').select('playground_canvas').eq('id', selProjId).single();
       const existing = (projData?.playground_canvas || []) as any[];
 
-      const uid = () => Math.random().toString(36).slice(2, 10);
-      const normT = (t: string) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+      const uid   = () => Math.random().toString(36).slice(2, 10);
+      const normT = (t: string) =>
+        t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
       const existingTitles = new Set(existing.map((b: any) => normT(b.title || '')));
 
-      // Hard-block duplicates. For extend cards, append the scope suggestion to content.
+      // Build the canvas blocks — duplicates already excluded above.
+      // Extend cards append a scope suggestion note to their content.
       const newCards = approvedWithIdx
-        .filter(({ card, i }) => {
-          const ov = cardOverlap[i];
-          if (ov?.status === 'duplicate') return false; // BLOCKED — existing card covers this
-          return !existingTitles.has(normT(card.title));
-        })
+        .filter(({ card }) => !existingTitles.has(normT(card.title)))
         .map(({ card, i }) => {
-          const ov = cardOverlap[i];
+          const ov        = cardOverlap[i];
           const scopeNote = ov?.status === 'extend' && ov.scope_suggestion
             ? `\n\nScope expansion (extends: "${ov.matched_card_title}"): ${ov.scope_suggestion}`
             : '';
           return {
             id:       uid(),
-            type:     card.type || 'technical',
+            type:     card.type     || 'technical',
             title:    card.title.slice(0, 70),
             content:  `${card.content}\n\nAlgorithm: ${card.source_algorithm || 'Algorithm audit'}${scopeNote}`,
             priority: card.priority || 'medium',
@@ -509,13 +518,17 @@ export default function AlgorithmIntel() {
             placed:   true,
             status:   'todo',
             color:    '#94a3b8',
-            tags:     ['from-algorithm-audit', '✓ hard-data', ...(ov?.status === 'extend' ? ['scope-expansion'] : [])],
-            source:   `Algorithm Audit — ${auditUrl.replace(/https?:\/\//, '').slice(0, 40)}`,
+            tags:     [
+              'from-algorithm-audit',
+              '✓ hard-data',
+              ...(ov?.status === 'extend' ? ['scope-expansion'] : []),
+            ],
+            source: `Algorithm Audit — ${auditUrl.replace(/https?:\/\//, '').slice(0, 40)}`,
           };
         });
 
       if (!newCards.length) {
-        toast({ title: 'No new cards — all already on canvas' });
+        toast({ title: 'No new cards', description: 'All approved cards already exist on the canvas.' });
         setSendingCards(false);
         return;
       }
@@ -524,13 +537,17 @@ export default function AlgorithmIntel() {
         playground_canvas: [...existing, ...newCards],
       }).eq('id', selProjId);
 
-      toast({ title: `${newCards.length} card${newCards.length !== 1 ? 's' : ''} sent to Canvas`, description: 'Open the Canvas tab to see them.' });
+      toast({
+        title: `${newCards.length} card${newCards.length !== 1 ? 's' : ''} sent to Canvas`,
+        description: 'Open the Canvas tab to see them.',
+      });
       setAuditCardApprovals({});
     } catch (e: any) {
       toast({ title: 'Error sending cards', description: e.message, variant: 'destructive' });
     }
     setSendingCards(false);
   };
+
 
   // ─────────────────────────────────────────────────────────────────
   // Crawl a URL and return its page analysis object.
