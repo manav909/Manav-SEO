@@ -465,9 +465,19 @@ export default function DataRoom() {
   // Comparison pair selection
   const [selectedOwnUrl,  setSelectedOwnUrl]   = useState('');
   const [selectedCompUrl, setSelectedCompUrl]  = useState('');
+  // Comparison criteria state
+  const [compareCriteria, setCompareCriteria] = useState<string[]>([
+    'title_and_meta', 'heading_structure', 'content_quality', 'schema_markup',
+    'internal_linking', 'geo_readiness', 'technical_issues', 'cta_effectiveness',
+  ]);
+  const [customCriterion, setCustomCriterion] = useState('');
+  // Live URL management: crawledUrls tracks all results, activeCrawlUrls is the current selection
+  const [activeCrawlUrls,   setActiveCrawlUrls]   = useState<string[]>([]);  // subset used for comparison
+  const [addingUrl,         setAddingUrl]          = useState('');            // new URL input
+  const [recrawlingUrl,     setRecrawlingUrl]      = useState('');            // url being re-crawled
   // Card proposal approval state: cardIdx → 'pending'|'approved'|'merged'|'rejected'
   const [cardApprovals,     setCardApprovals]      = useState<Record<number,string>>({});
-  const [pendingCards,      setPendingCards]       = useState<any[]>([]);  // approved cards waiting to go to canvas
+  const [pendingCards,      setPendingCards]       = useState<any[]>([]);
   // Conflict notifications: fields where new value differs from existing stored value
   const [pendingConflicts, setPendingConflicts] = useState<{
     field: string; label: string; category: string;
@@ -845,6 +855,9 @@ export default function DataRoom() {
       const data = await safeJson(res);
       if (data.success) {
         setCrawlResults(data);
+        // Auto-populate activeCrawlUrls with all successfully crawled URLs
+        const successful = (data.results || []).filter((r:any) => r.page_analysis).map((r:any) => r.url);
+        setActiveCrawlUrls(successful.length > 0 ? successful : (data.results || []).map((r:any) => r.url));
         toast({
           title:       `${data.urls_crawled} page${data.urls_crawled !== 1 ? 's' : ''} crawled`,
           description: `${data.aggregated_knowledge?.length || 0} data points extracted. Review and save to knowledge base.`,
@@ -936,6 +949,60 @@ export default function DataRoom() {
   };
 
   // ══ Run Manav Brain comparison analysis on crawl results ══
+  // ── Add a new URL to the comparison without re-crawling everything ──
+  const addSingleUrl = async (url: string) => {
+    if (!url.trim() || !selProjId) return;
+    const clean = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
+
+    // Check it isn't already in results
+    if (crawlResults?.results?.some((r: any) => r.url === clean)) {
+      setActiveCrawlUrls(prev => prev.includes(clean) ? prev : [...prev, clean]);
+      setAddingUrl('');
+      toast({ title: 'URL already crawled', description: 'Added to active comparison.' });
+      return;
+    }
+
+    setRecrawlingUrl(clean);
+    try {
+      const { data: projData } = await supabase.from('projects').select('playground_canvas').eq('id', selProjId).single();
+      const hints = (projData?.playground_canvas || [])
+        .filter((b: any) => b.placed && b.status !== 'done').slice(0, 6)
+        .map((b: any) => `[${b.type}] "${b.title}"`);
+
+      const res  = await fetch('/api/crawl', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'crawl_urls', urls: [clean],
+          projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
+          taskHints: hints,
+        }),
+      });
+      const data = await safeJson(res);
+      if (data.success && data.results?.[0]) {
+        const newResult = data.results[0];
+        // Merge into existing crawlResults
+        setCrawlResults((prev: any) => {
+          if (!prev) return data;
+          const existingResults = (prev.results || []).filter((r: any) => r.url !== clean);
+          const merged = { ...prev, results: [...existingResults, newResult], urls_crawled: existingResults.length + 1 };
+          // Update aggregated knowledge
+          const agg = { ...Object.fromEntries((prev.aggregated_knowledge || []).map((k: any) => [k.key, k])) };
+          for (const kf of (newResult.knowledge_fields || [])) agg[kf.key] = { ...kf, source_url: clean };
+          merged.aggregated_knowledge = Object.values(agg);
+          merged.cross_page_issues = merged.results.flatMap((r: any) => (r.page_analysis?.issues || []).map((i: any) => ({ ...i, url: r.url })));
+          merged.cross_page_opportunities = merged.results.flatMap((r: any) => (r.page_analysis?.opportunities || []).map((o: any) => ({ ...o, url: r.url })));
+          return merged;
+        });
+        setActiveCrawlUrls(prev => [...prev.filter(u => u !== clean), clean]);
+        toast({ title: `${clean.replace(/https?:\/\//, '').slice(0, 40)} crawled`, description: newResult.page_analysis ? 'Analysis complete' : newResult.error });
+      }
+    } catch (e: any) {
+      toast({ title: 'Could not crawl URL', description: e.message, variant: 'destructive' });
+    }
+    setRecrawlingUrl('');
+    setAddingUrl('');
+  };
+
   const runCompareAnalysis = async () => {
     if (!crawlResults || !selProjId) return;
     setCompareRunning(true);
@@ -955,9 +1022,16 @@ export default function DataRoom() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action:         'compare_analysis',
-          crawlResults,
+          // Only send the active URL subset for comparison
+          crawlResults: {
+            ...crawlResults,
+            results: (crawlResults.results || []).filter((r: any) =>
+              activeCrawlUrls.length === 0 || activeCrawlUrls.includes(r.url)
+            ),
+          },
           projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
           existingBlocks,
+          compareCriteria,
         }),
       });
       const data = await safeJson(res);
@@ -1574,532 +1648,311 @@ Evidence: ${c.data_basis}` : ''}`,
                 </div>
 
                 {crawlResults && (() => {
-                  // ── Classify each URL as own or competitor ──
-                  const ownDomain = (selProj?.url||'').replace(/https?:\/\//,'').replace(/\/+$/,'').split('/')[0];
+                  const ownDomain  = (selProj?.url||'').replace(/https?:\/\//,'').replace(/\/+$/,'').split('/')[0];
                   const compDomains = ['competitor_1','competitor_2','competitor_3']
-                    .map(k => getField('competitor',k))
-                    .filter(Boolean)
-                    .map(c => c.replace(/https?:\/\//,'').replace(/\/+$/,'').split('/')[0]);
+                    .map(k=>getField('competitor',k)).filter(Boolean)
+                    .map(c=>c.replace(/https?:\/\//,'').replace(/\/+$/,'').split('/')[0]);
+                  const isOwn  = (url:string) => !!ownDomain && url.includes(ownDomain);
+                  const isComp = (url:string) => compDomains.some(d=>url.includes(d));
 
-                  const isOwn  = (url: string) => ownDomain && url.includes(ownDomain);
-                  const isComp = (url: string) => compDomains.some(d => url.includes(d));
+                  // Full results pool + active subset for comparison
+                  const allResults    = crawlResults.results || [];
+                  const activeResults = activeCrawlUrls.length > 0
+                    ? allResults.filter((r:any) => activeCrawlUrls.includes(r.url))
+                    : allResults;
 
-                  const ownResults  = crawlResults.results?.filter((r:any) => isOwn(r.url))  || [];
-                  const compResults = crawlResults.results?.filter((r:any) => isComp(r.url)) || [];
-                  const otherResults= crawlResults.results?.filter((r:any) => !isOwn(r.url) && !isComp(r.url)) || [];
+                  const CRITERIA_LIBRARY = [
+                    { id:'title_and_meta',     label:'Title & Meta',          desc:'Title tag quality, length, keyword presence; meta description completeness' },
+                    { id:'heading_structure',  label:'Heading Structure',     desc:'H1 presence and quality, H2/H3 hierarchy, topic coverage through headings' },
+                    { id:'content_quality',    label:'Content Quality',       desc:'Word count, reading level, content depth, E-E-A-T signals, trust elements' },
+                    { id:'schema_markup',      label:'Schema / Structured Data', desc:'JSON-LD types present, schema completeness, FAQ/HowTo/Article schema' },
+                    { id:'internal_linking',   label:'Internal Linking',      desc:'Internal link count, anchor text quality, crawlability signals' },
+                    { id:'geo_readiness',      label:'GEO & AI Visibility',   desc:'FAQ sections, direct answer format, Perplexity citation likelihood, entity coverage' },
+                    { id:'technical_issues',   label:'Technical Issues',      desc:'Canonical tags, robots meta, OG tags, image alt attributes, broken signals' },
+                    { id:'cta_effectiveness',  label:'CTAs & Conversion',     desc:'CTA presence, button text quality, conversion element placement' },
+                    { id:'keyword_targeting',  label:'Keyword Targeting',     desc:'Primary keyword in title/H1/meta, LSI term coverage, semantic relevance' },
+                    { id:'competitive_gaps',   label:'Competitive Gaps',      desc:'What competitors have that your pages lack; features, content angles, schema' },
+                    { id:'content_freshness',  label:'Content Signals',       desc:'Recency signals, date markup, update frequency indicators' },
+                    { id:'page_speed_signals', label:'Page Speed Signals',    desc:'Observable performance signals: lazy loading, image optimisation, render-blocking' },
+                  ];
 
                   return (
-                    <div className="space-y-5">
+                    <div className="space-y-4">
 
-                      {/* ── Top bar ── */}
+                      {/* ── Top summary bar ── */}
                       <div className="flex items-center justify-between flex-wrap gap-3 rounded-2xl border border-border bg-card/60 px-5 py-4">
                         <div>
                           <div className="font-bold text-sm flex items-center gap-3">
-                            {crawlResults.urls_crawled} pages crawled
-                            <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-blue-400/10 text-blue-400 border border-blue-400/20">{ownResults.length} own</span>
-                            {compResults.length>0 && <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-orange-400/10 text-orange-400 border border-orange-400/20">{compResults.length} competitor</span>}
-                            {otherResults.length>0 && <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-border/60 text-muted-foreground">{otherResults.length} other</span>}
+                            {allResults.length} pages crawled
+                            <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-blue-400/10 text-blue-400 border border-blue-400/20">
+                              {allResults.filter((r:any)=>isOwn(r.url)).length} own
+                            </span>
+                            {allResults.filter((r:any)=>isComp(r.url)).length>0 && (
+                              <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-orange-400/10 text-orange-400 border border-orange-400/20">
+                                {allResults.filter((r:any)=>isComp(r.url)).length} competitor
+                              </span>
+                            )}
+                            {activeCrawlUrls.length > 0 && activeCrawlUrls.length < allResults.length && (
+                              <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                                {activeCrawlUrls.length} in comparison
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {crawlResults.cross_page_issues?.length||0} issues · {crawlResults.cross_page_opportunities?.length||0} opportunities
-                            {crawlResults.crawled_at && <span className="ml-2">· crawled {crawlResults.crawled_at?.split('T')[0]||''}</span>}
+                            {crawlResults.crawled_at && <span className="ml-2">· {crawlResults.crawled_at.split('T')[0]}</span>}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                           {!crawlSaved && crawlResults.aggregated_knowledge?.length>0 && (
                             <button onClick={saveCrawlToKnowledge} disabled={crawlSaving}
-                              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground hover:border-border/80 disabled:opacity-50">
-                              {crawlSaving?<><Loader2 size={11} className="animate-spin"/>Saving…</>:<><Save size={11}/>Save {crawlResults.aggregated_knowledge.length} fields</>}
+                              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">
+                              {crawlSaving?<><Loader2 size={11} className="animate-spin"/>Saving…</>:<><Save size={11}/>Save to Data Room</>}
                             </button>
                           )}
                           {crawlSaved && <div className="flex items-center gap-1 text-green-400 text-xs font-medium"><CheckCircle size={11}/>Saved</div>}
-                          <button onClick={runCompareAnalysis} disabled={compareRunning}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-primary text-white font-bold text-sm hover:opacity-90 disabled:opacity-50">
-                            {compareRunning?<><Loader2 size={13} className="animate-spin"/>Analysing…</>:<><Brain size={13}/>Ask Manav Brain</>}
-                          </button>
                         </div>
                       </div>
 
-                      {/* ── Main tab bar ── */}
+                      {/* ══ CRITERIA SELECTOR + URL MANAGER (always visible) ══ */}
+                      <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                        <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border">
+
+                          {/* LEFT: Comparison criteria */}
+                          <div className="p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-semibold text-sm">Comparison criteria</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">{compareCriteria.length} selected — Manav Brain will focus on these</div>
+                              </div>
+                              <div className="flex gap-1">
+                                <button onClick={()=>setCompareCriteria(CRITERIA_LIBRARY.map(c=>c.id))}
+                                  className="text-xs px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground">All</button>
+                                <button onClick={()=>setCompareCriteria(['title_and_meta','schema_markup','geo_readiness','technical_issues'])}
+                                  className="text-xs px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground">Quick</button>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 gap-1 max-h-56 overflow-y-auto pr-1">
+                              {CRITERIA_LIBRARY.map(c=>(
+                                <label key={c.id}
+                                  className={`flex items-start gap-2.5 p-2 rounded-lg cursor-pointer transition-colors ${compareCriteria.includes(c.id)?'bg-primary/8 border border-primary/20':'border border-transparent hover:bg-secondary/30'}`}>
+                                  <input type="checkbox" checked={compareCriteria.includes(c.id)}
+                                    onChange={e=>setCompareCriteria(prev=>e.target.checked?[...prev,c.id]:prev.filter(x=>x!==c.id))}
+                                    className="mt-0.5 accent-primary shrink-0"/>
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-semibold leading-tight">{c.label}</div>
+                                    <div className="text-xs text-muted-foreground leading-relaxed mt-0.5">{c.desc}</div>
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                            {/* Custom criterion */}
+                            <div className="flex gap-2 pt-1 border-t border-border/50">
+                              <input value={customCriterion} onChange={e=>setCustomCriterion(e.target.value)}
+                                onKeyDown={e=>{if(e.key==='Enter'&&customCriterion.trim()){setCompareCriteria(p=>[...p,customCriterion.trim()]);setCustomCriterion('');}}}
+                                placeholder="Add custom criterion…"
+                                className="flex-1 h-7 text-xs px-2.5 rounded-lg border border-border bg-background/60 outline-none focus:border-primary/50"/>
+                              <button onClick={()=>{if(customCriterion.trim()){setCompareCriteria(p=>[...p,customCriterion.trim()]);setCustomCriterion('');}}}
+                                disabled={!customCriterion.trim()}
+                                className="h-7 px-2.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs hover:bg-primary/20 disabled:opacity-40">
+                                <Plus size={11}/>
+                              </button>
+                            </div>
+                            {/* Custom criteria pills */}
+                            {compareCriteria.filter(c=>!CRITERIA_LIBRARY.some(l=>l.id===c)).length>0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {compareCriteria.filter(c=>!CRITERIA_LIBRARY.some(l=>l.id===c)).map(c=>(
+                                  <span key={c} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-primary/25 bg-primary/8 text-primary">
+                                    {c}
+                                    <button onClick={()=>setCompareCriteria(p=>p.filter(x=>x!==c))} className="hover:text-red-400"><X size={9}/></button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* RIGHT: URL management */}
+                          <div className="p-4 space-y-3">
+                            <div>
+                              <div className="font-semibold text-sm">URLs in comparison</div>
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                Toggle to include/exclude · Add new URLs to crawl live
+                              </div>
+                            </div>
+
+                            {/* URL list with toggles */}
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                              {allResults.map((r:any)=>{
+                                const active  = activeCrawlUrls.includes(r.url);
+                                const own     = isOwn(r.url);
+                                const comp    = isComp(r.url);
+                                const isRecrawling = recrawlingUrl === r.url;
+                                return (
+                                  <div key={r.url} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border transition-all ${active?own?'border-blue-400/25 bg-blue-400/5':comp?'border-orange-400/25 bg-orange-400/5':'border-border bg-background/30':'border-border/30 bg-background/10 opacity-50'}`}>
+                                    <input type="checkbox" checked={active}
+                                      onChange={e=>setActiveCrawlUrls(prev=>e.target.checked?[...prev,r.url]:prev.filter(u=>u!==r.url))}
+                                      className="accent-primary shrink-0"/>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-xs font-mono truncate">{r.url.replace(/https?:\/\//,'')}</div>
+                                      {r.page_analysis?.title_tag && (
+                                        <div className="text-xs text-muted-foreground truncate">{r.page_analysis.title_tag}</div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {own  && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-400/10 text-blue-400 font-medium">Own</span>}
+                                      {comp && <span className="text-xs px-1.5 py-0.5 rounded-full bg-orange-400/10 text-orange-400 font-medium">Comp</span>}
+                                      {!r.page_analysis && <span className="text-xs text-red-400/70">Failed</span>}
+                                      <button
+                                        onClick={()=>addSingleUrl(r.url)}
+                                        disabled={!!recrawlingUrl}
+                                        title="Re-crawl this URL"
+                                        className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 disabled:opacity-30">
+                                        {isRecrawling?<Loader2 size={10} className="animate-spin"/>:<RefreshCw size={10}/>}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Add new URL */}
+                            <div className="flex gap-2 pt-1 border-t border-border/50">
+                              <input value={addingUrl} onChange={e=>setAddingUrl(e.target.value)}
+                                onKeyDown={e=>e.key==='Enter'&&addingUrl.trim()&&!recrawlingUrl&&addSingleUrl(addingUrl)}
+                                placeholder="https://… add new URL"
+                                className="flex-1 h-8 text-xs px-2.5 rounded-lg border border-border bg-background/60 outline-none focus:border-primary/50 font-mono"/>
+                              <button
+                                onClick={()=>addingUrl.trim()&&addSingleUrl(addingUrl)}
+                                disabled={!addingUrl.trim()||!!recrawlingUrl}
+                                className="h-8 px-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 disabled:opacity-40 flex items-center gap-1">
+                                {recrawlingUrl&&addingUrl.trim()&&recrawlingUrl.includes(addingUrl.replace(/https?:\/\//,'').slice(0,10))
+                                  ?<Loader2 size={11} className="animate-spin"/>:<Plus size={11}/>}
+                                Crawl
+                              </button>
+                            </div>
+
+                            {/* Quick-add from knowledge */}
+                            {(selProj?.url || getField('competitor','competitor_1')) && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {selProj?.url && !allResults.some((r:any)=>r.url===selProj.url) && (
+                                  <button onClick={()=>addSingleUrl(selProj!.url)} disabled={!!recrawlingUrl}
+                                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-blue-400/20 text-blue-400/70 hover:text-blue-400 hover:border-blue-400/40 disabled:opacity-40">
+                                    <Plus size={9}/>{selProj.url.replace(/https?:\/\//,'').slice(0,25)}
+                                  </button>
+                                )}
+                                {['competitor_1','competitor_2','competitor_3'].map(k=>{
+                                  const comp = getField('competitor',k);
+                                  if (!comp) return null;
+                                  const full = comp.startsWith('http')?comp:`https://${comp}`;
+                                  if (allResults.some((r:any)=>r.url===full)) return null;
+                                  return (
+                                    <button key={k} onClick={()=>addSingleUrl(full)} disabled={!!recrawlingUrl}
+                                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-orange-400/20 text-orange-400/70 hover:text-orange-400 hover:border-orange-400/40 disabled:opacity-40">
+                                      <Plus size={9}/>{comp.replace(/https?:\/\//,'').slice(0,22)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Analyse button spanning full width */}
+                        <div className="px-4 py-3 border-t border-border bg-background/20">
+                          <button onClick={runCompareAnalysis} disabled={compareRunning||activeCrawlUrls.length===0}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-primary text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity">
+                            {compareRunning
+                              ?<><Loader2 size={14} className="animate-spin"/>Manav Brain analysing {activeResults.length} pages on {compareCriteria.length} criteria…</>
+                              :<><Brain size={14}/>Ask Manav Brain — {activeResults.length} page{activeResults.length!==1?'s':''} · {compareCriteria.length} criteri{compareCriteria.length===1?'on':'a'}</>}
+                          </button>
+                          {compareRunning && (
+                            <p className="text-xs text-muted-foreground text-center mt-1.5">
+                              Comparing: {CRITERIA_LIBRARY.filter(c=>compareCriteria.includes(c.id)).map(c=>c.label).join(' · ')}
+                              {compareCriteria.filter(c=>!CRITERIA_LIBRARY.some(l=>l.id===c)).map(c=>` · ${c}`)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ── Main tab bar (appears after first analysis) ── */}
                       <div className="flex gap-0 border-b border-border overflow-x-auto">
                         {([
-                          {id:'urls',     label:'Page Results',   badge:null},
-                          {id:'compare',  label:'Side-by-Side',   badge: selectedOwnUrl&&selectedCompUrl?'●':null},
+                          {id:'urls',    label:'Page Results', badge:null},
+                          {id:'compare', label:'Side-by-Side', badge: selectedOwnUrl&&selectedCompUrl?'●':null},
                           ...(compareResult?[
-                            {id:'matrix',       label:'Matrix',         badge:null},
-                            {id:'errors',       label:'Errors',         badge:compareResult.errors?.filter((e:any)=>e.severity==='critical'||e.severity==='high').length||null},
-                            {id:'opportunities',label:'Opportunities',  badge:compareResult.opportunities?.length||null},
-                            {id:'geo',          label:'GEO & AI',       badge:null},
-                            {id:'confidence',   label:'Confidence',     badge:compareResult.confidence_boosters?.length||null},
-                            {id:'gaps',         label:'Gaps',           badge:null},
-                            {id:'cards',        label:'Cards',          badge:compareResult.card_proposals?.length||null},
+                            {id:'matrix',        label:'Matrix',      badge:null},
+                            {id:'errors',        label:'Errors',      badge:compareResult.errors?.filter((e:any)=>e.severity==='critical'||e.severity==='high').length||null},
+                            {id:'opportunities', label:'Opportunities',badge:compareResult.opportunities?.length||null},
+                            {id:'geo',           label:'GEO & AI',    badge:null},
+                            {id:'confidence',    label:'Confidence',  badge:compareResult.confidence_boosters?.length||null},
+                            {id:'gaps',          label:'Gaps',        badge:null},
+                            {id:'cards',         label:'Cards',       badge:compareResult.card_proposals?.length||null},
                           ]:[]),
-                        ].map((tab:any)=>(
+                        ]).map((tab:any)=>(
                           <button key={tab.id} onClick={()=>setCompareTab(tab.id)}
-                            className={`px-3 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1.5 ${
-                              compareTab===tab.id?'border-primary text-primary':'border-transparent text-muted-foreground hover:text-foreground'
-                            }`}>
+                            className={`px-3 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1.5 ${compareTab===tab.id?'border-primary text-primary':'border-transparent text-muted-foreground hover:text-foreground'}`}>
                             {tab.label}
                             {tab.badge!=null && <span className={`px-1.5 py-0.5 rounded-full text-xs font-mono ${compareTab===tab.id?'bg-primary/20 text-primary':'bg-secondary text-muted-foreground'}`}>{tab.badge}</span>}
                           </button>
-                        )))}
+                        ))}
                       </div>
 
                       {/* ════════ PAGE RESULTS TAB ════════ */}
                       {compareTab==='urls' && (
                         <div className="space-y-4">
-
-                          {/* Own pages */}
-                          {ownResults.length>0 && (
-                            <div>
-                              <div className="flex items-center gap-2 mb-2">
-                                <div className="h-2.5 w-2.5 rounded-full bg-blue-400 shrink-0"/>
-                                <span className="text-xs font-semibold text-blue-400 uppercase tracking-wide">Your pages ({ownResults.length})</span>
-                              </div>
-                              <div className="space-y-3">
-                                {ownResults.map((r:any,i:number)=>(
-                                  <PageResultCard key={i} r={r} isOwn={isOwn(r.url)} isComp={isComp(r.url)} onSelectOwn={():void=>{setSelectedOwnUrl(selectedOwnUrl===r.url?'':r.url);}} onSelectComp={():void=>{}} selectedOwn={selectedOwnUrl===r.url} selectedComp={false}/>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Competitor pages */}
-                          {compResults.length>0 && (
-                            <div>
-                              <div className="flex items-center gap-2 mb-2">
-                                <div className="h-2.5 w-2.5 rounded-full bg-orange-400 shrink-0"/>
-                                <span className="text-xs font-semibold text-orange-400 uppercase tracking-wide">Competitor pages ({compResults.length})</span>
-                              </div>
-                              <div className="space-y-3">
-                                {compResults.map((r:any,i:number)=>(
-                                  <PageResultCard key={i} r={r} isOwn={isOwn(r.url)} isComp={isComp(r.url)} onSelectOwn={():void=>{}} onSelectComp={():void=>{setSelectedCompUrl(selectedCompUrl===r.url?'':r.url);}} selectedOwn={false} selectedComp={selectedCompUrl===r.url}/>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Other pages */}
-                          {otherResults.length>0 && (
-                            <div>
-                              <div className="flex items-center gap-2 mb-2">
-                                <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground/40 shrink-0"/>
-                                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Other pages ({otherResults.length})</span>
-                              </div>
-                              <div className="space-y-3">
-                                {otherResults.map((r:any,i:number)=>(
-                                  <PageResultCard key={i} r={r} isOwn={isOwn(r.url)} isComp={isComp(r.url)} onSelectOwn={():void=>{setSelectedOwnUrl(selectedOwnUrl===r.url?'':r.url);}} onSelectComp={():void=>{setSelectedCompUrl(selectedCompUrl===r.url?'':r.url);}} selectedOwn={selectedOwnUrl===r.url} selectedComp={selectedCompUrl===r.url}/>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Prompt to compare */}
-                          {(selectedOwnUrl || selectedCompUrl) && (
-                            <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 flex items-center justify-between gap-3">
-                              <div className="text-xs">
-                                {selectedOwnUrl && <span className="text-blue-400 font-medium">Own: {selectedOwnUrl.replace(/https?:\/\//,'').slice(0,40)}</span>}
-                                {selectedOwnUrl && selectedCompUrl && <span className="text-muted-foreground mx-2">vs</span>}
-                                {selectedCompUrl && <span className="text-orange-400 font-medium">Comp: {selectedCompUrl.replace(/https?:\/\//,'').slice(0,40)}</span>}
-                              </div>
-                              <button onClick={()=>setCompareTab('compare')}
-                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90">
-                                <GitCompare size={11}/>Compare these →
-                              </button>
-                            </div>
-                          )}
+                          {(() => {
+                            const ownR  = (crawlResults.results||[]).filter((r:any)=>isOwn(r.url));
+                            const compR = (crawlResults.results||[]).filter((r:any)=>isComp(r.url));
+                            const othR  = (crawlResults.results||[]).filter((r:any)=>!isOwn(r.url)&&!isComp(r.url));
+                            return (<>
+                              {ownR.length>0&&(<div><div className="flex items-center gap-2 mb-2"><div className="h-2.5 w-2.5 rounded-full bg-blue-400 shrink-0"/><span className="text-xs font-semibold text-blue-400 uppercase tracking-wide">Your pages ({ownR.length})</span></div><div className="space-y-3">{ownR.map((r:any,i:number)=>(<PageResultCard key={i} r={r} isOwn={isOwn(r.url)} isComp={isComp(r.url)} onSelectOwn={():void=>{setSelectedOwnUrl(selectedOwnUrl===r.url?'':r.url);}} onSelectComp={():void=>{}} selectedOwn={selectedOwnUrl===r.url} selectedComp={false as boolean}/>))}</div></div>)}
+                              {compR.length>0&&(<div><div className="flex items-center gap-2 mb-2"><div className="h-2.5 w-2.5 rounded-full bg-orange-400 shrink-0"/><span className="text-xs font-semibold text-orange-400 uppercase tracking-wide">Competitor pages ({compR.length})</span></div><div className="space-y-3">{compR.map((r:any,i:number)=>(<PageResultCard key={i} r={r} isOwn={isOwn(r.url)} isComp={isComp(r.url)} onSelectOwn={():void=>{}} onSelectComp={():void=>{setSelectedCompUrl(selectedCompUrl===r.url?'':r.url);}} selectedOwn={false as boolean} selectedComp={selectedCompUrl===r.url}/>))}</div></div>)}
+                              {othR.length>0&&(<div><div className="flex items-center gap-2 mb-2"><div className="h-2.5 w-2.5 rounded-full bg-muted-foreground/40 shrink-0"/><span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Other ({othR.length})</span></div><div className="space-y-3">{othR.map((r:any,i:number)=>(<PageResultCard key={i} r={r} isOwn={isOwn(r.url)} isComp={isComp(r.url)} onSelectOwn={():void=>{setSelectedOwnUrl(selectedOwnUrl===r.url?'':r.url);}} onSelectComp={():void=>{setSelectedCompUrl(selectedCompUrl===r.url?'':r.url);}} selectedOwn={selectedOwnUrl===r.url} selectedComp={selectedCompUrl===r.url}/>))}</div></div>)}
+                              {(selectedOwnUrl||selectedCompUrl)&&(<div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 flex items-center justify-between gap-3"><div className="text-xs">{selectedOwnUrl&&<span className="text-blue-400 font-medium">Own: {selectedOwnUrl.replace(/https?:\/\//,'').slice(0,40)}</span>}{selectedOwnUrl&&selectedCompUrl&&<span className="text-muted-foreground mx-2">vs</span>}{selectedCompUrl&&<span className="text-orange-400 font-medium">Comp: {selectedCompUrl.replace(/https?:\/\//,'').slice(0,40)}</span>}</div><button onClick={()=>setCompareTab('compare')} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90"><GitCompare size={11}/>Compare →</button></div>)}
+                            </>);
+                          })()}
                         </div>
                       )}
 
-                      {/* ════════ SIDE-BY-SIDE COMPARE TAB ════════ */}
+                      {/* ════════ SIDE-BY-SIDE TAB ════════ */}
                       {compareTab==='compare' && (
                         <div className="space-y-4">
-
-                          {/* Pair selector */}
                           <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-xl border border-blue-400/25 bg-blue-400/5 p-3">
-                              <div className="text-xs font-mono text-blue-400 uppercase mb-2">Your page</div>
-                              <select value={selectedOwnUrl} onChange={e=>setSelectedOwnUrl(e.target.value)}
-                                className="w-full text-xs h-8 px-2 rounded-lg border border-border bg-background/60 outline-none">
-                                <option value="">Select your page…</option>
-                                {crawlResults.results?.filter((r:any)=>r.page_analysis).map((r:any,i:number)=>(
-                                  <option key={i} value={r.url}>{r.url.replace(/https?:\/\//,'').slice(0,45)}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="rounded-xl border border-orange-400/25 bg-orange-400/5 p-3">
-                              <div className="text-xs font-mono text-orange-400 uppercase mb-2">Competitor page</div>
-                              <select value={selectedCompUrl} onChange={e=>setSelectedCompUrl(e.target.value)}
-                                className="w-full text-xs h-8 px-2 rounded-lg border border-border bg-background/60 outline-none">
-                                <option value="">Select competitor page…</option>
-                                {crawlResults.results?.filter((r:any)=>r.page_analysis).map((r:any,i:number)=>(
-                                  <option key={i} value={r.url}>{r.url.replace(/https?:\/\//,'').slice(0,45)}</option>
-                                ))}
-                              </select>
-                            </div>
+                            <div className="rounded-xl border border-blue-400/25 bg-blue-400/5 p-3"><div className="text-xs font-mono text-blue-400 uppercase mb-2">Your page</div><select value={selectedOwnUrl} onChange={e=>setSelectedOwnUrl(e.target.value)} className="w-full text-xs h-8 px-2 rounded-lg border border-border bg-background/60 outline-none"><option value="">Select your page…</option>{(crawlResults.results||[]).filter((r:any)=>r.page_analysis).map((r:any,i:number)=>(<option key={i} value={r.url}>{r.url.replace(/https?:\/\//,'').slice(0,45)}</option>))}</select></div>
+                            <div className="rounded-xl border border-orange-400/25 bg-orange-400/5 p-3"><div className="text-xs font-mono text-orange-400 uppercase mb-2">Competitor page</div><select value={selectedCompUrl} onChange={e=>setSelectedCompUrl(e.target.value)} className="w-full text-xs h-8 px-2 rounded-lg border border-border bg-background/60 outline-none"><option value="">Select competitor page…</option>{(crawlResults.results||[]).filter((r:any)=>r.page_analysis).map((r:any,i:number)=>(<option key={i} value={r.url}>{r.url.replace(/https?:\/\//,'').slice(0,45)}</option>))}</select></div>
                           </div>
-
-                          {selectedOwnUrl && selectedCompUrl ? (() => {
-                            const ownPage  = crawlResults.results?.find((r:any)=>r.url===selectedOwnUrl)?.page_analysis;
-                            const compPage = crawlResults.results?.find((r:any)=>r.url===selectedCompUrl)?.page_analysis;
-                            if (!ownPage || !compPage) return <p className="text-sm text-muted-foreground">Selected pages have no analysis data.</p>;
-
-                            const signals = [
-                              {label:'Title',            own: ownPage.title_tag,           comp: compPage.title_tag,          ownMeta: `${ownPage.title_length||0}ch`, compMeta: `${compPage.title_length||0}ch`},
-                              {label:'H1',               own: ownPage.h1,                  comp: compPage.h1},
-                              {label:'Meta description', own: ownPage.meta_description,    comp: compPage.meta_description,   ownMeta: `${ownPage.meta_desc_length||0}ch`, compMeta: `${compPage.meta_desc_length||0}ch`},
-                              {label:'Word count',       own: String(ownPage.word_count||0), comp: String(compPage.word_count||0)},
-                              {label:'Schema types',     own: ownPage.schema_types?.join(', ')||'None', comp: compPage.schema_types?.join(', ')||'None'},
-                              {label:'Content quality',  own: ownPage.content_quality||'?', comp: compPage.content_quality||'?'},
-                              {label:'Internal links',   own: String(ownPage.internal_links||0), comp: String(compPage.internal_links||0)},
-                              {label:'GEO readiness',    own: ownPage.geo_readiness?.answer_format_quality||'?', comp: compPage.geo_readiness?.answer_format_quality||'?'},
-                              {label:'FAQ detected',     own: ownPage.faqs_detected?.length?`${ownPage.faqs_detected.length} FAQs`:'None', comp: compPage.faqs_detected?.length?`${compPage.faqs_detected.length} FAQs`:'None'},
-                              {label:'CTAs',             own: ownPage.cta_elements?.join(', ')||'None', comp: compPage.cta_elements?.join(', ')||'None'},
-                              {label:'Images no alt',    own: String(ownPage.images_no_alt||0), comp: String(compPage.images_no_alt||0)},
-                            ];
-
-                            const ownIssues  = ownPage.issues  || [];
-                            const compIssues = compPage.issues || [];
-                            const ownOpps    = ownPage.opportunities  || [];
-                            const compOpps   = compPage.opportunities || [];
-
-                            return (
-                              <div className="space-y-4">
-                                {/* Signal comparison table */}
-                                <div className="rounded-2xl border border-border bg-card/40 overflow-hidden">
-                                  <div className="grid grid-cols-3 bg-card/80 border-b border-border">
-                                    <div className="px-3 py-2 text-xs font-semibold text-muted-foreground">Signal</div>
-                                    <div className="px-3 py-2 text-xs font-semibold text-blue-400 border-l border-border">
-                                      Your page <span className="font-normal opacity-60">{selectedOwnUrl.replace(/https?:\/\//,'').slice(0,25)}</span>
-                                    </div>
-                                    <div className="px-3 py-2 text-xs font-semibold text-orange-400 border-l border-border">
-                                      Competitor <span className="font-normal opacity-60">{selectedCompUrl.replace(/https?:\/\//,'').slice(0,25)}</span>
-                                    </div>
-                                  </div>
-                                  {signals.map((s,i)=>{
-                                    const ownBad  = /missing|none|not found|0$/i.test(s.own||'');
-                                    const compBad = /missing|none|not found|0$/i.test(s.comp||'');
-                                    const ownWin  = !ownBad && compBad;
-                                    const compWin = ownBad && !compBad;
-                                    return (
-                                      <div key={i} className={`grid grid-cols-3 border-b border-border/40 ${i%2===0?'bg-background/20':''}`}>
-                                        <div className="px-3 py-2.5 text-xs font-medium text-muted-foreground">{s.label}</div>
-                                        <div className={`px-3 py-2.5 text-xs border-l border-border/40 ${ownWin?'text-green-400':ownBad?'text-red-400/70':'text-foreground'}`}>
-                                          <span className="break-words">{s.own||'—'}</span>
-                                          {s.ownMeta && <span className="ml-1 text-muted-foreground/50">({s.ownMeta})</span>}
-                                          {ownWin && <TrendingUp size={10} className="inline ml-1 text-green-400"/>}
-                                          {compWin && <TrendingDown size={10} className="inline ml-1 text-red-400"/>}
-                                        </div>
-                                        <div className={`px-3 py-2.5 text-xs border-l border-border/40 ${compWin?'text-green-400':compBad?'text-red-400/70':'text-foreground'}`}>
-                                          <span className="break-words">{s.comp||'—'}</span>
-                                          {s.compMeta && <span className="ml-1 text-muted-foreground/50">({s.compMeta})</span>}
-                                          {compWin && <TrendingUp size={10} className="inline ml-1 text-green-400"/>}
-                                          {ownWin && <TrendingDown size={10} className="inline ml-1 text-red-400"/>}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-
-                                {/* Issues comparison */}
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="rounded-xl border border-border bg-card/40 p-3 space-y-2">
-                                    <div className="text-xs font-mono text-red-400 uppercase">Your page issues ({ownIssues.length})</div>
-                                    {ownIssues.length===0 && <p className="text-xs text-green-400">No issues detected</p>}
-                                    {ownIssues.map((issue:any,j:number)=>(
-                                      <div key={j} className={`text-xs rounded-lg px-2.5 py-1.5 ${issue.severity==='critical'?'bg-red-400/8 text-red-400':issue.severity==='high'?'bg-orange-400/8 text-orange-400':'bg-yellow-400/5 text-yellow-400'}`}>
-                                        <span className="font-semibold">[{issue.severity}]</span> {issue.detail||issue.type}
-                                        {issue.fix && <div className="text-muted-foreground mt-0.5">→ {issue.fix}</div>}
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <div className="rounded-xl border border-orange-400/15 bg-card/40 p-3 space-y-2">
-                                    <div className="text-xs font-mono text-orange-400 uppercase">Competitor issues ({compIssues.length})</div>
-                                    {compIssues.length===0 && <p className="text-xs text-green-400">No issues detected</p>}
-                                    {compIssues.map((issue:any,j:number)=>(
-                                      <div key={j} className={`text-xs rounded-lg px-2.5 py-1.5 ${issue.severity==='critical'?'bg-red-400/8 text-red-400':issue.severity==='high'?'bg-orange-400/8 text-orange-400':'bg-yellow-400/5 text-yellow-400'}`}>
-                                        <span className="font-semibold">[{issue.severity}]</span> {issue.detail||issue.type}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Opportunities comparison */}
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="rounded-xl border border-border bg-card/40 p-3 space-y-2">
-                                    <div className="text-xs font-mono text-green-400 uppercase">Your opportunities ({ownOpps.length})</div>
-                                    {ownOpps.map((opp:any,j:number)=>(
-                                      <div key={j} className="text-xs rounded-lg bg-green-400/5 border border-green-400/15 px-2.5 py-1.5">
-                                        <div className="font-medium">{opp.action}</div>
-                                        {opp.impact && <div className="text-muted-foreground">Impact: {opp.impact}</div>}
-                                      </div>
-                                    ))}
-                                    {ownOpps.length===0 && <p className="text-xs text-muted-foreground">None identified</p>}
-                                  </div>
-                                  <div className="rounded-xl border border-orange-400/15 bg-card/40 p-3 space-y-2">
-                                    <div className="text-xs font-mono text-orange-400 uppercase">Competitor advantages ({compOpps.length})</div>
-                                    {compOpps.map((opp:any,j:number)=>(
-                                      <div key={j} className="text-xs rounded-lg bg-orange-400/5 border border-orange-400/15 px-2.5 py-1.5">
-                                        <div className="font-medium">{opp.action}</div>
-                                        {opp.impact && <div className="text-muted-foreground">Their edge: {opp.impact}</div>}
-                                      </div>
-                                    ))}
-                                    {compOpps.length===0 && <p className="text-xs text-muted-foreground">None detected</p>}
-                                  </div>
-                                </div>
-
-                                {/* GEO comparison */}
-                                {(ownPage.geo_readiness||compPage.geo_readiness) && (
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 space-y-1.5">
-                                      <div className="text-xs font-mono text-blue-400 uppercase">Your GEO readiness</div>
-                                      <div className="text-xs"><span className="text-muted-foreground">AI citation likelihood:</span> <span className={ownPage.geo_readiness?.perplexity_citation_likelihood==='high'?'text-green-400':ownPage.geo_readiness?.perplexity_citation_likelihood==='medium'?'text-yellow-400':'text-red-400'}>{ownPage.geo_readiness?.perplexity_citation_likelihood||'?'}</span></div>
-                                      <div className="text-xs"><span className="text-muted-foreground">Answer format:</span> {ownPage.geo_readiness?.answer_format_quality||'?'}</div>
-                                      <div className="text-xs"><span className="text-muted-foreground">FAQ schema:</span> <span className={ownPage.geo_readiness?.has_faq_schema?'text-green-400':'text-red-400/70'}>{ownPage.geo_readiness?.has_faq_schema?'Present':'Missing'}</span></div>
-                                      {ownPage.faqs_detected?.length>0 && <div className="text-xs text-muted-foreground">{ownPage.faqs_detected.length} FAQ{ownPage.faqs_detected.length!==1?'s':''} detected</div>}
-                                    </div>
-                                    <div className="rounded-xl border border-orange-400/20 bg-orange-400/5 p-3 space-y-1.5">
-                                      <div className="text-xs font-mono text-orange-400 uppercase">Competitor GEO readiness</div>
-                                      <div className="text-xs"><span className="text-muted-foreground">AI citation likelihood:</span> <span className={compPage.geo_readiness?.perplexity_citation_likelihood==='high'?'text-green-400':compPage.geo_readiness?.perplexity_citation_likelihood==='medium'?'text-yellow-400':'text-red-400'}>{compPage.geo_readiness?.perplexity_citation_likelihood||'?'}</span></div>
-                                      <div className="text-xs"><span className="text-muted-foreground">Answer format:</span> {compPage.geo_readiness?.answer_format_quality||'?'}</div>
-                                      <div className="text-xs"><span className="text-muted-foreground">FAQ schema:</span> <span className={compPage.geo_readiness?.has_faq_schema?'text-green-400':'text-red-400/70'}>{compPage.geo_readiness?.has_faq_schema?'Present':'Missing'}</span></div>
-                                      {compPage.faqs_detected?.length>0 && <div className="text-xs text-muted-foreground">{compPage.faqs_detected.length} FAQ{compPage.faqs_detected.length!==1?'s':''} detected</div>}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Ask Manav Brain for this pair */}
-                                <button onClick={runCompareAnalysis} disabled={compareRunning}
-                                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-primary text-white font-bold text-sm hover:opacity-90 disabled:opacity-50">
-                                  {compareRunning?<><Loader2 size={14} className="animate-spin"/>Analysing pair…</>:<><Brain size={14}/>Ask Manav Brain to analyse this pair fully</>}
-                                </button>
-                              </div>
-                            );
-                          })() : (
-                            <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground text-sm">
-                              Select a page from each column above to compare them side by side.
-                              <div className="text-xs mt-2 opacity-60">Go to Page Results tab to select pages, or use the dropdowns above.</div>
-                            </div>
-                          )}
+                          {selectedOwnUrl&&selectedCompUrl?(()=>{
+                            const ownPage  = (crawlResults.results||[]).find((r:any)=>r.url===selectedOwnUrl)?.page_analysis;
+                            const compPage = (crawlResults.results||[]).find((r:any)=>r.url===selectedCompUrl)?.page_analysis;
+                            if(!ownPage||!compPage) return <p className="text-sm text-muted-foreground">Select pages with analysis data.</p>;
+                            const signals=[{label:'Title',own:ownPage.title_tag,comp:compPage.title_tag,ownMeta:`${ownPage.title_length||0}ch`,compMeta:`${compPage.title_length||0}ch`},{label:'H1',own:ownPage.h1,comp:compPage.h1},{label:'Meta',own:ownPage.meta_description,comp:compPage.meta_description,ownMeta:`${ownPage.meta_desc_length||0}ch`,compMeta:`${compPage.meta_desc_length||0}ch`},{label:'Words',own:String(ownPage.word_count||0),comp:String(compPage.word_count||0)},{label:'Schema',own:ownPage.schema_types?.join(', ')||'None',comp:compPage.schema_types?.join(', ')||'None'},{label:'Quality',own:ownPage.content_quality||'?',comp:compPage.content_quality||'?'},{label:'Int.links',own:String(ownPage.internal_links||0),comp:String(compPage.internal_links||0)},{label:'GEO',own:ownPage.geo_readiness?.answer_format_quality||'?',comp:compPage.geo_readiness?.answer_format_quality||'?'},{label:'FAQs',own:ownPage.faqs_detected?.length?`${ownPage.faqs_detected.length} FAQs`:'None',comp:compPage.faqs_detected?.length?`${compPage.faqs_detected.length} FAQs`:'None'},{label:'CTAs',own:ownPage.cta_elements?.join(', ')||'None',comp:compPage.cta_elements?.join(', ')||'None'}];
+                            return (<div className="space-y-3">
+                              <div className="rounded-2xl border border-border bg-card/40 overflow-hidden"><div className="grid grid-cols-3 bg-card/80 border-b border-border"><div className="px-3 py-2 text-xs font-semibold text-muted-foreground">Signal</div><div className="px-3 py-2 text-xs font-semibold text-blue-400 border-l border-border">Your page <span className="font-normal opacity-60">{selectedOwnUrl.replace(/https?:\/\//,'').slice(0,25)}</span></div><div className="px-3 py-2 text-xs font-semibold text-orange-400 border-l border-border">Competitor <span className="font-normal opacity-60">{selectedCompUrl.replace(/https?:\/\//,'').slice(0,25)}</span></div></div>{signals.map((s,i)=>{const ob=/missing|none|not found|^0$/i.test(s.own||'');const cb=/missing|none|not found|^0$/i.test(s.comp||'');return(<div key={i} className={`grid grid-cols-3 border-b border-border/40 ${i%2===0?'bg-background/20':''}`}><div className="px-3 py-2.5 text-xs font-medium text-muted-foreground">{s.label}</div><div className={`px-3 py-2.5 text-xs border-l border-border/40 ${!ob&&cb?'text-green-400':ob?'text-red-400':'text-foreground'}`}><span className="break-words">{s.own||'—'}</span>{s.ownMeta&&<span className="ml-1 text-muted-foreground/50">({s.ownMeta})</span>}</div><div className={`px-3 py-2.5 text-xs border-l border-border/40 ${!cb&&ob?'text-green-400':cb?'text-red-400':'text-foreground'}`}><span className="break-words">{s.comp||'—'}</span>{s.compMeta&&<span className="ml-1 text-muted-foreground/50">({s.compMeta})</span>}</div></div>);})}</div>
+                              <div className="grid grid-cols-2 gap-3"><div className="rounded-xl border border-border bg-card/40 p-3 space-y-1.5"><div className="text-xs font-mono text-red-400 uppercase">Your issues ({(ownPage.issues||[]).length})</div>{(ownPage.issues||[]).map((issue:any,j:number)=>(<div key={j} className={`text-xs rounded-lg px-2.5 py-1.5 ${issue.severity==='critical'?'bg-red-400/8 text-red-400':issue.severity==='high'?'bg-orange-400/8 text-orange-400':'bg-yellow-400/5 text-yellow-400'}`}><span className="font-semibold">[{issue.severity}]</span> {issue.detail}{issue.fix&&<div className="text-muted-foreground mt-0.5">→ {issue.fix}</div>}</div>))}{!(ownPage.issues?.length)&&<p className="text-xs text-green-400">None detected</p>}</div><div className="rounded-xl border border-orange-400/15 bg-card/40 p-3 space-y-1.5"><div className="text-xs font-mono text-orange-400 uppercase">Competitor issues ({(compPage.issues||[]).length})</div>{(compPage.issues||[]).map((issue:any,j:number)=>(<div key={j} className={`text-xs rounded-lg px-2.5 py-1.5 ${issue.severity==='critical'?'bg-red-400/8 text-red-400':issue.severity==='high'?'bg-orange-400/8 text-orange-400':'bg-yellow-400/5 text-yellow-400'}`}><span className="font-semibold">[{issue.severity}]</span> {issue.detail}</div>))}{!(compPage.issues?.length)&&<p className="text-xs text-green-400">None detected</p>}</div></div>
+                            </div>);
+                          })():<div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground text-sm">Select one page from each column to compare side by side.</div>}
                         </div>
                       )}
 
-                      {/* ════════ MANAV BRAIN ANALYSIS TABS ════════ */}
-                      {compareRunning && (
-                        <div className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-8 flex flex-col items-center gap-3">
-                          <Loader2 size={28} className="animate-spin text-violet-400"/>
-                          <div className="font-semibold text-sm">Manav Brain analysing…</div>
-                          <div className="text-xs text-muted-foreground text-center max-w-sm">
-                            Building comparison matrix · Identifying gaps · Ranking opportunities · Generating card proposals
-                          </div>
-                        </div>
-                      )}
+                      {/* ════════ MANAV BRAIN ANALYSIS ════════ */}
+                      {compareRunning&&(<div className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-8 flex flex-col items-center gap-3"><Loader2 size={28} className="animate-spin text-violet-400"/><div className="font-semibold text-sm">Manav Brain analysing…</div><div className="text-xs text-muted-foreground text-center max-w-sm">Evaluating {activeResults.length} pages across {compareCriteria.length} criteria</div></div>)}
 
-                      {compareResult && !compareRunning && (() => {
-                        const tabContent: Record<string,React.ReactNode> = {};
+                      {compareResult&&!compareRunning&&(()=>{
+                        const tabContent:Record<string,React.ReactNode>={};
 
-                        /* MATRIX */
-                        tabContent['matrix'] = compareResult.comparison_matrix ? (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-xs border-collapse">
-                              <thead>
-                                <tr className="border-b border-border">
-                                  {(compareResult.comparison_matrix.headers||[]).map((h:string,i:number)=>(
-                                    <th key={i} className={`text-left py-2 font-semibold ${i===0?'pr-4 text-muted-foreground w-36':'px-3 text-center text-muted-foreground/70'}`}>{h}</th>
-                                  ))}
-                                  <th className="px-2 text-center text-muted-foreground/50 text-xs">Best</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(compareResult.comparison_matrix.rows||[]).map((row:any,i:number)=>(
-                                  <tr key={i} className="border-b border-border/40 hover:bg-secondary/10">
-                                    <td className="py-2.5 pr-4 font-medium text-foreground">{row.signal}</td>
-                                    {(row.values||[]).map((val:string,j:number)=>{
-                                      const ok  = /^(ok|yes|present|good|comprehensive|high|✓)/i.test(val);
-                                      const bad = /missing|none|no |not found|too |absent|broken|low|0\s*ch/i.test(val);
-                                      return <td key={j} className={`px-3 py-2.5 text-center ${ok?'text-green-400':bad?'text-red-400':'text-muted-foreground'}`}>
-                                        <span className="block max-w-[120px] truncate mx-auto" title={val}>{val}</span>
-                                      </td>;
-                                    })}
-                                    <td className="px-2 py-2.5 text-center">
-                                      <span className={`px-2 py-0.5 rounded-full text-xs ${row.verdict==='best'?'bg-green-400/10 text-green-400':row.verdict==='worst'?'bg-red-400/10 text-red-400':'bg-secondary text-muted-foreground'}`}>{row.verdict||'—'}</span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : <p className="text-sm text-muted-foreground">No matrix data.</p>;
+                        tabContent['matrix']=compareResult.comparison_matrix?(<div className="overflow-x-auto"><table className="w-full text-xs border-collapse"><thead><tr className="border-b border-border">{(compareResult.comparison_matrix.headers||[]).map((h:string,i:number)=>(<th key={i} className={`text-left py-2 font-semibold ${i===0?'pr-4 text-muted-foreground w-36':'px-3 text-center text-muted-foreground/70'}`}>{h}</th>))}<th className="px-2 text-center text-muted-foreground/50 text-xs">Best</th></tr></thead><tbody>{(compareResult.comparison_matrix.rows||[]).map((row:any,i:number)=>(<tr key={i} className="border-b border-border/40 hover:bg-secondary/10"><td className="py-2.5 pr-4 font-medium text-foreground">{row.signal}</td>{(row.values||[]).map((val:string,j:number)=>{const ok=/^(ok|yes|present|good|comprehensive|high|✓)/i.test(val);const bad=/missing|none|no |not found|too |absent|broken|low|0\s*ch/i.test(val);return <td key={j} className={`px-3 py-2.5 text-center ${ok?'text-green-400':bad?'text-red-400':'text-muted-foreground'}`}><span className="block max-w-[120px] truncate mx-auto" title={val}>{val}</span></td>;})}<td className="px-2 py-2.5 text-center"><span className={`px-2 py-0.5 rounded-full text-xs ${row.verdict==='best'?'bg-green-400/10 text-green-400':row.verdict==='worst'?'bg-red-400/10 text-red-400':'bg-secondary text-muted-foreground'}`}>{row.verdict||'—'}</span></td></tr>))}</tbody></table></div>):<p className="text-sm text-muted-foreground">No matrix data.</p>;
 
-                        /* ERRORS */
-                        tabContent['errors'] = (
-                          <div className="space-y-2">
-                            {!compareResult.errors?.length && <p className="text-sm text-muted-foreground">No errors found.</p>}
-                            {(compareResult.errors||[]).map((err:any,i:number)=>(
-                              <div key={i} className={`rounded-xl border p-3 space-y-1.5 ${err.severity==='critical'?'border-red-400/30 bg-red-400/5':err.severity==='high'?'border-orange-400/25 bg-orange-400/5':'border-yellow-400/20 bg-yellow-400/5'}`}>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${err.severity==='critical'?'bg-red-400/20 text-red-400':err.severity==='high'?'bg-orange-400/20 text-orange-400':'bg-yellow-400/15 text-yellow-400'}`}>{err.severity}</span>
-                                  <span className="text-sm font-semibold flex-1">{err.issue}</span>
-                                  {err.quick_fix && <span className="text-xs px-2 py-0.5 rounded-full bg-green-400/10 text-green-400 border border-green-400/20">Quick fix</span>}
-                                </div>
-                                <p className="text-xs text-muted-foreground">{err.fix}</p>
-                                {err.affected_urls?.length>0 && <div className="flex flex-wrap gap-1">{err.affected_urls.map((u:string,j:number)=><span key={j} className="text-xs font-mono px-2 py-0.5 rounded-lg bg-background/60 border border-border/50 text-muted-foreground/60">{u.replace(/https?:\/\//,'').slice(0,35)}</span>)}</div>}
-                              </div>
-                            ))}
-                          </div>
-                        );
+                        tabContent['errors']=(<div className="space-y-2">{!compareResult.errors?.length&&<p className="text-sm text-muted-foreground">No errors found.</p>}{(compareResult.errors||[]).map((err:any,i:number)=>(<div key={i} className={`rounded-xl border p-3 space-y-1.5 ${err.severity==='critical'?'border-red-400/30 bg-red-400/5':err.severity==='high'?'border-orange-400/25 bg-orange-400/5':'border-yellow-400/20 bg-yellow-400/5'}`}><div className="flex items-center gap-2 flex-wrap"><span className={`text-xs font-bold px-2 py-0.5 rounded-full ${err.severity==='critical'?'bg-red-400/20 text-red-400':err.severity==='high'?'bg-orange-400/20 text-orange-400':'bg-yellow-400/15 text-yellow-400'}`}>{err.severity}</span><span className="text-sm font-semibold flex-1">{err.issue}</span>{err.quick_fix&&<span className="text-xs px-2 py-0.5 rounded-full bg-green-400/10 text-green-400 border border-green-400/20">Quick fix</span>}</div><p className="text-xs text-muted-foreground">{err.fix}</p>{err.affected_urls?.length>0&&<div className="flex flex-wrap gap-1">{err.affected_urls.map((u:string,j:number)=><span key={j} className="text-xs font-mono px-2 py-0.5 rounded-lg bg-background/60 border border-border/50 text-muted-foreground/60">{u.replace(/https?:\/\//,'').slice(0,35)}</span>)}</div>}</div>))}</div>);
 
-                        /* OPPORTUNITIES */
-                        tabContent['opportunities'] = (
-                          <div className="space-y-3">
-                            {!compareResult.opportunities?.length && <p className="text-sm text-muted-foreground">No opportunities identified.</p>}
-                            {(compareResult.opportunities||[]).map((opp:any,i:number)=>(
-                              <div key={i} className="rounded-xl border border-border bg-background/60 p-4 space-y-2">
-                                <div className="flex items-start gap-3">
-                                  <div className={`h-7 w-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${opp.impact==='high'?'bg-green-400/15 text-green-400':opp.impact==='medium'?'bg-yellow-400/15 text-yellow-400':'bg-muted/30 text-muted-foreground'}`}>#{opp.rank||i+1}</div>
-                                  <div className="flex-1">
-                                    <div className="font-semibold text-sm">{opp.title}</div>
-                                    <p className="text-xs text-muted-foreground mt-0.5">{opp.description}</p>
-                                  </div>
-                                  <div className="flex flex-col gap-1 items-end shrink-0">
-                                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${opp.impact==='high'?'border-green-400/30 text-green-400':opp.impact==='medium'?'border-yellow-400/30 text-yellow-400':'border-border text-muted-foreground'}`}>{opp.impact} impact</span>
-                                    <span className={`text-xs px-2 py-0.5 rounded-full border ${opp.effort==='low'?'border-green-400/20 text-green-400/70':'border-border text-muted-foreground'}`}>{opp.effort} effort</span>
-                                  </div>
-                                </div>
-                                {opp.data_basis && <p className="text-xs text-muted-foreground/60 pl-10 italic">Evidence: {opp.data_basis}</p>}
-                              </div>
-                            ))}
-                          </div>
-                        );
+                        tabContent['opportunities']=(<div className="space-y-3">{!compareResult.opportunities?.length&&<p className="text-sm text-muted-foreground">No opportunities identified.</p>}{(compareResult.opportunities||[]).map((opp:any,i:number)=>(<div key={i} className="rounded-xl border border-border bg-background/60 p-4 space-y-2"><div className="flex items-start gap-3"><div className={`h-7 w-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${opp.impact==='high'?'bg-green-400/15 text-green-400':opp.impact==='medium'?'bg-yellow-400/15 text-yellow-400':'bg-muted/30 text-muted-foreground'}`}>#{opp.rank||i+1}</div><div className="flex-1"><div className="font-semibold text-sm">{opp.title}</div><p className="text-xs text-muted-foreground mt-0.5">{opp.description}</p></div><div className="flex flex-col gap-1 items-end shrink-0"><span className={`text-xs px-2 py-0.5 rounded-full border ${opp.impact==='high'?'border-green-400/30 text-green-400':opp.impact==='medium'?'border-yellow-400/30 text-yellow-400':'border-border text-muted-foreground'}`}>{opp.impact} impact</span><span className={`text-xs px-2 py-0.5 rounded-full border ${opp.effort==='low'?'border-green-400/20 text-green-400/70':'border-border text-muted-foreground'}`}>{opp.effort} effort</span></div></div>{opp.data_basis&&<p className="text-xs text-muted-foreground/60 pl-10 italic">Evidence: {opp.data_basis}</p>}</div>))}</div>);
 
-                        /* GEO */
-                        tabContent['geo'] = (
-                          <div className="space-y-4">
-                            {!compareResult.geo_analysis ? <p className="text-sm text-muted-foreground">No GEO analysis — run Manav Brain analysis first.</p> : (
-                              <>
-                                <div className="flex items-center gap-3">
-                                  <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-black shrink-0 ${parseInt(compareResult.geo_analysis.overall_geo_score)>=70?'bg-green-400/15 text-green-400':parseInt(compareResult.geo_analysis.overall_geo_score)>=40?'bg-yellow-400/15 text-yellow-400':'bg-red-400/15 text-red-400'}`}>{compareResult.geo_analysis.overall_geo_score}</div>
-                                  <div><div className="font-semibold text-sm">GEO / AI Visibility Score</div><div className="text-xs text-muted-foreground">{compareResult.geo_analysis.entity_coverage}</div></div>
-                                </div>
-                                {compareResult.geo_analysis.faq_opportunities?.length>0 && (
-                                  <div className="space-y-1.5">
-                                    <div className="text-xs font-mono text-orange-400 uppercase">FAQ schema opportunities</div>
-                                    {compareResult.geo_analysis.faq_opportunities.map((f:string,i:number)=>(
-                                      <div key={i} className="flex gap-2 text-xs rounded-lg bg-orange-400/5 border border-orange-400/15 px-3 py-2"><ArrowRight size={10} className="text-orange-400 mt-0.5 shrink-0"/><span>{f}</span></div>
-                                    ))}
-                                  </div>
-                                )}
-                                {compareResult.geo_analysis.direct_answer_gaps?.length>0 && (
-                                  <div className="space-y-1.5">
-                                    <div className="text-xs font-mono text-muted-foreground uppercase">Questions to answer directly</div>
-                                    {compareResult.geo_analysis.direct_answer_gaps.map((q:string,i:number)=>(
-                                      <div key={i} className="text-xs text-muted-foreground flex gap-1.5"><span className="text-muted-foreground/40 shrink-0">·</span>{q}</div>
-                                    ))}
-                                  </div>
-                                )}
-                                {compareResult.geo_analysis.recommendations?.length>0 && (
-                                  <div className="space-y-1.5">
-                                    <div className="text-xs font-mono text-primary uppercase">GEO recommendations</div>
-                                    {compareResult.geo_analysis.recommendations.map((r:string,i:number)=>(
-                                      <div key={i} className="flex gap-2 text-xs rounded-lg bg-primary/5 border border-primary/15 px-3 py-2"><span className="text-primary font-bold shrink-0">{i+1}.</span><span>{r}</span></div>
-                                    ))}
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        );
+                        tabContent['geo']=(<div className="space-y-4">{!compareResult.geo_analysis?<p className="text-sm text-muted-foreground">No GEO analysis — run Manav Brain first.</p>:(<><div className="flex items-center gap-3"><div className={`h-11 w-11 rounded-xl flex items-center justify-center font-black shrink-0 ${parseInt(compareResult.geo_analysis.overall_geo_score)>=70?'bg-green-400/15 text-green-400':parseInt(compareResult.geo_analysis.overall_geo_score)>=40?'bg-yellow-400/15 text-yellow-400':'bg-red-400/15 text-red-400'}`}>{compareResult.geo_analysis.overall_geo_score}</div><div><div className="font-semibold text-sm">GEO / AI Score</div><div className="text-xs text-muted-foreground">{compareResult.geo_analysis.entity_coverage}</div></div></div>{compareResult.geo_analysis.faq_opportunities?.length>0&&(<div className="space-y-1.5"><div className="text-xs font-mono text-orange-400 uppercase">FAQ opportunities</div>{compareResult.geo_analysis.faq_opportunities.map((f:string,i:number)=>(<div key={i} className="flex gap-2 text-xs rounded-lg bg-orange-400/5 border border-orange-400/15 px-3 py-2"><ArrowRight size={10} className="text-orange-400 mt-0.5 shrink-0"/><span>{f}</span></div>))}</div>)}{compareResult.geo_analysis.recommendations?.length>0&&(<div className="space-y-1.5"><div className="text-xs font-mono text-primary uppercase">Recommendations</div>{compareResult.geo_analysis.recommendations.map((r:string,i:number)=>(<div key={i} className="flex gap-2 text-xs rounded-lg bg-primary/5 border border-primary/15 px-3 py-2"><span className="text-primary font-bold shrink-0">{i+1}.</span><span>{r}</span></div>))}</div>)}</>)}</div>);
 
-                        /* CONFIDENCE */
-                        tabContent['confidence'] = (
-                          <div className="space-y-3">
-                            <div className="rounded-xl border border-violet-400/20 bg-violet-400/5 p-3 text-xs text-muted-foreground">Existing canvas cards where this crawl data improves execution confidence.</div>
-                            {!compareResult.confidence_boosters?.length && <p className="text-sm text-muted-foreground">No confidence improvements found. Crawl pages relevant to your active canvas tasks.</p>}
-                            {(compareResult.confidence_boosters||[]).map((boost:any,i:number)=>(
-                              <div key={i} className="rounded-xl border border-violet-400/20 bg-card/60 p-4 space-y-2">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex-1"><div className="font-semibold text-sm">{boost.card_title}</div><div className="text-xs text-muted-foreground">{boost.new_data_available}</div></div>
-                                  <div className="text-sm font-black text-violet-400 shrink-0">{boost.confidence_increase}</div>
-                                </div>
-                                <div className="flex gap-2 text-xs rounded-lg bg-violet-400/5 border border-violet-400/15 px-3 py-2"><ArrowRight size={10} className="text-violet-400 mt-0.5 shrink-0"/><span className="text-muted-foreground">{boost.action}</span></div>
-                              </div>
-                            ))}
-                          </div>
-                        );
+                        tabContent['confidence']=(<div className="space-y-3"><div className="rounded-xl border border-violet-400/20 bg-violet-400/5 p-3 text-xs text-muted-foreground">Canvas cards improved by this crawl data.</div>{!compareResult.confidence_boosters?.length&&<p className="text-sm text-muted-foreground">No improvements found. Crawl pages relevant to your active tasks.</p>}{(compareResult.confidence_boosters||[]).map((b:any,i:number)=>(<div key={i} className="rounded-xl border border-violet-400/20 bg-card/60 p-4 space-y-2"><div className="flex items-center gap-3"><div className="flex-1"><div className="font-semibold text-sm">{b.card_title}</div><div className="text-xs text-muted-foreground">{b.new_data_available}</div></div><div className="text-sm font-black text-violet-400 shrink-0">{b.confidence_increase}</div></div><div className="flex gap-2 text-xs rounded-lg bg-violet-400/5 border border-violet-400/15 px-3 py-2"><ArrowRight size={10} className="text-violet-400 mt-0.5 shrink-0"/><span className="text-muted-foreground">{b.action}</span></div></div>))}</div>);
 
-                        /* GAPS */
-                        tabContent['gaps'] = (
-                          <div className="space-y-5">
-                            {compareResult.competitive_gaps?.length>0 && (
-                              <div>
-                                <div className="text-xs font-mono text-orange-400 uppercase mb-2 flex items-center gap-2"><AlertTriangle size={11}/>Competitive gaps</div>
-                                {compareResult.competitive_gaps.map((gap:any,i:number)=>(
-                                  <div key={i} className="rounded-xl border border-orange-400/15 bg-orange-400/5 p-3 space-y-1.5 mb-2">
-                                    <div className="flex items-start gap-2">
-                                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 ${gap.priority==='high'?'bg-red-400/20 text-red-400':'bg-orange-400/20 text-orange-400'}`}>{gap.priority}</span>
-                                      <div><div className="font-medium text-sm">{gap.gap}</div><p className="text-xs text-muted-foreground">{gap.evidence}</p></div>
-                                    </div>
-                                    <div className="flex gap-1.5 pl-10"><ArrowRight size={10} className="text-primary mt-0.5 shrink-0"/><span className="text-xs text-primary font-medium">{gap.action}</span></div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {compareResult.advantages?.length>0 && (
-                              <div>
-                                <div className="text-xs font-mono text-green-400 uppercase mb-2 flex items-center gap-2"><CheckCircle size={11}/>Your advantages</div>
-                                {compareResult.advantages.map((adv:any,i:number)=>(
-                                  <div key={i} className="rounded-xl border border-green-400/15 bg-green-400/5 p-3 space-y-1.5 mb-2">
-                                    <div className="font-medium text-sm text-green-400">{adv.advantage}</div>
-                                    {adv.how_to_leverage && <div className="flex gap-1.5"><ArrowRight size={10} className="text-green-400/70 mt-0.5 shrink-0"/><span className="text-xs text-muted-foreground">{adv.how_to_leverage}</span></div>}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
+                        tabContent['gaps']=(<div className="space-y-5">{compareResult.competitive_gaps?.length>0&&(<div><div className="text-xs font-mono text-orange-400 uppercase mb-2 flex items-center gap-2"><AlertTriangle size={11}/>Gaps</div>{compareResult.competitive_gaps.map((g:any,i:number)=>(<div key={i} className="rounded-xl border border-orange-400/15 bg-orange-400/5 p-3 space-y-1.5 mb-2"><div className="flex items-start gap-2"><span className={`text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 ${g.priority==='high'?'bg-red-400/20 text-red-400':'bg-orange-400/20 text-orange-400'}`}>{g.priority}</span><div><div className="font-medium text-sm">{g.gap}</div><p className="text-xs text-muted-foreground">{g.evidence}</p></div></div><div className="flex gap-1.5 pl-10"><ArrowRight size={10} className="text-primary mt-0.5 shrink-0"/><span className="text-xs text-primary font-medium">{g.action}</span></div></div>))}</div>)}{compareResult.advantages?.length>0&&(<div><div className="text-xs font-mono text-green-400 uppercase mb-2 flex items-center gap-2"><CheckCircle size={11}/>Advantages</div>{compareResult.advantages.map((a:any,i:number)=>(<div key={i} className="rounded-xl border border-green-400/15 bg-green-400/5 p-3 space-y-1.5 mb-2"><div className="font-medium text-sm text-green-400">{a.advantage}</div>{a.how_to_leverage&&<div className="flex gap-1.5"><ArrowRight size={10} className="text-green-400/70 mt-0.5 shrink-0"/><span className="text-xs text-muted-foreground">{a.how_to_leverage}</span></div>}</div>))}</div>)}</div>);
 
-                        /* CARDS */
-                        tabContent['cards'] = (
-                          <div className="space-y-4">
-                            {pendingCards.length>0 && (
-                              <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/8 px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm font-semibold text-primary"><CheckCircle2 size={14}/>{pendingCards.length} card{pendingCards.length!==1?'s':''} approved</div>
-                                <button onClick={sendApprovedCardsToCanvas} className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90"><Sparkles size={11}/>Send to Canvas</button>
-                              </div>
-                            )}
-                            {!compareResult.card_proposals?.length && <p className="text-sm text-muted-foreground">No card proposals. Run compare analysis with more pages.</p>}
-                            {(compareResult.card_proposals||[]).map((card:any,i:number)=>{
-                              const approval = cardApprovals[i];
-                              return (
-                                <div key={i} className={`rounded-xl border p-4 space-y-3 transition-all ${approval==='approved'?'border-green-400/30 bg-green-400/5':approval==='rejected'?'border-border/30 opacity-50':approval==='merged'?'border-yellow-400/30 bg-yellow-400/5':'border-border bg-background/60'}`}>
-                                  <div className="flex items-start gap-3">
-                                    <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground shrink-0 font-mono">{card.type}</span>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-semibold text-sm">{card.title}</div>
-                                      <div className="flex items-center gap-2 mt-0.5">
-                                        <span className="text-xs text-muted-foreground">Wk {card.week===5?'BL':card.week}</span>
-                                        <span className={`text-xs px-1.5 py-0.5 rounded-full border ${card.priority==='high'?'border-red-400/30 text-red-400':card.priority==='medium'?'border-yellow-400/30 text-yellow-400':'border-border text-muted-foreground'}`}>{card.priority}</span>
-                                        {card.confidence!=null && <span className={`text-xs px-1.5 py-0.5 rounded-full border ${card.confidence>=80?'border-green-400/30 text-green-400':card.confidence>=60?'border-yellow-400/30 text-yellow-400':'border-orange-400/30 text-orange-400'}`}>{card.confidence}% conf</span>}
-                                      </div>
-                                    </div>
-                                    {approval && <span className={`text-xs px-2 py-1 rounded-lg font-medium shrink-0 ${approval==='approved'?'bg-green-400/15 text-green-400':approval==='merged'?'bg-yellow-400/15 text-yellow-400':'bg-secondary text-muted-foreground'}`}>{approval}</span>}
-                                  </div>
-                                  <p className="text-xs text-muted-foreground">{card.content}</p>
-                                  {card.data_basis && <div className="flex gap-1.5 rounded-lg bg-primary/5 border border-primary/15 px-3 py-2"><span className="text-xs font-mono text-primary shrink-0">Evidence:</span><span className="text-xs text-muted-foreground">{card.data_basis}</span></div>}
-                                  {card.merge_candidate && <div className="flex gap-2 rounded-lg bg-yellow-400/8 border border-yellow-400/20 px-3 py-2"><AlertTriangle size={11} className="text-yellow-400 shrink-0 mt-0.5"/><div><span className="text-xs font-semibold text-yellow-400">Similar: </span><span className="text-xs text-muted-foreground">"{card.merge_candidate}" — {card.merge_reason}</span></div></div>}
-                                  {!approval && (
-                                    <div className="flex items-center gap-2 pt-1 border-t border-border/40">
-                                      <button onClick={()=>{setCardApprovals(p=>({...p,[i]:'approved'}));setPendingCards(p=>[...p,card]);}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-green-400/30 bg-green-400/8 text-green-400 hover:bg-green-400/15 font-medium"><CheckCircle2 size={10}/>Approve</button>
-                                      {card.merge_candidate && <button onClick={()=>{setCardApprovals(p=>({...p,[i]:'merged'}));setPendingCards(p=>[...p,{...card,title:`${card.merge_candidate} [+scope]`,content:`${card.content}\n\n--- Scope from crawler ---\n${card.data_basis||''}`}]);}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-yellow-400/25 bg-yellow-400/8 text-yellow-400 hover:bg-yellow-400/15 font-medium"><ArrowRight size={10}/>Merge scope</button>}
-                                      <button onClick={()=>setCardApprovals(p=>({...p,[i]:'rejected'}))} className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground ml-auto"><X size={10}/></button>
-                                    </div>
-                                  )}
-                                  {approval==='rejected' && <button onClick={()=>setCardApprovals(p=>{const n={...p};delete n[i];return n;})} className="text-xs text-muted-foreground hover:text-foreground">Undo</button>}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
+                        tabContent['cards']=(<div className="space-y-4">{pendingCards.length>0&&(<div className="flex items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/8 px-4 py-3"><div className="flex items-center gap-2 text-sm font-semibold text-primary"><CheckCircle2 size={14}/>{pendingCards.length} approved</div><button onClick={sendApprovedCardsToCanvas} className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90"><Sparkles size={11}/>Send to Canvas</button></div>)}{!compareResult.card_proposals?.length&&<p className="text-sm text-muted-foreground">No card proposals.</p>}{(compareResult.card_proposals||[]).map((card:any,i:number)=>{const approval=cardApprovals[i];return(<div key={i} className={`rounded-xl border p-4 space-y-3 ${approval==='approved'?'border-green-400/30 bg-green-400/5':approval==='rejected'?'border-border/30 opacity-50':approval==='merged'?'border-yellow-400/30 bg-yellow-400/5':'border-border bg-background/60'}`}><div className="flex items-start gap-3"><span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground shrink-0 font-mono">{card.type}</span><div className="flex-1 min-w-0"><div className="font-semibold text-sm">{card.title}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground">Wk {card.week===5?'BL':card.week}</span><span className={`text-xs px-1.5 py-0.5 rounded-full border ${card.priority==='high'?'border-red-400/30 text-red-400':card.priority==='medium'?'border-yellow-400/30 text-yellow-400':'border-border text-muted-foreground'}`}>{card.priority}</span>{card.confidence!=null&&<span className={`text-xs px-1.5 py-0.5 rounded-full border ${card.confidence>=80?'border-green-400/30 text-green-400':card.confidence>=60?'border-yellow-400/30 text-yellow-400':'border-orange-400/30 text-orange-400'}`}>{card.confidence}% conf</span>}</div></div>{approval&&<span className={`text-xs px-2 py-1 rounded-lg font-medium shrink-0 ${approval==='approved'?'bg-green-400/15 text-green-400':approval==='merged'?'bg-yellow-400/15 text-yellow-400':'bg-secondary text-muted-foreground'}`}>{approval}</span>}</div><p className="text-xs text-muted-foreground">{card.content}</p>{card.data_basis&&<div className="flex gap-1.5 rounded-lg bg-primary/5 border border-primary/15 px-3 py-2"><span className="text-xs font-mono text-primary shrink-0">Evidence:</span><span className="text-xs text-muted-foreground">{card.data_basis}</span></div>}{card.merge_candidate&&<div className="flex gap-2 rounded-lg bg-yellow-400/8 border border-yellow-400/20 px-3 py-2"><AlertTriangle size={11} className="text-yellow-400 shrink-0 mt-0.5"/><div><span className="text-xs font-semibold text-yellow-400">Similar: </span><span className="text-xs text-muted-foreground">"{card.merge_candidate}" — {card.merge_reason}</span></div></div>}{!approval&&(<div className="flex items-center gap-2 pt-1 border-t border-border/40"><button onClick={()=>{setCardApprovals(p=>({...p,[i]:'approved'}));setPendingCards(p=>[...p,card]);}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-green-400/30 bg-green-400/8 text-green-400 hover:bg-green-400/15 font-medium"><CheckCircle2 size={10}/>Approve</button>{card.merge_candidate&&<button onClick={()=>{setCardApprovals(p=>({...p,[i]:'merged'}));setPendingCards(p=>[...p,{...card,title:`${card.merge_candidate} [+scope]`,content:`${card.content}\n\n--- Scope from crawler ---\n${card.data_basis||''}`}]);}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-yellow-400/25 bg-yellow-400/8 text-yellow-400 hover:bg-yellow-400/15 font-medium"><ArrowRight size={10}/>Merge</button>}<button onClick={()=>setCardApprovals(p=>({...p,[i]:'rejected'}))} className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground ml-auto"><X size={10}/></button></div>)}{approval==='rejected'&&<button onClick={()=>setCardApprovals(p=>{const n={...p};delete n[i];return n;})} className="text-xs text-muted-foreground hover:text-foreground">Undo</button>}</div>);})}</div>);
 
                         return (
                           <div className="rounded-2xl border border-violet-400/20 bg-card/60 overflow-hidden">
@@ -2109,26 +1962,26 @@ Evidence: ${c.data_basis}` : ''}`,
                                 <div className="flex-1 min-w-0">
                                   <div className="font-bold text-sm">Manav Brain Analysis</div>
                                   <div className="text-xs text-muted-foreground mt-0.5">{compareResult.executive_summary}</div>
-                                </div>
-                                {compareResult.overall_score!=null && (
-                                  <div className={`flex flex-col items-center px-3 py-1.5 rounded-xl border shrink-0 ${compareResult.overall_score>=70?'border-green-400/30 bg-green-400/8':compareResult.overall_score>=40?'border-yellow-400/30 bg-yellow-400/8':'border-red-400/30 bg-red-400/8'}`}>
-                                    <span className={`text-xl font-black ${compareResult.overall_score>=70?'text-green-400':compareResult.overall_score>=40?'text-yellow-400':'text-red-400'}`}>{compareResult.overall_score}</span>
-                                    <span className="text-xs text-muted-foreground">/100</span>
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {CRITERIA_LIBRARY.filter(c=>compareCriteria.includes(c.id)).map(c=>(
+                                      <span key={c.id} className="text-xs px-1.5 py-0.5 rounded-full bg-primary/8 border border-primary/15 text-primary/70">{c.label}</span>
+                                    ))}
+                                    {compareCriteria.filter(c=>!CRITERIA_LIBRARY.some(l=>l.id===c)).map(c=>(
+                                      <span key={c} className="text-xs px-1.5 py-0.5 rounded-full bg-primary/8 border border-primary/15 text-primary/70">{c}</span>
+                                    ))}
                                   </div>
-                                )}
+                                </div>
+                                {compareResult.overall_score!=null&&(<div className={`flex flex-col items-center px-3 py-1.5 rounded-xl border shrink-0 ${compareResult.overall_score>=70?'border-green-400/30 bg-green-400/8':compareResult.overall_score>=40?'border-yellow-400/30 bg-yellow-400/8':'border-red-400/30 bg-red-400/8'}`}><span className={`text-xl font-black ${compareResult.overall_score>=70?'text-green-400':compareResult.overall_score>=40?'text-yellow-400':'text-red-400'}`}>{compareResult.overall_score}</span><span className="text-xs text-muted-foreground">/100</span></div>)}
                               </div>
                             </div>
-                            <div className="p-5">
-                              {tabContent[compareTab] || <p className="text-sm text-muted-foreground">Select a tab above.</p>}
-                            </div>
+                            <div className="p-5">{tabContent[compareTab]||<p className="text-sm text-muted-foreground">Select a tab above.</p>}</div>
                           </div>
                         );
                       })()}
 
                     </div>
                   );
-                })()}              </div>
-            )}
+                })()}
 
             {/* ── DOCUMENTS ── */}
             {tab === 'documents' && (
