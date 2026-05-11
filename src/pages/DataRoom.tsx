@@ -492,7 +492,7 @@ export default function DataRoom() {
   const client   = clients.find(c => c.id === selProj?.client_id);
 
   useEffect(() => {
-    if (!selProjId) { setKnowledge({}); setDocuments([]); setCrawlHistory([]); return; }
+    if (!selProjId) { setKnowledge({}); setDocuments([]); return; }
     loadData();
   }, [selProjId]);
 
