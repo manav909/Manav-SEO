@@ -14,6 +14,7 @@ import Audit     from "./pages/Audit";
 import Admin     from "./pages/Admin";
 import Playground from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
+import SystemControl from './pages/SystemControl';
 import NotFound  from "./pages/NotFound";
 
 const queryClient = new QueryClient({
