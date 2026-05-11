@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 // 600s: parallel batches of 3 means 8 URLs ≈ 3 batches × ~25s = ~75s total
-export const config = { maxDuration: 600 };
+export const config = { maxDuration: 300 };
 
 const SYSTEM = "You are Manav Brain. Extract SEO signals from live page content. Quote exact text. State 'Not found' for absent elements. Return only valid JSON.";
 
