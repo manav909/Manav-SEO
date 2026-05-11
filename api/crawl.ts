@@ -398,7 +398,7 @@ async function getCached(projectId: string, urls: string[]): Promise<Record<stri
   try {
     const { data } = await sb
       .from("crawled_pages")
-      .select("url,page_analysis,knowledge_fields,fetch_status,html_chars,crawl_status,crawled_at,fetch_strategy")
+      .select("url,page_analysis,knowledge_fields,fetch_status,html_chars,crawl_status,crawled_at")
       .eq("project_id", projectId)
       .in("url", urls);
     const map: Record<string, any> = {};
@@ -627,7 +627,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       let q = sb
         .from("crawled_pages")
-        .select("url,page_analysis,knowledge_fields,fetch_status,fetch_error,html_chars,crawl_status,fetch_strategy,crawled_at")
+        .select("url,page_analysis,knowledge_fields,fetch_status,fetch_error,html_chars,crawl_status,crawled_at")
         .eq("project_id", projectId)
         .order("crawled_at", { ascending: false });
       if (Array.isArray(urls) && urls.length) q = q.in("url", urls);
@@ -644,7 +644,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         knowledge_fields: row.knowledge_fields || [],
         html_chars:       row.html_chars || 0,
         crawl_status:     row.crawl_status,
-        fetch_strategy:   row.fetch_strategy,
+        fetch_strategy:   (row as any).fetch_strategy || undefined,
         from_cache:       true,
         cached_at:        row.crawled_at,
       }));
