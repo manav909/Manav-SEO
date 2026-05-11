@@ -211,7 +211,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const anthropic = new Anthropic();
       const response  = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 1500,
+        model: "claude-sonnet-4-5", max_tokens: 2000,
         system: SYSTEM + " You are performing a quality review. Be strict and evidence-driven. Return only valid JSON.",
         messages: [{ role: "user", content: verifyPrompt }],
       });
@@ -292,14 +292,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const anthropic = new Anthropic();
       const stream = await anthropic.messages.stream({
-        model: "claude-sonnet-4-5", max_tokens: 4000,
+        model: "claude-sonnet-4-5", max_tokens: 8192,
         system: SYSTEM,
         messages: [{ role: "user", content: executePrompt }],
       });
+      let finalStopReason = "";
       for await (const chunk of stream) {
         if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
           res.write(chunk.delta.text);
         }
+        if (chunk.type === "message_delta" && chunk.delta.stop_reason) {
+          finalStopReason = chunk.delta.stop_reason;
+        }
+      }
+      // Warn in Vercel logs if output was truncated at the token limit
+      if (finalStopReason === "max_tokens") {
+        console.warn(`[SEO Season] task-engine execute hit max_tokens limit — card: "${card.title}" role: ${role}. Consider increasing max_tokens or splitting the task.`);
+        res.write("\n\n---\n⚠️ Output reached the length limit and may be incomplete. Try splitting this task into smaller parts, or use the Redo button with more focused inputs.");
       }
     } catch (err: any) {
       res.write(`\nError: ${err.message}`);
@@ -346,7 +355,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const anthropic = new Anthropic();
       const response  = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 1200,
+        model: "claude-sonnet-4-5", max_tokens: 2000,
         system: SYSTEM + " You are evaluating your own work. Be honest, specific, and constructive. Return only valid JSON.",
         messages: [{ role: "user", content: evaluatePrompt }],
       });
