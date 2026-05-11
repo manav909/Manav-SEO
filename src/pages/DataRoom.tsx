@@ -39,8 +39,7 @@ import {
   TrendingDown,
   Minus,
   Eye,
-  Zap,
-} from 'lucide-react';
+  Zap, Database} from 'lucide-react';
 
 /* ─── types ─── */
 type KCategory = 'goal'|'cms'|'access'|'technical'|'competitor'|'content'|'analytics'|'manual'|'crawl';
@@ -451,8 +450,10 @@ export default function DataRoom() {
   const [uploadError,    setUploadError]    = useState('');
   const [reExtractingId, setReExtractingId] = useState<string|null>(null);
   // URL Crawler state
-  const [crawlHistory,      setCrawlHistory]      = useState<any[]>([]);
-  const [forceRefresh,      setForceRefresh]      = useState(false);  // bypass cache  // past crawl sessions from DB
+  // All historically crawled pages for this project (from crawled_pages table)
+  const [allCachedPages,    setAllCachedPages]    = useState<any[]>([]);
+  const [libLoading,        setLibLoading]        = useState(false);
+  const [forceRefresh,      setForceRefresh]      = useState(false);
   const [crawlUrls,         setCrawlUrls]         = useState('');
   const [crawlRunning,      setCrawlRunning]       = useState(false);
   const [crawlResults,      setCrawlResults]       = useState<any>(null);
@@ -497,8 +498,9 @@ export default function DataRoom() {
 
   // Load crawl history when crawl tab opens
   useEffect(() => {
-    if (tab === 'crawl' && selProjId && !crawlHistory.length) {
-      loadCrawlHistory();
+    // Load per-URL Page Library when entering the crawl tab
+    if (tab === 'crawl' && selProjId) {
+      loadAllCachedPages();
     }
   }, [tab, selProjId]);
 
@@ -771,68 +773,51 @@ export default function DataRoom() {
   };
 
   // ══ URL Crawler functions ══════════════════════════════════════════
-  const loadCrawlHistory = async () => {
+  // ── Load ALL historically crawled pages for this project from crawled_pages ──
+  // This is the Page Library — every URL ever crawled, individually, not bundled into sessions.
+  const loadAllCachedPages = async () => {
     if (!selProjId) return;
+    setLibLoading(true);
     try {
-      const { data } = await supabase
-        .from('project_documents')
-        .select('id,name,doc_type,extracted_data,source_date,raw_content,created_at')
-        .eq('project_id', selProjId)
-        .eq('doc_type', 'crawl_report')
-        .order('created_at', { ascending: false })
-        .limit(10);
-      if (data) setCrawlHistory(data);
-    } catch { /* silent */ }
-  };
-
-  // Load all previously crawled pages for this project from the DB cache
-  const loadCachedResults = async () => {
-    if (!selProjId) return;
-    setCrawlRunning(true);
-    try {
-      const res  = await fetch('/api/crawl', {
+      const res = await fetch('/api/crawl', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'load_cached', projectId: selProjId }),
       });
       const data = await safeJson(res);
       if (data.success && data.results?.length) {
-        setCrawlResults(data);
-        setCrawlSaved(true);
-        const successful = data.results.filter((r:any) => r.page_analysis).map((r:any) => r.url);
-        setActiveCrawlUrls(successful);
-        // Restore URLs to the textarea
-        setCrawlUrls(data.results.map((r:any) => r.url).join(String.fromCharCode(10)));
-        toast({ title: `${data.results.length} cached pages loaded`, description: 'Run compare analysis or add new URLs to crawl.' });
+        setAllCachedPages(data.results);
       } else {
-        toast({ title: 'No cached pages', description: 'Crawl some URLs first — they will be saved automatically.' });
+        setAllCachedPages([]);
       }
-    } catch (e: any) {
-      toast({ title: 'Load failed', description: e.message, variant: 'destructive' });
-    }
-    setCrawlRunning(false);
+    } catch { /* silent */ }
+    setLibLoading(false);
   };
 
-  const restoreCrawlSession = (session: any) => {
-    // Restore URLs from the session
-    const urls = session.raw_content || '';
-    setCrawlUrls(urls);
-    // Restore crawl results if available
-    if (session.extracted_data?.results) {
-      setCrawlResults({
-        success: true,
-        urls_crawled: session.extracted_data.results.length,
-        results: session.extracted_data.results,
-        aggregated_knowledge: session.extracted_data.knowledge_fields || [],
-        cross_page_issues: session.extracted_data.cross_page_issues || [],
-        cross_page_opportunities: session.extracted_data.cross_page_opportunities || [],
-        crawled_at: session.source_date,
-      });
-    }
-    setCrawlSaved(true);
-    setCrawlSaving(false);
-    setCompareResult(null);
-    setCardApprovals({});
-    toast({ title: 'Session restored', description: `Crawl from ${session.source_date} loaded. Click compare to re-analyse.` });
+  // Build crawlResults from the current activeCrawlUrls selection in the Page Library
+  const buildResultsFromSelection = (urls: string[], library: any[]) => {
+    const selected = library.filter(p => urls.includes(p.url));
+    if (!selected.length) return null;
+    const agg: Record<string, any> = {};
+    for (const r of selected) for (const kf of (r.knowledge_fields || [])) agg[kf.key] = { ...kf, source_url: r.url };
+    return {
+      success:                  true,
+      urls_crawled:             selected.length,
+      crawled_at:               selected[0]?.cached_at || new Date().toISOString(),
+      results:                  selected,
+      aggregated_knowledge:     Object.values(agg),
+      cross_page_issues:        selected.flatMap(r => (r.page_analysis?.issues || []).map((i: any) => ({ ...i, url: r.url }))),
+      cross_page_opportunities: selected.flatMap(r => (r.page_analysis?.opportunities || []).map((o: any) => ({ ...o, url: r.url }))),
+    };
+  };
+
+  // Toggle a page in/out of the active analysis selection
+  const togglePageInAnalysis = (url: string, library: any[]) => {
+    setActiveCrawlUrls(prev => {
+      const next = prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url];
+      setCrawlResults(buildResultsFromSelection(next, library));
+      setCrawlSaved(true);
+      return next;
+    });
   };
 
   const previewUrl = async (url: string) => {
@@ -914,10 +899,13 @@ export default function DataRoom() {
           if (msg.type === 'complete') {
             setCrawlResults(msg);
             const ok = (msg.results||[]).filter((r:any)=>r.page_analysis).map((r:any)=>r.url);
-            setActiveCrawlUrls(ok.length > 0 ? ok : (msg.results||[]).map((r:any)=>r.url));
+            const activeUrls = ok.length > 0 ? ok : (msg.results||[]).map((r:any)=>r.url);
+            setActiveCrawlUrls(activeUrls);
             const cached = (msg.results||[]).filter((r:any)=>r.from_cache).length;
             const fresh  = (msg.results||[]).filter((r:any)=>!r.from_cache&&r.page_analysis).length;
             const failed = (msg.results||[]).filter((r:any)=>!r.page_analysis).length;
+            // Refresh the Page Library so newly crawled pages appear immediately
+            loadAllCachedPages();
             toast({
               title: `${msg.urls_crawled} page${msg.urls_crawled!==1?'s':''} ready`,
               description: [
@@ -1025,23 +1013,7 @@ export default function DataRoom() {
       saved.push(kf.key);
     }
 
-    // Also save crawl results as a document record
-    await supabase.from('project_documents').insert({
-      project_id:     selProjId,
-      name:           `URL Crawl — ${new Date().toLocaleDateString()} (${crawlResults.urls_crawled} pages)`,
-      doc_type:       'crawl_report',
-      raw_content:    crawlUrls,
-      extracted_data: {
-        doc_summary:      `Crawled ${crawlResults.urls_crawled} URL${crawlResults.urls_crawled !== 1 ? 's' : ''}`,
-        knowledge_fields: crawlResults.aggregated_knowledge || [],
-        cross_page_issues:       crawlResults.cross_page_issues || [],
-        cross_page_opportunities: crawlResults.cross_page_opportunities || [],
-        results:          crawlResults.results || [],
-      },
-      file_size_kb:   0,
-      source_date:    new Date().toISOString().split('T')[0],
-    });
-
+    // Each URL is already saved individually in crawled_pages — no session bundle needed.
     // Mark strategy stale
     fetch('/api/control', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1114,6 +1086,8 @@ export default function DataRoom() {
           return merged;
         });
         setActiveCrawlUrls(prev => [...prev.filter(u => u !== clean), clean]);
+        // Refresh library so this URL appears/updates in the Page Library
+        loadAllCachedPages();
         toast({ title: `${clean.replace(/https?:\/\//, '').slice(0, 40)} crawled`, description: newResult.page_analysis ? 'Analysis complete' : newResult.error });
       }
     } catch (e: any) {
@@ -1612,33 +1586,165 @@ Evidence: ${c.data_basis}` : ''}`,
             {/* ── CRAWL TAB ── */}
             {tab === 'crawl' && (
               <div className="space-y-5">
-                {/* Crawl history */}
-                {crawlHistory.length > 0 && (
-                  <div className="rounded-2xl border border-border bg-card/40 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-xs font-mono text-muted-foreground uppercase">Past crawl sessions</div>
-                      <button onClick={loadCrawlHistory} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"><RefreshCw size={10}/>Refresh</button>
+                {/* ── Page Library — all historically crawled URLs ── */}
+                <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/80">
+                    <div>
+                      <div className="font-semibold text-sm flex items-center gap-2">
+                        <Database size={13} className="text-primary"/>
+                        Page Library
+                        {allCachedPages.length > 0 && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-normal">
+                            {allCachedPages.length} saved
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        Every URL crawled for this project — pick any combination for Manav Brain analysis
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {crawlHistory.map((session,i)=>(
-                        <div key={session.id||i} className="flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium truncate">{session.name}</div>
-                            <div className="text-xs text-muted-foreground">{session.source_date} · {session.extracted_data?.results?.length||0} pages crawled</div>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              onClick={()=>restoreCrawlSession(session)}
-                              className="text-xs px-2.5 py-1 rounded-lg border border-primary/25 bg-primary/8 text-primary hover:bg-primary/15 font-medium"
-                            >
-                              Restore
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {allCachedPages.length > 0 && (
+                        <>
+                          <button
+                            onClick={()=>{
+                              const ownHost = (selProj?.url||'').replace(/https?:\/\//,'').replace(/\/.*$/,'').toLowerCase();
+                              const ownUrls = allCachedPages.filter(p=>p.url.replace(/https?:\/\//,'').replace(/\/.*$/,'').toLowerCase()===ownHost||p.url.replace(/https?:\/\//,'').replace(/\/.*$/,'').toLowerCase().endsWith('.'+ownHost)).map(p=>p.url);
+                              setActiveCrawlUrls(ownUrls);
+                              setCrawlResults(buildResultsFromSelection(ownUrls, allCachedPages));
+                              setCrawlSaved(true);
+                            }}
+                            className="text-xs px-2 py-1 rounded-lg border border-blue-400/25 text-blue-400/80 hover:bg-blue-400/10 hover:text-blue-400"
+                          >Own only</button>
+                          <button
+                            onClick={()=>{
+                              const allUrls = allCachedPages.filter(p=>p.page_analysis).map(p=>p.url);
+                              setActiveCrawlUrls(allUrls);
+                              setCrawlResults(buildResultsFromSelection(allUrls, allCachedPages));
+                              setCrawlSaved(true);
+                            }}
+                            className="text-xs px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground"
+                          >Select all</button>
+                          <button
+                            onClick={()=>{ setActiveCrawlUrls([]); setCrawlResults(null); }}
+                            className="text-xs px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground"
+                          >Clear</button>
+                        </>
+                      )}
+                      <button onClick={loadAllCachedPages} disabled={libLoading}
+                        className="text-xs px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-50">
+                        <RefreshCw size={9} className={libLoading?'animate-spin':''}/>Refresh
+                      </button>
                     </div>
                   </div>
-                )}
+
+                  {libLoading && (
+                    <div className="px-4 py-6 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                      <Loader2 size={13} className="animate-spin"/>Loading page library…
+                    </div>
+                  )}
+
+                  {!libLoading && allCachedPages.length === 0 && (
+                    <div className="px-4 py-8 text-center">
+                      <Globe size={22} className="text-muted-foreground/20 mx-auto mb-2"/>
+                      <p className="text-sm text-muted-foreground">No pages crawled yet.</p>
+                      <p className="text-xs text-muted-foreground/60 mt-1">Crawl some URLs below — they'll appear here permanently.</p>
+                    </div>
+                  )}
+
+                  {!libLoading && allCachedPages.length > 0 && (()=>{
+                    const ownHost = (selProj?.url||'').replace(/https?:\/\//,'').replace(/\/.*$/,'').toLowerCase();
+                    const isOwn  = (url:string) => {
+                      if (!ownHost) return false;
+                      const h = url.replace(/https?:\/\//,'').replace(/\/.*$/,'').toLowerCase();
+                      return h===ownHost||h.endsWith('.'+ownHost);
+                    };
+                    const isComp = (url:string) => {
+                      const compHosts = ['competitor_1','competitor_2','competitor_3']
+                        .map(k=>getField('competitor',k)).filter(Boolean)
+                        .map(c=>c.replace(/https?:\/\//,'').replace(/\/.*$/,'').toLowerCase());
+                      const h = url.replace(/https?:\/\//,'').replace(/\/.*$/,'').toLowerCase();
+                      return compHosts.some(c=>h===c||h.endsWith('.'+c));
+                    };
+
+                    // Group: own pages first, then competitors, then other
+                    const sorted = [
+                      ...allCachedPages.filter(p=>isOwn(p.url)),
+                      ...allCachedPages.filter(p=>isComp(p.url)&&!isOwn(p.url)),
+                      ...allCachedPages.filter(p=>!isOwn(p.url)&&!isComp(p.url)),
+                    ];
+
+                    return (
+                      <div className="divide-y divide-border/50 max-h-72 overflow-y-auto">
+                        {sorted.map((page:any) => {
+                          const checked = activeCrawlUrls.includes(page.url);
+                          const own  = isOwn(page.url);
+                          const comp = isComp(page.url);
+                          const ok   = !!page.page_analysis;
+                          const conf = page.page_analysis?.data_confidence;
+                          const age  = page.cached_at
+                            ? Math.floor((Date.now()-new Date(page.cached_at).getTime())/86400000)
+                            : null;
+                          const isRecrawlingThis = recrawlingUrl === page.url;
+                          return (
+                            <div key={page.url}
+                              className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${checked?own?'bg-blue-400/4':comp?'bg-orange-400/4':'bg-primary/3':'hover:bg-secondary/20'}`}>
+                              <input type="checkbox" checked={checked}
+                                onChange={()=>togglePageInAnalysis(page.url, allCachedPages)}
+                                className="accent-primary shrink-0 h-3.5 w-3.5"/>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-mono text-foreground truncate max-w-[280px]">
+                                    {page.url.replace(/https?:\/\//, '')}
+                                  </span>
+                                  {own  && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-400/10 text-blue-400 font-medium shrink-0">Own</span>}
+                                  {comp && <span className="text-xs px-1.5 py-0.5 rounded-full bg-orange-400/10 text-orange-400 font-medium shrink-0">Comp</span>}
+                                </div>
+                                {page.page_analysis?.title_tag && page.page_analysis.title_tag !== 'Not found' && (
+                                  <div className="text-xs text-muted-foreground truncate mt-0.5">{page.page_analysis.title_tag}</div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {ok ? (
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full border ${conf==='high'?'border-green-400/25 text-green-400':conf==='medium'?'border-yellow-400/25 text-yellow-400':'border-border text-muted-foreground'}`}>
+                                    {conf||'?'}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs px-1.5 py-0.5 rounded-full border border-red-400/25 text-red-400">failed</span>
+                                )}
+                                {age !== null && (
+                                  <span className="text-xs text-muted-foreground/50">{age===0?'today':`${age}d ago`}</span>
+                                )}
+                                <button onClick={()=>addSingleUrl(page.url)} disabled={!!recrawlingUrl || crawlRunning}
+                                  title="Re-crawl this URL with fresh data"
+                                  className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-cyan-400 hover:bg-cyan-400/10 disabled:opacity-30 transition-colors">
+                                  {isRecrawlingThis
+                                    ? <Loader2 size={11} className="animate-spin text-cyan-400"/>
+                                    : <RefreshCw size={11}/>}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
+                  {activeCrawlUrls.length > 0 && (
+                    <div className="px-4 py-2.5 border-t border-border bg-background/30 flex items-center justify-between gap-3">
+                      <span className="text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground">{activeCrawlUrls.length}</span> page{activeCrawlUrls.length!==1?'s':''} selected for analysis
+                      </span>
+                      {!crawlSaved && crawlResults?.aggregated_knowledge?.length > 0 && (
+                        <button onClick={saveCrawlToKnowledge} disabled={crawlSaving}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15 disabled:opacity-50 font-medium">
+                          {crawlSaving?<><Loader2 size={10} className="animate-spin"/>Saving…</>:<><Save size={10}/>Save to Data Room</>}
+                        </button>
+                      )}
+                      {crawlSaved && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle size={10}/>Saved</span>}
+                    </div>
+                  )}
+                </div>
 
                 <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-4">
                   <div className="flex items-start gap-3">
@@ -1772,14 +1878,7 @@ Evidence: ${c.data_basis}` : ''}`,
                           ? <><Loader2 size={14} className="animate-spin"/>Crawling…</>
                           : <><Globe size={14}/>Crawl {crawlUrls.split(String.fromCharCode(10)).filter(Boolean).slice(0,10).length||''} URL{crawlUrls.split(String.fromCharCode(10)).filter(Boolean).length!==1?'s':''}</>}
                       </button>
-                      <button
-                        onClick={loadCachedResults}
-                        disabled={crawlRunning}
-                        title="Load previously crawled pages for this project — no new crawl needed"
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-primary/30 bg-primary/8 text-primary font-semibold text-sm disabled:opacity-50 hover:bg-primary/15 transition-colors"
-                      >
-                        <RefreshCw size={13}/>Load saved pages
-                      </button>
+
                       {crawlUrls.trim()&&!crawlRunning && (
                         <button
                           onClick={()=>crawlUrls.split(String.fromCharCode(10)).map((l:string)=>l.trim()).filter(Boolean).slice(0,10).forEach((u:string)=>{const c=u.startsWith('http')?u:`https://${u}`;if(!crawlPreview[c])previewUrl(c);})}
@@ -1862,15 +1961,7 @@ Evidence: ${c.data_basis}` : ''}`,
                             {crawlResults.crawled_at && <span className="ml-2">· {crawlResults.crawled_at.split('T')[0]}</span>}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {!crawlSaved && crawlResults.aggregated_knowledge?.length>0 && (
-                            <button onClick={saveCrawlToKnowledge} disabled={crawlSaving}
-                              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">
-                              {crawlSaving?<><Loader2 size={11} className="animate-spin"/>Saving…</>:<><Save size={11}/>Save to Data Room</>}
-                            </button>
-                          )}
-                          {crawlSaved && <div className="flex items-center gap-1 text-green-400 text-xs font-medium"><CheckCircle size={11}/>Saved</div>}
-                        </div>
+
                       </div>
 
                       {/* ══ CRITERIA SELECTOR + URL MANAGER (always visible) ══ */}
