@@ -64,9 +64,9 @@ export default function BrainLearning() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res  = await fetch('/api/brain-learning', {
+      const res  = await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_all', project_id: selProjId || null }),
+        body: JSON.stringify({ action: 'get_all_learnings', project_id: selProjId || null }),
       });
       const data = await res.json().catch(() => ({ learnings: [] }));
       setLearnings(data.learnings || []);
@@ -82,9 +82,9 @@ export default function BrainLearning() {
   const deleteLearning = async (id: string) => {
     setDeleting(d => ({ ...d, [id]: true }));
     try {
-      await fetch('/api/brain-learning', {
+      await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', id }),
+        body: JSON.stringify({ action: 'delete_learning', id }),
       });
       setLearnings(l => l.filter(x => x.id !== id));
       toast({ title: 'Learning removed' });
@@ -100,10 +100,10 @@ export default function BrainLearning() {
     if (!e) return;
     setSaving(s => ({ ...s, [id]: true }));
     try {
-      const res  = await fetch('/api/brain-learning', {
+      const res  = await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action:      'update',
+          action:      'update_learning',
           id,
           improvement: e.improvement,
           tags:        e.tags.split(',').map((t: string) => t.trim()).filter(Boolean),
