@@ -413,6 +413,7 @@ export default function DataRoom() {
           fileName:       file.name,
           docType:        uploadDocType,
           projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
+          siteUrl:        selProj?.url || '',
         }),
       });
       const extracted = await res.json();
@@ -430,7 +431,7 @@ export default function DataRoom() {
       setUploadStatus('saving');
       if (extracted.success && extracted.extracted) {
         await supabase.from('project_documents').update({
-          extracted_data: extracted.extracted,
+          extracted_data: { ...extracted.extracted, ...(extracted.live_verification ? { live_verification: extracted.live_verification } : {}) },
         }).eq('id', docRow.id);
 
         // Upsert knowledge fields
@@ -1026,6 +1027,44 @@ export default function DataRoom() {
                                     </div>
                                   ))}
                                 </div>
+                              </div>
+                            )}
+                            {/* Live verification results */}
+                            {doc.extracted_data.live_verification && (
+                              <div className="space-y-2">
+                                {doc.extracted_data.live_verification.discrepancies?.length > 0 && (
+                                  <div className="rounded-xl border border-red-400/25 bg-red-400/5 p-3">
+                                    <div className="text-xs font-mono text-red-400 uppercase mb-2 flex items-center gap-1.5">
+                                      <AlertTriangle size={10}/>Live site discrepancies — document may be outdated
+                                    </div>
+                                    {doc.extracted_data.live_verification.discrepancies.map((d:any,i:number)=>(
+                                      <div key={i} className="text-xs mb-1.5">
+                                        <span className="font-medium text-foreground">{d.key}: </span>
+                                        <span className="line-through text-red-400/70 mr-1">{d.extracted_value}</span>
+                                        <span className="text-green-400">→ {d.live_value||'differs'}</span>
+                                        {d.severity==='high' && <span className="ml-1 text-red-400 font-bold">[HIGH]</span>}
+                                        {d.note && <p className="text-muted-foreground mt-0.5 ml-2">{d.note}</p>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {doc.extracted_data.live_verification.unverifiable?.length > 0 && (
+                                  <div className="rounded-xl border border-muted/20 bg-muted/5 p-3">
+                                    <div className="text-xs font-mono text-muted-foreground uppercase mb-1.5">Could not verify against live site</div>
+                                    {doc.extracted_data.live_verification.unverifiable.map((u:any,i:number)=>(
+                                      <div key={i} className="text-xs text-muted-foreground mb-1 flex items-start gap-1.5">
+                                        <span className="shrink-0 mt-0.5">·</span>
+                                        <span><span className="font-medium text-foreground">{u.key}</span>: {u.reason}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {doc.extracted_data.live_verification.verified?.length > 0 && (
+                                  <div className="text-xs text-green-400/70 flex items-center gap-1.5">
+                                    <CheckCircle2 size={10}/>
+                                    {doc.extracted_data.live_verification.verified.length} field{doc.extracted_data.live_verification.verified.length!==1?'s':''} confirmed against live site
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
