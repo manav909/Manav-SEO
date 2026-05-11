@@ -131,7 +131,10 @@ export default function AlgorithmIntel() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'fetch_updates', engine: fetchTopic.engine, topic: fetchTopic.topic }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); }
+      catch { throw new Error(`Server error: ${text.slice(0, 150)}`); }
       if (data.success) {
         setFetchResult(data.items || []);
         setFetchSummary(data.fetch_summary || '');
@@ -153,7 +156,7 @@ export default function AlgorithmIntel() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'save_item', item }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ success: false, error: 'Server error' }));
       if (data.success) {
         setSavedIds(prev => ({ ...prev, [idx]: true }));
         setLibrary(prev => [data.item, ...prev]);
@@ -176,7 +179,7 @@ export default function AlgorithmIntel() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'save_many', items: unsaved }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ success: false }));
       if (data.success) {
         const newIds: Record<number,boolean> = {};
         fetchResult.forEach((_, i) => { newIds[i] = true; });
@@ -265,7 +268,10 @@ export default function AlgorithmIntel() {
           targetEngine: auditEngine,
         }),
       });
-      const auditData = await auditRes.json();
+      const auditText = await auditRes.text();
+      let auditData: any;
+      try { auditData = JSON.parse(auditText); }
+      catch { throw new Error(`Audit server error: ${auditText.slice(0, 150)}`); }
       if (auditData.success) {
         setAuditResult(auditData.audit);
         toast({ title: `Audit complete — ${auditData.audit.grade} (${auditData.audit.overall_score}/100)` });
