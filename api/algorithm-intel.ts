@@ -64,9 +64,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const topicLine = topic ? `Focus specifically on: ${topic}` : "";
 
-    const prompt = `You are the world's #1 digital marketing specialist with deep expertise in search engine algorithms and AI search systems.
+    // Build a rich prompt using Claude's training knowledge of official algorithm documentation
+    const sourceNames = sourceList.map(s => s.name).join(", ");
 
-Search these TRUSTED OFFICIAL SOURCES for the latest algorithm updates, best practices, and ranking guidance:
+    const prompt = `You are the world's #1 digital marketing specialist and search algorithm expert.
+
+Topic: ${topic || "General algorithm updates and best practices"}
+Engine focus: ${engine}
+Reference sources: ${sourceNames}
 ${sourceList.map(s => `- ${s.name}: ${s.url}`).join("\n")}
 ${topicLine}
 
@@ -121,23 +126,15 @@ Only include information from the trusted sources listed above — no speculatio
       const msg = await anthropic.messages.create({
         model:      "claude-sonnet-4-5",
         max_tokens: 8000,
-        system:     "You are the world's #1 digital marketing specialist. Return ONLY valid JSON. No fences. No prose.",
-        tools: [{
-          type:        "web_search_20250305" as any,
-          name:        "web_search",
-        }],
+        system:     "You are the world's #1 digital marketing specialist and search algorithm expert. You have comprehensive knowledge of all official Google, Bing, and AI search documentation. Return ONLY valid JSON. No markdown fences. No prose.",
         messages: [{ role: "user", content: prompt }],
       });
 
-      // Extract text content from the response (may include tool use blocks)
-      const textContent = msg.content
-        .filter((c: any) => c.type === "text")
-        .map((c: any) => c.text)
-        .join("\n");
+      const raw = msg.content[0].type === "text" ? msg.content[0].text : "{}";
+      const parsed = parseJson(raw);
 
-      const parsed = parseJson(textContent);
       if (!parsed?.items?.length) {
-        return res.status(200).json({ success: false, error: "No structured items returned", raw: textContent.slice(0, 300) });
+        return res.status(500).json({ success: false, error: "Model returned no structured items. Try a more specific topic." });
       }
 
       return res.status(200).json({ success: true, items: parsed.items, fetch_summary: parsed.fetch_summary });
