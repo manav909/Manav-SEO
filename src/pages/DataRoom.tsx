@@ -952,10 +952,51 @@ export default function DataRoom() {
     if (!crawlResults || !selProjId) return;
     setCrawlSaving(true);
 
+    // ── Identify own-domain URLs ──────────────────────────────────────
+    // Strip protocol + trailing slash, take the hostname only.
+    // e.g. "https://acme.com/page" → "acme.com"
+    const ownHostname = (selProj?.url || '')
+      .replace(/https?:\/\//, '')
+      .replace(/\/.*$/, '')   // remove path
+      .toLowerCase()
+      .trim();
+
+    // A URL belongs to the project if its hostname contains the own hostname.
+    // This correctly handles "www.acme.com" matching "acme.com" and subdomains.
+    const isOwnUrl = (url: string): boolean => {
+      if (!ownHostname) return false;
+      const host = url.replace(/https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
+      return host === ownHostname || host.endsWith('.' + ownHostname);
+    };
+
+    // ── Build knowledge list ONLY from own pages ──────────────────────
+    // Competitor knowledge_fields must NEVER overwrite project knowledge.
+    // They are used for comparison display but must not touch the Data Room.
+    const ownResults = (crawlResults.results || []).filter((r: any) => isOwnUrl(r.url));
+    const competitorResults = (crawlResults.results || []).filter((r: any) => !isOwnUrl(r.url));
+
+    // Merge own-page knowledge_fields (last-write-wins within own pages only)
+    const ownKnowledge: Record<string, any> = {};
+    for (const r of ownResults) {
+      for (const kf of (r.knowledge_fields || [])) {
+        if (kf.key && kf.value) {
+          ownKnowledge[kf.key] = { ...kf, source_url: r.url };
+        }
+      }
+    }
+
     const newConflicts: typeof pendingConflicts = [];
     const saved: string[] = [];
+    const skipped: string[] = [];
 
-    for (const kf of (crawlResults.aggregated_knowledge || [])) {
+    // Log what we're skipping so the user can see it
+    for (const r of competitorResults) {
+      for (const kf of (r.knowledge_fields || [])) {
+        if (kf.key) skipped.push(kf.key);
+      }
+    }
+
+    for (const kf of Object.values(ownKnowledge)) {
       if (!kf.key || !kf.value) continue;
 
       // Detect conflict with existing value
@@ -1020,8 +1061,10 @@ export default function DataRoom() {
     }
 
     toast({
-      title: `${saved.length} data point${saved.length !== 1 ? 's' : ''} saved to knowledge base`,
-      description: 'Strategy will show as stale — regenerate to apply the new data.',
+      title: `${saved.length} data point${saved.length !== 1 ? 's' : ''} saved from ${ownResults.length} own page${ownResults.length !== 1 ? 's' : ''}`,
+      description: competitorResults.length > 0
+        ? `${competitorResults.length} competitor page${competitorResults.length !== 1 ? 's' : ''} used for comparison only — their data was NOT written to your knowledge base.`
+        : 'Strategy will show as stale — regenerate to apply the new data.',
     });
   };
 
