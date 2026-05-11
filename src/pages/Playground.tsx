@@ -2758,26 +2758,79 @@ Please try again — if the problem persists, check your network connection.`);
                   </div>
                 ) : (
                   <>
-                    {/* Data gaps blocking notification */}
-                    {(s.data_gaps?.length > 0 || s.data_gaps_blocking?.length > 0) && (
-                      <div className="rounded-2xl border border-yellow-400/25 bg-yellow-400/5 p-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <AlertTriangle size={14} className="text-yellow-400 shrink-0"/>
-                          <span className="font-semibold text-sm text-yellow-400">Analysis gaps — add data to improve card quality</span>
+                    {/* Data gaps blocking notification — with exact Data Room guidance */}
+                    {(s.data_gaps?.length > 0 || s.data_gaps_blocking?.length > 0) && (() => {
+                      // Map gap descriptions to exact Data Room tab + field
+                      const GAP_GUIDE: Record<string, { tab: string; label: string; field: string; how: string }> = {
+                        'metrics':      { tab:'analytics',   label:'Analytics Baseline',       field:'Monthly Organic Sessions',   how:'Enter current monthly organic sessions from Google Analytics or GSC'},
+                        'analytics':    { tab:'analytics',   label:'Analytics Baseline',       field:'Monthly Organic Sessions',   how:'Enter current monthly organic sessions from Google Analytics or GSC'},
+                        'keyword':      { tab:'goals',       label:'Campaign Goals',            field:'Top 3 Target Keywords',      how:'Enter your 3 most important keywords in the Goals tab'},
+                        'keywords':     { tab:'goals',       label:'Campaign Goals',            field:'Top 3 Target Keywords',      how:'Enter your 3 most important keywords in the Goals tab'},
+                        'ranking':      { tab:'documents',   label:'Documents',                 field:'Upload Semrush/Ahrefs export',how:'Export keyword rankings from Semrush or Ahrefs and upload as CSV'},
+                        'competitor':   { tab:'competitors', label:'Competitor Intelligence',   field:'Main Competitor #1',         how:'Enter competitor domains in the Competitors tab'},
+                        'audit':        { tab:'documents',   label:'Documents',                 field:'Upload audit report',        how:'Run an audit from the Audit Tool — it saves automatically here'},
+                        'technical':    { tab:'technical',   label:'Technical Baseline',        field:'Pages Indexed (GSC)',         how:'Check Google Search Console Coverage and enter indexed pages count'},
+                        'gsc':          { tab:'documents',   label:'Documents',                 field:'Google Search Console Export',how:'In GSC → Performance → Export CSV, then upload here'},
+                        'gsc_data':     { tab:'documents',   label:'Documents',                 field:'Google Search Console Export',how:'In GSC → Performance → Export CSV, then upload here'},
+                        'goal':         { tab:'goals',       label:'Campaign Goals',            field:'Primary Business Goal',      how:'Set your campaign goal and target timeline in the Goals tab'},
+                        'cms':          { tab:'cms',         label:'CMS & Tech Stack',          field:'CMS / Platform',             how:'Select your CMS (WordPress, Shopify, etc.) in the CMS tab'},
+                        'domain':       { tab:'competitors', label:'Competitor Intelligence',   field:'Our Domain Rating',          how:'Check your domain rating in Ahrefs/Semrush and enter it'},
+                        'document':     { tab:'documents',   label:'Documents',                 field:'Upload SEO export',          how:'Upload CSV exports from GSC, Semrush, Ahrefs or GA4'},
+                        'no data':      { tab:'analytics',   label:'Analytics Baseline',       field:'Monthly Organic Sessions',   how:'Start with Analytics Baseline — enter at minimum your monthly organic sessions'},
+                        'perplexity':   { tab:'analytics',   label:'Analytics Baseline',       field:'GEO Metrics (Metrics Dashboard)',how:'Record Perplexity/ChatGPT citations in the Metrics Dashboard'},
+                      };
+
+                      const allGaps = [...(s.data_gaps||[]), ...(s.data_gaps_blocking||[])];
+
+                      const mapGap = (gap: string) => {
+                        const lower = gap.toLowerCase();
+                        for (const [key, guide] of Object.entries(GAP_GUIDE)) {
+                          if (lower.includes(key)) return guide;
+                        }
+                        // Default: point to analytics
+                        return { tab:'analytics', label:'Analytics Baseline', field:'Monthly Organic Sessions', how:'Fill in your analytics baseline as a starting point' };
+                      };
+
+                      return (
+                        <div className="rounded-2xl border border-yellow-400/25 bg-yellow-400/5 p-4 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle size={14} className="text-yellow-400 shrink-0"/>
+                            <span className="font-semibold text-sm text-yellow-400">
+                              {allGaps.length} analysis gap{allGaps.length!==1?'s':''} — fill these in Data Room then regenerate
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {allGaps.map((gap:string, i:number) => {
+                              const guide = mapGap(gap);
+                              return (
+                                <div key={i} className="rounded-xl border border-yellow-400/15 bg-background/40 p-3 space-y-1.5">
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-yellow-400 shrink-0 font-bold text-xs mt-0.5">{i+1}.</span>
+                                    <p className="text-xs text-foreground font-medium leading-snug">{gap}</p>
+                                  </div>
+                                  <div className="ml-4 flex flex-wrap items-center gap-2">
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                      <ChevronRight size={10} className="text-primary shrink-0"/>
+                                      <span className="text-primary font-medium">Data Room → {guide.label}</span>
+                                      <span>→</span>
+                                      <span className="font-medium text-foreground">{guide.field}</span>
+                                    </div>
+                                  </div>
+                                  <p className="ml-4 text-xs text-muted-foreground leading-relaxed">{guide.how}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="flex items-center gap-2 pt-1 border-t border-yellow-400/15 flex-wrap">
+                            <p className="text-xs text-muted-foreground flex-1">Fill these gaps then click Regenerate Strategy — you'll get more accurate, evidence-backed cards.</p>
+                            <Button size="sm" onClick={generate} disabled={generating}
+                              className="h-7 bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 text-xs">
+                              {generating ? <><RefreshCw size={10} className="animate-spin mr-1"/>Regenerating…</> : <><RefreshCw size={10} className="mr-1"/>Regenerate now</>}
+                            </Button>
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          {[...(s.data_gaps||[]), ...(s.data_gaps_blocking||[])].map((gap:string,i:number)=>(
-                            <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                              <span className="text-yellow-400 shrink-0 mt-0.5">·</span>
-                              <span>{gap}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-yellow-400/15">
-                          Go to <span className="text-primary font-medium">Data Room</span> to fill these gaps, then regenerate for more accurate cards.
-                        </p>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
                       <div className="flex items-center gap-3 mb-3">
