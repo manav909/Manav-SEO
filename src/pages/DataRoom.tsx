@@ -556,6 +556,7 @@ export default function DataRoom() {
           fileName:       doc.name,
           docType:        doc.doc_type,
           siteUrl:        selProj?.url || '',
+          skipLiveVerify: true,   // re-extraction: skip live verify to avoid function timeout
           projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
         }),
       });
