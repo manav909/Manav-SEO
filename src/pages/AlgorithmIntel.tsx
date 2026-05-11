@@ -92,6 +92,10 @@ export default function AlgorithmIntel() {
   const [search,       setSearch]       = useState('');
   const [filterEngine, setFilterEngine] = useState('');
 
+  // Best Practices tab state
+  const [practicesCat,  setPracticesCat]  = useState('');
+  const [checkedItems,  setCheckedItems]  = useState<Record<string,boolean>>({});
+
   // Scan for new updates state
   const [scanning,     setScanning]     = useState(false);
   const [scanResults,  setScanResults]  = useState<any[]>([]);
@@ -449,7 +453,7 @@ export default function AlgorithmIntel() {
               {showAddCustom && (
                 <div className="rounded-xl border border-border bg-card/60 p-4 space-y-3">
                   <div className="font-semibold text-sm flex items-center gap-2"><Plus size={13} className="text-primary"/>Add Custom Topic</div>
-                  <p className="text-xs text-muted-foreground">Type any algorithm update, guideline, or SEO signal — Claude will research it and add it to your library.</p>
+                  <p className="text-xs text-muted-foreground">Type any algorithm update, guideline, or SEO signal — Manav will research it and add it to your library.</p>
                   <div className="flex gap-2">
                     <input value={customLabel} onChange={e => setCustomLabel(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && !addingCustom && customLabel.trim() && addCustomTopic()}
@@ -673,65 +677,216 @@ export default function AlgorithmIntel() {
         )}
 
         {/* ══════════ BEST PRACTICES TAB ══════════ */}
-        {tab === 'practices' && (
-          <div className="space-y-5">
-            {library.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-border p-12 text-center">
-                <BookOpen size={32} className="text-muted-foreground/20 mx-auto mb-3"/>
-                <p className="font-semibold mb-1">No knowledge saved yet</p>
-                <p className="text-sm text-muted-foreground">Fetch topics from the Catalog tab to build your best practices library.</p>
+        {tab === 'practices' && (() => {
+          const CAT_LABEL: Record<string,string> = {
+            core_update:'Core Updates', helpful_content:'Helpful Content',
+            spam:'Spam & Penalties', eeat:'E-E-A-T', technical:'Technical SEO',
+            content:'Content Quality', links:'Links', geo_ai:'GEO / AI Search',
+            core_web_vitals:'Core Web Vitals', local:'Local SEO', general:'General',
+          };
+          const CAT_ICON: Record<string,string> = {
+            core_update:'🔄', helpful_content:'✍️', spam:'🚫', eeat:'⭐',
+            technical:'⚙️', content:'📝', links:'🔗', geo_ai:'🤖',
+            core_web_vitals:'⚡', local:'📍', general:'📚',
+          };
+          const IMPORTANCE_CONFIG: Record<string,{label:string;dot:string;card:string;badge:string}> = {
+            critical: { label:'Critical',  dot:'bg-red-400',    card:'border-red-400/30 bg-red-400/5',    badge:'bg-red-400/15 text-red-400 border-red-400/30' },
+            high:     { label:'High',      dot:'bg-orange-400', card:'border-orange-400/25 bg-orange-400/5', badge:'bg-orange-400/15 text-orange-400 border-orange-400/30' },
+            medium:   { label:'Medium',    dot:'bg-yellow-400', card:'border-yellow-400/25 bg-yellow-400/5', badge:'bg-yellow-400/15 text-yellow-400 border-yellow-400/30' },
+            low:      { label:'Low',       dot:'bg-border',     card:'border-border bg-card/40',           badge:'bg-secondary text-muted-foreground border-border' },
+          };
+
+          // Build per-category data
+          const cats = [...new Set(library.map(i => i.category as string))];
+          const activeCat = practicesCat || cats[0] || '';
+          const catItems  = library.filter(i => i.category === activeCat);
+          const practices = catItems.flatMap(i =>
+            (i.best_practices || []).map((p: any) => ({ ...p, source: i.title, engine: i.engine, impact: i.impact_level }))
+          );
+          const checks = catItems.flatMap(i =>
+            (i.checklist_items || []).map((c: any, ci: number) => ({ ...c, source: i.title, uid: `${i.id}_${ci}` }))
+          );
+
+          // Global stats
+          const totalPractices = library.reduce((s,i) => s + (i.best_practices?.length||0), 0);
+          const totalChecks    = library.reduce((s,i) => s + (i.checklist_items?.length||0), 0);
+          const checkedCount   = Object.values(checkedItems).filter(Boolean).length;
+
+          if (library.length === 0) return (
+            <div className="rounded-2xl border border-dashed border-border p-12 text-center">
+              <BookOpen size={32} className="text-muted-foreground/20 mx-auto mb-3"/>
+              <p className="font-semibold mb-1">No knowledge saved yet</p>
+              <p className="text-sm text-muted-foreground">Fetch topics from the Catalog tab to build your library.</p>
+            </div>
+          );
+
+          return (
+            <div className="space-y-5">
+
+              {/* ── Stats bar ─────────────────────────────── */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { val: library.length,  label: 'Topics saved',     color: 'text-primary'   },
+                  { val: totalPractices,  label: 'Best practices',    color: 'text-green-400' },
+                  { val: `${checkedCount}/${totalChecks}`, label: 'Checks done', color: 'text-yellow-400' },
+                ].map(s => (
+                  <div key={s.label} className="rounded-2xl border border-border bg-card/60 px-4 py-3 text-center">
+                    <div className={`text-2xl font-black ${s.color}`}>{s.val}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{s.label}</div>
+                  </div>
+                ))}
               </div>
-            ) : (
-              [...new Set(library.map(i => i.category))].map(cat => {
-                const items = library.filter(i => i.category === (cat as string));
-                const allPractices = items.flatMap(i => (i.best_practices || []).map((p: any) => ({ ...p, source: i.title, engine: i.engine, impact: i.impact_level })));
-                const allChecks    = items.flatMap(i => (i.checklist_items || []).map((c: any) => ({ ...c, source: i.title })));
-                if (!allPractices.length && !allChecks.length) return null;
-                const catLabel: Record<string,string> = { core_update:'Core Updates', helpful_content:'Helpful Content', spam:'Spam / Manual', eeat:'E-E-A-T', technical:'Technical', content:'Content Quality', links:'Links', geo_ai:'GEO / AI Search', core_web_vitals:'Core Web Vitals', local:'Local SEO', general:'General' };
-                return (
-                  <div key={cat as string} className="rounded-2xl border border-border bg-card/60 overflow-hidden">
-                    <div className="px-5 py-3 bg-card/80 border-b border-border flex items-center justify-between">
-                      <div className="font-semibold text-sm flex items-center gap-2"><Shield size={13} className="text-primary"/>{catLabel[cat as string] || (cat as string)}</div>
-                      <span className="text-xs text-muted-foreground">{allChecks.length} checks · {allPractices.length} practices</span>
+
+              {/* ── Category tab pills ────────────────────── */}
+              <div className="flex flex-wrap gap-2">
+                {cats.map(cat => {
+                  const count = library.filter(i => i.category === cat).reduce((s,i) => s+(i.best_practices?.length||0), 0);
+                  const isActive = activeCat === cat;
+                  return (
+                    <button key={cat} onClick={() => setPracticesCat(cat)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${
+                        isActive
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'border-border text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-secondary/40'
+                      }`}>
+                      <span>{CAT_ICON[cat as string] || '📌'}</span>
+                      {CAT_LABEL[cat as string] || (cat as string)}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${isActive ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-secondary text-muted-foreground'}`}>{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* ── Active category header ────────────────── */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-bold text-base flex items-center gap-2">
+                    <span>{CAT_ICON[activeCat] || '📌'}</span>
+                    {CAT_LABEL[activeCat] || activeCat}
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {practices.length} practice{practices.length !== 1 ? 's' : ''} · {checks.length} checklist item{checks.length !== 1 ? 's' : ''} from {catItems.length} topic{catItems.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+
+              {/* ── Practice cards grid ───────────────────── */}
+              {practices.length > 0 && (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {practices.map((p, i) => {
+                    const cfg = IMPORTANCE_CONFIG[p.impact] || IMPORTANCE_CONFIG.low;
+                    return (
+                      <div key={i} className={`rounded-2xl border p-4 space-y-3 ${cfg.card}`}>
+                        {/* Card header */}
+                        <div className="flex items-start gap-2.5">
+                          <div className={`h-2 w-2 rounded-full mt-1.5 shrink-0 ${cfg.dot}`}/>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="font-bold text-sm leading-tight">{p.practice}</span>
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium shrink-0 ${cfg.badge}`}>
+                                {cfg.label}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground/70 mt-0.5 leading-tight">{p.source}</p>
+                          </div>
+                        </div>
+
+                        {/* What to do */}
+                        <p className="text-xs text-foreground/80 leading-relaxed">{p.description}</p>
+
+                        {/* Example callout */}
+                        {p.example && (
+                          <div className="rounded-xl bg-background/50 border border-border/60 px-3 py-2.5 space-y-1">
+                            <div className="text-xs font-semibold text-primary/70 flex items-center gap-1.5">
+                              <span className="text-sm">💡</span> Real Example
+                            </div>
+                            <p className="text-xs text-muted-foreground italic leading-relaxed">{p.example}</p>
+                          </div>
+                        )}
+
+                        {/* How to verify */}
+                        {p.how_to_verify && (
+                          <div className="flex items-start gap-2 text-xs">
+                            <CheckCircle size={12} className="text-green-400 mt-0.5 shrink-0"/>
+                            <span className="text-muted-foreground"><span className="font-medium text-foreground">Verify: </span>{p.how_to_verify}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── Interactive checklist table ───────────── */}
+              {checks.length > 0 && (
+                <div className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-card/80">
+                    <div className="font-semibold text-sm flex items-center gap-2">
+                      <CheckCircle2 size={13} className="text-primary"/>
+                      Implementation Checklist
                     </div>
-                    <div className="p-5 space-y-5">
-                      {allPractices.length > 0 && (
-                        <div>
-                          <div className="text-xs font-mono text-primary uppercase mb-2">Best Practices</div>
-                          <div className="space-y-2">
-                            {allPractices.map((p, i) => (
-                              <div key={i} className={`rounded-xl border p-3 ${IMPACT_STYLE[p.impact] || IMPACT_STYLE.low}`}>
-                                <div className="font-semibold text-xs mb-1">{p.practice}</div>
-                                <p className="text-xs opacity-80">{p.description}</p>
-                                {p.example && <p className="text-xs opacity-60 mt-1 italic">e.g. {p.example}</p>}
-                                {p.how_to_verify && <p className="text-xs opacity-70 mt-1 flex items-center gap-1"><Eye size={9}/>Verify: {p.how_to_verify}</p>}
-                                <p className="text-xs opacity-40 mt-1">— {p.source}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {allChecks.length > 0 && (
-                        <div>
-                          <div className="text-xs font-mono text-primary uppercase mb-2">Implementation Checklist</div>
-                          <div className="space-y-1.5">
-                            {allChecks.map((c, i) => (
-                              <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg border border-border/50 bg-background/30 text-xs">
-                                <div className="h-4 w-4 rounded border border-border shrink-0 mt-0.5"/>
-                                <div className="flex-1"><span className="font-medium">{c.item}</span><span className="text-muted-foreground ml-2">→ {c.how_to_check}</span>{c.pass_criteria && <span className="text-green-400/70 ml-2">✓ {c.pass_criteria}</span>}</div>
-                                {c.tool && <span className="text-muted-foreground/40 shrink-0">{c.tool}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground">
+                        {checks.filter(c => checkedItems[c.uid]).length}/{checks.length} done
+                      </span>
+                      {/* Progress bar */}
+                      <div className="w-24 h-1.5 rounded-full bg-secondary overflow-hidden">
+                        <div className="h-full rounded-full bg-green-400 transition-all"
+                          style={{ width: `${checks.length ? (checks.filter(c => checkedItems[c.uid]).length / checks.length) * 100 : 0}%` }}/>
+                      </div>
+                      <button onClick={() => {
+                        const allDone = checks.every(c => checkedItems[c.uid]);
+                        const next: Record<string,boolean> = { ...checkedItems };
+                        checks.forEach(c => { next[c.uid] = !allDone; });
+                        setCheckedItems(next);
+                      }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                        {checks.every(c => checkedItems[c.uid]) ? 'Uncheck all' : 'Check all'}
+                      </button>
                     </div>
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
+                  <div className="divide-y divide-border/40">
+                    {checks.map((c, i) => {
+                      const done = !!checkedItems[c.uid];
+                      return (
+                        <label key={i} className={`flex items-start gap-3 px-5 py-3 cursor-pointer transition-colors ${done ? 'bg-green-400/4' : 'hover:bg-secondary/20'}`}>
+                          <input type="checkbox" checked={done}
+                            onChange={() => setCheckedItems(prev => ({ ...prev, [c.uid]: !done }))}
+                            className="accent-green-400 mt-0.5 h-4 w-4 shrink-0 cursor-pointer"/>
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-xs font-medium leading-tight ${done ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                              {c.item}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              <span className="text-xs text-muted-foreground/60">→ {c.how_to_check}</span>
+                              {c.pass_criteria && (
+                                <span className="text-xs text-green-400/70 flex items-center gap-1">
+                                  <CheckCircle size={9}/>Pass: {c.pass_criteria}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {c.tool && (
+                              <span className="text-xs px-2 py-0.5 rounded-lg border border-border bg-background/40 text-muted-foreground/60">
+                                {c.tool}
+                              </span>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {practices.length === 0 && checks.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                  No practices for this category yet — go to Catalog and fetch some topics.
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ══════════ AUDIT TAB ══════════ */}
         {tab === 'audit' && (
