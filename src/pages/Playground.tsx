@@ -326,6 +326,19 @@ function suggestWeekForCustom(title: string, content: string, allBlocks: Block[]
 
 /* ─── helpers ─── */
 const uid     = () => Math.random().toString(36).slice(2,9);
+
+// stableId: deterministic block ID derived from title.
+// Using a stable ID means the same strategy card always gets the same ID
+// across page reloads, so saved placement data (week, placed, status) is
+// correctly restored via the placedMap lookup in loadProject.
+// uid() is still used for user-created cards (they are stored verbatim in the DB).
+const stableId = (title: string): string => {
+  const norm = title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 50);
+  // djb2 hash → base36 string, prefixed with 's' to distinguish from uid() values
+  let h = 5381;
+  for (let i = 0; i < norm.length; i++) h = ((h << 5) + h + norm.charCodeAt(i)) >>> 0;
+  return 's' + h.toString(36).padStart(7, '0');
+};
 const safeStr = (v: any) => typeof v==='string'?v:v==null?'':JSON.stringify(v);
 const fmtDate = (r: string) => r?new Date(r).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
 
@@ -419,7 +432,7 @@ function buildLibraryFromStrategy(strategy: any): Block[] {
     seen.add(key);
     result.push({
       ...b,
-      id:     uid(),
+      id:     stableId(b.title),
       color:  TM[b.type]?.color || '#94a3b8',
       status: 'todo',
       placed: false,
@@ -2310,7 +2323,14 @@ export default function Playground() {
           if (data.success) {
             const merged = {...(strategy||{}), ...data.strategy};
             setStrategy(merged);
-            setBlocks(buildLibraryFromStrategy(merged));
+            // Rebuild library but preserve all existing placements
+            setBlocks(prev => {
+              const existing = new Map<string, Block>(prev.map(b => [b.id, b]));
+              return buildLibraryFromStrategy(merged).map(nb => {
+                const saved = existing.get(nb.id);
+                return saved ? { ...nb, placed: saved.placed, week: saved.week, status: saved.status, assignee: saved.assignee, tags: saved.tags, effort: saved.effort, impact: saved.impact } : nb;
+              });
+            });
             setBatchStatus(prev => ({...prev, [String(batchNum)]: 'ok'}));
             setFailedBatches(prev => prev.filter(n => n !== batchNum));
             await supabase.from('projects').update({playground_strategy: merged}).eq('id', selProjId);
