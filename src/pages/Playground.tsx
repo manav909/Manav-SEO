@@ -1120,6 +1120,10 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
   const [activeVersion,setActiveVersion]= useState<string|null>(null);
   const [showHistory,  setShowHistory]  = useState(false);
   const [redoFrom,     setRedoFrom]     = useState<ExecVersion|null>(null);
+  // Brain learning state
+  const [learningSaved,   setLearningSaved]   = useState(false);
+  const [savingLearning,  setSavingLearning]  = useState(false);
+  const [brainLearnings,  setBrainLearnings]  = useState<any[]>([]);
 
   // Derived values — declared AFTER state so they can reference state variables
   const cap           = getAICap(block.type);
@@ -1160,6 +1164,17 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     } catch {
       /* continue without context — questions still show */
     }
+
+    // Fetch relevant brain learnings for this card type
+    try {
+      const lr = await fetch('/api/brain-learning', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get_relevant', project_id: projectId, card_type: block.type, limit: 8 }),
+      });
+      const ld = await lr.json().catch(() => ({ learnings: [] }));
+      setBrainLearnings(ld.learnings || []);
+    } catch { /* non-blocking */ }
+
     setPhase('inputs');
   };
 
@@ -1244,7 +1259,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     try {
       const res = await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'execute', card: block, context, userInputs: getMergedInputs(), role }),
+        body: JSON.stringify({ action: 'execute', card: block, context, userInputs: getMergedInputs(), role, brainLearnings }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -1262,6 +1277,36 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
       setOutput(`Error: ${(e as Error).message}`);
       setPhase('done');
     }
+  };
+
+  // Save the current evaluation to Manav Brain Learning
+  const saveLearning = async () => {
+    if (!evaluation) return;
+    setSavingLearning(true);
+    try {
+      const improvement = [
+        ...(evaluation.what_missed || []).map((m: string) => `Next time: ${m}`),
+        evaluation.redo_reason ? `Redo approach: ${evaluation.redo_reason}` : '',
+      ].filter(Boolean).join(' | ');
+
+      await fetch('/api/brain-learning', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action:          'save_learning',
+          project_id:      projectId,
+          card_type:       block.type,
+          card_title:      block.title,
+          what_worked:     evaluation.what_worked || [],
+          what_missed:     evaluation.what_missed || [],
+          redo_reason:     evaluation.redo_reason || null,
+          improvement,
+          context_summary: `${block.type} task for ${siteUrl || 'unknown site'}`,
+          tags:            [block.type, role, ...(block.priority ? [block.priority] : [])],
+        }),
+      });
+      setLearningSaved(true);
+    } catch { /* non-blocking */ }
+    setSavingLearning(false);
   };
 
   const loadFromVersion = (v: ExecVersion) => {
@@ -1580,7 +1625,34 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
                             Try as {evaluation.better_role}
                           </button>
                         )}
+                        {/* Save to Manav Brain Learning */}
+                        {!learningSaved ? (
+                          <button onClick={saveLearning} disabled={savingLearning}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-emerald-400/30 bg-emerald-400/8 text-emerald-400 hover:bg-emerald-400/18 font-medium disabled:opacity-50">
+                            {savingLearning
+                              ? <><span className="animate-spin">⟳</span>Saving…</>
+                              : <><span>🧠</span>Save to Manav Brain Learning</>}
+                          </button>
+                        ) : (
+                          <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                            <span>✓</span>Saved to Manav Brain
+                          </span>
+                        )}
                       </div>
+
+                      {/* Show which learnings were applied in this run */}
+                      {brainLearnings.length > 0 && (
+                        <div className="mt-2 rounded-lg border border-emerald-400/15 bg-emerald-400/5 px-3 py-2">
+                          <div className="text-xs text-emerald-400 font-semibold mb-1">🧠 {brainLearnings.length} brain learning{brainLearnings.length !== 1 ? 's' : ''} applied in this run</div>
+                          <div className="space-y-0.5">
+                            {brainLearnings.slice(0, 3).map((l: any, i: number) => (
+                              <div key={i} className="text-xs text-white/35 truncate">
+                                · {l.what_missed?.[0] || l.improvement || l.card_title}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
