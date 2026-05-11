@@ -315,6 +315,88 @@ export default function AlgorithmIntel() {
     else setAddingCustom(false);
   };
 
+  // ─────────────────────────────────────────────────────────────────
+  // Audit a live page against the saved knowledge library
+  // Step 1: crawl the URL (NDJSON stream via /api/crawl)
+  // Step 2: score the page against the library via /api/algorithm-intel
+  // ─────────────────────────────────────────────────────────────────
+  const runAudit = async () => {
+    if (!auditUrl.trim()) return;
+    setAuditing(true);
+    setAuditResult(null);
+    setAuditStep('Crawling page…');
+    try {
+      const url = auditUrl.trim().startsWith('http') ? auditUrl.trim() : `https://${auditUrl.trim()}`;
+
+      // ── Step 1: crawl ──────────────────────────────────────────────
+      const crawlRes = await fetch('/api/crawl', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'crawl_urls',
+          urls: [url],
+          projectContext: `${client?.company || ''} | ${selProj?.url || ''}`,
+          projectId: selProjId || null,
+          forceRefresh: true,
+        }),
+      });
+
+      if (!crawlRes.ok || !crawlRes.body) {
+        toast({ title: 'Crawl failed', description: 'Could not reach the crawl API.', variant: 'destructive' });
+        setAuditing(false);
+        return;
+      }
+
+      // Read NDJSON stream
+      const reader = crawlRes.body.getReader();
+      const dec    = new TextDecoder();
+      let buf      = '';
+      let pageData: any = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        buf += dec.decode(value ?? new Uint8Array(), { stream: !done });
+        const parts = buf.split('\n'); buf = parts.pop() ?? '';
+        for (const line of parts) {
+          if (!line.trim()) continue;
+          try {
+            const msg = JSON.parse(line);
+            if (msg.type === 'complete' && msg.results?.[0]?.page_analysis) {
+              pageData = { ...msg.results[0].page_analysis, url: msg.results[0].url };
+            }
+          } catch { /* skip malformed NDJSON lines */ }
+        }
+        if (done) break;
+      }
+
+      if (!pageData) {
+        toast({ title: 'Crawl failed', description: 'Page could not be fetched. Check the URL is publicly accessible.', variant: 'destructive' });
+        setAuditing(false);
+        setAuditStep('');
+        return;
+      }
+
+      // ── Step 2: audit ──────────────────────────────────────────────
+      setAuditStep('Scoring against algorithm library…');
+      const data = await apiFetch({
+        action: 'audit_against',
+        pageData,
+        projectContext: `${client?.company || ''} | ${selProj?.url || ''}`,
+        targetEngine: auditEngine,
+      });
+
+      if (data.success) {
+        setAuditResult(data.audit);
+        toast({ title: `Audit complete — ${data.audit.grade} (${data.audit.overall_score}/100)` });
+      } else {
+        toast({ title: 'Audit failed', description: data.error, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Audit error', description: e.message, variant: 'destructive' });
+    }
+    setAuditing(false);
+    setAuditStep('');
+  };
+
   // ── Derived data ───────────────────────────────────────────────────
   // Weight colour: 9-10 = red (critical now), 7-8 = orange, 4-6 = yellow, 1-3 = muted
   const weightStyle = (w: number) =>
