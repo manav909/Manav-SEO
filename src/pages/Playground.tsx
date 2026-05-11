@@ -5,7 +5,7 @@ import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
-  Sparkles, FileText, Download, Copy, Plus, RefreshCw,
+  Sparkles, FileText, Download, Copy, Plus, RefreshCw, Trash2,
   ChevronDown, ChevronUp, Zap, Brain, Globe, Shield, Lock,
   Trophy, TrendingUp, Calendar, Layers, X, Tag,
   CheckCircle2, Maximize2, Star, Send, MessageSquare,
@@ -406,17 +406,24 @@ function buildLibraryFromStrategy(strategy: any): Block[] {
   const safe = (v: any) => (v == null ? '' : String(v));
   const pri  = (v: any): Priority => v === 'high' ? 'high' : v === 'low' ? 'low' : 'medium';
 
-  /* 1 — canvas_blocks (curated summary — highest signal) */
+  /* 1 — canvas_blocks (curated summary — highest signal)
+     Filter: skip C-grade (assumption) or missing data_basis blocks */
   for (const b of strategy.canvas_blocks || []) {
+    // Skip assumption-only blocks — they have no hard data behind them
+    if (b.data_grade === 'C') continue;
+    if (!b.data_basis || String(b.data_basis).toLowerCase().includes('assumption')) continue;
     push({
       type:     (b.type || 'custom') as BType,
       title:    safe(b.title).slice(0, 70),
-      content:  safe(b.content),
+      // Append data_basis so the card always shows what backs it
+      content:  safe(b.content) + (b.data_basis ? `
+
+Evidence: ${safe(b.data_basis)}` : ''),
       priority: pri(b.priority),
       week:     assignWeek(b),
       effort:   b.effort,
       impact:   b.impact,
-      tags:     b.tags || [],
+      tags:     [...(b.tags || []), b.data_grade === 'A' ? '✓ hard-data' : '~ inferred'],
       source:   safe(b.source) || 'Strategy Analysis',
     });
   }
@@ -2101,6 +2108,28 @@ export default function Playground() {
   };
 
 
+  /* ══ Delete strategy + canvas completely ══ */
+  const deleteStrategy = async () => {
+    if (!selProjId) return;
+    if (!confirm('Delete this strategy and all canvas blocks? This cannot be undone.')) return;
+    try {
+      await supabase.from('projects').update({
+        playground_strategy:     null,
+        playground_canvas:       null,
+        playground_generated_at: null,
+      }).eq('id', selProjId);
+      setStrategy(null);
+      setBlocks([]);
+      setRecommendation(null);
+      setGenAt('');
+      setBatchStatus({});
+      setFailedBatches([]);
+      toast({ title: 'Strategy deleted', description: 'Canvas is now empty. Generate a fresh strategy when ready.' });
+    } catch (e: any) {
+      toast({ title: 'Delete failed', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
   const generate = async () => {
     if(!selProj) return toast({title:'Select a project first',variant:'destructive'});
     setGenerating(true);
@@ -2126,15 +2155,26 @@ export default function Playground() {
       setBatchStatus(Object.fromEntries(Object.entries(data.batch_status||{}).map(([k,v])=>[k,String(v)])));
       setFailedBatches(data.failed_batches||[]);
 
-      const mergedStrategy = {...(strategy||{}), ...data.strategy};
-      setStrategy(mergedStrategy);
+      // Full regeneration: use new strategy entirely (no stale merge)
+      // Preserve canvas placements from existing blocks so placed cards stay put
+      const newStrategy = data.strategy;
+      const existingPlacements = blocks.reduce((map, b) => {
+        if (b.placed) map[b.id] = { placed: b.placed, week: b.week, status: b.status, assignee: b.assignee, aiAssisted: b.aiAssisted };
+        return map;
+      }, {} as Record<string, any>);
+      setStrategy(newStrategy);
       setGenAt(data.generated_at);
-      const nb = buildLibraryFromStrategy(mergedStrategy);
-      setBlocks(nb);
-      setRecommendation(getNextRecommendation([],nb));
+      const nb = buildLibraryFromStrategy(newStrategy);
+      // Re-apply existing placements to matching block IDs
+      const nbWithPlacements = nb.map(b => {
+        const saved = existingPlacements[b.id];
+        return saved ? { ...b, ...saved } : b;
+      });
+      setBlocks(nbWithPlacements);
+      setRecommendation(getNextRecommendation(nbWithPlacements.filter(b=>b.placed), nbWithPlacements.filter(b=>!b.placed)));
       await supabase.from('projects').update({
-        playground_strategy: mergedStrategy,
-        playground_canvas: [],
+        playground_strategy: newStrategy,
+        playground_canvas:   nbWithPlacements.map(b=>({ id:b.id, placed:b.placed, week:b.week, status:b.status, assignee:b.assignee||null, aiAssisted:b.aiAssisted||false, tags:b.tags||[], effort:b.effort||null, impact:b.impact||null })),
         playground_generated_at: data.generated_at,
       }).eq('id', selProjId);
 
@@ -2704,6 +2744,27 @@ Please try again — if the problem persists, check your network connection.`);
                   </div>
                 ) : (
                   <>
+                    {/* Data gaps blocking notification */}
+                    {(s.data_gaps?.length > 0 || s.data_gaps_blocking?.length > 0) && (
+                      <div className="rounded-2xl border border-yellow-400/25 bg-yellow-400/5 p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle size={14} className="text-yellow-400 shrink-0"/>
+                          <span className="font-semibold text-sm text-yellow-400">Analysis gaps — add data to improve card quality</span>
+                        </div>
+                        <div className="space-y-1">
+                          {[...(s.data_gaps||[]), ...(s.data_gaps_blocking||[])].map((gap:string,i:number)=>(
+                            <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                              <span className="text-yellow-400 shrink-0 mt-0.5">·</span>
+                              <span>{gap}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-yellow-400/15">
+                          Go to <span className="text-primary font-medium">Data Room</span> to fill these gaps, then regenerate for more accurate cards.
+                        </p>
+                      </div>
+                    )}
+
                     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
                       <div className="flex items-center gap-3 mb-3">
                         <Star className="h-4 w-4 text-primary" />
@@ -2794,9 +2855,18 @@ Please try again — if the problem persists, check your network connection.`);
                         </div>
                       </Section>
                     )}
-                    <Button onClick={()=>setTab('canvas')} className="w-full h-12 bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
-                      <Layers className="h-4 w-4 mr-2"/>Open Strategy Canvas →
-                    </Button>
+                    <div className="flex gap-3">
+                      <Button onClick={()=>setTab('canvas')} className="flex-1 h-12 bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
+                        <Layers className="h-4 w-4 mr-2"/>Open Strategy Canvas →
+                      </Button>
+                      <button
+                        onClick={deleteStrategy}
+                        className="h-12 px-5 rounded-xl border border-red-400/20 text-red-400/60 hover:text-red-400 hover:border-red-400/40 hover:bg-red-400/5 text-sm transition-colors flex items-center gap-2"
+                        title="Delete this strategy and start fresh"
+                      >
+                        <Trash2 size={14}/>Delete analysis
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
@@ -3121,7 +3191,17 @@ Please try again — if the problem persists, check your network connection.`);
                                 </div>
                                 {block.tags && block.tags.length > 0 && (
                                   <div className="flex gap-1 mt-1.5 flex-wrap">
-                                    {block.tags.slice(0,3).map((t,i)=><span key={i} className="text-xs px-1.5 py-0.5 rounded-full border border-border/50 bg-background/40 text-muted-foreground/60">{t}</span>)}
+                                    {block.tags.slice(0,4).map((t,i)=>{
+                                      const isHard = t === '✓ hard-data';
+                                      const isInferred = t === '~ inferred';
+                                      return (
+                                        <span key={i} className={`text-xs px-1.5 py-0.5 rounded-full border font-medium ${
+                                          isHard     ? 'border-green-400/30 bg-green-400/8 text-green-400' :
+                                          isInferred ? 'border-yellow-400/25 bg-yellow-400/5 text-yellow-400/70' :
+                                          'border-border/50 bg-background/40 text-muted-foreground/60'
+                                        }`}>{t}</span>
+                                      );
+                                    })}
                                   </div>
                                 )}
                                 {block.assignee && (
