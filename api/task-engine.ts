@@ -270,7 +270,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       `Competitors: ${[ctx.competitors?.c1, ctx.competitors?.c2].filter(Boolean).join(", ") || "Not recorded"} | Our DR: ${ctx.competitors?.ourDR || "?"}`,
       `Technical: ${ctx.technical?.pagesIndexed || "?"} pages indexed | Crawl errors: ${ctx.technical?.crawlErrors || "none"} | Schema: ${ctx.technical?.schema || "?"}`,
       "",
-      // Crawl data — page-specific intelligence from URL crawler
       ctx.crawl_data ? [
         `LIVE PAGE DATA (crawled ${ctx.crawl_data.crawled_at || "recently"} — ${ctx.crawl_data.page_count} pages):`,
         ...Object.entries(ctx.crawl_data.pages || {}).slice(0, 5).map(([path, p]: [string, any]) => [
@@ -293,7 +292,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "AUDIT INTELLIGENCE:",
       ctx.audits?.slice(0, 2).map((a: any) => `${a.date}: ${Object.values(a.sections).join(" | ")}`).join("\n") || "No audits available",
       "",
-      // Manav Brain learnings — injected when available
       brainLearnings?.length ? [
         "",
         "MANAV BRAIN LEARNINGS (from previous task executions — apply these to improve quality):",
@@ -341,7 +339,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           finalStopReason = chunk.delta.stop_reason;
         }
       }
-      // Warn in Vercel logs if output was truncated at the token limit
       if (finalStopReason === "max_tokens") {
         console.warn(`[SEO Season] task-engine execute hit max_tokens limit — card: "${card.title}" role: ${role}. Consider increasing max_tokens or splitting the task.`);
         res.write("\n\n---\n⚠️ Output reached the length limit and may be incomplete. Try splitting this task into smaller parts, or use the Redo button with more focused inputs.");
@@ -354,10 +351,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-
-  /* ── EVALUATE — Manav reviews his own output ── */
+  /* ── EVALUATE ── */
   if (action === "evaluate") {
-    const { output: executedOutput, executedRole, executedInputs, cardContext } = req.body;
+    const { output: executedOutput, executedRole, executedInputs } = req.body;
     if (!executedOutput) return res.status(400).json({ error: "No output to evaluate" });
 
     const evaluatePrompt = [
@@ -406,7 +402,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   /* ── BRAIN LEARNING — save_learning ── */
-  // Merged here to stay within Vercel Hobby 12-function limit.
   if (action === "save_learning") {
     const { project_id, card_type, card_title, what_worked, what_missed,
             redo_reason, improvement, context_summary, tags } = req.body;
@@ -474,23 +469,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .select("applied_count").eq("id", id).single();
           if (d) await sb.from("brain_learnings")
             .update({ applied_count: ((d as any).applied_count || 0) + 1 }).eq("id", id);
-        } catch { /* non-blocking — never fail the main response */ }
+        } catch { /* non-blocking */ }
       }
     })();
 
     return res.status(200).json({ success: true, learnings: rows });
   }
 
-  /* ── BRAIN LEARNING — get_all ── */
+  /* ── BRAIN LEARNING — get_all_learnings ── */
   if (action === "get_all_learnings") {
     const { project_id } = req.body;
-    let q = sb.from("brain_learnings").select("*").order("created_at", { ascending: false });
-    if (project_id) {
-      q = sb.from("brain_learnings").select("*")
-        .or(`project_id.eq.${project_id},project_id.is.null`)
-        .order("created_at", { ascending: false });
-    }
-    const { data, error } = await q;
+
+    // When project_id is provided: return learnings for that project OR with no project (shared).
+    // When project_id is absent/null: return ALL learnings across every project.
+    // Uses a ternary to avoid variable reassignment which can cause Supabase type issues.
+    const { data, error } = await (
+      project_id
+        ? sb.from("brain_learnings")
+            .select("*")
+            .or(`project_id.eq.${project_id},project_id.is.null`)
+            .order("created_at", { ascending: false })
+        : sb.from("brain_learnings")
+            .select("*")
+            .order("created_at", { ascending: false })
+    );
+
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ success: true, learnings: data || [] });
   }
