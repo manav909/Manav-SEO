@@ -451,7 +451,8 @@ export default function DataRoom() {
   const [uploadError,    setUploadError]    = useState('');
   const [reExtractingId, setReExtractingId] = useState<string|null>(null);
   // URL Crawler state
-  const [crawlHistory,      setCrawlHistory]      = useState<any[]>([]);  // past crawl sessions from DB
+  const [crawlHistory,      setCrawlHistory]      = useState<any[]>([]);
+  const [forceRefresh,      setForceRefresh]      = useState(false);  // bypass cache  // past crawl sessions from DB
   const [crawlUrls,         setCrawlUrls]         = useState('');
   const [crawlRunning,      setCrawlRunning]       = useState(false);
   const [crawlResults,      setCrawlResults]       = useState<any>(null);
@@ -784,6 +785,33 @@ export default function DataRoom() {
     } catch { /* silent */ }
   };
 
+  // Load all previously crawled pages for this project from the DB cache
+  const loadCachedResults = async () => {
+    if (!selProjId) return;
+    setCrawlRunning(true);
+    try {
+      const res  = await fetch('/api/crawl', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'load_cached', projectId: selProjId }),
+      });
+      const data = await safeJson(res);
+      if (data.success && data.results?.length) {
+        setCrawlResults(data);
+        setCrawlSaved(true);
+        const successful = data.results.filter((r:any) => r.page_analysis).map((r:any) => r.url);
+        setActiveCrawlUrls(successful);
+        // Restore URLs to the textarea
+        setCrawlUrls(data.results.map((r:any) => r.url).join(String.fromCharCode(10)));
+        toast({ title: `${data.results.length} cached pages loaded`, description: 'Run compare analysis or add new URLs to crawl.' });
+      } else {
+        toast({ title: 'No cached pages', description: 'Crawl some URLs first — they will be saved automatically.' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Load failed', description: e.message, variant: 'destructive' });
+    }
+    setCrawlRunning(false);
+  };
+
   const restoreCrawlSession = (session: any) => {
     // Restore URLs from the session
     const urls = session.raw_content || '';
@@ -841,29 +869,78 @@ export default function DataRoom() {
     setCrawlSaved(false);
 
     try {
-      const res  = await fetch('/api/crawl', {
+      const res = await fetch('/api/crawl', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action:         'crawl_urls',
           urls:            lines,
           projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
           projectId:       selProjId,
-          // Pass active canvas card titles as task hints so crawl focuses on what matters
           taskHints:       crawlTaskHints,
+          forceRefresh:    forceRefresh,
         }),
       });
-      const data = await safeJson(res);
-      if (data.success) {
-        setCrawlResults(data);
-        // Auto-populate activeCrawlUrls with all successfully crawled URLs
-        const successful = (data.results || []).filter((r:any) => r.page_analysis).map((r:any) => r.url);
-        setActiveCrawlUrls(successful.length > 0 ? successful : (data.results || []).map((r:any) => r.url));
-        toast({
-          title:       `${data.urls_crawled} page${data.urls_crawled !== 1 ? 's' : ''} crawled`,
-          description: `${data.aggregated_knowledge?.length || 0} data points extracted. Review and save to knowledge base.`,
-        });
-      } else {
-        toast({ title: 'Crawl failed', description: data.error, variant: 'destructive' });
+
+      if (!res.ok || !res.body) {
+        const err = await res.text();
+        toast({ title: 'Crawl failed', description: err.slice(0, 200), variant: 'destructive' });
+        setCrawlRunning(false);
+        return;
+      }
+
+      // Read NDJSON stream: each \n-terminated line is one JSON message
+      const reader  = res.body.getReader();
+      const dec     = new TextDecoder();
+      let   buf     = '';
+      const partial: any[] = [];
+
+      const processLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        try {
+          const msg = JSON.parse(trimmed);
+          if (msg.type === 'url_complete') {
+            partial.push(msg.result);
+            // Render each result as it arrives — don't wait for all URLs
+            setCrawlResults({
+              success: true, urls_crawled: partial.length,
+              results: [...partial],
+              aggregated_knowledge: partial.flatMap((r:any) => r.knowledge_fields || []),
+              cross_page_issues: partial.flatMap((r:any) => (r.page_analysis?.issues||[]).map((i:any)=>({...i,url:r.url}))),
+              cross_page_opportunities: partial.flatMap((r:any) => (r.page_analysis?.opportunities||[]).map((o:any)=>({...o,url:r.url}))),
+            });
+            setActiveCrawlUrls(partial.filter((r:any)=>r.page_analysis).map((r:any)=>r.url));
+          }
+          if (msg.type === 'complete') {
+            setCrawlResults(msg);
+            const ok = (msg.results||[]).filter((r:any)=>r.page_analysis).map((r:any)=>r.url);
+            setActiveCrawlUrls(ok.length > 0 ? ok : (msg.results||[]).map((r:any)=>r.url));
+            const cached = (msg.results||[]).filter((r:any)=>r.from_cache).length;
+            const fresh  = (msg.results||[]).filter((r:any)=>!r.from_cache&&r.page_analysis).length;
+            const failed = (msg.results||[]).filter((r:any)=>!r.page_analysis).length;
+            toast({
+              title: `${msg.urls_crawled} page${msg.urls_crawled!==1?'s':''} ready`,
+              description: [
+                fresh  ? `${fresh} freshly crawled`   : '',
+                cached ? `${cached} from cache`        : '',
+                failed ? `${failed} failed`            : '',
+              ].filter(Boolean).join(' · ') || 'Done',
+            });
+          }
+        } catch { /* malformed JSON line — skip */ }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        // Decode chunk — stream:true keeps multi-byte chars intact across chunks
+        buf += dec.decode(value ?? new Uint8Array(), { stream: !done });
+        // Split on newline and process every complete line
+        const parts = buf.split('\n');
+        // Last element may be an incomplete line — keep it in buf
+        buf = parts.pop() ?? '';
+        for (const line of parts) processLine(line);
+        // When stream ends, flush whatever remains in buf
+        if (done) { processLine(buf); break; }
       }
     } catch (e: any) {
       toast({ title: 'Crawl error', description: e.message, variant: 'destructive' });
@@ -1627,23 +1704,49 @@ Evidence: ${c.data_basis}` : ''}`,
                       <Globe size={13}/>Load all known URLs (project + landing pages + competitors)
                     </button>
                   )}
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <button
-                      onClick={runCrawl}
-                      disabled={crawlRunning||!crawlUrls.trim()}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-sm disabled:opacity-50 transition-colors"
-                    >
-                      {crawlRunning
-                        ? <><Loader2 size={14} className="animate-spin"/>Crawling…</>
-                        : <><Globe size={14}/>Crawl {crawlUrls.split(String.fromCharCode(10)).filter(Boolean).slice(0,10).length||''} page{crawlUrls.split(String.fromCharCode(10)).filter(Boolean).length!==1?'s':''}</>}
-                    </button>
-                    {crawlUrls.trim()&&!crawlRunning && (
+                  <div className="space-y-2.5">
+                    {/* Primary action row */}
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button
-                        onClick={()=>crawlUrls.split(String.fromCharCode(10)).map(l=>l.trim()).filter(Boolean).slice(0,10).forEach(u=>{const c=u.startsWith('http')?u:`https://${u}`;if(!crawlPreview[c])previewUrl(c);})}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >Test reachability</button>
+                        onClick={runCrawl}
+                        disabled={crawlRunning||!crawlUrls.trim()}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-sm disabled:opacity-50 transition-colors"
+                      >
+                        {crawlRunning
+                          ? <><Loader2 size={14} className="animate-spin"/>Crawling…</>
+                          : <><Globe size={14}/>Crawl {crawlUrls.split(String.fromCharCode(10)).filter(Boolean).slice(0,10).length||''} URL{crawlUrls.split(String.fromCharCode(10)).filter(Boolean).length!==1?'s':''}</>}
+                      </button>
+                      <button
+                        onClick={loadCachedResults}
+                        disabled={crawlRunning}
+                        title="Load previously crawled pages for this project — no new crawl needed"
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-primary/30 bg-primary/8 text-primary font-semibold text-sm disabled:opacity-50 hover:bg-primary/15 transition-colors"
+                      >
+                        <RefreshCw size={13}/>Load saved pages
+                      </button>
+                      {crawlUrls.trim()&&!crawlRunning && (
+                        <button
+                          onClick={()=>crawlUrls.split(String.fromCharCode(10)).map((l:string)=>l.trim()).filter(Boolean).slice(0,10).forEach((u:string)=>{const c=u.startsWith('http')?u:`https://${u}`;if(!crawlPreview[c])previewUrl(c);})}
+                          className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5"
+                        >Test reachability</button>
+                      )}
+                    </div>
+                    {/* Force refresh toggle */}
+                    <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
+                      <input type="checkbox" checked={forceRefresh} onChange={e=>setForceRefresh(e.target.checked)}
+                        className="accent-primary h-3.5 w-3.5"/>
+                      <span className="text-xs text-muted-foreground">
+                        Force re-crawl
+                        <span className="text-muted-foreground/50 ml-1">(ignore saved cache — fetch everything fresh)</span>
+                      </span>
+                    </label>
+                    {/* Progress indicator */}
+                    {crawlRunning && (
+                      <div className="flex items-center gap-2 text-xs text-cyan-400/80">
+                        <Loader2 size={11} className="animate-spin"/>
+                        Fetching pages · results appear as each URL completes · auto-saved to cache
+                      </div>
                     )}
-                    {crawlRunning && <span className="text-xs text-muted-foreground">Fetching live + analysing with Manav Brain… ~15–30s</span>}
                   </div>
                 </div>
 
@@ -1982,6 +2085,9 @@ Evidence: ${c.data_basis}` : ''}`,
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
 
             {/* ── DOCUMENTS ── */}
             {tab === 'documents' && (
