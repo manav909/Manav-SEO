@@ -2556,11 +2556,15 @@ Please try again — if the problem persists, check your network connection.`);
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
       const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj,role:activeRole})});
-      if(!res.ok||!res.body) throw new Error('failed');
+      if(!res.ok||!res.body) throw new Error(`Server error ${res.status} — please try again`);
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setChatResp(acc);chatEndRef.current?.scrollIntoView({behavior:'smooth'});}
-    } catch(e:any){setChatResp(`Error: ${e.message}`);}
-    setChatLoading(false);
+    } catch(e:any){
+      setChatResp(`Error: ${(e as Error).message}`);
+    } finally {
+      // Always clear loading state — prevents permanent spinner if stream hangs or errors
+      setChatLoading(false);
+    }
   };
 
   const saveCanvas = async (currentBlocks: Block[]) => {
