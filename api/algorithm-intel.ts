@@ -399,7 +399,103 @@ Return ONLY valid JSON (no markdown fences):
       return res.status(200).json({ success: true, audit });
     }
 
-    return res.status(400).json({ error: "Unknown action" });
+    // ══ CHECK CARD OVERLAP ══════════════════════════════════════════
+    // Semantic cross-check: for each proposal, does any existing canvas
+    // card already cover it (duplicate), partially cover it (extend),
+    // or is it genuinely new?
+    // Uses Claude for semantic understanding — keyword matching misses
+    // cards with different titles covering the same underlying issue.
+    if (action === "check_card_overlap") {
+      const anthropic = new Anthropic();
+      const { proposals, existingCards } = req.body;
+      if (!Array.isArray(proposals) || !proposals.length) {
+        return res.status(400).json({ error: "proposals required" });
+      }
+
+      // If no existing cards, everything is new — no Claude call needed
+      if (!Array.isArray(existingCards) || !existingCards.length) {
+        return res.status(200).json({
+          success: true,
+          overlap: proposals.map((_: any, i: number) => ({ index: i, status: "new" })),
+        });
+      }
+
+      const proposalList = proposals.map((p: any, i: number) =>
+        `[${i}] TYPE:${p.type} PRIORITY:${p.priority} TITLE:"${p.title}" CONTENT:"${(p.content || '').slice(0, 120)}"`
+      ).join("\n");
+
+      const existingList = existingCards.map((c: any, i: number) =>
+        `[${i}] TYPE:${c.type || '?'} STATUS:${c.status || '?'} TITLE:"${(c.title || '').slice(0, 80)}" CONTENT:"${(c.content || '').slice(0, 100)}"`
+      ).join("\n");
+
+      const prompt = `You are an SEO project manager. Cross-check these PROPOSALS against EXISTING CANVAS CARDS to prevent duplicate work.
+
+PROPOSALS (to evaluate):
+${proposalList}
+
+EXISTING CANVAS CARDS:
+${existingList}
+
+For each proposal, determine:
+- "new": no existing card covers this issue at all
+- "duplicate": an existing card already covers this issue (same problem, same scope)
+- "extend": an existing card partially covers this issue — recommend expanding the existing card's scope instead of creating a new one
+
+Rules:
+- Be strict about duplicates. If the core problem is the same, it is a duplicate even if worded differently.
+- Only mark "extend" when there is genuine partial overlap that makes scope expansion sensible.
+- Use "new" when the issue is genuinely distinct, even if loosely related.
+
+Return ONLY this JSON (no fences):
+{
+  "overlap": [
+    {
+      "index": 0,
+      "status": "new|duplicate|extend",
+      "matched_card_title": "exact title of the matching existing card, or null if new",
+      "matched_card_index": 0,
+      "reason": "one sentence explaining the decision",
+      "scope_suggestion": "if extend: specific wording to add to the existing card's content; otherwise null"
+    }
+  ]
+}`;
+
+      const msg = await anthropic.messages.create({
+        model:      "claude-sonnet-4-5",
+        max_tokens: 2000,
+        system:     "You are a strict SEO project manager preventing duplicate work. Return ONLY valid JSON. No fences.",
+        messages:   [{ role: "user", content: prompt }],
+      });
+
+      const raw    = (msg.content[0] as any).text || "{}";
+      const parsed = parseJson(raw);
+
+      if (!parsed?.overlap) {
+        // Fallback: title-based dedup if Claude parse fails
+        const normT = (t: string) => t.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim().slice(0, 40);
+        const existingTitles = new Set((existingCards as any[]).map((c: any) => normT(c.title || "")));
+        return res.status(200).json({
+          success: true,
+          overlap: (proposals as any[]).map((p: any, i: number) => ({
+            index: i,
+            status: existingTitles.has(normT(p.title)) ? "duplicate" : "new",
+            matched_card_title: existingTitles.has(normT(p.title)) ? p.title : null,
+          })),
+        });
+      }
+
+      // Fill in any missing indices as "new"
+      const result = parsed.overlap as any[];
+      const covered = new Set(result.map((r: any) => r.index));
+      for (let i = 0; i < proposals.length; i++) {
+        if (!covered.has(i)) result.push({ index: i, status: "new", matched_card_title: null });
+      }
+      result.sort((a: any, b: any) => a.index - b.index);
+
+      return res.status(200).json({ success: true, overlap: result });
+    }
+
+            return res.status(400).json({ error: "Unknown action" });
 
   } catch (fatalErr: any) {
     console.error("[algorithm-intel] Fatal:", fatalErr.message);
