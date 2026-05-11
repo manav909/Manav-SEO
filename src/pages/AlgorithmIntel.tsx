@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@supabase/supabase-js';
 import {
   Brain, Globe, RefreshCw, Loader2, Plus, Trash2, ChevronDown, ChevronRight,
