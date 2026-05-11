@@ -52,6 +52,7 @@ const AppRoutes = () => {
       <Route path="/playground" element={<Playground />} />
       <Route path="/system-control" element={<SystemControl />} />
       <Route path="/algorithm-intel" element={<AlgorithmIntel />} />
+      <Route path="/brain-learning" element={<BrainLearning />} />
       <Route path="*"          element={<NotFound />} />
     </Routes>
   );
