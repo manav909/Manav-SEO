@@ -1964,7 +1964,7 @@ export default function Playground() {
 
   const loadProject = async () => {
     const [rr,pr] = await Promise.all([
-      supabase.from('audit_reports').select('*').eq('project_id',selProjId).order('created_at',{ascending:false}).limit(20),
+      supabase.from('audit_reports').select('*').eq('project_id',selProjId).order('created_at',{ascending:false}).limit(5),
       supabase.from('projects').select('playground_strategy,playground_canvas,playground_generated_at').eq('id',selProjId).single(),
     ]);
     setReports(rr.data||[]);
@@ -2019,7 +2019,7 @@ export default function Playground() {
         supabase.from('metrics').select('*').eq('project_id',selProjId).order('recorded_at',{ascending:false}).limit(4),
         supabase.from('metrics').select('keyword_rankings').eq('project_id',selProjId).order('recorded_at',{ascending:false}).limit(1),
       ]);
-      const audits = reports.map(r=>({created_at:r.created_at,sections:Object.fromEntries(Object.entries(r.sections||{}).map(([k,v])=>[k,safeStr(v).slice(0,300)]))}));
+      const audits = reports.slice(0,3).map(r=>({created_at:r.created_at,sections:Object.fromEntries(Object.entries(r.sections||{}).map(([k,v])=>[k,safeStr(v).slice(0,300)]))}));
       const res = await fetch('/api/playground-analysis', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -2540,7 +2540,23 @@ Please try again — if the problem persists, check your network connection.`);
                               </div>
                               {report.synced_to_metrics&&<span className="text-xs text-green-400 font-mono flex items-center gap-1"><CheckCircle2 size={10}/>Synced</span>}
                             </div>
-                            {exp?<ChevronUp size={14}/>:<ChevronDown size={14}/>}
+                              <div className="flex items-center gap-2">
+                               <button
+                                 onClick={async(e)=>{
+                                   e.stopPropagation();
+                                   if(!confirm('Delete this audit report? This cannot be undone.')) return;
+                                   await supabase.from('audit_reports').delete().eq('id', report.id);
+                                   setReports(prev=>prev.filter(r=>r.id!==report.id));
+                                   if(expandedRep===report.id) setExpandedRep(null);
+                                   toast({title:'Report deleted'});
+                                 }}
+                                 className="h-7 w-7 rounded-lg flex items-center justify-center border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30 transition-colors"
+                                 title="Delete this report"
+                               >
+                                 <X size={12}/>
+                               </button>
+                               {exp?<ChevronUp size={14}/>:<ChevronDown size={14}/>}
+                             </div>
                           </button>
                           {exp && (
                             <div className="border-t border-border px-5 py-4 space-y-4">
