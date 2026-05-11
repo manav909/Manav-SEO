@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   BarChart3, Sparkles, LogOut, Settings, Zap, Layers,
-  Database, Activity, Brain, ChevronDown, Menu, X,
+  Database, Activity, Brain, ChevronDown, Menu, X, BookOpenCheck,
 } from 'lucide-react';
 
 interface Props {
@@ -22,9 +22,10 @@ const PRIMARY = [
 ];
 
 const SECONDARY = [
-  { href: '/launchpad',       label: 'Launchpad',  icon: Sparkles, desc: 'Project setup wizard'   },
-  { href: '/algorithm-intel', label: 'Algorithms', icon: Brain,    desc: 'Algorithm intelligence' },
-  { href: '/system-control',  label: 'Control',    icon: Activity, desc: 'System control & tasks' },
+  { href: '/launchpad',       label: 'Launchpad',      icon: Sparkles,       desc: 'Project setup wizard'      },
+  { href: '/algorithm-intel', label: 'Algorithms',     icon: Brain,          desc: 'Algorithm intelligence'    },
+  { href: '/brain-learning',  label: 'Brain Learning', icon: BookOpenCheck,  desc: 'Manav Brain skill & memory' },
+  { href: '/system-control',  label: 'Control',        icon: Activity,       desc: 'System control & tasks'    },
 ];
 
 export default function PortalNav({
