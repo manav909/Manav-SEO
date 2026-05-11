@@ -64,14 +64,30 @@ export default function BrainLearning() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // Only pass project_id when a project is actually selected.
+      // When omitted, the backend returns ALL learnings across all projects.
+      const body: Record<string, unknown> = { action: 'get_all_learnings' };
+      if (selProjId) body.project_id = selProjId;
+
       const res  = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_all_learnings', project_id: selProjId || null }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
-      const data = await res.json().catch(() => ({ learnings: [] }));
+      const data = await res.json().catch(() => null);
+
+      // Surface API-level errors so they are never silently swallowed
+      if (!data || data.error) {
+        throw new Error(data?.error || `HTTP ${res.status} — unexpected response from server`);
+      }
+
       setLearnings(data.learnings || []);
-    } catch {
-      toast({ title: 'Load failed', variant: 'destructive' });
+    } catch (err: any) {
+      toast({
+        title: 'Failed to load learnings',
+        description: err?.message || 'Unknown error — check the browser console',
+        variant: 'destructive',
+      });
     }
     setLoading(false);
   }, [selProjId]);
@@ -82,14 +98,17 @@ export default function BrainLearning() {
   const deleteLearning = async (id: string) => {
     setDeleting(d => ({ ...d, [id]: true }));
     try {
-      await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const res  = await fetch('/api/task-engine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete_learning', id }),
       });
+      const data = await res.json().catch(() => null);
+      if (!data || data.error) throw new Error(data?.error || 'Delete failed');
       setLearnings(l => l.filter(x => x.id !== id));
       toast({ title: 'Learning removed' });
-    } catch {
-      toast({ title: 'Delete failed', variant: 'destructive' });
+    } catch (err: any) {
+      toast({ title: 'Delete failed', description: err?.message, variant: 'destructive' });
     }
     setDeleting(d => ({ ...d, [id]: false }));
   };
@@ -101,7 +120,8 @@ export default function BrainLearning() {
     setSaving(s => ({ ...s, [id]: true }));
     try {
       const res  = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action:      'update_learning',
           id,
@@ -109,14 +129,13 @@ export default function BrainLearning() {
           tags:        e.tags.split(',').map((t: string) => t.trim()).filter(Boolean),
         }),
       });
-      const data = await res.json().catch(() => ({ success: false }));
-      if (data.success) {
-        setLearnings(l => l.map(x => x.id === id ? data.learning : x));
-        setEditing(ed => { const n = { ...ed }; delete n[id]; return n; });
-        toast({ title: 'Learning updated' });
-      }
-    } catch {
-      toast({ title: 'Update failed', variant: 'destructive' });
+      const data = await res.json().catch(() => null);
+      if (!data || data.error) throw new Error(data?.error || 'Update failed');
+      setLearnings(l => l.map(x => x.id === id ? data.learning : x));
+      setEditing(ed => { const n = { ...ed }; delete n[id]; return n; });
+      toast({ title: 'Learning updated' });
+    } catch (err: any) {
+      toast({ title: 'Update failed', description: err?.message, variant: 'destructive' });
     }
     setSaving(s => ({ ...s, [id]: false }));
   };
@@ -254,13 +273,14 @@ export default function BrainLearning() {
           </div>
         )}
 
-        {/* ── Learning cards ── */}
+        {/* ── No results for current filter ── */}
         {!loading && filtered.length === 0 && learnings.length > 0 && (
           <div className="text-center py-8 text-muted-foreground text-sm">
             No learnings match your filters.
           </div>
         )}
 
+        {/* ── Learning cards ── */}
         <div className="space-y-3">
           {filtered.map(l => {
             const isExpanded = !!expanded[l.id];
@@ -365,7 +385,7 @@ export default function BrainLearning() {
                       </div>
                     )}
 
-                    {/* Improvement / action */}
+                    {/* Improvement */}
                     {!isEditing && l.improvement && (
                       <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
                         <div className="text-xs font-semibold text-primary flex items-center gap-1.5 mb-1">
