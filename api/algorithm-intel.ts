@@ -45,8 +45,11 @@ function parseJson(text: string): any | null {
 // Handler
 // ─────────────────────────────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Top-level guard — ensures every crash returns JSON, never HTML
+  try {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const { action } = req.body;
+  if (!action) return res.status(400).json({ error: "action required" });
   const anthropic = new Anthropic();
 
   // ════════════════════════════════════════════════════════════════════
@@ -125,7 +128,7 @@ Only include information from the trusted sources listed above — no speculatio
     try {
       const msg = await anthropic.messages.create({
         model:      "claude-sonnet-4-5",
-        max_tokens: 8000,
+        max_tokens: 4000,
         system:     "You are the world's #1 digital marketing specialist and search algorithm expert. You have comprehensive knowledge of all official Google, Bing, and AI search documentation. Return ONLY valid JSON. No markdown fences. No prose.",
         messages: [{ role: "user", content: prompt }],
       });
@@ -361,4 +364,10 @@ Return ONLY valid JSON:
   }
 
   return res.status(400).json({ error: "Unknown action" });
+
+  } catch (fatalErr: any) {
+    // Catch any unhandled crash and return proper JSON (never HTML)
+    console.error("[algorithm-intel] Fatal error:", fatalErr.message);
+    return res.status(500).json({ success: false, error: fatalErr.message || "Internal server error" });
+  }
 }
