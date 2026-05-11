@@ -2787,34 +2787,98 @@ Please try again — if the problem persists, check your network connection.`);
                     {/* Data gaps blocking notification — with exact Data Room guidance */}
                     {(s.data_gaps?.length > 0 || s.data_gaps_blocking?.length > 0) && (() => {
                       // Map gap descriptions to exact Data Room tab + field
-                      const GAP_GUIDE: Record<string, { tab: string; label: string; field: string; how: string }> = {
-                        'metrics':      { tab:'analytics',   label:'Analytics Baseline',       field:'Monthly Organic Sessions',   how:'Enter current monthly organic sessions from Google Analytics or GSC'},
-                        'analytics':    { tab:'analytics',   label:'Analytics Baseline',       field:'Monthly Organic Sessions',   how:'Enter current monthly organic sessions from Google Analytics or GSC'},
-                        'keyword':      { tab:'goals',       label:'Campaign Goals',            field:'Top 3 Target Keywords',      how:'Enter your 3 most important keywords in the Goals tab'},
-                        'keywords':     { tab:'goals',       label:'Campaign Goals',            field:'Top 3 Target Keywords',      how:'Enter your 3 most important keywords in the Goals tab'},
-                        'ranking':      { tab:'documents',   label:'Documents',                 field:'Upload Semrush/Ahrefs export',how:'Export keyword rankings from Semrush or Ahrefs and upload as CSV'},
-                        'competitor':   { tab:'competitors', label:'Competitor Intelligence',   field:'Main Competitor #1',         how:'Enter competitor domains in the Competitors tab'},
-                        'audit':        { tab:'documents',   label:'Documents',                 field:'Upload audit report',        how:'Run an audit from the Audit Tool — it saves automatically here'},
-                        'technical':    { tab:'technical',   label:'Technical Baseline',        field:'Pages Indexed (GSC)',         how:'Check Google Search Console Coverage and enter indexed pages count'},
-                        'gsc':          { tab:'documents',   label:'Documents',                 field:'Google Search Console Export',how:'In GSC → Performance → Export CSV, then upload here'},
-                        'gsc_data':     { tab:'documents',   label:'Documents',                 field:'Google Search Console Export',how:'In GSC → Performance → Export CSV, then upload here'},
-                        'goal':         { tab:'goals',       label:'Campaign Goals',            field:'Primary Business Goal',      how:'Set your campaign goal and target timeline in the Goals tab'},
-                        'cms':          { tab:'cms',         label:'CMS & Tech Stack',          field:'CMS / Platform',             how:'Select your CMS (WordPress, Shopify, etc.) in the CMS tab'},
-                        'domain':       { tab:'competitors', label:'Competitor Intelligence',   field:'Our Domain Rating',          how:'Check your domain rating in Ahrefs/Semrush and enter it'},
-                        'document':     { tab:'documents',   label:'Documents',                 field:'Upload SEO export',          how:'Upload CSV exports from GSC, Semrush, Ahrefs or GA4'},
-                        'no data':      { tab:'analytics',   label:'Analytics Baseline',       field:'Monthly Organic Sessions',   how:'Start with Analytics Baseline — enter at minimum your monthly organic sessions'},
-                        'perplexity':   { tab:'analytics',   label:'Analytics Baseline',       field:'GEO Metrics (Metrics Dashboard)',how:'Record Perplexity/ChatGPT citations in the Metrics Dashboard'},
-                      };
+                      // Each entry is checked with gap.toLowerCase().includes(key)
+                      // Keys ordered from most-specific to least-specific to avoid false matches
+                      const GAP_GUIDE: { match: string; tab: string; label: string; field: string; how: string }[] = [
+                        // ── Technical / Indexation ──
+                        { match:'indexed pages',   tab:'technical',    label:'Technical Baseline',        field:'Pages Indexed (GSC)',            how:'Open Google Search Console → Coverage → check "Valid" count and enter it here' },
+                        { match:'index',           tab:'technical',    label:'Technical Baseline',        field:'Pages Indexed (GSC)',            how:'Open Google Search Console → Coverage → check "Valid" count and enter it here' },
+                        { match:'crawl',           tab:'technical',    label:'Technical Baseline',        field:'Crawl Errors',                   how:'Open GSC → Coverage → "Error" tab and count the errors, then enter here' },
+                        { match:'sitemap',         tab:'technical',    label:'Technical Baseline',        field:'Sitemap URL',                    how:'Enter your sitemap URL (usually yourdomain.com/sitemap.xml) in Technical tab' },
+                        { match:'pagespeed',       tab:'cms',          label:'CMS & Tech Stack',          field:'PageSpeed Mobile Score',         how:'Run your site at pagespeed.web.dev and enter the mobile and desktop scores' },
+                        { match:'page speed',      tab:'cms',          label:'CMS & Tech Stack',          field:'PageSpeed Mobile Score',         how:'Run your site at pagespeed.web.dev and enter the mobile and desktop scores' },
+                        { match:'core web',        tab:'cms',          label:'CMS & Tech Stack',          field:'PageSpeed Mobile Score',         how:'Run your site at pagespeed.web.dev — it shows Core Web Vitals too' },
+                        { match:'schema',          tab:'technical',    label:'Technical Baseline',        field:'Schema Markup',                  how:'Check if schema is installed in your CMS or paste a URL into validator.schema.org' },
+                        { match:'canonical',       tab:'technical',    label:'Technical Baseline',        field:'Canonical Issues',               how:'Run a quick Screaming Frog crawl — filter by "Canonical" to find issues' },
+                        { match:'robots',          tab:'technical',    label:'Technical Baseline',        field:'robots.txt Status',              how:"Visit yourdomain.com/robots.txt — check it loads and isn't blocking key pages" },
+                        { match:'redirect',        tab:'technical',    label:'Technical Baseline',        field:'Crawl Errors',                   how:'Check GSC Coverage for redirect errors, or run Screaming Frog on key URLs' },
+                        { match:'broken link',     tab:'technical',    label:'Technical Baseline',        field:'Broken Links',                   how:'Run Screaming Frog or Ahrefs Site Audit → filter by 404 status' },
+                        { match:'duplicate',       tab:'technical',    label:'Technical Baseline',        field:'Duplicate Content',              how:'Check Screaming Frog → Page Titles filter for duplicates' },
+                        { match:'technical',       tab:'technical',    label:'Technical Baseline',        field:'Pages Indexed (GSC)',            how:'Fill in Technical Baseline — start with Pages Indexed from GSC Coverage tab' },
+
+                        // ── Analytics / Traffic ──
+                        { match:'brand mention',   tab:'analytics',    label:'Analytics Baseline',        field:'Brand Mentions',                 how:'Check Google Alerts or Mention.com for your brand name, enter approximate monthly count' },
+                        { match:'mention',         tab:'analytics',    label:'Analytics Baseline',        field:'Brand Mentions',                 how:'Check Google Alerts or Mention.com for your brand name, enter approximate monthly count' },
+                        { match:'organic traffic', tab:'analytics',    label:'Analytics Baseline',        field:'Monthly Organic Sessions',       how:'In GA4 → Acquisition → Traffic Acquisition, filter by Organic Search' },
+                        { match:'organic session', tab:'analytics',    label:'Analytics Baseline',        field:'Monthly Organic Sessions',       how:'In GA4 → Acquisition → Traffic Acquisition, filter by Organic Search' },
+                        { match:'bounce rate',     tab:'analytics',    label:'Analytics Baseline',        field:'Bounce Rate',                    how:'In GA4 → Engagement rate (inverse of bounce rate) for organic sessions' },
+                        { match:'session duration',tab:'analytics',    label:'Analytics Baseline',        field:'Avg Session Duration',           how:'In GA4 → Engagement → Average engagement time per session' },
+                        { match:'conversion',      tab:'analytics',    label:'Analytics Baseline',        field:'Monthly Conversions',            how:'In GA4 → Conversions → set up your key conversion event and check monthly count' },
+                        { match:'impressions',     tab:'documents',    label:'Documents',                 field:'Upload GSC Export',              how:'In GSC → Performance → Date range → Export CSV, then upload here' },
+                        { match:'clicks',          tab:'documents',    label:'Documents',                 field:'Upload GSC Export',              how:'In GSC → Performance → Date range → Export CSV, then upload here' },
+                        { match:'average position',tab:'documents',    label:'Documents',                 field:'Upload GSC Export',              how:'In GSC → Performance → Date range → Export CSV, then upload here' },
+                        { match:'traffic',         tab:'analytics',    label:'Analytics Baseline',        field:'Monthly Organic Sessions',       how:'In GA4 → Acquisition → Traffic Acquisition, filter by Organic Search' },
+                        { match:'analytics',       tab:'analytics',    label:'Analytics Baseline',        field:'Monthly Organic Sessions',       how:'In GA4 → Acquisition → Traffic Acquisition, filter by Organic Search' },
+                        { match:'baseline',        tab:'analytics',    label:'Analytics Baseline',        field:'Monthly Organic Sessions',       how:'Start by entering your current monthly organic sessions — this is your baseline' },
+
+                        // ── GEO / AI Visibility ──
+                        { match:'perplexity',      tab:'analytics',    label:'Analytics Baseline',        field:'GEO / Perplexity Citations',     how:'Search your brand and key queries in Perplexity.ai — count citations and enter here' },
+                        { match:'chatgpt',         tab:'analytics',    label:'Analytics Baseline',        field:'GEO / ChatGPT Citations',        how:'Ask relevant questions in ChatGPT — check if your brand appears and enter count' },
+                        { match:'google ai',       tab:'analytics',    label:'Analytics Baseline',        field:'GEO / Google AI Overview',       how:'Search your target queries in Google — check for AI Overview mentions' },
+                        { match:'llm',             tab:'analytics',    label:'Analytics Baseline',        field:'LLM Visibility Score',           how:'This is calculated from GEO metrics — fill in your Perplexity/ChatGPT citation counts first' },
+                        { match:'ai visibility',   tab:'analytics',    label:'Analytics Baseline',        field:'LLM Visibility Score',           how:'This is calculated from GEO metrics — fill in your Perplexity/ChatGPT citation counts first' },
+                        { match:'citation',        tab:'analytics',    label:'Analytics Baseline',        field:'GEO / Perplexity Citations',     how:'Search your brand in Perplexity.ai and ChatGPT — count citations and record here' },
+                        { match:'geo',             tab:'analytics',    label:'Analytics Baseline',        field:'GEO / Perplexity Citations',     how:'Search your brand in Perplexity.ai and ChatGPT — count citations and record here' },
+
+                        // ── Scores / Health ──
+                        { match:'eeat',            tab:'documents',    label:'Documents',                 field:'Upload audit report',            how:'Run an SEO audit from the Audit Tool — E-E-A-T score is calculated automatically' },
+                        { match:'authority score', tab:'documents',    label:'Documents',                 field:'Upload audit report',            how:'Run an SEO audit from the Audit Tool — authority score is calculated from it' },
+                        { match:'health score',    tab:'documents',    label:'Documents',                 field:'Upload audit report',            how:'Run an SEO audit — algorithm health score is calculated automatically' },
+                        { match:'algorithm',       tab:'documents',    label:'Documents',                 field:'Upload audit report',            how:'Run an SEO audit from the Audit Tool — algorithm health is calculated automatically' },
+                        { match:'growth score',    tab:'analytics',    label:'Analytics Baseline',        field:'Monthly Organic Sessions',       how:'Growth score is calculated from your analytics baseline — fill in monthly sessions first' },
+                        { match:'score',           tab:'documents',    label:'Documents',                 field:'Upload audit report',            how:'Run an SEO audit from the Audit Tool — it calculates all SEO health scores automatically' },
+                        { match:'audit',           tab:'documents',    label:'Documents',                 field:'Upload audit report',            how:'Run an audit from the Audit Tool — it saves automatically to your project' },
+
+                        // ── Keyword / Rankings ──
+                        { match:'keyword ranking', tab:'documents',    label:'Documents',                 field:'Upload Semrush/Ahrefs export',   how:'Export keyword rankings from Semrush (Position Tracking) or Ahrefs (Rank Tracker) as CSV' },
+                        { match:'ranking data',    tab:'documents',    label:'Documents',                 field:'Upload Semrush/Ahrefs export',   how:'Export keyword rankings from Semrush (Position Tracking) or Ahrefs (Rank Tracker) as CSV' },
+                        { match:'position',        tab:'documents',    label:'Documents',                 field:'Upload GSC Export',              how:'GSC → Performance → export CSV shows average position for all keywords' },
+                        { match:'keyword',         tab:'goals',        label:'Campaign Goals',            field:'Top 3 Target Keywords',          how:'Enter your 3 most important target keywords in the Goals tab' },
+                        { match:'ranking',         tab:'documents',    label:'Documents',                 field:'Upload Semrush/Ahrefs export',   how:'Export keyword rankings from Semrush or Ahrefs and upload as CSV' },
+
+                        // ── Backlinks / Authority ──
+                        { match:'backlink',        tab:'documents',    label:'Documents',                 field:'Upload Ahrefs/Semrush export',   how:'In Ahrefs → Backlink profile → Export, or Semrush → Backlinks → Export as CSV' },
+                        { match:'referring domain',tab:'competitors',  label:'Competitor Intelligence',   field:'Our Referring Domains',          how:'Check your domain in Ahrefs or Semrush → Referring Domains count' },
+                        { match:'domain rating',   tab:'competitors',  label:'Competitor Intelligence',   field:'Our Domain Rating (DR)',         how:'Check your domain in Ahrefs → Overview — Domain Rating shown at the top' },
+                        { match:'domain authorit', tab:'competitors',  label:'Competitor Intelligence',   field:'Our Domain Rating (DR)',         how:'Check your domain in Moz or Ahrefs — Domain Authority/Rating shown in overview' },
+                        { match:'link',            tab:'documents',    label:'Documents',                 field:'Upload Ahrefs/Semrush export',   how:'Export backlink data from Ahrefs or Semrush and upload as CSV' },
+
+                        // ── Competitors ──
+                        { match:'competitor',      tab:'competitors',  label:'Competitor Intelligence',   field:'Main Competitor #1',             how:'Enter the top 2-3 competitor domains in the Competitors tab' },
+                        { match:'content gap',     tab:'documents',    label:'Documents',                 field:'Upload Semrush/Ahrefs export',   how:'Run a Content Gap analysis in Semrush or Ahrefs and export as CSV' },
+                        { match:'gap',             tab:'documents',    label:'Documents',                 field:'Upload Semrush/Ahrefs export',   how:'Run a Content Gap or Keyword Gap analysis in Semrush/Ahrefs and export as CSV' },
+
+                        // ── Goals / CMS ──
+                        { match:'goal',            tab:'goals',        label:'Campaign Goals',            field:'Primary Business Goal',          how:'Set your campaign goal and success metric in the Goals tab' },
+                        { match:'timeline',        tab:'goals',        label:'Campaign Goals',            field:'Target Timeline',                how:'Set your target timeline in the Goals tab — e.g. 3 months, 6 months' },
+                        { match:'cms',             tab:'cms',          label:'CMS & Tech Stack',          field:'CMS / Platform',                 how:'Select your CMS (WordPress, Shopify, Webflow etc.) in the CMS tab' },
+                        { match:'wordpress',       tab:'cms',          label:'CMS & Tech Stack',          field:'WordPress Version',              how:'Check wp-admin → Dashboard → At a Glance for your WordPress version' },
+                        { match:'plugin',          tab:'cms',          label:'CMS & Tech Stack',          field:'SEO Plugin',                     how:'Check your installed SEO plugin (Yoast, RankMath, etc.) in the CMS tab' },
+
+                        // ── GSC specific ──
+                        { match:'gsc',             tab:'documents',    label:'Documents',                 field:'Upload GSC Performance Export',  how:'In GSC → Performance → set date range → Export CSV, then upload here' },
+                        { match:'search console',  tab:'documents',    label:'Documents',                 field:'Upload GSC Performance Export',  how:'In GSC → Performance → set date range → Export CSV, then upload here' },
+                      ];
 
                       const allGaps = [...(s.data_gaps||[]), ...(s.data_gaps_blocking||[])];
 
                       const mapGap = (gap: string) => {
                         const lower = gap.toLowerCase();
-                        for (const [key, guide] of Object.entries(GAP_GUIDE)) {
-                          if (lower.includes(key)) return guide;
-                        }
-                        // Default: point to analytics
-                        return { tab:'analytics', label:'Analytics Baseline', field:'Monthly Organic Sessions', how:'Fill in your analytics baseline as a starting point' };
+                        // Find first entry whose match string appears in the gap text
+                        const found = GAP_GUIDE.find(entry => lower.includes(entry.match));
+                        if (found) return found;
+                        // Nothing matched — generic fallback
+                        return { match:'', tab:'analytics', label:'Analytics Baseline', field:'Monthly Organic Sessions', how:"Fill in your analytics baseline as a starting point — it's the most impactful first step" };
                       };
 
                       return (
