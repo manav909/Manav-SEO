@@ -1,12 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 120 };
+// Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably
+export const config = { maxDuration: 300 };
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Every finding must be based on observable data. Never invent rankings, metrics, or technical states. If you cannot verify something from the data provided, say exactly that and tell the user how to verify it manually.";
 
-// Exact field keys recognised by the Data Room UI
-// ONLY these keys will show up in forms — use them precisely
+// Exact field keys recognised by the Data Room UI — use these precisely
 const VALID_FIELDS = `
 ANALYTICS fields (category="analytics"):
   organic_sessions_monthly   — monthly organic sessions number
@@ -52,6 +52,17 @@ CMS fields (category="cms"):
   pagespeed_desktop          — desktop PageSpeed score 0-100
 `;
 
+const validKeySet = new Set([
+  "organic_sessions_monthly","organic_sessions_baseline_date","top_landing_pages",
+  "bounce_rate","avg_session_duration","conversions_monthly","gsc_total_impressions",
+  "gsc_total_clicks","gsc_avg_position","pages_indexed","pages_submitted",
+  "crawl_errors","broken_links","duplicate_content","schema_markup","sitemap_url",
+  "robots_txt","canonical_issues","competitor_1","competitor_1_dr","competitor_2",
+  "competitor_2_dr","competitor_3","our_domain_rating","our_referring_domains",
+  "content_gap_keywords","target_keywords","cms","cms_version","seo_plugin",
+  "pagespeed_mobile","pagespeed_desktop",
+]);
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -59,10 +70,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   /* ── EXTRACT DOCUMENT ── */
   if (action === "extract") {
-    const { content, fileName, docType, projectContext = "" } = req.body;
+    const {
+      content, fileName, docType, projectContext = "",
+      siteUrl = "",
+      skipLiveVerify = false,   // re-extraction skips live verify by default
+    } = req.body;
+
     if (!content) return res.status(400).json({ error: "No content provided" });
 
-    // Detect if content is binary/garbled (xlsx read as text)
+    // Detect binary/garbled content (xlsx read as text)
     const nonPrintable = (content.match(/[\x00-\x08\x0e-\x1f\x7f-\x9f]/g) || []).length;
     if (nonPrintable > 50) {
       return res.status(400).json({
@@ -88,13 +104,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "- Use exact field_key names from the list above — no others",
       "- For category: use exactly 'analytics', 'technical', 'competitor', 'goal', or 'cms'",
       "",
-      "Return ONLY valid JSON:",
-      '{"doc_summary":"2-sentence description of what this document contains and its date range","data_quality":"high|medium|low","date_range":"period covered or null","extracted":{"keywords":[{"keyword":"","position":null,"impressions":null,"clicks":null,"ctr":null}],"pages":[{"url":"","status_code":null,"title":"","issues":[]}],"technical_issues":[{"issue":"","severity":"critical|high|medium|low","count":null}],"metrics":{"total_pages":null,"indexed_pages":null,"total_keywords":null,"avg_position":null,"total_impressions":null,"total_clicks":null,"organic_traffic":null,"domain_rating":null},"action_items":[{"priority":"critical|high|medium|low","action":"","evidence":""}]},"knowledge_fields":[{"category":"analytics|technical|competitor|goal|cms","key":"MUST_BE_FROM_LIST_ABOVE","value":"","notes":""}]}',
+      'Return ONLY valid JSON: {"doc_summary":"2-sentence description","data_quality":"high|medium|low","date_range":"period or null","extracted":{"keywords":[{"keyword":"","position":null,"impressions":null,"clicks":null,"ctr":null}],"pages":[{"url":"","status_code":null,"title":"","issues":[]}],"technical_issues":[{"issue":"","severity":"critical|high|medium|low","count":null}],"metrics":{"total_pages":null,"indexed_pages":null,"total_keywords":null,"avg_position":null,"total_impressions":null,"total_clicks":null,"organic_traffic":null,"domain_rating":null},"action_items":[{"priority":"critical|high|medium|low","action":"","evidence":""}]},"knowledge_fields":[{"category":"analytics|technical|competitor|goal|cms","key":"MUST_BE_FROM_LIST_ABOVE","value":"","notes":""}]}',
     ].join("\n");
 
     try {
       const anthropic = new Anthropic();
-      const response  = await anthropic.messages.create({
+
+      // ── Step 1: Extract from document ──
+      const response = await anthropic.messages.create({
         model: "claude-sonnet-4-5", max_tokens: 4000,
         system: SYSTEM,
         messages: [{ role: "user", content: extractPrompt }],
@@ -104,64 +121,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let parsed: any = {};
       try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch { /* ignore */ }
 
-      // Filter knowledge_fields to only valid keys (safety net)
-      const validKeySet = new Set([
-        "organic_sessions_monthly","organic_sessions_baseline_date","top_landing_pages",
-        "bounce_rate","avg_session_duration","conversions_monthly","gsc_total_impressions",
-        "gsc_total_clicks","gsc_avg_position","pages_indexed","pages_submitted",
-        "crawl_errors","broken_links","duplicate_content","schema_markup","sitemap_url",
-        "robots_txt","canonical_issues","competitor_1","competitor_1_dr","competitor_2",
-        "competitor_2_dr","competitor_3","our_domain_rating","our_referring_domains",
-        "content_gap_keywords","target_keywords","cms","cms_version","seo_plugin",
-        "pagespeed_mobile","pagespeed_desktop",
-      ]);
+      // Filter to valid keys only
       if (Array.isArray(parsed.knowledge_fields)) {
         parsed.knowledge_fields = parsed.knowledge_fields.filter(
           (kf: any) => kf.key && validKeySet.has(kf.key) && kf.value && String(kf.value).trim() !== ""
         );
       }
 
-      // ── Live verification: cross-check extracted metrics against live site ──
-      let liveVerification: any = null;
-      const siteUrl = req.body.siteUrl || (projectContext.split("|")[1] || "").trim();
-      if (siteUrl && siteUrl.startsWith("http") && parsed?.knowledge_fields?.length > 0) {
-        try {
-          const cleanUrl = siteUrl.startsWith("http") ? siteUrl : `https://${siteUrl}`;
-          const liveRes = await fetch(`https://r.jina.ai/${cleanUrl}`, {
-            headers: { Accept: "text/plain", "X-Return-Format": "markdown", "X-Timeout": "15" },
-            signal: AbortSignal.timeout(18000),
-          });
-          const liveContent = liveRes.ok ? (await liveRes.text()).slice(0, 5000) : "";
+      // ── Step 2: Optional live verification (new uploads only, skip re-extraction) ──
+      // Guard: only run if we have a URL, fields to check, and this isn't a re-extract
+      const resolvedUrl = (siteUrl || (projectContext.split("|")[1] || "")).trim();
+      const canVerifyLive = (
+        !skipLiveVerify &&
+        resolvedUrl.startsWith("http") &&
+        Array.isArray(parsed.knowledge_fields) &&
+        parsed.knowledge_fields.length > 0
+      );
 
-          if (liveContent) {
-            const verifyPrompt = [
-              "You extracted data from an uploaded document. Now cross-check key metrics against the live site content below.",
-              "",
-              "EXTRACTED FIELDS:",
-              (parsed.knowledge_fields as any[]).slice(0, 10).map((kf: any) => `${kf.key}: ${kf.value}`).join("
-"),
-              "",
-              "LIVE SITE CONTENT (fetched right now):",
-              liveContent,
-              "",
-              "For each extracted field, check if the live site confirms, contradicts, or cannot verify it.",
-              "Return ONLY valid JSON: {"verified":[{"key":"","extracted_value":"","live_confirms":true,"note":""}],"discrepancies":[{"key":"","extracted_value":"","live_value":"","severity":"high|medium|low","note":""}],"unverifiable":[{"key":"","reason":"why live site cannot confirm this"}]}",
-            ].join("
-");
+      let liveVerification: any = null;
+
+      if (canVerifyLive) {
+        try {
+          // Shorter timeout: 8s max so we don't bloat the function runtime
+          const liveRes = await fetch(`https://r.jina.ai/${resolvedUrl}`, {
+            headers: { Accept: "text/plain", "X-Return-Format": "markdown", "X-Timeout": "8" },
+            signal: AbortSignal.timeout(10000),
+          });
+          const liveContent = liveRes.ok ? (await liveRes.text()).slice(0, 1500) : "";
+
+          if (liveContent && liveContent.length > 200) {
+            const fieldsToCheck = (parsed.knowledge_fields as any[])
+              .slice(0, 8)
+              .map((kf: any) => `${kf.key}: ${kf.value}`)
+              .join("\n");
+
+            const verifyMsg = [
+              "Cross-check these extracted data points against the live site.",
+              "EXTRACTED: " + fieldsToCheck,
+              "LIVE SITE: " + liveContent,
+              'Return ONLY JSON: {"verified":[{"key":"","note":""}],"discrepancies":[{"key":"","extracted_value":"","live_value":"","severity":"high|medium|low","note":""}],"unverifiable":[{"key":"","reason":""}]}',
+            ].join("\n");
 
             const verifyRes = await anthropic.messages.create({
-              model: "claude-sonnet-4-5", max_tokens: 1000,
+              model: "claude-sonnet-4-5", max_tokens: 400,
               system: SYSTEM,
-              messages: [{ role: "user", content: verifyPrompt }],
+              messages: [{ role: "user", content: verifyMsg }],
             });
-            const verifyRaw = verifyRes.content[0].type === "text" ? verifyRes.content[0].text : "{}";
-            const vf = verifyRaw.indexOf("{"), vl = verifyRaw.lastIndexOf("}");
-            try { liveVerification = JSON.parse(verifyRaw.slice(vf, vl + 1)); } catch { /* ignore */ }
+            const vRaw = verifyRes.content[0].type === "text" ? verifyRes.content[0].text : "{}";
+            const vf = vRaw.indexOf("{"), vl = vRaw.lastIndexOf("}");
+            try { liveVerification = JSON.parse(vRaw.slice(vf, vl + 1)); } catch { /* ignore */ }
           }
-        } catch { /* live check failed silently — don't block extraction */ }
+        } catch {
+          // Live verification is best-effort — never fail extraction because of it
+          liveVerification = null;
+        }
       }
 
-      return res.status(200).json({ success: true, extracted: parsed, live_verification: liveVerification });
+      return res.status(200).json({
+        success: true,
+        extracted: parsed,
+        live_verification: liveVerification,
+      });
+
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
     }
@@ -197,10 +218,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     "LIVE SITE CONTENT:",
     siteContent,
     "",
-    "For every finding: cite what you actually observed in the content above, or state: Could not verify — requires manual check with [specific tool].",
+    "For every finding: cite what you observed, or state: Could not verify — requires manual check with [specific tool].",
     "",
     "## Technical SEO",
-    "Crawlability, indexation, page speed signals, Core Web Vitals indicators, schema markup, canonical tags, robots.txt, sitemap",
+    "Crawlability, indexation, page speed signals, Core Web Vitals, schema markup, canonical tags, robots.txt, sitemap",
     "",
     "## On-Page SEO",
     "Title tags, meta descriptions, heading structure, keyword usage, content quality, internal linking, image optimisation",
@@ -212,15 +233,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     "Perplexity citation potential, structured data for AI, entity coverage, FAQ opportunities",
     "",
     "## Quick Wins",
-    "List 5 highest-impact changes that could be made this week — specific and actionable",
+    "5 highest-impact changes this week — specific and actionable",
     "",
     "## Priority Action Plan",
-    "Ranked list: Critical, then High, then Medium — with specific implementation steps for each",
+    "Ranked: Critical → High → Medium — with specific implementation steps",
   ].filter(l => l !== "").join("\n");
 
   try {
     const anthropic = new Anthropic();
-    const stream    = await anthropic.messages.stream({
+    const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-5", max_tokens: mode === "deep" ? 16000 : 8000,
       system: SYSTEM,
       messages: [{ role: "user", content: auditPrompt }],
