@@ -386,6 +386,20 @@ function seedBlocks(raw: any[]): Block[] {
     effort:  b.effort, impact:b.impact, tags:b.tags||[], source:b.source||'',
   }));
 }
+/* ─── Safe fetch-JSON helper ──────────────────────────────────────
+   Checks res.ok before parsing. If response is not JSON (Vercel 500
+   plain text etc.), throws a clean Error instead of a parse crash.
+────────────────────────────────────────────────────────────────── */
+async function safeJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!res.ok) {
+    try { const e = JSON.parse(text); throw new Error(e.error || e.message || text.slice(0,200)); }
+    catch (pe) { if (pe instanceof SyntaxError) throw new Error(text.slice(0,200)); throw pe; }
+  }
+  try { return JSON.parse(text); }
+  catch { throw new Error(`Server returned invalid JSON: ${text.slice(0,120)}`); }
+}
+
 function buildLibraryFromStrategy(strategy: any): Block[] {
   const seen  = new Set<string>();
   const result: Block[] = [];
@@ -1168,7 +1182,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_context', projectId }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       const ctx  = data.context || {};
       setContext(ctx);
 
@@ -1257,7 +1271,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'evaluate', card: block, output: out, executedRole: role, executedInputs: getMergedInputs() }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       const ev   = data.evaluation || {};
       setEvaluation(ev);
       await saveVersion(out, ev);
@@ -1722,7 +1736,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({action:'verify',card:block,siteUrl,completedAt:new Date(completedDate).toISOString(),checkType,completionNote,evidenceData}),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       setResult(data.success ? data : {verdict:'cannot_determine',next_action:'Server error — try again.',evidence_found:[],evidence_missing:[],what_to_check:[]});
     } catch(e:any) {
       setResult({verdict:'cannot_determine',next_action:`Error: ${(e as Error).message}`,evidence_found:[],evidence_missing:[],what_to_check:[]});
@@ -2049,7 +2063,7 @@ export default function Playground() {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ action: 'get_state', projectId: selProjId }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (data.success && data.sectionStatus) {
         const stale = (data.sectionStatus as any[])
           .filter(s => s.stale && s.hasCache)
@@ -2149,8 +2163,8 @@ export default function Playground() {
           resumeBatch: 0, existingStrategy: strategy||undefined,
         }),
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      const data = await safeJson(res);
+      if (!data.success) throw new Error(data.error || 'Strategy generation failed');
 
       setBatchStatus(Object.fromEntries(Object.entries(data.batch_status||{}).map(([k,v])=>[k,String(v)])));
       setFailedBatches(data.failed_batches||[]);
@@ -2210,7 +2224,7 @@ export default function Playground() {
               resumeBatch: batchNum, existingStrategy: strategy,
             }),
           });
-          const data = await res.json();
+          const data = await safeJson(res);
           if (data.success) {
             const merged = {...(strategy||{}), ...data.strategy};
             setStrategy(merged);
@@ -2296,7 +2310,7 @@ export default function Playground() {
           evidenceData,
         }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       setVerifyResult(data);
     } catch (e: any) {
       setVerifyResult({ success: false, error: (e as Error).message });
