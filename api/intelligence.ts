@@ -65,6 +65,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-cache");
   res.status(200);
 
+  // ── Everything after headers must be inside try-catch-finally ──
+  // If ANY code throws after res.status(200) but before res.end(),
+  // the client stream hangs open forever. The outer try ensures res.end() always runs.
+  try {
+
   const anthropic = new Anthropic();
   let systemPrompt = SYSTEM;
   let userPrompt   = "";
@@ -202,9 +207,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.write(chunk.delta.text);
       }
     }
-  } catch (err: any) {
-    res.write(`\nError: ${err.message}`);
+  } catch (streamErr: any) {
+    res.write(`\nError: ${streamErr.message}`);
+  }
+
+  } catch (outerErr: any) {
+    // Catches errors from Anthropic init, prompt building, fetchUrl, mode branches
+    // Without this, any throw here leaves res open and the client hangs forever
+    try { res.write(`\nError: ${outerErr.message}`); } catch { /* already closed */ }
   } finally {
-    res.end();
+    // Always close the response — no matter what
+    try { res.end(); } catch { /* already ended */ }
   }
 }
