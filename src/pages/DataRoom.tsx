@@ -222,13 +222,14 @@ export default function DataRoom() {
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [saving,    setSaving]    = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [extracting,setExtracting]= useState(false);
   const [showGuide, setShowGuide] = useState<string|null>(null);
   const [pendingFields, setPendingFields] = useState<Record<string,string>>({});
   const [expandedDoc,   setExpandedDoc]   = useState<string|null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadDocType, setUploadDocType] = useState('gsc_export');
+  const [uploadDocType,  setUploadDocType]  = useState('gsc_export');
+  const [uploadStatus,   setUploadStatus]   = useState<'idle'|'uploading'|'extracting'|'saving'|'done'|'error'>('idle');
+  const [uploadError,    setUploadError]    = useState('');
+  const [reExtractingId, setReExtractingId] = useState<string|null>(null);
 
   const selProj  = projects.find(p => p.id === selProjId);
   const client   = clients.find(c => c.id === selProj?.client_id);
@@ -317,14 +318,28 @@ export default function DataRoom() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selProjId) return;
-    setUploading(true);
+
+    // Reject binary files (xlsx/xls) before sending to API
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (ext === 'xlsx' || ext === 'xls') {
+      toast({
+        title: 'Export as CSV first',
+        description: 'XLSX/XLS files cannot be read as text. In Excel or Google Sheets: File → Download → CSV, then upload the .csv file.',
+        variant: 'destructive',
+      });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setUploadStatus('uploading');
+    setUploadError('');
 
     try {
       const text = await file.text();
       const sizeKb = Math.round(file.size / 1024);
 
-      // Save raw document
-      const { data: docRow } = await supabase.from('project_documents').insert({
+      // Step 1 — save raw document to DB
+      const { data: docRow, error: insertErr } = await supabase.from('project_documents').insert({
         project_id:   selProjId,
         name:         file.name,
         doc_type:     uploadDocType,
@@ -333,61 +348,146 @@ export default function DataRoom() {
         source_date:  new Date().toISOString().split('T')[0],
       }).select().single();
 
-      if (docRow) {
-        setUploading(false);
-        setExtracting(true);
-        toast({ title: `${file.name} uploaded — extracting data...` });
+      if (insertErr || !docRow) {
+        throw new Error(insertErr?.message || 'Document save failed');
+      }
 
-        // Extract via API
-        const res = await fetch('/api/analysis', {
+      // Step 2 — extract via API
+      setUploadStatus('extracting');
+      const res = await fetch('/api/analysis', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action:         'extract',
+          content:        text.slice(0, 15000),
+          fileName:       file.name,
+          docType:        uploadDocType,
+          projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
+        }),
+      });
+      const extracted = await res.json();
+
+      if (!res.ok) {
+        if (extracted.error === 'binary_file') {
+          // Delete the already-saved doc row and show error
+          await supabase.from('project_documents').delete().eq('id', docRow.id);
+          throw new Error(extracted.message || 'Binary file detected — please export as CSV');
+        }
+        throw new Error(extracted.error || 'Extraction API failed');
+      }
+
+      // Step 3 — save extracted data
+      setUploadStatus('saving');
+      if (extracted.success && extracted.extracted) {
+        await supabase.from('project_documents').update({
+          extracted_data: extracted.extracted,
+        }).eq('id', docRow.id);
+
+        // Upsert knowledge fields
+        const savedFields: string[] = [];
+        if (extracted.extracted.knowledge_fields?.length) {
+          for (const kf of extracted.extracted.knowledge_fields) {
+            if (!kf.key || !kf.value) continue;
+            const { error: upsertErr } = await supabase.from('project_knowledge').upsert({
+              project_id:  selProjId,
+              category:    kf.category || 'manual',
+              field_key:   kf.key,
+              field_value: String(kf.value),
+              source:      'uploaded',
+              source_name: file.name,
+              data_date:   extracted.extracted.date_range || null,
+              notes:       kf.notes || null,
+              updated_at:  new Date().toISOString(),
+            }, { onConflict: 'project_id,category,field_key' });
+            if (!upsertErr) savedFields.push(kf.key);
+          }
+        }
+
+        // Mark strategy as stale — new data means old analysis is outdated
+        fetch('/api/control', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            action:         'extract',
-            content:        text.slice(0, 15000),
-            fileName:       file.name,
-            docType:        uploadDocType,
-            projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
+            action: 'log_change', projectId: selProjId,
+            payload: {
+              changeType: 'document',
+              fieldPath:  `document.${uploadDocType}`,
+              oldValue:   null,
+              newValue:   file.name,
+              sourceName: file.name,
+              sourceDate: new Date().toISOString().split('T')[0],
+            },
           }),
+        }).catch(() => {});
+
+        const count = savedFields.length;
+        toast({
+          title: 'Upload complete!',
+          description: `${count} data point${count !== 1 ? 's' : ''} saved to your knowledge base.${count === 0 ? ' No matching fields found — check document type.' : ''}`,
         });
-        const extracted = await res.json();
-
-        if (extracted.success && extracted.extracted) {
-          // Save extracted data to document
-          await supabase.from('project_documents').update({
-            extracted_data: extracted.extracted,
-          }).eq('id', docRow.id);
-
-          // Auto-save extracted knowledge fields
-          if (extracted.extracted.knowledge_fields?.length) {
-            for (const kf of extracted.extracted.knowledge_fields) {
-              await supabase.from('project_knowledge').upsert({
-                project_id:  selProjId,
-                category:    kf.category || 'manual',
-                field_key:   kf.key,
-                field_value: kf.value,
-                source:      'uploaded',
-                source_name: file.name,
-                data_date:   extracted.extracted.date_range || null,
-                notes:       kf.notes,
-              }, { onConflict: 'project_id,category,field_key' });
-            }
-          }
-
-          toast({
-            title: 'Extraction complete!',
-            description: `${extracted.extracted.knowledge_fields?.length || 0} data points saved to your knowledge base.`,
-          });
-        }
-        await loadData();
-        setExtracting(false);
+      } else {
+        toast({ title: `${file.name} saved`, description: 'Extraction returned no structured data.' });
       }
+
+      await loadData();
+      setUploadStatus('done');
+      setTimeout(() => setUploadStatus('idle'), 3000);
     } catch (e: any) {
+      setUploadStatus('error');
+      setUploadError(e.message);
       toast({ title: 'Upload failed', description: e.message, variant: 'destructive' });
-      setUploading(false);
-      setExtracting(false);
+      setTimeout(() => { setUploadStatus('idle'); setUploadError(''); }, 5000);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // Re-extract an already-uploaded document
+  const reExtractDoc = async (doc: DocRecord) => {
+    if (!doc.id || !doc.raw_content || !selProjId) {
+      toast({ title: 'Cannot re-extract', description: 'No raw content stored for this document.', variant: 'destructive' });
+      return;
+    }
+    setReExtractingId(doc.id);
+    try {
+      const res = await fetch('/api/analysis', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action:         'extract',
+          content:        doc.raw_content.slice(0, 15000),
+          fileName:       doc.name,
+          docType:        doc.doc_type,
+          projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
+        }),
+      });
+      const extracted = await res.json();
+      if (extracted.success && extracted.extracted) {
+        await supabase.from('project_documents').update({ extracted_data: extracted.extracted }).eq('id', doc.id);
+        const savedFields: string[] = [];
+        if (extracted.extracted.knowledge_fields?.length) {
+          for (const kf of extracted.extracted.knowledge_fields) {
+            if (!kf.key || !kf.value) continue;
+            await supabase.from('project_knowledge').upsert({
+              project_id:  selProjId,
+              category:    kf.category || 'manual',
+              field_key:   kf.key,
+              field_value: String(kf.value),
+              source:      'uploaded',
+              source_name: doc.name,
+              data_date:   extracted.extracted.date_range || null,
+              updated_at:  new Date().toISOString(),
+            }, { onConflict: 'project_id,category,field_key' });
+            savedFields.push(kf.key);
+          }
+        }
+        await loadData();
+        toast({ title: 'Re-extraction complete', description: `${savedFields.length} data points updated.` });
+      } else {
+        toast({ title: 'Re-extraction failed', description: 'No structured data returned.', variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Re-extraction error', description: e.message, variant: 'destructive' });
+    }
+    setReExtractingId(null);
+  };
+
 
   const deleteDoc = async (id: string) => {
     await supabase.from('project_documents').delete().eq('id', id);
@@ -524,7 +624,7 @@ export default function DataRoom() {
               Client Knowledge Base
             </h1>
             <p className="text-sm text-muted-foreground">
-              Everything Claude knows about this client — hard data, tool access, goals, tech stack. Nothing gets lost. Everything feeds the AI.
+              Everything Manav Brain knows about this client — hard data, tool access, goals, tech stack. Nothing gets lost. Everything feeds Manav Brain.
             </p>
           </div>
         </div>
@@ -632,7 +732,7 @@ export default function DataRoom() {
 
                 {/* Where data comes from */}
                 <div className="rounded-2xl border border-border bg-card/60 p-5">
-                  <div className="font-semibold mb-4 flex items-center gap-2"><AlertTriangle size={15} className="text-primary"/>Where Does Claude Get Its Data?</div>
+                  <div className="font-semibold mb-4 flex items-center gap-2"><AlertTriangle size={15} className="text-primary"/>Where Does Manav Brain Get Its Data?</div>
                   <div className="space-y-3 text-sm">
                     {[
                       {icon:BarChart3,color:'#34d399',label:'Metrics Dashboard', desc:'Scores you enter manually in the Metrics section — LLM Visibility, Algorithm Health, E-E-A-T, Content Authority, Overall Growth, Indexed Pages, Brand Mentions, Perplexity/ChatGPT citations.'},
@@ -700,17 +800,46 @@ export default function DataRoom() {
                     Upload CSV, TXT, or XLSX exports from GSC, Screaming Frog, Semrush, Ahrefs, or GA4. Claude extracts every data point automatically.
                   </p>
                   <div className="flex items-center justify-center gap-3 mb-4 flex-wrap">
-                    <select value={uploadDocType} onChange={e=>setUploadDocType(e.target.value)} className="h-9 text-sm px-3 rounded-xl border border-border bg-background/60">
+                    <select value={uploadDocType} onChange={e=>setUploadDocType(e.target.value)}
+                      disabled={uploadStatus !== 'idle'}
+                      className="h-9 text-sm px-3 rounded-xl border border-border bg-background/60 disabled:opacity-50">
                       {DOC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
-                    <button onClick={()=>fileInputRef.current?.click()} disabled={uploading||extracting}
-                      className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-50">
-                      {uploading?<><RefreshCw size={13} className="animate-spin"/>Uploading...</>:
-                       extracting?<><RefreshCw size={13} className="animate-spin"/>Extracting data...</>:
-                       <><Upload size={13}/>Choose File</>}
+                    <button onClick={()=>fileInputRef.current?.click()} disabled={uploadStatus !== 'idle'}
+                      className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-50 transition-all">
+                      {uploadStatus === 'idle'      && <><Upload size={13}/>Choose File</>}
+                      {uploadStatus === 'uploading' && <><RefreshCw size={13} className="animate-spin"/>Saving file…</>}
+                      {uploadStatus === 'extracting'&& <><RefreshCw size={13} className="animate-spin"/>Extracting data…</>}
+                      {uploadStatus === 'saving'    && <><RefreshCw size={13} className="animate-spin"/>Saving to knowledge base…</>}
+                      {uploadStatus === 'done'      && <><CheckCircle2 size={13} className="text-green-400"/>Done!</>}
+                      {uploadStatus === 'error'     && <><AlertTriangle size={13} className="text-red-400"/>Failed — try again</>}
                     </button>
-                    <input ref={fileInputRef} type="file" accept=".csv,.txt,.xlsx,.xls,.html" onChange={handleFileUpload} className="hidden"/>
+                    <input ref={fileInputRef} type="file" accept=".csv,.txt,.html" onChange={handleFileUpload} className="hidden"/>
                   </div>
+                  {/* Upload progress steps */}
+                  {uploadStatus !== 'idle' && (
+                    <div className="flex items-center justify-center gap-2 mb-3">
+                      {(['uploading','extracting','saving','done'] as const).map((step, i) => {
+                        const steps = ['uploading','extracting','saving','done'] as const;
+                        const currentIdx = steps.indexOf(uploadStatus as any);
+                        const stepIdx = i;
+                        const labels = ['1. Saving file','2. Reading data','3. Updating knowledge base','✓ Complete'];
+                        const isDone = uploadStatus === 'done' || (currentIdx > stepIdx);
+                        const isActive = currentIdx === stepIdx;
+                        return (
+                          <div key={step} className={`text-xs px-2 py-1 rounded-lg font-medium transition-all ${
+                            isDone ? 'bg-green-400/15 text-green-400' :
+                            isActive ? 'bg-primary/15 text-primary' :
+                            'text-muted-foreground/40'
+                          }`}>{labels[i]}</div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {uploadStatus === 'error' && uploadError && (
+                    <div className="mb-3 text-xs text-red-400 text-center bg-red-400/10 rounded-lg px-4 py-2">{uploadError}</div>
+                  )}
+                  <p className="text-xs text-muted-foreground text-center">Accepts CSV, TXT, HTML — for XLSX/Excel files, save as CSV first</p>
                   {UPLOAD_GUIDES[uploadDocType] && (
                     <button onClick={()=>setShowGuide(showGuide===uploadDocType?null:uploadDocType)} className="text-xs text-primary hover:underline flex items-center gap-1 mx-auto">
                       <AlertTriangle size={11}/>How to export from this tool
@@ -756,7 +885,16 @@ export default function DataRoom() {
                           </div>
                           <div className="flex gap-2 shrink-0">
                             <button onClick={()=>setExpandedDoc(expandedDoc===doc.id?null:doc.id!)} className="text-xs px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground">
-                              {expandedDoc===doc.id?'Collapse':'View extracted'}
+                              {expandedDoc===doc.id?'Collapse':'View data'}
+                            </button>
+                            <button
+                              onClick={()=>reExtractDoc(doc)}
+                              disabled={reExtractingId === doc.id}
+                              title="Re-run extraction to update knowledge base with latest data from this document"
+                              className="text-xs px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-primary hover:border-primary/30 disabled:opacity-50 flex items-center gap-1">
+                              {reExtractingId === doc.id
+                                ? <><RefreshCw size={10} className="animate-spin"/>Re-reading…</>
+                                : <><RefreshCw size={10}/>Re-extract</>}
                             </button>
                             <button onClick={()=>doc.id&&deleteDoc(doc.id)} className="h-7 w-7 rounded-lg flex items-center justify-center border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30">
                               <Trash2 size={12}/>
