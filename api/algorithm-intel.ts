@@ -135,7 +135,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
     const { action } = req.body;
     if (!action) return res.status(400).json({ error: "action required" });
-    const anthropic = new Anthropic();
+    // Note: Anthropic client is created only inside actions that call Claude.
+    // get_catalog, save_item, get_all, delete_item are DB-only and never need it.
 
     // ══ GET CATALOG ══════════════════════════════════════════════════
     if (action === "get_catalog") {
@@ -190,6 +191,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ══ FETCH SINGLE TOPIC ═══════════════════════════════════════════
     if (action === "fetch_topic") {
+      const anthropic = new Anthropic();
       const { topic_id } = req.body;
       const topic = TOPIC_CATALOG.find(t => t.id === topic_id);
       if (!topic) return res.status(400).json({ error: "Unknown topic_id" });
@@ -214,8 +216,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ══ SCAN FOR NEW UPDATES ══════════════════════════════════════════
     // Asks Claude to identify important algorithm updates NOT in the catalog.
-    // Claude uses its training knowledge up to its cutoff.
     if (action === "scan_for_new") {
+      const anthropic = new Anthropic();
       const existingLabels = TOPIC_CATALOG.map(t => t.label);
 
       const prompt = `You are the world's #1 SEO expert with comprehensive knowledge up to mid-2025.
@@ -263,6 +265,7 @@ Return ONLY this JSON:
     // ══ ADD CUSTOM TOPIC ═════════════════════════════════════════════
     // User-discovered topic — fetch + save with "custom" tag
     if (action === "fetch_custom_topic") {
+      const anthropic = new Anthropic();
       const { label, engine = "google", category = "general", source = "User added" } = req.body;
       if (!label) return res.status(400).json({ error: "label required" });
 
@@ -335,6 +338,7 @@ Return ONLY this JSON:
 
     // ══ AUDIT AGAINST LIBRARY ════════════════════════════════════════
     if (action === "audit_against") {
+      const anthropic = new Anthropic();
       const { pageData, projectContext = "", targetEngine = "google" } = req.body;
       if (!pageData) return res.status(400).json({ error: "pageData required" });
 
