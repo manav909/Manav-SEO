@@ -133,6 +133,9 @@ export default function AlgorithmIntel() {
   const [auditCards,         setAuditCards]         = useState<any[]>([]);
   const [auditCardApprovals, setAuditCardApprovals] = useState<Record<number,boolean>>({});
   const [sendingCards,       setSendingCards]        = useState(false);
+  // Overlap check results — classifies each proposal as new/duplicate/extend
+  const [cardOverlap,        setCardOverlap]        = useState<Record<number,{status:string;matched_card_title:string|null;reason:string;scope_suggestion:string|null}>>({});
+  const [checkingOverlap,    setCheckingOverlap]    = useState(false);
 
   // ─────────────────────────────────────────────────────────────────
   // API helper — reads text, parses JSON, throws with readable message
@@ -412,6 +415,59 @@ export default function AlgorithmIntel() {
   };
 
   // ─────────────────────────────────────────────────────────────────
+  // Semantic overlap check — load canvas cards, send all proposals to
+  // Claude in one call, get back new/duplicate/extend per proposal.
+  // Duplicates are blocked; extends show the existing card + scope hint.
+  // ─────────────────────────────────────────────────────────────────
+  const checkOverlap = async (proposals: any[]) => {
+    if (!proposals.length || !selProjId) return;
+    setCheckingOverlap(true);
+    setCardOverlap({});
+    try {
+      // Load current canvas cards
+      const { data: projData } = await supabase
+        .from('projects').select('playground_canvas').eq('id', selProjId).single();
+      const existingCards = ((projData?.playground_canvas || []) as any[])
+        .filter(b => b.placed && b.status !== 'done')
+        .map(b => ({ title: b.title, content: b.content, type: b.type, status: b.status }));
+
+      const data = await apiFetch({
+        action: 'check_card_overlap',
+        proposals: proposals.map(p => ({ title: p.title, content: p.content, type: p.type, priority: p.priority })),
+        existingCards,
+      });
+
+      if (data.success && data.overlap) {
+        const map: typeof cardOverlap = {};
+        for (const item of data.overlap) {
+          map[item.index] = {
+            status:             item.status,
+            matched_card_title: item.matched_card_title || null,
+            reason:             item.reason || '',
+            scope_suggestion:   item.scope_suggestion || null,
+          };
+        }
+        setCardOverlap(map);
+        // Auto-approve only genuinely new cards
+        const autoApprove: Record<number,boolean> = {};
+        proposals.forEach((_, i) => { if (!map[i] || map[i].status === 'new') autoApprove[i] = true; });
+        setAuditCardApprovals(autoApprove);
+
+        const dupeCount   = Object.values(map).filter((v: any) => v.status === 'duplicate').length;
+        const extendCount = Object.values(map).filter((v: any) => v.status === 'extend').length;
+        const newCount    = proposals.length - dupeCount - extendCount;
+        toast({
+          title: `Overlap check complete`,
+          description: `${newCount} new · ${extendCount} scope expansions · ${dupeCount} duplicate${dupeCount !== 1 ? 's' : ''} blocked`,
+        });
+      }
+    } catch (e: any) {
+      toast({ title: 'Overlap check failed', description: e.message, variant: 'destructive' });
+    }
+    setCheckingOverlap(false);
+  };
+
+  // ─────────────────────────────────────────────────────────────────
   // Send approved audit cards to the Playground canvas
   // ─────────────────────────────────────────────────────────────────
   const sendAuditCards = async () => {
@@ -431,21 +487,32 @@ export default function AlgorithmIntel() {
       const normT = (t: string) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
       const existingTitles = new Set(existing.map((b: any) => normT(b.title || '')));
 
-      const newCards = approved
-        .filter(c => !existingTitles.has(normT(c.title)))
-        .map(c => ({
-          id:       uid(),
-          type:     c.type || 'technical',
-          title:    c.title.slice(0, 70),
-          content:  `${c.content}\n\nAlgorithm: ${c.source_algorithm || 'Algorithm audit'}`,
-          priority: c.priority || 'medium',
-          week:     1,
-          placed:   true,
-          status:   'todo',
-          color:    '#94a3b8',
-          tags:     ['from-algorithm-audit', '✓ hard-data'],
-          source:   `Algorithm Audit — ${auditUrl.replace(/https?:\/\//, '').slice(0, 40)}`,
-        }));
+      // Hard-block duplicates. For extend cards, append the scope suggestion to content.
+      const newCards = approvedWithIdx
+        .filter(({ card, i }) => {
+          const ov = cardOverlap[i];
+          if (ov?.status === 'duplicate') return false; // BLOCKED — existing card covers this
+          return !existingTitles.has(normT(card.title));
+        })
+        .map(({ card, i }) => {
+          const ov = cardOverlap[i];
+          const scopeNote = ov?.status === 'extend' && ov.scope_suggestion
+            ? `\n\nScope expansion (extends: "${ov.matched_card_title}"): ${ov.scope_suggestion}`
+            : '';
+          return {
+            id:       uid(),
+            type:     card.type || 'technical',
+            title:    card.title.slice(0, 70),
+            content:  `${card.content}\n\nAlgorithm: ${card.source_algorithm || 'Algorithm audit'}${scopeNote}`,
+            priority: card.priority || 'medium',
+            week:     1,
+            placed:   true,
+            status:   'todo',
+            color:    '#94a3b8',
+            tags:     ['from-algorithm-audit', '✓ hard-data', ...(ov?.status === 'extend' ? ['scope-expansion'] : [])],
+            source:   `Algorithm Audit — ${auditUrl.replace(/https?:\/\//, '').slice(0, 40)}`,
+          };
+        });
 
       if (!newCards.length) {
         toast({ title: 'No new cards — all already on canvas' });
@@ -582,8 +649,13 @@ export default function AlgorithmIntel() {
           return next;
         });
         setAuditResult(data.audit);
-        setAuditCards(buildCardProposals(data.audit));
+        const proposals = buildCardProposals(data.audit);
+        setAuditCards(proposals);
+        setCardOverlap({});  // clear previous overlap until new check completes
+        setAuditCardApprovals({});
         toast({ title: `${ENGINE_LABEL[auditEngine]} audit — ${data.audit.grade} (${data.audit.overall_score}/100)` });
+        // Run semantic overlap check against existing canvas cards
+        if (selProjId && proposals.length) checkOverlap(proposals);
       } else {
         toast({ title: 'Audit failed', description: data.error, variant: 'destructive' });
       }
@@ -1336,56 +1408,155 @@ ${sect('Priority Actions',result.priority_actions||[],(a)=>`<div class="c ${a.im
                   </div>
                 </div>
 
-                {/* Card proposals from audit */}
+                {/* Card proposals from audit — with overlap check */}
                 {auditCards.length > 0 && (
                   <div className="rounded-2xl border border-violet-400/20 bg-violet-400/5 overflow-hidden">
+                    {/* Header */}
                     <div className="flex items-center justify-between px-5 py-3 border-b border-violet-400/15">
                       <div>
                         <div className="font-semibold text-sm flex items-center gap-2">
                           <Sparkles size={13} className="text-violet-400"/>
-                          {auditCards.length} Canvas Card Proposals
+                          {auditCards.length} Card Proposals
+                          {checkingOverlap && <Loader2 size={11} className="animate-spin text-violet-400"/>}
+                          {!checkingOverlap && Object.keys(cardOverlap).length > 0 && (() => {
+                            const dupes  = Object.values(cardOverlap).filter((v: any) => v.status === 'duplicate').length;
+                            const ext    = Object.values(cardOverlap).filter((v: any) => v.status === 'extend').length;
+                            const newC   = auditCards.length - dupes - ext;
+                            return (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                — {newC > 0 && <span className="text-green-400">{newC} new</span>}
+                                {ext  > 0 && <><span className="mx-1">·</span><span className="text-yellow-400">{ext} expand</span></>}
+                                {dupes > 0 && <><span className="mx-1">·</span><span className="text-red-400">{dupes} blocked</span></>}
+                              </span>
+                            );
+                          })()}
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          Approve cards below, then send them to your Canvas in one click.
+                          {checkingOverlap
+                            ? 'Cross-checking against existing canvas cards…'
+                            : 'Duplicates are blocked. Extends suggest scope expansion on existing cards.'}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
+                        {!checkingOverlap && selProjId && (
+                          <button onClick={() => checkOverlap(auditCards)}
+                            className="text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center gap-1">
+                            <RefreshCw size={10}/>Re-check
+                          </button>
+                        )}
                         <button onClick={() => {
-                          const allApproved = auditCards.every((_, i) => auditCardApprovals[i]);
+                          // Select all button only selects non-duplicate cards
+                          const selectable = auditCards.map((_, i) => i).filter(i => cardOverlap[i]?.status !== 'duplicate');
+                          const allSel = selectable.every(i => auditCardApprovals[i]);
                           const next: Record<number,boolean> = {};
-                          auditCards.forEach((_, i) => { next[i] = !allApproved; });
+                          selectable.forEach(i => { next[i] = !allSel; });
                           setAuditCardApprovals(next);
                         }} className="text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground">
-                          {auditCards.every((_, i) => auditCardApprovals[i]) ? 'Deselect all' : 'Select all'}
+                          Select new
                         </button>
                         {Object.values(auditCardApprovals).some(Boolean) && (
                           <button onClick={sendAuditCards} disabled={sendingCards || !selProjId}
                             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl bg-violet-500 text-white font-bold hover:bg-violet-400 disabled:opacity-50">
-                            {sendingCards ? <><Loader2 size={11} className="animate-spin"/>Sending…</> : <><Send size={11}/>Send {Object.values(auditCardApprovals).filter(Boolean).length} to Canvas</>}
+                            {sendingCards
+                              ? <><Loader2 size={11} className="animate-spin"/>Sending…</>
+                              : <><Send size={11}/>Send {Object.values(auditCardApprovals).filter(Boolean).length} to Canvas</>}
                           </button>
                         )}
                       </div>
                     </div>
+
+                    {/* Card rows */}
                     <div className="divide-y divide-violet-400/10">
                       {auditCards.map((card, i) => {
                         const approved = !!auditCardApprovals[i];
+                        const ov       = cardOverlap[i];
+                        const isDup    = ov?.status === 'duplicate';
+                        const isExt    = ov?.status === 'extend';
+                        const isNew    = !ov || ov.status === 'new';
+
                         return (
-                          <label key={i} className={`flex items-start gap-3 px-5 py-3 cursor-pointer transition-colors ${approved ? 'bg-violet-400/8' : 'hover:bg-secondary/20'}`}>
-                            <input type="checkbox" checked={approved}
-                              onChange={() => setAuditCardApprovals(p => ({ ...p, [i]: !approved }))}
-                              className="accent-violet-400 mt-0.5 h-4 w-4 shrink-0"/>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-semibold text-foreground leading-tight">{card.title}</span>
-                                <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium ${IMPACT_STYLE[card.priority] || IMPACT_STYLE.low}`}>{card.type}</span>
-                                <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium ${IMPACT_STYLE[card.priority] || IMPACT_STYLE.low}`}>{card.priority}</span>
+                          <div key={i} className={`px-5 py-3 transition-colors ${
+                            isDup  ? 'bg-red-400/5 opacity-70'  :
+                            isExt  ? 'bg-yellow-400/5'          :
+                            approved ? 'bg-violet-400/8'        : 'hover:bg-secondary/20'
+                          }`}>
+                            <div className="flex items-start gap-3">
+                              {/* Checkbox — disabled for duplicates */}
+                              <input type="checkbox"
+                                checked={approved && !isDup}
+                                disabled={isDup}
+                                onChange={() => !isDup && setAuditCardApprovals(p => ({ ...p, [i]: !approved }))}
+                                className="accent-violet-400 mt-1 h-4 w-4 shrink-0 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"/>
+
+                              <div className="flex-1 min-w-0 space-y-1.5">
+                                {/* Title row */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`text-xs font-semibold leading-tight ${isDup ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                                    {card.title}
+                                  </span>
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full border font-medium ${IMPACT_STYLE[card.priority] || IMPACT_STYLE.low}`}>
+                                    {card.type}
+                                  </span>
+                                  {/* Overlap status badge */}
+                                  {checkingOverlap && !ov && (
+                                    <span className="text-xs text-muted-foreground/50 flex items-center gap-1"><Loader2 size={9} className="animate-spin"/>Checking…</span>
+                                  )}
+                                  {isNew && ov && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-400/15 text-green-400 border border-green-400/25 font-medium flex items-center gap-1">
+                                      <CheckCircle size={9}/>New
+                                    </span>
+                                  )}
+                                  {isDup && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-400/15 text-red-400 border border-red-400/25 font-medium flex items-center gap-1">
+                                      <XCircle size={9}/>Blocked — duplicate
+                                    </span>
+                                  )}
+                                  {isExt && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-400/15 text-yellow-400 border border-yellow-400/25 font-medium flex items-center gap-1">
+                                      <ArrowRight size={9}/>Scope expansion
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Content preview */}
+                                <p className="text-xs text-muted-foreground line-clamp-2">
+                                  {card.content.split('\n')[0]}
+                                </p>
+
+                                {/* Overlap detail */}
+                                {isDup && ov.matched_card_title && (
+                                  <div className="flex items-start gap-1.5 text-xs rounded-lg bg-red-400/8 border border-red-400/20 px-2.5 py-1.5">
+                                    <XCircle size={10} className="text-red-400 mt-0.5 shrink-0"/>
+                                    <span className="text-red-400/80">
+                                      Already covered by: <span className="font-semibold">"{ov.matched_card_title}"</span>
+                                      {ov.reason && <span className="text-muted-foreground/60"> — {ov.reason}</span>}
+                                    </span>
+                                  </div>
+                                )}
+                                {isExt && ov.matched_card_title && (
+                                  <div className="flex items-start gap-1.5 text-xs rounded-lg bg-yellow-400/8 border border-yellow-400/20 px-2.5 py-1.5">
+                                    <AlertTriangle size={10} className="text-yellow-400 mt-0.5 shrink-0"/>
+                                    <div>
+                                      <span className="text-yellow-400/80">
+                                        Extends: <span className="font-semibold">"{ov.matched_card_title}"</span>
+                                      </span>
+                                      {ov.scope_suggestion && (
+                                        <p className="text-muted-foreground mt-0.5">
+                                          Suggested scope: {ov.scope_suggestion}
+                                        </p>
+                                      )}
+                                      <p className="text-muted-foreground/60 mt-0.5 text-xs">
+                                        Approving this creates a new card — scope suggestion is included in the content.
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                                {card.source_algorithm && (
+                                  <span className="text-xs text-violet-400/60">Algorithm: {card.source_algorithm}</span>
+                                )}
                               </div>
-                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{card.content.split('\n')[0]}</p>
-                              {card.source_algorithm && (
-                                <span className="text-xs text-violet-400/70 mt-0.5">Algorithm: {card.source_algorithm}</span>
-                              )}
                             </div>
-                          </label>
+                          </div>
                         );
                       })}
                     </div>
