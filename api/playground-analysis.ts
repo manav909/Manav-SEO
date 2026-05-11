@@ -42,6 +42,10 @@ async function generate(prompt: string, maxTokens: number): Promise<string> {
     system:     MANAV_SYSTEM,
     messages:   [{ role: "user", content: prompt }],
   });
+  // Warn in logs if output was cut off at token limit
+  if (msg.stop_reason === "max_tokens") {
+    console.warn(`[SEO Season] playground-analysis batch hit max_tokens (${maxTokens}). Strategy JSON likely truncated. Increase maxTokens if this persists.`);
+  }
   return msg.content[0].type === "text" ? msg.content[0].text : "";
 }
 
@@ -214,7 +218,7 @@ CRITICAL CANVAS BLOCK RULES:
     for (const batchNum of batches) {
       const prompt = batchNum === 1 ? batch1Prompt : batchNum === 2 ? batch2Prompt : batch3Prompt;
       try {
-        const raw  = await generate(prompt, 2800);
+        const raw  = await generate(prompt, 4000);
         const data = tryParseJson(raw);
         if (data) {
           Object.assign(results, data);
