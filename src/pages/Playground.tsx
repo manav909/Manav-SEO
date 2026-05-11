@@ -1167,7 +1167,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
 
     // Fetch relevant brain learnings for this card type
     try {
-      const lr = await fetch('/api/brain-learning', {
+      const lr = await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_relevant', project_id: projectId, card_type: block.type, limit: 8 }),
       });
@@ -1289,7 +1289,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
         evaluation.redo_reason ? `Redo approach: ${evaluation.redo_reason}` : '',
       ].filter(Boolean).join(' | ');
 
-      await fetch('/api/brain-learning', {
+      await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action:          'save_learning',
