@@ -15,6 +15,7 @@ import Admin     from "./pages/Admin";
 import Playground from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
 import SystemControl from './pages/SystemControl';
+import BrainLearning from './pages/BrainLearning';
 import NotFound  from "./pages/NotFound";
 
 const queryClient = new QueryClient({
