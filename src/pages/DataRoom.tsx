@@ -263,6 +263,7 @@ export default function DataRoom() {
   const [uploadError,    setUploadError]    = useState('');
   const [reExtractingId, setReExtractingId] = useState<string|null>(null);
   // URL Crawler state
+  const [crawlHistory,      setCrawlHistory]      = useState<any[]>([]);  // past crawl sessions from DB
   const [crawlUrls,         setCrawlUrls]         = useState('');
   const [crawlRunning,      setCrawlRunning]       = useState(false);
   const [crawlResults,      setCrawlResults]       = useState<any>(null);
@@ -288,9 +289,16 @@ export default function DataRoom() {
   const client   = clients.find(c => c.id === selProj?.client_id);
 
   useEffect(() => {
-    if (!selProjId) { setKnowledge({}); setDocuments([]); return; }
+    if (!selProjId) { setKnowledge({}); setDocuments([]); setCrawlHistory([]); return; }
     loadData();
   }, [selProjId]);
+
+  // Load crawl history when crawl tab opens
+  useEffect(() => {
+    if (tab === 'crawl' && selProjId && !crawlHistory.length) {
+      loadCrawlHistory();
+    }
+  }, [tab, selProjId]);
 
   const loadData = async () => {
     const [kr, dr] = await Promise.all([
@@ -561,6 +569,43 @@ export default function DataRoom() {
   };
 
   // ══ URL Crawler functions ══════════════════════════════════════════
+  const loadCrawlHistory = async () => {
+    if (!selProjId) return;
+    try {
+      const { data } = await supabase
+        .from('project_documents')
+        .select('id,name,doc_type,extracted_data,source_date,raw_content,created_at')
+        .eq('project_id', selProjId)
+        .eq('doc_type', 'crawl_report')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (data) setCrawlHistory(data);
+    } catch { /* silent */ }
+  };
+
+  const restoreCrawlSession = (session: any) => {
+    // Restore URLs from the session
+    const urls = session.raw_content || '';
+    setCrawlUrls(urls);
+    // Restore crawl results if available
+    if (session.extracted_data?.results) {
+      setCrawlResults({
+        success: true,
+        urls_crawled: session.extracted_data.results.length,
+        results: session.extracted_data.results,
+        aggregated_knowledge: session.extracted_data.knowledge_fields || [],
+        cross_page_issues: session.extracted_data.cross_page_issues || [],
+        cross_page_opportunities: session.extracted_data.cross_page_opportunities || [],
+        crawled_at: session.source_date,
+      });
+    }
+    setCrawlSaved(true);
+    setCrawlSaving(false);
+    setCompareResult(null);
+    setCardApprovals({});
+    toast({ title: 'Session restored', description: `Crawl from ${session.source_date} loaded. Click compare to re-analyse.` });
+  };
+
   const previewUrl = async (url: string) => {
     const clean = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
     setCrawlPreview(p => ({ ...p, [clean]: { status: 'loading' } }));
@@ -578,6 +623,15 @@ export default function DataRoom() {
 
   const runCrawl = async () => {
     if (!selProjId) return;
+    // Build task hints from project canvas blocks for focused crawling
+    let crawlTaskHints: string[] = [];
+    try {
+      const { data: projData } = await supabase.from('projects').select('playground_canvas').eq('id', selProjId).single();
+      crawlTaskHints = (projData?.playground_canvas || [])
+        .filter((b: any) => b.placed && b.status !== 'done' && b.status !== 'verified')
+        .slice(0, 8)
+        .map((b: any) => `[${b.type}] "${b.title}" — ${(b.content||'').slice(0,80)}`);
+    } catch { /* silent */ }
     const lines = crawlUrls.split(String.fromCharCode(10)).map((l:string) => l.trim()).filter(Boolean);
     if (!lines.length) { toast({ title: 'Add at least one URL', variant: 'destructive' }); return; }
 
@@ -593,6 +647,8 @@ export default function DataRoom() {
           urls:            lines,
           projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
           projectId:       selProjId,
+          // Pass active canvas card titles as task hints so crawl focuses on what matters
+          taskHints:       crawlTaskHints,
         }),
       });
       const data = await safeJson(res);
@@ -1158,16 +1214,43 @@ Evidence: ${c.data_basis}` : ''}`,
             {/* ── CRAWL TAB ── */}
             {tab === 'crawl' && (
               <div className="space-y-5">
-                <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5">
+                {/* Crawl history */}
+                {crawlHistory.length > 0 && (
+                  <div className="rounded-2xl border border-border bg-card/40 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-xs font-mono text-muted-foreground uppercase">Past crawl sessions</div>
+                      <button onClick={loadCrawlHistory} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"><RefreshCw size={10}/>Refresh</button>
+                    </div>
+                    <div className="space-y-2">
+                      {crawlHistory.map((session,i)=>(
+                        <div key={session.id||i} className="flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium truncate">{session.name}</div>
+                            <div className="text-xs text-muted-foreground">{session.source_date} · {session.extracted_data?.results?.length||0} pages crawled</div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={()=>restoreCrawlSession(session)}
+                              className="text-xs px-2.5 py-1 rounded-lg border border-primary/25 bg-primary/8 text-primary hover:bg-primary/15 font-medium"
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-4">
                   <div className="flex items-start gap-3">
-                    <div className="h-9 w-9 rounded-xl bg-cyan-400/15 border border-cyan-400/25 flex items-center justify-center shrink-0">
-                      <Globe size={16} className="text-cyan-400"/>
+                    <div className="h-8 w-8 rounded-xl bg-cyan-400/15 border border-cyan-400/25 flex items-center justify-center shrink-0">
+                      <Globe size={14} className="text-cyan-400"/>
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm mb-1">URL Crawler — fetch live data from your pages</h3>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        Paste up to 10 URLs (one per line). Manav Brain fetches each page live via Jina AI, extracts every observable SEO signal —
-                        title tags, H1s, schema types, internal links, content quality, issues — and maps them to your knowledge base.
+                      <div className="font-bold text-sm">URL Crawler</div>
+                      <p className="text-xs text-muted-foreground">
+                        Fetches pages live, extracts every observable SEO signal, maps data to knowledge base, and boosts canvas card confidence with page-specific intelligence.
                       </p>
                     </div>
                   </div>
@@ -1408,11 +1491,13 @@ Evidence: ${c.data_basis}` : ''}`,
                         {/* Sub-tabs */}
                         <div className="flex gap-0 border-b border-border overflow-x-auto">
                           {([
-                            {id:'matrix',       label:'Comparison Matrix', count: null},
-                            {id:'errors',        label:'Errors',           count: compareResult.errors?.length},
-                            {id:'opportunities', label:'Opportunities',    count: compareResult.opportunities?.length},
-                            {id:'gaps',          label:'Gaps & Advantages',count: (compareResult.competitive_gaps?.length||0)+(compareResult.advantages?.length||0)},
-                            {id:'cards',         label:'Card Proposals',   count: compareResult.card_proposals?.length},
+                            {id:'matrix',       label:'Comparison Matrix',   count: null},
+                            {id:'errors',        label:'Errors',             count: compareResult.errors?.length},
+                            {id:'opportunities', label:'Opportunities',      count: compareResult.opportunities?.length},
+                            {id:'geo',           label:'GEO & AI',           count: compareResult.geo_analysis?.faq_opportunities?.length},
+                            {id:'confidence',    label:'Confidence Boost',   count: compareResult.confidence_boosters?.length},
+                            {id:'gaps',          label:'Gaps',               count: (compareResult.competitive_gaps?.length||0)+(compareResult.advantages?.length||0)},
+                            {id:'cards',         label:'Card Proposals',     count: compareResult.card_proposals?.length},
                           ] as const).map(({id,label,count})=>(
                             <button key={id} onClick={()=>setCompareTab(id as any)}
                               className={`px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1.5 ${
@@ -1594,6 +1679,98 @@ Evidence: ${c.data_basis}` : ''}`,
                                   </div>
                                 </div>
                               )}
+                            </div>
+                          )}
+
+                          {/* ── GEO & AI VISIBILITY ── */}
+                          {compareTab==='geo' && (
+                            <div className="space-y-4">
+                              {compareResult.geo_analysis ? (
+                                <>
+                                  <div className="flex items-center gap-3">
+                                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${
+                                      parseInt(compareResult.geo_analysis.overall_geo_score)>=70?'bg-green-400/15 text-green-400':
+                                      parseInt(compareResult.geo_analysis.overall_geo_score)>=40?'bg-yellow-400/15 text-yellow-400':
+                                      'bg-red-400/15 text-red-400'
+                                    }`}>{compareResult.geo_analysis.overall_geo_score}</div>
+                                    <div>
+                                      <div className="font-semibold text-sm">GEO / AI Visibility Score</div>
+                                      <div className="text-xs text-muted-foreground">{compareResult.geo_analysis.entity_coverage}</div>
+                                    </div>
+                                  </div>
+                                  {compareResult.geo_analysis.pages_ready_for_ai_citation?.length>0 && (
+                                    <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-3">
+                                      <div className="text-xs font-mono text-green-400 uppercase mb-2">Pages ready for AI citation</div>
+                                      {compareResult.geo_analysis.pages_ready_for_ai_citation.map((u:string,i:number)=>(
+                                        <div key={i} className="text-xs font-mono text-muted-foreground">{u.replace('https://','')}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {compareResult.geo_analysis.faq_opportunities?.length>0 && (
+                                    <div className="space-y-1">
+                                      <div className="text-xs font-mono text-orange-400 uppercase mb-2">FAQ opportunities — add schema here</div>
+                                      {compareResult.geo_analysis.faq_opportunities.map((f:string,i:number)=>(
+                                        <div key={i} className="flex items-start gap-2 text-xs rounded-lg bg-orange-400/5 border border-orange-400/15 px-3 py-2">
+                                          <ArrowRight size={10} className="text-orange-400 mt-0.5 shrink-0"/>
+                                          <span>{f}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {compareResult.geo_analysis.direct_answer_gaps?.length>0 && (
+                                    <div className="space-y-1">
+                                      <div className="text-xs font-mono text-muted-foreground uppercase mb-2">Questions to answer directly on page</div>
+                                      {compareResult.geo_analysis.direct_answer_gaps.map((q:string,i:number)=>(
+                                        <div key={i} className="text-xs text-muted-foreground flex items-start gap-1.5"><span className="text-muted-foreground/40 shrink-0">·</span>{q}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {compareResult.geo_analysis.recommendations?.length>0 && (
+                                    <div className="space-y-1">
+                                      <div className="text-xs font-mono text-primary uppercase mb-2">GEO recommendations</div>
+                                      {compareResult.geo_analysis.recommendations.map((r:string,i:number)=>(
+                                        <div key={i} className="flex items-start gap-2 text-xs rounded-lg bg-primary/5 border border-primary/15 px-3 py-2">
+                                          <span className="text-primary font-bold shrink-0">{i+1}.</span>
+                                          <span>{r}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              ) : <p className="text-sm text-muted-foreground">No GEO analysis available.</p>}
+                            </div>
+                          )}
+
+                          {/* ── CONFIDENCE BOOSTERS ── */}
+                          {compareTab==='confidence' && (
+                            <div className="space-y-3">
+                              <div className="rounded-xl border border-violet-400/20 bg-violet-400/5 p-3">
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                  These are your existing canvas cards that this crawl data directly improves.
+                                  The confidence score shows how much better Manav Brain can now execute each task
+                                  with the new page-specific intelligence available.
+                                </p>
+                              </div>
+                              {(!compareResult.confidence_boosters?.length) && (
+                                <p className="text-sm text-muted-foreground">No confidence improvements identified — try crawling pages relevant to your active canvas tasks.</p>
+                              )}
+                              {(compareResult.confidence_boosters||[]).map((boost:any,i:number)=>(
+                                <div key={i} className="rounded-xl border border-violet-400/20 bg-card/60 p-4 space-y-2">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex-1">
+                                      <div className="font-semibold text-sm">{boost.card_title}</div>
+                                      <div className="text-xs text-muted-foreground mt-0.5">{boost.new_data_available}</div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0 text-sm font-bold text-violet-400">
+                                      {boost.confidence_increase}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-start gap-2 rounded-lg bg-violet-400/5 border border-violet-400/15 px-3 py-2">
+                                    <ArrowRight size={10} className="text-violet-400 mt-0.5 shrink-0"/>
+                                    <span className="text-xs text-muted-foreground">{boost.action}</span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           )}
 
