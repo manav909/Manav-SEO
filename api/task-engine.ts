@@ -466,16 +466,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       rows = [...rows, ...(data || []).filter((r: any) => !seen.has(r.id))].slice(0, limit);
     }
 
-    // Increment applied_count for returned rows (best-effort, non-blocking)
-    const ids = rows.map((r: any) => r.id);
-    for (const id of ids.slice(0, 3)) {
-      sb.from("brain_learnings").select("applied_count").eq("id", id).single()
-        .then(({ data: d }: any) => {
-          if (d) sb.from("brain_learnings")
-            .update({ applied_count: (d.applied_count || 0) + 1 }).eq("id", id)
-            .then(() => {}).catch(() => {});
-        }).catch(() => {});
-    }
+    // Increment applied_count for returned rows (best-effort, fire-and-forget)
+    void (async () => {
+      for (const id of rows.slice(0, 3).map((r: any) => r.id)) {
+        try {
+          const { data: d } = await sb.from("brain_learnings")
+            .select("applied_count").eq("id", id).single();
+          if (d) await sb.from("brain_learnings")
+            .update({ applied_count: ((d as any).applied_count || 0) + 1 }).eq("id", id);
+        } catch { /* non-blocking — never fail the main response */ }
+      }
+    })();
 
     return res.status(200).json({ success: true, learnings: rows });
   }
