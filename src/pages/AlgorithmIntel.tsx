@@ -1,19 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { createClient } from '@supabase/supabase-js';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import {
   Brain, Globe, RefreshCw, Loader2, Plus, Trash2, ChevronDown, ChevronRight,
   CheckCircle, XCircle, AlertTriangle, Zap, BookOpen, Search, Filter,
   Download, Star, TrendingUp, Shield, FileText, Target, Eye, ArrowRight,
   ExternalLink, Database, CheckCircle2, X, BarChart3, Award, Sparkles,
 } from 'lucide-react';
-import { PortalNav } from '../components/PortalNav';
-import { useToast } from '../components/ui/use-toast';
-
-const supabase = createClient(
-  (import.meta as any).env.VITE_SUPABASE_URL,
-  (import.meta as any).env.VITE_SUPABASE_ANON_KEY
-);
+import PortalNav from '@/components/PortalNav';
+import { toast } from '@/hooks/use-toast';
 
 // ── Types ─────────────────────────────────────────────────────────────
 interface BestPractice  { practice: string; description: string; example: string; how_to_verify: string; }
@@ -84,7 +79,6 @@ const FETCH_TOPICS = [
 // ─────────────────────────────────────────────────────────────────────
 export default function AlgorithmIntel() {
   const { clients, projects } = useAuth();
-  const { toast } = useToast();
   const [tab, setTab]         = useState<Tab>('feed');
   const [selProjId, setSelProjId] = useState('');
 
