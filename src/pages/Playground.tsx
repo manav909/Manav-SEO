@@ -1536,23 +1536,33 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
               )}
 
               <div className="rounded-xl border border-white/8 bg-white/2 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/8 bg-white/3">
-                  <span className="text-xs font-semibold text-white">
-                    {phase==='executing' ? 'Streaming output...' : 'Output — review every section before delivering'}
-                  </span>
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/8 bg-white/3 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    {phase==='executing' && <RefreshCw size={11} className="animate-spin text-violet-400"/>}
+                    <span className="text-xs font-semibold text-white">
+                      {phase==='executing'
+                        ? `Generating${output ? ` — ${Math.round(output.length/5)} words so far` : '...'}`
+                        : 'Output — review every section before delivering'}
+                    </span>
+                    {phase==='done' && output && (
+                      <span className="text-xs text-white/30">
+                        ~{Math.round(output.length/5)} words
+                      </span>
+                    )}
+                  </div>
                   {phase==='done' && (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-white/25 max-w-[160px] truncate">{makeCriteriaLabel()}</span>
+                      <span className="text-xs text-white/25 max-w-[180px] truncate">{makeCriteriaLabel()}</span>
                       <button onClick={async()=>{await navigator.clipboard.writeText(output);setCopied(true);setTimeout(()=>setCopied(false),2000);}}
-                        className="flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-white/10 text-white/40 hover:text-white/70">
-                        <Copy size={10}/>{copied?'Copied!':'Copy'}
+                        className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-white/10 text-white/50 hover:text-white/80 hover:border-white/20">
+                        <Copy size={10}/>{copied?'Copied!':'Copy all'}
                       </button>
                     </div>
                   )}
                 </div>
-                <div className="p-4 max-h-72 overflow-y-auto">
+                <div className="p-4 max-h-[55vh] overflow-y-auto">
                   {output
-                    ? <pre className="text-xs text-white/70 whitespace-pre-wrap leading-relaxed font-mono">{output}</pre>
+                    ? <pre className="text-sm text-white/80 whitespace-pre-wrap leading-relaxed">{output}</pre>
                     : <div className="flex items-center gap-2 text-white/30 text-xs py-4"><RefreshCw size={12} className="animate-spin"/>Starting...</div>
                   }
                 </div>
