@@ -412,8 +412,10 @@ function buildLibraryFromStrategy(strategy: any): Block[] {
   const result: Block[] = [];
 
   const push = (b: Omit<Block,'id'|'status'|'placed'|'color'> & {type:BType}) => {
-    const key = b.title.toLowerCase().slice(0, 50);
-    if (seen.has(key) || !b.title.trim()) return;
+    // Normalize: lowercase, strip punctuation, collapse whitespace, first 40 chars
+    const normalize = (t: string) => t.toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim().slice(0,40);
+    const key = normalize(b.title);
+    if (!key || seen.has(key)) return;
     seen.add(key);
     result.push({
       ...b,
@@ -1931,6 +1933,11 @@ export default function Playground() {
   const chatEndRef    = useRef<HTMLDivElement>(null);
   // Create-card-from-chat state
   const [createCardFrom, setCreateCardFrom] = useState<{text:string;source:'canvas_chat'|'pipeline_chat'|'deep_dive'}|null>(null);
+  const [similarCardConflict, setSimilarCardConflict] = useState<{
+    proposed: {title:string;type:BType;week:number;priority:Priority;content:string};
+    source:   string;
+    matches:  Block[];
+  }|null>(null);
   const [createCardForm, setCreateCardForm] = useState<{title:string;type:BType;week:number;priority:Priority;content:string}>({title:'',type:'quick-win',week:1,priority:'high',content:''});
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -1984,8 +1991,11 @@ export default function Playground() {
       });
       // Re-include user-created cards: any saved block whose ID isn't in allBlocks
       // (strategy cards are covered by allBlocks.map above)
-      const strategyIds  = new Set(allBlocks.map(b => b.id));
-      const userCreated  = placements.filter(p => !strategyIds.has(p.id) && p.title && p.type);
+      const normT = (t: string) => (t||'').toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim().slice(0,40);
+      const strategyIds     = new Set(allBlocks.map(b => b.id));
+      const strategyTitles  = new Set(allBlocks.map(b => normT(b.title)));
+      // Only restore user cards whose title doesn't already appear in strategy (title dedup)
+      const userCreated  = placements.filter(p => !strategyIds.has(p.id) && p.title && p.type && !strategyTitles.has(normT(p.title)));
       const restoredUserCards: Block[] = userCreated.map((p: any) => ({
         id:         p.id,
         type:       p.type       as BType,
@@ -2218,23 +2228,32 @@ export default function Playground() {
       // Full regeneration: use new strategy entirely (no stale merge)
       // Preserve canvas placements from existing blocks so placed cards stay put
       const newStrategy = data.strategy;
+      // Capture existing placements from strategy blocks AND user-created cards
       const existingPlacements = blocks.reduce((map, b) => {
         if (b.placed) map[b.id] = { placed: b.placed, week: b.week, status: b.status, assignee: b.assignee, aiAssisted: b.aiAssisted };
         return map;
       }, {} as Record<string, any>);
+      // Keep user-created cards (source='Added from chat' or 'Canvas chat' etc.) — they're not in strategy
+      const userCreatedCards = blocks.filter(b => b.source && !['Strategy Analysis','Quick Wins','Technical Audit','Content Calendar','GEO Strategy','Competitive Intelligence','Strategic Insights','KPI Forecast','Retainer Value Summary','Week 1 Plan','Week 2 Plan','Week 3 Plan','Week 4 Plan','Week 5 Plan'].includes(b.source));
       setStrategy(newStrategy);
       setGenAt(data.generated_at);
       const nb = buildLibraryFromStrategy(newStrategy);
+      // Normalize helper for title dedup
+      const normTitle = (t: string) => t.toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim().slice(0,40);
+      const strategyTitles = new Set(nb.map(b => normTitle(b.title)));
       // Re-apply existing placements to matching block IDs
       const nbWithPlacements = nb.map(b => {
         const saved = existingPlacements[b.id];
         return saved ? { ...b, ...saved } : b;
       });
-      setBlocks(nbWithPlacements);
-      setRecommendation(getNextRecommendation(nbWithPlacements.filter(b=>b.placed), nbWithPlacements.filter(b=>!b.placed)));
+      // Re-add user-created cards — but skip if strategy now covers same topic
+      const uniqueUserCards = userCreatedCards.filter(uc => !strategyTitles.has(normTitle(uc.title)));
+      const finalBlocks = [...nbWithPlacements, ...uniqueUserCards];
+      setBlocks(finalBlocks);
+      setRecommendation(getNextRecommendation(finalBlocks.filter(b=>b.placed), finalBlocks.filter(b=>!b.placed)));
       await supabase.from('projects').update({
         playground_strategy: newStrategy,
-        playground_canvas:   nbWithPlacements.map(b=>({ id:b.id, placed:b.placed, week:b.week, status:b.status, assignee:b.assignee||null, aiAssisted:b.aiAssisted||false, tags:b.tags||[], effort:b.effort||null, impact:b.impact||null })),
+        playground_canvas:   finalBlocks.map(b=>({ id:b.id, placed:b.placed, week:b.week, status:b.status, assignee:b.assignee||null, aiAssisted:b.aiAssisted||false, tags:b.tags||[], effort:b.effort||null, impact:b.impact||null, title:b.title, content:b.content, type:b.type, priority:b.priority, color:b.color, source:b.source||null })),
         playground_generated_at: data.generated_at,
       }).eq('id', selProjId);
 
@@ -2601,7 +2620,34 @@ Please try again — if the problem persists, check your network connection.`);
   };
 
   /* ══ Create a card from a chat response ══ */
+  // ── Similarity check helper ──
+  const findSimilarBlocks = (title: string, type: BType): Block[] => {
+    const normT = (t: string) => t.toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
+    const candidateWords = new Set(normT(title).split(' ').filter(w => w.length > 3));
+    return blocks.filter(b => {
+      if (b.id === '') return false;
+      const existNorm = normT(b.title);
+      // Exact or near-exact title match
+      if (existNorm.includes(normT(title).slice(0,30)) || normT(title).includes(existNorm.slice(0,30))) return true;
+      // Same type + shared significant words (≥2 words in common)
+      const existWords = new Set(existNorm.split(' ').filter((w:string) => w.length > 3));
+      const shared = [...candidateWords].filter(w => existWords.has(w));
+      return b.type === type && shared.length >= 2;
+    });
+  };
+
   const addCardFromChat = (cardData: {title:string;type:BType;week:number;priority:Priority;content:string}, source: string) => {
+    // Check for similar existing cards before adding
+    const similar = findSimilarBlocks(cardData.title, cardData.type);
+    if (similar.length > 0) {
+      // Show merge/create choice modal
+      setSimilarCardConflict({ proposed: cardData, source, matches: similar });
+      return;
+    }
+    doAddCard(cardData, source);
+  };
+
+  const doAddCard = (cardData: {title:string;type:BType;week:number;priority:Priority;content:string}, source: string) => {
     const newBlock: Block = {
       id:         uid(),
       type:       cardData.type,
@@ -2611,7 +2657,7 @@ Please try again — if the problem persists, check your network connection.`);
       priority:   cardData.priority,
       status:     'todo',
       week:       cardData.week,
-      placed:     true,   // place it immediately in the chosen week
+      placed:     true,
       tags:       ['from-chat'],
       source:     source || 'Added from chat',
     };
@@ -2621,7 +2667,28 @@ Please try again — if the problem persists, check your network connection.`);
       return updated;
     });
     setCreateCardFrom(null);
+    setSimilarCardConflict(null);
     toast({ title: `Card added to Week ${cardData.week === 5 ? 'Backlog' : cardData.week}`, description: `"${newBlock.title}" placed on your canvas.` });
+  };
+
+  const mergeIntoExistingCard = (existingId: string, cardData: {title:string;type:BType;week:number;priority:Priority;content:string}) => {
+    setBlocks(prev => {
+      const updated = prev.map(b => {
+        if (b.id !== existingId) return b;
+        // Merge: append the new content to the existing card's content
+        return {
+          ...b,
+          content:  b.content + '\n\n--- Merged scope ---\n' + cardData.content,
+          priority: cardData.priority === 'high' ? 'high' : b.priority, // escalate priority if needed
+          tags:     [...(b.tags||[]), 'scope-expanded'],
+        };
+      });
+      scheduleAutoSave(updated);
+      return updated;
+    });
+    setCreateCardFrom(null);
+    setSimilarCardConflict(null);
+    toast({ title: 'Card scope expanded', description: 'New details merged into the existing card.' });
   };
 
 
@@ -4263,6 +4330,93 @@ Please try again — if the problem persists, check your network connection.`);
               )}
               <button onClick={async()=>{await navigator.clipboard.writeText(ddText);toast({title:'Copied!'});}} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground"><Copy size={11}/>Copy</button>
               <button onClick={()=>setDdBlock(null)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground ml-auto">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Similar Card Conflict Modal ══ */}
+      {similarCardConflict && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4" onClick={()=>setSimilarCardConflict(null)}>
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"/>
+          <div className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden" onClick={e=>e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-yellow-400/5">
+              <div className="h-8 w-8 rounded-xl bg-yellow-400/15 border border-yellow-400/25 flex items-center justify-center shrink-0">
+                <AlertTriangle size={14} className="text-yellow-400"/>
+              </div>
+              <div className="flex-1">
+                <div className="font-bold text-sm">Similar card already exists</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Expand the existing card's scope, or create a separate card</div>
+              </div>
+              <button onClick={()=>setSimilarCardConflict(null)} className="h-7 w-7 rounded-full border border-border flex items-center justify-center hover:bg-secondary/50">
+                <X size={12}/>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+
+              {/* Proposed new card */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <div className="text-xs font-mono text-primary uppercase mb-1.5">You're adding</div>
+                <div className="font-semibold text-sm">{similarCardConflict.proposed.title}</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground">{similarCardConflict.proposed.type}</span>
+                  <span className="text-xs text-muted-foreground">Week {similarCardConflict.proposed.week === 5 ? 'Backlog' : similarCardConflict.proposed.week}</span>
+                  <span className="text-xs text-muted-foreground">· {similarCardConflict.proposed.priority}</span>
+                </div>
+              </div>
+
+              {/* Existing similar cards */}
+              <div className="space-y-2">
+                <div className="text-xs font-mono text-muted-foreground uppercase">Similar cards already on your canvas</div>
+                {similarCardConflict.matches.map((match) => {
+                  const tm = TM[match.type] || TM.custom;
+                  return (
+                    <div key={match.id} className="rounded-xl border border-border bg-background/60 p-3 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <div className="h-6 w-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                          style={{background:`${tm.color}18`,border:`1px solid ${tm.color}28`}}>
+                          {React.createElement(tm.icon,{size:11,style:{color:tm.color}})}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm">{match.title}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{match.content}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-muted-foreground">Week {match.week === 5 ? 'Backlog' : match.week}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full border font-mono ${
+                              match.status === 'done' || match.status === 'verified' ? 'border-green-400/30 text-green-400' :
+                              match.status === 'doing' ? 'border-blue-400/30 text-blue-400' :
+                              'border-border text-muted-foreground'
+                            }`}>{match.status}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Merge option */}
+                      <button
+                        onClick={()=>mergeIntoExistingCard(match.id, similarCardConflict.proposed)}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-yellow-400/25 bg-yellow-400/5 text-yellow-400 text-xs font-semibold hover:bg-yellow-400/10 transition-colors"
+                      >
+                        <ArrowRight size={11}/>Expand scope of "{match.title.slice(0,30)}{match.title.length>30?'…':''}"
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Or create new */}
+              <div className="border-t border-border pt-3 flex items-center gap-3">
+                <button
+                  onClick={()=>doAddCard(similarCardConflict.proposed, similarCardConflict.source)}
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary/15 border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/25 transition-colors"
+                >
+                  <Plus size={13}/>Create as separate card anyway
+                </button>
+                <button onClick={()=>setSimilarCardConflict(null)} className="text-sm text-muted-foreground hover:text-foreground px-3">
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
