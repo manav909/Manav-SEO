@@ -132,9 +132,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const {
-    action, card, context = {}, userInputs = {}, role = "senior_seo",
+    action, card, context: rawContext, userInputs = {}, role = "senior_seo",
     completedAt, checkType = "guidance", completionNote = "", evidenceData = "",
   } = req.body;
+  // Guard: context defaults to {} even when explicitly sent as null from the client
+  const context = (rawContext && typeof rawContext === "object") ? rawContext : {};
 
   if (!card) return res.status(400).json({ error: "Missing card" });
 
@@ -339,8 +341,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         confidence_actual: "0-100 — honestly, how confident am I in this specific output given what I had to work with",
         manav_note: "A personal note to the team — what to watch out for in this output, what I am proud of, what needs their eyes"
       }),
-    ].join("
-");
+    ].join("\n");
 
     try {
       const anthropic = new Anthropic();
