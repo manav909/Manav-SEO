@@ -330,13 +330,20 @@ const safeStr = (v: any) => typeof v==='string'?v:v==null?'':JSON.stringify(v);
 const fmtDate = (r: string) => r?new Date(r).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
 
 function assignWeek(b: any): number {
-  if (b.type==='quick-win')   return 1;
-  if (b.type==='technical')   return b.urgency==='immediate'||b.urgency==='this_week'?1:2;
-  if (b.type==='content')     return Math.min(b.week||2,4);
-  if (b.type==='geo')         return 2;
-  if (b.type==='competitive') return 3;
-  if (b.type==='kpi'||b.type==='monthly') return 5;
-  return 5;
+  // Honour the week already set on the block (from strategy or weekly_plans)
+  // Only use type-based routing as a fallback for blocks with no explicit week
+  const explicit = b.week && typeof b.week === 'number' && b.week >= 1 && b.week <= 5;
+
+  if (b.type === 'quick-win')   return 1;
+  if (b.type === 'technical')   return b.urgency === 'immediate' || b.urgency === 'this_week' ? 1 : 2;
+  if (b.type === 'content')     return Math.min(explicit ? b.week : 2, 4);
+  if (b.type === 'geo')         return explicit ? b.week : 2;
+  if (b.type === 'competitive') return explicit ? b.week : 3;
+  if (b.type === 'insight')     return explicit ? b.week : 2;  // insights → early weeks, not Backlog
+  if (b.type === 'weekly')      return explicit ? b.week : 1;  // weekly tasks → use strategy week
+  if (b.type === 'kpi' || b.type === 'monthly') return 5;      // tracking/milestones → Backlog
+  // custom or unknown: use explicit week if available, else Backlog
+  return explicit ? b.week : 5;
 }
 
 /* ── Effort estimator: maps block type+priority to hours ── */
@@ -434,7 +441,8 @@ function buildLibraryFromStrategy(strategy: any): Block[] {
 
 Evidence: ${safe(b.data_basis)}` : ''),
       priority: pri(b.priority),
-      week:     assignWeek(b),
+      // Use week set by AI (b.week), fall back to type-based routing only if not set
+      week:     (b.week && b.week >= 1 && b.week <= 5) ? b.week : assignWeek(b),
       effort:   b.effort,
       impact:   b.impact,
       tags:     [...(b.tags || []), b.data_grade === 'A' ? '✓ hard-data' : '~ inferred'],
@@ -2375,7 +2383,7 @@ export default function Playground() {
     await new Promise(r => setTimeout(r, 100)); // let UI update
     setBlocks(prev => {
       const updated = [...prev];
-      const weekCaps = {1:4, 2:4, 3:4, 4:4, 5:99};
+      const weekCaps = {1:8, 2:8, 3:8, 4:8, 5:999};
       const weekCounts: Record<number,number> = {};
       // Count existing placed per week
       prev.filter(b=>b.placed).forEach(b => { weekCounts[b.week] = (weekCounts[b.week]||0)+1; });
@@ -2385,9 +2393,13 @@ export default function Playground() {
       const lib = prev.filter(b=>!b.placed)
         .sort((a,b)=> typeOrder[a.type]-typeOrder[b.type] || priOrder[a.priority]-priOrder[b.priority]);
       for (const block of lib) {
-        const targetWeek = assignWeek(block);
-        // Find best week with space
-        const weeks = [targetWeek, ...([1,2,3,4,5].filter(w=>w!==targetWeek))];
+        // Prefer the week the strategy already assigned to this block.
+        // assignWeek() is only used as a fallback for blocks with no explicit week.
+        const preferredWeek = (block.week && block.week >= 1 && block.week <= 5)
+          ? block.week
+          : assignWeek(block);
+        // Try preferred week first, then fall through to find space elsewhere
+        const weeks = [preferredWeek, ...([1,2,3,4,5].filter(w=>w!==preferredWeek))];
         for (const w of weeks) {
           if ((weekCounts[w]||0) < weekCaps[w]) {
             const idx2 = updated.findIndex(b=>b.id===block.id);
