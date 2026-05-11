@@ -1946,6 +1946,11 @@ export default function Playground() {
   const [depText,      setDepText]      = useState('');
   const [depLoading,   setDepLoading]   = useState(false);
   const [depFocusId,   setDepFocusId]   = useState<string|null>(null);
+  // Stale section tracking + refresh
+  const [staleSections, setStaleSections] = useState<{section:string;reason:string}[]>([]);
+  const [refreshing,    setRefreshing]    = useState<string|null>(null);  // which section is refreshing
+  // Conflict detection from DataRoom changes
+  const [conflicts,     setConflicts]     = useState<{field:string;oldVal:string;newVal:string;source:string;impacts:string[]}[]>([]);
   const chatEndRef    = useRef<HTMLDivElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -1971,11 +1976,28 @@ export default function Playground() {
     if (pr.data?.playground_strategy){setStrategy(pr.data.playground_strategy);setGenAt(pr.data.playground_generated_at||'');}
     if (pr.data?.playground_strategy) {
       const allBlocks  = buildLibraryFromStrategy(pr.data.playground_strategy);
-      const placements = (pr.data.playground_canvas || []) as {id:string;placed:boolean;week:number;status:Status}[];
+      const placements = (pr.data.playground_canvas || []) as Array<{
+        id:string; placed:boolean; week:number; status:Status;
+        assignee?:string|null; aiAssisted?:boolean; tags?:string[];
+        effort?:string|null; impact?:string|null;
+      }>;
       const placedMap  = new Map(placements.map(p => [p.id, p]));
       const merged = allBlocks.map(b => {
         const saved = placedMap.get(b.id);
-        return saved ? {...b, placed: saved.placed, week: saved.week, status: saved.status} : b;
+        if (!saved) return b;
+        // Restore all persisted fields — strategy provides title/content/type,
+        // canvas provides placement state + user edits
+        return {
+          ...b,
+          placed:     saved.placed     ?? b.placed,
+          week:       saved.week       ?? b.week,
+          status:     (saved.status    || b.status) as Status,
+          assignee:   saved.assignee   ?? b.assignee,
+          aiAssisted: saved.aiAssisted ?? b.aiAssisted,
+          tags:       saved.tags       ?? b.tags,
+          effort:     saved.effort     ?? b.effort,
+          impact:     saved.impact     ?? b.impact,
+        };
       });
       setBlocks(merged);
       setRecommendation(getNextRecommendation(merged.filter(b=>b.placed), merged.filter(b=>!b.placed)));
@@ -2008,7 +2030,76 @@ export default function Playground() {
       if (newDeps)     setDepText(newDeps);
     }
     setCacheLoaded(true);
+    // Load stale section status after project data is ready
+    loadStaleSections();
   };
+
+  /* ══ Load stale sections from SystemControl ══ */
+  const loadStaleSections = async () => {
+    if (!selProjId) return;
+    try {
+      const res = await fetch('/api/control', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'get_state', projectId: selProjId }),
+      });
+      const data = await res.json();
+      if (data.success && data.sectionStatus) {
+        const stale = (data.sectionStatus as any[])
+          .filter(s => s.stale && s.hasCache)
+          .map(s => ({ section: s.section, reason: s.staleReason || 'Data updated' }));
+        setStaleSections(stale);
+      }
+    } catch { /* silent */ }
+  };
+
+  /* ══ Impact label map ══ */
+  const SECTION_LABELS: Record<string,string> = {
+    strategy:  'Strategy & Canvas Blocks',
+    pipeline:  'Execution Pipeline',
+    agenda_1:  'Week 1 Agenda',
+    agenda_2:  'Week 2 Agenda',
+    agenda_3:  'Week 3 Agenda',
+    agenda_4:  'Week 4 Agenda',
+    agenda_5:  'Backlog Agenda',
+    kpi_forecast: 'KPI Forecast',
+  };
+
+  /* ══ Refresh a single stale section ══ */
+  const refreshSection = async (section: string) => {
+    if (!selProjId || !selProj) return;
+    setRefreshing(section);
+    try {
+      if (section === 'strategy') {
+        // Re-generate strategy then reload blocks, preserving existing canvas placements
+        await generate();
+      } else if (section === 'pipeline') {
+        callPipelineChat('Regenerate the full execution pipeline with current canvas state.', 'pipeline');
+      } else if (section.startsWith('agenda_')) {
+        const week = parseInt(section.replace('agenda_', ''));
+        if (!isNaN(week)) await generateAgenda(week);
+      }
+      // Mark as no longer stale locally
+      setStaleSections(prev => prev.filter(s => s.section !== section));
+    } catch { /* silent */ }
+    setRefreshing(null);
+  };
+
+  /* ══ Refresh all stale sections at once ══ */
+  const refreshAllStale = async () => {
+    if (!selProjId) return;
+    const stale = [...staleSections];
+    // Strategy first (others depend on it)
+    const stratFirst = ['strategy', ...stale.filter(s=>s.section!=='strategy').map(s=>s.section)];
+    for (const section of stratFirst) {
+      if (staleSections.some(s => s.section === section)) {
+        await refreshSection(section);
+        await new Promise(r => setTimeout(r, 500)); // small gap between calls
+      }
+    }
+    setStaleSections([]);
+    toast({ title: 'All sections refreshed', description: 'Everything is up to date with your latest data.' });
+  };
+
 
   const generate = async () => {
     if(!selProj) return toast({title:'Select a project first',variant:'destructive'});
@@ -2420,10 +2511,24 @@ Please try again — if the problem persists, check your network connection.`);
 
   const saveCanvas = async (currentBlocks: Block[]) => {
     if (!selProjId) return;
-    const placements = currentBlocks.filter(x=>x.placed).map(x=>({id:x.id,placed:x.placed,week:x.week,status:x.status}));
+    // Save FULL block state for all blocks so nothing is lost on reload.
+    // Placed blocks keep their position/status/assignee/aiAssisted/etc.
+    // Library blocks keep their current state too (tags, edits, etc.)
+    const snapshot = currentBlocks.map(b => ({
+      id:          b.id,
+      placed:      b.placed,
+      week:        b.week,
+      status:      b.status,
+      assignee:    b.assignee    || null,
+      aiAssisted:  b.aiAssisted  || false,
+      tags:        b.tags        || [],
+      effort:      b.effort      || null,
+      impact:      b.impact      || null,
+      // title + content + type are from strategy — don't save (they'd conflict on regen)
+    }));
     try {
-      await supabase.from('projects').update({playground_canvas:placements}).eq('id',selProjId);
-    } catch(e) { /* silent */ }
+      await supabase.from('projects').update({ playground_canvas: snapshot }).eq('id', selProjId);
+    } catch(e) { console.warn('[SEO Season] Canvas save failed:', e); }
   };
 
   const scheduleAutoSave = (currentBlocks: Block[]) => {
@@ -2700,6 +2805,50 @@ Please try again — if the problem persists, check your network connection.`);
             {/* ── CANVAS ── */}
             {tab==='canvas' && (
               <div className="space-y-4">
+
+                {/* ── Stale Section Banner ── */}
+                {staleSections.length > 0 && (
+                  <div className="rounded-2xl border border-orange-400/30 bg-orange-400/5 p-4 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle size={15} className="text-orange-400 shrink-0"/>
+                        <span className="font-semibold text-sm text-orange-400">
+                          {staleSections.length} section{staleSections.length!==1?'s':''} need refreshing
+                        </span>
+                        <span className="text-xs text-muted-foreground">— your data has been updated since these were generated</span>
+                      </div>
+                      <button
+                        onClick={refreshAllStale}
+                        disabled={!!refreshing}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-400/15 border border-orange-400/30 text-orange-400 text-xs font-semibold hover:bg-orange-400/25 disabled:opacity-50 transition-colors"
+                      >
+                        {refreshing
+                          ? <><RefreshCw size={11} className="animate-spin"/>Refreshing {SECTION_LABELS[refreshing]||refreshing}…</>
+                          : <><RefreshCw size={11}/>Refresh all now</>}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {staleSections.map(s => (
+                        <div key={s.section} className="flex items-center gap-2 rounded-xl border border-orange-400/20 bg-orange-400/8 px-3 py-1.5">
+                          <div className="min-w-0">
+                            <span className="text-xs font-medium text-orange-300">{SECTION_LABELS[s.section]||s.section}</span>
+                            {s.reason && <span className="text-xs text-muted-foreground ml-1.5">· {s.reason}</span>}
+                          </div>
+                          <button
+                            onClick={()=>refreshSection(s.section)}
+                            disabled={!!refreshing}
+                            className="flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 disabled:opacity-40 font-medium ml-1 shrink-0"
+                          >
+                            {refreshing===s.section
+                              ? <RefreshCw size={10} className="animate-spin"/>
+                              : <><RefreshCw size={10}/>Refresh</>}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {blocks.length===0 && !strategy ? (
                   <div className="rounded-2xl border border-dashed border-border bg-card/40 p-12 text-center">
                     <Layers size={48} className="text-muted-foreground/20 mx-auto mb-4"/>
