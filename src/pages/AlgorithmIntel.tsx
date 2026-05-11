@@ -96,15 +96,17 @@ export default function AlgorithmIntel() {
   const [practicesCat,  setPracticesCat]  = useState('');
   const [checkedItems,  setCheckedItems]  = useState<Record<string,boolean>>({});
 
-  // Scan for new updates state
-  const [scanning,     setScanning]     = useState(false);
-  const [scanResults,  setScanResults]  = useState<any[]>([]);
-  const [showScan,     setShowScan]     = useState(false);
-  // Add custom topic state
-  const [customLabel,  setCustomLabel]  = useState('');
-  const [customEngine, setCustomEngine] = useState('google');
-  const [addingCustom, setAddingCustom] = useState(false);
-  const [showAddCustom,setShowAddCustom]= useState(false);
+  // Scan / custom topic state
+  const [scanning,      setScanning]      = useState(false);
+  const [scanResults,   setScanResults]   = useState<any[]>([]);
+  const [showScan,      setShowScan]      = useState(false);
+  const [addingRow,     setAddingRow]     = useState(-1);   // index of scan row being added
+  const [customLabel,   setCustomLabel]   = useState('');
+  const [customEngine,  setCustomEngine]  = useState('google');
+  const [addingCustom,  setAddingCustom]  = useState(false);
+  const [showAddCustom, setShowAddCustom] = useState(false);
+  // Per-topic saving state (prevents double-save)
+  const [saving,        setSaving]        = useState<Record<string, boolean>>({});
 
   // Audit state
   const [auditUrl,     setAuditUrl]     = useState('');
@@ -113,232 +115,204 @@ export default function AlgorithmIntel() {
   const [auditStep,    setAuditStep]    = useState('');
   const [auditResult,  setAuditResult]  = useState<any>(null);
 
-  // ── Load catalog ───────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────
+  // API helper — reads text, parses JSON, throws with readable message
+  // ─────────────────────────────────────────────────────────────────
+  const apiFetch = async (body: object): Promise<any> => {
+    const res  = await fetch('/api/algorithm-intel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch { throw new Error(text.slice(0, 150) || `HTTP ${res.status}`); }
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // Load catalog (DB-only, no Claude call)
+  // ─────────────────────────────────────────────────────────────────
   const loadCatalog = useCallback(async () => {
     setCatLoading(true);
     try {
-      const res  = await fetch('/api/algorithm-intel', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_catalog' }),
-      });
-      const text = await res.text();
-      const data = JSON.parse(text);
+      const data = await apiFetch({ action: 'get_catalog' });
       if (data.success) setCatalog(data.catalog);
-    } catch { /* silent */ }
+      else toast({ title: 'Catalog load failed', description: data.error, variant: 'destructive' });
+    } catch (e: any) {
+      toast({ title: 'Catalog load error', description: e.message, variant: 'destructive' });
+    }
     setCatLoading(false);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Load library ───────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────
+  // Load library (direct Supabase read)
+  // ─────────────────────────────────────────────────────────────────
   const loadLibrary = useCallback(async () => {
     setLibLoading(true);
     try {
-      const { data } = await supabase.from('algorithm_knowledge').select('*').order('updated_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('algorithm_knowledge').select('*').order('updated_at', { ascending: false });
+      if (error) throw new Error(error.message);
       setLibrary((data as SavedItem[]) || []);
-    } catch { /* silent */ }
+    } catch (e: any) {
+      toast({ title: 'Library load error', description: e.message, variant: 'destructive' });
+    }
     setLibLoading(false);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    loadCatalog();
-    loadLibrary();
-  }, [loadCatalog, loadLibrary]);
+  useEffect(() => { loadCatalog(); loadLibrary(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Fetch a single topic ───────────────────────────────────────────
-  const fetchTopic = async (topicId: string) => {
+  // ─────────────────────────────────────────────────────────────────
+  // Fetch a single topic from the catalog
+  // Returns the item directly so callers don't depend on async state.
+  // Sets preview state for the manual Review → Save flow.
+  // ─────────────────────────────────────────────────────────────────
+  const fetchTopic = async (topicId: string): Promise<any | null> => {
     setFetching(f => ({ ...f, [topicId]: true }));
+    let item: any = null;
     try {
-      const res  = await fetch('/api/algorithm-intel', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'fetch_topic', topic_id: topicId }),
-      });
-      const text = await res.text();
-      let data: any;
-      try { data = JSON.parse(text); }
-      catch { throw new Error(`Server error: ${text.slice(0, 120)}`); }
-
+      const data = await apiFetch({ action: 'fetch_topic', topic_id: topicId });
       if (data.success && data.item) {
-        setPreview(p => ({ ...p, [topicId]: data.item }));
+        item = data.item;
+        // Store in preview state for the manual Review → Save flow
+        setPreview(p => ({ ...p, [topicId]: item }));
         setExpanded(e => ({ ...e, [topicId]: true }));
-        toast({ title: `Fetched: ${data.topic?.label}`, description: 'Review and save to your library.' });
+        toast({ title: `Fetched: ${data.topic?.label || topicId}`, description: 'Review below and save to your library.' });
       } else {
-        toast({ title: 'Fetch failed', description: data.error, variant: 'destructive' });
+        toast({ title: 'Fetch failed', description: data.error || 'Unknown error', variant: 'destructive' });
       }
     } catch (e: any) {
-      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+      toast({ title: 'Fetch error', description: e.message, variant: 'destructive' });
     }
     setFetching(f => ({ ...f, [topicId]: false }));
+    return item; // caller gets item directly — no state closure trap
   };
 
-  // ── Save a fetched item ────────────────────────────────────────────
-  const saveItem = async (item: any, topicId: string) => {
+  // ─────────────────────────────────────────────────────────────────
+  // Save a single item to the database
+  // Accepts the item directly — no state dependency.
+  // ─────────────────────────────────────────────────────────────────
+  const saveItem = async (item: any, topicId: string): Promise<boolean> => {
+    setSaving(s => ({ ...s, [topicId]: true }));
+    let success = false;
     try {
-      const res  = await fetch('/api/algorithm-intel', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save_item', item, topic_id: topicId }),
-      });
-      const data = await res.json().catch(() => ({ success: false, error: 'Server error' }));
+      const data = await apiFetch({ action: 'save_item', item, topic_id: topicId });
       if (data.success) {
-        toast({ title: 'Saved to library', description: item.title });
+        success = true;
+        toast({ title: 'Saved', description: item.title });
+        // Remove from preview — no longer needs review
         setPreview(p => { const n = { ...p }; delete n[topicId]; return n; });
-        await loadCatalog();
-        await loadLibrary();
+        setExpanded(e => { const n = { ...e }; delete n[topicId]; return n; });
+        await Promise.all([loadCatalog(), loadLibrary()]);
       } else {
-        toast({ title: 'Save failed', description: data.error, variant: 'destructive' });
+        toast({ title: 'Save failed', description: data.error || 'Unknown error', variant: 'destructive' });
       }
     } catch (e: any) {
-      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+      toast({ title: 'Save error', description: e.message, variant: 'destructive' });
     }
+    setSaving(s => ({ ...s, [topicId]: false }));
+    return success;
   };
 
-  // ── Fetch all unsaved / stale topics (sequential, one at a time) ───
+  // ─────────────────────────────────────────────────────────────────
+  // Fetch all unsaved / stale topics sequentially and auto-save each.
+  // Uses the return value of fetchTopic() — never reads stale state.
+  // ─────────────────────────────────────────────────────────────────
   const fetchAllNew = async () => {
     const toFetch = catalog.filter(t => !t.saved_id || t.is_stale);
     if (!toFetch.length) {
-      toast({ title: 'All topics up to date', description: 'Nothing to fetch.' });
+      toast({ title: 'All topics up to date' });
       return;
     }
-    toast({ title: `Fetching ${toFetch.length} topics…`, description: 'This will take a minute — each topic fetches individually.' });
+    toast({ title: `Fetching ${toFetch.length} topic${toFetch.length !== 1 ? 's' : ''} sequentially…` });
+    let done = 0;
     for (const topic of toFetch) {
-      await fetchTopic(topic.id);
-      // Auto-save if fetch succeeded
-      if (preview[topic.id]) {
-        await saveItem(preview[topic.id], topic.id);
+      toast({ title: `(${done + 1}/${toFetch.length}) Fetching: ${topic.label}` });
+      const item = await fetchTopic(topic.id); // returns item directly, no state lag
+      if (item) {
+        await saveItem(item, topic.id);
+        done++;
       }
     }
-    toast({ title: 'All topics fetched and saved' });
+    toast({ title: `Done — ${done} of ${toFetch.length} topic${toFetch.length !== 1 ? 's' : ''} fetched and saved` });
   };
 
-  // ── Delete item ────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────
+  // Delete an item from the library
+  // ─────────────────────────────────────────────────────────────────
   const deleteItem = async (id: string) => {
-    await fetch('/api/algorithm-intel', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete_item', id }),
-    });
-    setLibrary(l => l.filter(i => i.id !== id));
-    await loadCatalog();
+    try {
+      const data = await apiFetch({ action: 'delete_item', id });
+      if (data.success) {
+        setLibrary(l => l.filter(i => i.id !== id));
+        await loadCatalog(); // refresh saved_id states
+      } else {
+        toast({ title: 'Delete failed', description: data.error, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Delete error', description: e.message, variant: 'destructive' });
+    }
   };
 
-  // ── Scan for new algorithm updates not in the catalog ───────────
+  // ─────────────────────────────────────────────────────────────────
+  // Scan for algorithm updates not in the catalog
+  // ─────────────────────────────────────────────────────────────────
   const scanForNew = async () => {
     setScanning(true);
     setScanResults([]);
     try {
-      const res  = await fetch('/api/algorithm-intel', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'scan_for_new' }),
-      });
-      const text = await res.text();
-      let data: any;
-      try { data = JSON.parse(text); }
-      catch { throw new Error(`Server error: ${text.slice(0, 120)}`); }
+      const data = await apiFetch({ action: 'scan_for_new' });
       if (data.success) {
         setScanResults(data.suggestions || []);
         setShowScan(true);
-        toast({ title: `${data.suggestions?.length || 0} new updates discovered`, description: 'Review and add any that are relevant.' });
+        toast({ title: `${data.suggestions?.length || 0} new updates discovered` });
       } else {
         toast({ title: 'Scan failed', description: data.error, variant: 'destructive' });
       }
     } catch (e: any) {
-      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+      toast({ title: 'Scan error', description: e.message, variant: 'destructive' });
     }
     setScanning(false);
   };
 
-  // ── Add a custom topic ─────────────────────────────────────────────
-  const addCustomTopic = async () => {
-    if (!customLabel.trim()) return;
-    setAddingCustom(true);
+  // ─────────────────────────────────────────────────────────────────
+  // Add a scanned or custom topic: fetch → tag → save → refresh
+  // Per-row loading via addingRow (index), not shared boolean.
+  // ─────────────────────────────────────────────────────────────────
+  const addDiscoveredTopic = async (
+    label: string, engine: string, category: string, source: string, rowIndex?: number,
+  ) => {
+    if (rowIndex !== undefined) setAddingRow(rowIndex);
+    else setAddingCustom(true);
     try {
-      const res  = await fetch('/api/algorithm-intel', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'fetch_custom_topic', label: customLabel.trim(), engine: customEngine }),
+      const fetchData = await apiFetch({
+        action: 'fetch_custom_topic', label, engine, category, source,
       });
-      const text = await res.text();
-      let data: any;
-      try { data = JSON.parse(text); }
-      catch { throw new Error(`Server error: ${text.slice(0, 120)}`); }
-      if (data.success && data.item) {
-        // Save immediately
-        const saveRes = await fetch('/api/algorithm-intel', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'save_item', item: data.item }),
-        });
-        const saveData = await saveRes.json().catch(() => ({ success: false }));
-        if (saveData.success) {
-          toast({ title: 'Custom topic added', description: customLabel.trim() });
+      if (!fetchData.success || !fetchData.item) {
+        toast({ title: 'Fetch failed', description: fetchData.error, variant: 'destructive' });
+        return;
+      }
+      const item = fetchData.item;
+      // Ensure 'custom' tag, deduplicated
+      item.tags = [...new Set([...(Array.isArray(item.tags) ? item.tags : []), 'custom'])];
+
+      const saveData = await apiFetch({ action: 'save_item', item });
+      if (saveData.success) {
+        if (rowIndex !== undefined) {
+          setScanResults(r => r.filter((_, i) => i !== rowIndex));
+        } else {
           setCustomLabel('');
           setShowAddCustom(false);
-          await loadCatalog();
-          await loadLibrary();
         }
+        toast({ title: 'Added to library', description: label });
+        await Promise.all([loadCatalog(), loadLibrary()]);
       } else {
-        toast({ title: 'Fetch failed', description: data.error, variant: 'destructive' });
+        toast({ title: 'Save failed', description: saveData.error, variant: 'destructive' });
       }
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
-    setAddingCustom(false);
-  };
-
-  // ── Audit ──────────────────────────────────────────────────────────
-  const runAudit = async () => {
-    if (!auditUrl.trim()) return;
-    setAuditing(true); setAuditResult(null); setAuditStep('Crawling page…');
-    try {
-      // Step 1: crawl
-      const crawlRes = await fetch('/api/crawl', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'crawl_urls',
-          urls: [auditUrl.trim().startsWith('http') ? auditUrl.trim() : `https://${auditUrl.trim()}`],
-          projectContext: `${client?.company || ''} | ${selProj?.url || ''}`,
-          projectId: selProjId || null,
-          forceRefresh: true,
-        }),
-      });
-      const reader = crawlRes.body?.getReader();
-      const dec = new TextDecoder();
-      let buf = '', pageData: any = null;
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          buf += dec.decode(value ?? new Uint8Array(), { stream: !done });
-          const parts = buf.split('\n'); buf = parts.pop() ?? '';
-          for (const line of parts) {
-            if (!line.trim()) continue;
-            try {
-              const m = JSON.parse(line);
-              if (m.type === 'complete' && m.results?.[0]?.page_analysis)
-                pageData = { ...m.results[0].page_analysis, url: m.results[0].url };
-            } catch { /* skip */ }
-          }
-          if (done) break;
-        }
-      }
-      if (!pageData) {
-        toast({ title: 'Crawl failed', description: 'Could not fetch page.', variant: 'destructive' });
-        setAuditing(false); return;
-      }
-      // Step 2: audit
-      setAuditStep('Scoring against algorithm library…');
-      const auditRes = await fetch('/api/algorithm-intel', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'audit_against', pageData, projectContext: `${client?.company || ''} | ${selProj?.url || ''}`, targetEngine: auditEngine }),
-      });
-      const auditText = await auditRes.text();
-      let auditData: any;
-      try { auditData = JSON.parse(auditText); }
-      catch { throw new Error(`Audit server error: ${auditText.slice(0, 120)}`); }
-      if (auditData.success) {
-        setAuditResult(auditData.audit);
-        toast({ title: `Audit complete — ${auditData.audit.grade} (${auditData.audit.overall_score}/100)` });
-      } else {
-        toast({ title: 'Audit failed', description: auditData.error, variant: 'destructive' });
-      }
-    } catch (e: any) {
-      toast({ title: 'Error', description: e.message, variant: 'destructive' });
-    }
-    setAuditing(false); setAuditStep('');
+    if (rowIndex !== undefined) setAddingRow(-1);
+    else setAddingCustom(false);
   };
 
   // ── Derived data ───────────────────────────────────────────────────
@@ -456,14 +430,14 @@ export default function AlgorithmIntel() {
                   <p className="text-xs text-muted-foreground">Type any algorithm update, guideline, or SEO signal — Manav will research it and add it to your library.</p>
                   <div className="flex gap-2">
                     <input value={customLabel} onChange={e => setCustomLabel(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && !addingCustom && customLabel.trim() && addCustomTopic()}
+                      onKeyDown={e => e.key === 'Enter' && !addingCustom && customLabel.trim() && addDiscoveredTopic(customLabel.trim(), customEngine, 'general', 'User added')}
                       placeholder="e.g. Google March 2025 Spam Update, ChatGPT Memory + Search..."
                       className="flex-1 h-9 px-3 text-sm rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
                     <select value={customEngine} onChange={e => setCustomEngine(e.target.value)}
                       className="h-9 px-2 text-sm rounded-xl border border-border bg-background/60 outline-none">
                       {Object.entries(ENGINE_LABEL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
-                    <button onClick={addCustomTopic} disabled={addingCustom || !customLabel.trim()}
+                    <button onClick={() => addDiscoveredTopic(customLabel.trim(), customEngine, 'general', 'User added')} disabled={addingCustom || !customLabel.trim()}
                       className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50">
                       {addingCustom ? <><Loader2 size={11} className="animate-spin"/>Adding…</> : <><Sparkles size={11}/>Add</>}
                     </button>
@@ -490,30 +464,10 @@ export default function AlgorithmIntel() {
                           <p className="text-xs text-muted-foreground mt-0.5">{s.why_important}</p>
                         </div>
                         <button
-                          onClick={async () => {
-                            setAddingCustom(true);
-                            try {
-                              const res = await fetch('/api/algorithm-intel', {
-                                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: 'fetch_custom_topic', label: s.label, engine: s.engine, category: s.category, source: s.source }),
-                              });
-                              const data = await res.json().catch(() => ({ success: false }));
-                              if (data.success && data.item) {
-                                data.item.tags = [...(data.item.tags || []), 'custom'];
-                                const sr = await fetch('/api/algorithm-intel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save_item', item: data.item }) });
-                                const sd = await sr.json().catch(() => ({ success: false }));
-                                if (sd.success) {
-                                  setScanResults(r => r.filter((_, ri) => ri !== i));
-                                  toast({ title: 'Added', description: s.label });
-                                  await loadCatalog(); await loadLibrary();
-                                }
-                              }
-                            } catch { toast({ title: 'Error adding topic', variant: 'destructive' }); }
-                            setAddingCustom(false);
-                          }}
-                          disabled={addingCustom}
+                          onClick={() => addDiscoveredTopic(s.label, s.engine, s.category, s.source, i)}
+                          disabled={addingRow === i}
                           className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-violet-400/30 bg-violet-400/8 text-violet-400 hover:bg-violet-400/15 font-medium shrink-0 disabled:opacity-50">
-                          {addingCustom ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}Add
+                          {addingRow === i ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}Add
                         </button>
                       </div>
                     ))}
@@ -591,9 +545,12 @@ export default function AlgorithmIntel() {
                                   {isExpanded ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
                                   Review
                                 </button>
-                                <button onClick={() => saveItem(preview[topic.id], topic.id)}
-                                  className="text-xs px-2.5 py-1.5 rounded-lg border border-green-400/30 bg-green-400/8 text-green-400 hover:bg-green-400/15 font-medium flex items-center gap-1">
-                                  <CheckCircle2 size={10}/>Save
+                                <button
+                                  onClick={() => saveItem(preview[topic.id], topic.id)}
+                                  disabled={!!saving[topic.id]}
+                                  className="text-xs px-2.5 py-1.5 rounded-lg border border-green-400/30 bg-green-400/8 text-green-400 hover:bg-green-400/15 font-medium flex items-center gap-1 disabled:opacity-50">
+                                  {saving[topic.id] ? <Loader2 size={10} className="animate-spin"/> : <CheckCircle2 size={10}/>}
+                                  {saving[topic.id] ? 'Saving…' : 'Save'}
                                 </button>
                               </>
                             )}
