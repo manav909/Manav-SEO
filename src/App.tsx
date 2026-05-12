@@ -18,6 +18,7 @@ import Playground     from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
 import SystemControl  from './pages/SystemControl';
 import BrainLearning  from './pages/BrainLearning';
+import Desk           from './pages/Desk';
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -65,6 +66,7 @@ const AppRoutes = () => {
         <Route path="/system-control" element={<B name="system-control"><SystemControl />                                   </B>} />
         <Route path="/algorithm-intel"element={<B name="algo-intel">    <AlgorithmIntel />                                  </B>} />
         <Route path="/brain-learning" element={<B name="brain-learning"><BrainLearning />                                   </B>} />
+        <Route path="/desk"           element={<B name="desk">          <ApprovedRequired><Desk /></ApprovedRequired>           </B>} />
         <Route path="*"               element={<NotFound />} />
       </Routes>
 
