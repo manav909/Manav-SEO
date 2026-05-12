@@ -26,6 +26,7 @@ const SECONDARY = [
   { href: '/algorithm-intel', label: 'Algorithms',     icon: Brain,          desc: 'Algorithm intelligence'    },
   { href: '/brain-learning',  label: 'Brain Learning', icon: BookOpenCheck,  desc: 'Manav Brain skill & memory' },
   { href: '/desk',             label: 'Brain Desk',     icon: BookOpenCheck,  desc: 'Saved by Manav Brain'       },
+  { href: '/brain-command',     label: 'Brain Command',  icon: BookOpenCheck,  desc: 'Automation Mission Control' },
   { href: '/system-control',  label: 'Control',        icon: Activity,       desc: 'System control & tasks'    },
 ];
 

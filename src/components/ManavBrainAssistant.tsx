@@ -32,6 +32,7 @@ import {
   Brain, Send, X, Zap, Activity, Globe, Target, Shield, FileText,
   CheckCircle, AlertCircle, Loader2, Cpu, RefreshCw,
   AlertTriangle, Radio, Server, Database, Minimize2, Maximize2, Layers,
+  Mic, MicOff, Save,
 } from 'lucide-react';
 
 /* ═══════════════ TYPES ═══════════════ */
@@ -247,6 +248,10 @@ export default function ManavBrainAssistant() {
   const healCooldown    = useRef(false);
   const errHandlerRef   = useRef<((d: any) => void) | null>(null);
   const origFetchRef    = useRef<typeof fetch | null>(null);
+
+  const [listening, setListening] = useState(false);
+  const [savingMsg,  setSavingMsg]  = useState<string|null>(null);
+  const voiceRef = useRef<any>(null);
 
   const panelW = expanded ? 700 : 440;
   const panelH = expanded ? 740 : 620;
@@ -672,6 +677,17 @@ export default function ManavBrainAssistant() {
           break;
         }
 
+        case 'save_to_desk': {
+          if (!selProj) { upd('error', 'No project selected'); break; }
+          const res = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'save_to_desk', project_id: selProj,
+              title: action.title || 'Brain Output', content: action.content || '',
+              content_type: action.contentType || 'text', source: 'brain_action', tags: action.tags || [] }) });
+          const data = await res.json();
+          if (data.error) { upd('error', data.error); break; }
+          upd('done', 'Saved to Desk: ' + (action.title || 'Brain Output'));
+          break;
+        }
         default: upd('done', `Action ${action.type} acknowledged.`);
       }
     } catch (err: any) { upd('error', err?.message || 'Action failed'); }
@@ -773,6 +789,83 @@ export default function ManavBrainAssistant() {
 
   const sendMessage = useCallback((text: string) => sendMsgInternal(text, false), [sendMsgInternal]);
 
+  /* ── VOICE INPUT ── */
+  const toggleVoice = useCallback(() => {
+    if (listening) {
+      voiceRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { alert("Voice not supported in this browser. Use Chrome or Edge."); return; }
+    const r = new SR();
+    r.continuous      = false;
+    r.interimResults  = true;
+    r.lang            = "en-GB";
+    r.onresult  = (e: any) => {
+      const t = Array.from(e.results).map((r: any) => r[0].transcript).join("");
+      setInput(t);
+    };
+    r.onend     = () => setListening(false);
+    r.onerror   = () => setListening(false);
+    voiceRef.current = r;
+    r.start();
+    setListening(true);
+  }, [listening]);
+
+  /* ── SAVE MESSAGE TO DESK ── */
+  const saveToDesk = useCallback(async (msg: BrainMsg) => {
+    if (!selProj) { alert("Select a project first to save to desk."); return; }
+    const content = stripActions(msg.content);
+    if (content.length < 50) return;
+    setSavingMsg(msg.id);
+    try {
+      await fetch("/api/task-engine", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_to_desk", project_id: selProj,
+          title: content.slice(0, 80).replace(/\n/g, " "),
+          content, content_type: "text", source: "brain_chat",
+          tags: ["brain_chat", new Date().toLocaleDateString()],
+        }),
+      });
+    } catch (_e) { /* silent */ }
+    setSavingMsg(null);
+  }, [selProj]);
+
+  /* ── PARALLEL TASK RUNNER ── */
+  const runTasksParallel = useCallback(async (cards: any[], projectContext: any) => {
+    if (!selProj) return;
+    const MAX_CONCURRENT = 3;
+    const queue = [...cards];
+    const inFlight: Promise<void>[] = [];
+    const runCard = async (card: any) => {
+      const taskId = uid();
+      setMsgs(ms => [...ms, { id: taskId, role: "system" as MsgRole, content: "⚡ Running: " + card.title, ts: new Date() }]);
+      try {
+        const res = await brainFetch("/api/task-engine", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "execute", card, context: projectContext, projectId: selProj, role: "senior_seo" }),
+        });
+        if (res.body) {
+          const reader = res.body.getReader(); const dec = new TextDecoder(); let out = "";
+          while (true) { const { done, value } = await reader.read(); if (done) break; out += dec.decode(value); }
+          setMsgs(ms => [...ms, { id: uid(), role: "brain" as MsgRole, content: "✅ " + card.title + "\n\n" + out.slice(0, 600) + (out.length > 600 ? "\n\n[Full output saved to Desk]" : ""), ts: new Date() }]);
+        }
+      } catch (e: any) {
+        setMsgs(ms => [...ms, { id: uid(), role: "alert" as MsgRole, content: "Task failed: " + card.title + " — " + e.message, ts: new Date() }]);
+      }
+    };
+    while (queue.length > 0 || inFlight.length > 0) {
+      while (queue.length > 0 && inFlight.length < MAX_CONCURRENT) {
+        const card = queue.shift();
+        const p = runCard(card).then(() => { inFlight.splice(inFlight.indexOf(p), 1); });
+        inFlight.push(p);
+      }
+      if (inFlight.length > 0) await Promise.race(inFlight);
+    }
+  }, [selProj, brainFetch]);
+
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
   };
@@ -850,11 +943,23 @@ export default function ManavBrainAssistant() {
           {tab==='chat' && (
             <>
               <div style={{flex:1,overflow:'auto',padding:'14px',display:'flex',flexDirection:'column',gap:10,position:'relative',zIndex:2}}>
-                {msgs.map(m => <MsgBubble key={m.id} msg={m} onAction={a => {
-                  const tid=uid();
-                  setMsgs(ms=>[...ms,{id:tid,role:'brain' as MsgRole,content:`Executing: ${a.label}...`,actions:[a],results:[{action:a,status:'running' as const,result:''}],ts:new Date()}]);
-                  executeAction(a,tid,0);
-                }}/>)}
+                {msgs.map(m => (
+                  <div key={m.id}>
+                    <MsgBubble msg={m} onAction={a => {
+                      const tid=uid();
+                      setMsgs(ms=>[...ms,{id:tid,role:'brain' as MsgRole,content:`Executing: ${a.label}...`,actions:[a],results:[{action:a,status:'running' as const,result:''}],ts:new Date()}]);
+                      executeAction(a,tid,0);
+                    }}/>
+                    {m.role==='brain' && stripActions(m.content).length>100 && (
+                      <div style={{display:'flex',justifyContent:'flex-end',marginTop:2,paddingRight:2}}>
+                        <button onClick={()=>saveToDesk(m)} disabled={savingMsg===m.id} title="Save to Desk"
+                          style={{background:'none',border:'none',cursor:'pointer',color:savingMsg===m.id?'#10b981':'rgba(255,255,255,0.12)',fontSize:7,fontFamily:'monospace',display:'flex',alignItems:'center',gap:3,padding:2}}>
+                          <Save size={8}/>{savingMsg===m.id?'Saving...':'Save to Desk'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
                 {loading && !streamActive.current && (
                   <div style={{display:'flex',alignItems:'center',gap:7,paddingLeft:3}}>
                     <div style={{display:'flex',gap:3}}>{[0,1,2].map(i=><div key={i} style={{width:4,height:4,borderRadius:'50%',background:'#6366f1',animation:`dotPulse 1.4s ease-in-out ${i*0.2}s infinite`}}/>)}</div>
@@ -875,6 +980,13 @@ export default function ManavBrainAssistant() {
                   <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKey} disabled={loading} rows={1} placeholder="Tell Manav Brain what to do or ask anything..."
                     style={{flex:1,background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:10,padding:'8px 12px',fontSize:11,color:'rgba(255,255,255,0.78)',outline:'none',resize:'none',fontFamily:'inherit',lineHeight:1.5,minHeight:36,maxHeight:110,transition:'border-color 0.18s'}}
                     onFocus={e=>e.target.style.borderColor='rgba(99,102,241,0.4)'} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.07)'}/>
+                  <button onClick={toggleVoice} title={listening?'Stop listening':'Voice input'}
+                    style={{width:32,height:32,borderRadius:8,border:'none',cursor:'pointer',flexShrink:0,
+                      background:listening?'rgba(239,68,68,0.18)':'rgba(255,255,255,0.05)',
+                      display:'flex',alignItems:'center',justifyContent:'center',
+                      boxShadow:listening?'0 0 10px rgba(239,68,68,0.4)':'none'}}>
+                    {listening?<MicOff size={12} style={{color:'#ef4444'}}/>:<Mic size={12} style={{color:'rgba(255,255,255,0.3)'}}/>}
+                  </button>
                   <button onClick={()=>sendMessage(input)} disabled={loading||!input.trim()} style={{width:36,height:36,borderRadius:9,border:'none',cursor:'pointer',flexShrink:0,background:loading||!input.trim()?'rgba(99,102,241,0.12)':'linear-gradient(135deg,#6366f1,#4f46e5)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:!loading&&input.trim()?'0 0 14px rgba(99,102,241,0.35)':'none',transition:'all 0.18s'}}>
                     {loading?<Loader2 size={14} style={{color:'rgba(255,255,255,0.3)',animation:'spin 1s linear infinite'}}/>:<Send size={12} style={{color:!input.trim()?'rgba(255,255,255,0.18)':'white'}}/>}
                   </button>
