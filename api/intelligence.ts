@@ -1,5 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { extractAndSaveLearning }            from "./ai-cache";
 
 export const config = { maxDuration: 120 };
 
@@ -29,27 +30,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const {
-    mode = "chat",
-    blocks = [],
-    question = "",
-    role = "team_lead",
-    projectSummary = "",
-    focusBlockId = null,
-    checkUrl = null,
+    mode            = "chat",
+    blocks          = [],
+    question        = "",
+    role            = "team_lead",
+    projectSummary  = "",
+    focusBlockId    = null,
+    checkUrl        = null,
     week,
     weekLabel,
-    weekCards = [],
-    allPlacedCards = [],
-    projectContext = {},
-    // Full Data Room knowledge — passed from Playground loadContext result
-    dataRoom = {},      // { goals, tech, analytics, technical, competitors, metrics, audits, documents }
-    cardRequirements = [],   // saved task_requirements for this card
+    weekCards       = [],
+    allPlacedCards  = [],
+    projectContext  = {},
+    dataRoom        = {},
+    cardRequirements= [],
+    projectId       = null,   // used for brain learning capture
   } = req.body;
 
   const placed  = (blocks as any[]).filter(b => b.placed);
   const library = (blocks as any[]).filter(b => !b.placed);
 
-  // Format Data Room knowledge for prompt context
   const drContext = (() => {
     const dr = dataRoom as any;
     if (!dr || !Object.keys(dr).length) return "";
@@ -85,172 +85,188 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-cache");
   res.status(200);
 
-  // ── Everything after headers must be inside try-catch-finally ──
-  // If ANY code throws after res.status(200) but before res.end(),
-  // the client stream hangs open forever. The outer try ensures res.end() always runs.
   try {
+    const anthropic  = new Anthropic();
+    let systemPrompt = SYSTEM;
+    let userPrompt   = "";
 
-  const anthropic = new Anthropic();
-  let systemPrompt = SYSTEM;
-  let userPrompt   = "";
+    if (mode === "agenda") {
+      const todo  = (weekCards as any[]).filter(c => c.status === "todo");
+      const doing = (weekCards as any[]).filter(c => c.status === "doing");
+      const done  = (weekCards as any[]).filter(c => ["done", "verified"].includes(c.status));
+      const proj  = [projectContext.company, projectContext.industry, projectContext.url].filter(Boolean).join(" | ");
+      const cardDetail = (c: any) => [
+        `[${(c.type || "").toUpperCase()}|${c.priority}|${c.effort || "?"}]`,
+        `Title: ${c.title}`,
+        `Detail: ${(c.content || "").slice(0, 250)}`,
+        `Assigned: ${c.assignee || "Unassigned"}`,
+        `Status: ${c.status}`,
+      ].join("\n");
 
-  if (mode === "agenda") {
-    const todo  = (weekCards as any[]).filter(c => c.status === "todo");
-    const doing = (weekCards as any[]).filter(c => c.status === "doing");
-    const done  = (weekCards as any[]).filter(c => ["done", "verified"].includes(c.status));
-    const proj  = [projectContext.company, projectContext.industry, projectContext.url].filter(Boolean).join(" | ");
-    const cardDetail = (c: any) => [
-      `[${(c.type || "").toUpperCase()}|${c.priority}|${c.effort || "?"}]`,
-      `Title: ${c.title}`,
-      `Detail: ${(c.content || "").slice(0, 250)}`,
-      `Assigned: ${c.assignee || "Unassigned"}`,
-      `Status: ${c.status}`,
-    ].join("\n");
+      systemPrompt = SYSTEM + " Write precise, fact-based weekly agendas. Every verification step must name a specific tool and metric.";
+      userPrompt = [
+        `Write the ${weekLabel} agenda based only on the cards provided. Zero assumptions.`,
+        "",
+        `PROJECT: ${proj || "Not provided"}`,
+        "",
+        `CARDS (${(weekCards as any[]).length} total):`,
+        (weekCards as any[]).length === 0 ? "No cards placed here yet." : (weekCards as any[]).map(cardDetail).join("\n\n---\n\n"),
+        "",
+        `STATUS: To Do: ${todo.length} | In Progress: ${doing.length} | Done: ${done.length}`,
+        "",
+        `OTHER WEEKS (context): ${(allPlacedCards as any[]).filter((c: any) => c.week !== week).slice(0, 20).map((c: any) => `W${c.week}: [${c.type}] ${c.title}`).join(", ") || "None"}`,
+        "",
+        `## ${weekLabel} — What Is Happening`,
+        "[2-3 sentences based only on the cards]",
+        "",
+        "## What Each Task Means",
+        "[For every card: what, why, who, status, how to verify it is done]",
+        "",
+        "## Verification Checklist",
+        "| Task | Tool | What to Check | Pass Condition |",
+        "",
+        "## Gaps and Suggestions",
+        '[Only if there is a clear gap from the existing cards. Otherwise write: "Week plan is complete."]',
+        "",
+        "## End-of-Week Report",
+        "[What data to pull, what to compare it to, acceptable range, what is a red flag]",
+      ].join("\n");
 
-    systemPrompt = SYSTEM + " Write precise, fact-based weekly agendas. Every verification step must name a specific tool and metric.";
-    userPrompt = [
-      `Write the ${weekLabel} agenda based only on the cards provided. Zero assumptions.`,
-      "",
-      `PROJECT: ${proj || "Not provided"}`,
-      "",
-      `CARDS (${(weekCards as any[]).length} total):`,
-      (weekCards as any[]).length === 0 ? "No cards placed here yet." : (weekCards as any[]).map(cardDetail).join("\n\n---\n\n"),
-      "",
-      `STATUS: To Do: ${todo.length} | In Progress: ${doing.length} | Done: ${done.length}`,
-      "",
-      `OTHER WEEKS (context): ${(allPlacedCards as any[]).filter((c: any) => c.week !== week).slice(0, 20).map((c: any) => `W${c.week}: [${c.type}] ${c.title}`).join(", ") || "None"}`,
-      "",
-      `## ${weekLabel} — What Is Happening`,
-      "[2-3 sentences based only on the cards]",
-      "",
-      "## What Each Task Means",
-      "[For every card: what, why, who, status, how to verify it is done]",
-      "",
-      "## Verification Checklist",
-      "| Task | Tool | What to Check | Pass Condition |",
-      "",
-      "## Gaps and Suggestions",
-      '[Only if there is a clear gap from the existing cards. Otherwise write: "Week plan is complete."]',
-      "",
-      "## End-of-Week Report",
-      "[What data to pull, what to compare it to, acceptable range, what is a red flag]",
-    ].join("\n");
+    } else if (mode === "pipeline") {
+      systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.team_lead) + " " + SYSTEM;
+      userPrompt = [
+        `PROJECT: ${projectSummary}`,
+        "",
+        "CANVAS:",
+        byWeek || "No cards placed yet.",
+        "",
+        `LIBRARY: ${library.slice(0, 12).map((b: any) => `[${b.type}|${b.priority}] "${b.title}"`).join(", ") || "Empty"}`,
+        liveContent ? `\nLIVE SITE:\n${liveContent}` : "",
+        "",
+        "Produce a full execution pipeline:",
+        "## Critical Path",
+        "## Dependency Map",
+        "## Week-by-Week Sequence",
+        "## Risk Register — table with: Risk | Likelihood | Impact | Owner | Mitigation",
+        "## Capacity Check",
+        "## Before Week 1 Checklist",
+      ].join("\n");
 
-  } else if (mode === "pipeline") {
-    systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.team_lead) + " " + SYSTEM;
-    userPrompt = [
-      `PROJECT: ${projectSummary}`,
-      "",
-      "CANVAS:",
-      byWeek || "No cards placed yet.",
-      "",
-      `LIBRARY: ${library.slice(0, 12).map((b: any) => `[${b.type}|${b.priority}] "${b.title}"`).join(", ") || "Empty"}`,
-      liveContent ? `\nLIVE SITE:\n${liveContent}` : "",
-      "",
-      "Produce a full execution pipeline:",
-      "## Critical Path",
-      "## Dependency Map",
-      "## Week-by-Week Sequence",
-      "## Risk Register — table with: Risk | Likelihood | Impact | Owner | Mitigation",
-      "## Capacity Check",
-      "## Before Week 1 Checklist",
-    ].join("\n");
+    } else if (mode === "dependencies") {
+      const fb = focusBlockId ? placed.find((b: any) => b.id === focusBlockId) : null;
+      systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.senior_seo) + " " + SYSTEM;
+      userPrompt = [
+        `PROJECT: ${projectSummary}`,
+        "CANVAS:",
+        byWeek,
+        fb ? `FOCUS CARD: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content || "").slice(0, 350)}` : "",
+        liveContent ? `LIVE SITE:\n${liveContent}` : "",
+        "",
+        `Analyse dependencies for ${fb ? `"${fb.title}"` : "ALL tasks"}:`,
+        "## Blockers",
+        "## What This Enables",
+        "## Parallel vs Sequential",
+        "## If Delayed 1 Week",
+        "## Verification Before Starting",
+      ].filter(l => l !== "").join("\n");
 
-  } else if (mode === "dependencies") {
-    const fb = focusBlockId ? placed.find((b: any) => b.id === focusBlockId) : null;
-    systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.senior_seo) + " " + SYSTEM;
-    userPrompt = [
-      `PROJECT: ${projectSummary}`,
-      "CANVAS:",
-      byWeek,
-      fb ? `FOCUS CARD: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content || "").slice(0, 350)}` : "",
-      liveContent ? `LIVE SITE:\n${liveContent}` : "",
-      "",
-      `Analyse dependencies for ${fb ? `"${fb.title}"` : "ALL tasks"}:`,
-      "## Blockers",
-      "## What This Enables",
-      "## Parallel vs Sequential",
-      "## If Delayed 1 Week",
-      "## Verification Before Starting",
-    ].filter(l => l !== "").join("\n");
+    } else if (mode === "deep_dive") {
+      const fb = focusBlockId
+        ? placed.find((b: any) => b.id === focusBlockId) || library.find((b: any) => b.id === focusBlockId)
+        : null;
+      systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.senior_seo) + " " + SYSTEM;
+      userPrompt = [
+        `PROJECT: ${projectSummary}`,
+        "",
+        drContext,
+        "",
+        fb ? [
+          "CARD TO ANALYSE IN DEPTH:",
+          `"${fb.title}" [${fb.type}|${fb.priority}|${fb.status}]`,
+          fb.content,
+          `Assigned: ${fb.assignee || "Unassigned"} | Effort: ${fb.effort || "unknown"} | Impact: ${fb.impact || "unknown"}`,
+        ].join("\n") : `QUESTION: ${question}`,
+        "",
+        "FULL CANVAS CONTEXT:",
+        byWeek || "No cards placed yet.",
+        liveContent ? `\nLIVE SITE:\n${liveContent}` : "",
+        "",
+        "Provide a deep strategic analysis covering:",
+        "## Why This Card Matters",
+        "## Detailed Execution Plan (step-by-step, citing specific data from Data Room)",
+        "## Canvas Cards to Create",
+        "List 2-4 canvas cards that should be created as a result of this analysis. For each, specify: title, type (technical/content/geo/quick-win/competitive/insight/weekly), week (1-4 or Backlog), priority, and why it should be created.",
+        "## What I Need to Execute This",
+        "List the exact data, access, or documents needed to complete this card. Be specific: which GSC report, which page URL, which competitor domain, etc.",
+        "## Dependencies and Risks",
+        "## Expected Outcomes (measurable)",
+      ].filter(l => l !== "").join("\n");
 
-  } else if (mode === "deep_dive") {
-    const fb = focusBlockId
-      ? placed.find((b: any) => b.id === focusBlockId) || library.find((b: any) => b.id === focusBlockId)
-      : null;
-    systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.senior_seo) + " " + SYSTEM;
-    userPrompt = [
-      `PROJECT: ${projectSummary}`,
-      "",
-      drContext,
-      "",
-      fb ? [
-        "CARD TO ANALYSE IN DEPTH:",
-        `"${fb.title}" [${fb.type}|${fb.priority}|${fb.status}]`,
-        fb.content,
-        `Assigned: ${fb.assignee || "Unassigned"} | Effort: ${fb.effort || "unknown"} | Impact: ${fb.impact || "unknown"}`,
-      ].join("\n") : `QUESTION: ${question}`,
-      "",
-      "FULL CANVAS CONTEXT:",
-      byWeek || "No cards placed yet.",
-      liveContent ? `\nLIVE SITE:\n${liveContent}` : "",
-      "",
-      "Provide a deep strategic analysis covering:",
-      "## Why This Card Matters",
-      "## Detailed Execution Plan (step-by-step, citing specific data from Data Room)",
-      "## Canvas Cards to Create",
-      "List 2-4 canvas cards that should be created as a result of this analysis. For each, specify: title, type (technical/content/geo/quick-win/competitive/insight/weekly), week (1-4 or Backlog), priority, and why it should be created.",
-      "## What I Need to Execute This",
-      "List the exact data, access, or documents needed to complete this card. Be specific: which GSC report, which page URL, which competitor domain, etc.",
-      "## Dependencies and Risks",
-      "## Expected Outcomes (measurable)",
-    ].filter(l => l !== "").join("\n");
-
-  } else {
-    // chat or canvas_chat
-    const fb = focusBlockId ? placed.find((b: any) => b.id === focusBlockId) : null;
-    systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.senior_seo) + " " + SYSTEM;
-    userPrompt = [
-      `PROJECT: ${projectSummary}`,
-      drContext,
-      "CANVAS:",
-      byWeek || "No cards placed yet.",
-      fb ? `FOCUS: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content || "").slice(0, 300)}` : "",
-      liveContent ? `LIVE SITE:\n${liveContent}` : "",
-      "",
-      `QUESTION: ${question || "Provide a strategic overview of where this project stands."}`,
-    ].filter(l => l !== "").join("\n");
-  }
-
-  try {
-    const stream = await anthropic.messages.stream({
-      model: "claude-sonnet-4-5", max_tokens: 6000,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    });
-    let stopReason = "";
-    for await (const chunk of stream) {
-      if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-        res.write(chunk.delta.text);
-      }
-      if (chunk.type === "message_delta" && chunk.delta.stop_reason) {
-        stopReason = chunk.delta.stop_reason;
-      }
+    } else {
+      // chat or canvas_chat — not captured (too conversational)
+      const fb = focusBlockId ? placed.find((b: any) => b.id === focusBlockId) : null;
+      systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.senior_seo) + " " + SYSTEM;
+      userPrompt = [
+        `PROJECT: ${projectSummary}`,
+        drContext,
+        "CANVAS:",
+        byWeek || "No cards placed yet.",
+        fb ? `FOCUS: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content || "").slice(0, 300)}` : "",
+        liveContent ? `LIVE SITE:\n${liveContent}` : "",
+        "",
+        `QUESTION: ${question || "Provide a strategic overview of where this project stands."}`,
+      ].filter(l => l !== "").join("\n");
     }
-    if (stopReason === "max_tokens") {
-      console.warn(`[SEO Season] intelligence.ts hit max_tokens — mode: ${mode}, role: ${role}`);
-      res.write("\n\n---\n⚠️ Analysis reached the length limit. Use the deep dive or ask a more focused question to get the full detail on a specific area.");
+
+    try {
+      const stream = await anthropic.messages.stream({
+        model: "claude-sonnet-4-5", max_tokens: 6000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+      });
+
+      let stopReason  = "";
+      let fullOutput  = "";   // accumulated for brain learning capture
+
+      for await (const chunk of stream) {
+        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+          res.write(chunk.delta.text);
+          fullOutput += chunk.delta.text;
+        }
+        if (chunk.type === "message_delta" && chunk.delta.stop_reason) {
+          stopReason = chunk.delta.stop_reason;
+        }
+      }
+
+      if (stopReason === "max_tokens") {
+        console.warn(`[SEO Season] intelligence.ts hit max_tokens — mode: ${mode}, role: ${role}`);
+        res.write("\n\n---\n⚠️ Analysis reached the length limit. Use the deep dive or ask a more focused question.");
+      }
+
+      // Auto-capture brain learning for strategic modes (not chat/agenda — too operational)
+      if ((mode === "pipeline" || mode === "deep_dive") && projectId && fullOutput.length > 500) {
+        const fb = focusBlockId
+          ? placed.find((b: any) => b.id === focusBlockId) || library.find((b: any) => b.id === focusBlockId)
+          : null;
+        void extractAndSaveLearning(
+          mode === "pipeline" ? "pipeline_intelligence" : "deep_dive_analysis",
+          projectId,
+          fullOutput,
+          {
+            card_type:       fb?.type || "strategy",
+            card_title:      fb?.title || (mode === "pipeline" ? "Execution Pipeline" : `Deep Dive: ${question?.slice(0, 50) || "analysis"}`),
+            context_summary: `${mode} analysis — ${projectSummary?.slice(0, 80)}`,
+          }
+        );
+      }
+
+    } catch (streamErr: any) {
+      res.write(`\nError: ${streamErr.message}`);
     }
-  } catch (streamErr: any) {
-    res.write(`\nError: ${streamErr.message}`);
-  }
 
   } catch (outerErr: any) {
-    // Catches errors from Anthropic init, prompt building, fetchUrl, mode branches
-    // Without this, any throw here leaves res open and the client hangs forever
     try { res.write(`\nError: ${outerErr.message}`); } catch { /* already closed */ }
   } finally {
-    // Always close the response — no matter what
     try { res.end(); } catch { /* already ended */ }
   }
 }
