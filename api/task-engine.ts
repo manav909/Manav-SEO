@@ -1,8 +1,9 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 180 };
 
 const sb = createClient(
   process.env.VITE_SUPABASE_URL!,
@@ -396,6 +397,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (parsed.verdict && parsed.verdict !== "cannot_determine") {
         const projectId = req.body.projectId || context?.project?.id || null;
+        void extractAndSaveLearning("verify_outcome", projectId,
+          [`Verification: ${parsed.verdict} (${parsed.confidence}%) — ${card.type}: ${card.title}`,
+           `Evidence found: ${(parsed.evidence_found||[]).join(" | ")||"none"}`,
+           `Evidence missing: ${(parsed.evidence_missing||[]).join(" | ")||"none"}`,
+           `HOD note: ${parsed.hod_note||""}`].join("\n"),
+          { card_type: card.type, card_title: card.title, context_summary: `${card.type} verification: ${parsed.verdict}` }
+        );
       }
 
       return res.status(200).json({ success: true, ...parsed, waiting_status: { waitDays, daysSince, daysLeft, waitExpired }, live_data_used: liveContent.length > 0 });
@@ -515,10 +523,99 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let parsed: any = {};
       try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) { /* ignore */ }
 
+      void extractAndSaveLearning("task_execution_auto", projectId || context?.project?.id || null,
+        [`Task: ${card.title} [${card.type}] — Quality: ${parsed.quality_score}/100`,
+         `Worked: ${(parsed.what_worked||[]).join(" | ")}`,
+         `Missed: ${(parsed.what_missed||[]).join(" | ")}`,
+         `Redo: ${parsed.redo_reason||""}`,
+         `Output preview: ${String(executedOutput).slice(0, 500)}`].join("\n"),
+        { card_type: card.type, card_title: card.title, context_summary: `${card.type} evaluated — quality ${parsed.quality_score}/100` }
+      );
 
       return res.status(200).json({ success: true, evaluation: parsed });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /* ─── CHECK DATA SYNC ─── */
+  if (action === "check_sync") {
+    const { project_id } = req.body;
+    if (!project_id) return res.status(400).json({ error: "project_id required" });
+
+    const issues: string[] = [];
+    const info:   string[] = [];
+
+    try {
+      // 1. Check project exists
+      const { data: proj } = await sb.from("projects").select("id,name,playground_canvas").eq("id", project_id).single();
+      if (!proj) return res.status(404).json({ error: "Project not found" });
+      info.push(`Project: ${proj.name}`);
+
+      // 2. Check canvas cards
+      let canvasCount = 0;
+      if (proj.playground_canvas) {
+        try {
+          const blocks = typeof proj.playground_canvas === "string"
+            ? JSON.parse(proj.playground_canvas) : proj.playground_canvas;
+          canvasCount = Array.isArray(blocks) ? blocks.length : 0;
+          info.push(`Canvas: ${canvasCount} cards`);
+        } catch (_e) { issues.push("Canvas JSON is malformed — playground_canvas cannot be parsed"); }
+      } else {
+        issues.push("Canvas is empty — no cards exist for this project");
+      }
+
+      // 3. Check metrics
+      const { data: metrics } = await sb.from("metrics").select("id,created_at,llm_visibility,algorithm_health").eq("project_id", project_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (!metrics) {
+        issues.push("No metrics recorded — run an audit first to populate the metrics table");
+      } else {
+        const age = Math.floor((Date.now() - new Date(metrics.created_at).getTime()) / (1000*60*60*24));
+        info.push(`Metrics: LLM ${metrics.llm_visibility}/100 | Health ${metrics.algorithm_health}/100 | Age ${age} days`);
+        if (age > 14) issues.push(`Metrics are ${age} days old — consider running a fresh audit`);
+      }
+
+      // 4. Check project_knowledge (DataRoom context)
+      const { count: pkCount } = await sb.from("project_knowledge").select("id", { count: "exact", head: true }).eq("project_id", project_id);
+      if (!pkCount || pkCount === 0) {
+        issues.push("DataRoom is empty — project_knowledge has no entries. Fill the DataRoom to give Brain context.");
+      } else {
+        info.push(`DataRoom: ${pkCount} knowledge entries`);
+      }
+
+      // 5. Check task_executions
+      const { count: teCount } = await sb.from("task_executions").select("id", { count: "exact", head: true }).eq("project_id", project_id);
+      info.push(`Task executions: ${teCount || 0}`);
+
+      // 6. Check brain_learnings
+      try {
+        const { count: blCount } = await sb.from("brain_learnings").select("id", { count: "exact", head: true }).eq("project_id", project_id);
+        const { count: pendingCount } = await sb.from("brain_learnings").select("id", { count: "exact", head: true }).eq("project_id", project_id).eq("status", "pending_review");
+        info.push(`Learnings: ${blCount || 0} total, ${pendingCount || 0} pending review`);
+      } catch (_e) {
+        issues.push("brain_learnings status column missing — run migration-brain-v2.sql in Supabase SQL Editor");
+      }
+
+      // 7. Check audit_reports
+      const { count: arCount } = await sb.from("audit_reports").select("id", { count: "exact", head: true }).eq("project_id", project_id);
+      info.push(`Audit reports: ${arCount || 0}`);
+
+      // 8. Check algorithm_knowledge linked to project
+      const { count: akCount } = await sb.from("algorithm_knowledge").select("id", { count: "exact", head: true }).eq("project_id", project_id);
+      info.push(`Algorithm intel: ${akCount || 0} topic analyses for this project`);
+
+      return res.status(200).json({
+        success: true,
+        project: proj.name,
+        issues,
+        info,
+        healthy: issues.length === 0,
+        summary: issues.length === 0
+          ? "All data is synced correctly."
+          : `Found ${issues.length} sync issue${issues.length > 1 ? "s" : ""} that need attention.`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   }
 
