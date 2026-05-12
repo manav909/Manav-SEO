@@ -23,7 +23,7 @@ async function fetchUrl(url: string): Promise<string> {
       signal: AbortSignal.timeout(18000),
     });
     return r.ok ? (await r.text()).slice(0, 3000) : "";
-  } catch { return ""; }
+  } catch (_e) { return ""; }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -315,8 +315,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
   } catch (outerErr: any) {
-    try { res.write(`\nError: ${outerErr.message}`); } catch { /* already closed */ }
+    try { res.write(`\nError: ${outerErr.message}`); } catch (_e) { /* already closed */ }
   } finally {
-    try { res.end(); } catch { /* already ended */ }
+    try { res.end(); } catch (_e) { /* already ended */ }
   }
 }
