@@ -743,21 +743,28 @@ export default function GuestTour() {
             <sec.Icon size={9} style={{color:sec.color}}/>
           </div>
 
-          <div style={{flex:1,overflow:"auto",padding:"10px 11px",display:"flex",flexDirection:"column",gap:7}}>
-            {msgs.length===0&&(
-              <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(6,182,212,0.09)",borderRadius:"4px 11px 11px 11px",padding:"10px 12px"}}>
-                <p style={{fontSize:10,color:"rgba(255,255,255,0.68)",lineHeight:1.75,margin:0,whiteSpace:"pre-wrap"}}>{nar}{!narDone&&<span style={{animation:"blink 0.8s step-end infinite",color:"#6366f1"}}>|</span>}</p>
-              </div>
+          {/* ── FIXED: narration + section capsules — ALWAYS visible ── */}
+          <div style={{flexShrink:0,padding:"10px 11px",borderBottom:msgs.length>0?"1px solid rgba(255,255,255,0.06)":"none"}}>
+            <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(6,182,212,0.09)",borderRadius:"4px 11px 11px 11px",padding:"9px 12px",marginBottom:narDone?7:0}}>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.68)",lineHeight:1.75,margin:0,whiteSpace:"pre-wrap"}}>{nar}{!narDone&&<span style={{animation:"blink 0.8s step-end infinite",color:"#6366f1"}}>|</span>}</p>
+            </div>
+            {narDone&&(
+              <>
+                <div style={{display:"flex",gap:5,marginBottom:6}}>
+                  {step>0&&<button onClick={()=>goStep(step-1)} style={{display:"flex",alignItems:"center",gap:3,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:7,padding:"5px 9px",color:"rgba(255,255,255,0.38)",fontSize:8,fontFamily:"monospace",cursor:"pointer"}}><ChevronLeft size={9}/>Back</button>}
+                  {step<SECTIONS.length-1
+                    ? <button onClick={()=>goStep(step+1)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:3,background:"linear-gradient(135deg,rgba(99,102,241,0.15),rgba(79,70,229,0.1))",border:"1px solid rgba(99,102,241,0.25)",borderRadius:7,padding:"6px",color:"#a5b4fc",fontSize:8,fontFamily:"monospace",cursor:"pointer",fontWeight:700}}>{SECTIONS[step+1].label}<ChevronRight size={9}/></button>
+                    : <button onClick={()=>setCta(true)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:3,background:"linear-gradient(135deg,#6366f1,#4f46e5)",border:"none",borderRadius:7,padding:"7px",color:"white",fontSize:8,fontFamily:"monospace",cursor:"pointer",fontWeight:700}}><Sparkles size={9}/>Get Started</button>
+                  }
+                </div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {(CAPSULES[sec.id]||[]).map((cap,i)=><button key={i} onClick={()=>tapCapsuleEx(cap.key)} style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.15)",borderRadius:12,padding:"3px 8px",fontSize:9,fontFamily:"monospace",color:"rgba(165,180,252,0.7)",cursor:"pointer"}}>{cap.label}</button>)}
+                </div>
+              </>
             )}
-            {msgs.length===0&&narDone&&(
-              <div style={{display:"flex",gap:5}}>
-                {step>0&&<button onClick={()=>goStep(step-1)} style={{display:"flex",alignItems:"center",gap:3,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:7,padding:"5px 9px",color:"rgba(255,255,255,0.38)",fontSize:8,fontFamily:"monospace",cursor:"pointer"}}><ChevronLeft size={9}/>Back</button>}
-                {step<SECTIONS.length-1
-                  ? <button onClick={()=>goStep(step+1)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:3,background:"linear-gradient(135deg,rgba(99,102,241,0.15),rgba(79,70,229,0.1))",border:"1px solid rgba(99,102,241,0.25)",borderRadius:7,padding:"6px",color:"#a5b4fc",fontSize:8,fontFamily:"monospace",cursor:"pointer",fontWeight:700}}>{SECTIONS[step+1].label}<ChevronRight size={9}/></button>
-                  : <button onClick={()=>setCta(true)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:3,background:"linear-gradient(135deg,#6366f1,#4f46e5)",border:"none",borderRadius:7,padding:"7px",color:"white",fontSize:8,fontFamily:"monospace",cursor:"pointer",fontWeight:700}}><Sparkles size={9}/>Get Started</button>
-                }
-              </div>
-            )}
+          </div>
+          {/* ── SCROLLABLE: chat messages ── */}
+          <div style={{flex:1,overflow:"auto",padding:"8px 11px",display:"flex",flexDirection:"column",gap:6}}>
             {msgs.map((m,idx)=>(
               <div key={idx}>
                 <div style={{display:"flex",alignItems:"flex-start",gap:6,justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
@@ -774,11 +781,6 @@ export default function GuestTour() {
                 )}
               </div>
             ))}
-            {msgs.length===0&&narDone&&(
-              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                {(CAPSULES[sec.id]||[]).map((cap,i)=><button key={i} onClick={()=>tapCapsuleEx(cap.key)} style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.15)",borderRadius:12,padding:"4px 9px",fontSize:9,fontFamily:"monospace",color:"rgba(165,180,252,0.7)",cursor:"pointer"}}>{cap.label}</button>)}
-              </div>
-            )}
             {(msgs.some(m=>m.text.includes("Paste your URL"))||phase==="collecting")&&(
               <div style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:9,padding:"10px",marginTop:4}}>
                 <div style={{fontSize:8,fontFamily:"monospace",color:"rgba(165,180,252,0.7)",marginBottom:6,display:"flex",alignItems:"center",gap:4}}><Activity size={9}/>LIVE ANALYSIS</div>
