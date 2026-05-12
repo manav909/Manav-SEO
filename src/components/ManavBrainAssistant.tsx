@@ -127,7 +127,7 @@ function parseActions(text: string): ParsedAction[] {
   const out: ParsedAction[] = [];
   let m;
   while ((m = re.exec(text)) !== null) {
-    try { out.push(JSON.parse(m[1].trim())); } catch { /* skip */ }
+    try { out.push(JSON.parse(m[1].trim())); } catch (_e) { /* skip */ }
   }
   return out;
 }
@@ -286,7 +286,7 @@ export default function ManavBrainAssistant() {
     /* ── Override window.fetch to catch 5xx errors ── */
     window.fetch = async function monitoredFetch(...args: Parameters<typeof fetch>) {
       let url = '';
-      try { url = typeof args[0] === 'string' ? args[0] : (args[0] instanceof Request ? args[0].url : ''); } catch { /* ignore */ }
+      try { url = typeof args[0] === 'string' ? args[0] : (args[0] instanceof Request ? args[0].url : ''); } catch (_e) { /* ignore */ }
 
       try {
         const res = await origFetch(...args);
@@ -294,7 +294,7 @@ export default function ManavBrainAssistant() {
         // Only alert on OUR API routes with 5xx — read body for better diagnosis
         if (url.includes('/api/') && res.status >= 500) {
           let body = '';
-          try { const cloned = res.clone(); body = (await cloned.text()).slice(0, 400); } catch { /* silent */ }
+          try { const cloned = res.clone(); body = (await cloned.text()).slice(0, 400); } catch (_e) { /* silent */ }
 
           window.dispatchEvent(new CustomEvent('manav-brain-error', {
             detail: { type: 'api_error', url, status: res.status,
@@ -386,7 +386,7 @@ export default function ManavBrainAssistant() {
         } else {
           setSchemaOk(true);
         }
-      } catch { /* silent */ }
+      } catch (_e) { /* silent */ }
     };
     setTimeout(check, 3000);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -480,7 +480,7 @@ export default function ManavBrainAssistant() {
       });
       const d = await r.json().catch(() => ({}));
       next['task-engine'] = d.healthy ? 'ok' : 'error';
-    } catch { next['task-engine'] = 'error'; }
+    } catch (_e) { next['task-engine'] = 'error'; }
 
     // Algorithm intel health check
     try {
@@ -490,13 +490,13 @@ export default function ManavBrainAssistant() {
         signal: AbortSignal.timeout(6000),
       });
       next['algorithm-intel'] = r.ok ? 'ok' : 'error';
-    } catch { next['algorithm-intel'] = 'error'; }
+    } catch (_e) { next['algorithm-intel'] = 'error'; }
 
     // Supabase direct check (uses supabase client, not fetch override)
     try {
       const { error } = await supabase.from('brain_learnings').select('id').limit(1);
       next['supabase'] = error ? 'error' : 'ok';
-    } catch { next['supabase'] = 'error'; }
+    } catch (_e) { next['supabase'] = 'error'; }
 
     setApiStatus(next);
     setLastScan(new Date());
@@ -529,10 +529,10 @@ export default function ManavBrainAssistant() {
       // Try with new columns; fallback gracefully
       try {
         await supabase.from('brain_learnings').insert({ ...row, status: 'active', auto_captured: true, confidence_score: 98 });
-      } catch {
+      } catch (_e) {
         await supabase.from('brain_learnings').insert(row);
       }
-    } catch { /* silent */ }
+    } catch (_e) { /* silent */ }
   }, [selProj]);
 
   const logHealAction = useCallback(async (errMsg: string, fix: string, actions: string[]) => {
@@ -550,10 +550,10 @@ export default function ManavBrainAssistant() {
       };
       try {
         await supabase.from('brain_learnings').insert({ ...row, status: 'active', auto_captured: true, confidence_score: 95 });
-      } catch {
+      } catch (_e) {
         await supabase.from('brain_learnings').insert(row);
       }
-    } catch { /* silent */ }
+    } catch (_e) { /* silent */ }
   }, [selProj]);
 
   const logConversation = useCallback(async (userMsg: string, brainResp: string, actions: ParsedAction[]) => {
@@ -572,10 +572,10 @@ export default function ManavBrainAssistant() {
       };
       try {
         await supabase.from('brain_learnings').insert({ ...row, status: 'active', auto_captured: true, confidence_score: 90 });
-      } catch {
+      } catch (_e) {
         await supabase.from('brain_learnings').insert(row);
       }
-    } catch { /* silent */ }
+    } catch (_e) { /* silent */ }
   }, [selProj]);
 
   /* ───────────────────────────────────────────────────────────────
@@ -597,7 +597,7 @@ export default function ManavBrainAssistant() {
         setPending(all.filter((l: any) => l.status === 'pending_review').length);
       }
       if (algoD.success) setAlgoItems(algoD.items || []);
-    } catch { /* silent — context load failure is non-fatal */ }
+    } catch (_e) { /* silent — context load failure is non-fatal */ }
   }, [selProj, brainFetch]);
 
   /* ───────────────────────────────────────────────────────────────
