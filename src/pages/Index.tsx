@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AuthModal from '@/components/AuthModal';
 import { SeoEngine } from '@/components/SeoEngine';
+import ManavBrainGuest from '@/components/ManavBrainGuest';
 import {
   Star, Brain, ShieldCheck, CheckCircle, Globe,
   BarChart3, Zap, ArrowRight, Lock, LogOut,
@@ -550,6 +551,9 @@ export default function Index() {
           <div style={{fontSize:10,color:'rgba(255,255,255,0.18)'}}>© 2026 SEO Season</div>
         </div>
       </footer>
+
+      {/* Manav Brain Guest — only shown when user is not logged in */}
+      {(!user || !isApproved) && <ManavBrainGuest />}
     </div>
   );
 }
