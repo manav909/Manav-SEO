@@ -202,6 +202,18 @@ function MsgBubble({ msg, onAction }: { msg: BrainMsg; onAction: (a: ParsedActio
           </div>
         )}
         {msg.results?.map((r,i) => <ActionCard key={i} result={r}/>)}
+        {msg.role==='brain' && stripActions(msg.content).length > 150 && (
+          <button onClick={async()=>{
+            const res = await brainFetch('/api/task-engine',{method:'POST',headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({action:'desk_save',project_id:selProj||null,
+                title:`Brain: ${msg.ts.toLocaleDateString()} ${msg.ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`,
+                content_type:'text',content:stripActions(msg.content),source:'brain_chat'})});
+            const d=await res.json().catch(()=>({}));
+            if(d.success){setDeskItems(p=>[d.item,...p]);alert('Saved to Desk ✓');}
+          }} style={{marginTop:5,background:'rgba(16,185,129,0.06)',border:'1px solid rgba(16,185,129,0.15)',borderRadius:5,padding:'2px 8px',fontSize:7,fontFamily:'monospace',color:'rgba(52,211,153,0.6)',cursor:'pointer',display:'flex',alignItems:'center',gap:3}}>
+            <FileText size={7}/> Save to Desk
+          </button>
+        )}
         {msg.truncated && <p style={{fontSize:8,color:'rgba(251,191,36,0.5)',fontFamily:'monospace',margin:'4px 0 0'}}>⚠ Truncated — auto-continuing…</p>}
       </div>
       <span style={{fontSize:7,color:'rgba(255,255,255,0.1)',paddingLeft:isUser?0:2,paddingRight:isUser?2:0}}>{msg.ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
@@ -236,6 +248,8 @@ export default function ManavBrainAssistant() {
   const [attachments, setAttachments]   = useState<{type:string;data:string;mediaType:string;name:string}[]>([]);
   const [isSearching, setIsSearching]   = useState(false);
   const [inlineCharts,setInlineCharts]  = useState<Record<string,any>>({});
+  const [deskItems,  setDeskItems]       = useState<any[]>([]);
+  const [deskSaving, setDeskSaving]      = useState<string|null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending,  setPending]  = useState(0);
   const [suggIdx,  setSuggIdx]  = useState(0);
@@ -643,46 +657,33 @@ export default function ManavBrainAssistant() {
   const loadContext = useCallback(async () => {
     if (!selProj) return;
     try {
-      const [ctxR, learnR, algoR] = await Promise.all([
-        brainFetch('/api/control',        { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'get_context', projectId: selProj }) }),
-        brainFetch('/api/task-engine',    { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'get_all_learnings', project_id: selProj }) }),
-        brainFetch('/api/algorithm-intel',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'get_all' }) }),
+      // Load everything in parallel
+      const [fullCtxR, ctxR] = await Promise.all([
+        brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action: 'get_full_context', project_id: selProj }) }),
+        brainFetch('/api/control',     { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action: 'get_context', projectId: selProj }) }),
       ]);
-      const [ctxD, learnD, algoD] = await Promise.all([ctxR.json().catch(()=>({})), learnR.json().catch(()=>({})), algoR.json().catch(()=>({}))]);
-      if (ctxD.success)   setCtx(ctxD.context);
-      if (learnD.success) {
-        const all = learnD.learnings || [];
-        setLearnings(all.filter((l: any) => !l.status || l.status === 'active'));
-        setPending(all.filter((l: any) => l.status === 'pending_review').length);
-      }
-      if (algoD.success) setAlgoItems(algoD.items || []);
+      const [fullCtxD, ctxD] = await Promise.all([fullCtxR.json().catch(()=>({})), ctxR.json().catch(()=>({}))]);
 
-      // ── Load canvas blocks directly from Supabase ──
-      const { data: projRow } = await supabase
-        .from('projects')
-        .select('playground_canvas, playground_strategy, name')
-        .eq('id', selProj)
-        .single();
-      if (projRow?.playground_canvas) {
+      // Project context from control
+      if (ctxD.success) setCtx(ctxD.context);
+
+      // Full context from task-engine
+      if (fullCtxD.success) {
+        const fc = fullCtxD.context;
+        setLearnings((fc.learnings || []).filter((l:any) => !l.status || l.status === 'active'));
+        setPending((fullCtxD.context?.learnings || []).filter((l:any) => l.status === 'pending_review').length);
+        setAlgoItems(fc.algorithmIntel || []);
+        setDeskItems(fc.deskItems || []);
+        if (fc.metrics) setMetrics(fc.metrics);
+        // Canvas blocks
         try {
-          const blocks = typeof projRow.playground_canvas === 'string'
-            ? JSON.parse(projRow.playground_canvas)
-            : projRow.playground_canvas;
+          const blocks = fc.canvas || [];
           setCanvasBlocks(Array.isArray(blocks) ? blocks : []);
         } catch (_e) { setCanvasBlocks([]); }
-      } else { setCanvasBlocks([]); }
-
-      // ── Load latest metrics ──
-      const { data: metRow } = await supabase
-        .from('metrics')
-        .select('*')
-        .eq('project_id', selProj)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (metRow) setMetrics(metRow);
-
-    } catch (_e) { /* silent — context load failure is non-fatal */ }
+      }
+    } catch (_e) { /* silent */ }
   }, [selProj, brainFetch]);
 
   /* ───────────────────────────────────────────────────────────────
@@ -837,6 +838,27 @@ export default function ManavBrainAssistant() {
           break;
         }
 
+        case 'save_to_desk': {
+          if (!selProj) { upd('error', 'No project selected'); break; }
+          setDeskSaving(action.title || 'Saving...');
+          const res2 = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              action: 'desk_save', project_id: selProj,
+              title:        action.title || 'Brain Note',
+              content_type: action.contentType || 'text',
+              content:      action.content || '',
+              metadata:     action.metadata || {},
+              tags:         action.tags || [],
+              source:       'brain',
+            }) });
+          const data = await res2.json().catch(()=>({}));
+          setDeskSaving(null);
+          if (data.error) { upd('error', data.error); break; }
+          setDeskItems(prev => [data.item, ...prev]);
+          upd('done', `Saved to Desk: "${action.title || 'Brain Note'}"`);
+          break;
+        }
+
         case 'fetch_url': {
           upd('running', `Fetching ${action.url}...`);
           const res2 = await brainFetch('/api/intelligence', { method:'POST', headers:{'Content-Type':'application/json'},
@@ -897,7 +919,8 @@ export default function ManavBrainAssistant() {
           projectSummary: summary || 'No project selected', role: 'senior_seo',
           brainAssistantContext: {
             projectContext: ctx, learnings: learnings.slice(0, 12),
-            algoItems: algoItems.slice(0, 8), canvasBlocks: canvasBlocks.slice(0, 30), metrics, history,
+            algoItems: algoItems.slice(0, 8), canvasBlocks: canvasBlocks.slice(0, 50),
+            metrics, deskItems: deskItems.slice(0, 10), history,
             codeContent: codeSnippet || undefined,
           },
         }),
@@ -1021,6 +1044,9 @@ export default function ManavBrainAssistant() {
             </div>
             {alertCount>0 && <div style={{background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.35)',borderRadius:10,padding:'1px 6px',fontSize:7,fontFamily:'monospace',color:'#fca5a5',flexShrink:0,animation:'alertBadge 0.8s ease-in-out infinite alternate'}}>{alertCount} ERR</div>}
             {alertCount===0 && pending>0 && <div style={{background:'rgba(251,191,36,0.12)',border:'1px solid rgba(251,191,36,0.28)',borderRadius:10,padding:'1px 6px',fontSize:7,fontFamily:'monospace',color:'#fbbf24',flexShrink:0}}>{pending} P</div>}
+            <button onClick={()=>navigate('/desk')} title="Open Desk" style={{background:deskItems.length>0?'rgba(16,185,129,0.08)':'none',border:'none',cursor:'pointer',color:deskItems.length>0?'rgba(52,211,153,0.7)':'rgba(255,255,255,0.18)',padding:3,display:'flex',alignItems:'center',gap:2,fontSize:7,fontFamily:'monospace'}}>
+              <FileText size={10}/>{deskItems.length>0&&<span style={{fontSize:6}}>{deskItems.length}</span>}
+            </button>
             <button onClick={()=>setExpanded(e=>!e)} style={{background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.18)',padding:3,display:'flex'}}>{expanded?<Minimize2 size={11}/>:<Maximize2 size={11}/>}</button>
             <button onClick={()=>setOpen(false)} style={{background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.22)',padding:3,display:'flex'}}><X size={13}/></button>
           </div>
@@ -1190,6 +1216,7 @@ export default function ManavBrainAssistant() {
               {/* Quick actions */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:'auto'}}>
                 {[
+                  {label:'Open Desk',         icon:FileText, fn:()=>navigate('/desk')},
                   {label:'Full Diagnosis',    icon:Shield, fn:()=>{setTab('chat');sendMsgInternal('Run a complete system diagnosis. Check all APIs, the database schema, environment variables, and code imports. List every issue you find and provide the exact fix for each.',true);}},
                   {label:'Fix 500 Errors',    icon:Zap,    fn:()=>{setTab('chat');sendMsgInternal('The task-engine and algorithm-intel APIs are returning HTTP 500 errors. Diagnose the exact cause — check for: missing migration columns, dynamic import issues in ai-cache.ts, missing env vars. Provide the exact fix.',true);}},
                   {label:'Migration Check',   icon:Database,fn:()=>{setTab('chat');sendMsgInternal('Check if migration-brain-v2.sql has been run. Tell me exactly how to verify it and how to run it if needed.',true);}},
