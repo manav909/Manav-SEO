@@ -1,50 +1,342 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  Brain, TrendingUp, Zap, RefreshCw, Loader2, Search,
-  X, ChevronDown, ChevronRight, CheckCircle, AlertTriangle,
-  RotateCcw, Sparkles, BookOpen, Star, Filter, Trash2, Edit2,
+  Brain, Zap, RefreshCw, Search, X, ChevronDown, ChevronRight,
+  CheckCircle, AlertTriangle, RotateCcw, Star, Trash2, Edit2,
+  Shield, Activity, Database, Eye, EyeOff, Filter,
+  TrendingUp, Target, Globe, FileText, Cpu,
 } from 'lucide-react';
 import PortalNav from '@/components/PortalNav';
 import { toast } from '@/hooks/use-toast';
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, AreaChart, Area, XAxis, Tooltip } from 'recharts';
 
+/* ─── Types ─── */
 interface Learning {
-  id:              string;
-  project_id:      string | null;
-  card_type:       string;
-  card_title:      string;
-  what_worked:     string[];
-  what_missed:     string[];
-  redo_reason:     string | null;
-  improvement:     string | null;
-  context_summary: string | null;
-  tags:            string[];
-  source:          string;
-  applied_count:   number;
-  created_at:      string;
+  id:               string;
+  project_id:       string | null;
+  card_type:        string;
+  card_title:       string;
+  what_worked:      string[];
+  what_missed:      string[];
+  redo_reason:      string | null;
+  improvement:      string | null;
+  context_summary:  string | null;
+  tags:             string[];
+  source:           string;
+  applied_count:    number;
+  status:           'pending_review' | 'active' | 'rejected';
+  auto_captured:    boolean;
+  confidence_score: number;
+  created_at:       string;
+  updated_at:       string;
 }
 
-const CARD_TYPE_LABEL: Record<string,string> = {
-  content:    'Content', technical: 'Technical', geo: 'GEO / AI',
-  'quick-win': 'Quick Win', competitive: 'Competitive', weekly: 'Strategy',
-  general:    'General',
+/* ─── Config maps ─── */
+const SOURCE_META: Record<string, { label: string; color: string; icon: any; dim: string }> = {
+  task_execution:       { label: 'Task Execution',   color: '#6366f1', icon: Zap,      dim: 'strategy'     },
+  task_execution_auto:  { label: 'Task Auto-Eval',   color: '#8b5cf6', icon: Brain,    dim: 'strategy'     },
+  verify_outcome:       { label: 'Verification',     color: '#10b981', icon: Shield,   dim: 'strategy'     },
+  strategy_generation:  { label: 'Strategy Gen',     color: '#f59e0b', icon: Target,   dim: 'strategy'     },
+  pipeline_intelligence:{ label: 'Pipeline Intel',   color: '#3b82f6', icon: Activity, dim: 'strategy'     },
+  deep_dive_analysis:   { label: 'Deep Dive',        color: '#a78bfa', icon: Database, dim: 'strategy'     },
+  audit_streaming:      { label: 'Audit Analysis',   color: '#06b6d4', icon: FileText, dim: 'technical'    },
+  document_extraction:  { label: 'Doc Extraction',   color: '#14b8a6', icon: FileText, dim: 'technical'    },
+  seo_agent_audit:      { label: 'SEO Agent',        color: '#f97316', icon: Globe,    dim: 'technical'    },
+  algorithm_intel:      { label: 'Algorithm Intel',  color: '#ec4899', icon: Cpu,      dim: 'general'      },
+  crawl_analysis:       { label: 'Crawl Analysis',   color: '#84cc16', icon: Globe,    dim: 'technical'    },
 };
 
-const CARD_TYPE_COLOR: Record<string,string> = {
-  content:    'bg-blue-400/10 border-blue-400/25 text-blue-400',
-  technical:  'bg-orange-400/10 border-orange-400/25 text-orange-400',
-  geo:        'bg-violet-400/10 border-violet-400/25 text-violet-400',
-  'quick-win':'bg-green-400/10 border-green-400/25 text-green-400',
-  competitive:'bg-red-400/10 border-red-400/25 text-red-400',
-  weekly:     'bg-cyan-400/10 border-cyan-400/25 text-cyan-400',
-  general:    'bg-secondary border-border text-muted-foreground',
+const CARD_TYPE_DIM: Record<string, string> = {
+  technical:   'technical', 'quick-win': 'technical',
+  content:     'content',   geo: 'geo',
+  competitive: 'competitive', insight: 'strategy',
+  weekly:      'strategy',  strategy: 'strategy', general: 'strategy',
+  audit:       'technical',
 };
+
+const DIM_CONFIG = [
+  { key: 'technical',    label: 'Technical',    color: '#06b6d4', glow: 'rgba(6,182,212,0.3)' },
+  { key: 'content',      label: 'Content',      color: '#facc15', glow: 'rgba(250,204,21,0.3)' },
+  { key: 'geo',          label: 'GEO / AI',     color: '#6366f1', glow: 'rgba(99,102,241,0.3)' },
+  { key: 'competitive',  label: 'Competitive',  color: '#f97316', glow: 'rgba(249,115,22,0.3)' },
+  { key: 'strategy',     label: 'Strategy',     color: '#10b981', glow: 'rgba(16,185,129,0.3)' },
+];
 
 function daysAgo(iso: string) {
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-  return d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d}d ago`;
+  return d === 0 ? 'today' : d === 1 ? '1d ago' : `${d}d ago`;
 }
 
+function getLearningDim(l: Learning): string {
+  return CARD_TYPE_DIM[l.card_type] || SOURCE_META[l.source]?.dim || 'strategy';
+}
+
+function calcIntelligenceLevel(learnings: Learning[]): number {
+  const active = learnings.filter(l => l.status === 'active');
+  if (active.length === 0) return 0;
+  const score = active.reduce((s, l) => s + (l.confidence_score || 75) * (1 + (l.applied_count || 0) * 0.1), 0);
+  return Math.min(100, Math.round(score / 15));
+}
+
+function calcDimScores(learnings: Learning[]): Record<string, number> {
+  const active = learnings.filter(l => l.status === 'active');
+  const scores: Record<string, { total: number; count: number }> = {};
+  DIM_CONFIG.forEach(d => { scores[d.key] = { total: 0, count: 0 }; });
+  for (const l of active) {
+    const dim = getLearningDim(l);
+    if (scores[dim]) {
+      scores[dim].total += (l.confidence_score || 75) * (1 + (l.applied_count || 0) * 0.05);
+      scores[dim].count++;
+    }
+  }
+  const result: Record<string, number> = {};
+  for (const [key, val] of Object.entries(scores)) {
+    result[key] = val.count === 0 ? 0 : Math.min(100, Math.round(val.total / val.count));
+  }
+  return result;
+}
+
+/* ─── Animated background grid ─── */
+function NeuralBackground() {
+  return (
+    <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{zIndex:0}}>
+      {/* Dark base */}
+      <div style={{position:'absolute',inset:0,background:'#030712'}}/>
+      {/* Grid lines */}
+      <svg style={{position:'absolute',inset:0,width:'100%',height:'100%',opacity:0.08}}>
+        <defs>
+          <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+            <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#00d4ff" strokeWidth="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)"/>
+      </svg>
+      {/* Radial glow at center */}
+      <div style={{position:'absolute',inset:0,background:'radial-gradient(ellipse 60% 40% at 50% 20%, rgba(99,102,241,0.08) 0%, transparent 70%)'}}/>
+    </div>
+  );
+}
+
+/* ─── Circular score gauge ─── */
+function CircleGauge({ value, max = 100, color, size = 80, label, sublabel }: {
+  value: number; max?: number; color: string; size?: number; label: string; sublabel?: string;
+}) {
+  const pct = Math.min(1, value / max);
+  const r   = (size - 10) / 2;
+  const circ= 2 * Math.PI * r;
+  const dash= circ * pct;
+  return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+      <div style={{position:'relative',width:size,height:size}}>
+        <svg width={size} height={size} style={{transform:'rotate(-90deg)'}}>
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6"/>
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="6"
+            strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
+            style={{filter:`drop-shadow(0 0 6px ${color})`, transition:'stroke-dasharray 0.8s ease'}}/>
+        </svg>
+        <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+          <span style={{fontSize:size>70?18:13,fontWeight:900,color,fontFamily:'monospace',lineHeight:1}}>{value}</span>
+          {size > 70 && <span style={{fontSize:9,color:'rgba(255,255,255,0.4)',marginTop:1}}>/ {max}</span>}
+        </div>
+      </div>
+      <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',fontFamily:'monospace',textTransform:'uppercase',letterSpacing:'0.05em',textAlign:'center'}}>{label}</span>
+      {sublabel && <span style={{fontSize:9,color:'rgba(255,255,255,0.3)',textAlign:'center'}}>{sublabel}</span>}
+    </div>
+  );
+}
+
+/* ─── Status badge ─── */
+function StatusBadge({ status }: { status: string }) {
+  const cfg = {
+    active:         { bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.4)', color: '#10b981', label: '● ACTIVE' },
+    pending_review: { bg: 'rgba(251,191,36,0.15)', border: 'rgba(251,191,36,0.4)', color: '#fbbf24', label: '◌ PENDING' },
+    rejected:       { bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.25)', color: '#ef4444', label: '✕ REJECTED' },
+  }[status] || { bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', color: '#fff', label: status.toUpperCase() };
+  return (
+    <span style={{background:cfg.bg,border:`1px solid ${cfg.border}`,color:cfg.color,fontSize:9,fontFamily:'monospace',padding:'2px 6px',borderRadius:3,letterSpacing:'0.08em',fontWeight:700}}>
+      {cfg.label}
+    </span>
+  );
+}
+
+/* ─── Source badge ─── */
+function SourceBadge({ source }: { source: string }) {
+  const meta = SOURCE_META[source] || { label: source, color: '#94a3b8', icon: Brain };
+  const Icon = meta.icon;
+  return (
+    <span style={{display:'inline-flex',alignItems:'center',gap:4,background:`${meta.color}18`,border:`1px solid ${meta.color}30`,color:meta.color,fontSize:9,fontFamily:'monospace',padding:'2px 6px',borderRadius:3,letterSpacing:'0.06em',fontWeight:600}}>
+      <Icon size={8}/>{meta.label.toUpperCase()}
+    </span>
+  );
+}
+
+/* ─── Individual learning card ─── */
+function LearningCard({ l, onApprove, onReject, onDelete, onEdit, onDeactivate }: {
+  l: Learning;
+  onApprove:    (id: string) => void;
+  onReject:     (id: string) => void;
+  onDelete:     (id: string) => void;
+  onEdit:       (l: Learning) => void;
+  onDeactivate: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const dim    = getLearningDim(l);
+  const dimCfg = DIM_CONFIG.find(d => d.key === dim) || DIM_CONFIG[4];
+
+  return (
+    <div
+      style={{
+        background: l.status === 'pending_review'
+          ? 'rgba(251,191,36,0.04)'
+          : l.status === 'rejected'
+          ? 'rgba(239,68,68,0.03)'
+          : 'rgba(255,255,255,0.03)',
+        border: l.status === 'pending_review'
+          ? '1px solid rgba(251,191,36,0.2)'
+          : l.status === 'rejected'
+          ? '1px solid rgba(239,68,68,0.15)'
+          : `1px solid ${dimCfg.color}22`,
+        borderRadius: 12,
+        overflow: 'hidden',
+        transition: 'all 0.2s',
+      }}
+    >
+      {/* Card header */}
+      <div
+        style={{padding:'12px 16px',cursor:'pointer',display:'flex',alignItems:'flex-start',gap:12}}
+        onClick={() => setExpanded(e => !e)}
+      >
+        {/* Confidence ring */}
+        <CircleGauge value={l.confidence_score || 75} color={dimCfg.color} size={48} label="" />
+
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:6,marginBottom:6}}>
+            <StatusBadge status={l.status}/>
+            <SourceBadge source={l.source}/>
+            {l.applied_count > 0 && (
+              <span style={{background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.25)',color:'#10b981',fontSize:9,padding:'2px 6px',borderRadius:3,fontFamily:'monospace',fontWeight:700}}>
+                ⚡ ×{l.applied_count} DEPLOYED
+              </span>
+            )}
+            {l.auto_captured && (
+              <span style={{background:'rgba(99,102,241,0.1)',border:'1px solid rgba(99,102,241,0.2)',color:'#a5b4fc',fontSize:9,padding:'2px 5px',borderRadius:3,fontFamily:'monospace'}}>
+                AUTO
+              </span>
+            )}
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.2)',fontFamily:'monospace',marginLeft:'auto'}}>{daysAgo(l.created_at)}</span>
+          </div>
+          <div style={{fontSize:13,fontWeight:700,color:'#f1f5f9',marginBottom:4,lineHeight:1.3}}>{l.card_title}</div>
+          {l.improvement && (
+            <p style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.5,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
+              {l.improvement}
+            </p>
+          )}
+        </div>
+
+        <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}} onClick={e => e.stopPropagation()}>
+          {l.status === 'active' && (
+            <>
+              <button onClick={() => onEdit(l)} style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'rgba(255,255,255,0.4)'}}>
+                <Edit2 size={10}/>
+              </button>
+              <button onClick={() => onDeactivate(l.id)} style={{background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:6,width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#fbbf24'}} title="Move to review">
+                <Eye size={10}/>
+              </button>
+              <button onClick={() => onDelete(l.id)} style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:6,width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#ef4444'}}>
+                <Trash2 size={10}/>
+              </button>
+            </>
+          )}
+          {l.status === 'rejected' && (
+            <>
+              <button onClick={() => onApprove(l.id)} style={{background:'rgba(16,185,129,0.1)',border:'1px solid rgba(16,185,129,0.3)',borderRadius:6,padding:'4px 10px',cursor:'pointer',color:'#10b981',fontSize:10,fontFamily:'monospace',fontWeight:700}}>
+                RESTORE
+              </button>
+              <button onClick={() => onDelete(l.id)} style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:6,width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#ef4444'}}>
+                <Trash2 size={10}/>
+              </button>
+            </>
+          )}
+          <div style={{color:'rgba(255,255,255,0.2)',marginLeft:4}}>
+            {expanded ? <ChevronDown size={12}/> : <ChevronRight size={12}/>}
+          </div>
+        </div>
+      </div>
+
+      {/* Pending review action strip */}
+      {l.status === 'pending_review' && (
+        <div style={{borderTop:'1px solid rgba(251,191,36,0.15)',background:'rgba(251,191,36,0.04)',padding:'10px 16px',display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:10,color:'rgba(255,255,255,0.4)',fontFamily:'monospace',flex:1}}>
+            AUTO-CAPTURED INTELLIGENCE — REVIEW BEFORE ACTIVATING
+          </span>
+          <button
+            onClick={() => onReject(l.id)}
+            style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',borderRadius:6,padding:'5px 12px',cursor:'pointer',color:'#ef4444',fontSize:10,fontFamily:'monospace',fontWeight:700,display:'flex',alignItems:'center',gap:5}}
+          >
+            <X size={9}/>DISMISS
+          </button>
+          <button
+            onClick={() => onApprove(l.id)}
+            style={{background:'linear-gradient(135deg,rgba(16,185,129,0.2),rgba(6,182,212,0.2))',border:'1px solid rgba(16,185,129,0.4)',borderRadius:6,padding:'5px 14px',cursor:'pointer',color:'#10b981',fontSize:10,fontFamily:'monospace',fontWeight:700,display:'flex',alignItems:'center',gap:5,boxShadow:'0 0 12px rgba(16,185,129,0.2)'}}
+          >
+            <Zap size={9}/>INTEGRATE INTO BRAIN
+          </button>
+        </div>
+      )}
+
+      {/* Expanded details */}
+      {expanded && (
+        <div style={{borderTop:`1px solid ${dimCfg.color}15`,padding:'14px 16px',background:'rgba(0,0,0,0.2)'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:12}}>
+            {l.what_worked?.length > 0 && (
+              <div>
+                <div style={{fontSize:9,fontFamily:'monospace',color:'#10b981',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>WHAT WORKED</div>
+                {l.what_worked.map((w, i) => (
+                  <div key={i} style={{display:'flex',gap:6,alignItems:'flex-start',marginBottom:4}}>
+                    <CheckCircle size={9} style={{color:'#10b981',marginTop:2,flexShrink:0}}/>
+                    <span style={{fontSize:11,color:'rgba(255,255,255,0.5)',lineHeight:1.4}}>{w}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {l.what_missed?.length > 0 && (
+              <div>
+                <div style={{fontSize:9,fontFamily:'monospace',color:'#f97316',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>GAPS DETECTED</div>
+                {l.what_missed.map((w, i) => (
+                  <div key={i} style={{display:'flex',gap:6,alignItems:'flex-start',marginBottom:4}}>
+                    <AlertTriangle size={9} style={{color:'#f97316',marginTop:2,flexShrink:0}}/>
+                    <span style={{fontSize:11,color:'rgba(255,255,255,0.5)',lineHeight:1.4}}>{w}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {l.improvement && (
+            <div style={{background:`${dimCfg.color}0e`,border:`1px solid ${dimCfg.color}20`,borderRadius:8,padding:'10px 12px',marginBottom:10}}>
+              <div style={{fontSize:9,fontFamily:'monospace',color:dimCfg.color,marginBottom:5,textTransform:'uppercase',letterSpacing:'0.1em'}}>NEURAL IMPROVEMENT DIRECTIVE</div>
+              <p style={{fontSize:11,color:'rgba(255,255,255,0.6)',lineHeight:1.5,margin:0}}>{l.improvement}</p>
+            </div>
+          )}
+
+          {l.tags?.length > 0 && (
+            <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+              {l.tags.filter(t => t).slice(0, 6).map((t, i) => (
+                <span key={i} style={{fontSize:9,padding:'2px 6px',borderRadius:3,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.08)',color:'rgba(255,255,255,0.35)',fontFamily:'monospace'}}>
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═════════════════════════════════════════════════════
+   MAIN PAGE
+═════════════════════════════════════════════════════ */
 export default function BrainLearning() {
   const { clients, projects } = useAuth();
   const [selProjId, setSelProjId] = useState('');
@@ -53,391 +345,437 @@ export default function BrainLearning() {
 
   const [learnings,  setLearnings]  = useState<Learning[]>([]);
   const [loading,    setLoading]    = useState(false);
+  const [tab,        setTab]        = useState<'pending' | 'active' | 'rejected'>('pending');
+  const [dimFilter,  setDimFilter]  = useState('all');
   const [search,     setSearch]     = useState('');
-  const [filterType, setFilterType] = useState('');
-  const [expanded,   setExpanded]   = useState<Record<string,boolean>>({});
-  const [editing,    setEditing]    = useState<Record<string,{improvement:string;tags:string}>>({});
-  const [saving,     setSaving]     = useState<Record<string,boolean>>({});
-  const [deleting,   setDeleting]   = useState<Record<string,boolean>>({});
+  const [editingL,   setEditingL]   = useState<Learning | null>(null);
+  const [editText,   setEditText]   = useState('');
+  const [saving,     setSaving]     = useState(false);
+  const [approving,  setApproving]  = useState<string | null>(null);
+  const [lastLevel,  setLastLevel]  = useState(0);
 
-  // ── Load all learnings ─────────────────────────────────────────────
+  /* ── Load ── */
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Only pass project_id when a project is actually selected.
-      // When omitted, the backend returns ALL learnings across all projects.
       const body: Record<string, unknown> = { action: 'get_all_learnings' };
       if (selProjId) body.project_id = selProjId;
-
       const res  = await fetch('/api/task-engine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => null);
-
-      // Surface API-level errors so they are never silently swallowed
-      if (!data || data.error) {
-        throw new Error(data?.error || `HTTP ${res.status} — unexpected response from server`);
-      }
-
+      if (!data || data.error) throw new Error(data?.error || `HTTP ${res.status}`);
       setLearnings(data.learnings || []);
     } catch (err: any) {
-      toast({
-        title: 'Failed to load learnings',
-        description: err?.message || 'Unknown error — check the browser console',
-        variant: 'destructive',
-      });
+      toast({ title: 'Failed to load intelligence', description: err?.message, variant: 'destructive' });
     }
     setLoading(false);
   }, [selProjId]);
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Delete ─────────────────────────────────────────────────────────
-  const deleteLearning = async (id: string) => {
-    setDeleting(d => ({ ...d, [id]: true }));
+  /* Level-up animation trigger */
+  const level = calcIntelligenceLevel(learnings);
+  useEffect(() => {
+    if (level > lastLevel && lastLevel > 0) {
+      toast({ title: `🧠 INTELLIGENCE UPGRADED — LEVEL ${level}`, description: 'A new neural pathway has been activated.' });
+    }
+    setLastLevel(level);
+  }, [level]);
+
+  /* ── API actions ── */
+  async function callBrain(action: string, id: string): Promise<Learning | null> {
+    const res  = await fetch('/api/task-engine', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, id }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!data || data.error) throw new Error(data?.error || 'Action failed');
+    return data.learning || null;
+  }
+
+  const handleApprove = async (id: string) => {
+    setApproving(id);
+    try {
+      const updated = await callBrain('approve_learning', id);
+      if (updated) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
+      toast({ title: '⚡ NEURAL PATHWAY ACTIVATED', description: 'Learning integrated into Manav Brain.' });
+    } catch (err: any) {
+      toast({ title: 'Activation failed', description: err?.message, variant: 'destructive' });
+    }
+    setApproving(null);
+  };
+
+  const handleReject = async (id: string) => {
+    try {
+      const updated = await callBrain('reject_learning', id);
+      if (updated) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
+    } catch (err: any) {
+      toast({ title: 'Dismiss failed', description: err?.message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeactivate = async (id: string) => {
+    try {
+      const updated = await callBrain('deactivate_learning', id);
+      if (updated) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
+      toast({ title: 'Moved to review queue' });
+    } catch (err: any) {
+      toast({ title: 'Failed', description: err?.message, variant: 'destructive' });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
     try {
       const res  = await fetch('/api/task-engine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete_learning', id }),
       });
       const data = await res.json().catch(() => null);
       if (!data || data.error) throw new Error(data?.error || 'Delete failed');
-      setLearnings(l => l.filter(x => x.id !== id));
-      toast({ title: 'Learning removed' });
+      setLearnings(ls => ls.filter(l => l.id !== id));
     } catch (err: any) {
       toast({ title: 'Delete failed', description: err?.message, variant: 'destructive' });
     }
-    setDeleting(d => ({ ...d, [id]: false }));
   };
 
-  // ── Save edit ──────────────────────────────────────────────────────
-  const saveEdit = async (id: string) => {
-    const e = editing[id];
-    if (!e) return;
-    setSaving(s => ({ ...s, [id]: true }));
+  const handleSaveEdit = async () => {
+    if (!editingL || !editText.trim()) return;
+    setSaving(true);
     try {
       const res  = await fetch('/api/task-engine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action:      'update_learning',
-          id,
-          improvement: e.improvement,
-          tags:        e.tags.split(',').map((t: string) => t.trim()).filter(Boolean),
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_learning', id: editingL.id, improvement: editText }),
       });
       const data = await res.json().catch(() => null);
       if (!data || data.error) throw new Error(data?.error || 'Update failed');
-      setLearnings(l => l.map(x => x.id === id ? data.learning : x));
-      setEditing(ed => { const n = { ...ed }; delete n[id]; return n; });
-      toast({ title: 'Learning updated' });
+      setLearnings(ls => ls.map(l => l.id === editingL.id ? data.learning : l));
+      setEditingL(null);
+      toast({ title: 'Neural pathway updated' });
     } catch (err: any) {
       toast({ title: 'Update failed', description: err?.message, variant: 'destructive' });
     }
-    setSaving(s => ({ ...s, [id]: false }));
+    setSaving(false);
   };
 
-  // ── Filtered list ──────────────────────────────────────────────────
-  const filtered = learnings.filter(l => {
-    if (filterType && l.card_type !== filterType) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (
-        l.card_title.toLowerCase().includes(q)  ||
-        l.what_missed.some(w => w.toLowerCase().includes(q)) ||
-        l.improvement?.toLowerCase().includes(q) ||
-        l.tags.some(t => t.toLowerCase().includes(q))
-      );
+  /* ── Derived data ── */
+  const pending  = learnings.filter(l => l.status === 'pending_review');
+  const active   = learnings.filter(l => l.status === 'active');
+  const rejected = learnings.filter(l => l.status === 'rejected');
+  const dimScores= calcDimScores(learnings);
+  const totalApplied = active.reduce((s, l) => s + (l.applied_count || 0), 0);
+
+  const radarData = DIM_CONFIG.map(d => ({
+    dimension: d.label,
+    score:     dimScores[d.key] || 0,
+    fullMark:  100,
+  }));
+
+  // Growth timeline (learnings captured per day, last 14 days)
+  const timelineData = (() => {
+    const days: Record<string, { pending: number; active: number }> = {};
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000);
+      const key = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      days[key] = { pending: 0, active: 0 };
     }
-    return true;
-  });
+    for (const l of learnings) {
+      const d   = new Date(l.created_at);
+      const key = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      if (days[key]) days[key][l.status === 'active' ? 'active' : 'pending']++;
+    }
+    return Object.entries(days).map(([date, v]) => ({ date, ...v }));
+  })();
 
-  const cardTypes     = [...new Set(learnings.map(l => l.card_type))] as string[];
-  const totalApplied  = learnings.reduce((s, l) => s + (l.applied_count || 0), 0);
-  const topLearning   = [...learnings].sort((a, b) => (b.applied_count || 0) - (a.applied_count || 0))[0];
+  // Filtered list for current tab
+  const filtered = learnings
+    .filter(l => l.status === tab.replace('pending', 'pending_review') as any || (tab === 'pending' && l.status === 'pending_review') || (tab === 'active' && l.status === 'active') || (tab === 'rejected' && l.status === 'rejected'))
+    .filter(l => dimFilter === 'all' || getLearningDim(l) === dimFilter)
+    .filter(l => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return l.card_title.toLowerCase().includes(q) ||
+             l.improvement?.toLowerCase().includes(q) ||
+             l.source.toLowerCase().includes(q) ||
+             l.tags.some(t => t.toLowerCase().includes(q));
+    });
 
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <PortalNav
-        companyName={client?.company ? `${client.company} — Brain Learning` : 'Manav Brain Learning'}
-        projects={projects} selectedProjectId={selProjId} onProjectChange={setSelProjId}
-      />
-
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
-
-        {/* ── Header ── */}
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2 mb-1">
-              <Brain className="h-5 w-5 text-primary"/>Manav Brain Learning
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Every completed task review adds a learning. These are permanently injected into future task executions so quality compounds over time.
-            </p>
-          </div>
-
-          {/* Stats */}
-          <div className="flex gap-2.5">
-            {[
-              { val: learnings.length,   label: 'Learnings',    color: 'text-primary' },
-              { val: totalApplied,        label: 'Times applied', color: 'text-green-400' },
-              { val: cardTypes.length,    label: 'Card types',   color: 'text-violet-400' },
-            ].map(s => (
-              <div key={s.label} className="text-center px-3 py-2 rounded-xl border border-border bg-card/60">
-                <div className={`text-xl font-black ${s.color}`}>{s.val}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{s.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── How it works ── */}
-        <div className="rounded-2xl border border-primary/15 bg-primary/5 px-5 py-4">
-          <div className="font-semibold text-sm flex items-center gap-2 mb-2">
-            <Sparkles size={13} className="text-primary"/>How Manav Brain learns
-          </div>
-          <div className="grid sm:grid-cols-3 gap-4 text-xs text-muted-foreground">
-            <div className="flex items-start gap-2">
-              <span className="text-primary font-bold shrink-0">1.</span>
-              <span>Complete a task via "Ask Manav Brain". Manav evaluates the output and shows what worked and what was missed.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary font-bold shrink-0">2.</span>
-              <span>Click <strong className="text-foreground">Save to Manav Brain Learning</strong> in the evaluation panel. The observation is stored here permanently.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary font-bold shrink-0">3.</span>
-              <span>Every future task of the same type automatically applies all relevant learnings — Manav gets better with every task you complete.</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Top learning ── */}
-        {topLearning && topLearning.applied_count > 0 && (
-          <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/5 px-5 py-4 flex items-start gap-3">
-            <Star size={16} className="text-yellow-400 shrink-0 mt-0.5"/>
-            <div>
-              <div className="font-semibold text-sm text-yellow-400">Most applied learning</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                "{topLearning.card_title}" — applied {topLearning.applied_count} time{topLearning.applied_count !== 1 ? 's' : ''}
-              </div>
-              {topLearning.improvement && (
-                <div className="text-xs text-foreground mt-1">{topLearning.improvement}</div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Search + filter ── */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"/>
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search learnings…"
-              className="w-full h-9 pl-8 pr-3 text-sm rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
-          </div>
-          <select value={filterType} onChange={e => setFilterType(e.target.value)}
-            className="h-9 px-3 text-sm rounded-xl border border-border bg-background/60 outline-none">
-            <option value="">All types ({learnings.length})</option>
-            {cardTypes.map((t: string) => (
-              <option key={t} value={t}>
-                {CARD_TYPE_LABEL[t] || t} ({learnings.filter(l => l.card_type === t).length})
-              </option>
-            ))}
-          </select>
-          <button onClick={load} disabled={loading}
-            className="h-9 px-3 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5 disabled:opacity-50">
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''}/>Refresh
+  /* ── Inline editor modal ── */
+  const EditModal = () => !editingL ? null : (
+    <div style={{position:'fixed',inset:0,zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={() => setEditingL(null)}>
+      <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.8)',backdropFilter:'blur(8px)'}}/>
+      <div style={{position:'relative',width:'100%',maxWidth:560,background:'#0a0f1e',border:'1px solid rgba(99,102,241,0.3)',borderRadius:16,padding:24,boxShadow:'0 0 40px rgba(99,102,241,0.2)'}} onClick={e => e.stopPropagation()}>
+        <div style={{fontSize:10,fontFamily:'monospace',color:'#a5b4fc',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.1em'}}>EDIT NEURAL DIRECTIVE</div>
+        <div style={{fontSize:14,fontWeight:700,color:'#f1f5f9',marginBottom:16}}>{editingL.card_title}</div>
+        <textarea
+          value={editText}
+          onChange={e => setEditText(e.target.value)}
+          rows={4}
+          style={{width:'100%',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(99,102,241,0.3)',borderRadius:8,padding:'10px 12px',fontSize:12,color:'rgba(255,255,255,0.8)',outline:'none',resize:'none',fontFamily:'inherit',lineHeight:1.6,boxSizing:'border-box'}}
+        />
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button onClick={handleSaveEdit} disabled={saving} style={{background:'linear-gradient(135deg,#6366f1,#4f46e5)',border:'none',borderRadius:8,padding:'8px 18px',color:'white',fontSize:11,fontFamily:'monospace',fontWeight:700,cursor:'pointer',opacity:saving?0.5:1}}>
+            {saving ? 'SAVING...' : 'SAVE DIRECTIVE'}
+          </button>
+          <button onClick={() => setEditingL(null)} style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'8px 14px',color:'rgba(255,255,255,0.5)',fontSize:11,fontFamily:'monospace',cursor:'pointer'}}>
+            CANCEL
           </button>
         </div>
+      </div>
+    </div>
+  );
 
-        {/* ── Loading ── */}
-        {loading && (
-          <div className="flex items-center justify-center py-12 text-muted-foreground gap-2 text-sm">
-            <Loader2 size={16} className="animate-spin"/>Loading learnings…
-          </div>
-        )}
+  /* ── Render ── */
+  return (
+    <div style={{minHeight:'100vh',background:'#030712',color:'#f1f5f9',position:'relative'}}>
+      <NeuralBackground/>
+      <div style={{position:'relative',zIndex:1}}>
+        <PortalNav
+          companyName={client?.company ? `${client.company} — Manav Brain` : 'Manav Brain Intelligence'}
+          projects={projects} selectedProjectId={selProjId} onProjectChange={setSelProjId}
+        />
 
-        {/* ── Empty state ── */}
-        {!loading && learnings.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-border p-14 text-center">
-            <Brain size={36} className="text-muted-foreground/15 mx-auto mb-4"/>
-            <div className="font-semibold mb-2">No learnings yet</div>
-            <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-              Complete a task via "Ask Manav Brain" in the Canvas, then click
-              "Save to Manav Brain Learning" in the evaluation panel.
+        <div style={{maxWidth:1200,margin:'0 auto',padding:'32px 24px',display:'flex',flexDirection:'column',gap:28}}>
+
+          {/* ── HERO HEADER ── */}
+          <div style={{textAlign:'center',padding:'20px 0 8px'}}>
+            <div style={{fontSize:10,fontFamily:'monospace',color:'#6366f1',letterSpacing:'0.3em',marginBottom:8,textTransform:'uppercase'}}>
+              ◈ NEURAL INTELLIGENCE SYSTEM ◈
+            </div>
+            <h1 style={{fontSize:48,fontWeight:900,margin:'0 0 6px',background:'linear-gradient(135deg,#00d4ff,#a78bfa,#10b981)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',fontFamily:'monospace',letterSpacing:'-0.02em',lineHeight:1}}>
+              MANAV BRAIN
+            </h1>
+            <p style={{fontSize:12,color:'rgba(255,255,255,0.3)',fontFamily:'monospace',letterSpacing:'0.15em',margin:0}}>
+              ADAPTIVE SEO INTELLIGENCE · LEARNS FROM EVERY AI GENERATION
             </p>
           </div>
-        )}
 
-        {/* ── No results for current filter ── */}
-        {!loading && filtered.length === 0 && learnings.length > 0 && (
-          <div className="text-center py-8 text-muted-foreground text-sm">
-            No learnings match your filters.
-          </div>
-        )}
+          {/* ── INTELLIGENCE DASHBOARD ── */}
+          <div style={{display:'grid',gridTemplateColumns:'auto 1fr auto',gap:24,alignItems:'center',background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:20,padding:24}}>
 
-        {/* ── Learning cards ── */}
-        <div className="space-y-3">
-          {filtered.map(l => {
-            const isExpanded = !!expanded[l.id];
-            const isEditing  = !!editing[l.id];
-            return (
-              <div key={l.id} className="rounded-2xl border border-border bg-card/60 overflow-hidden">
-                {/* Card header */}
-                <div className="flex items-start gap-3 px-5 py-4 cursor-pointer"
-                  onClick={() => setExpanded(e => ({ ...e, [l.id]: !e[l.id] }))}>
+            {/* Brain level */}
+            <CircleGauge value={level} color="#6366f1" size={100} label="INTELLIGENCE" sublabel={`LEVEL ${level}`}/>
 
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    {/* Badges row */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-md border font-medium ${CARD_TYPE_COLOR[l.card_type] || CARD_TYPE_COLOR.general}`}>
-                        {CARD_TYPE_LABEL[l.card_type] || l.card_type}
-                      </span>
-                      {l.applied_count > 0 && (
-                        <span className="text-xs px-2 py-0.5 rounded-md border border-green-400/25 bg-green-400/8 text-green-400 font-medium flex items-center gap-1">
-                          <Zap size={9}/>Applied {l.applied_count}×
-                        </span>
-                      )}
-                      <span className="text-xs text-muted-foreground/50">{daysAgo(l.created_at)}</span>
-                    </div>
-
-                    {/* Task title */}
-                    <div className="font-semibold text-sm">{l.card_title}</div>
-
-                    {/* Improvement summary */}
-                    {l.improvement && (
-                      <p className="text-xs text-muted-foreground line-clamp-2">{l.improvement}</p>
-                    )}
-
-                    {/* Tags */}
-                    {l.tags?.filter(t => !['general'].includes(t)).length > 0 && (
-                      <div className="flex gap-1.5 flex-wrap">
-                        {l.tags.filter(t => !['general'].includes(t)).slice(0, 5).map((t, i) => (
-                          <span key={i} className="text-xs px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border/50">
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+            {/* Stats row */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+              {[
+                { val: active.length,    label: 'ACTIVE PATHWAYS',  color: '#10b981', sub: 'approved learnings' },
+                { val: pending.length,   label: 'PENDING REVIEW',   color: '#fbbf24', sub: 'awaiting your decision' },
+                { val: totalApplied,     label: 'TIMES DEPLOYED',   color: '#6366f1', sub: 'injected into AI prompts' },
+                { val: [...new Set(active.map(l => l.source))].length, label: 'DATA SOURCES', color: '#06b6d4', sub: 'learning channels active' },
+              ].map(s => (
+                <div key={s.label} style={{textAlign:'center',background:'rgba(255,255,255,0.03)',borderRadius:12,padding:'14px 10px',border:`1px solid ${s.color}18`}}>
+                  <div style={{fontSize:30,fontWeight:900,color:s.color,fontFamily:'monospace',lineHeight:1,textShadow:`0 0 20px ${s.color}60`}}>
+                    {s.val}
                   </div>
+                  <div style={{fontSize:8,fontFamily:'monospace',color:'rgba(255,255,255,0.4)',marginTop:4,letterSpacing:'0.1em',textTransform:'uppercase'}}>{s.label}</div>
+                  <div style={{fontSize:9,color:'rgba(255,255,255,0.2)',marginTop:2}}>{s.sub}</div>
+                </div>
+              ))}
+            </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button onClick={e => { e.stopPropagation(); setEditing(ed => ({ ...ed, [l.id]: { improvement: l.improvement || '', tags: l.tags?.join(', ') || '' } })); }}
-                      className="h-7 w-7 rounded-lg flex items-center justify-center border border-border text-muted-foreground hover:text-primary hover:border-primary/30">
-                      <Edit2 size={11}/>
-                    </button>
-                    <button onClick={e => { e.stopPropagation(); deleteLearning(l.id); }}
-                      disabled={!!deleting[l.id]}
-                      className="h-7 w-7 rounded-lg flex items-center justify-center border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30 disabled:opacity-40">
-                      {deleting[l.id] ? <Loader2 size={11} className="animate-spin"/> : <Trash2 size={11}/>}
-                    </button>
-                    {isExpanded ? <ChevronDown size={14} className="text-muted-foreground"/> : <ChevronRight size={14} className="text-muted-foreground"/>}
+            {/* Refresh */}
+            <button onClick={load} disabled={loading} style={{background:'rgba(99,102,241,0.1)',border:'1px solid rgba(99,102,241,0.3)',borderRadius:10,padding:'10px 14px',color:'#a5b4fc',cursor:'pointer',display:'flex',alignItems:'center',gap:6,fontSize:10,fontFamily:'monospace'}}>
+              <RefreshCw size={12} style={loading ? {animation:'spin 1s linear infinite'} : {}}/>
+              SYNC
+            </button>
+          </div>
+
+          {/* ── DIMENSION RADAR + TIMELINE ── */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+
+            {/* Radar */}
+            <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:20,padding:24}}>
+              <div style={{fontSize:10,fontFamily:'monospace',color:'rgba(255,255,255,0.3)',letterSpacing:'0.15em',marginBottom:16,textTransform:'uppercase'}}>◈ DOMAIN INTELLIGENCE MAP</div>
+              <div style={{display:'flex',gap:16,alignItems:'center'}}>
+                <div style={{width:200,height:200,flexShrink:0}}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart data={radarData}>
+                      <PolarGrid stroke="rgba(255,255,255,0.07)" />
+                      <PolarAngleAxis dataKey="dimension" tick={{fontSize:9,fill:'rgba(255,255,255,0.4)',fontFamily:'monospace'}} />
+                      <Radar name="Intelligence" dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{flex:1,display:'flex',flexDirection:'column',gap:10}}>
+                  {DIM_CONFIG.map(d => (
+                    <div key={d.key}>
+                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                        <span style={{fontSize:10,fontFamily:'monospace',color:'rgba(255,255,255,0.45)',letterSpacing:'0.05em'}}>{d.label.toUpperCase()}</span>
+                        <span style={{fontSize:10,fontFamily:'monospace',color:d.color,fontWeight:700}}>{dimScores[d.key] || 0}</span>
+                      </div>
+                      <div style={{height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:`${dimScores[d.key] || 0}%`,background:d.color,borderRadius:2,boxShadow:`0 0 8px ${d.glow}`,transition:'width 0.8s ease'}}/>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Growth timeline */}
+            <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:20,padding:24}}>
+              <div style={{fontSize:10,fontFamily:'monospace',color:'rgba(255,255,255,0.3)',letterSpacing:'0.15em',marginBottom:4,textTransform:'uppercase'}}>◈ NEURAL GROWTH TIMELINE</div>
+              <div style={{fontSize:9,color:'rgba(255,255,255,0.2)',marginBottom:16,fontFamily:'monospace'}}>LEARNINGS CAPTURED OVER LAST 14 DAYS</div>
+              <div style={{height:160}}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={timelineData} margin={{top:5,right:5,bottom:0,left:-20}}>
+                    <defs>
+                      <linearGradient id="activeGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="pendingGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="date" tick={{fontSize:8,fill:'rgba(255,255,255,0.2)',fontFamily:'monospace'}} axisLine={false} tickLine={false} interval={3}/>
+                    <Tooltip
+                      contentStyle={{background:'#0a0f1e',border:'1px solid rgba(99,102,241,0.3)',borderRadius:8,fontSize:10,fontFamily:'monospace'}}
+                      labelStyle={{color:'rgba(255,255,255,0.6)'}}
+                    />
+                    <Area type="monotone" dataKey="active"  stroke="#10b981" fill="url(#activeGrad)"  strokeWidth={1.5} name="Active"/>
+                    <Area type="monotone" dataKey="pending" stroke="#fbbf24" fill="url(#pendingGrad)" strokeWidth={1.5} name="Pending"/>
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* ── PENDING BANNER (if any) ── */}
+          {pending.length > 0 && (
+            <div style={{background:'linear-gradient(135deg,rgba(251,191,36,0.06),rgba(251,191,36,0.02))',border:'1px solid rgba(251,191,36,0.25)',borderRadius:16,padding:'14px 20px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={() => setTab('pending')}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:'#fbbf24',boxShadow:'0 0 12px #fbbf24',animation:'pulse 2s infinite'}}/>
+              <div style={{flex:1}}>
+                <span style={{fontSize:12,fontWeight:700,color:'#fbbf24',fontFamily:'monospace'}}>
+                  {pending.length} INTELLIGENCE BRIEFING{pending.length !== 1 ? 'S' : ''} AWAITING YOUR REVIEW
+                </span>
+                <span style={{fontSize:11,color:'rgba(255,255,255,0.35)',marginLeft:10}}>
+                  Auto-captured from AI outputs — approve to integrate into the brain
+                </span>
+              </div>
+              <span style={{fontSize:10,color:'#fbbf24',fontFamily:'monospace',fontWeight:700}}>REVIEW →</span>
+            </div>
+          )}
+
+          {/* ── MAIN LEARNING PANEL ── */}
+          <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:20,overflow:'hidden'}}>
+
+            {/* Tab bar */}
+            <div style={{display:'flex',borderBottom:'1px solid rgba(255,255,255,0.06)',background:'rgba(0,0,0,0.2)'}}>
+              {([
+                { id: 'pending',  label: `PENDING REVIEW (${pending.length})`,   color: '#fbbf24' },
+                { id: 'active',   label: `ACTIVE PATHWAYS (${active.length})`,   color: '#10b981' },
+                { id: 'rejected', label: `DISMISSED (${rejected.length})`,       color: '#ef4444' },
+              ] as const).map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)}
+                  style={{flex:1,padding:'14px 16px',background:'none',border:'none',cursor:'pointer',fontSize:9,fontFamily:'monospace',letterSpacing:'0.12em',fontWeight:700,color:tab===t.id ? t.color : 'rgba(255,255,255,0.25)',borderBottom:tab===t.id ? `2px solid ${t.color}` : '2px solid transparent',transition:'all 0.2s'}}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Filters */}
+            <div style={{display:'flex',gap:10,padding:'12px 16px',borderBottom:'1px solid rgba(255,255,255,0.04)',flexWrap:'wrap',alignItems:'center'}}>
+              <div style={{position:'relative',flex:1,minWidth:180}}>
+                <Search size={11} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'rgba(255,255,255,0.2)'}}/>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search intelligence..."
+                  style={{width:'100%',paddingLeft:30,paddingRight:12,height:32,background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:8,fontSize:11,color:'rgba(255,255,255,0.7)',outline:'none',fontFamily:'monospace',boxSizing:'border-box'}}/>
+              </div>
+              <select value={dimFilter} onChange={e => setDimFilter(e.target.value)}
+                style={{height:32,padding:'0 10px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:8,fontSize:10,color:'rgba(255,255,255,0.5)',outline:'none',fontFamily:'monospace',cursor:'pointer'}}>
+                <option value="all">ALL DOMAINS</option>
+                {DIM_CONFIG.map(d => <option key={d.key} value={d.key}>{d.label.toUpperCase()}</option>)}
+              </select>
+              {tab === 'pending' && pending.length > 0 && (
+                <div style={{display:'flex',gap:6,marginLeft:'auto'}}>
+                  <button
+                    onClick={async () => { for (const l of pending.slice(0,5)) await handleApprove(l.id); }}
+                    style={{background:'linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,182,212,0.15))',border:'1px solid rgba(16,185,129,0.3)',borderRadius:8,padding:'6px 14px',color:'#10b981',fontSize:9,fontFamily:'monospace',fontWeight:700,cursor:'pointer',letterSpacing:'0.08em'}}>
+                    ⚡ APPROVE ALL
+                  </button>
+                  <button
+                    onClick={async () => { for (const l of pending) await handleReject(l.id); }}
+                    style={{background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:8,padding:'6px 14px',color:'#ef4444',fontSize:9,fontFamily:'monospace',fontWeight:700,cursor:'pointer',letterSpacing:'0.08em'}}>
+                    DISMISS ALL
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* List */}
+            <div style={{padding:16,display:'flex',flexDirection:'column',gap:10,minHeight:200}}>
+              {loading && (
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',padding:48,gap:10,color:'rgba(255,255,255,0.3)'}}>
+                  <RefreshCw size={16} style={{animation:'spin 1s linear infinite', color:'#6366f1'}}/>
+                  <span style={{fontFamily:'monospace',fontSize:12}}>LOADING INTELLIGENCE DATA...</span>
+                </div>
+              )}
+
+              {!loading && filtered.length === 0 && (
+                <div style={{textAlign:'center',padding:'48px 16px'}}>
+                  <Brain size={40} style={{color:'rgba(255,255,255,0.05)',margin:'0 auto 16px'}}/>
+                  <div style={{fontSize:12,fontFamily:'monospace',color:'rgba(255,255,255,0.2)',marginBottom:6}}>
+                    {tab === 'pending'
+                      ? 'NO PENDING INTELLIGENCE — BRAIN IS FULLY REVIEWED'
+                      : tab === 'active'
+                      ? 'NO ACTIVE PATHWAYS — APPROVE SOME LEARNINGS FIRST'
+                      : 'NO DISMISSED INTELLIGENCE'}
+                  </div>
+                  {tab === 'pending' && (
+                    <p style={{fontSize:11,color:'rgba(255,255,255,0.15)',maxWidth:400,margin:'0 auto',lineHeight:1.6}}>
+                      Manav Brain automatically captures learnings from every AI generation in the app.
+                      They appear here for your review before being integrated.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!loading && filtered.map(l => (
+                <LearningCard
+                  key={l.id}
+                  l={l}
+                  onApprove={handleApprove}
+                  onReject={handleReject}
+                  onDelete={handleDelete}
+                  onDeactivate={handleDeactivate}
+                  onEdit={(learning) => { setEditingL(learning); setEditText(learning.improvement || ''); }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* ── HOW IT WORKS ── */}
+          <div style={{background:'rgba(99,102,241,0.04)',border:'1px solid rgba(99,102,241,0.12)',borderRadius:16,padding:'18px 22px'}}>
+            <div style={{fontSize:10,fontFamily:'monospace',color:'#a5b4fc',letterSpacing:'0.15em',marginBottom:12,textTransform:'uppercase'}}>◈ HOW MANAV BRAIN LEARNS</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:20}}>
+              {[
+                { step:'01', title:'AUTO-CAPTURE', desc:'Every AI output across the app — audits, strategy, task execution, deep dives — is automatically analysed and distilled into a learning.' },
+                { step:'02', title:'YOUR REVIEW', desc:'You decide what enters the brain. Pending learnings wait for your approval. Approve what resonates, dismiss what doesn\'t.' },
+                { step:'03', title:'COMPOUNDING INTELLIGENCE', desc:'Active learnings are injected into every future AI prompt of the matching type. The brain gets smarter with every task completed.' },
+              ].map(s => (
+                <div key={s.step} style={{display:'flex',gap:12}}>
+                  <div style={{fontFamily:'monospace',fontSize:20,fontWeight:900,color:'rgba(99,102,241,0.3)',lineHeight:1,flexShrink:0}}>{s.step}</div>
+                  <div>
+                    <div style={{fontSize:10,fontFamily:'monospace',color:'#a5b4fc',fontWeight:700,marginBottom:5,letterSpacing:'0.08em'}}>{s.title}</div>
+                    <p style={{fontSize:11,color:'rgba(255,255,255,0.3)',lineHeight:1.6,margin:0}}>{s.desc}</p>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
 
-                {/* Expanded details */}
-                {isExpanded && (
-                  <div className="border-t border-border px-5 py-4 space-y-4 bg-background/20">
-
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      {/* What worked */}
-                      {l.what_worked?.length > 0 && (
-                        <div>
-                          <div className="text-xs font-mono text-green-400 uppercase mb-2">What worked</div>
-                          <div className="space-y-1">
-                            {l.what_worked.map((w, i) => (
-                              <div key={i} className="flex items-start gap-2 text-xs">
-                                <CheckCircle size={10} className="text-green-400 mt-0.5 shrink-0"/>
-                                <span className="text-muted-foreground">{w}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* What was missed */}
-                      {l.what_missed?.length > 0 && (
-                        <div>
-                          <div className="text-xs font-mono text-orange-400 uppercase mb-2">What was missed</div>
-                          <div className="space-y-1">
-                            {l.what_missed.map((w, i) => (
-                              <div key={i} className="flex items-start gap-2 text-xs">
-                                <AlertTriangle size={10} className="text-orange-400 mt-0.5 shrink-0"/>
-                                <span className="text-muted-foreground">{w}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Redo reason */}
-                    {l.redo_reason && (
-                      <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 px-3 py-2.5">
-                        <div className="text-xs font-semibold text-yellow-400 flex items-center gap-1.5 mb-1">
-                          <RotateCcw size={10}/>If I could redo this
-                        </div>
-                        <p className="text-xs text-muted-foreground">{l.redo_reason}</p>
-                      </div>
-                    )}
-
-                    {/* Improvement */}
-                    {!isEditing && l.improvement && (
-                      <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
-                        <div className="text-xs font-semibold text-primary flex items-center gap-1.5 mb-1">
-                          <Brain size={10}/>Improvement applied in future runs
-                        </div>
-                        <p className="text-xs text-muted-foreground">{l.improvement}</p>
-                      </div>
-                    )}
-
-                    {/* Edit form */}
-                    {isEditing && (
-                      <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
-                        <div className="text-xs font-semibold text-primary">Edit Learning</div>
-                        <div>
-                          <label className="text-xs text-muted-foreground mb-1 block">Improvement statement</label>
-                          <textarea
-                            value={editing[l.id].improvement}
-                            onChange={e => setEditing(ed => ({ ...ed, [l.id]: { ...ed[l.id], improvement: e.target.value } }))}
-                            rows={3}
-                            className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50 resize-none"/>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground mb-1 block">Tags (comma-separated)</label>
-                          <input
-                            value={editing[l.id].tags}
-                            onChange={e => setEditing(ed => ({ ...ed, [l.id]: { ...ed[l.id], tags: e.target.value } }))}
-                            className="w-full text-xs h-8 px-3 rounded-xl border border-border bg-background/60 outline-none focus:border-primary/50"/>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => saveEdit(l.id)} disabled={!!saving[l.id]}
-                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50">
-                            {saving[l.id] ? <><Loader2 size={11} className="animate-spin"/>Saving…</> : 'Save'}
-                          </button>
-                          <button onClick={() => setEditing(ed => { const n = { ...ed }; delete n[l.id]; return n; })}
-                            className="text-xs px-3 py-1.5 rounded-xl border border-border text-muted-foreground hover:text-foreground">
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {l.context_summary && (
-                      <p className="text-xs text-muted-foreground/50">Context: {l.context_summary}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
-
       </div>
+
+      <EditModal/>
+
+      <style>{`
+        @keyframes spin   { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
+        @keyframes pulse  { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+      `}</style>
     </div>
   );
 }
