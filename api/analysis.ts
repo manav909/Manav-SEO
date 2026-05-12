@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { extractAndSaveLearning }            from "./ai-cache";
 
 // Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably
-export const config = { maxDuration: 300 };
+export const config = { maxDuration: 60 };
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Every finding must be based on observable data. Never invent rankings, metrics, or technical states. If you cannot verify something from the data provided, say exactly that and tell the user how to verify it manually.";
 
