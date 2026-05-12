@@ -101,7 +101,7 @@ async function fetchUrl(url: string): Promise<string> {
       signal: AbortSignal.timeout(18000),
     });
     return r.ok ? (await r.text()).slice(0, 4000) : "";
-  } catch { return ""; }
+  } catch (_e) { return ""; }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -170,7 +170,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }).select().single();
       if (error) throw error;
       return res.status(200).json({ success: true, learning: data });
-    } catch {
+    } catch (_e) {
       const { data, error } = await sb.from("brain_learnings").insert(row).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ success: true, learning: data });
@@ -183,7 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Try with status='active' filter (requires migration); fallback to all if column missing
     const fetchWithStatus = async (projId?: string, type?: string) => {
-      let q = sb.from("brain_learnings").select("*");
+      let q: any = sb.from("brain_learnings").select("*");
       try {
         // Attempt with status filter
         if (projId && type) q = (q as any).eq("project_id", projId).eq("card_type", type).eq("status", "active");
@@ -192,9 +192,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { data, error } = await (q as any).order("applied_count", { ascending: false }).order("created_at", { ascending: false }).limit(limit);
         if (error) throw error;
         return data || [];
-      } catch {
+      } catch (_e) {
         // Fallback: no status filter (migration not run yet)
-        let q2 = sb.from("brain_learnings").select("*");
+        let q2: any = sb.from("brain_learnings").select("*");
         if (projId && type) q2 = (q2 as any).eq("project_id", projId).eq("card_type", type);
         else if (type)      q2 = (q2 as any).eq("card_type", type);
         const { data } = await (q2 as any).order("created_at", { ascending: false }).limit(limit);
@@ -220,7 +220,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           const { data: d } = await sb.from("brain_learnings").select("applied_count").eq("id", id).single();
           if (d) await sb.from("brain_learnings").update({ applied_count: ((d as any).applied_count || 0) + 1 }).eq("id", id);
-        } catch { /* non-blocking */ }
+        } catch (_e) { /* non-blocking */ }
       }
     })();
 
@@ -236,7 +236,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (item?.source?.endsWith("_log")) {
         return res.status(403).json({ error: "Immutable log entry — brain logs cannot be deleted by design." });
       }
-    } catch { /* if check fails, allow delete */ }
+    } catch (_e) { /* if check fails, allow delete */ }
     const { error } = await sb.from("brain_learnings").delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ success: true });
@@ -393,7 +393,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const raw = response.content[0].type === "text" ? response.content[0].text : "{}";
       const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
       let parsed: any = {};
-      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch { /* ignore */ }
+      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) { /* ignore */ }
 
       if (parsed.verdict && parsed.verdict !== "cannot_determine") {
         const projectId = req.body.projectId || context?.project?.id || null;
@@ -521,7 +521,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const raw = response.content[0].type === "text" ? response.content[0].text : "{}";
       const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
       let parsed: any = {};
-      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch { /* ignore */ }
+      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) { /* ignore */ }
 
       void extractAndSaveLearning("task_execution_auto", projectId || context?.project?.id || null,
         [`Task: ${card.title} [${card.type}] — Quality: ${parsed.quality_score}/100`,
