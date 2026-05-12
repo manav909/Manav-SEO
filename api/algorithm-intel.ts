@@ -61,10 +61,10 @@ function parseJson(text: string): any | null {
   const c = text.replace(/^```[a-z]*\n?/gm, "").replace(/^```\s*$/gm, "").trim();
   const f = c.indexOf("{"), l = c.lastIndexOf("}");
   if (f < 0 || l < 0) return null;
-  try { return JSON.parse(c.slice(f, l + 1)); } catch {}
-  try { return JSON.parse(c.slice(f) + '"}]}'); } catch {}
-  try { return JSON.parse(c.slice(f) + '"}]'); } catch {}
-  try { return JSON.parse(c.slice(f) + "}"); } catch {}
+  try { return JSON.parse(c.slice(f, l + 1)); } catch (_e) {}
+  try { return JSON.parse(c.slice(f) + '"}]}'); } catch (_e) {}
+  try { return JSON.parse(c.slice(f) + '"}]'); } catch (_e) {}
+  try { return JSON.parse(c.slice(f) + "}"); } catch (_e) {}
   return null;
 }
 
@@ -281,7 +281,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ══ GET ALL ══════════════════════════════════════════════════════
     if (action === "get_all") {
       const { engine, category, impact_level } = req.body;
-      let q = sb.from("algorithm_knowledge").select("*").order("updated_at", { ascending: false });
+      let q: any = sb.from("algorithm_knowledge").select("*").order("updated_at", { ascending: false });
       if (engine)       q = q.eq("engine", engine);
       if (category)     q = q.eq("category", category);
       if (impact_level) q = q.eq("impact_level", impact_level);
