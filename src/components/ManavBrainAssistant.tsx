@@ -221,7 +221,7 @@ export default function ManavBrainAssistant() {
   const [tab,      setTab]      = useState<TabId>('chat');
   const [msgs,     setMsgs]     = useState<BrainMsg[]>([
     { id:uid(), role:'system', content:'◈ MANAV BRAIN GOD MODE — ONLINE', ts: new Date() },
-    { id:uid(), role:'brain',  content:"I am Manav Brain — the master intelligence of SEO Season.\n\nI monitor your system in real-time. I intercept errors before they reach you, diagnose them, and provide exact fixes. I have full authority over every feature.\n\nSelect a project above to give me full context.", ts: new Date() },
+    { id:uid(), role:'brain',  content:"I am Manav Brain — the master intelligence of SEO Season.\n\nI have full access to your strategy canvas, learnings, algorithm intel, and all your data. I can execute tasks, create cards, run audits, and navigate anywhere in the platform.\n\n⚡ SELECT A PROJECT above — I need it to give you specific, data-driven responses. Without a project I can only give generic advice.", ts: new Date() },
   ]);
   const [input,    setInput]    = useState('');
   const [loading,  setLoading]  = useState(false);
@@ -292,12 +292,16 @@ export default function ManavBrainAssistant() {
     window.fetch = async function monitoredFetch(...args: Parameters<typeof fetch>) {
       let url = '';
       try { url = typeof args[0] === 'string' ? args[0] : (args[0] instanceof Request ? args[0].url : ''); } catch (_e) { /* ignore */ }
+      // Don't monitor calls that explicitly opt out (e.g. BrainLearning page-load calls)
+      const skipHeaders = args[1] as RequestInit | undefined;
+      const skipMonitor = skipHeaders?.headers && typeof skipHeaders.headers === 'object' && 'X-Brain-Source' in (skipHeaders.headers as Record<string, string>);
 
       try {
         const res = await origFetch(...args);
 
         // Only alert on OUR API routes with 5xx — read body for better diagnosis
-        if (url.includes('/api/') && res.status >= 500) {
+        // Only fire for real server errors (5xx), not client errors (4xx), not opted-out calls
+        if (!skipMonitor && url.includes('/api/') && res.status >= 500 && res.status < 600) {
           let body = '';
           try { const cloned = res.clone(); body = (await cloned.text()).slice(0, 400); } catch (_e) { /* silent */ }
 
@@ -382,12 +386,16 @@ export default function ManavBrainAssistant() {
         const { data, error } = await supabase.from('brain_learnings').select('status').limit(1);
         if (error && error.message.includes('column "status"')) {
           setSchemaOk(false);
-          // Inject migration warning into chat
-          setMsgs(ms => [...ms, {
-            id: uid(), role: 'alert' as MsgRole,
-            content: 'SCHEMA ALERT: migration-brain-v2.sql has NOT been run. The status/auto_captured/confidence_score columns are missing from brain_learnings. Run the migration in Supabase SQL Editor to enable full Brain functionality.',
-            ts: new Date(),
-          }]);
+          // Only show migration warning once per session
+          const shownKey = 'brain_migration_warned';
+          if (!sessionStorage.getItem(shownKey)) {
+            sessionStorage.setItem(shownKey, '1');
+            setMsgs(ms => [...ms, {
+              id: uid(), role: 'alert' as MsgRole,
+              content: '⚠ OPTIONAL: Run migration-brain-v2.sql in Supabase to enable Brain Learning status filters. The system works without it — this just enables the approve/reject workflow.',
+              ts: new Date(),
+            }]);
+          }
         } else {
           setSchemaOk(true);
         }
@@ -465,7 +473,15 @@ export default function ManavBrainAssistant() {
       `You have full knowledge of the SEO Season codebase (Next.js/React/Supabase/Vercel Hobby). Be surgical and precise.`,
     ].filter(Boolean).join('\n');
 
-    void sendMsgInternal(healPrompt, true, err);
+    // Only trigger healing if Brain is not already processing something
+    if (!loading) {
+      void sendMsgInternal(healPrompt, true, err);
+    } else {
+      // Queue a brief status message instead of spamming
+      setMsgs(ms => [...ms, { id: uid(), role: 'alert' as MsgRole,
+        content: 'Auto-heal queued — Brain busy. Click DIAGNOSE NOW in System tab when ready.',
+        ts: new Date() }]);
+    }
   }, [schemaOk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ───────────────────────────────────────────────────────────────
@@ -610,7 +626,12 @@ export default function ManavBrainAssistant() {
         setPending(all.filter((l: any) => l.status === 'pending_review').length);
       }
       if (algoD.success) setAlgoItems(algoD.items || []);
-    } catch (_e) { /* silent — context load failure is non-fatal */ }
+    } catch (_e) {
+      // Non-fatal but tell user so they know Brain might have limited context
+      setMsgs(ms => [...ms, { id: uid(), role: 'system' as MsgRole,
+        content: '⚠ Context load partial — some project data may be missing. Brain will work with what it has.',
+        ts: new Date() }]);
+    }
   }, [selProj, brainFetch]);
 
   /* ───────────────────────────────────────────────────────────────
@@ -632,12 +653,20 @@ export default function ManavBrainAssistant() {
           break;
 
         case 'run_audit': {
-          const res = await brainFetch('/api/analysis', { method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ url: action.url, mode: action.mode || 'standard', action: 'audit', projectId: selProj }) });
-          if (!res.body) { upd('error', 'Stream unavailable'); break; }
+          if (!action.url) { upd('error', 'No URL provided for audit'); break; }
+          /* Route to run-analysis (the comprehensive streaming audit) */
+          const res = await brainFetch('/api/run-analysis', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              url:         action.url,
+              keywords:    (ctx as any)?.project?.keywords || [],
+              brand_name:  (ctx as any)?.project?.name    || '',
+              competitors: [(ctx as any)?.competitors?.c1, (ctx as any)?.competitors?.c2].filter(Boolean),
+              project_id:  selProj || null,
+            }) });
+          if (!res.body) { upd('error', 'Audit stream unavailable'); break; }
           const reader = res.body.getReader(); const dec = new TextDecoder(); let t = '';
           while (true) { const { done, value } = await reader.read(); if (done) break; t += dec.decode(value); }
-          upd('done', `Audit complete: ${t.slice(0, 180)}`);
+          upd('done', `Audit complete for ${action.url}. ${t.slice(0, 200)}`);
           break;
         }
 
@@ -691,7 +720,7 @@ export default function ManavBrainAssistant() {
         default: upd('done', `Action ${action.type} acknowledged.`);
       }
     } catch (err: any) { upd('error', err?.message || 'Action failed'); }
-  }, [navigate, selProj, learnings, brainFetch]);
+  }, [navigate, selProj, learnings, brainFetch, ctx]);
 
   const execAllActions = useCallback(async (msgId: string, actions: ParsedAction[]) => {
     for (let i = 0; i < actions.length; i++) {
@@ -734,12 +763,18 @@ export default function ManavBrainAssistant() {
           projectSummary: summary || 'No project selected', role: 'senior_seo',
           brainAssistantContext: {
             projectContext: ctx, learnings: learnings.slice(0, 12),
-            algoItems: algoItems.slice(0, 8), canvasBlocks: [], history,
+            algoItems: algoItems.slice(0, 8), canvasBlocks: (ctx as any)?.project?.canvasBlocks || [], history,
           },
         }),
       });
 
       if (!res.body) throw new Error('Stream unavailable');
+      // If intelligence crashed (500), read error and show it cleanly
+      if (!res.ok) {
+        const errText = await res.text().catch(() => 'API error');
+        const cleanErr = errText.replace(/<[^>]+>/g, '').trim().slice(0, 200);
+        throw new Error(cleanErr || `API returned ${res.status}`);
+      }
       const reader = res.body.getReader();
       const dec    = new TextDecoder();
       let   full   = '';
@@ -820,7 +855,7 @@ export default function ManavBrainAssistant() {
     if (content.length < 50) return;
     setSavingMsg(msg.id);
     try {
-      await fetch("/api/task-engine", {
+      await brainFetch("/api/task-engine", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "save_to_desk", project_id: selProj,
