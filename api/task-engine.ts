@@ -3,7 +3,7 @@ import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 180 };
+export const config = { maxDuration: 60 };
 
 const sb = createClient(
   process.env.VITE_SUPABASE_URL!,
@@ -105,7 +105,9 @@ async function fetchUrl(url: string): Promise<string> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  /* Global catch — ensures function never crashes with FUNCTION_INVOCATION_FAILED */
+  try {
+  if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
   const {
     action, card, context: rawContext, userInputs = {}, role = "senior_seo",
@@ -139,10 +141,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? sb.from("brain_learnings").select("*").or(`project_id.eq.${project_id},project_id.is.null`).order("created_at", { ascending: false })
         : sb.from("brain_learnings").select("*").order("created_at", { ascending: false });
       const { data, error } = await q;
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true, learnings: data || [] });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      return res.status(200).json({ error: err.message });
     }
   }
 
@@ -172,7 +174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, learning: data });
     } catch (_e) {
       const { data, error } = await sb.from("brain_learnings").insert(row).select().single();
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true, learning: data });
     }
   }
@@ -238,7 +240,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     } catch (_e) { /* if check fails, allow delete */ }
     const { error } = await sb.from("brain_learnings").delete().eq("id", id);
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true });
   }
 
@@ -250,7 +252,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tags: Array.isArray(tags) ? tags : (tags || "").split(",").map((t: string) => t.trim()).filter(Boolean),
       updated_at: new Date().toISOString(),
     }).eq("id", id).select().single();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
   }
 
@@ -259,7 +261,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!id) return res.status(400).json({ error: "id required" });
     const { data, error } = await sb.from("brain_learnings")
       .update({ status: "active", updated_at: new Date().toISOString() }).eq("id", id).select().single();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
   }
 
@@ -268,7 +270,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!id) return res.status(400).json({ error: "id required" });
     const { data, error } = await sb.from("brain_learnings")
       .update({ status: "rejected", updated_at: new Date().toISOString() }).eq("id", id).select().single();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
   }
 
@@ -277,7 +279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!id) return res.status(400).json({ error: "id required" });
     const { data, error } = await sb.from("brain_learnings")
       .update({ status: "pending_review", updated_at: new Date().toISOString() }).eq("id", id).select().single();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
   }
 
@@ -290,7 +292,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const { data: proj, error: projErr } = await sb.from("projects")
         .select("playground_strategy, playground_canvas").eq("id", project_id).single();
-      if (projErr) return res.status(500).json({ error: projErr.message });
+      if (projErr) return res.status(200).json({ error: projErr.message });
 
       const strategy = proj?.playground_strategy || { canvas_blocks: [] };
       if (!Array.isArray(strategy.canvas_blocks)) strategy.canvas_blocks = [];
@@ -319,10 +321,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         playground_strategy: strategy, playground_canvas: canvas,
       }).eq("id", project_id);
 
-      if (saveErr) return res.status(500).json({ error: saveErr.message });
+      if (saveErr) return res.status(200).json({ error: saveErr.message });
       return res.status(200).json({ success: true, card: builtCard });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      return res.status(200).json({ error: err.message });
     }
   }
 
@@ -408,7 +410,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({ success: true, ...parsed, waiting_status: { waitDays, daysSince, daysLeft, waitExpired }, live_data_used: liveContent.length > 0 });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      return res.status(200).json({ success: false, error: err.message });
     }
   }
 
@@ -534,9 +536,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({ success: true, evaluation: parsed });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      return res.status(200).json({ success: false, error: err.message });
     }
   }
 
-  return res.status(400).json({ error: `Unknown action: ${action}` });
+  return res.status(200).json({ error: `Unknown action: ${action}` });
+
+  } catch (topErr: any) {
+    /* Top-level safety net — never let the function crash entirely */
+    try { res.status(200).json({ error: "Internal error: " + (topErr?.message || "unknown"), healthy: false }); } catch (_e) { /* already sent */ }
+  }
 }
