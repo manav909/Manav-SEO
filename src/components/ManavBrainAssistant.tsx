@@ -25,7 +25,7 @@
 import React, {
   useState, useEffect, useCallback, useRef,
 } from 'react';
-import { useNavigate }  from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth }      from '@/contexts/AuthContext';
 import { supabase }     from '@/lib/supabase';
 import {
@@ -83,14 +83,23 @@ const IGNORE_PATTERNS = [
   'contentEditable', 'Cannot update a component', 'A component is changing',
 ];
 
-const SUGGESTIONS = [
-  "Run a full system health check",
-  "What should I prioritise this week?",
-  "Audit my homepage now",
-  "Fetch the March 2025 Core Update",
-  "Create a technical card for the biggest issue",
-  "How do I improve my GEO visibility?",
-  "Why are my APIs returning 500 errors?",
+// Context-aware suggestions by page
+const PAGE_SUGGESTIONS: Record<string, string[]> = {
+  '/playground':     ["What should I tackle first this week?", "Which card will move the needle most?", "Show me everything on my canvas", "Create a quick-win card right now"],
+  '/dashboard':      ["How are my metrics trending?", "What's the biggest opportunity right now?", "Compare my scores to last month", "What should I focus on this week?"],
+  '/data-room':      ["What context am I missing?", "Review my project brief and suggest improvements", "What keywords should I be targeting?", "Analyse my competitors"],
+  '/audit':          ["Run a full audit of my site", "What are my biggest technical issues?", "Check my Core Web Vitals", "Find my crawl errors"],
+  '/algorithm-intel':["What algorithm updates affect my site?", "How does the March 2025 core update impact me?", "What E-E-A-T signals am I missing?", "Am I at risk from any recent update?"],
+  '/brain-learning': ["What has worked best for my project?", "Show me my top learnings", "What should I do differently?", "Apply a learning to a new canvas card"],
+  '/desk':           ["Remind me of my most important saved items", "What notes have I been ignoring?", "Summarise everything on my desk", "Create an action plan from my notes"],
+};
+const DEFAULT_SUGGESTIONS = [
+  "What's the most important thing I should do right now?",
+  "Give me a quick win I can do in the next 30 minutes",
+  "What's been working well and what isn't?",
+  "Check my site for any urgent issues",
+  "What should I know about this week's SEO landscape?",
+  "Help me write a task for the canvas",
 ];
 
 const ACTION_ICONS: Record<string, any> = {
@@ -101,7 +110,7 @@ const ACTION_ICONS: Record<string, any> = {
 
 const HEALTH_CFG: Record<Health, { color: string; glow: string; label: string }> = {
   healthy:  { color: '#10b981', glow: 'rgba(16,185,129,0.4)',  label: 'ONLINE'   },
-  degraded: { color: '#f59e0b', glow: 'rgba(245,158,11,0.4)',  label: 'DEGRADED' },
+  degraded: { color: '#f59e0b', glow: 'rgba(245,158,11,0.4)',  label: 'NEEDS ATTENTION' },
   critical: { color: '#ef4444', glow: 'rgba(239,68,68,0.5)',   label: 'ALERT'    },
   scanning: { color: '#6366f1', glow: 'rgba(99,102,241,0.4)',  label: 'SCANNING' },
   healing:  { color: '#06b6d4', glow: 'rgba(6,182,212,0.4)',   label: 'HEALING'  },
@@ -232,7 +241,7 @@ export default function ManavBrainAssistant() {
   const [tab,      setTab]      = useState<TabId>('chat');
   const [msgs,     setMsgs]     = useState<BrainMsg[]>([
     { id:uid(), role:'system', content:'◈ MANAV BRAIN GOD MODE — ONLINE', ts: new Date() },
-    { id:uid(), role:'brain',  content:"I am Manav Brain — the master intelligence of SEO Season.\n\nI monitor your system in real-time. I intercept errors before they reach you, diagnose them, and provide exact fixes. I have full authority over every feature.\n\nSelect a project above to give me full context.", ts: new Date() },
+    { id:uid(), role:'brain',  content:"Hey! 👋 I'm Manav Brain, your SEO partner.\n\nI'm always watching — I'll flag things that need your attention, remind you of saved notes, and help you figure out what to focus on next.\n\nSelect a project up top and I'll tell you what I'm seeing.", ts: new Date() },
   ]);
   const [input,    setInput]    = useState('');
   const [loading,  setLoading]  = useState(false);
@@ -249,7 +258,15 @@ export default function ManavBrainAssistant() {
   const [isSearching, setIsSearching]   = useState(false);
   const [inlineCharts,setInlineCharts]  = useState<Record<string,any>>({});
   const [deskItems,  setDeskItems]       = useState<any[]>([]);
-  const [deskSaving, setDeskSaving]      = useState<string|null>(null);
+  const [deskSaving,  setDeskSaving]      = useState<string|null>(null);
+  const [reminders,   setReminders]       = useState<{id:string;text:string;deskId?:string;deskTitle?:string}[]>([]);
+  const [proactiveDone,setProactiveDone]  = useState<Set<string>>(new Set());
+  const [idleTimer,   setIdleTimer]       = useState<ReturnType<typeof setTimeout>|null>(null);
+
+  const location = useLocation();
+  const lastPageRef     = useRef('');
+  const lastActivityRef = useRef(Date.now());
+  const greetingDoneRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending,  setPending]  = useState(0);
   const [suggIdx,  setSuggIdx]  = useState(0);
@@ -347,6 +364,144 @@ export default function ManavBrainAssistant() {
 
   /* Reload context on project change */
   useEffect(() => { if (selProj) loadContext(); }, [selProj]);
+
+  /* ── DAILY GREETING — once per day, auto-open with personalised message ── */
+  useEffect(() => {
+    if (greetingDoneRef.current || !selProj || projects.length === 0) return;
+    const today       = new Date().toDateString();
+    const lastSeen    = localStorage.getItem('brain_last_greeting');
+    if (lastSeen === today) return;
+    greetingDoneRef.current = true;
+    localStorage.setItem('brain_last_greeting', today);
+
+    const h   = new Date().getHours();
+    const tod = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+    const greetings: Record<string, string> = {
+      morning:   'Good morning! ☀️',
+      afternoon: 'Hey, good afternoon!',
+      evening:   'Good evening!',
+    };
+
+    setTimeout(() => {
+      setOpen(true);
+      setTab('chat');
+      const proj = projects.find(p => p.id === selProj);
+      const greeting = `${greetings[tod]} I've been keeping an eye on things while you were away. Let me pull up what's most important for you right now...`;
+      setMsgs(ms => [...ms, { id:uid(), role:'brain' as MsgRole, content: greeting, ts: new Date() }]);
+      // Trigger a smart morning briefing
+      setTimeout(() => sendMsgInternal(
+        `Give me a concise good ${tod} briefing. In 3-4 short bullets: (1) what's the most urgent thing today, (2) what's looking good, (3) one thing I should do in the next hour. Be warm and direct, like a friend.`,
+        true
+      ), 800);
+    }, 2500);
+  }, [selProj, projects]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── PAGE NAVIGATION INTELLIGENCE — react when user visits a new page ── */
+  useEffect(() => {
+    const page = location.pathname;
+    if (!selProj || page === lastPageRef.current || page === '/') return;
+    lastPageRef.current = page;
+    const key = `brain_page_${page}_${new Date().toDateString()}`;
+    if (proactiveDone.has(key)) return;
+
+    const PAGE_MSGS: Record<string, string> = {
+      '/playground':     `I'm looking at your canvas right now. ${canvasBlocks.length > 0 ? `You have ${canvasBlocks.length} cards — want me to tell you which one to focus on first?` : "Your canvas looks empty. Want me to suggest a starting strategy?"}`,
+      '/dashboard':      `Checking your dashboard. ${metrics ? `Your LLM score is ${metrics.llm_visibility ?? '??'}/100.` : 'I don't see any metrics yet — want me to run an audit to fill this in?'}`,
+      '/data-room':      "This is where your project knowledge lives. The more you fill in here, the smarter my advice gets. Want help completing it?",
+      '/audit':          "Ready to run an audit? Drop your URL in and I'll find everything that needs fixing. Or I can start one now if you tell me which page to check.",
+      '/algorithm-intel':"Let's see what algorithm updates matter for your site. I'll flag anything that could be affecting your rankings right now.",
+      '/brain-learning': `You have ${learnings.length} active learnings. ${learnings.length > 0 ? "Want me to apply the best ones to your current canvas?" : "As we work together, I'll start building up your learning library automatically."}`,
+      '/desk':           `Your desk has ${deskItems.length} saved items. ${deskItems.length > 0 ? "Want me to summarise the most important ones?" : "I'll save anything useful here so you can come back to it."}`,
+    };
+
+    const msg = PAGE_MSGS[page];
+    if (!msg) return;
+
+    setProactiveDone(s => new Set([...s, key]));
+    setTimeout(() => {
+      setMsgs(ms => [...ms, { id:uid(), role:'brain' as MsgRole, content: msg, ts: new Date() }]);
+      setAlerts(n => n); // trigger badge update without incrementing
+    }, 1500);
+  }, [location.pathname, selProj]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── DESK ITEM REMINDERS — check for notes the user should review ── */
+  useEffect(() => {
+    if (!selProj || deskItems.length === 0) return;
+    const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+    const now      = Date.now();
+    const due      = deskItems.filter(item => {
+      const age    = now - new Date(item.created_at).getTime();
+      const key    = `reminded_${item.id}`;
+      return age > TWO_DAYS && !sessionStorage.getItem(key);
+    }).slice(0, 2);
+
+    if (due.length === 0) return;
+    setReminders(due.map(item => ({
+      id:        item.id,
+      text:      `You saved a note ${Math.floor((now - new Date(item.created_at).getTime()) / (24*60*60*1000))} days ago: "${item.title}"`,
+      deskId:    item.id,
+      deskTitle: item.title,
+    })));
+  }, [deskItems, selProj]);
+
+  /* ── IDLE NUDGE — gently prompt if user has been quiet for 15 mins ── */
+  useEffect(() => {
+    const IDLE_MS = 15 * 60 * 1000;
+    const resetIdle = () => { lastActivityRef.current = Date.now(); };
+    window.addEventListener('mousemove', resetIdle);
+    window.addEventListener('keydown',   resetIdle);
+
+    const check = setInterval(() => {
+      const idle   = Date.now() - lastActivityRef.current;
+      const key    = `idle_nudge_${new Date().toDateString()}_${new Date().getHours()}`;
+      if (idle > IDLE_MS && !open && selProj && !sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        setMsgs(ms => [...ms, { id:uid(), role:'brain' as MsgRole,
+          content: "Still here if you need me 👋  What are you working on? I can suggest the highest-value thing to do right now.",
+          ts: new Date() }]);
+      }
+    }, 60 * 1000);
+
+    return () => {
+      window.removeEventListener('mousemove', resetIdle);
+      window.removeEventListener('keydown',   resetIdle);
+      clearInterval(check);
+    };
+  }, [open, selProj]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── SMART CONTEXT SCAN after project loads ── */
+  useEffect(() => {
+    if (!selProj || !ctx) return;
+    const insights: string[] = [];
+    const met = ctx?.metrics || metrics;
+
+    if (met?.created_at) {
+      const age = Math.floor((Date.now() - new Date(met.created_at).getTime()) / (1000*60*60*24));
+      if (age > 10) insights.push(`📊 Your metrics are ${age} days old — a fresh audit would help.`);
+    }
+    if (!ctx?.project?.url) insights.push(`⚙️ Your site URL isn't set. Add it in the Data Room so I can run audits.`);
+    const placedCards = canvasBlocks.filter((b:any) => b.placed);
+    const week1       = placedCards.filter((b:any) => b.week === 1);
+    if (week1.length > 0) {
+      const pending = week1.filter((b:any) => b.status !== 'done');
+      if (pending.length > 0) insights.push(`🎯 Week 1 has ${pending.length} task${pending.length>1?'s':''} still to go — want to tackle one now?`);
+    }
+
+    if (insights.length > 0) {
+      const key = `smart_scan_${selProj}_${new Date().toDateString()}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        setTimeout(() => {
+          setMsgs(ms => [...ms, { id:uid(), role:'brain' as MsgRole,
+            content: `Here's what I'm noticing:
+
+${insights.join('
+')}`,
+            ts: new Date() }]);
+        }, 3000);
+      }
+    }
+  }, [selProj, ctx, metrics, canvasBlocks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ───────────────────────────────────────────────────────────────
      INSTALL ERROR INTERCEPTORS — runs once on mount
@@ -855,7 +1010,7 @@ export default function ManavBrainAssistant() {
           setDeskSaving(null);
           if (data.error) { upd('error', data.error); break; }
           setDeskItems(prev => [data.item, ...prev]);
-          upd('done', `Saved to Desk: "${action.title || 'Brain Note'}"`);
+          upd('done', `Saved to Desk ✅  "${action.title || 'Brain Note'}" — I'll remind you about it if it needs attention.`);
           break;
         }
 
@@ -1026,7 +1181,7 @@ export default function ManavBrainAssistant() {
                 ◈ MANAV BRAIN {alertCount>0?'— ALERT':health==='healing'?'— HEALING':health==='scanning'?'— SCANNING':'— GOD MODE'}
               </div>
               <div style={{fontSize:7,fontFamily:'monospace',color:'rgba(255,255,255,0.2)',letterSpacing:'0.06em'}}>
-                {loading?'PROCESSING...':health==='healing'?'SELF-HEALING ACTIVE':health==='scanning'?'SCANNING...':schemaOk===false?'⚠ MIGRATION NEEDED':alertCount>0?`${alertCount} UNRESOLVED ANOMALY${alertCount>1?'S':''}`:hc.label}
+                {loading?'Thinking...':health==='healing'?'On it! Self-healing...':health==='scanning'?'Checking everything...':schemaOk===false?'⚠ Quick setup needed':alertCount>0?`${alertCount} thing${alertCount>1?'s':''} to look at`:hc.label}
               </div>
             </div>
             <div style={{width:5,height:5,borderRadius:'50%',background:hc.color,boxShadow:`0 0 6px ${hc.glow}`,flexShrink:0}}/>
@@ -1084,8 +1239,25 @@ export default function ManavBrainAssistant() {
               </div>
               {msgs.length<=3 && (
                 <div style={{position:'relative',zIndex:2,padding:'6px 14px 0',display:'flex',gap:5,flexWrap:'wrap',borderTop:'1px solid rgba(255,255,255,0.04)'}}>
-                  {SUGGESTIONS.slice(suggIdx%SUGGESTIONS.length,(suggIdx%SUGGESTIONS.length)+3).map((s,i)=>(
-                    <button key={i} onClick={()=>{setInput(s);inputRef.current?.focus();}} style={{background:'rgba(99,102,241,0.05)',border:'1px solid rgba(99,102,241,0.14)',borderRadius:12,padding:'3px 8px',fontSize:8,fontFamily:'monospace',color:'rgba(165,180,252,0.65)',cursor:'pointer',whiteSpace:'nowrap'}}>{s}</button>
+                  {(PAGE_SUGGESTIONS[location.pathname] || DEFAULT_SUGGESTIONS).slice(0,3).map((s,i)=>(
+                    <button key={i} onClick={()=>sendMessage(s)} style={{background:'rgba(99,102,241,0.05)',border:'1px solid rgba(99,102,241,0.14)',borderRadius:12,padding:'4px 10px',fontSize:9,fontFamily:'monospace',color:'rgba(165,180,252,0.7)',cursor:'pointer',whiteSpace:'nowrap',transition:'all 0.15s'}}
+                      onMouseEnter={e=>(e.target as HTMLElement).style.background='rgba(99,102,241,0.12)'}
+                      onMouseLeave={e=>(e.target as HTMLElement).style.background='rgba(99,102,241,0.05)'}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Reminder cards */}
+              {reminders.length > 0 && (
+                <div style={{position:'relative',zIndex:2,padding:'6px 14px',borderTop:'1px solid rgba(251,191,36,0.08)'}}>
+                  {reminders.map((r,i) => (
+                    <div key={r.id} style={{background:'rgba(251,191,36,0.04)',border:'1px solid rgba(251,191,36,0.15)',borderRadius:8,padding:'7px 10px',marginBottom:4,display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:9,fontFamily:'monospace',color:'rgba(251,191,36,0.7)',flex:1,lineHeight:1.4}}>🔔 {r.text}</span>
+                      <button onClick={()=>{navigate('/desk');setOpen(false);}} style={{background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:5,padding:'2px 8px',color:'#fbbf24',fontSize:8,fontFamily:'monospace',cursor:'pointer'}}>Open</button>
+                      <button onClick={()=>{sessionStorage.setItem(`reminded_${r.id}`,'1');setReminders(prev=>prev.filter((_,j)=>j!==i));}} style={{background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.2)',fontSize:8,padding:'0 2px'}}>✕</button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1111,7 +1283,7 @@ export default function ManavBrainAssistant() {
                       style={{width:'100%',background:'rgba(0,0,0,0.4)',border:'1px solid rgba(6,182,212,0.1)',borderRadius:6,padding:'6px 8px',fontSize:9,color:'rgba(255,255,255,0.6)',outline:'none',resize:'vertical',fontFamily:'monospace',boxSizing:'border-box'}}/>
                   </div>
                 )}
-                  <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKey} disabled={loading} rows={1} placeholder="Tell Manav Brain what to do or ask anything..."
+                  <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKey} disabled={loading} rows={1} placeholder="Ask me anything — what to focus on, what's broken, what to do next..."
                     style={{flex:1,background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:10,padding:'8px 12px',fontSize:11,color:'rgba(255,255,255,0.78)',outline:'none',resize:'none',fontFamily:'inherit',lineHeight:1.5,minHeight:36,maxHeight:110,transition:'border-color 0.18s'}}
                     onFocus={e=>e.target.style.borderColor='rgba(99,102,241,0.4)'} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.07)'}/>
                   <button onClick={()=>sendMessage(input)} disabled={loading||!input.trim()} style={{width:36,height:36,borderRadius:9,border:'none',cursor:'pointer',flexShrink:0,background:loading||!input.trim()?'rgba(99,102,241,0.12)':'linear-gradient(135deg,#6366f1,#4f46e5)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:!loading&&input.trim()?'0 0 14px rgba(99,102,241,0.35)':'none',transition:'all 0.18s'}}>
@@ -1217,10 +1389,10 @@ export default function ManavBrainAssistant() {
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:'auto'}}>
                 {[
                   {label:'Open Desk',         icon:FileText, fn:()=>navigate('/desk')},
-                  {label:'Full Diagnosis',    icon:Shield, fn:()=>{setTab('chat');sendMsgInternal('Run a complete system diagnosis. Check all APIs, the database schema, environment variables, and code imports. List every issue you find and provide the exact fix for each.',true);}},
-                  {label:'Fix 500 Errors',    icon:Zap,    fn:()=>{setTab('chat');sendMsgInternal('The task-engine and algorithm-intel APIs are returning HTTP 500 errors. Diagnose the exact cause — check for: missing migration columns, dynamic import issues in ai-cache.ts, missing env vars. Provide the exact fix.',true);}},
-                  {label:'Migration Check',   icon:Database,fn:()=>{setTab('chat');sendMsgInternal('Check if migration-brain-v2.sql has been run. Tell me exactly how to verify it and how to run it if needed.',true);}},
-                  {label:'Scan & Fix All',    icon:Radio,  fn:()=>{runHealthScan();setTab('chat');sendMsgInternal('Scan the entire system and provide a prioritised list of every issue you can detect. For each issue provide: what it is, why it matters, and the exact fix.',true);}},
+                  {label:'What needs fixing?', icon:Shield, fn:()=>{setTab('chat');sendMsgInternal('What needs fixing right now? Check APIs, schema, environment. Be direct and brief.',true);}},
+                  {label:'Fix my API errors',  icon:Zap,    fn:()=>{setTab('chat');sendMsgInternal('My APIs are returning 500 errors. Diagnose what\'s broken and tell me exactly what to do.',true);}},
+                  {label:'Check my database', icon:Database, fn:()=>{setTab('chat');sendMsgInternal('Is my database set up correctly? Check all migrations and tell me if anything is missing.',true);}},
+                  {label:'Full health scan',   icon:Radio,  fn:()=>{runHealthScan();setTab('chat');sendMsgInternal('Do a full health scan and give me a prioritised list of everything that needs attention. Be brief and direct.',true);}},
                 ].map((item,i) => (
                   <button key={i} onClick={item.fn} style={{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:8,padding:'8px',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
                     <item.icon size={10} style={{color:'#6366f1',flexShrink:0}}/>
