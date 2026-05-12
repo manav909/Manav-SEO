@@ -1,6 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { createClient } from "@supabase/supabase-js";
+import Anthropic                              from "@anthropic-ai/sdk";
+import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { extractAndSaveLearning }            from "./ai-cache";
 
 export const config = { maxDuration: 120 };
 
@@ -9,11 +10,6 @@ const sb = createClient(
   process.env.VITE_SUPABASE_ANON_KEY!
 );
 
-// ─────────────────────────────────────────────────────────────────────
-// TOPIC CATALOG
-// weight 1-10: how critically important this is RIGHT NOW in 2025.
-// Added "added" field: approximate date this topic entered the landscape.
-// ─────────────────────────────────────────────────────────────────────
 export const TOPIC_CATALOG = [
   // Google Core Updates
   { id: "g_march_2025_core",       weight: 10, engine: "google",     category: "core_update",     label: "March 2025 Core Update",                   source: "Google Search Central",              group: "Google Core Updates",    added: "2025-03" },
@@ -61,9 +57,6 @@ export const TOPIC_CATALOG = [
   { id: "b_bing_webmaster_tools",  weight:  5, engine: "bing",       category: "technical",       label: "Bing Webmaster Tools Best Practices",      source: "Bing Webmaster",                     group: "Bing & Microsoft",       added: "2024-01" },
 ];
 
-// ─────────────────────────────────────────────────────────────────────
-// Safe JSON parser with truncation recovery
-// ─────────────────────────────────────────────────────────────────────
 function parseJson(text: string): any | null {
   const c = text.replace(/^```[a-z]*\n?/gm, "").replace(/^```\s*$/gm, "").trim();
   const f = c.indexOf("{"), l = c.lastIndexOf("}");
@@ -75,9 +68,6 @@ function parseJson(text: string): any | null {
   return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Build focused Claude prompt for ONE topic → ONE deep item
-// ─────────────────────────────────────────────────────────────────────
 function buildTopicPrompt(topic: { label: string; engine: string; category: string; source: string; added?: string }): string {
   return `You are the world's #1 SEO expert and search algorithm specialist with complete knowledge up to 2025.
 
@@ -116,21 +106,13 @@ Return ONLY a raw JSON object (no markdown fences, no prose, start immediately w
 }`;
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Handler
-// ─────────────────────────────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
     const { action } = req.body;
     if (!action) return res.status(400).json({ error: "action required" });
-    // Anthropic client is created only inside actions that call Claude.
-    // get_catalog, save_item, get_all, delete_item are DB-only.
 
     // ══ GET CATALOG ══════════════════════════════════════════════════
-    // Returns the full topic catalog with saved-status per topic.
-    // Matches saved items by "tid:{topic_id}" tag (reliable) then by
-    // title (fallback for items saved before tid-tagging was added).
     if (action === "get_catalog") {
       const { data } = await sb.from("algorithm_knowledge")
         .select("id,title,updated_at,tags")
@@ -144,108 +126,76 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (tag.startsWith("tid:")) byTopicId.set(tag.slice(4), { id: row.id, updated_at: row.updated_at });
         }
       }
-
       const getMatch = (id: string, label: string) =>
         byTopicId.get(id) || byTitle.get(label.toLowerCase().trim()) || null;
-
       const STALE_MS = 7 * 24 * 60 * 60 * 1000;
-
       const catalog = TOPIC_CATALOG.map(t => {
         const m = getMatch(t.id, t.label);
-        return {
-          ...t,
-          saved_id:  m?.id || null,
-          saved_at:  m?.updated_at || null,
-          is_stale:  m ? Date.now() - new Date(m.updated_at).getTime() > STALE_MS : false,
-          is_custom: false,
-        };
+        return { ...t, saved_id: m?.id || null, saved_at: m?.updated_at || null,
+          is_stale: m ? Date.now() - new Date(m.updated_at).getTime() > STALE_MS : false, is_custom: false };
       });
-
-      // Append user-added custom topics (tagged "custom")
       const customRows = (data || []).filter((r: any) => (r.tags || []).includes("custom"));
       for (const row of customRows) {
         if (TOPIC_CATALOG.some(t => t.label.toLowerCase().trim() === row.title?.toLowerCase().trim())) continue;
-        catalog.push({
-          id:        `custom_${row.id}`,
-          weight:    8,
-          engine:    "google",
-          category:  "general",
-          label:     row.title,
-          source:    "User added",
-          group:     "Custom Topics",
-          added:     row.updated_at?.slice(0, 7) || "2025",
-          saved_id:  row.id,
-          saved_at:  row.updated_at,
-          is_stale:  Date.now() - new Date(row.updated_at).getTime() > STALE_MS,
-          is_custom: true,
-        });
+        catalog.push({ id: `custom_${row.id}`, weight: 8, engine: "google", category: "general", label: row.title,
+          source: "User added", group: "Custom Topics", added: row.updated_at?.slice(0, 7) || "2025",
+          saved_id: row.id, saved_at: row.updated_at,
+          is_stale: Date.now() - new Date(row.updated_at).getTime() > STALE_MS, is_custom: true });
       }
-
       return res.status(200).json({ success: true, catalog });
     }
 
     // ══ FETCH SINGLE TOPIC ═══════════════════════════════════════════
     if (action === "fetch_topic") {
       const anthropic = new Anthropic();
-      const { topic_id } = req.body;
+      const { topic_id, project_id = null } = req.body;
       const topic = TOPIC_CATALOG.find(t => t.id === topic_id);
       if (!topic) return res.status(400).json({ error: "Unknown topic_id" });
 
       const msg = await anthropic.messages.create({
-        model:      "claude-sonnet-4-5",
-        max_tokens: 3000,
-        system:     "You are the world's #1 SEO expert. Return ONLY a raw JSON object. Start with { and end with }. No markdown. No prose.",
-        messages:   [{ role: "user", content: buildTopicPrompt(topic) }],
+        model: "claude-sonnet-4-5", max_tokens: 3000,
+        system: "You are the world's #1 SEO expert. Return ONLY a raw JSON object. Start with { and end with }. No markdown. No prose.",
+        messages: [{ role: "user", content: buildTopicPrompt(topic) }],
       });
-
       const raw    = msg.content[0].type === "text" ? msg.content[0].text : "";
       const parsed = parseJson(raw);
       if (!parsed?.title) {
         console.error(`[algo] fetch_topic parse failed for ${topic_id}:`, raw.slice(0, 200));
         return res.status(500).json({ success: false, error: "Parse failed. Please try again." });
       }
+
+      // Auto-capture algorithm knowledge as a brain learning
+      void extractAndSaveLearning(
+        "algorithm_intel",
+        project_id,
+        [
+          `Algorithm topic fetched: ${parsed.title}`,
+          `Summary: ${parsed.summary}`,
+          `What changed: ${parsed.what_changed || ""}`,
+          `Impact: ${parsed.impact_level}`,
+          `Best practices: ${(parsed.best_practices || []).map((p: any) => p.practice).join(" | ")}`,
+          `Key positive signals: ${(parsed.ranking_factors || []).filter((f: any) => f.signal === "positive").map((f: any) => f.factor).join(" | ")}`,
+          `Key negative signals: ${(parsed.ranking_factors || []).filter((f: any) => f.signal === "negative").map((f: any) => f.factor).join(" | ")}`,
+        ].join("\n"),
+        {
+          card_type:       topic.category?.includes("geo") ? "geo" : topic.category?.includes("technical") ? "technical" : topic.category?.includes("content") ? "content" : "general",
+          card_title:      `Algorithm: ${parsed.title}`,
+          context_summary: `${topic.engine} algorithm: ${parsed.title} — ${parsed.impact_level} impact`,
+        }
+      );
+
       return res.status(200).json({ success: true, item: parsed, topic });
     }
 
     // ══ SCAN FOR NEW UPDATES ═════════════════════════════════════════
     if (action === "scan_for_new") {
-      const anthropic   = new Anthropic();
+      const anthropic    = new Anthropic();
       const existingLabels = TOPIC_CATALOG.map(t => t.label);
-
       const msg = await anthropic.messages.create({
-        model:      "claude-sonnet-4-5",
-        max_tokens: 2000,
-        system:     "You are the world's #1 SEO expert. Return ONLY valid JSON. No fences.",
-        messages: [{
-          role: "user",
-          content: `You are the world's #1 SEO expert with comprehensive knowledge up to mid-2025.
-
-The following topics are already in our knowledge catalog:
-${existingLabels.map((l, i) => `${i + 1}. ${l}`).join("\n")}
-
-Identify 5-8 IMPORTANT algorithm updates, policies, or ranking signal changes that are:
-1. NOT in the list above
-2. Relevant and impactful for SEO practitioners in 2025
-3. From Google, Bing, ChatGPT Search, Perplexity, or Gemini
-4. Official or well-confirmed — no speculation
-
-Return ONLY this JSON:
-{
-  "suggestions": [
-    {
-      "label": "specific topic name",
-      "engine": "google|bing|chatgpt|perplexity|gemini|general",
-      "category": "core_update|helpful_content|spam|eeat|technical|content|links|geo_ai|core_web_vitals|local|general",
-      "source": "official source name",
-      "group": "Google Core Updates|E-E-A-T & Quality|Core Web Vitals|Technical SEO|Content & AI Visibility|AI Search Engines|Bing & Microsoft",
-      "why_important": "one sentence: why SEO practitioners need to know this right now",
-      "weight": 8
-    }
-  ]
-}`,
-        }],
+        model: "claude-sonnet-4-5", max_tokens: 2000,
+        system: "You are the world's #1 SEO expert. Return ONLY valid JSON. No fences.",
+        messages: [{ role: "user", content: `You are the world's #1 SEO expert with comprehensive knowledge up to mid-2025.\n\nThe following topics are already in our knowledge catalog:\n${existingLabels.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n\nIdentify 5-8 IMPORTANT algorithm updates, policies, or ranking signal changes that are:\n1. NOT in the list above\n2. Relevant and impactful for SEO practitioners in 2025\n3. From Google, Bing, ChatGPT Search, Perplexity, or Gemini\n4. Official or well-confirmed — no speculation\n\nReturn ONLY this JSON:\n{\n  "suggestions": [\n    {\n      "label": "specific topic name",\n      "engine": "google|bing|chatgpt|perplexity|gemini|general",\n      "category": "core_update|helpful_content|spam|eeat|technical|content|links|geo_ai|core_web_vitals|local|general",\n      "source": "official source name",\n      "group": "Google Core Updates|E-E-A-T & Quality|Core Web Vitals|Technical SEO|Content & AI Visibility|AI Search Engines|Bing & Microsoft",\n      "why_important": "one sentence: why SEO practitioners need to know this right now",\n      "weight": 8\n    }\n  ]\n}` }],
       });
-
       const raw    = msg.content[0].type === "text" ? msg.content[0].text : "{}";
       const parsed = parseJson(raw);
       if (!parsed?.suggestions?.length) {
@@ -257,38 +207,53 @@ Return ONLY this JSON:
     // ══ FETCH CUSTOM TOPIC ═══════════════════════════════════════════
     if (action === "fetch_custom_topic") {
       const anthropic = new Anthropic();
-      const { label, engine = "google", category = "general", source = "User added" } = req.body;
+      const { label, engine = "google", category = "general", source = "User added", project_id = null } = req.body;
       if (!label) return res.status(400).json({ error: "label required" });
 
       const customTopic = { label, engine, category, source, added: new Date().toISOString().slice(0, 7) };
       const msg = await anthropic.messages.create({
-        model:      "claude-sonnet-4-5",
-        max_tokens: 3000,
-        system:     "You are the world's #1 SEO expert. Return ONLY a raw JSON object. Start with {. No markdown.",
-        messages:   [{ role: "user", content: buildTopicPrompt(customTopic) }],
+        model: "claude-sonnet-4-5", max_tokens: 3000,
+        system: "You are the world's #1 SEO expert. Return ONLY a raw JSON object. Start with {. No markdown.",
+        messages: [{ role: "user", content: buildTopicPrompt(customTopic) }],
       });
-
       const raw    = msg.content[0].type === "text" ? msg.content[0].text : "";
       const parsed = parseJson(raw);
       if (!parsed?.title) return res.status(500).json({ success: false, error: "Parse failed. Try again." });
       parsed.tags = [...new Set([...(Array.isArray(parsed.tags) ? parsed.tags : []), "custom"])];
+
+      // Auto-capture custom algorithm research as a brain learning
+      void extractAndSaveLearning(
+        "algorithm_intel",
+        project_id,
+        [
+          `Custom algorithm research: ${parsed.title}`,
+          `Summary: ${parsed.summary}`,
+          `What changed: ${parsed.what_changed || ""}`,
+          `Impact: ${parsed.impact_level}`,
+          `Best practices: ${(parsed.best_practices || []).map((p: any) => p.practice).join(" | ")}`,
+        ].join("\n"),
+        {
+          card_type:       "general",
+          card_title:      `Custom Algorithm: ${parsed.title}`,
+          context_summary: `Custom research: ${label} — ${parsed.impact_level} impact`,
+        }
+      );
+
       return res.status(200).json({ success: true, item: parsed });
     }
 
     // ══ SAVE ITEM ════════════════════════════════════════════════════
-    // Stores topic_id as "tid:{id}" tag for reliable catalog re-matching.
     if (action === "save_item") {
       const { item, topic_id } = req.body;
       if (!item?.title) return res.status(400).json({ error: "item required" });
 
-      const tidTag   = topic_id ? `tid:${topic_id}` : null;
-      const baseTags = Array.isArray(item.tags) ? item.tags : [];
+      const tidTag    = topic_id ? `tid:${topic_id}` : null;
+      const baseTags  = Array.isArray(item.tags) ? item.tags : [];
       const cleanTags = [...new Set([
         ...baseTags.filter((t: string) => !t.startsWith("tid:")),
         ...(tidTag ? [tidTag] : []),
       ])];
 
-      // Delete existing rows for this topic (by tid tag and by title) before insert
       if (tidTag) await sb.from("algorithm_knowledge").delete().contains("tags", [tidTag]);
       await sb.from("algorithm_knowledge").delete().eq("title", item.title);
 
@@ -337,7 +302,7 @@ Return ONLY this JSON:
     // ══ AUDIT AGAINST LIBRARY ════════════════════════════════════════
     if (action === "audit_against") {
       const anthropic = new Anthropic();
-      const { pageData, projectContext = "", targetEngine = "google" } = req.body;
+      const { pageData, projectContext = "", targetEngine = "google", project_id = null } = req.body;
       if (!pageData) return res.status(400).json({ error: "pageData required" });
 
       const { data: knowledge } = await sb.from("algorithm_knowledge")
@@ -354,148 +319,89 @@ Return ONLY this JSON:
         return `[${k.impact_level?.toUpperCase()}] ${k.title}\n${k.what_changed || k.summary}\nChecks:\n${checks}\nFactors:\n${factors}`;
       }).join("\n\n---\n\n");
 
-      const prompt = `You are the world's #1 SEO specialist. Audit this page against the Algorithm Knowledge Library.
+      const prompt = `You are the world's #1 SEO specialist. Audit this page against the Algorithm Knowledge Library.\n\nPROJECT: ${projectContext}\nPAGE:\nURL: ${pageData.url || "unknown"}\nTitle: "${pageData.title_tag}" (${pageData.title_length}ch) — ${pageData.title_issues}\nH1: "${pageData.h1}" — ${pageData.h1_issues}\nMeta: ${pageData.meta_description !== "Not found" ? `"${pageData.meta_description?.slice(0, 80)}"` : "MISSING"}\nH2s: ${pageData.h2s?.join(", ") || "none"}\nSchema: ${pageData.schema_types?.join(", ") || "none"} (${pageData.structured_data_quality})\nWords: ${pageData.word_count} | Quality: ${pageData.content_quality}\nFAQs: ${pageData.faqs_detected?.length || 0} | GEO: ${pageData.geo_readiness?.answer_format_quality}\nIssues: ${(pageData.issues || []).slice(0, 3).map((i: any) => `[${i.severity}] ${i.detail}`).join("; ") || "none"}\n\nKNOWLEDGE LIBRARY:\n${knowledgeCtx}\n\nReturn ONLY valid JSON (no markdown fences):\n{\n  "overall_score": 0,\n  "grade": "A+|A|B+|B|C+|C|D|F",\n  "verdict": "one sentence overall verdict",\n  "engine_scores": {"google": {"score": 0, "label": "brief"}, "ai_search": {"score": 0, "label": "brief"}},\n  "checks": [{"algorithm": "name", "check": "what was checked", "status": "pass|fail|warning", "evidence": "specific from page data", "fix": "exact fix if failing", "impact": "critical|high|medium|low", "points": 0}],\n  "critical_fails": [{"issue": "what failed", "algorithm": "which algorithm", "fix": "exact step"}],\n  "quick_wins": [{"action": "specific action", "effort": "low|medium|high", "score_impact": "+X pts", "algorithm": "which rewards this"}],\n  "eeat_assessment": {"expertise": "high|medium|low — evidence", "experience": "high|medium|low — evidence", "authoritativeness": "high|medium|low — evidence", "trustworthiness": "high|medium|low — evidence"},\n  "geo_ai_readiness": {"score": 0, "ready_for_ai_citation": false, "gaps": ["gap"], "improvements": ["step"]},\n  "priority_actions": [{"rank": 1, "action": "specific action", "why": "which algorithm requires this", "effort": "low|medium|high", "impact": "critical|high|medium|low"}]\n}`;
 
-PROJECT: ${projectContext}
-PAGE:
-URL: ${pageData.url || "unknown"}
-Title: "${pageData.title_tag}" (${pageData.title_length}ch) — ${pageData.title_issues}
-H1: "${pageData.h1}" — ${pageData.h1_issues}
-Meta: ${pageData.meta_description !== "Not found" ? `"${pageData.meta_description?.slice(0, 80)}"` : "MISSING"}
-H2s: ${pageData.h2s?.join(", ") || "none"}
-Schema: ${pageData.schema_types?.join(", ") || "none"} (${pageData.structured_data_quality})
-Words: ${pageData.word_count} | Quality: ${pageData.content_quality}
-FAQs: ${pageData.faqs_detected?.length || 0} | GEO: ${pageData.geo_readiness?.answer_format_quality}
-Issues: ${(pageData.issues || []).slice(0, 3).map((i: any) => `[${i.severity}] ${i.detail}`).join("; ") || "none"}
-
-KNOWLEDGE LIBRARY:
-${knowledgeCtx}
-
-Return ONLY valid JSON (no markdown fences):
-{
-  "overall_score": 0,
-  "grade": "A+|A|B+|B|C+|C|D|F",
-  "verdict": "one sentence overall verdict",
-  "engine_scores": {"google": {"score": 0, "label": "brief"}, "ai_search": {"score": 0, "label": "brief"}},
-  "checks": [{"algorithm": "name", "check": "what was checked", "status": "pass|fail|warning", "evidence": "specific from page data", "fix": "exact fix if failing", "impact": "critical|high|medium|low", "points": 0}],
-  "critical_fails": [{"issue": "what failed", "algorithm": "which algorithm", "fix": "exact step"}],
-  "quick_wins": [{"action": "specific action", "effort": "low|medium|high", "score_impact": "+X pts", "algorithm": "which rewards this"}],
-  "eeat_assessment": {"expertise": "high|medium|low — evidence", "experience": "high|medium|low — evidence", "authoritativeness": "high|medium|low — evidence", "trustworthiness": "high|medium|low — evidence"},
-  "geo_ai_readiness": {"score": 0, "ready_for_ai_citation": false, "gaps": ["gap"], "improvements": ["step"]},
-  "priority_actions": [{"rank": 1, "action": "specific action", "why": "which algorithm requires this", "effort": "low|medium|high", "impact": "critical|high|medium|low"}]
-}`;
-
-      const msg = await anthropic.messages.create({
-        model:      "claude-sonnet-4-5",
-        max_tokens: 4000,
-        system:     "You are the world's #1 SEO specialist. Return ONLY valid JSON. No fences. No prose.",
-        messages:   [{ role: "user", content: prompt }],
+      const msg   = await anthropic.messages.create({
+        model: "claude-sonnet-4-5", max_tokens: 4000,
+        system: "You are the world's #1 SEO specialist. Return ONLY valid JSON. No fences. No prose.",
+        messages: [{ role: "user", content: prompt }],
       });
       const raw   = (msg.content[0] as any).text || "{}";
       const audit = parseJson(raw);
       if (!audit || Object.keys(audit).length < 3) {
         return res.status(500).json({ success: false, error: "Audit response could not be parsed. Please try again." });
       }
+
+      // Auto-capture algorithm audit findings as a brain learning
+      void extractAndSaveLearning(
+        "algorithm_intel",
+        project_id,
+        [
+          `Algorithm audit for ${pageData.url}: ${audit.grade} (${audit.overall_score}/100)`,
+          `Verdict: ${audit.verdict}`,
+          `Critical fails: ${(audit.critical_fails || []).map((f: any) => f.issue).join(" | ") || "none"}`,
+          `Quick wins: ${(audit.quick_wins || []).slice(0, 3).map((w: any) => w.action).join(" | ") || "none"}`,
+          `GEO ready: ${audit.geo_ai_readiness?.ready_for_ai_citation ? "yes" : "no"} — score: ${audit.geo_ai_readiness?.score || 0}`,
+          `Priority actions: ${(audit.priority_actions || []).slice(0, 3).map((a: any) => a.action).join(" | ") || "none"}`,
+        ].join("\n"),
+        {
+          card_type:       "technical",
+          card_title:      `Algorithm Audit: ${pageData.url}`,
+          context_summary: `Algorithm audit against library — ${audit.grade} grade`,
+        }
+      );
+
       return res.status(200).json({ success: true, audit });
     }
 
     // ══ CHECK CARD OVERLAP ══════════════════════════════════════════
-    // Semantic cross-check: for each proposal, does any existing canvas
-    // card already cover it (duplicate), partially cover it (extend),
-    // or is it genuinely new?
-    // Uses Claude for semantic understanding — keyword matching misses
-    // cards with different titles covering the same underlying issue.
     if (action === "check_card_overlap") {
       const anthropic = new Anthropic();
       const { proposals, existingCards } = req.body;
       if (!Array.isArray(proposals) || !proposals.length) {
         return res.status(400).json({ error: "proposals required" });
       }
-
-      // If no existing cards, everything is new — no Claude call needed
       if (!Array.isArray(existingCards) || !existingCards.length) {
         return res.status(200).json({
           success: true,
           overlap: proposals.map((_: any, i: number) => ({ index: i, status: "new" })),
         });
       }
-
       const proposalList = proposals.map((p: any, i: number) =>
         `[${i}] TYPE:${p.type} PRIORITY:${p.priority} TITLE:"${p.title}" CONTENT:"${(p.content || '').slice(0, 120)}"`
       ).join("\n");
-
       const existingList = existingCards.map((c: any, i: number) =>
         `[${i}] TYPE:${c.type || '?'} STATUS:${c.status || '?'} TITLE:"${(c.title || '').slice(0, 80)}" CONTENT:"${(c.content || '').slice(0, 100)}"`
       ).join("\n");
-
-      const prompt = `You are an SEO project manager. Cross-check these PROPOSALS against EXISTING CANVAS CARDS to prevent duplicate work.
-
-PROPOSALS (to evaluate):
-${proposalList}
-
-EXISTING CANVAS CARDS:
-${existingList}
-
-For each proposal, determine:
-- "new": no existing card covers this issue at all
-- "duplicate": an existing card already covers this issue (same problem, same scope)
-- "extend": an existing card partially covers this issue — recommend expanding the existing card's scope instead of creating a new one
-
-Rules:
-- Be strict about duplicates. If the core problem is the same, it is a duplicate even if worded differently.
-- Only mark "extend" when there is genuine partial overlap that makes scope expansion sensible.
-- Use "new" when the issue is genuinely distinct, even if loosely related.
-
-Return ONLY this JSON (no fences):
-{
-  "overlap": [
-    {
-      "index": 0,
-      "status": "new|duplicate|extend",
-      "matched_card_title": "exact title of the matching existing card, or null if new",
-      "matched_card_index": 0,
-      "reason": "one sentence explaining the decision",
-      "scope_suggestion": "if extend: specific wording to add to the existing card's content; otherwise null"
-    }
-  ]
-}`;
-
+      const prompt = `You are an SEO project manager. Cross-check these PROPOSALS against EXISTING CANVAS CARDS to prevent duplicate work.\n\nPROPOSALS (to evaluate):\n${proposalList}\n\nEXISTING CANVAS CARDS:\n${existingList}\n\nFor each proposal, determine:\n- "new": no existing card covers this issue at all\n- "duplicate": an existing card already covers this issue (same problem, same scope)\n- "extend": an existing card partially covers this — recommend expanding the existing card instead\n\nReturn ONLY this JSON (no fences):\n{\n  "overlap": [\n    {\n      "index": 0,\n      "status": "new|duplicate|extend",\n      "matched_card_title": "exact title of matching card, or null if new",\n      "matched_card_index": 0,\n      "reason": "one sentence explaining the decision",\n      "scope_suggestion": "if extend: specific wording to add; otherwise null"\n    }\n  ]\n}`;
       const msg = await anthropic.messages.create({
-        model:      "claude-sonnet-4-5",
-        max_tokens: 2000,
-        system:     "You are a strict SEO project manager preventing duplicate work. Return ONLY valid JSON. No fences.",
-        messages:   [{ role: "user", content: prompt }],
+        model: "claude-sonnet-4-5", max_tokens: 2000,
+        system: "You are a strict SEO project manager preventing duplicate work. Return ONLY valid JSON. No fences.",
+        messages: [{ role: "user", content: prompt }],
       });
-
       const raw    = (msg.content[0] as any).text || "{}";
       const parsed = parseJson(raw);
-
       if (!parsed?.overlap) {
-        // Fallback: title-based dedup if Claude parse fails
         const normT = (t: string) => t.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim().slice(0, 40);
         const existingTitles = new Set((existingCards as any[]).map((c: any) => normT(c.title || "")));
         return res.status(200).json({
           success: true,
           overlap: (proposals as any[]).map((p: any, i: number) => ({
-            index: i,
-            status: existingTitles.has(normT(p.title)) ? "duplicate" : "new",
+            index: i, status: existingTitles.has(normT(p.title)) ? "duplicate" : "new",
             matched_card_title: existingTitles.has(normT(p.title)) ? p.title : null,
           })),
         });
       }
-
-      // Fill in any missing indices as "new"
       const result = parsed.overlap as any[];
       const covered = new Set(result.map((r: any) => r.index));
       for (let i = 0; i < proposals.length; i++) {
         if (!covered.has(i)) result.push({ index: i, status: "new", matched_card_title: null });
       }
       result.sort((a: any, b: any) => a.index - b.index);
-
       return res.status(200).json({ success: true, overlap: result });
     }
 
-            return res.status(400).json({ error: "Unknown action" });
+    return res.status(400).json({ error: "Unknown action" });
 
   } catch (fatalErr: any) {
     console.error("[algorithm-intel] Fatal:", fatalErr.message);
