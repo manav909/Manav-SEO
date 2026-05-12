@@ -229,7 +229,7 @@ KNOWLEDGE FIELD RULES:
 Include 3-6 issues and 3-5 opportunities. Be specific — cite exact text from the HTML.`;
 
   const msg = await anthropic.messages.create({
-    model:      "claude-sonnet-4-5",
+    model:      "claude-sonnet-4-6",
     max_tokens: 3500,  // Enough for complete JSON even on content-rich pages
     system:     "You are a precise SEO data extraction engine. Return ONLY valid JSON. No prose. No markdown fences. Every field must have a value — never null.",
     messages:   [{ role: "user", content: prompt }],
@@ -257,7 +257,7 @@ Include 3-6 issues and 3-5 opportunities. Be specific — cite exact text from t
 // URL-only fallback when fetch fails
 async function analyseUrlOnly(url: string, anthropic: Anthropic): Promise<any> {
   const msg = await anthropic.messages.create({
-    model: "claude-sonnet-4-5", max_tokens: 800,
+    model: "claude-sonnet-4-6", max_tokens: 800,
     system: "Return ONLY valid JSON. No prose. No markdown fences.",
     messages: [{ role: "user", content: `Page at ${url} could not be fetched. Infer what you can from the URL structure only.
 Return JSON with these fields set to "Not fetched" where unknown:
@@ -456,7 +456,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .eq("project_id", projectId).order("crawled_at", { ascending: false });
       if (Array.isArray(urls) && urls.length) q = q.in("url", urls); else q = q.limit(50);
       const { data, error } = await q;
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) return res.status(200).json({ error: error.message });
       const results = (data || []).map((row: any) => ({
         url: row.url, status: row.fetch_status || 200, error: row.fetch_error || undefined,
         page_analysis: row.page_analysis, knowledge_fields: row.knowledge_fields || [],
@@ -464,7 +464,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         from_cache: true, cached_at: row.crawled_at,
       }));
       return res.status(200).json({ success: true, urls_crawled: results.length, crawled_at: results[0]?.cached_at || new Date().toISOString(), results, from_cache: true, ...buildSummary(results) });
-    } catch (err: any) { return res.status(500).json({ success: false, error: err.message }); }
+    } catch (err: any) { return res.status(200).json({ success: false, error: err.message }); }
   }
 
   // ── compare_analysis ──────────────────────────────────────────────
@@ -568,7 +568,7 @@ Return ONLY valid JSON (absolutely no markdown fences, no prose before or after)
 
     try {
       const msg = await anthropic.messages.create({
-        model:      "claude-sonnet-4-5",
+        model:      "claude-sonnet-4-6",
         max_tokens: 6000,  // Increased from 5000 — prevents truncation on multi-page analyses
         system:     "You are Manav Brain. Return ONLY valid JSON. No markdown fences. No text before or after the JSON. Cite specific observations from the page data.",
         messages:   [{ role: "user", content: prompt }],
@@ -584,7 +584,7 @@ Return ONLY valid JSON (absolutely no markdown fences, no prose before or after)
       // FIX: detect empty/failed parse and return a real error instead of {}
       if (!analysis || Object.keys(analysis).length < 3) {
         console.error("[compare] JSON parse failed. Raw response (first 300):", raw.slice(0, 300));
-        return res.status(500).json({
+        return res.status(200).json({
           success: false,
           error: "Analysis could not be parsed. The model may have returned an incomplete response. Try again — if it persists, reduce the number of URLs.",
           raw_preview: raw.slice(0, 200),
@@ -594,7 +594,7 @@ Return ONLY valid JSON (absolutely no markdown fences, no prose before or after)
       return res.status(200).json({ success: true, analysis });
     } catch (err: any) {
       console.error("[compare] Claude API error:", err.message);
-      return res.status(500).json({ success: false, error: err.message });
+      return res.status(200).json({ success: false, error: err.message });
     }
   }
 

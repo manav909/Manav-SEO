@@ -220,7 +220,7 @@ Return ONLY the JSON. No other text.`;
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1200,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -540,7 +540,7 @@ Return ONLY valid JSON:
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -681,6 +681,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json(result);
 
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(200).json({ success: false, error: err.message });
   }
 }

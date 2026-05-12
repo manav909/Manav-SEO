@@ -152,7 +152,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!topic) return res.status(400).json({ error: "Unknown topic_id" });
 
       const msg = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 3000,
+        model: "claude-sonnet-4-6", max_tokens: 3000,
         system: "You are the world's #1 SEO expert. Return ONLY a raw JSON object. Start with { and end with }. No markdown. No prose.",
         messages: [{ role: "user", content: buildTopicPrompt(topic) }],
       });
@@ -160,7 +160,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const parsed = parseJson(raw);
       if (!parsed?.title) {
         console.error(`[algo] fetch_topic parse failed for ${topic_id}:`, raw.slice(0, 200));
-        return res.status(500).json({ success: false, error: "Parse failed. Please try again." });
+        return res.status(200).json({ success: false, error: "Parse failed. Please try again." });
       }
 
       // Auto-capture algorithm knowledge as a brain learning
@@ -173,14 +173,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const anthropic    = new Anthropic();
       const existingLabels = TOPIC_CATALOG.map(t => t.label);
       const msg = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 2000,
+        model: "claude-sonnet-4-6", max_tokens: 2000,
         system: "You are the world's #1 SEO expert. Return ONLY valid JSON. No fences.",
         messages: [{ role: "user", content: `You are the world's #1 SEO expert with comprehensive knowledge up to mid-2025.\n\nThe following topics are already in our knowledge catalog:\n${existingLabels.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n\nIdentify 5-8 IMPORTANT algorithm updates, policies, or ranking signal changes that are:\n1. NOT in the list above\n2. Relevant and impactful for SEO practitioners in 2025\n3. From Google, Bing, ChatGPT Search, Perplexity, or Gemini\n4. Official or well-confirmed — no speculation\n\nReturn ONLY this JSON:\n{\n  "suggestions": [\n    {\n      "label": "specific topic name",\n      "engine": "google|bing|chatgpt|perplexity|gemini|general",\n      "category": "core_update|helpful_content|spam|eeat|technical|content|links|geo_ai|core_web_vitals|local|general",\n      "source": "official source name",\n      "group": "Google Core Updates|E-E-A-T & Quality|Core Web Vitals|Technical SEO|Content & AI Visibility|AI Search Engines|Bing & Microsoft",\n      "why_important": "one sentence: why SEO practitioners need to know this right now",\n      "weight": 8\n    }\n  ]\n}` }],
       });
       const raw    = msg.content[0].type === "text" ? msg.content[0].text : "{}";
       const parsed = parseJson(raw);
       if (!parsed?.suggestions?.length) {
-        return res.status(500).json({ success: false, error: "No suggestions returned. Try again." });
+        return res.status(200).json({ success: false, error: "No suggestions returned. Try again." });
       }
       return res.status(200).json({ success: true, suggestions: parsed.suggestions });
     }
@@ -193,13 +193,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const customTopic = { label, engine, category, source, added: new Date().toISOString().slice(0, 7) };
       const msg = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 3000,
+        model: "claude-sonnet-4-6", max_tokens: 3000,
         system: "You are the world's #1 SEO expert. Return ONLY a raw JSON object. Start with {. No markdown.",
         messages: [{ role: "user", content: buildTopicPrompt(customTopic) }],
       });
       const raw    = msg.content[0].type === "text" ? msg.content[0].text : "";
       const parsed = parseJson(raw);
-      if (!parsed?.title) return res.status(500).json({ success: false, error: "Parse failed. Try again." });
+      if (!parsed?.title) return res.status(200).json({ success: false, error: "Parse failed. Try again." });
       parsed.tags = [...new Set([...(Array.isArray(parsed.tags) ? parsed.tags : []), "custom"])];
 
       // Auto-capture custom algorithm research as a brain learning
@@ -239,7 +239,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updated_at:      new Date().toISOString(),
       }).select().single();
 
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true, item: data });
     }
 
@@ -251,7 +251,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (category)     q = q.eq("category", category);
       if (impact_level) q = q.eq("impact_level", impact_level);
       const { data, error } = await q;
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true, items: data || [] });
     }
 
@@ -260,7 +260,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { id } = req.body;
       if (!id) return res.status(400).json({ error: "id required" });
       const { error } = await sb.from("algorithm_knowledge").delete().eq("id", id);
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true });
     }
 
@@ -287,14 +287,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const prompt = `You are the world's #1 SEO specialist. Audit this page against the Algorithm Knowledge Library.\n\nPROJECT: ${projectContext}\nPAGE:\nURL: ${pageData.url || "unknown"}\nTitle: "${pageData.title_tag}" (${pageData.title_length}ch) — ${pageData.title_issues}\nH1: "${pageData.h1}" — ${pageData.h1_issues}\nMeta: ${pageData.meta_description !== "Not found" ? `"${pageData.meta_description?.slice(0, 80)}"` : "MISSING"}\nH2s: ${pageData.h2s?.join(", ") || "none"}\nSchema: ${pageData.schema_types?.join(", ") || "none"} (${pageData.structured_data_quality})\nWords: ${pageData.word_count} | Quality: ${pageData.content_quality}\nFAQs: ${pageData.faqs_detected?.length || 0} | GEO: ${pageData.geo_readiness?.answer_format_quality}\nIssues: ${(pageData.issues || []).slice(0, 3).map((i: any) => `[${i.severity}] ${i.detail}`).join("; ") || "none"}\n\nKNOWLEDGE LIBRARY:\n${knowledgeCtx}\n\nReturn ONLY valid JSON (no markdown fences):\n{\n  "overall_score": 0,\n  "grade": "A+|A|B+|B|C+|C|D|F",\n  "verdict": "one sentence overall verdict",\n  "engine_scores": {"google": {"score": 0, "label": "brief"}, "ai_search": {"score": 0, "label": "brief"}},\n  "checks": [{"algorithm": "name", "check": "what was checked", "status": "pass|fail|warning", "evidence": "specific from page data", "fix": "exact fix if failing", "impact": "critical|high|medium|low", "points": 0}],\n  "critical_fails": [{"issue": "what failed", "algorithm": "which algorithm", "fix": "exact step"}],\n  "quick_wins": [{"action": "specific action", "effort": "low|medium|high", "score_impact": "+X pts", "algorithm": "which rewards this"}],\n  "eeat_assessment": {"expertise": "high|medium|low — evidence", "experience": "high|medium|low — evidence", "authoritativeness": "high|medium|low — evidence", "trustworthiness": "high|medium|low — evidence"},\n  "geo_ai_readiness": {"score": 0, "ready_for_ai_citation": false, "gaps": ["gap"], "improvements": ["step"]},\n  "priority_actions": [{"rank": 1, "action": "specific action", "why": "which algorithm requires this", "effort": "low|medium|high", "impact": "critical|high|medium|low"}]\n}`;
 
       const msg   = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 4000,
+        model: "claude-sonnet-4-6", max_tokens: 4000,
         system: "You are the world's #1 SEO specialist. Return ONLY valid JSON. No fences. No prose.",
         messages: [{ role: "user", content: prompt }],
       });
       const raw   = (msg.content[0] as any).text || "{}";
       const audit = parseJson(raw);
       if (!audit || Object.keys(audit).length < 3) {
-        return res.status(500).json({ success: false, error: "Audit response could not be parsed. Please try again." });
+        return res.status(200).json({ success: false, error: "Audit response could not be parsed. Please try again." });
       }
 
       // Auto-capture algorithm audit findings as a brain learning
@@ -323,7 +323,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ).join("\n");
       const prompt = `You are an SEO project manager. Cross-check these PROPOSALS against EXISTING CANVAS CARDS to prevent duplicate work.\n\nPROPOSALS (to evaluate):\n${proposalList}\n\nEXISTING CANVAS CARDS:\n${existingList}\n\nFor each proposal, determine:\n- "new": no existing card covers this issue at all\n- "duplicate": an existing card already covers this issue (same problem, same scope)\n- "extend": an existing card partially covers this — recommend expanding the existing card instead\n\nReturn ONLY this JSON (no fences):\n{\n  "overlap": [\n    {\n      "index": 0,\n      "status": "new|duplicate|extend",\n      "matched_card_title": "exact title of matching card, or null if new",\n      "matched_card_index": 0,\n      "reason": "one sentence explaining the decision",\n      "scope_suggestion": "if extend: specific wording to add; otherwise null"\n    }\n  ]\n}`;
       const msg = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 2000,
+        model: "claude-sonnet-4-6", max_tokens: 2000,
         system: "You are a strict SEO project manager preventing duplicate work. Return ONLY valid JSON. No fences.",
         messages: [{ role: "user", content: prompt }],
       });
@@ -353,6 +353,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (fatalErr: any) {
     console.error("[algorithm-intel] Fatal:", fatalErr.message);
-    return res.status(500).json({ success: false, error: fatalErr.message || "Internal server error" });
+    return res.status(200).json({ success: false, error: fatalErr.message || "Internal server error" });
   }
 }

@@ -185,7 +185,7 @@ Using ONLY the data above, return this EXACT JSON — no markdown, no text outsi
 
   try {
     const response = await client.messages.create({
-      model:      'claude-sonnet-4-5',
+      model:      'claude-sonnet-4-6',
       max_tokens: 3000,
       messages:   [{ role: 'user', content: prompt }],
     });
@@ -203,6 +203,6 @@ Using ONLY the data above, return this EXACT JSON — no markdown, no text outsi
     });
 
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(200).json({ success: false, error: err.message });
   }
 }

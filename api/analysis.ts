@@ -113,7 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // ── Step 1: Extract from document ──
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 4000,
+        model: "claude-sonnet-4-6", max_tokens: 4000,
         system: SYSTEM,
         messages: [{ role: "user", content: extractPrompt }],
       });
@@ -162,7 +162,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ].join("\n");
 
             const verifyRes = await anthropic.messages.create({
-              model: "claude-sonnet-4-5", max_tokens: 400,
+              model: "claude-sonnet-4-6", max_tokens: 400,
               system: SYSTEM,
               messages: [{ role: "user", content: verifyMsg }],
             });
@@ -198,7 +198,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      return res.status(200).json({ success: false, error: err.message });
     }
   }
 
@@ -256,7 +256,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const anthropic = new Anthropic();
     const stream = await anthropic.messages.stream({
-      model: "claude-sonnet-4-5", max_tokens: mode === "deep" ? 16000 : 8000,
+      model: "claude-sonnet-4-6", max_tokens: mode === "deep" ? 16000 : 8000,
       system: SYSTEM,
       messages: [{ role: "user", content: auditPrompt }],
     });

@@ -242,7 +242,7 @@ ${mode === 'deep' ? `- DEEP MODE: Be exhaustive. Every section should have maxim
   try {
     const client = new Anthropic();
     const stream = await client.messages.stream({
-      model:      "claude-sonnet-4-5",
+      model:      "claude-sonnet-4-6",
       max_tokens: cfg.maxTokens,
       system:     SYSTEM_PROMPTS[deliverableType],
       messages:   [{ role: "user", content: userMessage }],

@@ -36,7 +36,7 @@ HARD RULES you must never break:
 
 async function generate(prompt: string, maxTokens: number): Promise<string> {
   const msg = await anthropic.messages.create({
-    model:      "claude-sonnet-4-5",
+    model:      "claude-sonnet-4-6",
     max_tokens: maxTokens,
     system:     MANAV_SYSTEM,
     messages:   [{ role: "user", content: prompt }],
@@ -173,6 +173,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(200).json({ success: false, error: err.message });
   }
 }

@@ -2,7 +2,7 @@ import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 60 };
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Speak as a knowledgeable senior colleague who genuinely cares about this project. Use I throughout. Be direct, specific, and honest. Never invent data. Flag every assumption. Reference actual card titles and data from the canvas — never make things up.";
 
