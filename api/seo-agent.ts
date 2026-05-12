@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 300 };
+export const config = { maxDuration: 60 };
 
 type DeliverableType = "Technical" | "On-Page" | "Off-Page" | "GEO";
 
@@ -177,7 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     deliverableType = (req.body?.deliverableType ?? "") as DeliverableType;
     projectContext  = req.body?.projectContext   ?? undefined;
     mode            = req.body?.mode === 'deep' ? 'deep' : 'standard';
-  } catch {
+  } catch (_e) {
     return res.status(400).json({ error: "Could not parse request body." });
   }
 

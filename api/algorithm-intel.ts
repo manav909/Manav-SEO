@@ -1,9 +1,8 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 60 };
 
 const sb = createClient(
   process.env.VITE_SUPABASE_URL!,
@@ -165,24 +164,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Auto-capture algorithm knowledge as a brain learning
-      void extractAndSaveLearning(
-        "algorithm_intel",
-        project_id,
-        [
-          `Algorithm topic fetched: ${parsed.title}`,
-          `Summary: ${parsed.summary}`,
-          `What changed: ${parsed.what_changed || ""}`,
-          `Impact: ${parsed.impact_level}`,
-          `Best practices: ${(parsed.best_practices || []).map((p: any) => p.practice).join(" | ")}`,
-          `Key positive signals: ${(parsed.ranking_factors || []).filter((f: any) => f.signal === "positive").map((f: any) => f.factor).join(" | ")}`,
-          `Key negative signals: ${(parsed.ranking_factors || []).filter((f: any) => f.signal === "negative").map((f: any) => f.factor).join(" | ")}`,
-        ].join("\n"),
-        {
-          card_type:       topic.category?.includes("geo") ? "geo" : topic.category?.includes("technical") ? "technical" : topic.category?.includes("content") ? "content" : "general",
-          card_title:      `Algorithm: ${parsed.title}`,
-          context_summary: `${topic.engine} algorithm: ${parsed.title} — ${parsed.impact_level} impact`,
-        }
-      );
 
       return res.status(200).json({ success: true, item: parsed, topic });
     }
@@ -222,22 +203,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       parsed.tags = [...new Set([...(Array.isArray(parsed.tags) ? parsed.tags : []), "custom"])];
 
       // Auto-capture custom algorithm research as a brain learning
-      void extractAndSaveLearning(
-        "algorithm_intel",
-        project_id,
-        [
-          `Custom algorithm research: ${parsed.title}`,
-          `Summary: ${parsed.summary}`,
-          `What changed: ${parsed.what_changed || ""}`,
-          `Impact: ${parsed.impact_level}`,
-          `Best practices: ${(parsed.best_practices || []).map((p: any) => p.practice).join(" | ")}`,
-        ].join("\n"),
-        {
-          card_type:       "general",
-          card_title:      `Custom Algorithm: ${parsed.title}`,
-          context_summary: `Custom research: ${label} — ${parsed.impact_level} impact`,
-        }
-      );
 
       return res.status(200).json({ success: true, item: parsed });
     }
@@ -333,23 +298,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Auto-capture algorithm audit findings as a brain learning
-      void extractAndSaveLearning(
-        "algorithm_intel",
-        project_id,
-        [
-          `Algorithm audit for ${pageData.url}: ${audit.grade} (${audit.overall_score}/100)`,
-          `Verdict: ${audit.verdict}`,
-          `Critical fails: ${(audit.critical_fails || []).map((f: any) => f.issue).join(" | ") || "none"}`,
-          `Quick wins: ${(audit.quick_wins || []).slice(0, 3).map((w: any) => w.action).join(" | ") || "none"}`,
-          `GEO ready: ${audit.geo_ai_readiness?.ready_for_ai_citation ? "yes" : "no"} — score: ${audit.geo_ai_readiness?.score || 0}`,
-          `Priority actions: ${(audit.priority_actions || []).slice(0, 3).map((a: any) => a.action).join(" | ") || "none"}`,
-        ].join("\n"),
-        {
-          card_type:       "technical",
-          card_title:      `Algorithm Audit: ${pageData.url}`,
-          context_summary: `Algorithm audit against library — ${audit.grade} grade`,
-        }
-      );
 
       return res.status(200).json({ success: true, audit });
     }

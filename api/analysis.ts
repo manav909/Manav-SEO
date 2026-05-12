@@ -1,6 +1,5 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { extractAndSaveLearning }            from "./ai-cache";
 
 // Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably
 export const config = { maxDuration: 60 };
@@ -190,16 +189,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             : "",
         ].filter(Boolean).join("\n");
 
-        void extractAndSaveLearning(
-          "document_extraction",
-          projectId,
-          learningText,
-          {
-            card_type:       docType?.includes("gsc") ? "technical" : docType?.includes("keyword") ? "content" : "general",
-            card_title:      `Document: ${fileName || "uploaded file"}`,
-            context_summary: `${docType || "document"} extraction — ${parsed.data_quality} quality`,
-          }
-        );
       }
 
       return res.status(200).json({
@@ -283,16 +272,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Auto-capture audit insights as a brain learning (fire-and-forget)
     if (projectId && fullAuditOutput.length > 500) {
-      void extractAndSaveLearning(
-        "audit_streaming",
-        projectId,
-        fullAuditOutput,
-        {
-          card_type:       "technical",
-          card_title:      `Audit: ${url}`,
-          context_summary: `${mode} SEO audit for ${url} — keyword: ${keyword || "not specified"}`,
-        }
-      );
     }
 
   } catch (err: any) {

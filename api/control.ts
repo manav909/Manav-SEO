@@ -6,7 +6,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 60 };
 
 const COST = { input: 0.003, output: 0.015 };
 const STALE_MAP: Record<string, string[]> = {

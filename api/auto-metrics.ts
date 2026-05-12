@@ -9,7 +9,7 @@ async function fetchText(url: string, timeout = 25000): Promise<string> {
     });
     if (!res.ok) return '';
     return (await res.text()).trim().slice(0, 8000);
-  } catch { return ''; }
+  } catch (_e) { return ''; }
 }
 
 async function fetchRaw(url: string, timeout = 15000): Promise<string> {
@@ -20,7 +20,7 @@ async function fetchRaw(url: string, timeout = 15000): Promise<string> {
     });
     if (!res.ok) return '';
     return (await res.text()).slice(0, 50000);
-  } catch { return ''; }
+  } catch (_e) { return ''; }
 }
 
 async function countSitemapPages(domain: string): Promise<{ count: number; source: string }> {
@@ -39,7 +39,7 @@ async function countSitemapPages(domain: string): Promise<{ count: number; sourc
       const sitemapRefs = (xml.match(/<sitemap>/g) || []).length;
       const count = urlMatches || locMatches || sitemapRefs;
       if (count > 0) return { count, source: url };
-    } catch { continue; }
+    } catch (_e) { continue; }
   }
   return { count: 0, source: 'not found' };
 }
@@ -58,7 +58,7 @@ async function countIndexedPages(domain: string): Promise<{ count: number; raw: 
     }
     const domainCount = (text.match(new RegExp(domain.replace('.', '\\.'), 'g')) || []).length;
     return { count: domainCount > 0 ? domainCount * 3 : 0, raw: text.slice(0, 1000) };
-  } catch { return { count: 0, raw: '' }; }
+  } catch (_e) { return { count: 0, raw: '' }; }
 }
 
 async function checkKeywordRanking(keyword: string, domain: string): Promise<{
@@ -91,7 +91,7 @@ async function checkKeywordRanking(keyword: string, domain: string): Promise<{
                         : `Page 3+ — Position ~${position}`;
 
     return { position, positionLabel, page, found: true, snippet };
-  } catch {
+  } catch (_e) {
     return { position: null, positionLabel: 'Could not check', page: null, found: false, snippet: '' };
   }
 }
@@ -108,7 +108,7 @@ async function countBrandMentions(brandName: string, domain: string): Promise<{ 
       if (m) return { count: parseInt(m[1].replace(/,/g, '')) };
     }
     return { count: 0 };
-  } catch { return { count: 0 }; }
+  } catch (_e) { return { count: 0 }; }
 }
 
 async function checkPerplexity(keyword: string, brandName: string): Promise<{ found: boolean; citationCount: number }> {
@@ -120,7 +120,7 @@ async function checkPerplexity(keyword: string, brandName: string): Promise<{ fo
     const found        = text.toLowerCase().includes(cleanBrand);
     const citationCount = Math.min((text.toLowerCase().match(new RegExp(cleanBrand, 'g')) || []).length, 20);
     return { found, citationCount };
-  } catch { return { found: false, citationCount: 0 }; }
+  } catch (_e) { return { found: false, citationCount: 0 }; }
 }
 
 async function checkGoogleAI(keyword: string, domain: string): Promise<{ found: boolean }> {
@@ -132,7 +132,7 @@ async function checkGoogleAI(keyword: string, domain: string): Promise<{ found: 
     const hasDomain   = text.toLowerCase().includes(cleanDomain.toLowerCase());
     const hasAI       = ['AI Overview', 'Featured snippet', 'People also ask'].some(p => text.includes(p));
     return { found: hasDomain && hasAI };
-  } catch { return { found: false }; }
+  } catch (_e) { return { found: false }; }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -365,7 +365,7 @@ Return this EXACT JSON:
     let analysis: any;
     try {
       analysis = JSON.parse(cleaned);
-    } catch {
+    } catch (_e) {
       analysis = { overall_growth_score: 50, story: 'Analysis complete. See verified data below.' };
     }
 

@@ -1,8 +1,7 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 60 };
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Speak as a knowledgeable senior colleague who genuinely cares about this project. Use I throughout. Be direct, specific, and honest. Never invent data. Flag every assumption. Reference actual card titles and data from the canvas — never make things up.";
 
@@ -298,16 +297,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const fb = focusBlockId
           ? placed.find((b:any)=>b.id===focusBlockId)||library.find((b:any)=>b.id===focusBlockId)
           : null;
-        void extractAndSaveLearning(
-          mode === "pipeline" ? "pipeline_intelligence" : mode === "brain_assistant" ? "brain_assistant_log" : "deep_dive_analysis",
-          projectId,
-          fullOutput,
-          {
-            card_type:       fb?.type || "strategy",
-            card_title:      fb?.title || (mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` : `Deep Dive: ${question.slice(0, 50)}`),
-            context_summary: `${mode} — ${projectSummary?.slice(0, 80)}`,
-          }
-        );
       }
 
     } catch (streamErr: any) {

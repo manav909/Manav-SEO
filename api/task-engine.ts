@@ -1,9 +1,8 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 180 };
+export const config = { maxDuration: 60 };
 
 const sb = createClient(
   process.env.VITE_SUPABASE_URL!,
@@ -397,13 +396,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (parsed.verdict && parsed.verdict !== "cannot_determine") {
         const projectId = req.body.projectId || context?.project?.id || null;
-        void extractAndSaveLearning("verify_outcome", projectId,
-          [`Verification: ${parsed.verdict} (${parsed.confidence}%) — ${card.type}: ${card.title}`,
-           `Evidence found: ${(parsed.evidence_found||[]).join(" | ")||"none"}`,
-           `Evidence missing: ${(parsed.evidence_missing||[]).join(" | ")||"none"}`,
-           `HOD note: ${parsed.hod_note||""}`].join("\n"),
-          { card_type: card.type, card_title: card.title, context_summary: `${card.type} verification: ${parsed.verdict}` }
-        );
       }
 
       return res.status(200).json({ success: true, ...parsed, waiting_status: { waitDays, daysSince, daysLeft, waitExpired }, live_data_used: liveContent.length > 0 });
@@ -523,14 +515,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let parsed: any = {};
       try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) { /* ignore */ }
 
-      void extractAndSaveLearning("task_execution_auto", projectId || context?.project?.id || null,
-        [`Task: ${card.title} [${card.type}] — Quality: ${parsed.quality_score}/100`,
-         `Worked: ${(parsed.what_worked||[]).join(" | ")}`,
-         `Missed: ${(parsed.what_missed||[]).join(" | ")}`,
-         `Redo: ${parsed.redo_reason||""}`,
-         `Output preview: ${String(executedOutput).slice(0, 500)}`].join("\n"),
-        { card_type: card.type, card_title: card.title, context_summary: `${card.type} evaluated — quality ${parsed.quality_score}/100` }
-      );
 
       return res.status(200).json({ success: true, evaluation: parsed });
     } catch (err: any) {

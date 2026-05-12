@@ -1,6 +1,5 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { extractAndSaveLearning }            from "./ai-cache";
 
 export const config = { maxDuration: 60 };
 
@@ -25,7 +24,6 @@ function tryParseJson(raw: string): any | null {
   try { return JSON.parse(extracted + closing); } catch (_e) { return null; }
 }
 
-const anthropic = new Anthropic();
 
 const MANAV_SYSTEM = `You are Manav Brain — the senior SEO strategist embedded in SEO Season.
 HARD RULES you must never break:
@@ -50,6 +48,7 @@ async function generate(prompt: string, maxTokens: number): Promise<string> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const anthropic = new Anthropic();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const {
@@ -160,17 +159,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `Batches: ${JSON.stringify(batchStatus)}`,
       ].join("\n");
 
-      void extractAndSaveLearning(
-        "strategy_generation",
-        project.id,
-        learningContext,
-        {
-          card_type:       "strategy",
-          card_title:      `Strategy for ${clientData?.company || "project"}`,
-          context_summary: `Strategy generation — data confidence: ${results.data_confidence || "unknown"}`,
-          project_name:    clientData?.company,
-        }
-      );
     }
 
     return res.status(200).json({

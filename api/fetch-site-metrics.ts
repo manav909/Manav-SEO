@@ -8,7 +8,7 @@ async function fetchPageSpeed(url: string) {
     const res = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
     if (!res.ok) return null;
     return await res.json();
-  } catch { return null; }
+  } catch (_e) { return null; }
 }
 
 async function fetchPageSpeedDesktop(url: string) {
@@ -18,7 +18,7 @@ async function fetchPageSpeedDesktop(url: string) {
     const res = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
     if (!res.ok) return null;
     return await res.json();
-  } catch { return null; }
+  } catch (_e) { return null; }
 }
 
 async function fetchSiteContent(url: string) {
@@ -32,7 +32,7 @@ async function fetchSiteContent(url: string) {
     if (!res.ok) return null;
     const text = await res.text();
     return text.trim().slice(0, 12000);
-  } catch { return null; }
+  } catch (_e) { return null; }
 }
 
 function extractCWV(psiData: any) {

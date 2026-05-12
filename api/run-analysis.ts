@@ -1,9 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 60 };
 
-const client = new Anthropic();
 
 /* ══════════════════════════════════════════════════
    CONFIDENCE SYSTEM
@@ -37,7 +36,7 @@ async function fetchPage(url: string): Promise<string> {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const html = await r.text();
     return html.slice(0, 80000);
-  } catch { return ''; }
+  } catch (_e) { return ''; }
 }
 
 async function fetchSitemap(url: string): Promise<{ count: number; urls: string[] }> {
@@ -50,7 +49,7 @@ async function fetchSitemap(url: string): Promise<{ count: number; urls: string[
       const text = await r.text();
       const urls = [...text.matchAll(/<loc>(.*?)<\/loc>/g)].map(m => m[1]).filter(Boolean);
       if (urls.length > 0) return { count: urls.length, urls: urls.slice(0, 50) };
-    } catch { continue; }
+    } catch (_e) { continue; }
   }
   return { count: 0, urls: [] };
 }
@@ -66,7 +65,7 @@ async function googleCount(query: string): Promise<number> {
     const m = html.match(/About ([\d,]+) results/i) || html.match(/([\d,]+) results/i);
     if (m) return parseInt(m[1].replace(/,/g, ''));
     return 0;
-  } catch { return 0; }
+  } catch (_e) { return 0; }
 }
 
 async function checkGoogleRank(keyword: string, domain: string): Promise<{ found: boolean; position: number | null; page: number | null; snippet: string; positionLabel: string }> {
@@ -97,7 +96,7 @@ async function checkGoogleRank(keyword: string, domain: string): Promise<{ found
       }
     }
     return { found: false, position: null, page: null, snippet: '', positionLabel: 'Not in top 30' };
-  } catch {
+  } catch (_e) {
     return { found: false, position: null, page: null, snippet: '', positionLabel: 'Check failed' };
   }
 }
@@ -112,7 +111,7 @@ async function testPerplexity(brand: string): Promise<{ mentions: number; verifi
     const domain = brand.toLowerCase().replace(/[^a-z0-9]/g, '');
     const mentions = (html.match(new RegExp(domain, 'gi')) || []).length;
     return { mentions, verified: true };
-  } catch {
+  } catch (_e) {
     return { mentions: 0, verified: false };
   }
 }
@@ -242,7 +241,7 @@ Return ONLY the JSON. No other text.`;
       keyword_presence: data.keyword_presence || {},
       limitations,
     };
-  } catch {
+  } catch (_e) {
     return {
       eeat_score:              dp(null, 0, [], ['AI analysis failed']),
       content_authority_score: dp(null, 0, [], ['AI analysis failed']),
@@ -548,7 +547,7 @@ Return ONLY valid JSON:
     const raw     = response.content[0].type === 'text' ? response.content[0].text : '{}';
     const cleaned = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
     return JSON.parse(cleaned);
-  } catch {
+  } catch (_e) {
     return {
       overall_verdict: 'Analysis synthesis failed — raw data is still available above.',
       biggest_verified_win: '',
@@ -567,6 +566,7 @@ Return ONLY valid JSON:
    MAIN HANDLER
 ══════════════════════════════════════════════════ */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const client = new Anthropic();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const {

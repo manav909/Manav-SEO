@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 300 };
+export const config = { maxDuration: 60 };
 
 const sb = createClient(
   process.env.VITE_SUPABASE_URL!,
@@ -46,11 +46,11 @@ function parseJson(text: string): any | null {
   const f = clean.indexOf("{");
   const l = clean.lastIndexOf("}");
   if (f < 0 || l < 0) return null;
-  try { return JSON.parse(clean.slice(f, l + 1)); } catch {}
+  try { return JSON.parse(clean.slice(f, l + 1)); } catch (_e) {}
   // Last-ditch: try to close an unclosed JSON (truncation recovery)
-  try { return JSON.parse(clean.slice(f) + '"}]}'); } catch {}
-  try { return JSON.parse(clean.slice(f) + '"}'); } catch {}
-  try { return JSON.parse(clean.slice(f) + '}'); } catch {}
+  try { return JSON.parse(clean.slice(f) + '"}]}'); } catch (_e) {}
+  try { return JSON.parse(clean.slice(f) + '"}'); } catch (_e) {}
+  try { return JSON.parse(clean.slice(f) + '}'); } catch (_e) {}
   return null;
 }
 
@@ -80,7 +80,7 @@ async function tryFetch(url: string, ua: string, name: string, ms: number): Prom
         text.includes("Checking your browser before accessing") || (text.includes("Enable JavaScript") && text.length < 3000)) return null;
     const c = cleanHtml(text);
     return { html: c, status: r.status, strategy: name, chars: c.length };
-  } catch { clearTimeout(t); return null; }
+  } catch (_e) { clearTimeout(t); return null; }
 }
 
 async function tryJina(url: string): Promise<FetchResult | null> {
@@ -98,7 +98,7 @@ async function tryJina(url: string): Promise<FetchResult | null> {
     const text = await r.text();
     if (!text || text.trim().length < 100) return null;
     return { html: text.slice(0, 12000), status: 200, strategy: "jina", chars: text.length };
-  } catch { clearTimeout(t); return null; }
+  } catch (_e) { clearTimeout(t); return null; }
 }
 
 async function tryGoogleCache(url: string): Promise<FetchResult | null> {
