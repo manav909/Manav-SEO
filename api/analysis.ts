@@ -1,4 +1,5 @@
 import Anthropic                              from "@anthropic-ai/sdk";
+import { extractAndSaveLearning } from "./ai-cache";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 // Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably

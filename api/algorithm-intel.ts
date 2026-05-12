@@ -1,13 +1,17 @@
 import Anthropic                              from "@anthropic-ai/sdk";
+import { extractAndSaveLearning } from "./ai-cache";
 import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { maxDuration: 60 };
 
-const sb = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.VITE_SUPABASE_ANON_KEY!
-);
+/* ── Lazy DB — never throws on module load ── */
+function db() {
+  const url = process.env.VITE_SUPABASE_URL  || process.env.SUPABASE_URL  || "";
+  const key = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+  if (!url || !key) throw new Error("Supabase env vars not configured");
+  return createClient(url, key);
+}
 
 export const TOPIC_CATALOG = [
   // Google Core Updates
@@ -105,7 +109,13 @@ Return ONLY a raw JSON object (no markdown fences, no prose, start immediately w
 }`;
 }
 
+/* ── Safe export: catches any uncaught crash before Vercel sees it ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _handler(req, res); }
+  catch (e: any) { try { res.status(200).json({ error: "Unexpected: " + (e?.message||"unknown"), healthy: false }); } catch (_) {} }
+}
+
+async function _handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
     const { action } = req.body;
@@ -113,7 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ══ GET CATALOG ══════════════════════════════════════════════════
     if (action === "get_catalog") {
-      const { data } = await sb.from("algorithm_knowledge")
+      const { data } = await db().from("algorithm_knowledge")
         .select("id,title,updated_at,tags")
         .order("updated_at", { ascending: false });
 
@@ -219,10 +229,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ...(tidTag ? [tidTag] : []),
       ])];
 
-      if (tidTag) await sb.from("algorithm_knowledge").delete().contains("tags", [tidTag]);
-      await sb.from("algorithm_knowledge").delete().eq("title", item.title);
+      if (tidTag) await db().from("algorithm_knowledge").delete().contains("tags", [tidTag]);
+      await db().from("algorithm_knowledge").delete().eq("title", item.title);
 
-      const { data, error } = await sb.from("algorithm_knowledge").insert({
+      const { data, error } = await db().from("algorithm_knowledge").insert({
         engine:          item.engine          || "google",
         category:        item.category        || "general",
         title:           item.title,
@@ -246,7 +256,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ══ GET ALL ══════════════════════════════════════════════════════
     if (action === "get_all") {
       const { engine, category, impact_level } = req.body;
-      let q: any = sb.from("algorithm_knowledge").select("*").order("updated_at", { ascending: false });
+      let q: any = db().from("algorithm_knowledge").select("*").order("updated_at", { ascending: false });
       if (engine)       q = q.eq("engine", engine);
       if (category)     q = q.eq("category", category);
       if (impact_level) q = q.eq("impact_level", impact_level);
@@ -259,7 +269,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === "delete_item") {
       const { id } = req.body;
       if (!id) return res.status(400).json({ error: "id required" });
-      const { error } = await sb.from("algorithm_knowledge").delete().eq("id", id);
+      const { error } = await db().from("algorithm_knowledge").delete().eq("id", id);
       if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true });
     }
@@ -270,7 +280,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { pageData, projectContext = "", targetEngine = "google", project_id = null } = req.body;
       if (!pageData) return res.status(400).json({ error: "pageData required" });
 
-      const { data: knowledge } = await sb.from("algorithm_knowledge")
+      const { data: knowledge } = await db().from("algorithm_knowledge")
         .select("*").in("engine", [targetEngine, "general"])
         .order("impact_level", { ascending: true });
 

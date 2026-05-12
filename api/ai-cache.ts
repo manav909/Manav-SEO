@@ -187,3 +187,32 @@ export async function extractAndSaveLearning(
     // Completely silent — learning capture must NEVER break the main API response
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   saveToDesk — saves any Brain output to the brain_desk table.
+   Fire-and-forget. Called from task-engine execute, intelligence, etc.
+───────────────────────────────────────────────────────────────────────── */
+export async function saveToDesk(
+  projectId:   string | null,
+  title:       string,
+  content:     string,
+  contentType: "text" | "report" | "code" | "analysis" | "audit" | "note",
+  source:      string,
+  tags:        string[] = []
+): Promise<void> {
+  if (!projectId || !content || content.length < 100) return;
+  try {
+    const sb = getSupabase();
+    await sb.from("brain_desk").insert({
+      project_id:   projectId,
+      title:        title.slice(0, 200),
+      content_type: contentType,
+      content,
+      source,
+      tags:         [...tags, source].filter(Boolean),
+      pinned:       false,
+      metadata:     { auto_saved: true, saved_at: new Date().toISOString() },
+      updated_at:   new Date().toISOString(),
+    });
+  } catch (_e) { /* silent — desk save must never break the caller */ }
+}

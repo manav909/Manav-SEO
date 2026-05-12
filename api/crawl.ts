@@ -1,13 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { extractAndSaveLearning } from "./ai-cache";
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { maxDuration: 60 };
 
-const sb = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.VITE_SUPABASE_ANON_KEY!
-);
+/* ── Lazy DB — never throws on module load ── */
+function db() {
+  const url = process.env.VITE_SUPABASE_URL  || process.env.SUPABASE_URL  || "";
+  const key = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+  if (!url || !key) throw new Error("Supabase env vars not configured");
+  return createClient(url, key);
+}
 
 const VALID_KEYS = new Set([
   "organic_sessions_monthly","organic_sessions_baseline_date","top_landing_pages",
@@ -293,7 +297,7 @@ const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 async function getCached(projectId: string, urls: string[]): Promise<Record<string, any>> {
   if (!projectId || !urls.length) return {};
   try {
-    const { data } = await sb
+    const { data } = await db()
       .from("crawled_pages")
       .select("url,page_analysis,knowledge_fields,fetch_status,html_chars,crawl_status,crawled_at")
       .eq("project_id", projectId).in("url", urls);
@@ -306,7 +310,7 @@ async function getCached(projectId: string, urls: string[]): Promise<Record<stri
 async function saveToCache(projectId: string, url: string, result: any) {
   if (!projectId) return;
   try {
-    await sb.from("crawled_pages").upsert({
+    await db().from("crawled_pages").upsert({
       project_id: projectId, url,
       page_analysis:    result.page_analysis ?? null,
       knowledge_fields: result.knowledge_fields ?? [],
@@ -407,7 +411,13 @@ function buildSummary(results: any[]) {
 // ─────────────────────────────────────────────────────────────────────
 // Handler
 // ─────────────────────────────────────────────────────────────────────
+/* ── Safe export: catches any uncaught crash before Vercel sees it ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _handler(req, res); }
+  catch (e: any) { try { res.status(200).json({ error: "Unexpected: " + (e?.message||"unknown"), healthy: false }); } catch (_) {} }
+}
+
+async function _handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const { action } = req.body;
   const anthropic = new Anthropic();
@@ -451,7 +461,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { projectId, urls } = req.body;
     if (!projectId) return res.status(400).json({ error: "projectId required" });
     try {
-      let q = sb.from("crawled_pages")
+      let q = db().from("crawled_pages")
         .select("url,page_analysis,knowledge_fields,fetch_status,fetch_error,html_chars,crawl_status,crawled_at")
         .eq("project_id", projectId).order("crawled_at", { ascending: false });
       if (Array.isArray(urls) && urls.length) q = q.in("url", urls); else q = q.limit(50);

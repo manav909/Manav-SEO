@@ -1,14 +1,17 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { extractAndSaveLearning }            from "./ai-cache";
+import { extractAndSaveLearning, saveToDesk } from "./ai-cache";
 
 export const config = { maxDuration: 60 };
 
-const sb = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.VITE_SUPABASE_ANON_KEY!
-);
+/* ── Lazy DB — never throws on module load ── */
+function db() {
+  const url = process.env.VITE_SUPABASE_URL  || process.env.SUPABASE_URL  || "";
+  const key = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+  if (!url || !key) throw new Error("Supabase env vars not configured");
+  return createClient(url, key);
+}
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Speak as a knowledgeable senior colleague. Use I throughout. Be direct, specific, and honest. Never invent data. Flag every assumption. Cite every source.";
 
@@ -104,7 +107,13 @@ async function fetchUrl(url: string): Promise<string> {
   } catch (_e) { return ""; }
 }
 
+/* ── Safe export: catches any uncaught crash before Vercel sees it ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _handler(req, res); }
+  catch (e: any) { try { res.status(200).json({ error: "Unexpected: " + (e?.message||"unknown"), healthy: false }); } catch (_) {} }
+}
+
+async function _handler(req: VercelRequest, res: VercelResponse) {
   /* Global catch — ensures function never crashes with FUNCTION_INVOCATION_FAILED */
   try {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
@@ -122,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   ═══════════════════════════════════════════════════════════════ */
   if (action === "health_check") {
     try {
-      const { error } = await sb.from("brain_learnings").select("id").limit(1);
+      const { error } = await db().from("brain_learnings").select("id").limit(1);
       if (error) return res.status(200).json({ healthy: false, db: "error", error: error.message });
       return res.status(200).json({ healthy: true, db: "ok", ts: new Date().toISOString() });
     } catch (err: any) {
@@ -138,8 +147,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { project_id } = req.body;
     try {
       const q = project_id
-        ? sb.from("brain_learnings").select("*").or(`project_id.eq.${project_id},project_id.is.null`).order("created_at", { ascending: false })
-        : sb.from("brain_learnings").select("*").order("created_at", { ascending: false });
+        ? db().from("brain_learnings").select("*").or(`project_id.eq.${project_id},project_id.is.null`).order("created_at", { ascending: false })
+        : db().from("brain_learnings").select("*").order("created_at", { ascending: false });
       const { data, error } = await q;
       if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true, learnings: data || [] });
@@ -167,13 +176,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Try with new columns first, fallback if migration not run
     try {
-      const { data, error } = await sb.from("brain_learnings").insert({
+      const { data, error } = await db().from("brain_learnings").insert({
         ...row, status: "active", auto_captured: false, confidence_score: 85,
       }).select().single();
       if (error) throw error;
       return res.status(200).json({ success: true, learning: data });
     } catch (_e) {
-      const { data, error } = await sb.from("brain_learnings").insert(row).select().single();
+      const { data, error } = await db().from("brain_learnings").insert(row).select().single();
       if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true, learning: data });
     }
@@ -185,7 +194,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Try with status='active' filter (requires migration); fallback to all if column missing
     const fetchWithStatus = async (projId?: string, type?: string) => {
-      let q: any = sb.from("brain_learnings").select("*");
+      let q: any = db().from("brain_learnings").select("*");
       try {
         // Attempt with status filter
         if (projId && type) q = (q as any).eq("project_id", projId).eq("card_type", type).eq("status", "active");
@@ -196,7 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return data || [];
       } catch (_e) {
         // Fallback: no status filter (migration not run yet)
-        let q2: any = sb.from("brain_learnings").select("*");
+        let q2: any = db().from("brain_learnings").select("*");
         if (projId && type) q2 = (q2 as any).eq("project_id", projId).eq("card_type", type);
         else if (type)      q2 = (q2 as any).eq("card_type", type);
         const { data } = await (q2 as any).order("created_at", { ascending: false }).limit(limit);
@@ -220,8 +229,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     void (async () => {
       for (const id of rows.slice(0, 3).map((r: any) => r.id)) {
         try {
-          const { data: d } = await sb.from("brain_learnings").select("applied_count").eq("id", id).single();
-          if (d) await sb.from("brain_learnings").update({ applied_count: ((d as any).applied_count || 0) + 1 }).eq("id", id);
+          const { data: d } = await db().from("brain_learnings").select("applied_count").eq("id", id).single();
+          if (d) await db().from("brain_learnings").update({ applied_count: ((d as any).applied_count || 0) + 1 }).eq("id", id);
         } catch (_e) { /* non-blocking */ }
       }
     })();
@@ -234,12 +243,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!id) return res.status(400).json({ error: "id required" });
     // IMMUTABLE LOG PROTECTION
     try {
-      const { data: item } = await sb.from("brain_learnings").select("source").eq("id", id).single();
+      const { data: item } = await db().from("brain_learnings").select("source").eq("id", id).single();
       if (item?.source?.endsWith("_log")) {
         return res.status(403).json({ error: "Immutable log entry — brain logs cannot be deleted by design." });
       }
     } catch (_e) { /* if check fails, allow delete */ }
-    const { error } = await sb.from("brain_learnings").delete().eq("id", id);
+    const { error } = await db().from("brain_learnings").delete().eq("id", id);
     if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true });
   }
@@ -247,7 +256,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "update_learning") {
     const { id, improvement, tags } = req.body;
     if (!id) return res.status(400).json({ error: "id required" });
-    const { data, error } = await sb.from("brain_learnings").update({
+    const { data, error } = await db().from("brain_learnings").update({
       improvement,
       tags: Array.isArray(tags) ? tags : (tags || "").split(",").map((t: string) => t.trim()).filter(Boolean),
       updated_at: new Date().toISOString(),
@@ -259,7 +268,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "approve_learning") {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: "id required" });
-    const { data, error } = await sb.from("brain_learnings")
+    const { data, error } = await db().from("brain_learnings")
       .update({ status: "active", updated_at: new Date().toISOString() }).eq("id", id).select().single();
     if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
@@ -268,7 +277,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "reject_learning") {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: "id required" });
-    const { data, error } = await sb.from("brain_learnings")
+    const { data, error } = await db().from("brain_learnings")
       .update({ status: "rejected", updated_at: new Date().toISOString() }).eq("id", id).select().single();
     if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
@@ -277,7 +286,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "deactivate_learning") {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: "id required" });
-    const { data, error } = await sb.from("brain_learnings")
+    const { data, error } = await db().from("brain_learnings")
       .update({ status: "pending_review", updated_at: new Date().toISOString() }).eq("id", id).select().single();
     if (error) return res.status(200).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
@@ -290,7 +299,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "project_id, card.type, and card.title are required" });
     }
     try {
-      const { data: proj, error: projErr } = await sb.from("projects")
+      const { data: proj, error: projErr } = await db().from("projects")
         .select("playground_strategy, playground_canvas").eq("id", project_id).single();
       if (projErr) return res.status(200).json({ error: projErr.message });
 
@@ -317,7 +326,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         title: builtCard.title, content: builtCard.content, type: builtCard.type,
         priority: builtCard.priority, color: builtCard.color, source: "Manav Brain" });
 
-      const { error: saveErr } = await sb.from("projects").update({
+      const { error: saveErr } = await db().from("projects").update({
         playground_strategy: strategy, playground_canvas: canvas,
       }).eq("id", project_id);
 
@@ -480,15 +489,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         model: "claude-sonnet-4-6", max_tokens: 8192, system: SYSTEM,
         messages: [{ role: "user", content: executePrompt }],
       });
-      let finalStopReason = "";
+      let finalStopReason = ""; let execFull = "";
       for await (const chunk of stream) {
-        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") res.write(chunk.delta.text);
+        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") { res.write(chunk.delta.text); execFull += chunk.delta.text; }
         if (chunk.type === "message_delta" && chunk.delta.stop_reason) finalStopReason = chunk.delta.stop_reason;
       }
       if (finalStopReason === "max_tokens") {
         res.write("\n\n---\n⚠️ Output reached the length limit and may be incomplete.");
       }
     } catch (err: any) { res.write(`\nError: ${err.message}`); } finally { res.end(); }
+    // Auto-save to desk + capture learning (fire-and-forget)
+    const deskProjId = (req.body.projectId || context?.project?.id || null) as string | null;
+    if (deskProjId && execFull.length > 300) {
+      void saveToDesk(deskProjId, card.title || "Task Output", execFull,
+        card.type === "technical" ? "code" : card.type === "audit" ? "audit" : "report",
+        "task_execute", [card.type]);
+      void extractAndSaveLearning("task_execution_auto", deskProjId, execFull,
+        { card_type: card.type, card_title: card.title, context_summary: card.type + " execution" });
+    }
     return;
   }
 

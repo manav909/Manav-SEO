@@ -1,6 +1,6 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { extractAndSaveLearning }            from "./ai-cache";
+import { extractAndSaveLearning, saveToDesk } from "./ai-cache";
 
 export const config = { maxDuration: 60 };
 
@@ -111,6 +111,7 @@ When you want to navigate somewhere:
 ⟦ACTION⟧{"type":"navigate","path":"/admin","label":"Open Admin Panel"}⟦/ACTION⟧
 ⟦ACTION⟧{"type":"navigate","path":"/launchpad","label":"Open Launchpad"}⟦/ACTION⟧
 ⟦ACTION⟧{"type":"navigate","path":"/desk","label":"Open Brain Desk"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"navigate","path":"/brain-command","label":"Open Brain Command Panel"}⟦/ACTION⟧
 
 When you want to run an SEO audit:
 ⟦ACTION⟧{"type":"run_audit","url":"https://example.com","mode":"standard","label":"Run SEO Audit for example.com"}⟦/ACTION⟧
