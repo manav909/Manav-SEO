@@ -619,5 +619,107 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  /* ─── BRAIN DESK ─── */
+  if (action === "desk_save") {
+    const { project_id, title, content_type = "text", content, metadata = {}, tags = [], source = "brain" } = req.body;
+    if (!project_id || !content) return res.status(400).json({ error: "project_id and content required" });
+    try {
+      const { data, error } = await sb.from("brain_desk").insert({
+        project_id, title: title || "Brain Note",
+        content_type, content,
+        metadata, tags, source,
+        updated_at: new Date().toISOString(),
+      }).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ success: true, item: data });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  }
+
+  if (action === "desk_list") {
+    const { project_id, content_type, pinned_only } = req.body;
+    if (!project_id) return res.status(400).json({ error: "project_id required" });
+    try {
+      let q: any = sb.from("brain_desk").select("*").eq("project_id", project_id);
+      if (content_type) q = q.eq("content_type", content_type);
+      if (pinned_only)  q = q.eq("pinned", true);
+      q = q.order("pinned", { ascending: false }).order("created_at", { ascending: false });
+      const { data, error } = await q;
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ success: true, items: data || [] });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  }
+
+  if (action === "desk_delete") {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: "id required" });
+    try {
+      const { error } = await sb.from("brain_desk").delete().eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ success: true });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  }
+
+  if (action === "desk_pin") {
+    const { id, pinned } = req.body;
+    if (!id) return res.status(400).json({ error: "id required" });
+    try {
+      const { error } = await sb.from("brain_desk").update({ pinned: !!pinned }).eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ success: true });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  }
+
+  if (action === "get_full_context") {
+    // Returns EVERYTHING about a project for brain
+    const { project_id } = req.body;
+    if (!project_id) return res.status(400).json({ error: "project_id required" });
+    try {
+      const [
+        { data: projData },
+        { data: executions },
+        { data: auditReps },
+        { data: knowledge },
+        { data: documents },
+        { data: learnings },
+        { data: metricsData },
+        { data: algoItems },
+        { data: deskItems },
+      ] = await Promise.all([
+        sb.from("projects").select("*").eq("id", project_id).single(),
+        sb.from("task_executions").select("id,task_type,task_title,output,created_at").eq("project_id", project_id).order("created_at", { ascending: false }).limit(20),
+        sb.from("audit_reports").select("id,url,summary,score,created_at").eq("project_id", project_id).order("created_at", { ascending: false }).limit(3),
+        sb.from("project_knowledge").select("section,data").eq("project_id", project_id),
+        sb.from("project_documents").select("name,content_preview,doc_type,created_at").eq("project_id", project_id).limit(10),
+        sb.from("brain_learnings").select("card_type,card_title,improvement,applied_count,source").eq("project_id", project_id).eq("status", "active").order("applied_count", { ascending: false }).limit(30),
+        sb.from("metrics").select("*").eq("project_id", project_id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        sb.from("algorithm_knowledge").select("title,summary,category").eq("project_id", project_id).order("updated_at", { ascending: false }).limit(15),
+        sb.from("brain_desk").select("id,title,content_type,content,tags,created_at").eq("project_id", project_id).order("created_at", { ascending: false }).limit(20),
+      ]);
+
+      // Parse canvas
+      let canvas: any[] = [];
+      try {
+        const raw = projData?.playground_canvas;
+        canvas = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : [];
+      } catch (_e) { canvas = []; }
+
+      return res.status(200).json({
+        success: true,
+        context: {
+          project: projData,
+          canvas,
+          executions:    executions    || [],
+          auditReports:  auditReps     || [],
+          knowledge:     knowledge     || [],
+          documents:     documents     || [],
+          learnings:     learnings     || [],
+          metrics:       metricsData,
+          algorithmIntel:algoItems     || [],
+          deskItems:     deskItems     || [],
+        },
+      });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  }
+
   return res.status(400).json({ error: `Unknown action: ${action}` });
 }
