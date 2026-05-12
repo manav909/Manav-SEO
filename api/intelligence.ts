@@ -1,10 +1,9 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 60 };
 
-const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Speak as a knowledgeable senior colleague who genuinely cares about this project. Use I throughout. Be direct, specific, and honest. Never invent data. Flag every assumption. Reference actual card titles and data from the canvas — never make things up.";
+const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Speak as a knowledgeable senior colleague. Be direct, specific, and honest. Never invent data. Flag every assumption.";
 
 const ROLE_VOICE: Record<string, string> = {
   content_writer:  "You are talking directly to a Content Writer. Tell them exactly what to write this week, why each piece matters, what keywords to hit, and what great looks like.",
@@ -26,217 +25,185 @@ async function fetchUrl(url: string): Promise<string> {
   } catch (_e) { return ""; }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// BRAIN ASSISTANT — The master intelligence system
-// Knows everything, can execute everything, never hallucinates.
-// Uses ⟦ACTION⟧{...}⟦/ACTION⟧ tags for executable operations.
-// ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// BUILD BRAIN ASSISTANT PROMPT
+// ─────────────────────────────────────────────────────────────────────────
 function buildBrainAssistantPrompt(ctx: {
-  question:       string;
-  projectContext: any;
-  learnings:      any[];
-  algoItems:      any[];
-  canvasBlocks:   any[];
-  metrics:        any;
-  history:        { role: string; content: string }[];
-  projectSummary: string;
-  codeContent?:   string;
+  question: string; projectContext: any; learnings: any[];
+  algoItems: any[]; canvasBlocks: any[]; metrics: any;
+  history: { role: string; content: string }[];
+  projectSummary: string; codeContent?: string | null;
 }): { system: string; user: string } {
-
-  const pc  = ctx.projectContext || {};
-  const proj = pc.project || {};
-  const goals= pc.goals   || {};
-  const met  = pc.metrics || {};
+  const pc   = ctx.projectContext || {};
+  const proj = pc.project  || {};
+  const goals= pc.goals    || {};
+  const met  = pc.metrics  || {};
 
   const projectSection = [
     `COMPANY: ${proj.name || "Unknown"} | URL: ${proj.url || "Not set"}`,
     `GOAL: ${goals.primary || "Not set"} | Timeline: ${goals.timeline || "Not set"}`,
-    `KEYWORDS: ${goals.keywords || (proj.keywords || []).join(", ") || "Not set"}`,
+    `KEYWORDS: ${goals.keywords || (proj.keywords||[]).join(", ") || "Not set"}`,
     met.llmVisibility != null
       ? `SCORES: LLM ${met.llmVisibility}/100 | Health ${met.algorithmHealth}/100 | EEAT ${met.eeat}/100 | Authority ${met.authority}/100`
-      : "SCORES: Not yet recorded — go to Metrics Dashboard",
-    `ANALYTICS: Organic ${pc.analytics?.organicMonthly || "?"}/mo | GSC ${pc.analytics?.gscClicks || "?"} clicks | Avg pos ${pc.analytics?.gscAvgPos || "?"}`,
-    `TECHNICAL: ${pc.technical?.pagesIndexed || "?"} pages indexed | Crawl errors: ${pc.technical?.crawlErrors || "none"}`,
-    `CMS: ${pc.tech?.cms || "Not set"} | SEO plugin: ${pc.tech?.seoPlugin || "Not set"} | PageSpeed: ${pc.tech?.pagespdMobile || "?"}`,
-    `COMPETITORS: ${[pc.competitors?.c1, pc.competitors?.c2].filter(Boolean).join(", ") || "Not set"} | Our DR: ${pc.competitors?.ourDR || "?"}`,
+      : "SCORES: Not yet recorded",
+    `ANALYTICS: Organic ${pc.analytics?.organicMonthly||"?"}/mo | GSC ${pc.analytics?.gscClicks||"?"} clicks`,
+    `TECHNICAL: ${pc.technical?.pagesIndexed||"?"} pages indexed | Crawl errors: ${pc.technical?.crawlErrors||"none"}`,
+    `CMS: ${pc.tech?.cms||"Not set"} | PageSpeed: ${pc.tech?.pagespdMobile||"?"}`,
+    `COMPETITORS: ${[pc.competitors?.c1,pc.competitors?.c2].filter(Boolean).join(", ") || "Not set"}`,
   ].join("\n");
 
   const learningsSection = ctx.learnings.length > 0
-    ? ctx.learnings.slice(0, 10).map((l: any, i: number) =>
-        `[${i+1}] ${l.card_type?.toUpperCase()} — "${l.card_title}"\n    Improvement: ${l.improvement || "—"}\n    Applied: ${l.applied_count || 0}× | Source: ${l.source}`
+    ? ctx.learnings.slice(0,10).map((l:any,i:number) =>
+        `[${i+1}] ${l.card_type?.toUpperCase()} — "${l.card_title}"\n    ${l.improvement||"—"} | Applied: ${l.applied_count||0}×`
       ).join("\n")
-    : "No active learnings yet. The brain is learning from every AI operation automatically.";
+    : "No active learnings yet.";
 
   const algoSection = ctx.algoItems.length > 0
-    ? ctx.algoItems.slice(0, 10).map((a: any) =>
-        `• [${a.impact_level?.toUpperCase()}] ${a.title} (${a.engine}): ${(a.summary || "").slice(0, 120)}`
-      ).join("\n")
-    : "No algorithm knowledge saved yet. Use Algorithm Intelligence to research topics.";
+    ? ctx.algoItems.slice(0,8).map((a:any) => `• ${a.title}: ${a.summary?.slice(0,100)}`).join("\n")
+    : "No algorithm intel saved yet.";
 
   const canvasSection = ctx.canvasBlocks.length > 0
     ? [1,2,3,4,5].map(w => {
-        const wb = ctx.canvasBlocks.filter((b: any) => b.placed && b.week === w);
+        const wb = ctx.canvasBlocks.filter((b:any) => b.placed && b.week === w);
         if (!wb.length) return "";
-        return `Week ${w === 5 ? "Backlog" : w} (${wb.length}): ${wb.map((b: any) => `[${b.type}|${b.status}] "${b.title}"`).join(", ")}`;
+        return `Week ${w===5?"Backlog":w} (${wb.length}): ${wb.map((b:any)=>`[${b.type}|${b.status}] "${b.title}"`).join(", ")}`;
       }).filter(Boolean).join("\n")
-    : "Canvas is empty. No cards placed yet.";
+    : "Canvas is empty.";
 
   const metricsSection = ctx.metrics
-    ? `LIVE METRICS: LLM ${ctx.metrics.llm_visibility||"??"}/100 | Health ${ctx.metrics.algorithm_health||"??"}/100 | EEAT ${ctx.metrics.eeat_score||"??"}/100 | Organic ${ctx.metrics.organic_sessions||"??"}/mo | GSC clicks ${ctx.metrics.gsc_clicks||"??"}`
+    ? `LIVE METRICS: LLM ${ctx.metrics.llm_visibility||"??"}/100 | Health ${ctx.metrics.algorithm_health||"??"}/100 | EEAT ${ctx.metrics.eeat_score||"??"}/100 | Organic ${ctx.metrics.organic_sessions||"??"}/mo`
     : "";
 
   const codeSection = ctx.codeContent
-    ? `\n\nCODE FOR ANALYSIS:\n\\`\\`\\`\n${ctx.codeContent.slice(0, 6000)}\n\\`\\`\\`\nAnalyze this code for: logic errors, data sync issues, missing connections, broken flows.`
+    ? `\n\nCODE FOR ANALYSIS:\n\`\`\`\n${ctx.codeContent.slice(0, 6000)}\n\`\`\`\nAnalyze this code for: logic errors, data sync issues, missing connections, broken flows.`
     : "";
 
   const historySection = ctx.history.length > 0
-    ? ctx.history.slice(-8).map(m => `${m.role === "user" ? "User" : "Manav Brain"}: ${m.content.slice(0, 200)}`).join("\n")
+    ? ctx.history.slice(-8).map(m => `${m.role==="user"?"User":"Manav Brain"}: ${m.content.slice(0,200)}`).join("\n")
     : "";
 
-  const system = `You are MANAV BRAIN — the most intelligent SEO partner ever built. You are the master intelligence running SEO Season, with complete knowledge of and control over every feature of this software.
+  const system = `You are MANAV BRAIN — the most intelligent SEO partner ever built. You are simultaneously a world-class senior SEO strategist, technical SEO expert, GEO specialist, and the operational brain of SEO Season software.
 
-You are simultaneously:
-• A world-class senior SEO strategist with deep knowledge of Google, ChatGPT Search, Perplexity, and Bing algorithms
-• A technical SEO expert who understands every crawl signal, Core Web Vitals issue, and indexation problem
-• A GEO (Generative Engine Optimisation) specialist who knows how to get cited by AI search engines
-• The operational brain of this software — you know every feature and can direct the user or execute operations
+You have NATIVE SKILLS — use them proactively:
+• WEB SEARCH: You can search the web in real-time. Use this for: current algorithm updates, competitor analysis, live SERP data, recent SEO news, any facts you need to verify. Search when data might be outdated.
+• IMAGE ANALYSIS: When users share screenshots, analyse site design, SERP results, competitor pages, technical issues, UI problems.
+• DOCUMENT READING: When users share PDFs, DOCX, XLSX — read them and extract SEO insights, keyword data, rank tracking data.
+• CODE ANALYSIS: Analyse TypeScript, TSX, SQL code for logic errors and data sync issues.
+• DATA VISUALISATION: Generate charts by using ACTION tags with type "generate_chart".
+• REPORT GENERATION: Create downloadable SEO reports with ACTION tag type "generate_report".
+• URL ANALYSIS: Fetch and analyse any URL for SEO issues.
+• DATA SYNC CHECKING: Detect and fix data inconsistencies across the app.
 
-CRITICAL RULES — never break these:
-1. ONLY state facts from the data provided. Never invent metrics, rankings, or statistics.
-2. When you want to execute an operation, use ACTION tags (format below). Be proactive.
-3. Self-optimize: if a task is too large for one response, break it into sequential steps with multiple actions.
-4. Write your own optimized prompts — craft the most effective version, not just what the user said.
-5. After every response, recommend the single highest-value next action.
-6. If data is missing, tell the user EXACTLY which page in the software has it and what to fill in.
-7. Detect token limit warnings in responses ("reached the length limit") and automatically continue.
+CODEBASE KNOWLEDGE:
+PAGES→APIs: Playground→/api/intelligence,control,task-engine,playground-analysis|localStorage:seo_season_proj. Dashboard→Supabase:metrics,projects. Audit→/api/run-analysis. DataRoom→/api/control,analysis,crawl. AlgorithmIntel→/api/algorithm-intel,crawl. BrainLearning→/api/task-engine. SystemControl→/api/control.
+DATA LOCATIONS: Canvas→projects.playground_canvas(JSON). Metrics→metrics table. Context→project_knowledge. Learnings→brain_learnings. Algorithm→algorithm_knowledge. Audits→audit_reports.
+SYNC ISSUES: Canvas blank→playground_canvas null/malformed. Metrics stale→run-analysis not completed. Context empty→DataRoom not filled. Learnings missing→migration-brain-v2.sql not run.
 
-EXECUTABLE ACTIONS — use these tags to control the software:
-When you want to navigate somewhere:
+CRITICAL RULES:
+1. ONLY state facts from data provided. Never invent metrics.
+2. Use web search proactively — if asked about current algorithm updates, rankings, competitors, search first.
+3. Use ACTION tags to execute operations. Be proactive.
+4. Recommend highest-value next action after every response.
+5. For data sync issues, trace the exact flow: UI component → API → Supabase table → back to UI.
+
+EXECUTABLE ACTIONS:
 ⟦ACTION⟧{"type":"navigate","path":"/playground","label":"Open Strategy Canvas"}⟦/ACTION⟧
 ⟦ACTION⟧{"type":"navigate","path":"/data-room","label":"Open Data Room"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"navigate","path":"/brain-learning","label":"Open Brain Learning"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"navigate","path":"/algorithm-intel","label":"Open Algorithm Intelligence"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"navigate","path":"/audit","label":"Open Audit Tool"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"navigate","path":"/dashboard","label":"Open Dashboard"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"navigate","path":"/admin","label":"Open Admin Panel"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"navigate","path":"/launchpad","label":"Open Launchpad"}⟦/ACTION⟧
-
-When you want to run an SEO audit:
-⟦ACTION⟧{"type":"run_audit","url":"https://example.com","mode":"standard","label":"Run SEO Audit for example.com"}⟦/ACTION⟧
-
-When you want to fetch algorithm intelligence:
-⟦ACTION⟧{"type":"fetch_algorithm","topicId":"g_march_2025_core","topicLabel":"March 2025 Core Update","label":"Fetch March 2025 Core Update"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"fetch_custom_algorithm","topicLabel":"Your custom SEO topic","label":"Research: Your custom topic"}⟦/ACTION⟧
-
-When you want to create a canvas card:
-⟦ACTION⟧{"type":"add_card","cardType":"technical","title":"Fix crawl errors","content":"Address the 23 crawl errors found in audit. Focus on 404s and redirect chains first.","priority":"high","week":1,"label":"Add Technical Card: Fix crawl errors"}⟦/ACTION⟧
-
-When you want to search brain learnings:
-⟦ACTION⟧{"type":"search_brain","query":"technical","label":"Search brain for technical learnings"}⟦/ACTION⟧
-
-ALWAYS respond with:
-1. A direct, specific answer using only the data provided
-2. ACTION tags for any operations you want to execute
-3. A clear "Next: [specific recommended action]" at the end`;
+⟦ACTION⟧{"type":"run_audit","url":"https://example.com","mode":"standard","label":"Run SEO Audit"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"fetch_algorithm","topicId":"g_march_2025_core","topicLabel":"March 2025 Core Update","label":"Fetch Algorithm Update"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"add_card","cardType":"technical","title":"...","content":"...","priority":"high","week":1,"label":"Add Canvas Card"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"list_cards","label":"List all canvas cards"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"check_data_sync","label":"Check data sync"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"reload_canvas","label":"Reload canvas"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"execute_task","cardId":"","cardType":"","title":"","content":"","label":"Execute task"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"search_brain","query":"...","label":"Search brain learnings"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"generate_report","title":"SEO Report","sections":[{"heading":"Executive Summary","content":"..."},{"heading":"Key Findings","content":"..."}],"label":"Download SEO Report"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"generate_chart","chartType":"bar","title":"Organic Traffic Trend","data":[{"name":"Jan","value":1200},{"name":"Feb","value":1450}],"dataKey":"value","label":"View Chart"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"fetch_url","url":"https://example.com","label":"Analyse this URL"}⟦/ACTION⟧`;
 
   const user = [
-    `PROJECT INTELLIGENCE:`,
-    projectSection,
-    ``,
-    `ACTIVE BRAIN LEARNINGS (${ctx.learnings.length} neural pathways):`,
-    learningsSection,
-    ``,
-    `ALGORITHM KNOWLEDGE (${ctx.algoItems.length} topics saved):`,
-    algoSection,
-    ``,
-    `CANVAS STATE:`,
-    canvasSection,
-
-CODEBASE ARCHITECTURE — complete knowledge of every file and data flow:
-PAGES & DATA: Playground→/api/intelligence,control,task-engine,playground-analysis|Supabase:projects(playground_canvas JSON),task_executions,metrics|localStorage:seo_season_proj. Dashboard→Supabase:metrics,projects,upsells. Audit→/api/run-analysis|Supabase:audit_reports,metrics. DataRoom→/api/control,analysis,crawl|Supabase:project_knowledge,project_documents. AlgorithmIntel→/api/algorithm-intel,crawl|Supabase:algorithm_knowledge. BrainLearning→/api/task-engine|Supabase:brain_learnings. SystemControl→/api/control|Supabase:ai_content_cache,staleness_registry.
-
-API ACTIONS: task-engine:{execute,evaluate,verify,get_context,get_blueprint,get_all_learnings,save_learning,approve/reject_learning,add_canvas_card,check_sync}. intelligence:{generate,summarise,brief,answer,brain_assistant,code_analysis}. control:{get_context,get_state,log_change,check_fingerprint,save_with_fingerprint}. algorithm-intel:{fetch_topic,fetch_custom_topic,get_all,save_item,delete_item,check_card_overlap,scan_for_new,audit_against}. analysis:{audit,extract,verify}. crawl:{crawl_urls,preview_url,load_cached,compare_analysis}. run-analysis:streams full site audit. playground-analysis:generates strategy. launchpad:recommendations. auto-metrics:scrapes live URLs. fetch-site-metrics:PageSpeed+Jina.
-
-DATA LOCATIONS (where each data type lives): Canvas cards→projects.playground_canvas(JSON array, Playground reads/writes directly, task-engine.add_canvas_card also writes). Task executions→task_executions table(project_id FK). Metrics→metrics table(one row/project, run-analysis writes, Dashboard reads direct Supabase, Playground reads via control.get_context). Project context→project_knowledge+projects tables(DataRoom saves via control.save_with_fingerprint, Playground reads via control.get_context). Learnings→brain_learnings table(BrainLearning CRUD via task-engine). Algorithm intel→algorithm_knowledge table(AlgorithmIntel page writes). Audit reports→audit_reports table(run-analysis writes, Playground reads partial).
-
-COMMON SYNC FAILURES: Canvas blank→projects.playground_canvas null/malformed→check SELECT playground_canvas FROM projects WHERE id=X. Dashboard metrics stale→metrics table not updated→run-analysis must complete. Playground context empty→control.get_context fails→DataRoom must be filled first. Learnings missing→brain_learnings status column missing(run migration-brain-v2.sql). Algorithm Intel blank→algorithm_knowledge empty→user must fetch topics first. Audit not linking→audit_reports.project_id must match current project.
-
-ADDITIONAL ACTIONS (use when relevant):
-⟦ACTION⟧{"type":"check_data_sync","label":"Check project data sync"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"list_cards","label":"List all canvas cards"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"reload_canvas","label":"Reload canvas from DB"}⟦/ACTION⟧
-⟦ACTION⟧{"type":"execute_task","cardId":"","cardType":"","title":"","content":"","label":"Execute task"}⟦/ACTION⟧
-    historySection ? `\nCONVERSATION HISTORY:\n${historySection}` : "",
-    ``,
-    `USER REQUEST: ${ctx.question}`,
-  ].filter(s => s !== undefined).join("\n");
+    `PROJECT DATA:\n${projectSection}`,
+    metricsSection ? `\n${metricsSection}` : "",
+    `\nCANVAS:\n${canvasSection}`,
+    `\nALGORITHM INTEL:\n${algoSection}`,
+    `\nBRAIN LEARNINGS:\n${learningsSection}`,
+    historySection ? `\n\nCONVERSATION HISTORY:\n${historySection}` : "",
+    codeSection,
+    `\n\nQUESTION: ${ctx.question}`,
+  ].filter(l => l !== "").join("\n");
 
   return { system, user };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// HANDLER
+// ─────────────────────────────────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const {
-    mode            = "chat",
-    blocks          = [],
-    question        = "",
-    role            = "team_lead",
-    projectSummary  = "",
-    focusBlockId    = null,
-    checkUrl        = null,
-    week,
-    weekLabel,
-    weekCards       = [],
-    allPlacedCards  = [],
-    projectContext  = {},
-    dataRoom        = {},
-    cardRequirements= [],
-    projectId       = null,
-    // Brain assistant specific
-    brainAssistantContext = null,
-  } = req.body;
-
-  const placed  = (blocks as any[]).filter(b => b.placed);
-  const library = (blocks as any[]).filter(b => !b.placed);
-
-  const drContext = (() => {
-    const dr = dataRoom as any;
-    if (!dr || !Object.keys(dr).length) return "";
-    const lines: string[] = ["DATA ROOM KNOWLEDGE:"];
-    if (dr.goals?.primary)            lines.push(`  Goal: ${dr.goals.primary} | Timeline: ${dr.goals.timeline || "?"} | Keywords: ${dr.goals.keywords || "?"}`);
-    if (dr.analytics?.organicMonthly) lines.push(`  Organic sessions/mo: ${dr.analytics.organicMonthly} | Avg position: ${dr.analytics.gscAvgPos || "?"}`);
-    if (dr.technical?.pagesIndexed)   lines.push(`  Pages indexed: ${dr.technical.pagesIndexed} | Crawl errors: ${dr.technical.crawlErrors || "none"}`);
-    if (dr.competitors?.c1)           lines.push(`  Competitors: ${[dr.competitors.c1, dr.competitors.c2].filter(Boolean).join(", ")} | Our DR: ${dr.competitors.ourDR || "?"}`);
-    if (dr.tech?.cms)                 lines.push(`  CMS: ${dr.tech.cms} | SEO plugin: ${dr.tech.seoPlugin || "?"} | PageSpeed mob: ${dr.tech.pagespdMobile || "?"}`);
-    if (dr.metrics)                   lines.push(`  Metrics: LLM ${dr.metrics.llmVisibility ?? "?"}% | Health ${dr.metrics.algorithmHealth ?? "?"}% | EEAT ${dr.metrics.eeat ?? "?"}%`);
-    if (dr.audits?.length)            lines.push(`  Latest audit: ${dr.audits[0].date}`);
-    if (cardRequirements?.length)     lines.push(`  Saved requirements: ${(cardRequirements as any[]).map((r:any) => `${r.category}: ${r.requirement}`).join(" | ")}`);
-    return lines.join("\n");
-  })();
-
-  const byWeek = [1, 2, 3, 4, 5].map(w => {
-    const wb = placed.filter((b: any) => b.week === w);
-    if (!wb.length) return "";
-    return [`${w === 5 ? "BACKLOG" : `WEEK ${w}`} (${wb.length} cards):`,
-      ...wb.map((b: any) => `  [${(b.type||"").toUpperCase()}|${b.status}|${b.priority}] "${b.title}"${b.assignee ? ` — ${b.assignee}` : ""}\n   ${(b.content||"").slice(0, 120)}`)
-    ].join("\n");
-  }).filter(Boolean).join("\n\n");
-
-  let liveContent = "";
-  if (checkUrl) liveContent = await fetchUrl(checkUrl);
-
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.setHeader("Cache-Control", "no-cache");
-  res.status(200);
+  res.setHeader("Transfer-Encoding", "chunked");
+  res.setHeader("X-Content-Type-Options", "nosniff");
 
   try {
-    const anthropic  = new Anthropic();
+    const {
+      mode            = "chat",
+      blocks          = [],
+      question        = "",
+      role            = "team_lead",
+      projectSummary  = "",
+      focusBlockId    = null,
+      checkUrl        = null,
+      week, weekLabel,
+      weekCards       = [],
+      allPlacedCards  = [],
+      projectContext  = {},
+      dataRoom        = {},
+      cardRequirements= [],
+      projectId       = null,
+      brainAssistantContext = null,
+      attachments     = [],  // ← NEW: [{type:"image"|"document", data:base64, mediaType:string}]
+    } = req.body;
+
+    const anthropic = new Anthropic();
+    const placed    = (blocks as any[]).filter(b => b.placed);
+    const library   = (blocks as any[]).filter(b => !b.placed);
+
+    const drContext = (() => {
+      const dr = dataRoom as any;
+      if (!dr || !Object.keys(dr).length) return "";
+      const lines: string[] = [];
+      if (dr.analytics)   lines.push(`ANALYTICS: organic ${dr.analytics.organic_sessions_monthly||"?"}/mo, GSC clicks ${dr.analytics.gsc_total_clicks||"?"}`);
+      if (dr.technical)   lines.push(`TECHNICAL: ${dr.technical.pages_indexed||"?"} indexed, ${dr.technical.crawl_errors||"no"} errors`);
+      if (dr.keywords)    lines.push(`KEYWORDS: ${(dr.keywords.primary_keywords||[]).slice(0,5).join(", ")}`);
+      if (dr.competitors) lines.push(`COMPETITORS: ${[dr.competitors.competitor_1,dr.competitors.competitor_2].filter(Boolean).join(", ")}`);
+      return lines.length ? `DATA ROOM:\n${lines.join("\n")}` : "";
+    })();
+
+    const byWeek = (() => {
+      const pw = (allPlacedCards as any[]).length ? (allPlacedCards as any[]) : placed;
+      const m: Record<number,string[]> = {};
+      pw.forEach((b:any) => { const w=b.week||1; if(!m[w]) m[w]=[]; m[w].push(`[${b.type}|${b.status}] "${b.title}"`); });
+      return Object.entries(m).sort(([a],[b])=>+a - +b).map(([w,cs])=>`Week ${w}: ${cs.join(", ")}`).join("\n");
+    })();
+
     let systemPrompt = SYSTEM;
     let userPrompt   = "";
 
-    // ── BRAIN ASSISTANT MODE — master intelligence with full context ──
+    // ── Build content blocks for user message (supports attachments) ──
+    const buildUserContent = (text: string): any => {
+      if (!attachments || (attachments as any[]).length === 0) return text;
+      const parts: any[] = [{ type: "text", text }];
+      for (const att of attachments as any[]) {
+        if (att.type === "image") {
+          parts.push({ type: "image", source: { type: "base64", media_type: att.mediaType || "image/jpeg", data: att.data } });
+        } else if (att.type === "document") {
+          parts.push({ type: "document", source: { type: "base64", media_type: att.mediaType || "application/pdf", data: att.data } });
+        }
+      }
+      return parts;
+    };
+
     if (mode === "brain_assistant" || mode === "code_analysis") {
       const bac = brainAssistantContext || {};
       const { system, user } = buildBrainAssistantPrompt({
@@ -252,89 +219,130 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
       systemPrompt = system;
       userPrompt   = user;
-
     } else if (mode === "agenda") {
-      const todo  = (weekCards as any[]).filter(c => c.status === "todo");
-      const doing = (weekCards as any[]).filter(c => c.status === "doing");
-      const done  = (weekCards as any[]).filter(c => ["done", "verified"].includes(c.status));
-      const proj  = [projectContext.company, projectContext.industry, projectContext.url].filter(Boolean).join(" | ");
-      const cardDetail = (c: any) => [`[${(c.type||"").toUpperCase()}|${c.priority}|${c.effort||"?"}]`,`Title: ${c.title}`,`Detail: ${(c.content||"").slice(0,250)}`,`Assigned: ${c.assignee||"Unassigned"}`,`Status: ${c.status}`].join("\n");
-      systemPrompt = SYSTEM + " Write precise, fact-based weekly agendas. Every verification step must name a specific tool and metric.";
-      userPrompt = [`Write the ${weekLabel} agenda based only on the cards provided. Zero assumptions.`,``,`PROJECT: ${proj||"Not provided"}`,``,`CARDS (${(weekCards as any[]).length} total):`,
-        (weekCards as any[]).length === 0 ? "No cards placed here yet." : (weekCards as any[]).map(cardDetail).join("\n\n---\n\n"),
-        ``,`STATUS: To Do: ${todo.length} | In Progress: ${doing.length} | Done: ${done.length}`,``,
-        `OTHER WEEKS (context): ${(allPlacedCards as any[]).filter((c:any)=>c.week!==week).slice(0,20).map((c:any)=>`W${c.week}: [${c.type}] ${c.title}`).join(", ")||"None"}`,``,
-        `## ${weekLabel} — What Is Happening`,`[2-3 sentences based only on the cards]`,``,`## What Each Task Means`,`[For every card: what, why, who, status, how to verify it is done]`,``,
-        `## Verification Checklist`,`| Task | Tool | What to Check | Pass Condition |`,``,`## Gaps and Suggestions`,`[Only if there is a clear gap. Otherwise: "Week plan is complete."]`,``,
-        `## End-of-Week Report`,`[What data to pull, what to compare it to, acceptable range, red flags]`].join("\n");
-
+      systemPrompt = (ROLE_VOICE[role]||ROLE_VOICE.senior_seo) + " " + SYSTEM;
+      userPrompt = [`Write the ${weekLabel} agenda based only on the cards provided. Zero assumptions. Every task directly from the cards.`,`PROJECT: ${projectSummary}`,`CANVAS:`,byWeek||"No cards placed yet."].filter(l=>l!=="").join("\n");
     } else if (mode === "pipeline") {
-      systemPrompt = (ROLE_VOICE[role] || ROLE_VOICE.team_lead) + " " + SYSTEM;
-      userPrompt = [`PROJECT: ${projectSummary}`,``,`CANVAS:`,byWeek||"No cards placed yet.",``,`LIBRARY: ${library.slice(0,12).map((b:any)=>`[${b.type}|${b.priority}] "${b.title}"`).join(", ")||"Empty"}`,liveContent?`\nLIVE SITE:\n${liveContent}`:"",``,`Produce a full execution pipeline:`,`## Critical Path`,`## Dependency Map`,`## Week-by-Week Sequence`,`## Risk Register — table with: Risk | Likelihood | Impact | Owner | Mitigation`,`## Capacity Check`,`## Before Week 1 Checklist`].join("\n");
-
+      systemPrompt = (ROLE_VOICE[role]||ROLE_VOICE.senior_seo) + " " + SYSTEM;
+      userPrompt = [`PROJECT: ${projectSummary}`,``,`CANVAS:`,byWeek||"No cards placed yet.",``,`LIBRARY (unplaced):`,library.map((b:any)=>`[${b.type}] "${b.title}"`).join(", ")||"Empty",``,`QUESTION: ${question||"Provide a strategic overview of where this project stands."}`].filter(l=>l!=="").join("\n");
     } else if (mode === "dependencies") {
-      const fb = focusBlockId ? placed.find((b:any)=>b.id===focusBlockId) : null;
       systemPrompt = (ROLE_VOICE[role]||ROLE_VOICE.senior_seo) + " " + SYSTEM;
-      userPrompt = [`PROJECT: ${projectSummary}`,`CANVAS:`,byWeek,fb?`FOCUS CARD: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content||"").slice(0,350)}`:"",liveContent?`LIVE SITE:\n${liveContent}`:"",``,`Analyse dependencies for ${fb?`"${fb.title}"`:"ALL tasks"}:`,`## Blockers`,`## What This Enables`,`## Parallel vs Sequential`,`## If Delayed 1 Week`,`## Verification Before Starting`].filter(l=>l!=="").join("\n");
-
-    } else if (mode === "deep_dive") {
       const fb = focusBlockId ? placed.find((b:any)=>b.id===focusBlockId)||library.find((b:any)=>b.id===focusBlockId) : null;
+      userPrompt = [`PROJECT: ${projectSummary}`,`CANVAS:`,byWeek,fb?`FOCUS CARD: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content||"").slice(0,300)}`:"",`REQUIREMENTS:`,cardRequirements.map((r:any)=>`• ${r.key}: ${r.value}`).join("\n")||"None specified",``,`QUESTION: ${question}`].filter(l=>l!=="").join("\n");
+    } else if (mode === "deep_dive") {
       systemPrompt = (ROLE_VOICE[role]||ROLE_VOICE.senior_seo) + " " + SYSTEM;
-      userPrompt = [`PROJECT: ${projectSummary}`,``,drContext,``,
-        fb?[`CARD TO ANALYSE IN DEPTH:`,`"${fb.title}" [${fb.type}|${fb.priority}|${fb.status}]`,fb.content,`Assigned: ${fb.assignee||"Unassigned"} | Effort: ${fb.effort||"unknown"} | Impact: ${fb.impact||"unknown"}`].join("\n"):`QUESTION: ${question}`,
-        ``,`FULL CANVAS CONTEXT:`,byWeek||"No cards placed yet.",liveContent?`\nLIVE SITE:\n${liveContent}`:"",``,
-        `Provide a deep strategic analysis covering:`,`## Why This Card Matters`,`## Detailed Execution Plan (step-by-step, citing specific data from Data Room)`,
-        `## Canvas Cards to Create`,`List 2-4 canvas cards with: title, type, week (1-4), priority, why to create.`,
-        `## What I Need to Execute This`,`## Dependencies and Risks`,`## Expected Outcomes (measurable)`].filter(l=>l!=="").join("\n");
-
+      const fb = focusBlockId ? placed.find((b:any)=>b.id===focusBlockId)||library.find((b:any)=>b.id===focusBlockId) : null;
+      const liveContent = checkUrl ? await fetchUrl(checkUrl) : "";
+      userPrompt = [`PROJECT: ${projectSummary}`,drContext,`CANVAS:`,byWeek||"No cards placed yet.",fb?`FOCUS: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content||"").slice(0,300)}`:"",liveContent?`LIVE SITE:\n${liveContent}`:"",``,`QUESTION: ${question||"Provide a strategic overview."}`].filter(l=>l!=="").join("\n");
     } else {
-      const fb = focusBlockId ? placed.find((b:any)=>b.id===focusBlockId) : null;
       systemPrompt = (ROLE_VOICE[role]||ROLE_VOICE.senior_seo) + " " + SYSTEM;
-      userPrompt = [`PROJECT: ${projectSummary}`,drContext,`CANVAS:`,byWeek||"No cards placed yet.",fb?`FOCUS: "${fb.title}" [${fb.type}|${fb.status}]\n${(fb.content||"").slice(0,300)}`:"",liveContent?`LIVE SITE:\n${liveContent}`:"",``,`QUESTION: ${question||"Provide a strategic overview of where this project stands."}`].filter(l=>l!=="").join("\n");
+      userPrompt = [`PROJECT: ${projectSummary}`,drContext,`CANVAS:`,byWeek||"No cards placed yet.",``,`QUESTION: ${question||"Provide a strategic overview."}`].filter(l=>l!=="").join("\n");
     }
 
     try {
-      const stream = await anthropic.messages.stream({
-        model: "claude-sonnet-4-5", max_tokens: 6000,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-      });
+      // ── Determine if this mode should use web search ──
+      const useWebSearch = mode === "brain_assistant" || mode === "code_analysis";
+      const userContent  = buildUserContent(userPrompt);
 
-      let stopReason  = "";
-      let fullOutput  = "";
+      // ── Multi-turn streaming with web search support ──
+      const messages: any[] = [{ role: "user", content: userContent }];
+      const tools: any[] = useWebSearch
+        ? [{ type: "web_search_20250305", name: "web_search" }]
+        : [];
 
-      for await (const chunk of stream) {
-        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-          res.write(chunk.delta.text);
-          fullOutput += chunk.delta.text;
-        }
-        if (chunk.type === "message_delta" && chunk.delta.stop_reason) {
-          stopReason = chunk.delta.stop_reason;
-        }
-      }
+      let fullOutput = "";
+      let stopReason = "";
+      const maxIterations = useWebSearch ? 4 : 1;
 
-      if (stopReason === "max_tokens") {
-        console.warn(`[SEO Season] intelligence.ts hit max_tokens — mode: ${mode}, role: ${role}`);
-        const truncMsg = "\n\n---\n⚠️ Response reached the length limit. I am continuing in the next message automatically.";
-        res.write(truncMsg);
-        fullOutput += truncMsg;
-      }
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        const streamParams: any = {
+          model: "claude-sonnet-4-5", max_tokens: 6000,
+          system: systemPrompt, messages,
+        };
+        if (tools.length > 0) streamParams.tools = tools;
 
-      // Auto-capture brain learnings for strategic modes
-      if ((mode === "pipeline" || mode === "deep_dive" || mode === "brain_assistant" || mode === "code_analysis") && projectId && fullOutput.length > 500) {
-        const fb = focusBlockId
-          ? placed.find((b:any)=>b.id===focusBlockId)||library.find((b:any)=>b.id===focusBlockId)
-          : null;
-        void extractAndSaveLearning(
-          mode === "pipeline" ? "pipeline_intelligence" : mode === "brain_assistant" ? "brain_assistant_log" : "deep_dive_analysis",
-          projectId,
-          fullOutput,
-          {
-            card_type:       fb?.type || "strategy",
-            card_title:      fb?.title || (mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` : `Deep Dive: ${question.slice(0, 50)}`),
-            context_summary: `${mode} — ${projectSummary?.slice(0, 80)}`,
+        const stream = await anthropic.messages.stream(streamParams);
+
+        let iterText  = "";
+        let toolUseId = "";
+        let toolInput = "";
+        let inToolUse = false;
+        let inToolResult = false;
+
+        for await (const chunk of stream) {
+          // Content block starts
+          if (chunk.type === "content_block_start") {
+            const cb = chunk.content_block as any;
+            if (cb.type === "tool_use") {
+              inToolUse = true;
+              toolUseId = cb.id;
+              toolInput = "";
+              if (cb.name === "web_search") {
+                res.write("\n🔍 Searching the web...");
+              }
+            }
+            if (cb.type === "tool_result") {
+              inToolResult = true;
+              res.write("\n📋 Processing results...\n");
+            }
           }
-        );
+
+          // Content block deltas
+          if (chunk.type === "content_block_delta") {
+            const d = chunk.delta as any;
+            if (d.type === "text_delta") {
+              res.write(d.text);
+              iterText   += d.text;
+              fullOutput += d.text;
+              inToolUse  = false;
+              inToolResult = false;
+            }
+            if (d.type === "input_json_delta" && inToolUse) {
+              toolInput += d.partial_json || "";
+            }
+            // web_search results come as text in tool_result
+            if (d.type === "text" && inToolResult) {
+              // Don't stream tool result raw text — model will synthesise it
+            }
+          }
+
+          // Content block ends
+          if (chunk.type === "content_block_stop") {
+            inToolUse = false;
+            inToolResult = false;
+          }
+
+          if (chunk.type === "message_delta" && (chunk.delta as any).stop_reason) {
+            stopReason = (chunk.delta as any).stop_reason;
+          }
+        }
+
+        if (stopReason === "max_tokens") {
+          res.write("\n\n---\n⚠️ Response reached the length limit. I am continuing in the next message automatically.");
+          fullOutput += "\n\n---\n⚠️ Response reached the length limit. I am continuing in the next message automatically.";
+          break;
+        }
+
+        if (stopReason === "end_turn") break;
+
+        // If tool_use, continue conversation
+        if (stopReason === "tool_use") {
+          const finalMsg = await stream.finalMessage();
+          messages.push({ role: "assistant", content: finalMsg.content });
+          // For web_search_20250305, provide a minimal tool result to continue
+          const toolResults = finalMsg.content
+            .filter((b: any) => b.type === "tool_use")
+            .map((b: any) => ({
+              type: "tool_result",
+              tool_use_id: b.id,
+              content: "Search completed. Use the results in your response.",
+            }));
+          if (toolResults.length > 0) {
+            messages.push({ role: "user", content: toolResults });
+          } else {
+            break;
+          }
+        }
       }
 
     } catch (streamErr: any) {
