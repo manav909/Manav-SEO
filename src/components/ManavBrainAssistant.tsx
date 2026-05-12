@@ -231,8 +231,12 @@ export default function ManavBrainAssistant() {
   const [canvasBlocks,setCanvasBlocks]= useState<any[]>([]);
   const [metrics, setMetrics]   = useState<any>(null);
   const [autoProj,setAutoProj]  = useState(false);
-  const [codeSnippet,setCodeSnippet] = useState('');
+  const [codeSnippet,setCodeSnippet]   = useState('');
   const [showCodePaste,setShowCodePaste] = useState(false);
+  const [attachments, setAttachments]   = useState<{type:string;data:string;mediaType:string;name:string}[]>([]);
+  const [isSearching, setIsSearching]   = useState(false);
+  const [inlineCharts,setInlineCharts]  = useState<Record<string,any>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending,  setPending]  = useState(0);
   const [suggIdx,  setSuggIdx]  = useState(0);
 
@@ -266,6 +270,30 @@ export default function ManavBrainAssistant() {
     const orig = origFetchRef.current;
     return orig ? orig(...args) : window.fetch(...args);
   }, []);
+
+  /* ── Read file as base64 ── */
+  const readFileAsBase64 = useCallback((file: File): Promise<{data:string;mediaType:string;name:string;type:string}> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => {
+        const dataUrl = reader.result as string;
+        const base64  = dataUrl.split(',')[1];
+        const mt = file.type || 'application/octet-stream';
+        const type = mt.startsWith('image/') ? 'image' : 'document';
+        resolve({ data: base64, mediaType: mt, name: file.name, type });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  /* ── Handle file drop on brain panel ── */
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files).slice(0, 3);
+    const read  = await Promise.all(files.map(readFileAsBase64));
+    setAttachments(prev => [...prev, ...read].slice(0, 3));
+  }, [readFileAsBase64]);
 
   /* Auto-scroll */
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
@@ -770,6 +798,56 @@ export default function ManavBrainAssistant() {
           break;
         }
 
+        case 'generate_report': {
+          try {
+            const { jsPDF } = await import('jspdf');
+            const doc  = new jsPDF();
+            const proj = projects.find(p => p.id === selProj);
+            const date = new Date().toLocaleDateString();
+            doc.setFillColor(3, 7, 18);
+            doc.rect(0, 0, 210, 297, 'F');
+            doc.setTextColor(165, 180, 252);
+            doc.setFontSize(20);
+            doc.text(action.title || 'SEO Report', 20, 25);
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(10);
+            doc.text(`Project: ${proj?.name || 'Unknown'} | Generated: ${date}`, 20, 35);
+            doc.setDrawColor(99, 102, 241);
+            doc.line(20, 40, 190, 40);
+            let y = 52;
+            (action.sections || []).forEach((s: any) => {
+              if (y > 260) { doc.addPage(); y = 20; }
+              doc.setTextColor(165, 180, 252); doc.setFontSize(13);
+              doc.text(s.heading || '', 20, y); y += 8;
+              doc.setTextColor(200, 200, 200); doc.setFontSize(10);
+              const lines = doc.splitTextToSize(s.content || '', 170);
+              doc.text(lines, 20, y); y += lines.length * 6 + 8;
+            });
+            doc.save(`${(action.title||'report').replace(/\s+/g,'-').toLowerCase()}.pdf`);
+            upd('done', `Report downloaded: ${action.title || 'SEO Report'}`);
+          } catch (err: any) { upd('error', `Report generation failed: ${err.message}`); }
+          break;
+        }
+
+        case 'generate_chart': {
+          const chartId = `chart_${Date.now()}`;
+          setInlineCharts(prev => ({ ...prev, [chartId]: { ...action, id: chartId } }));
+          setMsgs(ms => ms.map(m => m.id===msgId ? { ...m, chartId } : m));
+          upd('done', `Chart rendered below.`);
+          break;
+        }
+
+        case 'fetch_url': {
+          upd('running', `Fetching ${action.url}...`);
+          const res2 = await brainFetch('/api/intelligence', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ mode: 'deep_dive', question: `Analyse this URL for SEO issues: ${action.url}`, checkUrl: action.url, projectSummary: '', role: 'senior_seo' }) });
+          if (!res2.body) { upd('error', 'Failed to fetch URL'); break; }
+          const reader2 = res2.body.getReader(); const dec2 = new TextDecoder(); let t2 = '';
+          while (true) { const { done, value } = await reader2.read(); if (done) break; t2 += dec2.decode(value); }
+          upd('done', t2.slice(0, 400));
+          break;
+        }
+
         default: upd('done', `Action ${action.type} acknowledged.`);
       }
     } catch (err: any) { upd('error', err?.message || 'Action failed'); }
@@ -796,6 +874,7 @@ export default function ManavBrainAssistant() {
     setLoading(true);
     if (!isAuto) setInput('');
     if (!isAuto && codeSnippet) { setCodeSnippet(''); setShowCodePaste(false); }
+    if (!isAuto && attachments.length) setAttachments([]);
 
     if (!isAuto) setMsgs(ms => [...ms, { id:uid(), role:'user', content: text, ts: new Date() }]);
     const brainId = uid();
@@ -814,6 +893,7 @@ export default function ManavBrainAssistant() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'brain_assistant', question: text, projectId: selProj || null,
+          attachments: attachments.map(a => ({type:a.type,data:a.data,mediaType:a.mediaType})),
           projectSummary: summary || 'No project selected', role: 'senior_seo',
           brainAssistantContext: {
             projectContext: ctx, learnings: learnings.slice(0, 12),
@@ -831,9 +911,14 @@ export default function ManavBrainAssistant() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        full += dec.decode(value);
+        const chunk = dec.decode(value);
+        full += chunk;
+        // Detect web search indicator
+        if (chunk.includes('🔍 Searching') || chunk.includes('📋 Processing')) setIsSearching(true);
+        else if (full.length > 200) setIsSearching(false);
         setMsgs(ms => ms.map(m => m.id===brainId ? { ...m, content: full } : m));
       }
+      setIsSearching(false);
 
       const truncated = full.includes('reached the length limit');
       const actions   = parseActions(full);
@@ -966,7 +1051,7 @@ export default function ManavBrainAssistant() {
                 {loading && !streamActive.current && (
                   <div style={{display:'flex',alignItems:'center',gap:7,paddingLeft:3}}>
                     <div style={{display:'flex',gap:3}}>{[0,1,2].map(i=><div key={i} style={{width:4,height:4,borderRadius:'50%',background:'#6366f1',animation:`dotPulse 1.4s ease-in-out ${i*0.2}s infinite`}}/>)}</div>
-                    <span style={{fontSize:8,fontFamily:'monospace',color:'rgba(99,102,241,0.55)',letterSpacing:'0.1em'}}>THINKING...</span>
+                    <span style={{fontSize:8,fontFamily:'monospace',color:'rgba(99,102,241,0.55)',letterSpacing:'0.1em'}}>{isSearching?'SEARCHING WEB...':'THINKING...'}</span>
                   </div>
                 )}
                 <div ref={bottomRef}/>
@@ -980,6 +1065,16 @@ export default function ManavBrainAssistant() {
               )}
               <div style={{position:'relative',zIndex:2,padding:'10px 14px 14px',borderTop:'1px solid rgba(255,255,255,0.04)',background:'rgba(0,0,0,0.18)'}}>
                 <div style={{display:'flex',gap:7,alignItems:'flex-end'}}>
+                {attachments.length > 0 && (
+                  <div style={{marginBottom:6,display:'flex',gap:4,flexWrap:'wrap'}}>
+                    {attachments.map((a,i) => (
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:4,background:'rgba(99,102,241,0.08)',border:'1px solid rgba(99,102,241,0.2)',borderRadius:6,padding:'2px 7px'}}>
+                        <span style={{fontSize:8,fontFamily:'monospace',color:'rgba(165,180,252,0.8)'}}>{a.type==='image'?'🖼':'📄'} {a.name.slice(0,18)}</span>
+                        <button onClick={()=>setAttachments(prev=>prev.filter((_,j)=>j!==i))} style={{background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.3)',fontSize:9,padding:0}}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {showCodePaste && (
                   <div style={{marginBottom:8,background:'rgba(6,182,212,0.04)',border:'1px solid rgba(6,182,212,0.15)',borderRadius:8,padding:8}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
@@ -1000,7 +1095,10 @@ export default function ManavBrainAssistant() {
                 <div style={{marginTop:5,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <span style={{fontSize:7,fontFamily:'monospace',color:'rgba(255,255,255,0.12)'}}>ENTER to send · SHIFT+ENTER new line</span>
                   <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                    <button onClick={()=>setShowCodePaste(v=>!v)} style={{background:showCodePaste?'rgba(6,182,212,0.12)':'none',border:showCodePaste?'1px solid rgba(6,182,212,0.3)':'none',borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:showCodePaste?'rgba(6,182,212,0.9)':'rgba(255,255,255,0.25)',fontSize:7,fontFamily:'monospace',padding:'1px 5px'}}>
+                    <button onClick={()=>fileInputRef.current?.click()} style={{background:attachments.length>0?'rgba(99,102,241,0.12)':'none',border:attachments.length>0?'1px solid rgba(99,102,241,0.3)':'none',borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:attachments.length>0?'rgba(165,180,252,0.9)':'rgba(255,255,255,0.25)',fontSize:7,fontFamily:'monospace',padding:'1px 5px'}}>
+                      📎{attachments.length>0?` ${attachments.length} file${attachments.length>1?'s':''}`:' FILE'}
+                    </button>
+                    <button onClick={()=>setShowCodePaste(v=>!v)} none',border:showCodePaste?'1px solid rgba(6,182,212,0.3)':'none',borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:showCodePaste?'rgba(6,182,212,0.9)':'rgba(255,255,255,0.25)',fontSize:7,fontFamily:'monospace',padding:'1px 5px'}}:'none',border:showCodePaste?'1px solid rgba(6,182,212,0.3)':'none',borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:showCodePaste?'rgba(6,182,212,0.9)':'rgba(255,255,255,0.25)',fontSize:7,fontFamily:'monospace',padding:'1px 5px'}}>
                       📎 CODE{codeSnippet?' ✓':''}
                     </button>
                     <button onClick={()=>{sendMsgInternal('Run a complete data sync check for this project. Check all tables, identify sync issues, and tell me exactly what to fix.',false);}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:'rgba(255,255,255,0.18)',fontSize:7,fontFamily:'monospace',padding:0}}>
@@ -1141,6 +1239,15 @@ export default function ManavBrainAssistant() {
           )}
         </div>
       )}
+
+      {/* Hidden file input */}
+      <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.docx,.xlsx,.csv,.txt,.ts,.tsx,.json" style={{display:'none'}}
+        onChange={async e => {
+          const files = Array.from(e.target.files||[]).slice(0,3);
+          const read  = await Promise.all(files.map(readFileAsBase64));
+          setAttachments(prev => [...prev, ...read].slice(0,3));
+          e.target.value = '';
+        }}/>
 
       <style>{`
         @keyframes brainPulse { 0%,100%{box-shadow:0 0 0 1px rgba(99,102,241,0.4),0 0 30px rgba(99,102,241,0.35);}50%{box-shadow:0 0 0 1px rgba(99,102,241,0.7),0 0 55px rgba(99,102,241,0.55);} }
