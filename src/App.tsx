@@ -21,6 +21,7 @@ import SystemControl  from './pages/SystemControl';
 import BrainLearning  from './pages/BrainLearning';
 import GuestTour      from './pages/GuestTour';
 import Desk           from './pages/Desk';
+import BrainCommand   from './pages/BrainCommand';
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -69,6 +70,7 @@ const AppRoutes = () => {
         <Route path="/algorithm-intel"element={<B name="algo-intel">    <ApprovedRequired><AlgorithmIntel /></ApprovedRequired></B>} />
         <Route path="/brain-learning" element={<B name="brain-learning"><ApprovedRequired><BrainLearning /></ApprovedRequired> </B>} />
         <Route path="/desk"          element={<B name="desk">         <ApprovedRequired><Desk /></ApprovedRequired>          </B>} />
+        <Route path="/brain-command"  element={<B name="brain-command"><ApprovedRequired><BrainCommand /></ApprovedRequired></B>} />
         <Route path="*"               element={<NotFound />} />
       </Routes>
 
