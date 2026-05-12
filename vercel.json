@@ -1,5 +1,29 @@
 {
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
+  "framework": null,
+
+  "functions": {
+    "api/algorithm-intel.ts":     { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/analysis.ts":            { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/auto-metrics.ts":        { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/control.ts":             { "runtime": "nodejs20.x", "maxDuration": 30  },
+    "api/crawl.ts":               { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/fetch-site-metrics.ts":  { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/intelligence.ts":        { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/launchpad.ts":           { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/playground-analysis.ts": { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/run-analysis.ts":        { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/seo-agent.ts":           { "runtime": "nodejs20.x", "maxDuration": 60  },
+    "api/task-engine.ts":         { "runtime": "nodejs20.x", "maxDuration": 60  }
+  },
+
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ]
 }
