@@ -1,7 +1,8 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 120 };
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Speak as a knowledgeable senior colleague who genuinely cares about this project. Use I throughout. Be direct, specific, and honest. Never invent data. Flag every assumption. Reference actual card titles and data from the canvas — never make things up.";
 
@@ -36,8 +37,10 @@ function buildBrainAssistantPrompt(ctx: {
   learnings:      any[];
   algoItems:      any[];
   canvasBlocks:   any[];
+  metrics:        any;
   history:        { role: string; content: string }[];
   projectSummary: string;
+  codeContent?:   string;
 }): { system: string; user: string } {
 
   const pc  = ctx.projectContext || {};
@@ -77,6 +80,14 @@ function buildBrainAssistantPrompt(ctx: {
         return `Week ${w === 5 ? "Backlog" : w} (${wb.length}): ${wb.map((b: any) => `[${b.type}|${b.status}] "${b.title}"`).join(", ")}`;
       }).filter(Boolean).join("\n")
     : "Canvas is empty. No cards placed yet.";
+
+  const metricsSection = ctx.metrics
+    ? `LIVE METRICS: LLM ${ctx.metrics.llm_visibility||"??"}/100 | Health ${ctx.metrics.algorithm_health||"??"}/100 | EEAT ${ctx.metrics.eeat_score||"??"}/100 | Organic ${ctx.metrics.organic_sessions||"??"}/mo | GSC clicks ${ctx.metrics.gsc_clicks||"??"}`
+    : "";
+
+  const codeSection = ctx.codeContent
+    ? `\n\nCODE FOR ANALYSIS:\n\\`\\`\\`\n${ctx.codeContent.slice(0, 6000)}\n\\`\\`\\`\nAnalyze this code for: logic errors, data sync issues, missing connections, broken flows.`
+    : "";
 
   const historySection = ctx.history.length > 0
     ? ctx.history.slice(-8).map(m => `${m.role === "user" ? "User" : "Manav Brain"}: ${m.content.slice(0, 200)}`).join("\n")
@@ -140,6 +151,21 @@ ALWAYS respond with:
     ``,
     `CANVAS STATE:`,
     canvasSection,
+
+CODEBASE ARCHITECTURE — complete knowledge of every file and data flow:
+PAGES & DATA: Playground→/api/intelligence,control,task-engine,playground-analysis|Supabase:projects(playground_canvas JSON),task_executions,metrics|localStorage:seo_season_proj. Dashboard→Supabase:metrics,projects,upsells. Audit→/api/run-analysis|Supabase:audit_reports,metrics. DataRoom→/api/control,analysis,crawl|Supabase:project_knowledge,project_documents. AlgorithmIntel→/api/algorithm-intel,crawl|Supabase:algorithm_knowledge. BrainLearning→/api/task-engine|Supabase:brain_learnings. SystemControl→/api/control|Supabase:ai_content_cache,staleness_registry.
+
+API ACTIONS: task-engine:{execute,evaluate,verify,get_context,get_blueprint,get_all_learnings,save_learning,approve/reject_learning,add_canvas_card,check_sync}. intelligence:{generate,summarise,brief,answer,brain_assistant,code_analysis}. control:{get_context,get_state,log_change,check_fingerprint,save_with_fingerprint}. algorithm-intel:{fetch_topic,fetch_custom_topic,get_all,save_item,delete_item,check_card_overlap,scan_for_new,audit_against}. analysis:{audit,extract,verify}. crawl:{crawl_urls,preview_url,load_cached,compare_analysis}. run-analysis:streams full site audit. playground-analysis:generates strategy. launchpad:recommendations. auto-metrics:scrapes live URLs. fetch-site-metrics:PageSpeed+Jina.
+
+DATA LOCATIONS (where each data type lives): Canvas cards→projects.playground_canvas(JSON array, Playground reads/writes directly, task-engine.add_canvas_card also writes). Task executions→task_executions table(project_id FK). Metrics→metrics table(one row/project, run-analysis writes, Dashboard reads direct Supabase, Playground reads via control.get_context). Project context→project_knowledge+projects tables(DataRoom saves via control.save_with_fingerprint, Playground reads via control.get_context). Learnings→brain_learnings table(BrainLearning CRUD via task-engine). Algorithm intel→algorithm_knowledge table(AlgorithmIntel page writes). Audit reports→audit_reports table(run-analysis writes, Playground reads partial).
+
+COMMON SYNC FAILURES: Canvas blank→projects.playground_canvas null/malformed→check SELECT playground_canvas FROM projects WHERE id=X. Dashboard metrics stale→metrics table not updated→run-analysis must complete. Playground context empty→control.get_context fails→DataRoom must be filled first. Learnings missing→brain_learnings status column missing(run migration-brain-v2.sql). Algorithm Intel blank→algorithm_knowledge empty→user must fetch topics first. Audit not linking→audit_reports.project_id must match current project.
+
+ADDITIONAL ACTIONS (use when relevant):
+⟦ACTION⟧{"type":"check_data_sync","label":"Check project data sync"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"list_cards","label":"List all canvas cards"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"reload_canvas","label":"Reload canvas from DB"}⟦/ACTION⟧
+⟦ACTION⟧{"type":"execute_task","cardId":"","cardType":"","title":"","content":"","label":"Execute task"}⟦/ACTION⟧
     historySection ? `\nCONVERSATION HISTORY:\n${historySection}` : "",
     ``,
     `USER REQUEST: ${ctx.question}`,
@@ -211,7 +237,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let userPrompt   = "";
 
     // ── BRAIN ASSISTANT MODE — master intelligence with full context ──
-    if (mode === "brain_assistant") {
+    if (mode === "brain_assistant" || mode === "code_analysis") {
       const bac = brainAssistantContext || {};
       const { system, user } = buildBrainAssistantPrompt({
         question,
@@ -219,8 +245,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         learnings:      bac.learnings      || [],
         algoItems:      bac.algoItems      || [],
         canvasBlocks:   bac.canvasBlocks   || placed,
+        metrics:        bac.metrics        || null,
         history:        bac.history        || [],
         projectSummary,
+        codeContent:    brainAssistantContext?.codeContent || null,
       });
       systemPrompt = system;
       userPrompt   = user;
@@ -293,10 +321,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Auto-capture brain learnings for strategic modes
-      if ((mode === "pipeline" || mode === "deep_dive" || mode === "brain_assistant") && projectId && fullOutput.length > 500) {
+      if ((mode === "pipeline" || mode === "deep_dive" || mode === "brain_assistant" || mode === "code_analysis") && projectId && fullOutput.length > 500) {
         const fb = focusBlockId
           ? placed.find((b:any)=>b.id===focusBlockId)||library.find((b:any)=>b.id===focusBlockId)
           : null;
+        void extractAndSaveLearning(
+          mode === "pipeline" ? "pipeline_intelligence" : mode === "brain_assistant" ? "brain_assistant_log" : "deep_dive_analysis",
+          projectId,
+          fullOutput,
+          {
+            card_type:       fb?.type || "strategy",
+            card_title:      fb?.title || (mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` : `Deep Dive: ${question.slice(0, 50)}`),
+            context_summary: `${mode} — ${projectSummary?.slice(0, 80)}`,
+          }
+        );
       }
 
     } catch (streamErr: any) {
