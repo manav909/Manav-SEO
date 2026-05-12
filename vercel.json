@@ -5,7 +5,7 @@
   "installCommand": "npm install",
   "functions": {
     "api/*.ts": {
-      "maxDuration": 180
+      "maxDuration": 60
     }
   },
   "rewrites": [
