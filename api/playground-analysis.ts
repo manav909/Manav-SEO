@@ -1,5 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { extractAndSaveLearning }            from "./ai-cache";
 
 export const config = { maxDuration: 300 };
 
@@ -42,9 +43,8 @@ async function generate(prompt: string, maxTokens: number): Promise<string> {
     system:     MANAV_SYSTEM,
     messages:   [{ role: "user", content: prompt }],
   });
-  // Warn in logs if output was cut off at token limit
   if (msg.stop_reason === "max_tokens") {
-    console.warn(`[SEO Season] playground-analysis batch hit max_tokens (${maxTokens}). Strategy JSON likely truncated. Increase maxTokens if this persists.`);
+    console.warn(`[SEO Season] playground-analysis batch hit max_tokens (${maxTokens}). Strategy JSON likely truncated.`);
   }
   return msg.content[0].type === "text" ? msg.content[0].text : "";
 }
@@ -58,14 +58,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     auditReports = [], competitors = [], allKeywords = [],
     resumeBatch = 0,
     existingStrategy,
-    // dataRoom context for richer grounding
     dataRoomContext = {},
   } = req.body;
 
   const latest  = (metrics as any[])[0] ?? null;
   const safeStr = (v: any) => typeof v === "string" ? v : v == null ? "" : String(v);
 
-  // ── Build a data inventory so the AI knows exactly what it has ──
   const hasMetrics     = !!latest;
   const hasKeywords    = (allKeywords as string[]).length > 0;
   const hasRankings    = (keywordRankings as any[]).length > 0;
@@ -92,135 +90,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .map((a: any) => `${(a.created_at||"").split("T")[0]}: ${Object.keys(a.sections||{}).map(t => `[${t}] ${safeStr(a.sections[t]).slice(0,200)}`).join(" | ")}`)
     .join("\n");
 
-  const brief = `Company: ${clientData?.company??'Unknown'} | Industry: ${clientData?.industry??'Unknown'} | Site: ${project?.url??'Unknown'}
-Keywords: ${kwList||'None'} | Competitors: ${compList||'None'}
-Scores: ${scores}
-Rankings: ${kwRanks||'No data'}
-Audits:\n${auditSummary||'No audits yet'}`;
+  const brief = `Company: ${clientData?.company??'Unknown'} | Industry: ${clientData?.industry??'Unknown'} | Site: ${project?.url??'Unknown'}\nKeywords: ${kwList||'None'} | Competitors: ${compList||'None'}\nScores: ${scores}\nRankings: ${kwRanks||'No data'}\nAudits:\n${auditSummary||'No audits yet'}`;
 
-  // ── Batch 1: Executive summary, quick wins, weekly plans ──
-  const batch1Prompt = `You are Manav Brain. STRICT MODE: every output must cite specific data. Omit anything you cannot fact-check.
+  const batch1Prompt = `You are Manav Brain. STRICT MODE: every output must cite specific data. Omit anything you cannot fact-check.\n\nDATA INVENTORY (what you actually have):\n${dataInventory}\n\nFULL DATA:\n${brief}\n\nReturn JSON with ONLY these keys:\n{\n  "executive_summary": "3 sentences citing specific numbers from data. If no data, write: INSUFFICIENT DATA — fill in metrics and run audit first.",\n  "data_confidence": "high|medium|low — based on what data is available",\n  "overall_health": "Excellent|Strong|Building|Needs Work|Critical",\n  "biggest_opportunity": "Cite the specific metric or finding that shows this opportunity. No data = omit.",\n  "biggest_risk": "Cite the specific finding. No data = omit.",\n  "data_gaps": ["list of things I could not analyse because data was missing"],\n  "quick_wins": [\n    {"id":"qw1","title":"title","description":"what + specific evidence from data","effort":"low|medium|high","impact":"high|medium|low","timeframe":"1-3 days","category":"technical|content|geo|links","evidence":"EXACT data point: e.g. 'LLM score 34/100 — well below 60 threshold'","data_grade":"A"}\n  ],\n  "weekly_plans": [\n    {"week":1,"theme":"theme","focus":"what this achieves","tasks":["task citing specific finding"],"expected_outcome":"measurable result based on data"}\n  ]\n}\n\nRULES:\n- quick_wins: ONLY include if you have evidence. If you have enough data for 3 items, return 3 — not 6 invented ones.\n- weekly_plans: exactly 4 weeks, but only include tasks with data backing.\n- data_grade on quick_wins: A = direct metric/audit evidence, B = inferred from available data, C = assumption (DO NOT include C-grade items).\n- If overall data is insufficient, return only: executive_summary, data_confidence: "low", data_gaps, and empty arrays.`;
 
-DATA INVENTORY (what you actually have):
-${dataInventory}
+  const batch2Prompt = `You are Manav Brain. STRICT MODE: only output items you can fact-check against the data.\n\nDATA INVENTORY:\n${dataInventory}\n\nFULL DATA:\n${brief}\n\nReturn JSON with ONLY these keys:\n{\n  "kpi_forecast": [\n    {"metric":"LLM Visibility Score","now":"EXACT value from data or Unknown","d30":"realistic target","d60":"target","d90":"target","basis":"cite the data point justifying this trajectory"}\n  ],\n  "technical_priorities": [\n    {"id":"tp1","issue":"EXACT issue from audit data","fix":"specific fix","urgency":"immediate|this_week|this_month","impact":"effect on rankings","effort":"low|medium|high","evidence":"audit report date and finding","data_grade":"A|B"}\n  ],\n  "content_calendar": [\n    {"id":"cc1","title":"title","type":"blog|landing_page|faq|pillar","target_keyword":"keyword from tracked list ONLY","search_intent":"informational|commercial","rationale":"why from ranking data","suggested_week":2,"word_count":1200,"data_grade":"A|B"}\n  ]\n}\n\nRULES:\n- kpi_forecast: use ACTUAL scores from data for "now". If metric not in data, write "No data — add to Metrics Dashboard".\n- technical_priorities: ONLY from audit data. No audit? Return empty array.\n- content_calendar: ONLY for keywords that appear in allKeywords or rankings data. No keyword data? Return empty array.\n- DO NOT include C-grade (assumption) items. Omit entire category if no supporting data.`;
 
-FULL DATA:
-${brief}
-
-Return JSON with ONLY these keys:
-{
-  "executive_summary": "3 sentences citing specific numbers from data. If no data, write: INSUFFICIENT DATA — fill in metrics and run audit first.",
-  "data_confidence": "high|medium|low — based on what data is available",
-  "overall_health": "Excellent|Strong|Building|Needs Work|Critical",
-  "biggest_opportunity": "Cite the specific metric or finding that shows this opportunity. No data = omit.",
-  "biggest_risk": "Cite the specific finding. No data = omit.",
-  "data_gaps": ["list of things I could not analyse because data was missing"],
-  "quick_wins": [
-    {"id":"qw1","title":"title","description":"what + specific evidence from data","effort":"low|medium|high","impact":"high|medium|low","timeframe":"1-3 days","category":"technical|content|geo|links","evidence":"EXACT data point: e.g. 'LLM score 34/100 — well below 60 threshold'","data_grade":"A"}
-  ],
-  "weekly_plans": [
-    {"week":1,"theme":"theme","focus":"what this achieves","tasks":["task citing specific finding"],"expected_outcome":"measurable result based on data"}
-  ]
-}
-
-RULES:
-- quick_wins: ONLY include if you have evidence. If you have enough data for 3 items, return 3 — not 6 invented ones.
-- weekly_plans: exactly 4 weeks, but only include tasks with data backing.
-- data_grade on quick_wins: A = direct metric/audit evidence, B = inferred from available data, C = assumption (DO NOT include C-grade items).
-- If overall data is insufficient, return only: executive_summary, data_confidence: "low", data_gaps, and empty arrays.`;
-
-  // ── Batch 2: KPI forecast, technical priorities, content calendar ──
-  const batch2Prompt = `You are Manav Brain. STRICT MODE: only output items you can fact-check against the data.
-
-DATA INVENTORY:
-${dataInventory}
-
-FULL DATA:
-${brief}
-
-Return JSON with ONLY these keys:
-{
-  "kpi_forecast": [
-    {"metric":"LLM Visibility Score","now":"EXACT value from data or Unknown","d30":"realistic target","d60":"target","d90":"target","basis":"cite the data point justifying this trajectory"}
-  ],
-  "technical_priorities": [
-    {"id":"tp1","issue":"EXACT issue from audit data","fix":"specific fix","urgency":"immediate|this_week|this_month","impact":"effect on rankings","effort":"low|medium|high","evidence":"audit report date and finding","data_grade":"A|B"}
-  ],
-  "content_calendar": [
-    {"id":"cc1","title":"title","type":"blog|landing_page|faq|pillar","target_keyword":"keyword from tracked list ONLY","search_intent":"informational|commercial","rationale":"why from ranking data","suggested_week":2,"word_count":1200,"data_grade":"A|B"}
-  ]
-}
-
-RULES:
-- kpi_forecast: use ACTUAL scores from data for "now". If metric not in data, write "No data — add to Metrics Dashboard".
-- technical_priorities: ONLY from audit data. No audit? Return empty array.
-- content_calendar: ONLY for keywords that appear in allKeywords or rankings data. No keyword data? Return empty array.
-- DO NOT include C-grade (assumption) items. Omit entire category if no supporting data.`;
-
-  // ── Batch 3: GEO, competitive, insights, canvas blocks ──
-  const batch3Prompt = `You are Manav Brain. STRICT MODE: canvas blocks must be fact-backed. No invented blocks.
-
-DATA INVENTORY:
-${dataInventory}
-
-FULL DATA:
-${brief}
-
-Return JSON with ONLY these keys:
-{
-  "geo_strategy": [
-    {"platform":"Perplexity|ChatGPT|Google AI Overview","current_citations":"exact number from metrics or Unknown","action":"specific action","evidence":"cite metric","expected_impact":"result","timeframe":"timeline","data_grade":"A|B"}
-  ],
-  "competitive_intelligence": [
-    {"competitor":"domain from data only","their_strength":"what data shows they do better","your_opportunity":"specific gap","strategy":"exact approach","evidence":"cite source","data_grade":"A|B"}
-  ],
-  "strategic_insights": [
-    {"id":"si1","category":"opportunity|risk|strength|pattern","title":"insight title","detail":"specific with evidence citation","action":"what to do","priority":"high|medium|low","evidence":"cite exact data point","data_grade":"A|B"}
-  ],
-  "retainer_value_summary": {
-    "projection":"based on actual current scores, realistic projection",
-    "ranking_win":"X keywords to Page 1 — only if ranking data exists, else omit",
-    "narrative":"2-sentence honest assessment based on available data"
-  },
-  "canvas_blocks": [
-    {
-      "id":"b1",
-      "type":"technical|quick-win|content|geo|competitive|insight|weekly|monthly|kpi",
-      "title":"Short title max 8 words",
-      "content":"Full actionable detail. MUST cite specific evidence.",
-      "priority":"high|medium|low",
-      "effort":"low|medium|high",
-      "impact":"high|medium|low",
-      "tags":["tag1","tag2"],
-      "source":"exact source (e.g. Audit 2024-01-15, Metrics Dashboard, Ranking data)",
-      "data_basis":"REQUIRED: exact data point backing this card. E.g.: LLM score 34/100, or 23 crawl errors from audit, or keyword ranking pos 18 for X. If you cannot write a real data_basis, DO NOT include this block.",
-      "data_grade":"A|B",
-      "week":1
-    }
-  ],
-  "note_on_week_field": "Set week 1=urgent/quick, 2=content+geo, 3=competitive+authority, 4=compounding, 5=tracking. Spread blocks — do not put everything in week 1 or 5.",
-  "data_gaps_blocking": ["list of block types you WANTED to create but had no data for"]
-}
-
-CRITICAL CANVAS BLOCK RULES:
-1. data_basis is MANDATORY. If you cannot write a real one from the provided data, OMIT the block.
-2. data_grade C (assumption) blocks are FORBIDDEN — they will be filtered out automatically.
-3. Do NOT pad to a fixed count. 8 well-evidenced blocks beats 20 invented ones.
-4. SPREAD BLOCKS ACROSS ALL 4 ACTIVE WEEKS — do not cluster everything in week 1.
-   - Week 1: urgent fixes, quick wins (effort=low, immediate impact)
-   - Week 2: content creation, GEO optimisation, technical follow-up
-   - Week 3: competitive moves, deeper content, authority building
-   - Week 4: compounding tasks, link building, monitoring and iteration
-   - Backlog (week 5): KPIs, long-term milestones, tracking tasks
-5. Set "week" field explicitly on every canvas block (1-5).
-6. geo_strategy: only if perplexity_citations or google_ai_citations data exists, or audit mentions GEO.
-7. competitive_intelligence: only if competitors list is non-empty AND audit or ranking data shows gaps.
-8. For each type, only generate blocks with DIRECT evidence: technical from audit, content from keywords/rankings, geo from GEO metrics.`;
+  const batch3Prompt = `You are Manav Brain. STRICT MODE: canvas blocks must be fact-backed. No invented blocks.\n\nDATA INVENTORY:\n${dataInventory}\n\nFULL DATA:\n${brief}\n\nReturn JSON with ONLY these keys:\n{\n  "geo_strategy": [\n    {"platform":"Perplexity|ChatGPT|Google AI Overview","current_citations":"exact number from metrics or Unknown","action":"specific action","evidence":"cite metric","expected_impact":"result","timeframe":"timeline","data_grade":"A|B"}\n  ],\n  "competitive_intelligence": [\n    {"competitor":"domain from data only","their_strength":"what data shows they do better","your_opportunity":"specific gap","strategy":"exact approach","evidence":"cite source","data_grade":"A|B"}\n  ],\n  "strategic_insights": [\n    {"id":"si1","category":"opportunity|risk|strength|pattern","title":"insight title","detail":"specific with evidence citation","action":"what to do","priority":"high|medium|low","evidence":"cite exact data point","data_grade":"A|B"}\n  ],\n  "retainer_value_summary": {\n    "projection":"based on actual current scores, realistic projection",\n    "ranking_win":"X keywords to Page 1 — only if ranking data exists, else omit",\n    "narrative":"2-sentence honest assessment based on available data"\n  },\n  "canvas_blocks": [\n    {\n      "id":"b1",\n      "type":"technical|quick-win|content|geo|competitive|insight|weekly|monthly|kpi",\n      "title":"Short title max 8 words",\n      "content":"Full actionable detail. MUST cite specific evidence.",\n      "priority":"high|medium|low",\n      "effort":"low|medium|high",\n      "impact":"high|medium|low",\n      "tags":["tag1","tag2"],\n      "source":"exact source (e.g. Audit 2024-01-15, Metrics Dashboard, Ranking data)",\n      "data_basis":"REQUIRED: exact data point backing this card. E.g.: LLM score 34/100, or 23 crawl errors from audit, or keyword ranking pos 18 for X. If you cannot write a real data_basis, DO NOT include this block.",\n      "data_grade":"A|B",\n      "week":1\n    }\n  ],\n  "note_on_week_field": "Set week 1=urgent/quick, 2=content+geo, 3=competitive+authority, 4=compounding, 5=tracking. Spread blocks — do not put everything in week 1 or 5.",\n  "data_gaps_blocking": ["list of block types you WANTED to create but had no data for"]\n}\n\nCRITICAL CANVAS BLOCK RULES:\n1. data_basis is MANDATORY. If you cannot write a real one from the provided data, OMIT the block.\n2. data_grade C (assumption) blocks are FORBIDDEN — they will be filtered out automatically.\n3. Do NOT pad to a fixed count. 8 well-evidenced blocks beats 20 invented ones.\n4. SPREAD BLOCKS ACROSS ALL 4 ACTIVE WEEKS.\n5. Set "week" field explicitly on every canvas block (1-5).`;
 
   try {
     const batches = resumeBatch === 0 ? [1, 2, 3] : [resumeBatch].filter(n => n >= 1 && n <= 3);
-
-    // On full generation (resumeBatch=0), start with EMPTY results — no stale merge
     const results: any = resumeBatch === 0 ? {} : { ...(existingStrategy || {}) };
     const batchStatus: Record<number, "ok" | "failed"> = {};
 
@@ -229,31 +108,27 @@ CRITICAL CANVAS BLOCK RULES:
       try {
         const raw  = await generate(prompt, 4000);
         const data = tryParseJson(raw);
-        if (data) {
-          Object.assign(results, data);
-          batchStatus[batchNum] = "ok";
-        } else {
-          batchStatus[batchNum] = "failed";
-        }
+        if (data) { Object.assign(results, data); batchStatus[batchNum] = "ok"; }
+        else      { batchStatus[batchNum] = "failed"; }
       } catch {
         batchStatus[batchNum] = "failed";
       }
     }
 
     // Ensure required arrays
-    if (!Array.isArray(results.canvas_blocks))           results.canvas_blocks           = [];
-    if (!Array.isArray(results.quick_wins))              results.quick_wins              = [];
-    if (!Array.isArray(results.weekly_plans))            results.weekly_plans            = [];
-    if (!Array.isArray(results.kpi_forecast))            results.kpi_forecast            = [];
-    if (!Array.isArray(results.technical_priorities))    results.technical_priorities    = [];
-    if (!Array.isArray(results.content_calendar))        results.content_calendar        = [];
-    if (!Array.isArray(results.geo_strategy))            results.geo_strategy            = [];
+    if (!Array.isArray(results.canvas_blocks))            results.canvas_blocks            = [];
+    if (!Array.isArray(results.quick_wins))               results.quick_wins               = [];
+    if (!Array.isArray(results.weekly_plans))             results.weekly_plans             = [];
+    if (!Array.isArray(results.kpi_forecast))             results.kpi_forecast             = [];
+    if (!Array.isArray(results.technical_priorities))     results.technical_priorities     = [];
+    if (!Array.isArray(results.content_calendar))         results.content_calendar         = [];
+    if (!Array.isArray(results.geo_strategy))             results.geo_strategy             = [];
     if (!Array.isArray(results.competitive_intelligence)) results.competitive_intelligence = [];
-    if (!Array.isArray(results.strategic_insights))      results.strategic_insights      = [];
-    if (!Array.isArray(results.data_gaps))               results.data_gaps               = [];
-    if (!Array.isArray(results.data_gaps_blocking))      results.data_gaps_blocking      = [];
+    if (!Array.isArray(results.strategic_insights))       results.strategic_insights       = [];
+    if (!Array.isArray(results.data_gaps))                results.data_gaps                = [];
+    if (!Array.isArray(results.data_gaps_blocking))       results.data_gaps_blocking       = [];
 
-    // Filter out assumption (grade C or missing data_basis) canvas blocks
+    // Filter out assumption/C-grade canvas blocks
     const beforeFilter = results.canvas_blocks.length;
     results.canvas_blocks = (results.canvas_blocks as any[]).filter((b: any) => {
       if (!b.data_basis || b.data_basis.trim() === "") return false;
@@ -264,20 +139,47 @@ CRITICAL CANVAS BLOCK RULES:
     });
     const afterFilter = results.canvas_blocks.length;
 
-    // Assign IDs
     results.canvas_blocks = results.canvas_blocks.map((b: any, i: number) => ({
       ...b, id: b.id || `b${i + 1}`,
     }));
 
     const failedBatches = Object.entries(batchStatus).filter(([,s]) => s === "failed").map(([n]) => Number(n));
 
+    // Auto-capture strategy generation as a brain learning (fire-and-forget)
+    // Only when full generation (not resume) and we have meaningful output
+    if (resumeBatch === 0 && results.canvas_blocks.length > 0 && project?.id) {
+      const learningContext = [
+        `Strategy generated for ${clientData?.company || "Unknown"} (${clientData?.industry || "Unknown industry"})`,
+        `Data quality: ${results.data_confidence || "unknown"}`,
+        `Canvas blocks generated: ${results.canvas_blocks.length} (${beforeFilter - afterFilter} filtered as assumptions)`,
+        `Data gaps: ${(results.data_gaps || []).join(" | ") || "none"}`,
+        `Blocked by missing data: ${(results.data_gaps_blocking || []).join(" | ") || "none"}`,
+        `Quick wins found: ${results.quick_wins?.length || 0}`,
+        `Top opportunity: ${results.biggest_opportunity || "not identified"}`,
+        `Top risk: ${results.biggest_risk || "not identified"}`,
+        `Batches: ${JSON.stringify(batchStatus)}`,
+      ].join("\n");
+
+      void extractAndSaveLearning(
+        "strategy_generation",
+        project.id,
+        learningContext,
+        {
+          card_type:       "strategy",
+          card_title:      `Strategy for ${clientData?.company || "project"}`,
+          context_summary: `Strategy generation — data confidence: ${results.data_confidence || "unknown"}`,
+          project_name:    clientData?.company,
+        }
+      );
+    }
+
     return res.status(200).json({
-      success:        true,
-      strategy:       results,
-      generated_at:   new Date().toISOString(),
-      batch_status:   batchStatus,
-      failed_batches: failedBatches,
-      is_partial:     failedBatches.length > 0,
+      success:         true,
+      strategy:        results,
+      generated_at:    new Date().toISOString(),
+      batch_status:    batchStatus,
+      failed_batches:  failedBatches,
+      is_partial:      failedBatches.length > 0,
       blocks_filtered: beforeFilter - afterFilter,
       data_quality:    results.data_confidence || "unknown",
     });
