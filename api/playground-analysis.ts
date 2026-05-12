@@ -9,7 +9,7 @@ function tryParseJson(raw: string): any | null {
   const last  = raw.lastIndexOf("}");
   if (first === -1) return null;
   const extracted = raw.slice(first, last !== -1 ? last + 1 : undefined);
-  try { return JSON.parse(extracted); } catch {}
+  try { return JSON.parse(extracted); } catch (_e) {}
   let b = 0, br = 0, inStr = false, esc = false;
   for (const ch of extracted) {
     if (esc) { esc = false; continue; }
@@ -22,7 +22,7 @@ function tryParseJson(raw: string): any | null {
   let closing = inStr ? '"' : "";
   while (br > 0) { closing += "]"; br--; }
   while (b  > 0) { closing += "}"; b--;  }
-  try { return JSON.parse(extracted + closing); } catch { return null; }
+  try { return JSON.parse(extracted + closing); } catch (_e) { return null; }
 }
 
 const anthropic = new Anthropic();
@@ -110,7 +110,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const data = tryParseJson(raw);
         if (data) { Object.assign(results, data); batchStatus[batchNum] = "ok"; }
         else      { batchStatus[batchNum] = "failed"; }
-      } catch {
+      } catch (_e) {
         batchStatus[batchNum] = "failed";
       }
     }
