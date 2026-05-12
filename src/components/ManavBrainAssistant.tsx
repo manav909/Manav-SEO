@@ -228,6 +228,9 @@ export default function ManavBrainAssistant() {
   const [ctx,      setCtx]      = useState<any>(null);
   const [learnings,setLearnings]= useState<any[]>([]);
   const [algoItems,setAlgoItems]= useState<any[]>([]);
+  const [canvasBlocks,setCanvasBlocks]= useState<any[]>([]);
+  const [metrics, setMetrics]   = useState<any>(null);
+  const [autoProj,setAutoProj]  = useState(false);
   const [pending,  setPending]  = useState(0);
   const [suggIdx,  setSuggIdx]  = useState(0);
 
@@ -271,6 +274,32 @@ export default function ManavBrainAssistant() {
     const t = setInterval(() => setSuggIdx(i => (i + 3) % SUGGESTIONS.length), 9000);
     return () => clearInterval(t);
   }, [open]);
+
+  /* ── Auto-select project from localStorage on mount ── */
+  useEffect(() => {
+    // 1. Read Playground's active project from localStorage
+    const stored = localStorage.getItem('seo_season_proj');
+    if (stored) { setSelProj(stored); setAutoProj(true); return; }
+    // 2. If only one project exists, auto-select it
+    if (projects.length === 1) { setSelProj(projects[0].id); setAutoProj(true); }
+  }, [projects]);
+
+  /* ── Sync when user changes project on any other page ── */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'seo_season_proj' && e.newValue && e.newValue !== selProj) {
+        setSelProj(e.newValue);
+        setAutoProj(true);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [selProj]);
+
+  /* ── Write to localStorage when user picks project in Brain ── */
+  useEffect(() => {
+    if (selProj) localStorage.setItem('seo_season_proj', selProj);
+  }, [selProj]);
 
   /* Reload context on project change */
   useEffect(() => { if (selProj) loadContext(); }, [selProj]);
@@ -597,6 +626,32 @@ export default function ManavBrainAssistant() {
         setPending(all.filter((l: any) => l.status === 'pending_review').length);
       }
       if (algoD.success) setAlgoItems(algoD.items || []);
+
+      // ── Load canvas blocks directly from Supabase ──
+      const { data: projRow } = await supabase
+        .from('projects')
+        .select('playground_canvas, playground_strategy, name')
+        .eq('id', selProj)
+        .single();
+      if (projRow?.playground_canvas) {
+        try {
+          const blocks = typeof projRow.playground_canvas === 'string'
+            ? JSON.parse(projRow.playground_canvas)
+            : projRow.playground_canvas;
+          setCanvasBlocks(Array.isArray(blocks) ? blocks : []);
+        } catch (_e) { setCanvasBlocks([]); }
+      } else { setCanvasBlocks([]); }
+
+      // ── Load latest metrics ──
+      const { data: metRow } = await supabase
+        .from('metrics')
+        .select('*')
+        .eq('project_id', selProj)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (metRow) setMetrics(metRow);
+
     } catch (_e) { /* silent — context load failure is non-fatal */ }
   }, [selProj, brainFetch]);
 
@@ -664,6 +719,41 @@ export default function ManavBrainAssistant() {
           break;
         }
 
+        case 'list_cards': {
+          if (!canvasBlocks.length) { upd('done', 'No canvas cards loaded. Select a project first.'); break; }
+          const byWeek: Record<number, any[]> = {};
+          canvasBlocks.forEach((b: any) => {
+            const w = b.week || 1;
+            if (!byWeek[w]) byWeek[w] = [];
+            byWeek[w].push(b);
+          });
+          const summary = Object.entries(byWeek)
+            .sort(([a],[b]) => Number(a)-Number(b))
+            .map(([w, cards]) => `Week ${w}: ${cards.map((c:any)=>c.title).join(', ')}`)
+            .join('\n');
+          upd('done', `${canvasBlocks.length} cards across ${Object.keys(byWeek).length} weeks:\n${summary}`);
+          break;
+        }
+
+        case 'execute_task': {
+          if (!selProj) { upd('error', 'No project selected'); break; }
+          const res  = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'execute', project_id: selProj,
+              card: { id: action.cardId, type: action.cardType, title: action.title, content: action.content },
+              role: action.role || 'senior_seo' }) });
+          const data = await res.json().catch(() => ({}));
+          if (data.error) { upd('error', data.error); break; }
+          upd('done', (data.result || 'Task executed').slice(0, 300));
+          void loadContext();
+          break;
+        }
+
+        case 'reload_canvas': {
+          await loadContext();
+          upd('done', `Canvas reloaded. ${canvasBlocks.length} cards ready.`);
+          break;
+        }
+
         default: upd('done', `Action ${action.type} acknowledged.`);
       }
     } catch (err: any) { upd('error', err?.message || 'Action failed'); }
@@ -710,7 +800,7 @@ export default function ManavBrainAssistant() {
           projectSummary: summary || 'No project selected', role: 'senior_seo',
           brainAssistantContext: {
             projectContext: ctx, learnings: learnings.slice(0, 12),
-            algoItems: algoItems.slice(0, 8), canvasBlocks: [], history,
+            algoItems: algoItems.slice(0, 8), canvasBlocks: canvasBlocks.slice(0, 30), metrics, history,
           },
         }),
       });
@@ -753,7 +843,7 @@ export default function ManavBrainAssistant() {
         return;
       }
 
-      if (actions.some(a => ['add_card','run_audit','fetch_algorithm'].includes(a.type))) void loadContext();
+      if (actions.some(a => ['add_card','run_audit','fetch_algorithm','execute_task','reload_canvas'].includes(a.type))) void loadContext();
 
     } catch (err: any) {
       setMsgs(ms => ms.map(m => m.id===brainId ? { ...m, content: `Error: ${err?.message || 'Something went wrong.'}` } : m));
@@ -814,10 +904,18 @@ export default function ManavBrainAssistant() {
               </div>
             </div>
             <div style={{width:5,height:5,borderRadius:'50%',background:hc.color,boxShadow:`0 0 6px ${hc.glow}`,flexShrink:0}}/>
-            <select value={selProj} onChange={e=>setSelProj(e.target.value)} style={{height:24,padding:'0 6px',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:6,fontSize:8,color:'rgba(255,255,255,0.55)',outline:'none',fontFamily:'monospace',cursor:'pointer',maxWidth:100,flexShrink:0}}>
-              <option value="">PROJECT</option>
-              {projects.map(p => { const cl=clients.find(c=>c.id===p.client_id); return <option key={p.id} value={p.id}>{cl?.company||p.name}</option>; })}
-            </select>
+            <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>
+              <select value={selProj} onChange={e=>{setSelProj(e.target.value);setAutoProj(false);}} style={{height:24,padding:'0 6px',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:6,fontSize:8,color:'rgba(255,255,255,0.55)',outline:'none',fontFamily:'monospace',cursor:'pointer',maxWidth:110}}>
+                <option value="">PROJECT</option>
+                {projects.map(p => { const cl=clients.find(c=>c.id===p.client_id); return <option key={p.id} value={p.id}>{cl?.company||p.name}</option>; })}
+              </select>
+              {selProj && (
+                <div style={{display:'flex',gap:3,alignItems:'center'}}>
+                  {autoProj && <span style={{fontSize:6,fontFamily:'monospace',color:'#10b981',letterSpacing:'0.06em'}}>◉ AUTO</span>}
+                  {canvasBlocks.length>0 && <span style={{fontSize:6,fontFamily:'monospace',color:'rgba(99,102,241,0.6)'}}>{canvasBlocks.length} cards</span>}
+                </div>
+              )}
+            </div>
             {alertCount>0 && <div style={{background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.35)',borderRadius:10,padding:'1px 6px',fontSize:7,fontFamily:'monospace',color:'#fca5a5',flexShrink:0,animation:'alertBadge 0.8s ease-in-out infinite alternate'}}>{alertCount} ERR</div>}
             {alertCount===0 && pending>0 && <div style={{background:'rgba(251,191,36,0.12)',border:'1px solid rgba(251,191,36,0.28)',borderRadius:10,padding:'1px 6px',fontSize:7,fontFamily:'monospace',color:'#fbbf24',flexShrink:0}}>{pending} P</div>}
             <button onClick={()=>setExpanded(e=>!e)} style={{background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.18)',padding:3,display:'flex'}}>{expanded?<Minimize2 size={11}/>:<Maximize2 size={11}/>}</button>
