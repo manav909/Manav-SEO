@@ -1,5 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { extractAndSaveLearning }            from "./ai-cache";
 
 // Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably
 export const config = { maxDuration: 300 };
@@ -73,7 +74,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const {
       content, fileName, docType, projectContext = "",
       siteUrl = "",
-      skipLiveVerify = false,   // re-extraction skips live verify by default
+      skipLiveVerify = false,
+      projectId = null,
     } = req.body;
 
     if (!content) return res.status(400).json({ error: "No content provided" });
@@ -128,8 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
       }
 
-      // ── Step 2: Optional live verification (new uploads only, skip re-extraction) ──
-      // Guard: only run if we have a URL, fields to check, and this isn't a re-extract
+      // ── Step 2: Optional live verification ──
       const resolvedUrl = (siteUrl || (projectContext.split("|")[1] || "")).trim();
       const canVerifyLive = (
         !skipLiveVerify &&
@@ -142,7 +143,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (canVerifyLive) {
         try {
-          // Shorter timeout: 8s max so we don't bloat the function runtime
           const liveRes = await fetch(`https://r.jina.ai/${resolvedUrl}`, {
             headers: { Accept: "text/plain", "X-Return-Format": "markdown", "X-Timeout": "8" },
             signal: AbortSignal.timeout(10000),
@@ -172,9 +172,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             try { liveVerification = JSON.parse(vRaw.slice(vf, vl + 1)); } catch { /* ignore */ }
           }
         } catch {
-          // Live verification is best-effort — never fail extraction because of it
           liveVerification = null;
         }
+      }
+
+      // Auto-capture document extraction insights as a brain learning (fire-and-forget)
+      if (projectId && parsed.doc_summary && (parsed.extracted?.action_items?.length || 0) > 0) {
+        const learningText = [
+          `Document: ${fileName || "unknown"} (${docType || "unknown"})`,
+          `Summary: ${parsed.doc_summary}`,
+          `Data quality: ${parsed.data_quality}`,
+          `Action items (${parsed.extracted?.action_items?.length || 0}):`,
+          ...(parsed.extracted?.action_items || []).slice(0, 5).map((a: any) => `  [${a.priority}] ${a.action} — ${a.evidence}`),
+          `Technical issues: ${(parsed.extracted?.technical_issues || []).slice(0, 3).map((i: any) => `${i.issue} (${i.severity})`).join(" | ")}`,
+          liveVerification?.discrepancies?.length
+            ? `Discrepancies found: ${liveVerification.discrepancies.map((d: any) => `${d.key}: ${d.note}`).join(" | ")}`
+            : "",
+        ].filter(Boolean).join("\n");
+
+        void extractAndSaveLearning(
+          "document_extraction",
+          projectId,
+          learningText,
+          {
+            card_type:       docType?.includes("gsc") ? "technical" : docType?.includes("keyword") ? "content" : "general",
+            card_title:      `Document: ${fileName || "uploaded file"}`,
+            context_summary: `${docType || "document"} extraction — ${parsed.data_quality} quality`,
+          }
+        );
       }
 
       return res.status(200).json({
@@ -189,7 +214,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   /* ── AUDIT (streaming) ── */
-  const { url, keyword, mode = "standard", projectContext = "" } = req.body;
+  const { url, keyword, mode = "standard", projectContext = "", projectId = null } = req.body;
   if (!url) return res.status(400).json({ error: "URL required" });
 
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -246,11 +271,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       system: SYSTEM,
       messages: [{ role: "user", content: auditPrompt }],
     });
+
+    let fullAuditOutput = "";   // accumulated for brain learning capture
+
     for await (const chunk of stream) {
       if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
         res.write(chunk.delta.text);
+        fullAuditOutput += chunk.delta.text;
       }
     }
+
+    // Auto-capture audit insights as a brain learning (fire-and-forget)
+    if (projectId && fullAuditOutput.length > 500) {
+      void extractAndSaveLearning(
+        "audit_streaming",
+        projectId,
+        fullAuditOutput,
+        {
+          card_type:       "technical",
+          card_title:      `Audit: ${url}`,
+          context_summary: `${mode} SEO audit for ${url} — keyword: ${keyword || "not specified"}`,
+        }
+      );
+    }
+
   } catch (err: any) {
     res.write(`\nError: ${err.message}`);
   } finally {
