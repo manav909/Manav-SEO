@@ -31,7 +31,7 @@ import { supabase }     from '@/lib/supabase';
 import {
   Brain, Send, X, Zap, Activity, Globe, Target, Shield, FileText,
   CheckCircle, AlertCircle, Loader2, Cpu, RefreshCw,
-  AlertTriangle, Radio, Server, Database, Minimize2, Maximize2, Layers,
+  AlertTriangle, Radio, Server, Database, Minimize2, Maximize2, Layers, Code2,
 } from 'lucide-react';
 
 /* ═══════════════ TYPES ═══════════════ */
@@ -231,6 +231,8 @@ export default function ManavBrainAssistant() {
   const [canvasBlocks,setCanvasBlocks]= useState<any[]>([]);
   const [metrics, setMetrics]   = useState<any>(null);
   const [autoProj,setAutoProj]  = useState(false);
+  const [codeSnippet,setCodeSnippet] = useState('');
+  const [showCodePaste,setShowCodePaste] = useState(false);
   const [pending,  setPending]  = useState(0);
   const [suggIdx,  setSuggIdx]  = useState(0);
 
@@ -719,7 +721,21 @@ export default function ManavBrainAssistant() {
           break;
         }
 
-        case 'list_cards': {
+        case 'check_data_sync': {
+          if (!selProj) { upd('error', 'No project selected'); break; }
+          const res  = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action: 'check_sync', project_id: selProj }) });
+          const data = await res.json().catch(() => ({}));
+          if (data.error) { upd('error', data.error); break; }
+          const issueText = data.issues?.length > 0
+            ? `\n\n⚠ ISSUES:\n${data.issues.map((i: string) => `• ${i}`).join('\n')}`
+            : '\n\n✓ No sync issues found.';
+          const infoText  = data.info?.length > 0 ? `\n\nINFO:\n${data.info.map((i: string) => `• ${i}`).join('\n')}` : '';
+          upd('done', `${data.summary}${issueText}${infoText}`);
+          break;
+        }
+
+                case 'list_cards': {
           if (!canvasBlocks.length) { upd('done', 'No canvas cards loaded. Select a project first.'); break; }
           const byWeek: Record<number, any[]> = {};
           canvasBlocks.forEach((b: any) => {
@@ -779,6 +795,7 @@ export default function ManavBrainAssistant() {
     streamActive.current = true;
     setLoading(true);
     if (!isAuto) setInput('');
+    if (!isAuto && codeSnippet) { setCodeSnippet(''); setShowCodePaste(false); }
 
     if (!isAuto) setMsgs(ms => [...ms, { id:uid(), role:'user', content: text, ts: new Date() }]);
     const brainId = uid();
@@ -801,6 +818,7 @@ export default function ManavBrainAssistant() {
           brainAssistantContext: {
             projectContext: ctx, learnings: learnings.slice(0, 12),
             algoItems: algoItems.slice(0, 8), canvasBlocks: canvasBlocks.slice(0, 30), metrics, history,
+            codeContent: codeSnippet || undefined,
           },
         }),
       });
@@ -962,6 +980,16 @@ export default function ManavBrainAssistant() {
               )}
               <div style={{position:'relative',zIndex:2,padding:'10px 14px 14px',borderTop:'1px solid rgba(255,255,255,0.04)',background:'rgba(0,0,0,0.18)'}}>
                 <div style={{display:'flex',gap:7,alignItems:'flex-end'}}>
+                {showCodePaste && (
+                  <div style={{marginBottom:8,background:'rgba(6,182,212,0.04)',border:'1px solid rgba(6,182,212,0.15)',borderRadius:8,padding:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                      <span style={{fontSize:8,fontFamily:'monospace',color:'rgba(6,182,212,0.7)',letterSpacing:'0.08em'}}>📎 CODE ATTACHED — Brain will analyze this</span>
+                      <button onClick={()=>{setCodeSnippet('');setShowCodePaste(false);}} style={{background:'none',border:'none',cursor:'pointer',color:'rgba(255,255,255,0.3)',fontSize:8}}>✕ Remove</button>
+                    </div>
+                    <textarea value={codeSnippet} onChange={e=>setCodeSnippet(e.target.value)} rows={5} placeholder="Paste any file content here — TypeScript, TSX, SQL, JSON..."
+                      style={{width:'100%',background:'rgba(0,0,0,0.4)',border:'1px solid rgba(6,182,212,0.1)',borderRadius:6,padding:'6px 8px',fontSize:9,color:'rgba(255,255,255,0.6)',outline:'none',resize:'vertical',fontFamily:'monospace',boxSizing:'border-box'}}/>
+                  </div>
+                )}
                   <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKey} disabled={loading} rows={1} placeholder="Tell Manav Brain what to do or ask anything..."
                     style={{flex:1,background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:10,padding:'8px 12px',fontSize:11,color:'rgba(255,255,255,0.78)',outline:'none',resize:'none',fontFamily:'inherit',lineHeight:1.5,minHeight:36,maxHeight:110,transition:'border-color 0.18s'}}
                     onFocus={e=>e.target.style.borderColor='rgba(99,102,241,0.4)'} onBlur={e=>e.target.style.borderColor='rgba(255,255,255,0.07)'}/>
@@ -971,9 +999,17 @@ export default function ManavBrainAssistant() {
                 </div>
                 <div style={{marginTop:5,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <span style={{fontSize:7,fontFamily:'monospace',color:'rgba(255,255,255,0.12)'}}>ENTER to send · SHIFT+ENTER new line</span>
-                  <button onClick={runHealthScan} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:'rgba(255,255,255,0.18)',fontSize:7,fontFamily:'monospace',padding:0}}>
-                    <RefreshCw size={7} style={health==='scanning'?{animation:'spin 1s linear infinite'}:{}}/> SCAN
-                  </button>
+                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                    <button onClick={()=>setShowCodePaste(v=>!v)} style={{background:showCodePaste?'rgba(6,182,212,0.12)':'none',border:showCodePaste?'1px solid rgba(6,182,212,0.3)':'none',borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:showCodePaste?'rgba(6,182,212,0.9)':'rgba(255,255,255,0.25)',fontSize:7,fontFamily:'monospace',padding:'1px 5px'}}>
+                      📎 CODE{codeSnippet?' ✓':''}
+                    </button>
+                    <button onClick={()=>{sendMsgInternal('Run a complete data sync check for this project. Check all tables, identify sync issues, and tell me exactly what to fix.',false);}} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:'rgba(255,255,255,0.18)',fontSize:7,fontFamily:'monospace',padding:0}}>
+                      <Database size={7}/> SYNC
+                    </button>
+                    <button onClick={runHealthScan} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3,color:'rgba(255,255,255,0.18)',fontSize:7,fontFamily:'monospace',padding:0}}>
+                      <RefreshCw size={7} style={health==='scanning'?{animation:'spin 1s linear infinite'}:{}}/>  SCAN
+                    </button>
+                  </div>
                 </div>
               </div>
             </>
