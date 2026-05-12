@@ -176,7 +176,7 @@ function ActionCard({ result }: { result: ActionResult }) {
   );
 }
 
-function MsgBubble({ msg, onAction }: { msg: BrainMsg; onAction: (a: ParsedAction) => void }) {
+function MsgBubble({ msg, onAction, onSaveToDesk }: { msg: BrainMsg; onAction: (a: ParsedAction) => void; onSaveToDesk?: () => void }) {
   const isUser  = msg.role === 'user';
   const isAlert = msg.role === 'alert';
   const isSys   = msg.role === 'system';
@@ -211,15 +211,8 @@ function MsgBubble({ msg, onAction }: { msg: BrainMsg; onAction: (a: ParsedActio
           </div>
         )}
         {msg.results?.map((r,i) => <ActionCard key={i} result={r}/>)}
-        {msg.role==='brain' && stripActions(msg.content).length > 150 && (
-          <button onClick={async()=>{
-            const res = await brainFetch('/api/task-engine',{method:'POST',headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({action:'desk_save',project_id:selProj||null,
-                title:`Brain: ${msg.ts.toLocaleDateString()} ${msg.ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`,
-                content_type:'text',content:stripActions(msg.content),source:'brain_chat'})});
-            const d=await res.json().catch(()=>({}));
-            if(d.success){setDeskItems(p=>[d.item,...p]);alert('Saved to Desk ✓');}
-          }} style={{marginTop:5,background:'rgba(16,185,129,0.06)',border:'1px solid rgba(16,185,129,0.15)',borderRadius:5,padding:'2px 8px',fontSize:7,fontFamily:'monospace',color:'rgba(52,211,153,0.6)',cursor:'pointer',display:'flex',alignItems:'center',gap:3}}>
+        {msg.role==='brain' && stripActions(msg.content).length > 150 && onSaveToDesk && (
+          <button onClick={onSaveToDesk} style={{marginTop:5,background:'rgba(16,185,129,0.06)',border:'1px solid rgba(16,185,129,0.15)',borderRadius:5,padding:'3px 10px',fontSize:9,fontFamily:'monospace',color:'rgba(52,211,153,0.7)',cursor:'pointer',display:'flex',alignItems:'center',gap:4'}}>
             <FileText size={7}/> Save to Desk
           </button>
         )}
@@ -261,7 +254,6 @@ export default function ManavBrainAssistant() {
   const [deskSaving,  setDeskSaving]      = useState<string|null>(null);
   const [reminders,   setReminders]       = useState<{id:string;text:string;deskId?:string;deskTitle?:string}[]>([]);
   const [proactiveDone,setProactiveDone]  = useState<Set<string>>(new Set());
-  const [idleTimer,   setIdleTimer]       = useState<ReturnType<typeof setTimeout>|null>(null);
 
   const location = useLocation();
   const lastPageRef     = useRef('');
@@ -332,7 +324,7 @@ export default function ManavBrainAssistant() {
   /* Rotate suggestion chips */
   useEffect(() => {
     if (!open) return;
-    const t = setInterval(() => setSuggIdx(i => (i + 3) % SUGGESTIONS.length), 9000);
+    const t = setInterval(() => setSuggIdx(i => (i + 3) % DEFAULT_SUGGESTIONS.length), 9000);
     return () => clearInterval(t);
   }, [open]);
 
@@ -509,10 +501,7 @@ export default function ManavBrainAssistant() {
         sessionStorage.setItem(key, '1');
         setTimeout(() => {
           setMsgs(ms => [...ms, { id:uid(), role:'brain' as MsgRole,
-            content: `Here's what I'm noticing:
-
-${insights.join('
-')}`,
+            content: "Here's what I'm noticing:\n\n" + insights.join("\n"),
             ts: new Date() }]);
         }, 3000);
       }
@@ -1240,7 +1229,16 @@ ${insights.join('
           {tab==='chat' && (
             <>
               <div style={{flex:1,overflow:'auto',padding:'14px',display:'flex',flexDirection:'column',gap:10,position:'relative',zIndex:2}}>
-                {msgs.map(m => <MsgBubble key={m.id} msg={m} onAction={a => {
+                {msgs.map(m => <MsgBubble key={m.id} msg={m}
+                  onSaveToDesk={m.role==='brain' ? async()=>{
+                    const r = await brainFetch('/api/task-engine',{method:'POST',headers:{'Content-Type':'application/json'},
+                      body:JSON.stringify({action:'desk_save',project_id:selProj||null,
+                        title:"Brain " + m.ts.toLocaleDateString() + " " + m.ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+                        content_type:'text',content:stripActions(m.content),source:'brain_chat'})});
+                    const d=await r.json().catch(()=>({}));
+                    if(d.success){setDeskItems(p=>[d.item,...p]);alert('Saved to Desk ✓');}
+                  } : undefined}
+                  onAction={a => {
                   const tid=uid();
                   setMsgs(ms=>[...ms,{id:tid,role:'brain' as MsgRole,content:`Executing: ${a.label}...`,actions:[a],results:[{action:a,status:'running' as const,result:''}],ts:new Date()}]);
                   executeAction(a,tid,0);
