@@ -121,7 +121,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const raw = response.content[0].type === "text" ? response.content[0].text : "{}";
       const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
       let parsed: any = {};
-      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch { /* ignore */ }
+      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) { /* ignore */ }
 
       // Filter to valid keys only
       if (Array.isArray(parsed.knowledge_fields)) {
@@ -169,9 +169,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
             const vRaw = verifyRes.content[0].type === "text" ? verifyRes.content[0].text : "{}";
             const vf = vRaw.indexOf("{"), vl = vRaw.lastIndexOf("}");
-            try { liveVerification = JSON.parse(vRaw.slice(vf, vl + 1)); } catch { /* ignore */ }
+            try { liveVerification = JSON.parse(vRaw.slice(vf, vl + 1)); } catch (_e) { /* ignore */ }
           }
-        } catch {
+        } catch (_e) {
           liveVerification = null;
         }
       }
@@ -230,7 +230,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       signal: AbortSignal.timeout(30000),
     });
     if (r.ok) siteContent = (await r.text()).slice(0, mode === "deep" ? 16000 : 8000);
-  } catch {
+  } catch (_e) {
     siteContent = "Could not fetch live site — analysis based on URL and context only.";
   }
 
