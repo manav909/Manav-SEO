@@ -5,9 +5,10 @@ import { TooltipProvider }   from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { ErrorBoundary }        from "@/components/ErrorBoundary";
-import { BrainErrorBoundary }   from "@/components/BrainErrorBoundary";
-import ManavBrainAssistant      from "@/components/ManavBrainAssistant";
+import { DemoProvider }          from "@/contexts/DemoContext";
+import { ErrorBoundary }         from "@/components/ErrorBoundary";
+import { BrainErrorBoundary }    from "@/components/BrainErrorBoundary";
+import ManavBrainAssistant       from "@/components/ManavBrainAssistant";
 import Index          from "./pages/Index";
 import DataRoom       from './pages/DataRoom';
 import Dashboard      from "./pages/Dashboard";
@@ -18,7 +19,7 @@ import Playground     from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
 import SystemControl  from './pages/SystemControl';
 import BrainLearning  from './pages/BrainLearning';
-import Desk           from './pages/Desk';
+import GuestTour      from './pages/GuestTour';
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -42,10 +43,6 @@ const ApprovedRequired = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-/**
- * Wrap a page in BrainErrorBoundary so crashes on any route are caught,
- * reported to Manav Brain, and shown as a self-healing screen.
- */
 function B({ children, name }: { children: React.ReactNode; name: string }) {
   return <BrainErrorBoundary routeName={name}>{children}</BrainErrorBoundary>;
 }
@@ -56,22 +53,24 @@ const AppRoutes = () => {
   return (
     <>
       <Routes>
-        <Route path="/"               element={<B name="index">         <Index />                                           </B>} />
-        <Route path="/data-room"      element={<B name="data-room">     <DataRoom />                                        </B>} />
-        <Route path="/dashboard"      element={<B name="dashboard">     <ApprovedRequired><Dashboard /></ApprovedRequired>  </B>} />
-        <Route path="/launchpad"      element={<B name="launchpad">     <ApprovedRequired><Launchpad /></ApprovedRequired>  </B>} />
-        <Route path="/audit"          element={<B name="audit">         <ApprovedRequired><Audit /></ApprovedRequired>      </B>} />
-        <Route path="/admin"          element={<B name="admin">         <Admin />                                           </B>} />
-        <Route path="/playground"     element={<B name="playground">    <Playground />                                      </B>} />
-        <Route path="/system-control" element={<B name="system-control"><SystemControl />                                   </B>} />
-        <Route path="/algorithm-intel"element={<B name="algo-intel">    <AlgorithmIntel />                                  </B>} />
-        <Route path="/brain-learning" element={<B name="brain-learning"><BrainLearning />                                   </B>} />
-        <Route path="/desk"           element={<B name="desk">          <ApprovedRequired><Desk /></ApprovedRequired>           </B>} />
+        {/* Public routes */}
+        <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
+        <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />
+        <Route path="/admin"          element={<B name="admin">         <Admin />                                          </B>} />
+
+        {/* Protected routes */}
+        <Route path="/data-room"      element={<B name="data-room">     <ApprovedRequired><DataRoom /></ApprovedRequired>       </B>} />
+        <Route path="/dashboard"      element={<B name="dashboard">     <ApprovedRequired><Dashboard /></ApprovedRequired>     </B>} />
+        <Route path="/launchpad"      element={<B name="launchpad">     <ApprovedRequired><Launchpad /></ApprovedRequired>     </B>} />
+        <Route path="/audit"          element={<B name="audit">         <ApprovedRequired><Audit /></ApprovedRequired>         </B>} />
+        <Route path="/playground"     element={<B name="playground">    <ApprovedRequired><Playground /></ApprovedRequired>    </B>} />
+        <Route path="/system-control" element={<B name="system-control"><ApprovedRequired><SystemControl /></ApprovedRequired> </B>} />
+        <Route path="/algorithm-intel"element={<B name="algo-intel">    <ApprovedRequired><AlgorithmIntel /></ApprovedRequired></B>} />
+        <Route path="/brain-learning" element={<B name="brain-learning"><ApprovedRequired><BrainLearning /></ApprovedRequired> </B>} />
         <Route path="*"               element={<NotFound />} />
       </Routes>
 
-      {/* ◈ Manav Brain — God Mode floating AI, available on every page.
-          Monitors all errors, heals the system, controls the entire app. */}
+      {/* Manav Brain — only shown for authenticated users */}
       <ManavBrainAssistant />
     </>
   );
@@ -86,9 +85,11 @@ const App = () => (
         <BrowserRouter>
           <ErrorBoundary>
             <AuthProvider>
-              <ErrorBoundary>
-                <AppRoutes />
-              </ErrorBoundary>
+              <DemoProvider>
+                <ErrorBoundary>
+                  <AppRoutes />
+                </ErrorBoundary>
+              </DemoProvider>
             </AuthProvider>
           </ErrorBoundary>
         </BrowserRouter>
