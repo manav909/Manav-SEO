@@ -144,6 +144,111 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Guard: context defaults to {} even when explicitly sent as null from the client
   const context = (rawContext && typeof rawContext === "object") ? rawContext : {};
 
+  /* ── BRAIN LEARNING actions — no card required ── */
+  /* ── get_all_learnings ── */
+  if (action === "get_all_learnings") {
+    const { project_id } = req.body;
+    const { data, error } = await (
+      project_id
+        ? sb.from("brain_learnings")
+            .select("*")
+            .or(`project_id.eq.${project_id},project_id.is.null`)
+            .order("created_at", { ascending: false })
+        : sb.from("brain_learnings")
+            .select("*")
+            .order("created_at", { ascending: false })
+    );
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, learnings: data || [] });
+  }
+
+  /* ── save_learning ── */
+  if (action === "save_learning") {
+    const { project_id, card_type, card_title, what_worked, what_missed,
+            redo_reason, improvement, context_summary, tags } = req.body;
+    if (!card_type) return res.status(400).json({ error: "card_type required" });
+    const { data, error } = await sb.from("brain_learnings").insert({
+      project_id:      project_id || null,
+      card_type,
+      card_title:      card_title || "",
+      what_worked:     Array.isArray(what_worked)  ? what_worked  : [],
+      what_missed:     Array.isArray(what_missed)  ? what_missed  : [],
+      redo_reason:     redo_reason     || null,
+      improvement:     improvement     || null,
+      context_summary: context_summary || null,
+      tags:            Array.isArray(tags) ? tags : [],
+      source:          "task_execution",
+      applied_count:   0,
+      updated_at:      new Date().toISOString(),
+    }).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, learning: data });
+  }
+
+  /* ── get_relevant ── */
+  if (action === "get_relevant") {
+    const { project_id, card_type, limit = 8 } = req.body;
+    let rows: any[] = [];
+    if (project_id && card_type) {
+      const { data } = await sb.from("brain_learnings")
+        .select("*")
+        .eq("project_id", project_id).eq("card_type", card_type)
+        .order("applied_count", { ascending: false })
+        .order("created_at",    { ascending: false })
+        .limit(limit);
+      rows = data || [];
+    }
+    if (rows.length < limit && card_type) {
+      const seen = new Set(rows.map((r: any) => r.id));
+      const { data } = await sb.from("brain_learnings")
+        .select("*").eq("card_type", card_type)
+        .order("applied_count", { ascending: false })
+        .order("created_at",    { ascending: false })
+        .limit(limit);
+      rows = [...rows, ...(data || []).filter((r: any) => !seen.has(r.id))].slice(0, limit);
+    }
+    if (rows.length < 3) {
+      const seen = new Set(rows.map((r: any) => r.id));
+      const { data } = await sb.from("brain_learnings").select("*")
+        .order("created_at", { ascending: false }).limit(5);
+      rows = [...rows, ...(data || []).filter((r: any) => !seen.has(r.id))].slice(0, limit);
+    }
+    void (async () => {
+      for (const id of rows.slice(0, 3).map((r: any) => r.id)) {
+        try {
+          const { data: d } = await sb.from("brain_learnings")
+            .select("applied_count").eq("id", id).single();
+          if (d) await sb.from("brain_learnings")
+            .update({ applied_count: ((d as any).applied_count || 0) + 1 }).eq("id", id);
+        } catch { /* non-blocking */ }
+      }
+    })();
+    return res.status(200).json({ success: true, learnings: rows });
+  }
+
+  /* ── delete_learning ── */
+  if (action === "delete_learning") {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: "id required" });
+    const { error } = await sb.from("brain_learnings").delete().eq("id", id);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true });
+  }
+
+  /* ── update_learning ── */
+  if (action === "update_learning") {
+    const { id, improvement, tags } = req.body;
+    if (!id) return res.status(400).json({ error: "id required" });
+    const { data, error } = await sb.from("brain_learnings").update({
+      improvement,
+      tags:       Array.isArray(tags) ? tags : (tags || "").split(",").map((t: string) => t.trim()).filter(Boolean),
+      updated_at: new Date().toISOString(),
+    }).eq("id", id).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, learning: data });
+  }
+
+  /* ── All remaining actions require a card ── */
   if (!card) return res.status(400).json({ error: "Missing card" });
 
   /* ── REQUIREMENTS ── */
@@ -399,125 +504,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
     }
-  }
-
-  /* ── BRAIN LEARNING — save_learning ── */
-  if (action === "save_learning") {
-    const { project_id, card_type, card_title, what_worked, what_missed,
-            redo_reason, improvement, context_summary, tags } = req.body;
-    if (!card_type) return res.status(400).json({ error: "card_type required" });
-
-    const { data, error } = await sb.from("brain_learnings").insert({
-      project_id:      project_id || null,
-      card_type,
-      card_title:      card_title || "",
-      what_worked:     Array.isArray(what_worked)  ? what_worked  : [],
-      what_missed:     Array.isArray(what_missed)  ? what_missed  : [],
-      redo_reason:     redo_reason     || null,
-      improvement:     improvement     || null,
-      context_summary: context_summary || null,
-      tags:            Array.isArray(tags) ? tags : [],
-      source:          "task_execution",
-      applied_count:   0,
-      updated_at:      new Date().toISOString(),
-    }).select().single();
-
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ success: true, learning: data });
-  }
-
-  /* ── BRAIN LEARNING — get_relevant ── */
-  if (action === "get_relevant") {
-    const { project_id, card_type, limit = 8 } = req.body;
-    let rows: any[] = [];
-
-    // 1. Same card type + same project (most targeted)
-    if (project_id && card_type) {
-      const { data } = await sb.from("brain_learnings")
-        .select("*")
-        .eq("project_id", project_id).eq("card_type", card_type)
-        .order("applied_count", { ascending: false })
-        .order("created_at",    { ascending: false })
-        .limit(limit);
-      rows = data || [];
-    }
-
-    // 2. Same card type, any project (cross-project knowledge)
-    if (rows.length < limit && card_type) {
-      const seen = new Set(rows.map((r: any) => r.id));
-      const { data } = await sb.from("brain_learnings")
-        .select("*").eq("card_type", card_type)
-        .order("applied_count", { ascending: false })
-        .order("created_at",    { ascending: false })
-        .limit(limit);
-      rows = [...rows, ...(data || []).filter((r: any) => !seen.has(r.id))].slice(0, limit);
-    }
-
-    // 3. Recent general learnings if still under limit
-    if (rows.length < 3) {
-      const seen = new Set(rows.map((r: any) => r.id));
-      const { data } = await sb.from("brain_learnings").select("*")
-        .order("created_at", { ascending: false }).limit(5);
-      rows = [...rows, ...(data || []).filter((r: any) => !seen.has(r.id))].slice(0, limit);
-    }
-
-    // Increment applied_count for returned rows (best-effort, fire-and-forget)
-    void (async () => {
-      for (const id of rows.slice(0, 3).map((r: any) => r.id)) {
-        try {
-          const { data: d } = await sb.from("brain_learnings")
-            .select("applied_count").eq("id", id).single();
-          if (d) await sb.from("brain_learnings")
-            .update({ applied_count: ((d as any).applied_count || 0) + 1 }).eq("id", id);
-        } catch { /* non-blocking */ }
-      }
-    })();
-
-    return res.status(200).json({ success: true, learnings: rows });
-  }
-
-  /* ── BRAIN LEARNING — get_all_learnings ── */
-  if (action === "get_all_learnings") {
-    const { project_id } = req.body;
-
-    // When project_id is provided: return learnings for that project OR with no project (shared).
-    // When project_id is absent/null: return ALL learnings across every project.
-    // Uses a ternary to avoid variable reassignment which can cause Supabase type issues.
-    const { data, error } = await (
-      project_id
-        ? sb.from("brain_learnings")
-            .select("*")
-            .or(`project_id.eq.${project_id},project_id.is.null`)
-            .order("created_at", { ascending: false })
-        : sb.from("brain_learnings")
-            .select("*")
-            .order("created_at", { ascending: false })
-    );
-
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ success: true, learnings: data || [] });
-  }
-
-  /* ── BRAIN LEARNING — delete_learning ── */
-  if (action === "delete_learning") {
-    const { id } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
-    const { error } = await sb.from("brain_learnings").delete().eq("id", id);
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ success: true });
-  }
-
-  /* ── BRAIN LEARNING — update_learning ── */
-  if (action === "update_learning") {
-    const { id, improvement, tags } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
-    const { data, error } = await sb.from("brain_learnings").update({
-      improvement,
-      tags:       Array.isArray(tags) ? tags : (tags || "").split(",").map((t: string) => t.trim()).filter(Boolean),
-      updated_at: new Date().toISOString(),
-    }).eq("id", id).select().single();
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ success: true, learning: data });
   }
 
   return res.status(400).json({ error: `Unknown action: ${action}` });
