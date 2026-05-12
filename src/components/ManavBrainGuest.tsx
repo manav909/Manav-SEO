@@ -62,21 +62,22 @@ export default function ManavBrainGuest() {
     }, 1200);
   }, []);
 
-  /* Stream a response from Claude */
-  const streamBrainReply = useCallback(async (userText: string, systemPrompt: string) => {
+  /* Stream a response through /api/intelligence (no API key needed) */
+  const streamBrainReply = useCallback(async (userText: string, _systemPrompt: string) => {
     setStreaming(true);
-    const thinkingId = Date.now().toString();
     setMsgs(m => [...m, { role:'brain', text:'' }]);
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/intelligence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 300,
-          stream: true,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userText }],
+          mode: 'answer',
+          question: userText,
+          projectSummary: 'Guest visitor exploring SEO Season demo',
+          role: 'senior_seo',
+          brainAssistantContext: {
+            systemExtra: 'You are Manav Brain on the SEO Season landing page. You are talking to a potential client who has not signed up yet. Be enthusiastic, expert, and end every answer with a hook to get them to take the demo tour. Keep under 4 sentences. Show deep SEO expertise specific to their question.',
+          },
         }),
       });
       if (!res.body) throw new Error('no stream');
@@ -86,25 +87,13 @@ export default function ManavBrainGuest() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const lines = dec.decode(value).split('\n').filter(l => l.startsWith('data: '));
-        for (const line of lines) {
-          try {
-            const d = JSON.parse(line.slice(6));
-            if (d.type === 'content_block_delta' && d.delta?.text) {
-              full += d.delta.text;
-              setMsgs(m => {
-                const cp = [...m];
-                cp[cp.length-1] = { role:'brain', text: full };
-                return cp;
-              });
-            }
-          } catch (_e) { /* ok */ }
-        }
+        full += dec.decode(value);
+        setMsgs(m => { const cp = [...m]; cp[cp.length-1] = { role:'brain', text: full }; return cp; });
       }
     } catch (_e) {
       setMsgs(m => {
         const cp = [...m];
-        cp[cp.length-1] = { role:'brain', text:"Let me show you a demo of SEO Season right now. Click 'Start tour' and I'll walk you through everything." };
+        cp[cp.length-1] = { role:'brain', text:"Great question — and the answer is very specific to your site. Want me to show you? Take the 3-minute tour and I'll answer it with your real data." };
         return cp;
       });
     }
