@@ -1,6 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { createClient } from "@supabase/supabase-js";
+import Anthropic                              from "@anthropic-ai/sdk";
+import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { extractAndSaveLearning }            from "./ai-cache";
 
 export const config = { maxDuration: 180 };
 
@@ -141,11 +142,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     action, card, context: rawContext, userInputs = {}, role = "senior_seo",
     completedAt, checkType = "guidance", completionNote = "", evidenceData = "",
   } = req.body;
-  // Guard: context defaults to {} even when explicitly sent as null from the client
+
   const context = (rawContext && typeof rawContext === "object") ? rawContext : {};
 
-  /* ── BRAIN LEARNING actions — no card required ── */
-  /* ── get_all_learnings ── */
+  /* ─────────────────────────────────────────────────────────────────
+     BRAIN LEARNING ACTIONS — no card required, always first
+  ───────────────────────────────────────────────────────────────── */
+
   if (action === "get_all_learnings") {
     const { project_id } = req.body;
     const { data, error } = await (
@@ -162,37 +165,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ success: true, learnings: data || [] });
   }
 
-  /* ── save_learning ── */
   if (action === "save_learning") {
     const { project_id, card_type, card_title, what_worked, what_missed,
             redo_reason, improvement, context_summary, tags } = req.body;
     if (!card_type) return res.status(400).json({ error: "card_type required" });
     const { data, error } = await sb.from("brain_learnings").insert({
-      project_id:      project_id || null,
+      project_id:       project_id || null,
       card_type,
-      card_title:      card_title || "",
-      what_worked:     Array.isArray(what_worked)  ? what_worked  : [],
-      what_missed:     Array.isArray(what_missed)  ? what_missed  : [],
-      redo_reason:     redo_reason     || null,
-      improvement:     improvement     || null,
-      context_summary: context_summary || null,
-      tags:            Array.isArray(tags) ? tags : [],
-      source:          "task_execution",
-      applied_count:   0,
-      updated_at:      new Date().toISOString(),
+      card_title:       card_title  || "",
+      what_worked:      Array.isArray(what_worked) ? what_worked : [],
+      what_missed:      Array.isArray(what_missed) ? what_missed : [],
+      redo_reason:      redo_reason     || null,
+      improvement:      improvement     || null,
+      context_summary:  context_summary || null,
+      tags:             Array.isArray(tags) ? tags : [],
+      source:           "task_execution",
+      applied_count:    0,
+      status:           "active",     // manual save = pre-approved
+      auto_captured:    false,
+      confidence_score: 85,
+      updated_at:       new Date().toISOString(),
     }).select().single();
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
   }
 
-  /* ── get_relevant ── */
   if (action === "get_relevant") {
     const { project_id, card_type, limit = 8 } = req.body;
     let rows: any[] = [];
+
+    // CRITICAL: Only inject ACTIVE learnings — pending/rejected must never enter AI prompts
     if (project_id && card_type) {
       const { data } = await sb.from("brain_learnings")
         .select("*")
-        .eq("project_id", project_id).eq("card_type", card_type)
+        .eq("project_id", project_id).eq("card_type", card_type).eq("status", "active")
         .order("applied_count", { ascending: false })
         .order("created_at",    { ascending: false })
         .limit(limit);
@@ -201,7 +207,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (rows.length < limit && card_type) {
       const seen = new Set(rows.map((r: any) => r.id));
       const { data } = await sb.from("brain_learnings")
-        .select("*").eq("card_type", card_type)
+        .select("*").eq("card_type", card_type).eq("status", "active")
         .order("applied_count", { ascending: false })
         .order("created_at",    { ascending: false })
         .limit(limit);
@@ -210,9 +216,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (rows.length < 3) {
       const seen = new Set(rows.map((r: any) => r.id));
       const { data } = await sb.from("brain_learnings").select("*")
+        .eq("status", "active")
         .order("created_at", { ascending: false }).limit(5);
       rows = [...rows, ...(data || []).filter((r: any) => !seen.has(r.id))].slice(0, limit);
     }
+
     void (async () => {
       for (const id of rows.slice(0, 3).map((r: any) => r.id)) {
         try {
@@ -223,10 +231,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch { /* non-blocking */ }
       }
     })();
+
     return res.status(200).json({ success: true, learnings: rows });
   }
 
-  /* ── delete_learning ── */
   if (action === "delete_learning") {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: "id required" });
@@ -235,7 +243,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ success: true });
   }
 
-  /* ── update_learning ── */
   if (action === "update_learning") {
     const { id, improvement, tags } = req.body;
     if (!id) return res.status(400).json({ error: "id required" });
@@ -244,6 +251,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tags:       Array.isArray(tags) ? tags : (tags || "").split(",").map((t: string) => t.trim()).filter(Boolean),
       updated_at: new Date().toISOString(),
     }).eq("id", id).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, learning: data });
+  }
+
+  // approve_learning: user reviews a pending_review learning and activates it
+  if (action === "approve_learning") {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: "id required" });
+    const { data, error } = await sb.from("brain_learnings")
+      .update({ status: "active", updated_at: new Date().toISOString() })
+      .eq("id", id).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, learning: data });
+  }
+
+  // reject_learning: user dismisses a pending_review learning
+  if (action === "reject_learning") {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: "id required" });
+    const { data, error } = await sb.from("brain_learnings")
+      .update({ status: "rejected", updated_at: new Date().toISOString() })
+      .eq("id", id).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, learning: data });
+  }
+
+  // deactivate_learning: move active back to pending_review for re-evaluation
+  if (action === "deactivate_learning") {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: "id required" });
+    const { data, error } = await sb.from("brain_learnings")
+      .update({ status: "pending_review", updated_at: new Date().toISOString() })
+      .eq("id", id).select().single();
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ success: true, learning: data });
   }
@@ -330,6 +370,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
       let parsed: any = {};
       try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch { /* ignore */ }
+
+      // Auto-capture verification pattern as a brain learning (fire-and-forget)
+      if (parsed.verdict && parsed.verdict !== "cannot_determine") {
+        const projectId = req.body.projectId || context?.project?.id || null;
+        void extractAndSaveLearning(
+          "verify_outcome",
+          projectId,
+          [
+            `Verification result: ${parsed.verdict} (${parsed.confidence}% confidence)`,
+            `Task type: ${card.type} | Title: ${card.title}`,
+            `Evidence found: ${(parsed.evidence_found || []).join(" | ") || "none"}`,
+            `Evidence missing: ${(parsed.evidence_missing || []).join(" | ") || "none"}`,
+            `HOD note: ${parsed.hod_note || ""}`,
+            `Next action: ${parsed.next_action || ""}`,
+            `What to check: ${(parsed.what_to_check || []).map((c: any) => `${c.tool}: ${c.pass_condition}`).join(" | ")}`,
+          ].join("\n"),
+          {
+            card_type:       card.type,
+            card_title:      card.title,
+            context_summary: `${card.type} task verification — verdict: ${parsed.verdict}`,
+          }
+        );
+      }
+
       return res.status(200).json({
         success: true, ...parsed,
         waiting_status: { waitDays, daysSince, daysLeft, waitExpired },
@@ -445,8 +509,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
       if (finalStopReason === "max_tokens") {
-        console.warn(`[SEO Season] task-engine execute hit max_tokens limit — card: "${card.title}" role: ${role}. Consider increasing max_tokens or splitting the task.`);
-        res.write("\n\n---\n⚠️ Output reached the length limit and may be incomplete. Try splitting this task into smaller parts, or use the Redo button with more focused inputs.");
+        console.warn(`[SEO Season] task-engine execute hit max_tokens — card: "${card.title}" role: ${role}`);
+        res.write("\n\n---\n⚠️ Output reached the length limit and may be incomplete. Try splitting this task or use the Redo button.");
       }
     } catch (err: any) {
       res.write(`\nError: ${err.message}`);
@@ -456,9 +520,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  /* ── EVALUATE ── */
+  /* ── EVALUATE — Manav reviews his own output, auto-captures learning ── */
   if (action === "evaluate") {
-    const { output: executedOutput, executedRole, executedInputs } = req.body;
+    const { output: executedOutput, executedRole, executedInputs, projectId } = req.body;
     if (!executedOutput) return res.status(400).json({ error: "No output to evaluate" });
 
     const evaluatePrompt = [
@@ -475,17 +539,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "",
       "Evaluate honestly. Return ONLY valid JSON:",
       JSON.stringify({
-        quality_score: "0-100 — how good is this output really",
-        what_worked: ["specific thing that is genuinely strong"],
-        what_missed: ["specific gap or weakness in the output"],
-        was_role_right: "yes or no",
-        better_role: "which role would have produced better output and why",
-        inputs_that_mattered: ["which user inputs most shaped this output"],
+        quality_score:          "0-100 — how good is this output really",
+        what_worked:            ["specific thing that is genuinely strong"],
+        what_missed:            ["specific gap or weakness in the output"],
+        was_role_right:         "yes or no",
+        better_role:            "which role would have produced better output and why",
+        inputs_that_mattered:   ["which user inputs most shaped this output"],
         inputs_that_would_help: ["what additional input would have made this significantly better"],
-        suggested_inputs: { "key": "what I would have asked for" },
-        redo_reason: "One honest sentence: if I could redo this, here is what I would change and why",
-        confidence_actual: "0-100 — honestly, how confident am I in this specific output given what I had to work with",
-        manav_note: "A personal note to the team — what to watch out for in this output, what I am proud of, what needs their eyes"
+        suggested_inputs:       { "key": "what I would have asked for" },
+        redo_reason:            "One honest sentence: if I could redo this, here is what I would change and why",
+        confidence_actual:      "0-100 — honestly, how confident am I in this specific output",
+        manav_note:             "A personal note to the team — what to watch out for, what I am proud of, what needs their eyes",
       }),
     ].join("\n");
 
@@ -500,6 +564,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
       let parsed: any = {};
       try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch { /* ignore */ }
+
+      // Auto-capture this evaluation as a pending brain learning (fire-and-forget).
+      // The user still sees the manual "Save to Manav Brain" button — that confirms
+      // and marks the auto-captured learning as active instead of creating a duplicate.
+      void extractAndSaveLearning(
+        "task_execution_auto",
+        projectId || context?.project?.id || null,
+        [
+          `Task: ${card.title} [${card.type}] — Role: ${executedRole}`,
+          `Quality: ${parsed.quality_score}/100 | Confidence: ${parsed.confidence_actual}%`,
+          `What worked: ${(parsed.what_worked || []).join(" | ")}`,
+          `What was missed: ${(parsed.what_missed || []).join(" | ")}`,
+          `Redo reason: ${parsed.redo_reason || ""}`,
+          `Manav note: ${parsed.manav_note || ""}`,
+          `Output preview: ${String(executedOutput).slice(0, 600)}`,
+        ].join("\n"),
+        {
+          card_type:       card.type,
+          card_title:      card.title,
+          context_summary: `${card.type} task evaluated — quality ${parsed.quality_score}/100`,
+        }
+      );
+
       return res.status(200).json({ success: true, evaluation: parsed });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
