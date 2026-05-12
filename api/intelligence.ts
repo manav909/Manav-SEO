@@ -269,7 +269,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
       const stream = await anthropic.messages.stream({
-        model: "claude-sonnet-4-5-20251001", max_tokens: 6000,
+        model: "claude-sonnet-4-6", max_tokens: 6000,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
       });
