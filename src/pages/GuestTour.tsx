@@ -18,7 +18,8 @@ import {
   Lock, Download, Loader2, Star, Trophy, AlertTriangle,
   FileText, Activity,
 } from 'lucide-react';
-import { DEMO_INDUSTRIES, detectIndustry, type DemoProject } from '@/contexts/DemoContext';
+import type { DemoProject } from '@/contexts/DemoContext';
+import { DEMO_INDUSTRIES, detectIndustry } from '@/contexts/DemoContext';
 
 /* ══════════════════════════════════════════════════════
    TYPES
@@ -74,7 +75,7 @@ const NARRATION: Record<string,(d:DemoProject)=>string> = {
 /* ══════════════════════════════════════════════════════
    BRAIN API — routes through /api/intelligence (no auth)
 ══════════════════════════════════════════════════════ */
-async function callBrain(question: string, systemExtra: string, streaming: boolean,
+async function callBrain(question: string, systemExtra: string, _streaming: boolean,
                           onChunk?: (t:string)=>void): Promise<string> {
   const res = await fetch('/api/intelligence', {
     method: 'POST',
