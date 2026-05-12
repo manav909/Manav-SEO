@@ -6,17 +6,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ErrorBoundary }     from "@/components/ErrorBoundary";
-import Index     from "./pages/Index";
-import DataRoom from './pages/DataRoom';
-import Dashboard from "./pages/Dashboard";
-import Launchpad from "./pages/Launchpad";
-import Audit     from "./pages/Audit";
-import Admin     from "./pages/Admin";
-import Playground from './pages/Playground';
+import Index          from "./pages/Index";
+import DataRoom       from './pages/DataRoom';
+import Dashboard      from "./pages/Dashboard";
+import Launchpad      from "./pages/Launchpad";
+import Audit          from "./pages/Audit";
+import Admin          from "./pages/Admin";
+import Playground     from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
-import SystemControl from './pages/SystemControl';
-import BrainLearning from './pages/BrainLearning';
-import NotFound  from "./pages/NotFound";
+import SystemControl  from './pages/SystemControl';
+import BrainLearning  from './pages/BrainLearning';
+import NotFound       from "./pages/NotFound";
+import ManavBrainAssistant from './components/ManavBrainAssistant';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -43,19 +44,24 @@ const AppRoutes = () => {
   const { authChecked, loading } = useAuth();
   if (!authChecked && loading) return <Spinner label="Loading SEO Season..." />;
   return (
-    <Routes>
-      <Route path="/"          element={<Index />} />
-      <Route path="/data-room" element={<DataRoom />} />
-      <Route path="/dashboard" element={<ApprovedRequired><Dashboard /></ApprovedRequired>} />
-      <Route path="/launchpad" element={<ApprovedRequired><Launchpad /></ApprovedRequired>} />
-      <Route path="/audit"     element={<ApprovedRequired><Audit /></ApprovedRequired>} />
-      <Route path="/admin"     element={<Admin />} />
-      <Route path="/playground" element={<Playground />} />
-      <Route path="/system-control" element={<SystemControl />} />
-      <Route path="/algorithm-intel" element={<AlgorithmIntel />} />
-      <Route path="/brain-learning" element={<BrainLearning />} />
-      <Route path="*"          element={<NotFound />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/"               element={<Index />} />
+        <Route path="/data-room"      element={<DataRoom />} />
+        <Route path="/dashboard"      element={<ApprovedRequired><Dashboard /></ApprovedRequired>} />
+        <Route path="/launchpad"      element={<ApprovedRequired><Launchpad /></ApprovedRequired>} />
+        <Route path="/audit"          element={<ApprovedRequired><Audit /></ApprovedRequired>} />
+        <Route path="/admin"          element={<Admin />} />
+        <Route path="/playground"     element={<Playground />} />
+        <Route path="/system-control" element={<SystemControl />} />
+        <Route path="/algorithm-intel"element={<AlgorithmIntel />} />
+        <Route path="/brain-learning" element={<BrainLearning />} />
+        <Route path="*"               element={<NotFound />} />
+      </Routes>
+
+      {/* ◈ Manav Brain — floating AI assistant, available on every page */}
+      <ManavBrainAssistant />
+    </>
   );
 };
 
