@@ -560,26 +560,35 @@ export default function GuestTour() {
     if(n) setTimeout(()=>startNar(n),250);
   },[demo,startNar]);
 
-  const pushMsg = useCallback((key:string, overrideText?:string)=>{
-    const script=S[key]; if(!script) return;
-    const text=overrideText||script.text;
-    setMsgs(m=>[...m,{role:"brain",text,capsules:script.capsules,savings:script.savings}]);
+  /* Single atomic fn — adds user + brain in ONE setMsgs call, zero flash */
+  const sendScript = useCallback((userText:string, key:string)=>{
+    if(key==="signup"){navigate("/");return;}
+    const script=S[key];
+    if(!script){setMsgs(m=>[...m,{role:"user",text:userText}]);return;}
+    setMsgs(m=>[...m,
+      {role:"user",  text:userText},
+      {role:"brain", text:script.text, capsules:script.capsules, savings:script.savings},
+    ]);
     if(script.createCards && analysis){
       const c=buildLiveCards(analysis); setCards(c); setView("analysis");
       c.forEach((_,ci)=>setTimeout(()=>setCards(p=>p.map((x,pi)=>pi===ci?{...x,revealed:true}:x)),500+ci*600));
     }
-  },[analysis]);
+  },[analysis,navigate]);
 
   const tapCapsule = useCallback((key:string)=>{
-    if(key==="boost"){setMsgs(m=>[...m,{role:"user",text:"Analyse my website"},{role:"brain",text:"Perfect. Paste your URL below and one line about your business.",capsules:[]}]);return;}
-    if(key==="signup"){navigate("/");return;}
-    setMsgs(m=>[...m,{role:"user",text:key.replace(/_/g," ")}]);
-    setTimeout(()=>pushMsg(key),150);
-  },[pushMsg,navigate]);
+    if(key==="boost"){
+      setMsgs(m=>[...m,
+        {role:"user",  text:"Analyse my website"},
+        {role:"brain", text:"Perfect. Paste your URL below and one line about your business.",capsules:[]},
+      ]);
+      return;
+    }
+    sendScript(key.replace(/_/g," "), key);
+  },[sendScript]);
 
-  const runAnalysis = useCallback(async(url:string,desc:string)=>{
+  const runAnalysis = useCallback(async(url:string,desc:string,skipInitMsg?:boolean)=>{
     setPhase("analyzing");
-    setMsgs(m=>[...m,{role:"brain",text:"Running analysis for "+url+"..."}]);
+    if(!skipInitMsg) setMsgs(m=>[...m,{role:"brain",text:"Running analysis for "+url+"..."}]);
     const prompt = [
       "WEBSITE: "+url,
       "BUSINESS: "+desc,
@@ -634,13 +643,19 @@ export default function GuestTour() {
   const tapCapsuleEx = useCallback((key:string)=>{
     if(key==="post_qw"&&analysis){
       const qw=analysis.quickWins[0];
-      const t="Top quick win: "+qw.title+". Effort: "+qw.effort+". Expected impact: "+qw.impact+". Implementable today. I have added it to your strategy canvas along with "+(analysis.quickWins.length-1)+" more quick wins.";
-      setMsgs(m=>[...m,{role:"user",text:"Show my quick wins"},{role:"brain",text:t,capsules:[{label:"Build full Week 1",key:"post_canvas"},{label:"Download PDF",key:"post_pdf"},{label:"Get started",key:"cta"}]}]);
+      const t="Top quick win: "+qw.title+". Effort: "+qw.effort+". Expected impact: "+qw.impact+". Implementable today. Added to your canvas along with "+(analysis.quickWins.length-1)+" more quick wins.";
+      setMsgs(m=>[...m,
+        {role:"user",  text:"Show my quick wins"},
+        {role:"brain", text:t, capsules:[{label:"Build full Week 1",key:"post_canvas"},{label:"Download PDF",key:"post_pdf"},{label:"Get started",key:"cta"}]},
+      ]);
       return;
     }
     if(key==="post_risk"&&analysis){
-      const t="Biggest risk: "+analysis.biggestRisk+" This is actively affecting your rankings right now. I have created a recovery task in your canvas with the specific fix.";
-      setMsgs(m=>[...m,{role:"user",text:"See my biggest risk"},{role:"brain",text:t,capsules:[{label:"How urgent is this?",key:"drops"},{label:"What is the fix?",key:"priority"},{label:"Get started",key:"cta"}]}]);
+      const t="Biggest risk: "+analysis.biggestRisk+" This is actively affecting your rankings right now. Recovery task added to your canvas with the specific fix.";
+      setMsgs(m=>[...m,
+        {role:"user",  text:"See my biggest risk"},
+        {role:"brain", text:t, capsules:[{label:"How urgent is this?",key:"drops"},{label:"What is the fix?",key:"priority"},{label:"Get started",key:"cta"}]},
+      ]);
       return;
     }
     tapCapsule(key);
@@ -649,12 +664,25 @@ export default function GuestTour() {
   const sendMsg = useCallback(async()=>{
     const val=input.trim(); if(!val||busy) return;
     setInput("");
-    setMsgs(m=>[...m,{role:"user",text:val}]);
     const urlMatch=val.match(/[a-z0-9][\w.-]*\.[a-z]{2,}/i);
-    if(urlMatch&&phase==="idle"){setUrlIn(urlMatch[0]);setDescIn(val);setPhase("collecting");setMsgs(m=>[...m,{role:"brain",text:"Got "+urlMatch[0]+". What does your business do — one sentence?",capsules:[]}]);return;}
-    if(phase==="collecting"&&urlIn){runAnalysis(urlIn,val);return;}
+    if(urlMatch&&phase==="idle"){
+      setUrlIn(urlMatch[0]); setDescIn(val); setPhase("collecting");
+      setMsgs(m=>[...m,
+        {role:"user",  text:val},
+        {role:"brain", text:"Got "+urlMatch[0]+". What does your business do — one sentence?", capsules:[]},
+      ]);
+      return;
+    }
+    if(phase==="collecting"&&urlIn){
+      setMsgs(m=>[...m,
+        {role:"user",  text:val},
+        {role:"brain", text:"Running analysis for "+urlIn+"..."},
+      ]);
+      runAnalysis(urlIn,val,true);
+      return;
+    }
     setBusy(true);
-    setMsgs(m=>[...m,{role:"brain",text:""}]);
+    setMsgs(m=>[...m,{role:"user",text:val},{role:"brain",text:""}]);
     try{
       const res=await fetch("/api/intelligence",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"answer",question:val,projectSummary:"Guest demo visitor",role:"senior_seo",brainAssistantContext:{systemExtra:"You are Manav Brain on the SEO Season demo page. Expert SEO. Under 4 sentences. Always end with a hook to get their URL. Be direct and insightful."}})});
       if(!res.body) throw new Error("no body");
@@ -783,7 +811,7 @@ export default function GuestTour() {
                   </div>
                 </div>
                 {m.savings&&m.savings.length>0&&<SavingsTable savings={m.savings}/>}
-                {m.capsules&&m.capsules.length>0&&idx===msgs.length-1&&(
+                {m.capsules&&m.capsules.length>0&&m.role==="brain"&&idx===msgs.length-1&&(
                   <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:5,paddingLeft:24}}>
                     {m.capsules.map((cap,ci)=><button key={ci} onClick={()=>tapCapsuleEx(cap.key)} style={{background:"rgba(99,102,241,0.07)",border:"1px solid rgba(99,102,241,0.18)",borderRadius:14,padding:"4px 10px",fontSize:9,fontFamily:"monospace",color:"rgba(165,180,252,0.75)",cursor:"pointer",whiteSpace:"nowrap"}}>{cap.label}</button>)}
                   </div>
