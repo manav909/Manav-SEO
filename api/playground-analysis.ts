@@ -2,7 +2,7 @@ import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { extractAndSaveLearning }            from "./ai-cache";
 
-export const config = { maxDuration: 300 };
+export const config = { maxDuration: 60 };
 
 function tryParseJson(raw: string): any | null {
   const first = raw.indexOf("{");
