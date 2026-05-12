@@ -33,7 +33,7 @@ export async function saveToCache(
         input_hash: inputHash || null, token_count: Math.round(content.length / 4) },
       { onConflict: "project_id,content_type" }
     );
-  } catch { /* cache failure must never break main response */ }
+  } catch (_e) { /* cache failure must never break main response */ }
 }
 
 export async function loadFromCache(
@@ -47,7 +47,7 @@ export async function loadFromCache(
       .select("content,status,updated_at")
       .eq("project_id", projectId).eq("content_type", contentType).single();
     return data || null;
-  } catch { return null; }
+  } catch (_e) { return null; }
 }
 
 export async function loadAllCache(
@@ -57,7 +57,7 @@ export async function loadAllCache(
   if (!projectId) return {};
   try {
     const sb = getSupabase();
-    let q = sb.from("ai_content_cache")
+    let q: any = sb.from("ai_content_cache")
       .select("content_type,content,status,updated_at")
       .eq("project_id", projectId);
     if (prefix) q = q.like("content_type", `${prefix}%`);
@@ -66,7 +66,7 @@ export async function loadAllCache(
     return Object.fromEntries(
       data.map((r: any) => [r.content_type, { content: r.content, status: r.status, updated_at: r.updated_at }])
     );
-  } catch { return {}; }
+  } catch (_e) { return {}; }
 }
 
 export function hashInput(input: any): string {
@@ -109,7 +109,7 @@ export async function extractAndSaveLearning(
         .eq("status", "pending_review")
         .eq("project_id", projectId || "");
       if ((count ?? 0) >= 25) return;
-    } catch {
+    } catch (_e) {
       // If status column doesn't exist yet (migration not run), skip
       return;
     }
@@ -121,7 +121,7 @@ export async function extractAndSaveLearning(
         .select("id").eq("source", source).eq("project_id", projectId || "")
         .gte("created_at", cutoff).limit(1);
       if (recent && recent.length > 0) return;
-    } catch { return; }
+    } catch (_e) { return; }
 
     // --- FIX: use the statically-imported Anthropic directly, no dynamic import ---
     const anthropic = new Anthropic();
@@ -151,7 +151,7 @@ export async function extractAndSaveLearning(
     if (f === -1 || l === -1) return;
 
     let parsed: any = {};
-    try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch { return; }
+    try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) { return; }
     if (!parsed.improvement || !parsed.card_type) return;
 
     // Attempt insert with new columns; if migration not run, fall back gracefully
@@ -178,12 +178,12 @@ export async function extractAndSaveLearning(
         auto_captured:    true,
         confidence_score: Math.min(100, Math.max(0, Number(parsed.confidence_score) || 75)),
       });
-    } catch {
+    } catch (_e) {
       // Migration not run yet — insert without new columns
-      try { await sb.from("brain_learnings").insert(newRow); } catch { /* silent */ }
+      try { await sb.from("brain_learnings").insert(newRow); } catch (_e) { /* silent */ }
     }
 
-  } catch {
+  } catch (_e) {
     // Completely silent — learning capture must NEVER break the main API response
   }
 }
