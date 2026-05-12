@@ -361,14 +361,19 @@ export default function BrainLearning() {
       const body: Record<string, unknown> = { action: 'get_all_learnings' };
       if (selProjId) body.project_id = selProjId;
       const res  = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'brain-learning-page' },
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => null);
-      if (!data || data.error) throw new Error(data?.error || `HTTP ${res.status}`);
-      setLearnings(data.learnings || []);
+      if (data && data.learnings) {
+        setLearnings(data.learnings || []);
+      } else if (data?.error) {
+        // Show toast but don't crash - Brain Learning page still renders
+        toast({ title: 'Could not load learnings', description: data.error, variant: 'destructive' });
+      }
     } catch (err: any) {
-      toast({ title: 'Failed to load intelligence', description: err?.message, variant: 'destructive' });
+      toast({ title: 'Connection issue', description: 'Could not reach task-engine. Check Vercel logs.', variant: 'destructive' });
     }
     setLoading(false);
   }, [selProjId]);

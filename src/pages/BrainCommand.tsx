@@ -196,6 +196,7 @@ export default function BrainCommand() {
 
   /* Add card to queue */
   const addToQueue = (card: any) => {
+    if (!selProj) { alert("Select a project first."); return; }
     if (queue.some(q => q.card.id === card.id)) return;
     setQueue(q => [...q, { id: uid(), card, status: "queued", output: "", startedAt: null, doneAt: null, savedDesk: false }]);
   };
@@ -283,15 +284,26 @@ export default function BrainCommand() {
     setChatMsgs(m => [...m, { role: "user", text }]);
     setChatLoading(true);
     try {
+      // Build queue context and inject it into the question
+      const queueContext = queue.length > 0
+        ? `\n\nCURRENT EXECUTION QUEUE (${queue.length} tasks):\n` +
+          queue.map(t => `  [${t.status.toUpperCase()}] ${t.card.title} (${t.card.type})`).join("\n")
+        : "";
+      const enrichedQuestion = text + queueContext;
+
       const res = await fetch("/api/intelligence", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode: "brain_assistant", question: text, projectId: selProj || null,
-          projectSummary: selProj ? "Brain Command panel" : "No project selected",
+          mode: "brain_assistant",
+          question: enrichedQuestion,
+          projectId: selProj || null,
+          projectSummary: selProj ? (projContext?.project?.name || "Brain Command panel") : "No project selected",
           role: "senior_seo",
           brainAssistantContext: {
             projectContext: projContext,
             canvasBlocks: canvas.slice(0, 20),
-            queueStatus: queue.map(t => ({ title: t.card.title, status: t.status })),
+            learnings: [],
+            algoItems: [],
+            history: chatMsgs.slice(-6).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text.slice(0, 200) })),
           },
         }),
       });
