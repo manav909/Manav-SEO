@@ -386,7 +386,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const anthropic = new Anthropic();
       const response  = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 2000,
+        model: "claude-sonnet-4-6", max_tokens: 2000,
         system: SYSTEM + " You are performing a quality review. Be strict and evidence-driven. Return only valid JSON.",
         messages: [{ role: "user", content: verifyPrompt }],
       });
@@ -475,7 +475,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const anthropic = new Anthropic();
       const stream = await anthropic.messages.stream({
-        model: "claude-sonnet-4-5", max_tokens: 8192, system: SYSTEM,
+        model: "claude-sonnet-4-6", max_tokens: 8192, system: SYSTEM,
         messages: [{ role: "user", content: executePrompt }],
       });
       let finalStopReason = "";
@@ -514,7 +514,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const anthropic = new Anthropic();
       const response  = await anthropic.messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 2000,
+        model: "claude-sonnet-4-6", max_tokens: 2000,
         system: SYSTEM + " Evaluate your own work honestly. Return only valid JSON.",
         messages: [{ role: "user", content: evaluatePrompt }],
       });
@@ -536,189 +536,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
     }
-  }
-
-  /* ─── CHECK DATA SYNC ─── */
-  if (action === "check_sync") {
-    const { project_id } = req.body;
-    if (!project_id) return res.status(400).json({ error: "project_id required" });
-
-    const issues: string[] = [];
-    const info:   string[] = [];
-
-    try {
-      // 1. Check project exists
-      const { data: proj } = await sb.from("projects").select("id,name,playground_canvas").eq("id", project_id).single();
-      if (!proj) return res.status(404).json({ error: "Project not found" });
-      info.push(`Project: ${proj.name}`);
-
-      // 2. Check canvas cards
-      let canvasCount = 0;
-      if (proj.playground_canvas) {
-        try {
-          const blocks = typeof proj.playground_canvas === "string"
-            ? JSON.parse(proj.playground_canvas) : proj.playground_canvas;
-          canvasCount = Array.isArray(blocks) ? blocks.length : 0;
-          info.push(`Canvas: ${canvasCount} cards`);
-        } catch (_e) { issues.push("Canvas JSON is malformed — playground_canvas cannot be parsed"); }
-      } else {
-        issues.push("Canvas is empty — no cards exist for this project");
-      }
-
-      // 3. Check metrics
-      const { data: metrics } = await sb.from("metrics").select("id,created_at,llm_visibility,algorithm_health").eq("project_id", project_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (!metrics) {
-        issues.push("No metrics recorded — run an audit first to populate the metrics table");
-      } else {
-        const age = Math.floor((Date.now() - new Date(metrics.created_at).getTime()) / (1000*60*60*24));
-        info.push(`Metrics: LLM ${metrics.llm_visibility}/100 | Health ${metrics.algorithm_health}/100 | Age ${age} days`);
-        if (age > 14) issues.push(`Metrics are ${age} days old — consider running a fresh audit`);
-      }
-
-      // 4. Check project_knowledge (DataRoom context)
-      const { count: pkCount } = await sb.from("project_knowledge").select("id", { count: "exact", head: true }).eq("project_id", project_id);
-      if (!pkCount || pkCount === 0) {
-        issues.push("DataRoom is empty — project_knowledge has no entries. Fill the DataRoom to give Brain context.");
-      } else {
-        info.push(`DataRoom: ${pkCount} knowledge entries`);
-      }
-
-      // 5. Check task_executions
-      const { count: teCount } = await sb.from("task_executions").select("id", { count: "exact", head: true }).eq("project_id", project_id);
-      info.push(`Task executions: ${teCount || 0}`);
-
-      // 6. Check brain_learnings
-      try {
-        const { count: blCount } = await sb.from("brain_learnings").select("id", { count: "exact", head: true }).eq("project_id", project_id);
-        const { count: pendingCount } = await sb.from("brain_learnings").select("id", { count: "exact", head: true }).eq("project_id", project_id).eq("status", "pending_review");
-        info.push(`Learnings: ${blCount || 0} total, ${pendingCount || 0} pending review`);
-      } catch (_e) {
-        issues.push("brain_learnings status column missing — run migration-brain-v2.sql in Supabase SQL Editor");
-      }
-
-      // 7. Check audit_reports
-      const { count: arCount } = await sb.from("audit_reports").select("id", { count: "exact", head: true }).eq("project_id", project_id);
-      info.push(`Audit reports: ${arCount || 0}`);
-
-      // 8. Check algorithm_knowledge linked to project
-      const { count: akCount } = await sb.from("algorithm_knowledge").select("id", { count: "exact", head: true }).eq("project_id", project_id);
-      info.push(`Algorithm intel: ${akCount || 0} topic analyses for this project`);
-
-      return res.status(200).json({
-        success: true,
-        project: proj.name,
-        issues,
-        info,
-        healthy: issues.length === 0,
-        summary: issues.length === 0
-          ? "All data is synced correctly."
-          : `Found ${issues.length} sync issue${issues.length > 1 ? "s" : ""} that need attention.`,
-      });
-    } catch (err: any) {
-      return res.status(500).json({ error: err.message });
-    }
-  }
-
-  /* ─── BRAIN DESK ─── */
-  if (action === "desk_save") {
-    const { project_id, title, content_type = "text", content, metadata = {}, tags = [], source = "brain" } = req.body;
-    if (!project_id || !content) return res.status(400).json({ error: "project_id and content required" });
-    try {
-      const { data, error } = await sb.from("brain_desk").insert({
-        project_id, title: title || "Brain Note",
-        content_type, content,
-        metadata, tags, source,
-        updated_at: new Date().toISOString(),
-      }).select().single();
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ success: true, item: data });
-    } catch (err: any) { return res.status(500).json({ error: err.message }); }
-  }
-
-  if (action === "desk_list") {
-    const { project_id, content_type, pinned_only } = req.body;
-    if (!project_id) return res.status(400).json({ error: "project_id required" });
-    try {
-      let q: any = sb.from("brain_desk").select("*").eq("project_id", project_id);
-      if (content_type) q = q.eq("content_type", content_type);
-      if (pinned_only)  q = q.eq("pinned", true);
-      q = q.order("pinned", { ascending: false }).order("created_at", { ascending: false });
-      const { data, error } = await q;
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ success: true, items: data || [] });
-    } catch (err: any) { return res.status(500).json({ error: err.message }); }
-  }
-
-  if (action === "desk_delete") {
-    const { id } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
-    try {
-      const { error } = await sb.from("brain_desk").delete().eq("id", id);
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ success: true });
-    } catch (err: any) { return res.status(500).json({ error: err.message }); }
-  }
-
-  if (action === "desk_pin") {
-    const { id, pinned } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
-    try {
-      const { error } = await sb.from("brain_desk").update({ pinned: !!pinned }).eq("id", id);
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ success: true });
-    } catch (err: any) { return res.status(500).json({ error: err.message }); }
-  }
-
-  if (action === "get_full_context") {
-    // Returns EVERYTHING about a project for brain
-    const { project_id } = req.body;
-    if (!project_id) return res.status(400).json({ error: "project_id required" });
-    try {
-      const [
-        { data: projData },
-        { data: executions },
-        { data: auditReps },
-        { data: knowledge },
-        { data: documents },
-        { data: learnings },
-        { data: metricsData },
-        { data: algoItems },
-        { data: deskItems },
-      ] = await Promise.all([
-        sb.from("projects").select("*").eq("id", project_id).single(),
-        sb.from("task_executions").select("id,task_type,task_title,output,created_at").eq("project_id", project_id).order("created_at", { ascending: false }).limit(20),
-        sb.from("audit_reports").select("id,url,summary,score,created_at").eq("project_id", project_id).order("created_at", { ascending: false }).limit(3),
-        sb.from("project_knowledge").select("section,data").eq("project_id", project_id),
-        sb.from("project_documents").select("name,content_preview,doc_type,created_at").eq("project_id", project_id).limit(10),
-        sb.from("brain_learnings").select("card_type,card_title,improvement,applied_count,source").eq("project_id", project_id).eq("status", "active").order("applied_count", { ascending: false }).limit(30),
-        sb.from("metrics").select("*").eq("project_id", project_id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        sb.from("algorithm_knowledge").select("title,summary,category").eq("project_id", project_id).order("updated_at", { ascending: false }).limit(15),
-        sb.from("brain_desk").select("id,title,content_type,content,tags,created_at").eq("project_id", project_id).order("created_at", { ascending: false }).limit(20),
-      ]);
-
-      // Parse canvas
-      let canvas: any[] = [];
-      try {
-        const raw = projData?.playground_canvas;
-        canvas = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : [];
-      } catch (_e) { canvas = []; }
-
-      return res.status(200).json({
-        success: true,
-        context: {
-          project: projData,
-          canvas,
-          executions:    executions    || [],
-          auditReports:  auditReps     || [],
-          knowledge:     knowledge     || [],
-          documents:     documents     || [],
-          learnings:     learnings     || [],
-          metrics:       metricsData,
-          algorithmIntel:algoItems     || [],
-          deskItems:     deskItems     || [],
-        },
-      });
-    } catch (err: any) { return res.status(500).json({ error: err.message }); }
   }
 
   return res.status(400).json({ error: `Unknown action: ${action}` });
