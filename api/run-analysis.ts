@@ -1,4 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
+
+/* Lazy Anthropic client — created on first use, not at module load */
+/* Lazy Anthropic — created once, never at module level */
+function getAI(): Anthropic {
+  return new Anthropic();
+}
 import { extractAndSaveLearning } from "./ai-cache";
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
@@ -220,7 +226,7 @@ Analyse and return this exact JSON structure:
 Return ONLY the JSON. No other text.`;
 
   try {
-    const response = await client.messages.create({
+    const response = await getAI().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1200,
       messages: [{ role: 'user', content: prompt }],
@@ -540,7 +546,7 @@ Return ONLY valid JSON:
 }`;
 
   try {
-    const response = await client.messages.create({
+    const response = await getAI().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
@@ -567,7 +573,6 @@ Return ONLY valid JSON:
    MAIN HANDLER
 ══════════════════════════════════════════════════ */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const client = new Anthropic();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const {

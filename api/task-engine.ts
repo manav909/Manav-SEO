@@ -483,13 +483,14 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader("X-Accel-Buffering", "no");
     res.setHeader("Cache-Control", "no-cache");
     res.status(200);
+    let execFull = "";
     try {
       const anthropic = new Anthropic();
       const stream = await anthropic.messages.stream({
         model: "claude-sonnet-4-6", max_tokens: 8192, system: SYSTEM,
         messages: [{ role: "user", content: executePrompt }],
       });
-      let finalStopReason = ""; let execFull = "";
+      let finalStopReason = "";
       for await (const chunk of stream) {
         if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") { res.write(chunk.delta.text); execFull += chunk.delta.text; }
         if (chunk.type === "message_delta" && chunk.delta.stop_reason) finalStopReason = chunk.delta.stop_reason;

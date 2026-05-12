@@ -35,7 +35,7 @@ HARD RULES you must never break:
 5. If a whole category has no data, skip it entirely and add it to data_gaps.
 6. ASSUMPTION cards are FORBIDDEN. Every canvas block must have a data_basis citing real input data.`;
 
-async function generate(prompt: string, maxTokens: number): Promise<string> {
+async function generate(prompt: string, maxTokens: number, anthropic: any): Promise<string> {
   const msg = await anthropic.messages.create({
     model:      "claude-sonnet-4-6",
     max_tokens: maxTokens,
@@ -106,7 +106,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const batchNum of batches) {
       const prompt = batchNum === 1 ? batch1Prompt : batchNum === 2 ? batch2Prompt : batch3Prompt;
       try {
-        const raw  = await generate(prompt, 4000);
+        const raw  = await generate(prompt, 4000, anthropic);
         const data = tryParseJson(raw);
         if (data) { Object.assign(results, data); batchStatus[batchNum] = "ok"; }
         else      { batchStatus[batchNum] = "failed"; }
