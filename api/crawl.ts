@@ -418,14 +418,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function _handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
   const { action } = req.body;
   const anthropic = new Anthropic();
 
   // ── crawl_urls: stream NDJSON ────────────────────────────────────
   if (action === "crawl_urls") {
     const { urls, projectId = null, projectContext = "", taskHints = [], forceRefresh = false } = req.body;
-    if (!Array.isArray(urls) || !urls.length) return res.status(400).json({ error: "No URLs provided" });
+    if (!Array.isArray(urls) || !urls.length) return res.status(200).json({ error: "No URLs provided" });
 
     const urlList = urls.slice(0, 10)
       .map((u: string) => u.trim().startsWith("http") ? u.trim() : `https://${u.trim()}`)
@@ -459,7 +459,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   // ── load_cached ───────────────────────────────────────────────────
   if (action === "load_cached") {
     const { projectId, urls } = req.body;
-    if (!projectId) return res.status(400).json({ error: "projectId required" });
+    if (!projectId) return res.status(200).json({ error: "projectId required" });
     try {
       let q = db().from("crawled_pages")
         .select("url,page_analysis,knowledge_fields,fetch_status,fetch_error,html_chars,crawl_status,crawled_at")
@@ -480,14 +480,14 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   // ── compare_analysis ──────────────────────────────────────────────
   if (action === "compare_analysis") {
     const { crawlResults, projectContext = "", existingBlocks = [], taskHints = [], compareCriteria = [] } = req.body;
-    if (!crawlResults?.results?.length) return res.status(400).json({ error: "No crawl results" });
+    if (!crawlResults?.results?.length) return res.status(200).json({ error: "No crawl results" });
 
     const results = crawlResults.results as any[];
 
     // Check we have at least one page with actual analysis
     const withData = results.filter(r => r.page_analysis);
     if (!withData.length) {
-      return res.status(400).json({
+      return res.status(200).json({
         error: "No page data available — all URLs failed to fetch. Check that the URLs are publicly accessible and try again with Force re-crawl enabled.",
       });
     }
@@ -611,7 +611,7 @@ Return ONLY valid JSON (absolutely no markdown fences, no prose before or after)
   // ── preview_url ───────────────────────────────────────────────────
   if (action === "preview_url") {
     const { url } = req.body;
-    if (!url) return res.status(400).json({ error: "URL required" });
+    if (!url) return res.status(200).json({ error: "URL required" });
     const clean = url.startsWith("http") ? url : `https://${url}`;
     const f = await fetchUrl(clean);
     return res.status(200).json({
@@ -621,5 +621,5 @@ Return ONLY valid JSON (absolutely no markdown fences, no prose before or after)
     });
   }
 
-  return res.status(400).json({ error: "Unknown action" });
+  return res.status(200).json({ error: "Unknown action" });
 }

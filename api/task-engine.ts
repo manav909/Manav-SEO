@@ -160,7 +160,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   if (action === "save_learning") {
     const { project_id, card_type, card_title, what_worked, what_missed,
             redo_reason, improvement, context_summary, tags } = req.body;
-    if (!card_type) return res.status(400).json({ error: "card_type required" });
+    if (!card_type) return res.status(200).json({ error: "card_type required" });
 
     const row: any = {
       project_id: project_id || null, card_type,
@@ -240,12 +240,12 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "delete_learning") {
     const { id } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
+    if (!id) return res.status(200).json({ error: "id required" });
     // IMMUTABLE LOG PROTECTION
     try {
       const { data: item } = await db().from("brain_learnings").select("source").eq("id", id).single();
       if (item?.source?.endsWith("_log")) {
-        return res.status(403).json({ error: "Immutable log entry — brain logs cannot be deleted by design." });
+        return res.status(200).json({ error: "Immutable log entry — brain logs cannot be deleted by design." });
       }
     } catch (_e) { /* if check fails, allow delete */ }
     const { error } = await db().from("brain_learnings").delete().eq("id", id);
@@ -255,7 +255,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "update_learning") {
     const { id, improvement, tags } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
+    if (!id) return res.status(200).json({ error: "id required" });
     const { data, error } = await db().from("brain_learnings").update({
       improvement,
       tags: Array.isArray(tags) ? tags : (tags || "").split(",").map((t: string) => t.trim()).filter(Boolean),
@@ -267,7 +267,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "approve_learning") {
     const { id } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
+    if (!id) return res.status(200).json({ error: "id required" });
     const { data, error } = await db().from("brain_learnings")
       .update({ status: "active", updated_at: new Date().toISOString() }).eq("id", id).select().single();
     if (error) return res.status(200).json({ error: error.message });
@@ -276,7 +276,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "reject_learning") {
     const { id } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
+    if (!id) return res.status(200).json({ error: "id required" });
     const { data, error } = await db().from("brain_learnings")
       .update({ status: "rejected", updated_at: new Date().toISOString() }).eq("id", id).select().single();
     if (error) return res.status(200).json({ error: error.message });
@@ -285,7 +285,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
   if (action === "deactivate_learning") {
     const { id } = req.body;
-    if (!id) return res.status(400).json({ error: "id required" });
+    if (!id) return res.status(200).json({ error: "id required" });
     const { data, error } = await db().from("brain_learnings")
       .update({ status: "pending_review", updated_at: new Date().toISOString() }).eq("id", id).select().single();
     if (error) return res.status(200).json({ error: error.message });
@@ -296,7 +296,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   if (action === "add_canvas_card") {
     const { project_id, card: newCard } = req.body;
     if (!project_id || !newCard?.type || !newCard?.title) {
-      return res.status(400).json({ error: "project_id, card.type, and card.title are required" });
+      return res.status(200).json({ error: "project_id, card.type, and card.title are required" });
     }
     try {
       const { data: proj, error: projErr } = await db().from("projects")
@@ -338,7 +338,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   }
 
   /* ── All remaining actions require a card ── */
-  if (!card) return res.status(400).json({ error: "Missing card" });
+  if (!card) return res.status(200).json({ error: "Missing card" });
 
   /* ── REQUIREMENTS ── */
   if (action === "requirements") {
@@ -514,7 +514,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   /* ── EVALUATE ── */
   if (action === "evaluate") {
     const { output: executedOutput, executedRole, executedInputs, projectId } = req.body;
-    if (!executedOutput) return res.status(400).json({ error: "No output to evaluate" });
+    if (!executedOutput) return res.status(200).json({ error: "No output to evaluate" });
 
     const evaluatePrompt = [
       "You just produced the following output for a task. Now evaluate it honestly.",

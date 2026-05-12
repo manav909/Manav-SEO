@@ -166,7 +166,7 @@ function buildContextSection(ctx: ProjectContext, deliverableType: DeliverableTy
    MAIN HANDLER
 ───────────────────────────────────────────────────────────────── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
+  if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed." });
 
   let url: string, keyword: string, deliverableType: DeliverableType;
   let projectContext: ProjectContext | undefined;
@@ -179,7 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     projectContext  = req.body?.projectContext   ?? undefined;
     mode            = req.body?.mode === 'deep' ? 'deep' : 'standard';
   } catch (_e) {
-    return res.status(400).json({ error: "Could not parse request body." });
+    return res.status(200).json({ error: "Could not parse request body." });
   }
 
   // Mode-specific limits
@@ -188,10 +188,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     : { websiteChars: 8000,  maxTokens: 8000,  snippetNote: 'standard' };
 
   if (!url || !keyword || !deliverableType) {
-    return res.status(400).json({ error: "Missing required fields: url, keyword, deliverableType." });
+    return res.status(200).json({ error: "Missing required fields: url, keyword, deliverableType." });
   }
   if (!SYSTEM_PROMPTS[deliverableType]) {
-    return res.status(400).json({ error: `Invalid deliverableType. Must be one of: ${Object.keys(SYSTEM_PROMPTS).join(", ")}.` });
+    return res.status(200).json({ error: `Invalid deliverableType. Must be one of: ${Object.keys(SYSTEM_PROMPTS).join(", ")}.` });
   }
 
   const websiteContent = await fetchWebsiteContent(url, cfg.websiteChars);

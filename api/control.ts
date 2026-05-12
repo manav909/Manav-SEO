@@ -25,7 +25,7 @@ function fingerprint(input: any): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
   const sb = createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_SUPABASE_ANON_KEY!);
   const { action, projectId, payload } = req.body;
@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "get_context") {
     const s = (v: any) => (v == null ? "" : String(v));
     const [projR, metR, audR, knwR, docR] = await Promise.all([
-      sb.from("projects").select("*").eq("id", projectId).single(),
+      sb.from("projects").select("*, playground_canvas, playground_strategy").eq("id", projectId).single(),
       sb.from("metrics").select("*").eq("project_id", projectId).order("recorded_at",{ascending:false}).limit(3),
       sb.from("audit_reports").select("id,created_at,sections").eq("project_id", projectId).order("created_at",{ascending:false}).limit(3),
       sb.from("project_knowledge").select("*").eq("project_id", projectId),
@@ -46,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const r of (knwR.data||[])) { if (!kMap[r.category]) kMap[r.category]={}; kMap[r.category][r.field_key]=r.field_value||""; }
 
     return res.status(200).json({ success: true, context: {
-      project:   { name:proj?.name??"", url:proj?.url??"", keywords:proj?.keywords??[], competitors:proj?.competitors??[] },
+      project:   { name:proj?.name??"", url:proj?.url??"", keywords:proj?.keywords??[], competitors:proj?.competitors??[], canvasBlocks:(proj?.playground_canvas||proj?.playground_strategy?.canvas_blocks||[]) },
       goals:     { primary:kMap.goal?.primary_goal??"", timeline:kMap.goal?.target_timeline??"", success:kMap.goal?.success_metric??"", baseline:kMap.goal?.current_baseline??"", keywords:kMap.goal?.target_keywords??"" },
       tech:      { cms:kMap.cms?.cms??"", version:kMap.cms?.cms_version??"", theme:kMap.cms?.theme??"", seoPlugin:kMap.cms?.seo_plugin??"", caching:kMap.cms?.caching_plugin??"", hosting:kMap.cms?.hosting??"", otherPlugins:kMap.cms?.other_plugins??"", pagespdMobile:kMap.cms?.pagespeed_mobile??"", pagespdDesk:kMap.cms?.pagespeed_desktop??"", ssl:kMap.cms?.ssl??"" },
       analytics: { organicMonthly:kMap.analytics?.organic_sessions_monthly??"", baselineDate:kMap.analytics?.organic_sessions_baseline_date??"", topPages:kMap.analytics?.top_landing_pages??"", gscImpressions:kMap.analytics?.gsc_total_impressions??"", gscClicks:kMap.analytics?.gsc_total_clicks??"", gscAvgPos:kMap.analytics?.gsc_avg_position??"", conversions:kMap.analytics?.conversions_monthly??"" },
@@ -149,5 +149,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  return res.status(400).json({ error:`Unknown action: ${action}` });
+  return res.status(200).json({ error:`Unknown action: ${action}` });
 }

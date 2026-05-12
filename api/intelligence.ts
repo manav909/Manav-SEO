@@ -152,7 +152,7 @@ ALWAYS respond with:
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
   const {
     mode            = "chat",

@@ -50,7 +50,7 @@ async function generate(prompt: string, maxTokens: number, anthropic: any): Prom
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const anthropic = new Anthropic();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
   const {
     project, client: clientData,

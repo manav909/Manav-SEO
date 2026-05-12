@@ -65,7 +65,7 @@ const validKeySet = new Set([
 ]);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
   const { action = "audit" } = req.body;
 
@@ -78,12 +78,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       projectId = null,
     } = req.body;
 
-    if (!content) return res.status(400).json({ error: "No content provided" });
+    if (!content) return res.status(200).json({ error: "No content provided" });
 
     // Detect binary/garbled content (xlsx read as text)
     const nonPrintable = (content.match(/[\x00-\x08\x0e-\x1f\x7f-\x9f]/g) || []).length;
     if (nonPrintable > 50) {
-      return res.status(400).json({
+      return res.status(200).json({
         error: "binary_file",
         message: "This file appears to be a binary format (e.g. XLSX). Please export it as CSV first, then re-upload.",
       });
@@ -205,7 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   /* ── AUDIT (streaming) ── */
   const { url, keyword, mode = "standard", projectContext = "", projectId = null } = req.body;
-  if (!url) return res.status(400).json({ error: "URL required" });
+  if (!url) return res.status(200).json({ error: "URL required" });
 
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("X-Accel-Buffering", "no");

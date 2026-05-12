@@ -117,9 +117,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 async function _handler(req: VercelRequest, res: VercelResponse) {
   try {
-    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+    if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
     const { action } = req.body;
-    if (!action) return res.status(400).json({ error: "action required" });
+    if (!action) return res.status(200).json({ error: "action required" });
 
     // ══ GET CATALOG ══════════════════════════════════════════════════
     if (action === "get_catalog") {
@@ -159,7 +159,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       const anthropic = new Anthropic();
       const { topic_id, project_id = null } = req.body;
       const topic = TOPIC_CATALOG.find(t => t.id === topic_id);
-      if (!topic) return res.status(400).json({ error: "Unknown topic_id" });
+      if (!topic) return res.status(200).json({ error: "Unknown topic_id" });
 
       const msg = await anthropic.messages.create({
         model: "claude-sonnet-4-6", max_tokens: 3000,
@@ -199,7 +199,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     if (action === "fetch_custom_topic") {
       const anthropic = new Anthropic();
       const { label, engine = "google", category = "general", source = "User added", project_id = null } = req.body;
-      if (!label) return res.status(400).json({ error: "label required" });
+      if (!label) return res.status(200).json({ error: "label required" });
 
       const customTopic = { label, engine, category, source, added: new Date().toISOString().slice(0, 7) };
       const msg = await anthropic.messages.create({
@@ -220,7 +220,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     // ══ SAVE ITEM ════════════════════════════════════════════════════
     if (action === "save_item") {
       const { item, topic_id } = req.body;
-      if (!item?.title) return res.status(400).json({ error: "item required" });
+      if (!item?.title) return res.status(200).json({ error: "item required" });
 
       const tidTag    = topic_id ? `tid:${topic_id}` : null;
       const baseTags  = Array.isArray(item.tags) ? item.tags : [];
@@ -268,7 +268,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     // ══ DELETE ═══════════════════════════════════════════════════════
     if (action === "delete_item") {
       const { id } = req.body;
-      if (!id) return res.status(400).json({ error: "id required" });
+      if (!id) return res.status(200).json({ error: "id required" });
       const { error } = await db().from("algorithm_knowledge").delete().eq("id", id);
       if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true });
@@ -278,14 +278,14 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     if (action === "audit_against") {
       const anthropic = new Anthropic();
       const { pageData, projectContext = "", targetEngine = "google", project_id = null } = req.body;
-      if (!pageData) return res.status(400).json({ error: "pageData required" });
+      if (!pageData) return res.status(200).json({ error: "pageData required" });
 
       const { data: knowledge } = await db().from("algorithm_knowledge")
         .select("*").in("engine", [targetEngine, "general"])
         .order("impact_level", { ascending: true });
 
       if (!knowledge?.length) {
-        return res.status(400).json({ error: "No algorithm knowledge saved yet. Fetch topics from the Catalog tab first." });
+        return res.status(200).json({ error: "No algorithm knowledge saved yet. Fetch topics from the Catalog tab first." });
       }
 
       const knowledgeCtx = (knowledge as any[]).slice(0, 15).map(k => {
@@ -317,7 +317,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       const anthropic = new Anthropic();
       const { proposals, existingCards } = req.body;
       if (!Array.isArray(proposals) || !proposals.length) {
-        return res.status(400).json({ error: "proposals required" });
+        return res.status(200).json({ error: "proposals required" });
       }
       if (!Array.isArray(existingCards) || !existingCards.length) {
         return res.status(200).json({
@@ -359,7 +359,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, overlap: result });
     }
 
-    return res.status(400).json({ error: "Unknown action" });
+    return res.status(200).json({ error: "Unknown action" });
 
   } catch (fatalErr: any) {
     console.error("[algorithm-intel] Fatal:", fatalErr.message);
