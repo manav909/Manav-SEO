@@ -404,17 +404,33 @@ export default function ManavBrainAssistant() {
     const key = `brain_page_${page}_${new Date().toDateString()}`;
     if (proactiveDone.has(key)) return;
 
+    const metricsMsg = metrics
+      ? ("Checking your dashboard. Your LLM score is " + (metrics.llm_visibility ?? "??") + "/100.")
+      : "Checking your dashboard. No metrics yet — want me to run an audit to fill this in?";
+
+    const canvasMsg = canvasBlocks.length > 0
+      ? ("Looking at your canvas. You have " + canvasBlocks.length + " cards — want me to tell you which one to focus on first?")
+      : "Your canvas looks empty. Want me to suggest a starting strategy?";
+
+    const learningsMsg = learnings.length > 0
+      ? ("You have " + learnings.length + " active learnings. Want me to apply the best ones to your current canvas?")
+      : "As we work together, I'll start building up your learning library automatically.";
+
+    const deskMsg = deskItems.length > 0
+      ? ("Your desk has " + deskItems.length + " saved items. Want me to summarise the most important ones?")
+      : "Save anything useful here and I'll remind you about it when it matters.";
+
     const PAGE_MSGS: Record<string, string> = {
-      '/playground':     `I'm looking at your canvas right now. ${canvasBlocks.length > 0 ? `You have ${canvasBlocks.length} cards — want me to tell you which one to focus on first?` : "Your canvas looks empty. Want me to suggest a starting strategy?"}`,
-      '/dashboard':      `Checking your dashboard. ${metrics ? `Your LLM score is ${metrics.llm_visibility ?? '??'}/100.` : 'I don't see any metrics yet — want me to run an audit to fill this in?'}`,
-      '/data-room':      "This is where your project knowledge lives. The more you fill in here, the smarter my advice gets. Want help completing it?",
-      '/audit':          "Ready to run an audit? Drop your URL in and I'll find everything that needs fixing. Or I can start one now if you tell me which page to check.",
-      '/algorithm-intel':"Let's see what algorithm updates matter for your site. I'll flag anything that could be affecting your rankings right now.",
-      '/brain-learning': `You have ${learnings.length} active learnings. ${learnings.length > 0 ? "Want me to apply the best ones to your current canvas?" : "As we work together, I'll start building up your learning library automatically."}`,
-      '/desk':           `Your desk has ${deskItems.length} saved items. ${deskItems.length > 0 ? "Want me to summarise the most important ones?" : "I'll save anything useful here so you can come back to it."}`,
+      "/playground":     canvasMsg,
+      "/dashboard":      metricsMsg,
+      "/data-room":      "This is where your project knowledge lives. The more you fill in here, the smarter my advice gets. Want help completing it?",
+      "/audit":          "Ready to run an audit. Drop your URL in and I'll find everything that needs fixing. Or just ask me to start one.",
+      "/algorithm-intel":"Let me check what algorithm updates matter for your site. I'll flag anything that could be affecting your rankings.",
+      "/brain-learning": learningsMsg,
+      "/desk":           deskMsg,
     };
 
-    const msg = PAGE_MSGS[page];
+    const msg = PAGE_MSGS[page] || PAGE_MSGS[page.replace(/\/+$/, '')];
     if (!msg) return;
 
     setProactiveDone(s => new Set([...s, key]));
@@ -1010,7 +1026,7 @@ ${insights.join('
           setDeskSaving(null);
           if (data.error) { upd('error', data.error); break; }
           setDeskItems(prev => [data.item, ...prev]);
-          upd('done', `Saved to Desk ✅  "${action.title || 'Brain Note'}" — I'll remind you about it if it needs attention.`);
+          upd('done', "Saved to Desk ✅  \"" + (action.title || "Brain Note") + "\" — I'll remind you about it if it needs attention.");
           break;
         }
 
