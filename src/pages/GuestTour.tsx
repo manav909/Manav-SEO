@@ -540,7 +540,11 @@ export default function GuestTour() {
     setTimeout(()=>startNar(getNarration("playground",d as DemoProject)),500);
   },[]);
 
-  useEffect(()=>{botRef.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
+  const chatRef = useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    const el = chatRef.current;
+    if(el) el.scrollTop = el.scrollHeight;
+  },[msgs]);
 
   const startNar = useCallback((text:string)=>{
     setNarDone(false); setNar("");
@@ -743,28 +747,33 @@ export default function GuestTour() {
             <sec.Icon size={9} style={{color:sec.color}}/>
           </div>
 
-          {/* ── FIXED: narration + section capsules — ALWAYS visible ── */}
-          <div style={{flexShrink:0,padding:"10px 11px",borderBottom:msgs.length>0?"1px solid rgba(255,255,255,0.06)":"none"}}>
-            <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(6,182,212,0.09)",borderRadius:"4px 11px 11px 11px",padding:"9px 12px",marginBottom:narDone?7:0}}>
-              <p style={{fontSize:10,color:"rgba(255,255,255,0.68)",lineHeight:1.75,margin:0,whiteSpace:"pre-wrap"}}>{nar}{!narDone&&<span style={{animation:"blink 0.8s step-end infinite",color:"#6366f1"}}>|</span>}</p>
+          {/* ── FIXED top: narration (capped height) + nav + capsules ALWAYS visible ── */}
+          <div style={{flexShrink:0,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+            {/* Narration — maxHeight prevents it pushing chat out of view */}
+            <div style={{padding:"9px 11px 6px"}}>
+              <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(6,182,212,0.09)",borderRadius:"4px 11px 11px 11px",padding:"8px 11px",maxHeight:96,overflowY:"auto"}}>
+                <p style={{fontSize:10,color:"rgba(255,255,255,0.68)",lineHeight:1.7,margin:0,whiteSpace:"pre-wrap"}}>{nar}{!narDone&&<span style={{animation:"blink 0.8s step-end infinite",color:"#6366f1"}}>|</span>}</p>
+              </div>
             </div>
-            {narDone&&(
-              <>
-                <div style={{display:"flex",gap:5,marginBottom:6}}>
-                  {step>0&&<button onClick={()=>goStep(step-1)} style={{display:"flex",alignItems:"center",gap:3,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:7,padding:"5px 9px",color:"rgba(255,255,255,0.38)",fontSize:8,fontFamily:"monospace",cursor:"pointer"}}><ChevronLeft size={9}/>Back</button>}
-                  {step<SECTIONS.length-1
-                    ? <button onClick={()=>goStep(step+1)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:3,background:"linear-gradient(135deg,rgba(99,102,241,0.15),rgba(79,70,229,0.1))",border:"1px solid rgba(99,102,241,0.25)",borderRadius:7,padding:"6px",color:"#a5b4fc",fontSize:8,fontFamily:"monospace",cursor:"pointer",fontWeight:700}}>{SECTIONS[step+1].label}<ChevronRight size={9}/></button>
-                    : <button onClick={()=>setCta(true)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:3,background:"linear-gradient(135deg,#6366f1,#4f46e5)",border:"none",borderRadius:7,padding:"7px",color:"white",fontSize:8,fontFamily:"monospace",cursor:"pointer",fontWeight:700}}><Sparkles size={9}/>Get Started</button>
-                  }
-                </div>
-                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                  {(CAPSULES[sec.id]||[]).map((cap,i)=><button key={i} onClick={()=>tapCapsuleEx(cap.key)} style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.15)",borderRadius:12,padding:"3px 8px",fontSize:9,fontFamily:"monospace",color:"rgba(165,180,252,0.7)",cursor:"pointer"}}>{cap.label}</button>)}
-                </div>
-              </>
-            )}
+            {/* Nav buttons — always visible, no narDone gate */}
+            <div style={{padding:"0 11px 5px",display:"flex",gap:5}}>
+              {step>0&&<button onClick={()=>goStep(step-1)} style={{display:"flex",alignItems:"center",gap:3,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:7,padding:"5px 9px",color:"rgba(255,255,255,0.38)",fontSize:8,fontFamily:"monospace",cursor:"pointer"}}><ChevronLeft size={9}/>Back</button>}
+              {step<SECTIONS.length-1
+                ? <button onClick={()=>goStep(step+1)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:3,background:"linear-gradient(135deg,rgba(99,102,241,0.15),rgba(79,70,229,0.1))",border:"1px solid rgba(99,102,241,0.25)",borderRadius:7,padding:"6px",color:"#a5b4fc",fontSize:8,fontFamily:"monospace",cursor:"pointer",fontWeight:700}}>{SECTIONS[step+1].label}<ChevronRight size={9}/></button>
+                : <button onClick={()=>setCta(true)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:3,background:"linear-gradient(135deg,#6366f1,#4f46e5)",border:"none",borderRadius:7,padding:"7px",color:"white",fontSize:8,fontFamily:"monospace",cursor:"pointer",fontWeight:700}}><Sparkles size={9}/>Get Started</button>
+              }
+            </div>
+            {/* Section capsules — always visible, no narDone gate */}
+            <div style={{padding:"0 11px 8px",display:"flex",gap:4,flexWrap:"wrap"}}>
+              {(CAPSULES[sec.id]||[]).map((cap,i)=>(
+                <button key={i} onClick={()=>tapCapsuleEx(cap.key)} style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.15)",borderRadius:12,padding:"3px 8px",fontSize:9,fontFamily:"monospace",color:"rgba(165,180,252,0.7)",cursor:"pointer",opacity:narDone?1:0.5}}>
+                  {cap.label}
+                </button>
+              ))}
+            </div>
           </div>
           {/* ── SCROLLABLE: chat messages ── */}
-          <div style={{flex:1,overflow:"auto",padding:"8px 11px",display:"flex",flexDirection:"column",gap:6}}>
+          <div ref={chatRef} style={{flex:1,overflow:"auto",padding:"8px 11px",display:"flex",flexDirection:"column",gap:6}}>
             {msgs.map((m,idx)=>(
               <div key={idx}>
                 <div style={{display:"flex",alignItems:"flex-start",gap:6,justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
