@@ -1289,7 +1289,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
         evaluation.redo_reason ? `Redo approach: ${evaluation.redo_reason}` : '',
       ].filter(Boolean).join(' | ');
 
-      await fetch('/api/task-engine', {
+      const res  = await fetch('/api/task-engine', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action:          'save_learning',
@@ -1304,8 +1304,12 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
           tags:            [block.type, role, ...(block.priority ? [block.priority] : [])],
         }),
       });
+      const data = await res.json().catch(() => null);
+      if (!data || data.error) throw new Error(data?.error || `HTTP ${res.status}`);
       setLearningSaved(true);
-    } catch { /* non-blocking */ }
+    } catch (err: any) {
+      toast({ title: 'Failed to save learning', description: err?.message || 'Unknown error', variant: 'destructive' });
+    }
     setSavingLearning(false);
   };
 
