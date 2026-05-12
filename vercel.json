@@ -3,27 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "framework": null,
-
-  "functions": {
-    "api/algorithm-intel.ts":     { "maxDuration": 60 },
-    "api/analysis.ts":            { "maxDuration": 60 },
-    "api/auto-metrics.ts":        { "maxDuration": 60 },
-    "api/control.ts":             { "maxDuration": 30 },
-    "api/crawl.ts":               { "maxDuration": 60 },
-    "api/fetch-site-metrics.ts":  { "maxDuration": 60 },
-    "api/intelligence.ts":        { "maxDuration": 60 },
-    "api/launchpad.ts":           { "maxDuration": 60 },
-    "api/playground-analysis.ts": { "maxDuration": 60 },
-    "api/run-analysis.ts":        { "maxDuration": 60 },
-    "api/seo-agent.ts":           { "maxDuration": 60 },
-    "api/task-engine.ts":         { "maxDuration": 60 }
-  },
-
   "rewrites": [
-    {
-      "source": "/((?!api/).*)",
-      "destination": "/index.html"
-    }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
