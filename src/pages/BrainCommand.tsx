@@ -183,7 +183,7 @@ export default function BrainCommand() {
     setCanvas(cards);
     // Load project context
     try {
-      const res  = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" },
+      const res  = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Source": "app-page" },
         body: JSON.stringify({ action: "get_context", projectId: selProj }) });
       const json = await res.json().catch(() => ({}));
       if (json.context) setProjContext(json.context);
@@ -212,7 +212,7 @@ export default function BrainCommand() {
     setQueue(q => q.map(t => t.id === task.id ? { ...t, status: "running", startedAt: Date.now() } : t));
     try {
       const res = await fetch("/api/task-engine", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Source": "app-page" },
         body: JSON.stringify({ action: "execute", card: task.card, context: projContext || {},
           projectId: selProj, role: "senior_seo", brainLearnings: [] }),
       });
@@ -232,7 +232,7 @@ export default function BrainCommand() {
         : t));
       // Auto-save to desk
       if (full.length > 200 && selProj && !abortRefs.current[task.id]) {
-        await fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" },
+        await fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Source": "app-page" },
           body: JSON.stringify({ action: "save_to_desk", project_id: selProj,
             title: task.card.title || "Task Output", content: full,
             content_type: task.card.type === "technical" ? "code" : task.card.type === "audit" ? "audit" : "report",
@@ -269,7 +269,7 @@ export default function BrainCommand() {
   const saveTaskToDesk = useCallback(async (id: string) => {
     const task = queue.find(t => t.id === id);
     if (!task || !selProj) return;
-    await fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" },
+    await fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Source": "app-page" },
       body: JSON.stringify({ action: "save_to_desk", project_id: selProj,
         title: task.card.title, content: task.output,
         content_type: "report", source: "brain_command", tags: [task.card.type] }) });
@@ -291,7 +291,7 @@ export default function BrainCommand() {
         : "";
       const enrichedQuestion = text + queueContext;
 
-      const res = await fetch("/api/intelligence", { method: "POST", headers: { "Content-Type": "application/json" },
+      const res = await fetch("/api/intelligence", { method: "POST", headers: { "Content-Type": "application/json", "X-Brain-Source": "app-page" },
         body: JSON.stringify({
           mode: "brain_assistant",
           question: enrichedQuestion,

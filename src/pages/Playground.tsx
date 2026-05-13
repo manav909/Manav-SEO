@@ -1140,7 +1140,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     setPhase('loading');
     try {
       const res  = await fetch('/api/control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'get_context', projectId }),
       });
       const data = await safeJson(res);
@@ -1168,7 +1168,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     // Fetch relevant brain learnings for this card type
     try {
       const lr = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'get_relevant', project_id: projectId, card_type: block.type, limit: 8 }),
       });
       const ld = await lr.json().catch(() => ({ learnings: [] }));
@@ -1240,7 +1240,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     setEvaluating(true);
     try {
       const res  = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'evaluate', card: block, output: out, executedRole: role, executedInputs: getMergedInputs() }),
       });
       const data = await safeJson(res);
@@ -1258,7 +1258,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
     setShowHistory(false);
     try {
       const res = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'execute', card: block, context, userInputs: getMergedInputs(), role, brainLearnings }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -1290,7 +1290,7 @@ function InlineTaskExecutor({ block, projectId, siteUrl, projectSummary, onClose
       ].filter(Boolean).join(' | ');
 
       const res  = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({
           action:          'save_learning',
           project_id:      projectId,
@@ -1776,7 +1776,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
     setLoading(true); setResult(null); setStep(3);
     try {
       const res = await fetch('/api/task-engine', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', headers:{'Content-Type':'application/json','X-Brain-Source':'app-page'},
         body: JSON.stringify({action:'verify',card:block,siteUrl,completedAt:new Date(completedDate).toISOString(),checkType,completionNote,evidenceData}),
       });
       const data = await safeJson(res);
@@ -2477,7 +2477,7 @@ export default function Playground() {
     try {
       const res = await fetch('/api/task-engine', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({
           action:         'verify',
           card:           block,
@@ -2624,7 +2624,7 @@ export default function Playground() {
     try {
       const res = await fetch('/api/intelligence', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({
           mode: 'agenda',
           week,
@@ -2724,7 +2724,7 @@ Please try again — if the problem persists, check your network connection.`);
     setDdBlock(block);setDdText('');setDdLoading(true);
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
-      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'deep_dive',focusBlockId:block.id,blocks,projectSummary:proj,role:activeRole,dataRoom:projContext,cardRequirements:cardReqCache[block.id]||[]})});
+      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json','X-Brain-Source':'app-page'},body:JSON.stringify({mode:'deep_dive',focusBlockId:block.id,blocks,projectSummary:proj,role:activeRole,dataRoom:projContext,cardRequirements:cardReqCache[block.id]||[]})});
       if(!res.ok||!res.body) throw new Error('Request failed');
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setDdText(acc);}
@@ -2810,7 +2810,7 @@ Please try again — if the problem persists, check your network connection.`);
     setChatLoading(true);setChatResp('');
     const proj=`${client?.company||'Client'} | ${selProj?.url||''} | ${client?.industry||''}`;
     try {
-      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj,role:activeRole,dataRoom:projContext})});
+      const res=await fetch('/api/intelligence',{method:'POST',headers:{'Content-Type':'application/json','X-Brain-Source':'app-page'},body:JSON.stringify({question:chatQ,blocks:placedBlocks,projectSummary:proj,role:activeRole,dataRoom:projContext})});
       if(!res.ok||!res.body) throw new Error(`Server error ${res.status} — please try again`);
       const reader=res.body.getReader();const dec=new TextDecoder();let acc='';
       while(true){const{done,value}=await reader.read();if(done)break;acc+=dec.decode(value,{stream:true});setChatResp(acc);chatEndRef.current?.scrollIntoView({behavior:'smooth'});}

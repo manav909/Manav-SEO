@@ -653,7 +653,7 @@ export default function DataRoom() {
       // Step 2 — extract via API
       setUploadStatus('extracting');
       const res = await fetch('/api/analysis', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({
           action:         'extract',
           content:        text.slice(0, 15000),
@@ -728,7 +728,7 @@ export default function DataRoom() {
 
         // Mark strategy as stale — new data means old analysis is outdated
         fetch('/api/control', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
           body: JSON.stringify({
             action: 'log_change', projectId: selProjId,
             payload: {
@@ -780,7 +780,7 @@ export default function DataRoom() {
     setLibLoading(true);
     try {
       const res = await fetch('/api/crawl', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'load_cached', projectId: selProjId }),
       });
       const data = await safeJson(res);
@@ -825,7 +825,7 @@ export default function DataRoom() {
     setCrawlPreview(p => ({ ...p, [clean]: { status: 'loading' } }));
     try {
       const res  = await fetch('/api/crawl', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'preview_url', url: clean }),
       });
       const data = await safeJson(res);
@@ -855,7 +855,7 @@ export default function DataRoom() {
 
     try {
       const res = await fetch('/api/crawl', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({
           action:         'crawl_urls',
           urls:            lines,
@@ -1016,7 +1016,7 @@ export default function DataRoom() {
     // Each URL is already saved individually in crawled_pages — no session bundle needed.
     // Mark strategy stale
     fetch('/api/control', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
       body: JSON.stringify({
         action: 'log_change', projectId: selProjId,
         payload: { changeType: 'document', fieldPath: 'crawl', oldValue: null, newValue: `Crawl ${new Date().toLocaleDateString()}`, sourceName: 'URL Crawler' },
@@ -1062,7 +1062,7 @@ export default function DataRoom() {
         .map((b: any) => `[${b.type}] "${b.title}"`);
 
       const res  = await fetch('/api/crawl', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({
           action: 'crawl_urls', urls: [clean],
           projectContext: `${client?.company || ''} | ${selProj?.url || ''} | ${client?.industry || ''}`,
@@ -1113,7 +1113,7 @@ export default function DataRoom() {
       const existingBlocks = (projData?.playground_canvas || []) as any[];
 
       const res = await fetch('/api/crawl', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({
           action:         'compare_analysis',
           // Only send the active URL subset for comparison
@@ -1198,7 +1198,7 @@ Evidence: ${c.data_basis}` : ''}`,
 
       // Mark strategy stale
       fetch('/api/control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'log_change', projectId: selProjId, payload: { changeType: 'canvas', fieldPath: 'canvas.crawl_cards', oldValue: null, newValue: `${newCards.length} cards from URL crawler`, sourceName: 'URL Crawler' } }),
       }).catch(() => {});
 
@@ -1219,7 +1219,7 @@ Evidence: ${c.data_basis}` : ''}`,
     setReExtractingId(doc.id);
     try {
       const res = await fetch('/api/analysis', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({
           action:         'extract',
           content:        doc.raw_content.slice(0, 15000),

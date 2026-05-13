@@ -392,7 +392,7 @@ export default function BrainLearning() {
   /* ── API actions ── */
   async function callBrain(action: string, id: string): Promise<Learning | null> {
     const res  = await fetch('/api/task-engine', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
       body: JSON.stringify({ action, id }),
     });
     const data = await res.json().catch(() => null);
@@ -434,7 +434,7 @@ export default function BrainLearning() {
   const handleDelete = async (id: string) => {
     try {
       const res  = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'delete_learning', id }),
       });
       const data = await res.json().catch(() => null);
@@ -450,7 +450,7 @@ export default function BrainLearning() {
     setSaving(true);
     try {
       const res  = await fetch('/api/task-engine', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
         body: JSON.stringify({ action: 'update_learning', id: editingL.id, improvement: editText }),
       });
       const data = await res.json().catch(() => null);
