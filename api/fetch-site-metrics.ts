@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { extractAndSaveLearning } from "./ai-cache";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+export const config = { maxDuration: 120 };
+
 async function fetchPageSpeed(url: string) {
   try {
     const fullUrl = url.startsWith('http') ? url : `https://${url}`;

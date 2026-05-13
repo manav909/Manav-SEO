@@ -3,7 +3,7 @@ import { extractAndSaveLearning } from "./ai-cache";
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 /* ── Lazy DB — never throws on module load ── */
 function db() {

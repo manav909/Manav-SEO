@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { extractAndSaveLearning } from "./ai-cache";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 120 };
 
 /* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {

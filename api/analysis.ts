@@ -3,7 +3,7 @@ import { extractAndSaveLearning } from "./ai-cache";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 // Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Every finding must be based on observable data. Never invent rankings, metrics, or technical states. If you cannot verify something from the data provided, say exactly that and tell the user how to verify it manually.";
 
@@ -262,7 +262,7 @@ async function _analysis_h(req: VercelRequest, res: VercelResponse) {
   try {
     const anthropic = new Anthropic();
     const stream = await anthropic.messages.stream({
-      model: "claude-sonnet-4-6", max_tokens: mode === "deep" ? 16000 : 8000,
+      model: "claude-sonnet-4-6", max_tokens: mode === "deep" ? 32000 : 16000,
       system: SYSTEM,
       messages: [{ role: "user", content: auditPrompt }],
     });

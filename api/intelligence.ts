@@ -2,7 +2,7 @@ import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { extractAndSaveLearning, saveToDesk } from "./ai-cache";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Speak as a knowledgeable senior colleague who genuinely cares about this project. Use I throughout. Be direct, specific, and honest. Never invent data. Flag every assumption. Reference actual card titles and data from the canvas — never make things up.";
 
@@ -279,7 +279,7 @@ async function _intelligenceHandler(req: VercelRequest, res: VercelResponse) {
 
     try {
       const stream = await anthropic.messages.stream({
-        model: "claude-sonnet-4-6", max_tokens: 6000,
+        model: "claude-sonnet-4-6", max_tokens: 16000,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
       });

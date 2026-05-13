@@ -8,7 +8,7 @@ function getAI(): Anthropic {
 import { extractAndSaveLearning } from "./ai-cache";
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 
 /* ══════════════════════════════════════════════════
@@ -228,7 +228,7 @@ Return ONLY the JSON. No other text.`;
   try {
     const response = await getAI().messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
+      max_tokens: 4000,
       messages: [{ role: 'user', content: prompt }],
     });
     const raw = response.content[0].type === 'text' ? response.content[0].text : '{}';
@@ -548,7 +548,7 @@ Return ONLY valid JSON:
   try {
     const response = await getAI().messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
+      max_tokens: 6000,
       messages: [{ role: 'user', content: prompt }],
     });
     const raw     = response.content[0].type === 'text' ? response.content[0].text : '{}';

@@ -6,7 +6,7 @@
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 10 };
+export const config = { maxDuration: 15 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const results: Record<string, any> = {};

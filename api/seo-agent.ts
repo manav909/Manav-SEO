@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { extractAndSaveLearning } from "./ai-cache";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 type DeliverableType = "Technical" | "On-Page" | "Off-Page" | "GEO";
 
