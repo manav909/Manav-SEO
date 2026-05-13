@@ -1050,21 +1050,55 @@ export default function ManavBrainAssistant() {
       {/* ─── FLOATING BUTTON ─── */}
       {!open && (
         <button onClick={() => setOpen(true)}
-          style={{position:'fixed',bottom:24,right:24,zIndex:9990,width:60,height:60,borderRadius:'50%',border:'none',cursor:'pointer',
-            background: alertCount>0 ? 'linear-gradient(135deg,#7f1d1d,#1f0505)' : health==='healing' ? 'linear-gradient(135deg,#0d4f3c,#0a1f1a)' : 'linear-gradient(135deg,#1e1b4b,#0a0f1e)',
-            boxShadow: alertCount>0 ? '0 0 0 1px rgba(239,68,68,0.6),0 0 40px rgba(239,68,68,0.5)' : `0 0 0 1px ${hc.glow},0 0 30px ${hc.glow}`,
-            display:'flex',alignItems:'center',justifyContent:'center',
+          style={{
+            position:'fixed',
+            /* Sits on the RIGHT EDGE, vertically centred — never covers page content */
+            top:'50%',
+            right:0,
+            transform:'translateY(-50%)',
+            zIndex:9990,
+            width:36,
+            height:72,
+            borderRadius:'12px 0 0 12px',  /* flat right edge flush with viewport */
+            border:'none',
+            cursor:'pointer',
+            background: alertCount>0
+              ? 'linear-gradient(180deg,rgba(127,29,29,0.95),rgba(31,5,5,0.95))'
+              : health==='healing'
+              ? 'linear-gradient(180deg,rgba(13,79,60,0.95),rgba(10,31,26,0.95))'
+              : 'linear-gradient(180deg,rgba(30,27,75,0.95),rgba(10,15,30,0.95))',
+            boxShadow: alertCount>0
+              ? '-2px 0 0 0 rgba(239,68,68,0.6),-4px 0 20px rgba(239,68,68,0.35)'
+              : `-2px 0 0 0 ${hc.glow},-4px 0 18px ${hc.glow}`,
+            display:'flex',
+            flexDirection:'column',
+            alignItems:'center',
+            justifyContent:'center',
+            gap:4,
+            backdropFilter:'blur(12px)',
             animation: alertCount>0 ? 'alertPulse 0.8s ease-in-out infinite' : 'brainPulse 3s ease-in-out infinite',
           }}>
-          <Brain size={24} style={{color:alertCount>0?'#fca5a5':'#a5b4fc',filter:`drop-shadow(0 0 8px ${alertCount>0?'rgba(239,68,68,0.8)':'rgba(99,102,241,0.8)'})`}}/>
-          {alertCount>0 && <div style={{position:'absolute',top:2,right:2,width:20,height:20,borderRadius:'50%',background:'#ef4444',border:'2px solid #030712',fontSize:9,fontWeight:900,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'monospace'}}>{alertCount>9?'9+':alertCount}</div>}
-          {alertCount===0 && pending>0 && <div style={{position:'absolute',top:2,right:2,width:18,height:18,borderRadius:'50%',background:'#f59e0b',border:'2px solid #030712',fontSize:9,fontWeight:900,color:'#030712',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'monospace'}}>{pending>9?'9+':pending}</div>}
+          <Brain size={16} style={{color:alertCount>0?'#fca5a5':'#a5b4fc',filter:`drop-shadow(0 0 6px ${alertCount>0?'rgba(239,68,68,0.8)':'rgba(99,102,241,0.8)'})`}}/>
+          {/* Vertical label */}
+          <span style={{fontSize:7,fontFamily:'monospace',fontWeight:700,color:alertCount>0?'rgba(252,165,165,0.7)':'rgba(165,180,252,0.5)',writingMode:'vertical-rl',letterSpacing:'0.12em',lineHeight:1}}>
+            BRAIN
+          </span>
+          {alertCount>0 && (
+            <div style={{position:'absolute',top:6,right:4,width:16,height:16,borderRadius:'50%',background:'#ef4444',border:'2px solid #030712',fontSize:8,fontWeight:900,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'monospace'}}>
+              {alertCount>9?'9+':alertCount}
+            </div>
+          )}
+          {alertCount===0 && pending>0 && (
+            <div style={{position:'absolute',top:6,right:4,width:14,height:14,borderRadius:'50%',background:'#f59e0b',border:'2px solid #030712',fontSize:7,fontWeight:900,color:'#030712',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'monospace'}}>
+              {pending>9?'9+':pending}
+            </div>
+          )}
         </button>
       )}
 
       {/* ─── PANEL ─── */}
       {open && (
-        <div style={{position:'fixed',bottom:24,right:24,zIndex:9990,width:panelW,height:panelH,borderRadius:20,overflow:'hidden',background:'#030712',border:`1px solid ${alertCount>0?'rgba(239,68,68,0.3)':'rgba(99,102,241,0.22)'}`,boxShadow:`0 0 80px ${alertCount>0?'rgba(239,68,68,0.1)':'rgba(99,102,241,0.1)'},0 20px 60px rgba(0,0,0,0.85)`,display:'flex',flexDirection:'column',transition:'all 0.3s cubic-bezier(0.4,0,0.2,1)'}}>
+        <div style={{position:'fixed',bottom:24,right:40,zIndex:9990,width:panelW,height:panelH,borderRadius:20,overflow:'hidden',background:'#030712',border:`1px solid ${alertCount>0?'rgba(239,68,68,0.3)':'rgba(99,102,241,0.22)'}`,boxShadow:`0 0 80px ${alertCount>0?'rgba(239,68,68,0.1)':'rgba(99,102,241,0.1)'},0 20px 60px rgba(0,0,0,0.85)`,display:'flex',flexDirection:'column',transition:'all 0.3s cubic-bezier(0.4,0,0.2,1)'}}>
           <Scanlines/>
           {scanLine && <div style={{position:'absolute',top:0,left:0,right:0,height:2,zIndex:10,background:'linear-gradient(90deg,transparent,rgba(6,182,212,0.9),transparent)',animation:'scanSlide 2.5s linear forwards',pointerEvents:'none'}}/>}
           <div style={{position:'absolute',inset:0,zIndex:0,overflow:'hidden',borderRadius:20}}>
