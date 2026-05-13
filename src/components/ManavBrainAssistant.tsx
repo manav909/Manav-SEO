@@ -255,6 +255,52 @@ export default function ManavBrainAssistant() {
 
   const panelW = expanded ? 700 : 440;
   const panelH = expanded ? 740 : 620;
+
+  /* ── Draggable position state ── */
+  const [btnPos, setBtnPos] = React.useState<{x:number;y:number}|null>(null);
+  const dragRef  = React.useRef<{startX:number;startY:number;origX:number;origY:number;dragging:boolean}>({startX:0,startY:0,origX:0,origY:0,dragging:false});
+  const btnRef   = React.useRef<HTMLButtonElement>(null);
+
+  // Default pos: bottom-right (matches original)
+  const btnLeft  = btnPos ? btnPos.x : (typeof window !== 'undefined' ? window.innerWidth  - 84 : 0);
+  const btnTop   = btnPos ? btnPos.y : (typeof window !== 'undefined' ? window.innerHeight - 84 : 0);
+
+  const onMouseDown = React.useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: btnLeft, origY: btnTop, dragging: false };
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - dragRef.current.startX;
+      const dy = ev.clientY - dragRef.current.startY;
+      if (!dragRef.current.dragging && Math.hypot(dx, dy) < 4) return;
+      dragRef.current.dragging = true;
+      const maxX = window.innerWidth  - 60;
+      const maxY = window.innerHeight - 60;
+      setBtnPos({ x: Math.max(0, Math.min(maxX, dragRef.current.origX + dx)), y: Math.max(0, Math.min(maxY, dragRef.current.origY + dy)) });
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  }, [btnLeft, btnTop]);
+
+  const onTouchStart = React.useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    dragRef.current = { startX: t.clientX, startY: t.clientY, origX: btnLeft, origY: btnTop, dragging: false };
+    const onMove = (ev: TouchEvent) => {
+      const touch = ev.touches[0];
+      const dx = touch.clientX - dragRef.current.startX;
+      const dy = touch.clientY - dragRef.current.startY;
+      if (!dragRef.current.dragging && Math.hypot(dx, dy) < 6) return;
+      dragRef.current.dragging = true;
+      setBtnPos({ x: Math.max(0, Math.min(window.innerWidth-60, dragRef.current.origX+dx)), y: Math.max(0, Math.min(window.innerHeight-60, dragRef.current.origY+dy)) });
+    };
+    const onEnd = () => { window.removeEventListener('touchmove', onMove); window.removeEventListener('touchend', onEnd); };
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+  }, [btnLeft, btnTop]);
   const hc     = HEALTH_CFG[health];
 
   /* ───────────────────────────────────────────────────────────────
@@ -1047,42 +1093,37 @@ export default function ManavBrainAssistant() {
 
   return (
     <>
-      {/* ─── FLOATING BUTTON ─── */}
+      {/* ─── FLOATING BUTTON (draggable round pill) ─── */}
       {!open && (
-        <button onClick={() => setOpen(true)}
+        <button
+          ref={btnRef}
+          onMouseDown={onMouseDown}
+          onTouchStart={onTouchStart}
+          onClick={() => { if (!dragRef.current.dragging) setOpen(true); }}
           style={{
             position:'fixed',
-            /* Sits on the RIGHT EDGE, vertically centred — never covers page content */
-            top:'50%',
-            right:0,
-            transform:'translateY(-50%)',
+            left: btnLeft,
+            top:  btnTop,
             zIndex:9990,
-            width:36,
-            height:72,
-            borderRadius:'12px 0 0 12px',  /* flat right edge flush with viewport */
+            width:60, height:60,
+            borderRadius:'50%',
             border:'none',
-            cursor:'pointer',
+            cursor:'grab',
+            userSelect:'none',
+            touchAction:'none',
             background: alertCount>0
-              ? 'linear-gradient(180deg,rgba(127,29,29,0.95),rgba(31,5,5,0.95))'
+              ? 'linear-gradient(135deg,#7f1d1d,#1f0505)'
               : health==='healing'
-              ? 'linear-gradient(180deg,rgba(13,79,60,0.95),rgba(10,31,26,0.95))'
-              : 'linear-gradient(180deg,rgba(30,27,75,0.95),rgba(10,15,30,0.95))',
+              ? 'linear-gradient(135deg,#0d4f3c,#0a1f1a)'
+              : 'linear-gradient(135deg,#1e1b4b,#0a0f1e)',
             boxShadow: alertCount>0
-              ? '-2px 0 0 0 rgba(239,68,68,0.6),-4px 0 20px rgba(239,68,68,0.35)'
-              : `-2px 0 0 0 ${hc.glow},-4px 0 18px ${hc.glow}`,
-            display:'flex',
-            flexDirection:'column',
-            alignItems:'center',
-            justifyContent:'center',
-            gap:4,
-            backdropFilter:'blur(12px)',
+              ? '0 0 0 1px rgba(239,68,68,0.6),0 0 40px rgba(239,68,68,0.5),0 8px 32px rgba(0,0,0,0.6)'
+              : `0 0 0 1px ${hc.glow},0 0 30px ${hc.glow},0 8px 32px rgba(0,0,0,0.6)`,
+            display:'flex', alignItems:'center', justifyContent:'center',
             animation: alertCount>0 ? 'alertPulse 0.8s ease-in-out infinite' : 'brainPulse 3s ease-in-out infinite',
+            transition: 'box-shadow 0.2s, background 0.2s',
           }}>
-          <Brain size={16} style={{color:alertCount>0?'#fca5a5':'#a5b4fc',filter:`drop-shadow(0 0 6px ${alertCount>0?'rgba(239,68,68,0.8)':'rgba(99,102,241,0.8)'})`}}/>
-          {/* Vertical label */}
-          <span style={{fontSize:7,fontFamily:'monospace',fontWeight:700,color:alertCount>0?'rgba(252,165,165,0.7)':'rgba(165,180,252,0.5)',writingMode:'vertical-rl',letterSpacing:'0.12em',lineHeight:1}}>
-            BRAIN
-          </span>
+          <Brain size={24} style={{color:alertCount>0?'#fca5a5':'#a5b4fc',filter:`drop-shadow(0 0 8px ${alertCount>0?'rgba(239,68,68,0.8)':'rgba(99,102,241,0.8)'})`}}/>
           {alertCount>0 && (
             <div style={{position:'absolute',top:6,right:4,width:16,height:16,borderRadius:'50%',background:'#ef4444',border:'2px solid #030712',fontSize:8,fontWeight:900,color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'monospace'}}>
               {alertCount>9?'9+':alertCount}
@@ -1098,7 +1139,18 @@ export default function ManavBrainAssistant() {
 
       {/* ─── PANEL ─── */}
       {open && (
-        <div style={{position:'fixed',bottom:24,right:40,zIndex:9990,width:panelW,height:panelH,borderRadius:20,overflow:'hidden',background:'#030712',border:`1px solid ${alertCount>0?'rgba(239,68,68,0.3)':'rgba(99,102,241,0.22)'}`,boxShadow:`0 0 80px ${alertCount>0?'rgba(239,68,68,0.1)':'rgba(99,102,241,0.1)'},0 20px 60px rgba(0,0,0,0.85)`,display:'flex',flexDirection:'column',transition:'all 0.3s cubic-bezier(0.4,0,0.2,1)'}}>
+        <div style={{
+          position:'fixed',
+          /* Spawn near the button's position, clamped to viewport */
+          bottom: btnPos ? Math.max(16, window.innerHeight - btnPos.y - panelH - 30) : 24,
+          right:  btnPos ? Math.max(16, window.innerWidth  - btnPos.x - panelW)        : 24,
+          zIndex:9990, width:panelW, height:panelH, borderRadius:20,
+          overflow:'hidden', background:'#030712',
+          border:`1px solid ${alertCount>0?'rgba(239,68,68,0.3)':'rgba(99,102,241,0.22)'}`,
+          boxShadow:`0 0 80px ${alertCount>0?'rgba(239,68,68,0.1)':'rgba(99,102,241,0.1)'},0 20px 60px rgba(0,0,0,0.85)`,
+          display:'flex', flexDirection:'column',
+          animation:'brainOpen 0.28s cubic-bezier(0.34,1.56,0.64,1) forwards',
+        }}>
           <Scanlines/>
           {scanLine && <div style={{position:'absolute',top:0,left:0,right:0,height:2,zIndex:10,background:'linear-gradient(90deg,transparent,rgba(6,182,212,0.9),transparent)',animation:'scanSlide 2.5s linear forwards',pointerEvents:'none'}}/>}
           <div style={{position:'absolute',inset:0,zIndex:0,overflow:'hidden',borderRadius:20}}>
@@ -1332,6 +1384,7 @@ export default function ManavBrainAssistant() {
       )}
 
       <style>{`
+        @keyframes brainOpen  { 0%{opacity:0;transform:scale(0.82) translateY(10px);}60%{transform:scale(1.03) translateY(-2px);}100%{opacity:1;transform:scale(1) translateY(0);} }
         @keyframes brainPulse { 0%,100%{box-shadow:0 0 0 1px rgba(99,102,241,0.4),0 0 30px rgba(99,102,241,0.35);}50%{box-shadow:0 0 0 1px rgba(99,102,241,0.7),0 0 55px rgba(99,102,241,0.55);} }
         @keyframes alertPulse { 0%,100%{box-shadow:0 0 0 1px rgba(239,68,68,0.6),0 0 40px rgba(239,68,68,0.5);}50%{box-shadow:0 0 0 2px rgba(239,68,68,0.9),0 0 65px rgba(239,68,68,0.75);} }
         @keyframes alertBadge { from{transform:scale(1);}to{transform:scale(1.2);} }
