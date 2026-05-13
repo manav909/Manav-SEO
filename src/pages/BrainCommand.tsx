@@ -137,12 +137,36 @@ function TaskRow({ task, onCancel, onSave }: {
       </div>
       {/* Expanded output */}
       {expanded && task.output && (
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "10px 14px",
-          maxHeight: 240, overflowY: "auto", background: "rgba(0,0,0,0.2)" }}>
-          <pre style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, margin: 0,
-            whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit" }}>
+        <div style={{
+          borderTop: "1px solid rgba(255,255,255,0.05)", padding: "10px 14px",
+          maxHeight: 300, overflowY: "auto",
+          background: task.status === "error" ? "rgba(239,68,68,0.04)" : "rgba(0,0,0,0.2)",
+        }}>
+          {task.status === "error" && (
+            <div style={{ marginBottom: 8, fontSize: 9, fontFamily: "monospace", color: "#ef4444",
+              background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+              borderRadius: 6, padding: "5px 8px", display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <span>❌</span>
+              <span>Task failed — output below is the error returned by the server. Check Vercel → Functions → Logs for the full crash trace.</span>
+            </div>
+          )}
+          <pre style={{
+            fontSize: 10, lineHeight: 1.7, margin: 0,
+            whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit",
+            color: task.status === "error" ? "rgba(252,165,165,0.8)" : "rgba(255,255,255,0.55)",
+          }}>
             {task.output}
           </pre>
+          {task.status === "done" && !task.savedDesk && (
+            <div style={{ marginTop: 8, fontSize: 8, color: "rgba(255,255,255,0.2)", fontFamily: "monospace" }}>
+              Output not yet saved to Desk — click the save button above.
+            </div>
+          )}
+          {task.status === "done" && task.savedDesk && (
+            <div style={{ marginTop: 8, fontSize: 8, color: "#10b981", fontFamily: "monospace" }}>
+              ✓ Saved to Desk
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -262,7 +286,30 @@ export default function BrainCommand() {
       if (active.length > 0) await Promise.race(active);
     }
     setRunning(false);
-    setChatMsgs(m => [...m, { role: "brain", text: "All " + pending.length + " tasks complete. Outputs saved to Desk automatically. What would you like to do next?" }]);
+    // Read actual final task statuses to give an honest report
+    setQueue(finalQueue => {
+      const ran      = finalQueue.filter(t => pending.some(p => p.id === t.id));
+      const done     = ran.filter(t => t.status === "done");
+      const errors   = ran.filter(t => t.status === "error");
+      const cancelled= ran.filter(t => t.status === "cancelled");
+
+      let msg = "";
+      if (errors.length === 0 && cancelled.length === 0) {
+        msg = `✅ All ${done.length} task${done.length !== 1 ? "s" : ""} completed successfully. Outputs saved to Desk.`;
+      } else if (done.length === 0) {
+        msg = `❌ All ${errors.length} task${errors.length !== 1 ? "s" : ""} failed.\n\n` +
+          errors.map(t => `• **${t.card.title}**: ${t.output.slice(0, 150)}`).join("\n") +
+          "\n\nI couldn't complete these. This usually means the API function crashed or timed out. Check Vercel logs or try again.";
+      } else {
+        const errList = errors.map(t => `• **${t.card.title}**: ${t.output.slice(0, 120)}`).join("\n");
+        msg = `⚠️ ${done.length} task${done.length !== 1 ? "s" : ""} succeeded, ${errors.length} failed.\n\n` +
+          `**Failed tasks:**\n${errList}\n\n` +
+          `Successful outputs saved to Desk. Failed tasks can be retried — clear the queue, re-add them, and run again.`;
+      }
+
+      setChatMsgs(m => [...m, { role: "brain" as const, text: msg }]);
+      return finalQueue;
+    });
   }, [queue, selProj, projContext]);
 
   /* Save task output to desk manually */
