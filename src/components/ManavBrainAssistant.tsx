@@ -733,6 +733,60 @@ export default function ManavBrainAssistant() {
           upd('done', 'Saved to Desk: ' + (action.title || 'Brain Output'));
           break;
         }
+        case 'save_learning': {
+          if (!selProj) { upd('error', 'No project selected'); break; }
+          const res = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              action: 'save_learning', project_id: selProj,
+              card_type:       action.cardType       || action.card_type       || 'insight',
+              card_title:      action.title          || action.card_title      || 'Brain Learning',
+              what_worked:     action.whatWorked     || action.what_worked     || [],
+              what_missed:     action.whatMissed     || action.what_missed     || [],
+              improvement:     action.improvement    || action.content         || '',
+              context_summary: action.summary        || action.context_summary || '',
+              tags:            action.tags           || [action.cardType || 'insight', 'brain-created'],
+            }) });
+          const data = await res.json();
+          if (data.error) { upd('error', 'Could not save learning: ' + data.error); break; }
+          upd('done', '✅ Brain Learning saved: ' + (action.title || 'New Pathway'));
+          break;
+        }
+        case 'save_multiple_learnings': {
+          if (!selProj) { upd('error', 'No project selected'); break; }
+          const learnings: any[] = action.learnings || [];
+          if (!learnings.length) { upd('done', 'No learnings to save'); break; }
+          upd('running', `Saving ${learnings.length} brain learnings...`);
+          let saved = 0;
+          for (const l of learnings) {
+            try {
+              const res = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({
+                  action: 'save_learning', project_id: selProj,
+                  card_type:       l.cardType       || l.card_type       || 'insight',
+                  card_title:      l.title          || l.card_title      || 'Brain Learning',
+                  what_worked:     l.whatWorked     || l.what_worked     || [l.insight || ''],
+                  what_missed:     l.whatMissed     || l.what_missed     || [],
+                  improvement:     l.improvement    || l.content         || '',
+                  context_summary: l.summary        || l.context_summary || '',
+                  tags:            l.tags           || [l.cardType || 'insight', 'brain-auto'],
+                }) });
+              const d = await res.json();
+              if (!d.error) saved++;
+            } catch (_e) { /* continue */ }
+          }
+          upd('done', `✅ ${saved}/${learnings.length} brain learnings saved permanently`);
+          break;
+        }
+        case 'fetch_url': {
+          upd('running', `Fetching ${action.url}...`);
+          try {
+            const res = await brainFetch('/api/crawl', { method:'POST', headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ action: 'preview_url', url: action.url }) });
+            const data = await res.json();
+            upd('done', `Fetched ${action.url}: ${JSON.stringify(data).slice(0, 200)}`);
+          } catch (e: any) { upd('error', e.message); }
+          break;
+        }
         default: upd('done', `Action ${action.type} acknowledged.`);
       }
     } catch (err: any) { upd('error', err?.message || 'Action failed'); }
