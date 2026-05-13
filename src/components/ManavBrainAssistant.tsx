@@ -374,8 +374,8 @@ export default function ManavBrainAssistant() {
 
   /* ── Health scan: 5s delay, then every 5 minutes ── */
   useEffect(() => {
-    const t1 = setTimeout(() => runHealthScan(), 5000);
-    const t2 = setInterval(() => runHealthScan(), 5 * 60 * 1000);
+    const t1 = setTimeout(() => runHealthScan(), 2000);
+    const t2 = setInterval(() => runHealthScan(), 3 * 60 * 1000);
     return () => { clearTimeout(t1); clearInterval(t2); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -429,11 +429,18 @@ export default function ManavBrainAssistant() {
     healCooldown.current = true;
     setTimeout(() => { healCooldown.current = false; }, 60000); // 60s cooldown
 
-    setHealth('critical');
-    setOpen(true);
-    setTab('chat');
+    // Only auto-open panel for JS/React crashes — not for API 500s (handled by retry)
+    const isCriticalCrash = err.type === 'js_error' || err.type === 'react_error';
+    if (isCriticalCrash) {
+      setHealth('critical');
+      setOpen(true);
+      setTab('chat');
+      setTimeout(() => triggerHealing(err), 1000);
+    } else {
+      // API errors: just mark degraded, don't interrupt the user
+      setHealth('degraded');
+    }
     void logSystemError(err);
-    setTimeout(() => triggerHealing(err), 1000);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ───────────────────────────────────────────────────────────────
@@ -492,20 +499,21 @@ export default function ManavBrainAssistant() {
     setScanLine(true);
     const next: Record<string, 'ok'|'error'|'checking'> = {};
 
-    // Use dedicated health_check endpoint — retry once for cold starts (Hobby plan)
+    // Health check — Pro plan: no cold start issues, fast response expected
     const checkTaskEngine = async (): Promise<'ok'|'error'> => {
       try {
         const r = await brainFetch('/api/task-engine', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ action: 'health_check' }),
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(8000),
         });
-        const d = await r.json().catch(() => ({}));
-        return (d.healthy || r.ok) ? 'ok' : 'error';
+        if (r.ok) return 'ok';
+        const text = await r.text().catch(() => '');
+        return text.length > 0 ? 'ok' : 'error';
       } catch (_e) { return 'error'; }
     };
     next['task-engine'] = await checkTaskEngine();
-    // Retry once — cold starts on Hobby plan are common
+    // One retry for transient network issues
     if (next['task-engine'] === 'error') {
       await new Promise(r => setTimeout(r, 2000));
       next['task-engine'] = await checkTaskEngine();
