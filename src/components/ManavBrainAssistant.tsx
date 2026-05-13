@@ -714,6 +714,14 @@ export default function ManavBrainAssistant() {
           break;
         }
 
+        case 'retry_last': {
+          const lastUserMsg = msgs.filter(m => m.role === 'user').pop();
+          if (lastUserMsg) {
+            upd('done', '');
+            setTimeout(() => sendMessage(stripActions(lastUserMsg.content)), 300);
+          } else { upd('done', 'No message to retry.'); }
+          break;
+        }
         case 'save_to_desk': {
           if (!selProj) { upd('error', 'No project selected'); break; }
           const res = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
@@ -777,11 +785,19 @@ export default function ManavBrainAssistant() {
       });
 
       if (!res.body) throw new Error('Stream unavailable');
-      // If intelligence crashed (500), read error and show it cleanly
+      // If intelligence crashed (500), show a human-friendly message with retry action
       if (!res.ok) {
-        const errText = await res.text().catch(() => 'API error');
-        const cleanErr = errText.replace(/<[^>]+>/g, '').trim().slice(0, 200);
-        throw new Error(cleanErr || `API returned ${res.status}`);
+        const errText = await res.text().catch(() => '');
+        const isVercelCrash = errText.includes('FUNCTION_INVOCATION_FAILED') || errText.includes('A server error');
+        const friendlyMsg = isVercelCrash
+          ? '⚡ I hit a server error — this happens occasionally during cold starts or heavy load.\n\nClick **Retry** below to try again, or wait 10 seconds and resend your message.\n\n*Technical: ' + errText.replace(/<[^>]+>/g, ' ').trim().slice(0, 120) + '*'
+          : '⚡ I could not reach the intelligence API (HTTP ' + res.status + ').\n\nPlease try again in a moment.';
+        setMsgs(ms => ms.map(m => m.id===brainId
+          ? { ...m, content: friendlyMsg, actions: [{type:'retry_last', label:'↺ Retry', icon:'refresh'}] }
+          : m
+        ));
+        setLoading(false);
+        return;
       }
       const reader = res.body.getReader();
       const dec    = new TextDecoder();
