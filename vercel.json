@@ -4,8 +4,47 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "functions": {
-    "api/*.ts": {
+    "api/intelligence.ts": {
+      "maxDuration": 300
+    },
+    "api/task-engine.ts": {
+      "maxDuration": 300
+    },
+    "api/run-analysis.ts": {
+      "maxDuration": 300
+    },
+    "api/crawl.ts": {
+      "maxDuration": 300
+    },
+    "api/seo-agent.ts": {
+      "maxDuration": 300
+    },
+    "api/analysis.ts": {
+      "maxDuration": 300
+    },
+    "api/playground-analysis.ts": {
+      "maxDuration": 300
+    },
+    "api/algorithm-intel.ts": {
+      "maxDuration": 180
+    },
+    "api/launchpad.ts": {
+      "maxDuration": 120
+    },
+    "api/auto-metrics.ts": {
+      "maxDuration": 120
+    },
+    "api/fetch-site-metrics.ts": {
+      "maxDuration": 120
+    },
+    "api/control.ts": {
       "maxDuration": 60
+    },
+    "api/ai-cache.ts": {
+      "maxDuration": 30
+    },
+    "api/health-diagnostic.ts": {
+      "maxDuration": 15
     }
   },
   "rewrites": [
