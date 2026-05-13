@@ -1,7 +1,52 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { extractAndSaveLearning } from "./ai-cache";
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+
+/* ─── Inline brain helpers (self-contained, no cross-file imports) ─── */
+import { createClient as _sbCreate } from "@supabase/supabase-js";
+function _sbClient() {
+  return _sbCreate(
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
+    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
+  );
+}
+async function extractAndSaveLearning(
+  source: string, projectId: string | null, output: string,
+  metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
+): Promise<void> {
+  if (!projectId || !output || output.length < 200 || output.startsWith("Error:")) return;
+  try {
+    const row: any = {
+      project_id: projectId, source,
+      card_type:       metadata.card_type       || "insight",
+      card_title:      (metadata.card_title     || source).slice(0, 60),
+      context_summary: metadata.context_summary || source,
+      what_worked: [], what_missed: [],
+      improvement: output.slice(0, 300),
+      tags: [source.split("_")[0]].filter(Boolean),
+      applied_count: 0, updated_at: new Date().toISOString(),
+    };
+    try {
+      await _sbClient().from("brain_learnings").insert({ ...row, status: "pending_review", auto_captured: true, confidence_score: 65 });
+    } catch (_e) {
+      try { await _sbClient().from("brain_learnings").insert(row); } catch (_e2) { /* silent */ }
+    }
+  } catch (_e) { /* never crash callers */ }
+}
+async function saveToDesk(
+  projectId: string | null, title: string, content: string,
+  contentType: string, source: string, tags: string[] = []
+): Promise<void> {
+  if (!projectId || !content || content.length < 50) return;
+  try {
+    await _sbClient().from("brain_desk").insert({
+      project_id: projectId, title: title.slice(0, 200), content_type: contentType,
+      content, source, tags: [...tags, source].filter(Boolean),
+      pinned: false, metadata: { auto_saved: true }, updated_at: new Date().toISOString(),
+    });
+  } catch (_e) { /* silent */ }
+}
+
 
 export const config = { maxDuration: 300 };
 
