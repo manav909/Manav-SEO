@@ -168,10 +168,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (checkUrl) liveContent = await fetchUrl(checkUrl);
 
   /* ── Set streaming headers ── */
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.setHeader("Cache-Control", "no-cache");
-  res.status(200);
+  res.writeHead(200, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "X-Accel-Buffering": "no",
+    "Cache-Control": "no-cache, no-transform",
+    "Transfer-Encoding": "chunked",
+  });
 
   let systemPrompt = "";
   let userPrompt   = "";

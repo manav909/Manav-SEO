@@ -431,10 +431,12 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       .map((u: string) => u.trim().startsWith("http") ? u.trim() : `https://${u.trim()}`)
       .filter(u => u.length > 8);
 
-    res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.setHeader("Cache-Control", "no-cache");
-    res.status(200);
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson",
+      "X-Accel-Buffering": "no",
+      "Cache-Control": "no-cache, no-transform",
+      "Transfer-Encoding": "chunked",
+    });
 
     const cache = projectId ? await getCached(projectId, urlList) : {};
     const results: any[] = [];

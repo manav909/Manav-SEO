@@ -240,10 +240,12 @@ ${mode === 'deep' ? `- DEEP MODE: Be exhaustive. Every section should have maxim
 - If you are running long, compress bullet depth but NEVER skip or merge sections
   `.trim();
 
-  res.setHeader("Content-Type",      "text/plain; charset=utf-8");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.setHeader("Cache-Control",     "no-cache");
-  res.status(200);
+  res.writeHead(200, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "X-Accel-Buffering": "no",
+    "Cache-Control": "no-cache, no-transform",
+    "Transfer-Encoding": "chunked",
+  });
 
   try {
     const client = new Anthropic();
