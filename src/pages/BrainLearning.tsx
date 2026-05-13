@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Brain, Zap, RefreshCw, Search, X, ChevronDown, ChevronRight,
@@ -100,6 +101,7 @@ function calcDimScores(learnings: Learning[]): Record<string, number> {
 function NeuralBackground() {
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{zIndex:0}}>
+      <HelpPanel {...HELP["brain-learning"]} pageId="brain-learning" />
       {/* Dark base */}
       <div style={{position:'absolute',inset:0,background:'#030712'}}/>
       {/* Grid lines */}

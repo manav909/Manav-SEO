@@ -11,6 +11,7 @@
  * - Voice: speak commands
  */
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -77,6 +78,7 @@ function TaskRow({ task, onCancel, onSave }: {
       border: `1px solid ${task.status === "error" ? "rgba(239,68,68,0.25)" : task.status === "done" ? "rgba(16,185,129,0.2)" : color + "22"}`,
       transition: "all 0.3s",
     }}>
+      <HelpPanel {...HELP["brain-command"]} pageId="brain-command" />
       {/* Row header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer" }}
         onClick={() => setExpanded(e => !e)}>

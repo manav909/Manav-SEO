@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -413,6 +414,7 @@ export default function Admin() {
           if (!cp.length) return null;
           return (
             <optgroup key={c.id} label={`${c.name} — ${c.company}`}>
+              <HelpPanel {...HELP["admin"]} pageId="admin" />
               {cp.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name} ({p.url}){p.last_analysis_at ? ' ✓' : ''}

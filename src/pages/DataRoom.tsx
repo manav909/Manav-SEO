@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import PortalNav from '@/components/PortalNav';
@@ -265,6 +266,7 @@ function PageResultCard({ r, isOwn, isComp, onSelectOwn, onSelectComp, selectedO
 
   return (
     <div className={`rounded-xl border ${borderColor} ${bgColor} overflow-hidden transition-all`}>
+      <HelpPanel {...HELP["data-room"]} pageId="data-room" />
       {/* Header row */}
       <div className="flex items-start gap-3 px-4 py-3 cursor-pointer" onClick={()=>setExpanded(e=>!e)}>
         <div className={`h-2 w-2 rounded-full shrink-0 mt-1.5 ${r.status===200?'bg-green-400':r.error?'bg-red-400':'bg-yellow-400'}`}/>
