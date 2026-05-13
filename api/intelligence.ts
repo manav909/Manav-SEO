@@ -126,6 +126,8 @@ RULES:
 2. Use ACTION tags to execute operations (format below).
 3. End every response with the single highest-value next action.
 4. If data is missing, tell the user exactly which page has it.
+5. When asked to "learn", "remember", or "save" insights about a project — ALWAYS emit save_learning or save_multiple_learnings ACTION tags with the actual intelligence you've analysed. Never just describe learnings without saving them.
+6. After analysing a project, proactively save all key insights using save_multiple_learnings. Each learning needs: title (max 8 words), improvement (1 actionable sentence), cardType (technical/content/insight/geo/competitive), tags.
 
 EXECUTABLE ACTIONS:
 Navigate: ⟦ACTION⟧{"type":"navigate","path":"/playground","label":"Open Strategy Canvas"}⟦/ACTION⟧
@@ -138,7 +140,16 @@ Navigate: ⟦ACTION⟧{"type":"navigate","path":"/brain-command","label":"Open B
 Navigate: ⟦ACTION⟧{"type":"navigate","path":"/desk","label":"Open Brain Desk"}⟦/ACTION⟧
 Run audit: ⟦ACTION⟧{"type":"run_audit","url":"https://example.com","label":"Run SEO Audit"}⟦/ACTION⟧
 Add card: ⟦ACTION⟧{"type":"add_card","cardType":"technical","title":"Fix crawl errors","content":"Detail","priority":"high","week":1,"label":"Add Card"}⟦/ACTION⟧
-Search brain: ⟦ACTION⟧{"type":"search_brain","query":"technical","label":"Search Brain Learnings"}⟦/ACTION⟧`;
+Search brain: ⟦ACTION⟧{"type":"search_brain","query":"technical","label":"Search Brain Learnings"}⟦/ACTION⟧
+
+Save a single brain learning permanently:
+⟦ACTION⟧{"type":"save_learning","cardType":"insight","title":"Alpha Software: LLM Score 20/100 — invisible to AI engines","improvement":"Fix GEO: rewrite /mobile-forms intro, add FAQPage schema, target Perplexity citation triggers","whatWorked":["HubSpot CMS structure is clean"],"whatMissed":["No conversational content for AI engines","Zero FAQ schema coverage"],"summary":"LLM visibility crisis — site not cited by ChatGPT or Perplexity","tags":["llm","geo","critical"],"label":"Save Learning: LLM Crisis"}⟦/ACTION⟧
+
+Save multiple brain learnings at once (use this when encoding multiple insights):
+⟦ACTION⟧{"type":"save_multiple_learnings","learnings":[{"cardType":"technical","title":"HubSpot SEO plugin not configured","improvement":"Configure HubSpot SEO plugin: canonical tags, meta robots, XML sitemap","whatWorked":[],"whatMissed":["SEO plugin not set — meta tags may be missing"],"summary":"Technical gap","tags":["technical","hubspot"]},{"cardType":"insight","title":"Zero rankings on 5 core keywords","improvement":"Build topical clusters around each keyword before targeting directly","whatWorked":[],"whatMissed":["No content targeting primary keywords"],"summary":"Content gap","tags":["keywords","content"]}],"label":"Save 2 Alpha Software Learnings"}⟦/ACTION⟧
+
+Fetch and analyse a URL:
+⟦ACTION⟧{"type":"fetch_url","url":"https://alphasoftware.com/mobile-forms","label":"Fetch /mobile-forms live content"}⟦/ACTION⟧`;
 
   const user = [
     `PROJECT INTELLIGENCE:`,
