@@ -805,9 +805,13 @@ export default function BrainLearning() {
         @keyframes spin   { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
         @keyframes pulse  { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
       `}</style>
-      {enrichTarget && learnings.length > 0
-        ? <DeepEnrichModal
-            learning={(learnings.find(x => x.id === enrichTarget) || learnings[0] || {} as any) as any}
+      {enrichTarget && (() => {
+        // Only render if we found the exact learning — never pass empty object
+        const enrichLearning = learnings.find(x => x.id === enrichTarget);
+        if (!enrichLearning) return null;
+        return (
+          <DeepEnrichModal
+            learning={enrichLearning as any}
             projectUrl={''}
             onClose={() => setEnrichTarget(null)}
             onSaved={(updates) => {
@@ -815,7 +819,8 @@ export default function BrainLearning() {
               setEnrichTarget(null);
             }}
           />
-        : null}
+        );
+      })()}
     </div>
   );
 }
