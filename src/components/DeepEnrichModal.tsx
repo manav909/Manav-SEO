@@ -87,6 +87,11 @@ function DataStream() {
 
 /* ─── Main component ─── */
 export default function DeepEnrichModal({ learning, projectUrl, onClose, onSaved }: Props) {
+  // Safety guard — if learning is incomplete/undefined, close immediately
+  React.useEffect(() => {
+    if (!learning || !learning.id) { onClose(); }
+  }, [learning, onClose]);
+
   const [phase,        setPhase]        = useState<'questions'|'analysing'|'result'>('questions');
   const [answers,      setAnswers]      = useState<Answers>({});
   const [stageIdx,     setStageIdx]     = useState(0);
@@ -136,9 +141,9 @@ export default function DeepEnrichModal({ learning, projectUrl, onClose, onSaved
             `DEEP ENRICHMENT PROTOCOL — No assumptions, hard facts only.`,
             ``,
             `LEARNING TO ENRICH:`,
-            `Title: ${learning.card_title}`,
-            `Type: ${learning.card_type}`,
-            `Confidence: ${learning.confidence_score || 75}/100`,
+            `Title: ${learning.card_title || 'Brain Learning'}`,
+            `Type: ${learning.card_type || 'insight'}`,
+            `Confidence: ${(learning.confidence_score ?? 75)}/100`,
             `Gaps: ${(learning.what_missed||[]).join(' | ') || 'Not defined'}`,
             `Current directive: ${learning.improvement || 'Not defined'}`,
             `Context: ${learning.context_summary || 'Not provided'}`,
@@ -157,7 +162,7 @@ export default function DeepEnrichModal({ learning, projectUrl, onClose, onSaved
             `HARD RULES:`,
             `- Never say "we need to check" without also stating what the answer likely is`,
             `- Every insight must reference the specific card type (${learning.card_type}) and context`,
-            `- Confidence must increase from current ${learning.confidence_score || 75} — explain why`,
+            `- Confidence must increase from current ${(learning.confidence_score ?? 75)} — explain why`,
             ``,
             `After your analysis, emit this exact ACTION tag:`,
             `⟦ACTION⟧{"type":"save_learning","title":"[improved title]","cardType":"${learning.card_type}","whatWorked":["insight1","insight2","insight3","insight4"],"whatMissed":["gap1 — why it matters","gap2 — why it matters","gap3 — why it matters"],"improvement":"[sharp one-sentence directive]","confidence_score":[number 75-95],"summary":"${learning.context_summary||learning.card_title}","tags":["${learning.card_type}","enriched","brain-deep"]}⟦/ACTION⟧`,
@@ -198,11 +203,12 @@ export default function DeepEnrichModal({ learning, projectUrl, onClose, onSaved
             what_worked:     action.whatWorked      || action.what_worked   || [],
             what_missed:     action.whatMissed      || action.what_missed   || [],
             improvement:     action.improvement     || null,
-            confidence_score:Math.min(95, Number(action.confidence_score) || (learning.confidence_score || 75) + 10),
+            confidence_score:Math.min(95, Number(action.confidence_score) || ((learning.confidence_score ?? 75)) + 10),
             context_summary: action.summary         || learning.context_summary,
           };
 
           // Update Supabase
+          if (!learning?.id) throw new Error('Learning ID missing — cannot update');
           const { error: dbErr } = await supabase
             .from('brain_learnings')
             .update({ ...updates, updated_at: new Date().toISOString() })
