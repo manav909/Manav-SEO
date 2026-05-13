@@ -735,19 +735,26 @@ export default function ManavBrainAssistant() {
         }
         case 'save_learning': {
           if (!selProj) { upd('error', 'No project selected'); break; }
-          const res = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({
-              action: 'save_learning', project_id: selProj,
-              card_type:       action.cardType       || action.card_type       || 'insight',
-              card_title:      action.title          || action.card_title      || 'Brain Learning',
-              what_worked:     action.whatWorked     || action.what_worked     || [],
-              what_missed:     action.whatMissed     || action.what_missed     || [],
-              improvement:     action.improvement    || action.content         || '',
-              context_summary: action.summary        || action.context_summary || '',
-              tags:            action.tags           || [action.cardType || 'insight', 'brain-created'],
-            }) });
-          const data = await res.json();
-          if (data.error) { upd('error', 'Could not save learning: ' + data.error); break; }
+          const row: any = {
+            project_id:      selProj,
+            card_type:       action.cardType       || action.card_type       || 'insight',
+            card_title:      (action.title         || action.card_title      || 'Brain Learning').slice(0, 100),
+            what_worked:     Array.isArray(action.whatWorked) ? action.whatWorked : action.whatWorked ? [action.whatWorked] : [],
+            what_missed:     Array.isArray(action.whatMissed) ? action.whatMissed : action.whatMissed ? [action.whatMissed] : [],
+            improvement:     action.improvement    || action.content         || '',
+            context_summary: action.summary        || action.context_summary || '',
+            tags:            Array.isArray(action.tags) ? action.tags : [action.cardType || 'insight', 'brain-created'],
+            source:          'brain_chat',
+            applied_count:   0,
+            updated_at:      new Date().toISOString(),
+          };
+          let { error } = await supabase.from('brain_learnings').insert({
+            ...row, status: 'active', auto_captured: true, confidence_score: 80,
+          });
+          if (error) {
+            const fb = await supabase.from('brain_learnings').insert(row);
+            if (fb.error) { upd('error', 'Could not save: ' + fb.error.message); break; }
+          }
           upd('done', '✅ Brain Learning saved: ' + (action.title || 'New Pathway'));
           break;
         }
@@ -757,22 +764,33 @@ export default function ManavBrainAssistant() {
           if (!learnings.length) { upd('done', 'No learnings to save'); break; }
           upd('running', `Saving ${learnings.length} brain learnings...`);
           let saved = 0;
+          // Use supabase client directly — bypasses API function module issues
           for (const l of learnings) {
             try {
-              const res = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({
-                  action: 'save_learning', project_id: selProj,
-                  card_type:       l.cardType       || l.card_type       || 'insight',
-                  card_title:      l.title          || l.card_title      || 'Brain Learning',
-                  what_worked:     l.whatWorked     || l.what_worked     || [l.insight || ''],
-                  what_missed:     l.whatMissed     || l.what_missed     || [],
-                  improvement:     l.improvement    || l.content         || '',
-                  context_summary: l.summary        || l.context_summary || '',
-                  tags:            l.tags           || [l.cardType || 'insight', 'brain-auto'],
-                }) });
-              const d = await res.json();
-              if (!d.error) saved++;
-            } catch (_e) { /* continue */ }
+              const row: any = {
+                project_id:      selProj,
+                card_type:       l.cardType       || l.card_type       || 'insight',
+                card_title:      (l.title         || l.card_title      || 'Brain Learning').slice(0, 100),
+                what_worked:     Array.isArray(l.whatWorked  || l.what_worked)  ? (l.whatWorked||l.what_worked)   : l.whatWorked ? [l.whatWorked]   : [],
+                what_missed:     Array.isArray(l.whatMissed  || l.what_missed)  ? (l.whatMissed||l.what_missed)   : l.whatMissed ? [l.whatMissed]   : [],
+                improvement:     l.improvement    || l.content         || '',
+                context_summary: l.summary        || l.context_summary || '',
+                tags:            Array.isArray(l.tags) ? l.tags : [l.cardType || 'insight', 'brain-auto'],
+                source:          'brain_chat',
+                applied_count:   0,
+                updated_at:      new Date().toISOString(),
+              };
+              // Try with extended columns, fall back gracefully
+              let { error } = await supabase.from('brain_learnings').insert({
+                ...row, status: 'active', auto_captured: true, confidence_score: 80,
+              });
+              if (error) {
+                const fb = await supabase.from('brain_learnings').insert(row);
+                if (!fb.error) saved++;
+              } else {
+                saved++;
+              }
+            } catch (_e) { /* continue with next learning */ }
           }
           upd('done', `✅ ${saved}/${learnings.length} brain learnings saved permanently`);
           break;
