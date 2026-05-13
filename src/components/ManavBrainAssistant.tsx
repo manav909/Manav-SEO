@@ -752,8 +752,16 @@ export default function ManavBrainAssistant() {
             ...row, status: 'active', auto_captured: true, confidence_score: 80,
           });
           if (error) {
-            const fb = await supabase.from('brain_learnings').insert(row);
-            if (fb.error) { upd('error', 'Could not save: ' + fb.error.message); break; }
+            const { error: e2 } = await supabase.from('brain_learnings').insert(row);
+            if (e2) {
+              // Try via API as last resort
+              try {
+                const ar = await brainFetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json','X-Brain-Source':'app-page'},
+                  body: JSON.stringify({ action:'save_learning', project_id: selProj, ...row }) });
+                const ad = await ar.json().catch(()=>({}));
+                if (ad.error) { upd('error', `Could not save learning: ${error.message || ad.error}`); break; }
+              } catch(_e) { upd('error', `Could not save: ${error.message}`); break; }
+            }
           }
           upd('done', '✅ Brain Learning saved: ' + (action.title || 'New Pathway'));
           break;
@@ -764,35 +772,55 @@ export default function ManavBrainAssistant() {
           if (!learnings.length) { upd('done', 'No learnings to save'); break; }
           upd('running', `Saving ${learnings.length} brain learnings...`);
           let saved = 0;
-          // Use supabase client directly — bypasses API function module issues
+          let lastError = '';
+
           for (const l of learnings) {
+            // Build the row — only columns that definitely exist in the schema
+            const row: any = {
+              project_id:      selProj,
+              card_type:       (l.cardType || l.card_type || 'insight').toLowerCase(),
+              card_title:      (l.title || l.card_title || 'Brain Learning').slice(0, 100),
+              what_worked:     Array.isArray(l.whatWorked || l.what_worked) ? (l.whatWorked || l.what_worked) : [],
+              what_missed:     Array.isArray(l.whatMissed || l.what_missed) ? (l.whatMissed || l.what_missed) : [],
+              improvement:     l.improvement || l.content || null,
+              context_summary: l.summary || l.context_summary || null,
+              tags:            Array.isArray(l.tags) ? l.tags : ['brain-auto'],
+              source:          'brain_chat',
+              applied_count:   0,
+              updated_at:      new Date().toISOString(),
+            };
+
+            // ATTEMPT 1: Direct Supabase with all extended columns
+            const { error: e1 } = await supabase.from('brain_learnings').insert({
+              ...row, status: 'pending_review', auto_captured: true, confidence_score: 75
+            });
+            if (!e1) { saved++; continue; }
+
+            // ATTEMPT 2: Direct Supabase without extended columns (migration not run)
+            const { error: e2 } = await supabase.from('brain_learnings').insert(row);
+            if (!e2) { saved++; continue; }
+
+            // ATTEMPT 3: Via task-engine API (server-side, different permissions)
             try {
-              const row: any = {
-                project_id:      selProj,
-                card_type:       l.cardType       || l.card_type       || 'insight',
-                card_title:      (l.title         || l.card_title      || 'Brain Learning').slice(0, 100),
-                what_worked:     Array.isArray(l.whatWorked  || l.what_worked)  ? (l.whatWorked||l.what_worked)   : l.whatWorked ? [l.whatWorked]   : [],
-                what_missed:     Array.isArray(l.whatMissed  || l.what_missed)  ? (l.whatMissed||l.what_missed)   : l.whatMissed ? [l.whatMissed]   : [],
-                improvement:     l.improvement    || l.content         || '',
-                context_summary: l.summary        || l.context_summary || '',
-                tags:            Array.isArray(l.tags) ? l.tags : [l.cardType || 'insight', 'brain-auto'],
-                source:          'brain_chat',
-                applied_count:   0,
-                updated_at:      new Date().toISOString(),
-              };
-              // Try with extended columns, fall back gracefully
-              let { error } = await supabase.from('brain_learnings').insert({
-                ...row, status: 'active', auto_captured: true, confidence_score: 80,
+              const apiRes = await brainFetch('/api/task-engine', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
+                body: JSON.stringify({ action: 'save_learning', project_id: selProj, ...row }),
               });
-              if (error) {
-                const fb = await supabase.from('brain_learnings').insert(row);
-                if (!fb.error) saved++;
-              } else {
-                saved++;
-              }
-            } catch (_e) { /* continue with next learning */ }
+              const apiData = await apiRes.json().catch(() => ({}));
+              if (!apiData.error) { saved++; continue; }
+              lastError = apiData.error || e2?.message || e1?.message || 'Unknown error';
+            } catch (_e3) {
+              lastError = e2?.message || e1?.message || 'Insert failed';
+            }
           }
-          upd('done', `✅ ${saved}/${learnings.length} brain learnings saved permanently`);
+
+          if (saved === 0 && lastError) {
+            upd('error', `❌ Could not save any learnings. Error: ${lastError}\n\nThis is likely a Supabase RLS policy issue. Go to Supabase Dashboard → brain_learnings table → RLS Policies → ensure authenticated users can INSERT.`);
+          } else if (saved < learnings.length) {
+            upd('done', `⚠️ ${saved}/${learnings.length} saved. ${learnings.length - saved} failed (${lastError})`);
+          } else {
+            upd('done', `✅ ${saved}/${learnings.length} brain learnings saved permanently`);
+          }
           break;
         }
         case 'fetch_url': {
