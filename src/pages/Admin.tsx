@@ -849,7 +849,7 @@ export default function Admin() {
                   <div>
                     <div className="text-sm font-semibold text-yellow-400 mb-1">Review Before Pushing to Dashboard</div>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Overall confidence: <span className="font-bold text-foreground">{aiResult.overall_confidence}%</span>.
+                      Overall confidence: <span className="font-bold text-foreground">{aiResult?.overall_confidence ?? 0}%</span>.
                       Verified data shown in <span className="text-green-400 font-semibold">green</span>.
                       Estimated data in <span className="text-yellow-400 font-semibold">yellow</span>.
                       Edit any value, then save to dashboard.
@@ -858,13 +858,13 @@ export default function Admin() {
                 </div>
 
                 {/* Cross-verification results */}
-                {Object.keys(aiResult.cross_verifications || {}).length > 0 && (
+                {Object.keys(aiResult?.cross_verifications || {}).length > 0 && (
                   <div className="rounded-2xl border border-border bg-card/60 p-4">
                     <div className="font-semibold text-sm mb-3 flex items-center gap-2">
                       <Shield className="h-4 w-4 text-primary" />Cross-Verification Results
                     </div>
                     <div className="space-y-2">
-                      {Object.entries(aiResult.cross_verifications).map(([key, v]: [string, any]) => (
+                      {Object.entries(aiResult?.cross_verifications).map(([key, v]: [string, any]) => (
                         <div key={key} className={`rounded-lg border p-3 ${v.agreement ? 'border-green-400/20 bg-green-400/5' : 'border-yellow-400/20 bg-yellow-400/5'}`}>
                           <div className="flex items-center gap-2 mb-0.5">
                             {v.agreement
@@ -887,14 +887,14 @@ export default function Admin() {
                     <CheckCircle className="h-4 w-4 text-green-400" />
                     <span className="font-semibold text-sm">Analysis Preview</span>
                     <span className="ml-auto text-xs text-muted-foreground">
-                      {new Date(aiResult.fetched_at).toLocaleString()}
+                      {new Date(aiResult?.fetched_at).toLocaleString()}
                     </span>
                   </div>
 
-                  {aiResult.synthesis?.overall_verdict && (
+                  {aiResult?.synthesis?.overall_verdict && (
                     <div className="rounded-xl border border-border bg-background/60 p-3 mb-4">
                       <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-1">Verdict</div>
-                      <p className="text-sm">{aiResult.synthesis.overall_verdict}</p>
+                      <p className="text-sm">{aiResult?.synthesis?.overall_verdict}</p>
                     </div>
                   )}
 
@@ -925,7 +925,7 @@ export default function Admin() {
                         Keyword Rankings — Live Google SERP ✓
                       </div>
                       <div className="space-y-2">
-                        {aiResult.analysis.keyword_rankings.map((k: any, i: number) => {
+                        {(aiResult?.analysis?.keyword_rankings || []).map((k: any, i: number) => {
                           const col = !k.found ? 'text-orange-400' : k.page===1 ? 'text-green-400' : k.page===2 ? 'text-yellow-400' : 'text-orange-400';
                           const bg  = !k.found ? 'bg-orange-400/5 border-orange-400/20' : k.page===1 ? 'bg-green-400/5 border-green-400/20' : k.page===2 ? 'bg-yellow-400/5 border-yellow-400/20' : 'bg-orange-400/5 border-orange-400/20';
                           return (

@@ -620,6 +620,7 @@ export default function Dashboard() {
       if (chartTo   && d > chartTo)   return false;
       return true;
     })
+    .filter((m): m is NonNullable<typeof m> => m != null)
     .map(m => ({
       date:     fmtShort(m.recorded_at),
       fullDate: toDateStr(m.recorded_at),

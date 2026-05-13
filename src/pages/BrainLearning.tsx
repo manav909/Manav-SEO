@@ -805,9 +805,9 @@ export default function BrainLearning() {
         @keyframes spin   { from { transform: rotate(0deg);   } to { transform: rotate(360deg); } }
         @keyframes pulse  { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
       `}</style>
-      {enrichTarget
+      {enrichTarget && learnings.length > 0
         ? <DeepEnrichModal
-            learning={learnings.find(x => x.id === enrichTarget) as any || learnings[0] as any}
+            learning={(learnings.find(x => x.id === enrichTarget) || learnings[0] || {} as any) as any}
             projectUrl={''}
             onClose={() => setEnrichTarget(null)}
             onSaved={(updates) => {
