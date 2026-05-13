@@ -84,12 +84,6 @@
       "regions": [
         "iad1"
       ]
-    },
-    "api/ai-cache.ts": {
-      "maxDuration": 10,
-      "regions": [
-        "iad1"
-      ]
     }
   },
   "rewrites": [
