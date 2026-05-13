@@ -427,7 +427,7 @@ export default function ManavBrainAssistant() {
 
     if (healCooldown.current) return;
     healCooldown.current = true;
-    setTimeout(() => { healCooldown.current = false; }, 60000); // 60s cooldown
+    setTimeout(() => { healCooldown.current = false; }, 300000); // 5min cooldown — prevents cascade
 
     // Only auto-open panel for JS/React crashes — not for API 500s (handled by retry)
     const isCriticalCrash = err.type === 'js_error' || err.type === 'react_error';
@@ -753,7 +753,7 @@ export default function ManavBrainAssistant() {
   /* ───────────────────────────────────────────────────────────────
      SEND MESSAGE — uses brainFetch for the /api/intelligence call
   ─────────────────────────────────────────────────────────────── */
-  const sendMsgInternal = useCallback(async (text: string, isAuto = false, sourceErr?: SysError) => {
+  const sendMsgInternal = useCallback(async (text: string, isAuto = false, sourceErr?: SysError, isRetry = false) => {
     if (!text.trim() || loading) return;
     streamActive.current = true;
     setLoading(true);
@@ -789,9 +789,19 @@ export default function ManavBrainAssistant() {
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
         const isVercelCrash = errText.includes('FUNCTION_INVOCATION_FAILED') || errText.includes('A server error');
+        // Auto-retry once silently before showing error to user
+        if (!isRetry) {
+          setMsgs(ms => ms.map(m => m.id===brainId
+            ? { ...m, content: '◈ Retrying...' }
+            : m
+          ));
+          await new Promise(r => setTimeout(r, 3000)); // wait 3s for cold start
+          void sendMsgInternal(text, isAuto, sourceErr, true); // retry flag = true
+          return;
+        }
         const friendlyMsg = isVercelCrash
-          ? '⚡ I hit a server error — this happens occasionally during cold starts or heavy load.\n\nClick **Retry** below to try again, or wait 10 seconds and resend your message.\n\n*Technical: ' + errText.replace(/<[^>]+>/g, ' ').trim().slice(0, 120) + '*'
-          : '⚡ I could not reach the intelligence API (HTTP ' + res.status + ').\n\nPlease try again in a moment.';
+          ? '⚡ I hit a server error both times I tried. This is likely a region deployment issue that your developer needs to fix (deploy with regions: iad1 in vercel.json).\n\n*Technical: ' + errText.replace(/<[^>]+>/g, ' ').trim().slice(0, 120) + '*'
+          : '⚡ Could not reach the intelligence API (HTTP ' + res.status + '). Please try again in a moment.';
         setMsgs(ms => ms.map(m => m.id===brainId
           ? { ...m, content: friendlyMsg, actions: [{type:'retry_last', label:'↺ Retry', icon:'refresh'}] }
           : m
