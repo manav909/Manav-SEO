@@ -50,7 +50,7 @@ function B({ children, name }: { children: React.ReactNode; name: string }) {
 }
 
 const AppRoutes = () => {
-  const { authChecked, loading } = useAuth();
+  const { authChecked, loading, isApproved } = useAuth();
   if (!authChecked && loading) return <Spinner label="Loading SEO Season..." />;
   return (
     <>
@@ -74,8 +74,8 @@ const AppRoutes = () => {
         <Route path="*"               element={<NotFound />} />
       </Routes>
 
-      {/* Manav Brain — only shown for authenticated users */}
-      <ManavBrainAssistant />
+      {/* Manav Brain — only for approved/signed-in users. Guests have ManavBrainGuest on Index. */}
+      {isApproved && <ManavBrainAssistant />}
     </>
   );
 };
