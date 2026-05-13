@@ -216,6 +216,7 @@ async function _intelligenceHandler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-cache");
   res.status(200);
 
+  let fullOutput = "";
   try {
     const anthropic  = new Anthropic();
     let systemPrompt = SYSTEM;
@@ -284,7 +285,6 @@ async function _intelligenceHandler(req: VercelRequest, res: VercelResponse) {
       });
 
       let stopReason  = "";
-      let fullOutput  = "";
 
       for await (const chunk of stream) {
         if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
@@ -303,23 +303,6 @@ async function _intelligenceHandler(req: VercelRequest, res: VercelResponse) {
         fullOutput += truncMsg;
       }
 
-      // Auto-capture brain learnings for strategic modes
-      if ((mode === "pipeline" || mode === "deep_dive" || mode === "brain_assistant") && projectId && fullOutput.length > 500) {
-        const fb = focusBlockId
-          ? placed.find((b:any)=>b.id===focusBlockId)||library.find((b:any)=>b.id===focusBlockId)
-          : null;
-        void extractAndSaveLearning(
-          mode === "pipeline" ? "pipeline_intelligence" : mode === "brain_assistant" ? "brain_assistant_log" : "deep_dive_analysis",
-          projectId,
-          fullOutput,
-          {
-            card_type:       fb?.type || "strategy",
-            card_title:      fb?.title || (mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` : `Deep Dive: ${question.slice(0, 50)}`),
-            context_summary: `${mode} — ${projectSummary?.slice(0, 80)}`,
-          }
-        );
-      }
-
     } catch (streamErr: any) {
       res.write(`\nError: ${streamErr.message}`);
     }
@@ -328,5 +311,25 @@ async function _intelligenceHandler(req: VercelRequest, res: VercelResponse) {
     try { res.write(`\nError: ${outerErr.message}`); } catch (_e) { /* already closed */ }
   } finally {
     try { res.end(); } catch (_e) { /* already ended */ }
+  }
+  // Defer learning capture AFTER response is sent — never blocks the 60s limit
+  if ((mode === "pipeline" || mode === "deep_dive" || mode === "brain_assistant")) {
+    setImmediate(() => {
+      const captureId = projectId;
+      if (!captureId || !fullOutput || fullOutput.length < 200) return;
+      const fb = focusBlockId
+        ? placed.find((b:any)=>b.id===focusBlockId)||library.find((b:any)=>b.id===focusBlockId)
+        : null;
+      void extractAndSaveLearning(
+        mode === "pipeline" ? "pipeline_intelligence" : mode === "brain_assistant" ? "brain_assistant_log" : "deep_dive_analysis",
+        captureId,
+        fullOutput,
+        {
+          card_type:       fb?.type || "strategy",
+          card_title:      fb?.title || (mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` : `Deep Dive: ${question.slice(0, 50)}`),
+          context_summary: `${mode} — ${projectSummary?.slice(0, 80)}`,
+        }
+      );
+    });
   }
 }

@@ -499,15 +499,17 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         res.write("\n\n---\n⚠️ Output reached the length limit and may be incomplete.");
       }
     } catch (err: any) { res.write(`\nError: ${err.message}`); } finally { res.end(); }
-    // Auto-save to desk + capture learning (fire-and-forget)
-    const deskProjId = (req.body.projectId || context?.project?.id || null) as string | null;
-    if (deskProjId && execFull.length > 300) {
-      void saveToDesk(deskProjId, card.title || "Task Output", execFull,
-        card.type === "technical" ? "code" : card.type === "audit" ? "audit" : "report",
-        "task_execute", [card.type]);
-      void extractAndSaveLearning("task_execution_auto", deskProjId, execFull,
-        { card_type: card.type, card_title: card.title, context_summary: card.type + " execution" });
-    }
+    // Defer background work — must not block after res.end()
+    setImmediate(() => {
+      const deskProjId = (req.body.projectId || context?.project?.id || null) as string | null;
+      if (deskProjId && execFull.length > 300) {
+        void saveToDesk(deskProjId, card.title || "Task Output", execFull,
+          card.type === "technical" ? "code" : card.type === "audit" ? "audit" : "report",
+          "task_execute", [card.type]);
+        void extractAndSaveLearning("task_execution_auto", deskProjId, execFull,
+          { card_type: card.type, card_title: card.title, context_summary: card.type + " execution" });
+      }
+    });
     return;
   }
 

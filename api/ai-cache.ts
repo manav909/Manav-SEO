@@ -6,7 +6,6 @@
  * static top-level import and could fail at Vercel cold start, crashing every
  * API function that imports this module. Now uses the static import directly.
  */
-import Anthropic            from "@anthropic-ai/sdk";
 import { createClient }     from "@supabase/supabase-js";
 
 function getSupabase() {
@@ -124,36 +123,38 @@ export async function extractAndSaveLearning(
       if (recent && recent.length > 0) return;
     } catch (_e) { return; }
 
-    // --- FIX: use the statically-imported Anthropic directly, no dynamic import ---
-    const anthropic = new Anthropic();
+    // Fast heuristic extraction — no Claude call, <50ms, never causes timeouts
+    const lines    = output.split("\n").filter(l => l.trim().length > 20);
+    const firstLine = lines[0]?.slice(0, 80) || source;
+    const cardType  = metadata.card_type ||
+      (source.includes("technical") ? "technical" :
+       source.includes("content")   ? "content"   :
+       source.includes("geo")       ? "geo"        :
+       source.includes("audit")     ? "technical"  :
+       source.includes("competitive")? "competitive":
+       "insight");
 
-    const response = await anthropic.messages.create({
-      model:      "claude-sonnet-4-6",
-      max_tokens: 600,
-      system:     "You extract precise, specific SEO learnings. Be concrete and actionable. Return only valid JSON.",
-      messages: [{
-        role: "user",
-        content: [
-          `Extract a structured SEO learning from this ${source} AI output.`,
-          `Context: ${metadata.context_summary || source}`,
-          metadata.project_name ? `Project: ${metadata.project_name}` : "",
-          "",
-          "OUTPUT TO LEARN FROM:",
-          output.slice(0, 2800),
-          "",
-          "Return ONLY valid JSON:",
-          `{"title":"Short title (max 8 words)","what_worked":["specific strength"],"what_missed":["specific gap"],"improvement":"One actionable sentence: next time do X to achieve Y","tags":["tag1","tag2"],"card_type":"technical|content|geo|competitive|insight|weekly|strategy|audit|general","confidence_score":75}`,
-        ].filter(Boolean).join("\n"),
-      }],
-    });
+    // Extract key phrases as what_worked (lines with positive indicators)
+    const positiveLines = lines.filter(l =>
+      /improve|optim|strateg|recommend|should|increase|boost|rank|index|schema|fix|add|create|update/i.test(l)
+    ).slice(0, 3).map(l => l.trim().slice(0, 120));
 
-    const raw = response.content[0].type === "text" ? response.content[0].text : "{}";
-    const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
-    if (f === -1 || l === -1) return;
+    // Extract gaps (lines with negative indicators)
+    const gapLines = lines.filter(l =>
+      /missing|lack|gap|issue|problem|error|slow|broken|no |not |without|poor|low/i.test(l)
+    ).slice(0, 2).map(l => l.trim().slice(0, 120));
 
-    let parsed: any = {};
-    try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) { return; }
-    if (!parsed.improvement || !parsed.card_type) return;
+    const improvement = positiveLines[0] || lines.slice(1, 3).map(l => l.trim()).join(" | ").slice(0, 200) || "Review output for specific improvements";
+
+    const parsed: any = {
+      title:            (metadata.card_title || firstLine).slice(0, 60),
+      what_worked:      positiveLines.length > 0 ? positiveLines : [`${source} completed`],
+      what_missed:      gapLines.length > 0 ? gapLines : [],
+      improvement:      improvement,
+      tags:             [cardType, source.split("_")[0]].filter(Boolean),
+      card_type:        cardType,
+      confidence_score: positiveLines.length > 0 ? 70 : 55,
+    };
 
     // Attempt insert with new columns; if migration not run, fall back gracefully
     const newRow: any = {
