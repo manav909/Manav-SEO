@@ -24,10 +24,16 @@ function fingerprint(input: any): string {
   return h.toString(16);
 }
 
+/* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _controlHandler(req, res); }
+  catch (e: any) { try { res.status(200).json({ error: e?.message || "unknown" }); } catch (_) {} }
+}
+
+async function _controlHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
-  const sb = createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_SUPABASE_ANON_KEY!);
+  const sb = createClient(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co", process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder");
   const { action, projectId, payload } = req.body;
 
   /* ── GET PROJECT CONTEXT ── */

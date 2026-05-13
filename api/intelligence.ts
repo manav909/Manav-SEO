@@ -151,7 +151,15 @@ ALWAYS respond with:
   return { system, user };
 }
 
+/* ── Safe export: top-level catch prevents FUNCTION_INVOCATION_FAILED ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _intelligenceHandler(req, res); }
+  catch (e: any) {
+    try { res.status(200).end("Error: " + (e?.message || "unknown")); } catch (_) {}
+  }
+}
+
+async function _intelligenceHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
   const {

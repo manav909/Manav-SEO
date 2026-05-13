@@ -10,10 +10,11 @@ import Anthropic            from "@anthropic-ai/sdk";
 import { createClient }     from "@supabase/supabase-js";
 
 function getSupabase() {
-  return createClient(
-    process.env.VITE_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY!
-  );
+  /* Use placeholder URL so module NEVER throws on load even if env vars missing.
+     Actual queries will fail with auth errors (caught inside handlers), not module crashes. */
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder";
+  return createClient(url, key);
 }
 
 /* ─── CACHE HELPERS ─── */

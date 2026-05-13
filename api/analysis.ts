@@ -64,7 +64,12 @@ const validKeySet = new Set([
   "pagespeed_mobile","pagespeed_desktop",
 ]);
 
+/* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _analysis_h(req, res); }
+  catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
+}
+async function _analysis_h(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
   const { action = "audit" } = req.body;

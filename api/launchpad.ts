@@ -4,7 +4,12 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { maxDuration: 60 };
 
+/* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _launchpad_h(req, res); }
+  catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
+}
+async function _launchpad_h(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(200).json({ error: 'Method not allowed' });
 
   const {

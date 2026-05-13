@@ -48,7 +48,12 @@ async function generate(prompt: string, maxTokens: number, anthropic: any): Prom
   return msg.content[0].type === "text" ? msg.content[0].text : "";
 }
 
+/* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _playground_analysis_h(req, res); }
+  catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
+}
+async function _playground_analysis_h(req: VercelRequest, res: VercelResponse) {
   const anthropic = new Anthropic();
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 

@@ -71,7 +71,12 @@ function extractCWV(psiData: any) {
   };
 }
 
+/* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _fetch_site_metrics_h(req, res); }
+  catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
+}
+async function _fetch_site_metrics_h(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(200).json({ error: 'Method not allowed' });
 
   const { url } = req.body;

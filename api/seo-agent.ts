@@ -165,7 +165,12 @@ function buildContextSection(ctx: ProjectContext, deliverableType: DeliverableTy
 /* ─────────────────────────────────────────────────────────────────
    MAIN HANDLER
 ───────────────────────────────────────────────────────────────── */
+/* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _seo_agent_h(req, res); }
+  catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
+}
+async function _seo_agent_h(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed." });
 
   let url: string, keyword: string, deliverableType: DeliverableType;
