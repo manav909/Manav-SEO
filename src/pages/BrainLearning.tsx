@@ -1,3 +1,4 @@
+import { supabase } from '@/lib/supabase';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { useAuth } from '@/contexts/AuthContext';
@@ -173,15 +174,17 @@ function SourceBadge({ source }: { source: string }) {
 }
 
 /* ─── Individual learning card ─── */
-function LearningCard({ l, onApprove, onReject, onDelete, onEdit, onDeactivate }: {
+function LearningCard({ l, onApprove, onReject, onDelete, onEdit, onDeactivate, onEnrich }: {
   l: Learning;
   onApprove:    (id: string) => void;
   onReject:     (id: string) => void;
   onDelete:     (id: string) => void;
   onEdit:       (l: Learning) => void;
   onDeactivate: (id: string) => void;
+  onEnrich?:    (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [enriching, setEnriching] = useState(false);
   const dim    = getLearningDim(l);
   const dimCfg = DIM_CONFIG.find(d => d.key === dim) || DIM_CONFIG[4];
 
@@ -277,6 +280,20 @@ function LearningCard({ l, onApprove, onReject, onDelete, onEdit, onDeactivate }
           >
             <X size={9}/>DISMISS
           </button>
+          {/* Deepen: Brain resolves gaps and enriches this learning before approval */}
+          {onEnrich && (
+            <button
+              onClick={async () => {
+                setEnriching(true);
+                await onEnrich(l.id);
+                setEnriching(false);
+              }}
+              disabled={enriching}
+              style={{background:enriching?'rgba(99,102,241,0.08)':'linear-gradient(135deg,rgba(99,102,241,0.15),rgba(139,92,246,0.15))',border:'1px solid rgba(99,102,241,0.4)',borderRadius:6,padding:'5px 14px',cursor:enriching?'default':'pointer',color:'#a5b4fc',fontSize:10,fontFamily:'monospace',fontWeight:700,display:'flex',alignItems:'center',gap:5,boxShadow:enriching?'none':'0 0 10px rgba(99,102,241,0.2)',opacity:enriching?0.7:1}}
+            >
+              <Brain size={9} style={{animation:enriching?'spin 1s linear infinite':undefined}}/>{enriching?'DEEPENING...':'DEEPEN WITH BRAIN'}
+            </button>
+          )}
           <button
             onClick={() => onApprove(l.id)}
             style={{background:'linear-gradient(135deg,rgba(16,185,129,0.2),rgba(6,182,212,0.2))',border:'1px solid rgba(16,185,129,0.4)',borderRadius:6,padding:'5px 14px',cursor:'pointer',color:'#10b981',fontSize:10,fontFamily:'monospace',fontWeight:700,display:'flex',alignItems:'center',gap:5,boxShadow:'0 0 12px rgba(16,185,129,0.2)'}}
@@ -430,6 +447,149 @@ export default function BrainLearning() {
       toast({ title: 'Moved to review queue' });
     } catch (err: any) {
       toast({ title: 'Failed', description: err?.message, variant: 'destructive' });
+    }
+  };
+
+  /* ── DEEPEN: Brain resolves gaps, fetches real data, enriches the learning ── */
+  const handleEnrich = async (id: string) => {
+    const l = learnings.find(x => x.id === id);
+    if (!l) return;
+
+    // Build context for Brain
+    const projectId = learnings.find(x => x.id === id)?.project_id;
+    const projectData = (() => {
+      // Get project URL from projects context if available
+      return '';
+    })();
+
+    toast({ title: '◈ Brain Deepening...', description: `Resolving gaps in "${l.card_title}"` });
+
+    try {
+      const res = await fetch('/api/intelligence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
+        body: JSON.stringify({
+          mode: 'brain_assistant',
+          question: [
+            `I have a PENDING brain learning that needs gap resolution before I approve it.`,
+            ``,
+            `LEARNING TITLE: ${l.card_title}`,
+            `TYPE: ${l.card_type}`,
+            `CURRENT GAPS DETECTED: ${(l.what_missed || []).join('; ')}`,
+            `CURRENT IMPROVEMENT DIRECTIVE: ${l.improvement || 'None'}`,
+            `CURRENT CONFIDENCE: ${l.confidence_score || 75}/100`,
+            ``,
+            `TASK: Analyse this learning deeply. Based on the gaps and directive:`,
+            `1. Identify exactly what data would resolve each gap`,
+            `2. Provide specific, actionable what_worked insights (minimum 3)`,
+            `3. Provide specific what_missed findings with WHY they matter`,
+            `4. Write a precise improvement directive (one clear sentence)`,
+            `5. Rate the new confidence score (50-95) based on how resolvable these gaps are`,
+            ``,
+            `Then save the enriched version using save_learning ACTION with:`,
+            `- Higher confidence_score based on your analysis`,
+            `- Populated whatWorked array (3-5 specific insights)`,
+            `- Populated whatMissed array (2-3 specific gaps with context)`,
+            `- Sharp improvement sentence`,
+            ``,
+            `Return your analysis then emit the save_learning ACTION tag.`,
+          ].join('\n'),
+          projectId: l.project_id,
+          projectSummary: l.context_summary || l.card_title,
+          brainAssistantContext: {
+            projectContext: null,
+            learnings: [],
+            algoItems: [],
+            canvasBlocks: [],
+            history: [],
+          },
+        }),
+      });
+
+      if (!res.ok || !res.body) throw new Error('Intelligence API unavailable');
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let full = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        full += dec.decode(value);
+      }
+
+      // Parse any save_learning ACTION tags Brain emitted
+      const actionPattern = /⟦ACTION⟧(\{[^⟧]+\})⟦\/ACTION⟧/g;
+      let match;
+      let enriched = false;
+
+      while ((match = actionPattern.exec(full)) !== null) {
+        try {
+          const action = JSON.parse(match[1]);
+          if (action.type === 'save_learning' || action.type === 'update_learning') {
+            // Update the existing learning with enriched data
+            const updates: any = {
+              updated_at: new Date().toISOString(),
+            };
+            if (action.whatWorked || action.what_worked) {
+              updates.what_worked = action.whatWorked || action.what_worked || [];
+            }
+            if (action.whatMissed || action.what_missed) {
+              updates.what_missed = action.whatMissed || action.what_missed || [];
+            }
+            if (action.improvement) updates.improvement = action.improvement;
+            if (action.confidence_score) updates.confidence_score = Math.min(95, Number(action.confidence_score));
+            if (action.title && action.title !== l.card_title) updates.card_title = action.title;
+
+            // Update existing learning (don't create new)
+            const { error } = await supabase
+              .from('brain_learnings')
+              .update(updates)
+              .eq('id', id);
+
+            if (!error) {
+              setLearnings(ls => ls.map(x => x.id === id ? { ...x, ...updates } : x));
+              enriched = true;
+              toast({
+                title: '✅ Learning Deepened',
+                description: `Confidence: ${l.confidence_score || 75} → ${updates.confidence_score || l.confidence_score}. Review and approve when ready.`,
+              });
+            } else {
+              toast({ title: 'Update failed', description: error.message, variant: 'destructive' });
+            }
+          }
+        } catch (_e) { /* skip malformed action */ }
+      }
+
+      if (!enriched) {
+        // Brain responded but didn't emit save_learning - extract key insights manually
+        const lines = full.split('\n').filter(l => l.trim().length > 20);
+        const positiveLines = lines.filter(l =>
+          /improve|optim|should|recommend|strateg|fix|add|create|update/i.test(l)
+        ).slice(0, 3).map(l => l.replace(/^[•\-*\d.]+\s*/, '').trim().slice(0, 120));
+
+        const gapLines = lines.filter(l =>
+          /missing|lack|gap|issue|problem|no |not |without/i.test(l)
+        ).slice(0, 2).map(l => l.replace(/^[•\-*\d.]+\s*/, '').trim().slice(0, 120));
+
+        if (positiveLines.length > 0) {
+          const updates = {
+            what_worked: positiveLines,
+            what_missed: gapLines,
+            improvement: positiveLines[0] || l.improvement || '',
+            confidence_score: Math.min(85, (l.confidence_score || 75) + 10),
+            updated_at: new Date().toISOString(),
+          };
+          const { error } = await supabase.from('brain_learnings').update(updates).eq('id', id);
+          if (!error) {
+            setLearnings(ls => ls.map(x => x.id === id ? { ...x, ...updates } : x));
+            toast({ title: '⚡ Learning Enriched', description: `${positiveLines.length} insights extracted. Confidence boosted.` });
+          }
+        } else {
+          toast({ title: 'Brain analysed but found no new insights', description: 'Try providing more project context in Data Room first.' });
+        }
+      }
+    } catch (e: any) {
+      toast({ title: 'Enrichment failed', description: e.message, variant: 'destructive' });
     }
   };
 
@@ -746,6 +906,7 @@ export default function BrainLearning() {
                   l={l}
                   onApprove={handleApprove}
                   onReject={handleReject}
+                  onEnrich={handleEnrich}
                   onDelete={handleDelete}
                   onDeactivate={handleDeactivate}
                   onEdit={(learning) => { setEditingL(learning); setEditText(learning.improvement || ''); }}
