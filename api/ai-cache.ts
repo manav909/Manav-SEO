@@ -218,3 +218,11 @@ export async function saveToDesk(
     });
   } catch (_e) { /* silent — desk save must never break the caller */ }
 }
+
+/* ─── Minimal handler so @vercel/node compiles this file into /var/task/api/ai-cache.js ───
+   WITHOUT this, @vercel/node skips this file and all other functions crash with
+   "Cannot find module ai-cache" at runtime. Not a public endpoint. ─── */
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+export default function handler(_req: VercelRequest, res: VercelResponse) {
+  res.status(200).json({ ok: true });
+}
