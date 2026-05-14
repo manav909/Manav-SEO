@@ -9,6 +9,7 @@ import { DemoProvider }          from "@/contexts/DemoContext";
 import { ErrorBoundary }         from "@/components/ErrorBoundary";
 import { BrainErrorBoundary }    from "@/components/BrainErrorBoundary";
 import ManavBrainAssistant       from "@/components/ManavBrainAssistant";
+import HelpOracle                from "@/components/HelpOracle";
 import Index          from "./pages/Index";
 import DataRoom       from './pages/DataRoom';
 import Dashboard      from "./pages/Dashboard";
