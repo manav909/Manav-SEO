@@ -157,11 +157,15 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   if (action === "get_all_learnings") {
     const { project_id } = body;
     try {
+      // Strict project isolation: only return learnings for this project.
+      // Learnings with project_id=null are institutional knowledge (from archived projects)
+      // and are intentionally included so accumulated wisdom is never lost.
       const q = project_id
         ? db().from("brain_learnings").select("*")
             .or(`project_id.eq.${project_id},project_id.is.null`)
             .order("created_at", { ascending: false })
         : db().from("brain_learnings").select("*")
+            .is("project_id", null)
             .order("created_at", { ascending: false });
       const { data, error } = await q;
       if (error) return ok(res, { error: error.message });
@@ -824,6 +828,74 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     } catch (e: any) {
       return ok(res, { error: e.message });
     }
+  }
+
+
+  /* ── ARCHIVE PROJECT ──
+     Preserves active learnings as institutional knowledge (project_id → null).
+     The project is soft-deleted (status='archived').
+     Knowledge NEVER degrades — accumulated intelligence remains for future projects. */
+  if (action === "archive_project") {
+    const { project_id: pid, hard_delete = false } = body;
+    if (!pid) return ok(res, { error: "project_id required" });
+    try {
+      // Migrate active learnings: project_id=null → global institutional knowledge
+      const { count: migratedCount } = await db()
+        .from("brain_learnings")
+        .update({ project_id: null })
+        .eq("project_id", pid)
+        .eq("status", "active")
+        .select("id");
+
+      // Reject unreviewed pending learnings (don't pollute global pool)
+      await db()
+        .from("brain_learnings")
+        .update({ status: "rejected" })
+        .eq("project_id", pid)
+        .eq("status", "pending_review");
+
+      // Log the archival event
+      await db().from("system_change_log").insert({
+        change_type: hard_delete ? "project_deleted" : "project_archived",
+        description: `Project ${pid} ${hard_delete ? "deleted" : "archived"}. ${migratedCount || 0} active learnings preserved as institutional knowledge.`,
+        metadata: { project_id: pid, migrated_learnings: migratedCount || 0, timestamp: new Date().toISOString() },
+        affected_table: "projects", affected_id: pid,
+      });
+
+      if (hard_delete) {
+        await Promise.allSettled([
+          db().from("task_executions").delete().eq("project_id", pid),
+          db().from("ai_content_cache").delete().eq("project_id", pid),
+          db().from("brain_desk").delete().eq("project_id", pid),
+          db().from("projects").delete().eq("id", pid),
+        ]);
+        return ok(res, { success: true, action: "deleted", migratedLearnings: migratedCount || 0 });
+      } else {
+        await db().from("projects").update({ status: "archived" }).eq("id", pid);
+        return ok(res, { success: true, action: "archived", migratedLearnings: migratedCount || 0 });
+      }
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+  /* ── GET PROJECT INTEL — full dossier for Mission Control ── */
+  if (action === "get_project_intel") {
+    const { project_id: pid } = body;
+    if (!pid) return ok(res, { error: "project_id required" });
+    try {
+      const [learningsR, knowledgeR, deskR, tasksR] = await Promise.allSettled([
+        db().from("brain_learnings").select("*").eq("project_id", pid).order("created_at", { ascending: false }),
+        db().from("project_knowledge").select("*").eq("project_id", pid).maybeSingle(),
+        db().from("brain_desk").select("id,title,content_type,created_at,tags").eq("project_id", pid).order("created_at", { ascending: false }).limit(30),
+        db().from("task_executions").select("id,task_type,status,created_at").eq("project_id", pid).order("created_at", { ascending: false }).limit(30),
+      ]);
+      return ok(res, {
+        success: true,
+        learnings:  learningsR.status === "fulfilled" ? (learningsR.value.data || []) : [],
+        knowledge:  knowledgeR.status === "fulfilled" ? knowledgeR.value.data : null,
+        deskItems:  deskR.status === "fulfilled"      ? (deskR.value.data || [])      : [],
+        tasks:      tasksR.status === "fulfilled"     ? (tasksR.value.data || [])     : [],
+      });
+    } catch (e: any) { return ok(res, { error: e.message }); }
   }
 
     return ok(res, { error: `Unknown action: ${action}` });
