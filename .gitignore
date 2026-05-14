@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Compiled _lib (built at deploy time)
+api/_lib/*.js
