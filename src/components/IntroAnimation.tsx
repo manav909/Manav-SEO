@@ -1,512 +1,581 @@
 /**
  * SEO SEASON — CINEMATIC UNIVERSE
- * Refined: zero text overlap · smooth rank lerp · live daily data
  *
- * Layout zones (never violated):
- *   TOP     0   → 20vh  — act titles only
- *   CANVAS  20vh → 80vh  — nodes / Manav / HUD panels (canvas)
- *   BOTTOM  80vh → 100vh — single rotating strip (feed OR caps)
+ * Principles:
+ * – Canvas rendered at devicePixelRatio — no blur, ultra-sharp on all screens
+ * – One statement per act, timed for human reading
+ * – Every second earns its place like a movie scene
+ * – Three hero visuals: Signal Network, Algorithm Capture, Brand Ascent
  *
- * Dynamic data: seeded by day-of-year so numbers feel live and change daily.
- * SKIP and HUD chrome live in corners, never inside text zones.
+ * ACTS (20 seconds total):
+ *  I    0s   → 4.5s  — The Signal    (orb, the internet is alive)
+ *  II   4.5s → 9.0s  — The Network   (signal nodes crystallise)
+ *  III  9.0s → 14.0s — The Capture   (wireframe human + algos absorbed into Manav)
+ *  IV  14.0s → 17.5s — The Ascent    (rank climbing, proof)
+ *  V   17.5s → 21s   — SEO Season    (brand reveal, enter)
  */
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 
-/* ── colours ── */
+/* ── palette ── */
 const CYN  = '#00FFD1';
-const RED  = '#FF3062';
-const WHT  = '#F0F8FF';
 const GOLD = '#FFB800';
-const BG   = '#03060F';
+const WHT  = '#EEF4FF';
+const DIM  = '#0A1830';
+const BG   = '#030810';
 
 /* ── act timing ms ── */
-const ACT = { I: 0, II: 2800, III: 6000, IV: 9200, V: 12000, END: 15000 };
+const ACT = { I:0, II:4500, III:9000, IV:14000, V:17500, END:21000 };
 
-/* ── math helpers ── */
-const lerp    = (a: number, b: number, t: number) => a + (b - a) * Math.min(1, Math.max(0, t));
-const easeOut = (t: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+/* ── smooth maths ── */
+const clamp = (v:number,lo:number,hi:number) => Math.max(lo,Math.min(hi,v));
+const lerp  = (a:number,b:number,t:number)  => a+(b-a)*clamp(t,0,1);
+const easeOut3  = (t:number) => 1-Math.pow(1-clamp(t,0,1),3);
+const easeOut5  = (t:number) => 1-Math.pow(1-clamp(t,0,1),5);
+const easeInOut = (t:number) => { const c=clamp(t,0,1); return c<.5?2*c*c:1-Math.pow(-2*c+2,2)/2; };
 
-/* ─────────────────────────────────────────────
-   DAILY DYNAMIC DATA
-   Seeded by day-of-year so values refresh daily
-   All numbers grounded in real 2024-25 events
-───────────────────────────────────────────── */
-function getDailyData() {
-  const now = new Date();
-  const doy = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
-  const s   = doy * 37 + now.getMonth() * 311;   // daily seed
-
-  /* Real algorithm events — actual dates, real impacts */
-  const events = [
-    { date: 'May 2025',  name: 'Google AI Mode Launch',          delta: '+18% AI citations',     vertical: 'AI Search'    },
-    { date: 'Apr 2025',  name: 'Shopping AI Overviews',          delta: '+22% e-comm intent',    vertical: 'E-commerce'   },
-    { date: 'Mar 2025',  name: 'Google Core Update',             delta: 'Content quality +40%',  vertical: 'Content SEO'  },
-    { date: 'Feb 2025',  name: 'AI Overviews Global Expansion',  delta: '65% of SERPs impacted', vertical: 'All Markets'  },
-    { date: 'Jan 2025',  name: 'E-E-A-T Enforcement Wave',       delta: 'Author signals +28%',   vertical: 'Publishing'   },
-    { date: 'Dec 2024',  name: 'December Core Update',           delta: 'Spam signals −34%',     vertical: 'Technical'    },
-    { date: 'Nov 2024',  name: 'Helpful Content Integration',    delta: 'Thin content −29%',     vertical: 'Content SEO'  },
-  ];
-  const todayEvent = events[s % events.length];
-  const prevEvent  = events[(s + 1) % events.length];
-
-  /* Live search count: ~8.5 B/day = 98,611/sec, ticks from midnight */
-  const secToday   = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  const baseCount  = 8_450_000_000 + (s % 90) * 1_000_000;
-  const liveCount  = baseCount + secToday * 98_611;
-
-  /* Daily learnings count — grows with time (realistic compounding) */
-  const learningsToday = 42 + (doy % 60);
-
-  /* Brain learning feed — rotates daily */
-  const feedLines = [
-    `CAPTURED · ${todayEvent.name} — ${todayEvent.delta}`,
-    `PATTERN  · "${todayEvent.vertical}" intent clusters mapped`,
-    `SIGNAL   · Featured Snippet rate +${11 + (s % 9)}% this week`,
-    `VALIDATE · ${prevEvent.name} cross-referenced`,
-    `LEARNING · New LLM citation trigger logged`,
-    `REFRESH  · Competitor gap matrix updated ${now.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`,
-    `INSIGHT  · Voice queries up ${17 + (s % 15)}% in ${todayEvent.vertical}`,
-    `SYNC     · ${events.length} algo events active in Brain`,
-  ];
-
-  return { todayEvent, prevEvent, liveCount, learningsToday, feedLines, seed: s };
-}
-
-/* ─────────────────────────────────────────────
-   CANVAS SIGNAL ENGINE
-───────────────────────────────────────────── */
-function SignalEngine({ onActChange }: { onActChange: (a: number) => void }) {
+/* ════════════════════════════════════════════════════════
+   CANVAS ENGINE — single, full-life renderer
+   All drawing happens here; React only handles text overlays.
+════════════════════════════════════════════════════════ */
+function CanvasEngine({ onAct }:{ onAct:(n:number)=>void }) {
   const ref  = useRef<HTMLCanvasElement>(null);
-  const raf  = useRef(0);
+  const rafId= useRef(0);
   const t0   = useRef(0);
   const actR = useRef(-1);
 
-  useEffect(() => {
-    const c = ref.current; if (!c) return;
-    const resize = () => { c.width = innerWidth; c.height = innerHeight; };
-    resize();
-    window.addEventListener('resize', resize);
+  useEffect(()=>{
+    const canvas = ref.current; if (!canvas) return;
 
-    type P = { x:number;y:number;tx:number;ty:number;prog:number;spd:number;col:string };
-
-    const ND = [
-      { label:'SEARCH INTENT',   col:CYN,  r:6 }, { label:'BACKLINK TRUST',  col:WHT,  r:5 },
-      { label:'ALGO SIGNALS',    col:CYN,  r:5 }, { label:'CONTENT DEPTH',   col:WHT,  r:5 },
-      { label:'LLM VISIBILITY',  col:GOLD, r:7 }, { label:'E-E-A-T',         col:WHT,  r:5 },
-      { label:'COMPETITOR GAPS', col:RED,  r:5 }, { label:'CORE WEB VITALS', col:CYN,  r:5 },
-      { label:'TOPICAL AUTH',    col:GOLD, r:6 }, { label:'SCHEMA MARKUP',   col:WHT,  r:4 },
-      { label:'CTR SIGNALS',     col:CYN,  r:5 }, { label:'BRAND AUTH',      col:GOLD, r:6 },
-    ];
-    const LK = [[0,2],[0,4],[1,4],[1,6],[2,8],[3,4],[3,5],[4,7],[4,11],
-                [5,8],[6,9],[7,10],[8,11],[9,10],[10,11],[0,1],[2,3],[6,7]];
-
-    type N = { x:number;y:number;label:string;col:string;r:number;ph:number };
-    let nodes: N[] = [];
-    let parts: P[] = [];
-    let manA = 0;
-    let rankV = 47;                              // lerp target (smooth)
-    const RSTEPS = [47, 47, 38, 26, 14, 6, 1];  // keyed 0-1 progress thru Act IV
-    const ORBIT  = [82, 130, 192];
-
-    const hx = (h: string): [number,number,number] => {
-      const s = h.replace('#','');
-      return [parseInt(s.slice(0,2),16), parseInt(s.slice(2,4),16), parseInt(s.slice(4,6),16)];
+    /* ── UHD: draw at device pixel density ── */
+    const dpr = window.devicePixelRatio || 1;
+    const setSize = () => {
+      canvas.width  = window.innerWidth  * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width  = window.innerWidth  + 'px';
+      canvas.style.height = window.innerHeight + 'px';
     };
+    setSize();
+    window.addEventListener('resize', setSize);
 
-    const place = (W: number, H: number) => {
-      const cx = W/2, cy = H/2;
-      /* Nodes spread inside CANVAS zone 20vh-80vh, never enters text zones */
-      const rMax = Math.min(W * 0.30, H * 0.27);
-      nodes = ND.map((nd,i) => {
-        const a = (i/ND.length)*Math.PI*2 - Math.PI/2;
-        const r = rMax * (0.62 + 0.38 * ((i%3)/2));
-        return { x:cx+r*Math.cos(a), y:cy+r*Math.sin(a), ...nd, ph:Math.random()*Math.PI*2 };
+    const g = canvas.getContext('2d')!;
+    /* Scale all draw calls — 1 "unit" = 1 CSS pixel */
+    g.scale(dpr, dpr);
+
+    /* ── helpers that respect DPR ── */
+    const W  = ()=>window.innerWidth;
+    const H  = ()=>window.innerHeight;
+    const CX = ()=>W()/2;
+    const CY = ()=>H()/2;
+
+    type Vec2 = {x:number;y:number};
+    type Pt   = Vec2 & {progress:number;speed:number;col:string;sx:number;sy:number};
+
+    /* ──────────────────── Signal nodes ──────────────────── */
+    const NODE_DATA = [
+      {label:'SEARCH INTENT',   col:CYN,  r:5.5},
+      {label:'BACKLINK TRUST',  col:WHT,  r:4.5},
+      {label:'ALGO SIGNALS',    col:CYN,  r:4.5},
+      {label:'CONTENT DEPTH',   col:WHT,  r:4.5},
+      {label:'LLM VISIBILITY',  col:GOLD, r:6.5},
+      {label:'E-E-A-T',         col:WHT,  r:4.5},
+      {label:'COMPETITOR GAPS', col:'#FF4477', r:4.5},
+      {label:'CORE WEB VITALS', col:CYN,  r:4.5},
+      {label:'TOPICAL AUTH',    col:GOLD, r:5.5},
+      {label:'SCHEMA',          col:WHT,  r:3.5},
+      {label:'CTR SIGNALS',     col:CYN,  r:4.5},
+      {label:'BRAND AUTH',      col:GOLD, r:5.5},
+    ];
+    const LINKS = [[0,2],[0,4],[1,4],[1,6],[2,8],[3,4],[3,5],[4,7],[4,11],
+                   [5,8],[6,9],[7,10],[8,11],[9,10],[10,11],[0,1],[2,3]];
+
+    type NodeState = Vec2 & {label:string;col:string;r:number;ph:number};
+    let nodes: NodeState[] = [];
+
+    const buildNodes = () => {
+      const cx=CX(), cy=CY(), rMax=Math.min(W()*0.30,H()*0.27);
+      nodes = NODE_DATA.map((nd,i)=>{
+        const a=(i/NODE_DATA.length)*Math.PI*2-Math.PI/2;
+        const r=rMax*(0.62+0.38*((i%3)/2));
+        return {x:cx+r*Math.cos(a),y:cy+r*Math.sin(a),...nd,ph:Math.random()*Math.PI*2};
       });
     };
+    buildNodes();
+    window.addEventListener('resize',buildNodes);
 
-    const spawn = (ai: number, bi: number) => {
-      if (!nodes[ai]||!nodes[bi]) return;
-      parts.push({ x:nodes[ai].x, y:nodes[ai].y, tx:nodes[bi].x, ty:nodes[bi].y,
-        prog:0, spd:0.007+Math.random()*0.006, col:nodes[ai].col });
+    /* ──────────────────── Particles ──────────────────── */
+    let particles: Pt[] = [];
+    const spawnPt = (a:Vec2,b:Vec2,col:string) =>
+      particles.push({...a,sx:a.x,sy:a.y,progress:0,speed:0.006+Math.random()*0.007,col,x:a.x,y:a.y});
+
+    /* ──────────────────── Algo capture actors ──────────────────── */
+    const ALGOS = [
+      {label:'GOOGLE CORE UPDATE', x:0.12, y:0.28},
+      {label:'AI OVERVIEWS',       x:0.82, y:0.22},
+      {label:'E-E-A-T SIGNALS',    x:0.18, y:0.72},
+      {label:'LLM CITATIONS',      x:0.78, y:0.70},
+      {label:'MARCH 2025 UPDATE',  x:0.06, y:0.50},
+      {label:'INTENT MAPPING',     x:0.90, y:0.46},
+    ];
+    type Algo = {label:string;x:number;y:number;captured:boolean;captureT:number;streamPts:Pt[]};
+    let algos: Algo[] = ALGOS.map(a=>({...a,captured:false,captureT:0,streamPts:[]}));
+
+    /* ──────────────────── Wireframe human ──────────────────── */
+    const drawHuman = (cx:number,cy:number,h:number,alpha:number,t:number) => {
+      /* Draw a sci-fi blueprint human figure.
+         Origin cx,cy is the CHEST centre. h = total figure height. */
+      const u = h/10;  /* unit = 1/10 total height */
+      g.globalAlpha = alpha;
+      g.strokeStyle = `rgba(0,255,209,${alpha})`;
+
+      const ln = (ax:number,ay:number,bx:number,by:number,a2?:number) => {
+        g.beginPath(); g.moveTo(ax,ay); g.lineTo(bx,by);
+        g.globalAlpha = a2 ?? alpha; g.stroke();
+      };
+      const arc = (x:number,y:number,r:number,s:number,e:number,a2?:number) => {
+        g.beginPath(); g.arc(x,y,r,s,e);
+        g.globalAlpha = a2 ?? alpha; g.stroke();
+      };
+
+      /* --- draw in segments, each keyed to t 0-1 --- */
+      const seg = (start:number, end:number, draw:()=>void) => {
+        if (t < start) return;
+        const st = clamp((t-start)/(end-start),0,1);
+        g.globalAlpha = alpha*st;
+        draw();
+        g.globalAlpha = alpha;
+      };
+
+      /* Head */
+      seg(0.0,0.25,()=>{ arc(cx,cy-4.2*u,1.4*u,0,Math.PI*2); });
+      /* Spine */
+      seg(0.1,0.35,()=>{ ln(cx,cy-2.8*u,cx,cy+3.5*u); });
+      /* Shoulders */
+      seg(0.2,0.4,()=>{ ln(cx-2.8*u,cy-1.8*u,cx+2.8*u,cy-1.8*u); });
+      /* Upper arms */
+      seg(0.3,0.5,()=>{ ln(cx-2.8*u,cy-1.8*u,cx-3.4*u,cy+0.8*u); ln(cx+2.8*u,cy-1.8*u,cx+3.4*u,cy+0.8*u); });
+      /* Lower arms */
+      seg(0.35,0.55,()=>{ ln(cx-3.4*u,cy+0.8*u,cx-3.0*u,cy+2.8*u); ln(cx+3.4*u,cy+0.8*u,cx+3.0*u,cy+2.8*u); });
+      /* Collar bone */
+      seg(0.25,0.45,()=>{ ln(cx-2.0*u,cy-2.0*u,cx,cy-2.0*u); ln(cx,cy-2.0*u,cx+2.0*u,cy-2.0*u); });
+      /* Ribs */
+      seg(0.3,0.55,()=>{
+        [-0.2,0.5,1.2,1.9].forEach(oy=>{
+          arc(cx,cy-1.2*u+oy*u,2.2*u,Math.PI*0.15,Math.PI*0.85,alpha*0.35);
+          arc(cx,cy-1.2*u+oy*u,2.2*u,Math.PI*1.15,Math.PI*1.85,alpha*0.35);
+        });
+      });
+      /* Pelvis */
+      seg(0.45,0.65,()=>{ arc(cx,cy+3.0*u,1.8*u,Math.PI*0.1,Math.PI*0.9,alpha*0.5); arc(cx,cy+3.0*u,1.8*u,Math.PI*1.1,Math.PI*1.9,alpha*0.5); });
+      /* Upper legs */
+      seg(0.55,0.75,()=>{ ln(cx-0.9*u,cy+3.5*u,cx-1.2*u,cy+6.0*u); ln(cx+0.9*u,cy+3.5*u,cx+1.2*u,cy+6.0*u); });
+      /* Lower legs */
+      seg(0.65,0.85,()=>{ ln(cx-1.2*u,cy+6.0*u,cx-1.0*u,cy+8.5*u); ln(cx+1.2*u,cy+6.0*u,cx+1.0*u,cy+8.5*u); });
+      /* Feet */
+      seg(0.75,0.95,()=>{ ln(cx-1.0*u,cy+8.5*u,cx-2.2*u,cy+8.8*u); ln(cx+1.0*u,cy+8.5*u,cx+2.2*u,cy+8.8*u); });
+      /* Neural dots on key joints */
+      seg(0.8,1.0,()=>{
+        const joints:Vec2[] = [
+          {x:cx,y:cy-4.2*u},{x:cx-2.8*u,y:cy-1.8*u},{x:cx+2.8*u,y:cy-1.8*u},
+          {x:cx,y:cy-0.0*u},{x:cx-1.2*u,y:cy+6.0*u},{x:cx+1.2*u,y:cy+6.0*u},
+        ];
+        joints.forEach(j=>{
+          g.beginPath(); g.arc(j.x,j.y,2,0,Math.PI*2);
+          g.fillStyle=CYN; g.globalAlpha=alpha*0.7; g.fill();
+          g.beginPath(); g.arc(j.x,j.y,4,0,Math.PI*2);
+          g.strokeStyle=CYN; g.globalAlpha=alpha*0.2; g.stroke();
+        });
+      });
+      g.globalAlpha=1;
     };
 
-    place(c.width, c.height);
+    /* ──────────────────── Rank state ──────────────────── */
+    let rankV  = 47;
+    const RANK_PATH = [47,38,27,16,8,3,1];  /* smooth journey */
 
-    const draw = (now: number) => {
+    /* ──────────────────── Main draw loop ──────────────────── */
+    const draw = (now:number) => {
       if (!t0.current) t0.current = now;
       const el = now - t0.current;
-      const W = c.width, H = c.height, cx = W/2, cy = H/2;
-      /* Canvas text-safe zone: only draw node labels below 62% height */
-      const labelFloor = H * 0.62;
+      const w=W(), h=H(), cx=CX(), cy=CY();
 
-      /* Act advance */
-      const na = el<ACT.II?0 : el<ACT.III?1 : el<ACT.IV?2 : el<ACT.V?3 : 4;
-      if (na !== actR.current) { actR.current = na; onActChange(na); }
+      /* ── act advancement ── */
+      const na = el<ACT.II?0:el<ACT.III?1:el<ACT.IV?2:el<ACT.V?3:4;
+      if (na!==actR.current){ actR.current=na; onAct(na); }
 
-      manA += 0.0053;
+      /* ── persistent trail — very slow fade keeps ghost trails ── */
+      const trailA = el<ACT.II ? 0.18 : 0.08;
+      g.fillStyle=`rgba(3,8,16,${trailA})`; g.fillRect(0,0,w,h);
 
-      /* Smooth rank: interpolate through RSTEPS based on progress in Act IV */
-      if (el > ACT.IV) {
-        const p   = Math.min(1, (el - ACT.IV) / 3400);
-        const raw = p * (RSTEPS.length - 1);
-        const lo  = Math.floor(raw), hi = Math.min(lo+1, RSTEPS.length-1);
-        const tgt = lerp(RSTEPS[lo], RSTEPS[hi], raw - lo);
-        rankV = lerp(rankV, tgt, 0.04);          // lag makes it feel physical
-      }
-
-      /* Traffic: live-feeling eased count */
-      const traffic = el > ACT.IV
-        ? Math.round(easeOut(Math.min(1,(el-ACT.IV)/3400)) * 34847) : 0;
-
-      /* Background — slightly different fade per act for crispness */
-      const g = c.getContext('2d')!;
-      g.fillStyle = `rgba(3,6,15,${el < ACT.II ? 0.20 : 0.09})`;
-      g.fillRect(0, 0, W, H);
-
-      /* ─── ACT I: breathing orb ─── */
-      if (el < ACT.II + 700) {
-        const tI   = Math.min(1, el / 900);
-        const fade = el > ACT.II ? easeOut(1 - (el-ACT.II)/700) : 1;
-        const br   = 0.75 + 0.25 * Math.sin(el * 0.0022);
-        const orbR = 52 * tI * br;
-        const gr   = g.createRadialGradient(cx, cy, 0, cx, cy, orbR*2.4);
-        gr.addColorStop(0, `rgba(0,255,209,${0.05*tI*fade})`);
-        gr.addColorStop(1, 'rgba(0,255,209,0)');
-        g.beginPath(); g.arc(cx,cy,orbR*2.4,0,Math.PI*2); g.fillStyle=gr; g.fill();
-        g.beginPath(); g.arc(cx,cy,3*tI,0,Math.PI*2);
-        g.fillStyle=`rgba(0,255,209,${tI*fade})`; g.shadowBlur=14; g.shadowColor=CYN; g.fill(); g.shadowBlur=0;
-        for (let i=1;i<=3;i++) {
-          const rr = ((el*0.13 - i*52) % 270 + 270) % 270;
-          const ra = Math.max(0, 0.32 - rr/270*0.32) * tI * fade;
-          if (ra > 0.004) { g.beginPath(); g.arc(cx,cy,rr,0,Math.PI*2); g.strokeStyle=`rgba(0,255,209,${ra})`; g.lineWidth=0.6; g.stroke(); }
+      /* ════════════════ ACT I — THE SIGNAL ════════════════ */
+      if (el < ACT.II + 600) {
+        const fade = el>ACT.II ? easeOut3(1-(el-ACT.II)/600) : 1;
+        const tI   = easeOut3(el/1000);
+        /* Breathing orb */
+        const br   = 0.78+0.22*Math.sin(el*0.002);
+        const orbR = 48*tI*br;
+        const gr   = g.createRadialGradient(cx,cy,0,cx,cy,orbR*2.8);
+        gr.addColorStop(0,`rgba(0,255,209,${0.04*tI*fade})`);
+        gr.addColorStop(1,'rgba(0,255,209,0)');
+        g.beginPath(); g.arc(cx,cy,orbR*2.8,0,Math.PI*2); g.fillStyle=gr; g.fill();
+        /* Central point — hard sharp dot */
+        g.beginPath(); g.arc(cx,cy,2*tI,0,Math.PI*2);
+        g.fillStyle=`rgba(0,255,209,${tI*fade})`; g.shadowBlur=10; g.shadowColor=CYN; g.fill(); g.shadowBlur=0;
+        /* Concentric rings — crisp 0.5px lines */
+        for (let i=1;i<=4;i++){
+          const rr=((el*0.11-i*50)%260+260)%260;
+          const ra=Math.max(0,0.28-rr/260*0.28)*tI*fade;
+          if (ra<0.003) continue;
+          g.beginPath(); g.arc(cx,cy,rr,0,Math.PI*2);
+          g.strokeStyle=`rgba(0,255,209,${ra})`; g.lineWidth=0.5; g.stroke();
         }
       }
 
-      /* ─── ACT II+: network ─── */
+      /* ════════════════ ACT II — THE NETWORK ════════════════ */
       if (el > ACT.II) {
-        const nT = easeOut(Math.min(1,(el-ACT.II)/1800));
-        if (Math.random() < 0.13*nT) { const lk=LK[Math.floor(Math.random()*LK.length)]; spawn(lk[0],lk[1]); }
+        const nT = easeOut3((el-ACT.II)/1800);
 
-        LK.forEach(([a,b]) => {
+        /* Spawn particles along links */
+        if (Math.random()<0.12*nT){
+          const lk=LINKS[Math.floor(Math.random()*LINKS.length)];
+          if (nodes[lk[0]]&&nodes[lk[1]]) spawnPt(nodes[lk[0]],nodes[lk[1]],nodes[lk[0]].col);
+        }
+
+        /* Link lines — ultra thin */
+        g.lineWidth = 0.5;
+        LINKS.forEach(([a,b])=>{
           if (!nodes[a]||!nodes[b]) return;
-          const bt = easeOut(Math.min(1,Math.max(0,(el-ACT.II-Math.min(a,b)*105)/460)));
+          const bt=easeOut3(clamp((el-ACT.II-Math.min(a,b)*110)/420,0,1));
           if (bt<0.01) return;
           g.beginPath(); g.moveTo(nodes[a].x,nodes[a].y); g.lineTo(nodes[b].x,nodes[b].y);
-          g.strokeStyle=`rgba(0,255,209,${0.065*bt})`; g.lineWidth=0.45; g.stroke();
+          g.strokeStyle=`rgba(0,255,209,${0.06*bt})`; g.stroke();
         });
 
-        parts = parts.filter(p => {
-          p.prog += p.spd;
-          const x=lerp(p.x,p.tx,p.prog), y=lerp(p.y,p.ty,p.prog);
-          const a=Math.sin(p.prog*Math.PI)*0.8;
-          const [r,gg,b2]=hx(p.col);
-          g.beginPath(); g.arc(x,y,1.3,0,Math.PI*2);
-          g.fillStyle=`rgba(${r},${gg},${b2},${a})`; g.shadowBlur=4; g.shadowColor=p.col; g.fill(); g.shadowBlur=0;
-          return p.prog<1;
+        /* Particles */
+        particles = particles.filter(p=>{
+          p.progress+=p.spd;
+          p.x=lerp(p.sx,p.x+(p.x-p.sx)*0.001,p.progress);
+          const px=lerp(p.sx,p.x,p.progress);
+          const py_t=lerp(p.sy,p.y,p.progress);
+          const pa=Math.sin(p.progress*Math.PI)*0.7;
+          const hx=p.col.replace('#','');
+          const r=parseInt(hx.slice(0,2),16),gg=parseInt(hx.slice(2,4),16),b=parseInt(hx.slice(4,6),16);
+          g.beginPath(); g.arc(px,py_t,1.2,0,Math.PI*2);
+          g.fillStyle=`rgba(${r},${gg},${b},${pa})`; g.shadowBlur=3; g.shadowColor=p.col; g.fill(); g.shadowBlur=0;
+          return p.progress<1;
         });
 
-        nodes.forEach((n,i) => {
-          const bt = easeOut(Math.min(1,Math.max(0,(el-ACT.II-i*130)/360)));
+        /* Nodes */
+        g.lineWidth=0.6;
+        nodes.forEach((n,i)=>{
+          const bt=easeOut3(clamp((el-ACT.II-i*130)/360,0,1));
           if (bt<0.01) return;
-          const pulse = 0.58+0.42*Math.sin(el*0.0016+n.ph);
-          const [r,gg,b2]=hx(n.col);
-          const aura=g.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*4.2);
-          aura.addColorStop(0,`rgba(${r},${gg},${b2},${0.08*bt*pulse})`); aura.addColorStop(1,'rgba(0,0,0,0)');
-          g.beginPath(); g.arc(n.x,n.y,n.r*4.2,0,Math.PI*2); g.fillStyle=aura; g.fill();
-          g.beginPath(); g.arc(n.x,n.y,n.r+2.8*pulse,0,Math.PI*2);
-          g.strokeStyle=`rgba(${r},${gg},${b2},${0.20*bt})`; g.lineWidth=0.6; g.stroke();
+          const pulse=0.6+0.4*Math.sin(el*0.0015+n.ph);
+          const hx=n.col.replace('#','');
+          const r=parseInt(hx.slice(0,2),16),gg=parseInt(hx.slice(2,4),16),b=parseInt(hx.slice(4,6),16);
+          /* Aura — soft, not blurry (radial gradient, no shadowBlur) */
+          const aura=g.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*5);
+          aura.addColorStop(0,`rgba(${r},${gg},${b},${0.07*bt*pulse})`);
+          aura.addColorStop(1,'rgba(0,0,0,0)');
+          g.beginPath(); g.arc(n.x,n.y,n.r*5,0,Math.PI*2); g.fillStyle=aura; g.fill();
+          /* Outer ring */
+          g.beginPath(); g.arc(n.x,n.y,n.r+2.5*pulse,0,Math.PI*2);
+          g.strokeStyle=`rgba(${r},${gg},${b},${0.18*bt})`; g.stroke();
+          /* Core — sharp filled circle */
           g.beginPath(); g.arc(n.x,n.y,n.r*bt,0,Math.PI*2);
-          g.fillStyle=`rgba(${r},${gg},${b2},${0.88*bt})`;
-          g.shadowBlur=9*pulse; g.shadowColor=n.col; g.fill(); g.shadowBlur=0;
-          /* Label: only in canvas zone, only after node fully born */
-          if (bt>0.8 && el<ACT.V && n.y>labelFloor) {
-            const la=(bt-0.8)/0.2*0.6;
-            g.font='500 8px "Courier New",monospace';
-            g.fillStyle=`rgba(${r},${gg},${b2},${la})`; g.textAlign='center'; g.textBaseline='bottom';
-            g.fillText(n.label, n.x, n.y-n.r-7);
+          g.fillStyle=`rgba(${r},${gg},${b},${0.9*bt})`;
+          g.shadowBlur=0; g.fill();
+          /* Label — only if node is in safe zone (below 60% of height) */
+          if (bt>0.85 && n.y>h*0.58 && el<ACT.V) {
+            const la=(bt-0.85)/0.15*0.55;
+            g.font=`500 8px "Courier New",monospace`;
+            g.fillStyle=`rgba(${r},${gg},${b},${la})`;
+            g.textAlign='center'; g.textBaseline='bottom';
+            g.fillText(n.label,n.x,n.y-n.r-8);
           }
         });
       }
 
-      /* ─── ACT III+: Manav ─── */
-      if (el > ACT.III) {
-        const t  = easeOut(Math.min(1,(el-ACT.III)/1300));
-        const mx = cx + Math.sin(el*0.00022)*6, my = cy + Math.cos(el*0.00029)*5;
+      /* ════════════════ ACT III — ALGORITHM CAPTURE ════════════════ */
+      if (el>ACT.III) {
+        const tA  = clamp((el-ACT.III)/(ACT.IV-ACT.III),0,1);
+        const mx  = cx, my = cy;
 
-        ORBIT.forEach((or,i) => {
-          const a = manA * [1.0,0.64,0.41][i] + i*(Math.PI*2/3);
-          g.beginPath(); g.arc(mx,my,or*t,0,Math.PI*2);
-          g.strokeStyle=`rgba(0,255,209,${(0.11+i*0.035)*t})`; g.lineWidth=0.5; g.stroke();
-          const dx=mx+or*t*Math.cos(a), dy=my+or*t*Math.sin(a);
-          g.beginPath(); g.arc(dx,dy,2.3,0,Math.PI*2);
-          g.fillStyle=`rgba(255,184,0,${0.72*t})`; g.shadowBlur=8; g.shadowColor=GOLD; g.fill(); g.shadowBlur=0;
+        /* Manav orbital rings */
+        const ORBIT=[85,136,200];
+        ORBIT.forEach((or,i)=>{
+          const speed=[0.012,0.0075,0.005][i];
+          const a = (el-ACT.III)*speed + i*(Math.PI*2/3);
+          g.beginPath(); g.arc(mx,my,or*easeOut5(tA*1.5),0,Math.PI*2);
+          g.strokeStyle=`rgba(0,255,209,${(0.10+i*0.03)*easeOut3(tA)})`; g.lineWidth=0.5; g.stroke();
+          const dx=mx+or*easeOut5(tA*1.5)*Math.cos(a), dy=my+or*easeOut5(tA*1.5)*Math.sin(a);
+          g.beginPath(); g.arc(dx,dy,2.2,0,Math.PI*2);
+          g.fillStyle=`rgba(255,184,0,${0.7*easeOut3(tA)})`;
+          g.shadowBlur=6; g.shadowColor=GOLD; g.fill(); g.shadowBlur=0;
         });
 
-        const pm=0.88+0.12*Math.sin(el*0.0035), cR=13*t*pm;
-        const mg=g.createRadialGradient(mx,my,0,mx,my,cR*3);
-        mg.addColorStop(0,`rgba(255,184,0,${0.16*t})`); mg.addColorStop(0.5,`rgba(0,255,209,${0.045*t})`); mg.addColorStop(1,'rgba(0,0,0,0)');
-        g.beginPath(); g.arc(mx,my,cR*3,0,Math.PI*2); g.fillStyle=mg; g.fill();
+        /* Manav core */
+        const pm=0.85+0.15*Math.sin(el*0.003);
+        const cR=12*easeOut5(tA*1.2)*pm;
+        const mg=g.createRadialGradient(mx,my,0,mx,my,cR*3.5);
+        mg.addColorStop(0,`rgba(255,184,0,${0.15*easeOut3(tA)})`);
+        mg.addColorStop(0.5,`rgba(0,255,209,${0.04*easeOut3(tA)})`);
+        mg.addColorStop(1,'rgba(0,0,0,0)');
+        g.beginPath(); g.arc(mx,my,cR*3.5,0,Math.PI*2); g.fillStyle=mg; g.fill();
         g.beginPath(); g.arc(mx,my,cR,0,Math.PI*2);
-        g.fillStyle=GOLD; g.shadowBlur=20*pm; g.shadowColor=GOLD; g.fill(); g.shadowBlur=0;
-        g.beginPath(); g.arc(mx,my,cR+4*pm,0,Math.PI*2);
-        g.strokeStyle=`rgba(255,184,0,0.32)`; g.lineWidth=0.8; g.stroke();
+        g.fillStyle=GOLD; g.shadowBlur=16*pm; g.shadowColor=GOLD; g.fill(); g.shadowBlur=0;
 
-        /* MANAV label — always in canvas centre zone, clear of text zones */
-        if (t > 0.5) {
-          const la=(t-0.5)/0.5;
-          g.font='600 11px "Courier New",monospace'; g.fillStyle=`rgba(255,184,0,${la*0.78})`;
-          g.textAlign='center'; g.textBaseline='top'; g.fillText('MANAV', mx, my+cR+10);
-          g.font='400 7.5px "Courier New",monospace'; g.fillStyle=`rgba(0,255,209,${la*0.4})`;
-          g.fillText('INTELLIGENCE NODE', mx, my+cR+23);
+        /* Wireframe human — appears on right side */
+        const humanX = cx + W()*0.28;
+        const humanH = H()*0.55;
+        const humanT = easeOut3(clamp((el-ACT.III-400)/1800,0,1));
+        const humanA = humanT;
+        if (humanA>0.01) {
+          g.lineWidth=0.8;
+          g.strokeStyle=CYN;
+          drawHuman(humanX, cy-humanH*0.08, humanH, humanA*0.65, humanT);
+          /* Search query bubble above head */
+          if (humanT>0.7) {
+            const bubA=(humanT-0.7)/0.3*0.6;
+            const bx=humanX, by=cy-humanH*0.55;
+            g.beginPath();
+            const bw=110, bh=22, br=6;
+            g.roundRect(bx-bw/2,by-bh,bw,bh,br);
+            g.strokeStyle=`rgba(0,255,209,${bubA*0.5})`; g.lineWidth=0.6; g.stroke();
+            g.fillStyle=`rgba(3,8,16,${bubA*0.8})`; g.fill();
+            g.font=`400 8px "Courier New",monospace`;
+            g.fillStyle=`rgba(0,255,209,${bubA})`; g.textAlign='center'; g.textBaseline='middle';
+            g.fillText('"best seo agency 2025"',bx,by-bh/2);
+            /* Line from bubble to head */
+            g.beginPath(); g.moveTo(bx,by); g.lineTo(bx,cy-humanH*0.47);
+            g.strokeStyle=`rgba(0,255,209,${bubA*0.3})`; g.lineWidth=0.5; g.stroke();
+          }
         }
 
-        if (t > 0.3) {
-          [4,8,11].forEach(ni => {
-            if (!nodes[ni]) return;
-            const la = easeOut((t-0.3)/0.7)*0.28;
-            g.beginPath(); g.moveTo(mx,my); g.lineTo(nodes[ni].x,nodes[ni].y);
-            const lg=g.createLinearGradient(mx,my,nodes[ni].x,nodes[ni].y);
-            lg.addColorStop(0,`rgba(255,184,0,${la})`); lg.addColorStop(1,'rgba(0,255,209,0)');
-            g.strokeStyle=lg; g.lineWidth=0.8; g.stroke();
-          });
-        }
-      }
+        /* Algo label boxes + capture streams */
+        algos.forEach((alg,i)=>{
+          const ax=alg.x*W(), ay=alg.y*H();
+          /* Stagger appearance */
+          const algT=easeOut3(clamp((el-ACT.III-i*280)/600,0,1));
+          if (algT<0.01) return;
 
-      /* ─── ACT IV: HUD panels — CANVAS zone only (H*0.38 to H*0.72) ─── */
-      if (el > ACT.IV) {
-        const t   = easeOut(Math.min(1,(el-ACT.IV)/1500));
-        /* Position HUD panels at 55% height — safely inside canvas zone */
-        const py  = H * 0.55;
-        const lx  = W * 0.20, rx = W * 0.80;
-        const ringR = 52*t;
+          /* Start capture after label fully visible */
+          const captureStart=ACT.III+i*280+700;
+          if (!alg.captured && el>captureStart){
+            alg.captureT=clamp((el-captureStart)/1400,0,1);
+            if (alg.captureT>=1) alg.captured=true;
+          }
 
-        /* Left: rank ring */
-        g.beginPath(); g.arc(lx,py,ringR,0,Math.PI*2);
-        g.strokeStyle=`rgba(0,255,209,${0.13*t})`; g.lineWidth=0.7; g.stroke();
-        const rd = Math.round(rankV), [cr,cg,cb]=hx(rd<=1?GOLD:CYN);
-        g.font=`200 ${Math.round(24*t)}px "Courier New",monospace`;
-        g.fillStyle=`rgba(${cr},${cg},${cb},${0.92*t})`;
-        g.shadowBlur=rd<=1?18:0; g.shadowColor=rd<=1?GOLD:CYN;
-        g.textAlign='center'; g.textBaseline='middle'; g.fillText(`#${rd}`,lx,py); g.shadowBlur=0;
-        g.font='400 6px "Courier New",monospace'; g.fillStyle=`rgba(255,255,255,${0.26*t})`;
-        g.fillText('SEARCH POSITION',lx,py+ringR+12);
+          const capT = alg.captured?1:alg.captureT;
 
-        /* Right: bar chart + traffic */
-        const bars=[0.36,0.50,0.60,0.72,0.82,0.90,0.95,1.0];
-        const bx=rx-38, by=py-48;
-        bars.forEach((h,i) => {
-          const bh=26*h*t, bw=6;
-          g.beginPath(); g.rect(bx+i*(bw+3),by+26-bh,bw,bh);
-          g.fillStyle=`rgba(0,255,209,${(0.26+h*0.48)*t})`; g.fill();
+          /* Box */
+          const bw=alg.label.length*5.5+16, bh=18;
+          const boxA=(1-capT*0.8)*algT;
+          if (boxA>0.02){
+            g.beginPath(); g.roundRect(ax-bw/2,ay-bh/2,bw,bh,3);
+            g.strokeStyle=`rgba(0,255,209,${boxA*0.5})`; g.lineWidth=0.6; g.stroke();
+            g.fillStyle=`rgba(3,8,16,${boxA*0.7})`; g.fill();
+            g.font=`500 7.5px "Courier New",monospace`;
+            g.fillStyle=`rgba(0,255,209,${boxA})`; g.textAlign='center'; g.textBaseline='middle';
+            g.fillText(alg.label,ax,ay);
+          }
+
+          /* Stream line — from algo box to Manav */
+          if (capT>0&&capT<1){
+            const sx=lerp(ax,mx,capT), sy=lerp(ay,my,capT);
+            const progress=capT;
+            g.beginPath(); g.moveTo(ax,ay); g.lineTo(sx,sy);
+            const lg=g.createLinearGradient(ax,ay,sx,sy);
+            lg.addColorStop(0,'rgba(255,184,0,0)');
+            lg.addColorStop(0.6,`rgba(255,184,0,${0.5*easeInOut(progress)})`);
+            lg.addColorStop(1,`rgba(0,255,209,${0.3*easeInOut(progress)})`);
+            g.strokeStyle=lg; g.lineWidth=1; g.stroke();
+            /* Bright leading particle */
+            g.beginPath(); g.arc(sx,sy,2.5,0,Math.PI*2);
+            g.fillStyle=GOLD; g.shadowBlur=10; g.shadowColor=GOLD; g.fill(); g.shadowBlur=0;
+          }
+
+          /* Capture flash at Manav */
+          if (alg.captured||capT>0.95){
+            const fl=easeOut3(1-(el-captureStart-1400)/300);
+            if (fl>0){
+              g.beginPath(); g.arc(mx,my,cR*1.8*fl,0,Math.PI*2);
+              g.fillStyle=`rgba(255,184,0,${fl*0.12})`; g.fill();
+            }
+          }
         });
-        g.font=`200 ${Math.round(17*t)}px "Courier New",monospace`;
-        g.fillStyle=`rgba(0,255,209,${0.88*t})`;
-        g.textAlign='center'; g.textBaseline='middle'; g.fillText(traffic.toLocaleString(),rx,py+10);
-        g.font='400 6px "Courier New",monospace'; g.fillStyle=`rgba(255,255,255,${0.26*t})`;
-        g.fillText('ORGANIC SESSIONS / MO',rx,py+28);
+
+        /* MANAV label */
+        const la=easeOut3(clamp((el-ACT.III-500)/800,0,1));
+        if (la>0){
+          g.font=`600 11px "Courier New",monospace`;
+          g.fillStyle=`rgba(255,184,0,${la*0.82})`; g.textAlign='center'; g.textBaseline='top';
+          g.fillText('MANAV',mx,my+cR+10);
+          g.font=`400 7px "Courier New",monospace`;
+          g.fillStyle=`rgba(0,255,209,${la*0.45})`;
+          g.fillText('INTELLIGENCE NODE',mx,my+cR+23);
+        }
       }
 
-      if (el < ACT.END) raf.current = requestAnimationFrame(draw);
+      /* ════════════════ ACT IV — THE ASCENT ════════════════ */
+      if (el>ACT.IV) {
+        const p  = clamp((el-ACT.IV)/(ACT.V-ACT.IV),0,1);
+
+        /* Smooth rank */
+        if (p>0){
+          const raw=p*(RANK_PATH.length-1);
+          const lo=Math.floor(raw),hi=Math.min(lo+1,RANK_PATH.length-1);
+          const tgt=lerp(RANK_PATH[lo],RANK_PATH[hi],raw-lo);
+          rankV=lerp(rankV,tgt,0.045);
+        }
+        const rd=Math.round(rankV);
+
+        /* Central rank ring */
+        const ringR=58*easeOut5(p*1.3);
+        g.beginPath(); g.arc(cx,cy,ringR,0,Math.PI*2);
+        g.strokeStyle=`rgba(0,255,209,${0.12*easeOut3(p)})`; g.lineWidth=0.7; g.stroke();
+        /* Filled progress arc */
+        const arcEnd=-Math.PI/2+Math.PI*2*(1-(rankV-1)/46);
+        g.beginPath(); g.arc(cx,cy,ringR,-Math.PI/2,arcEnd);
+        const rankColor=rd<=1?GOLD:CYN;
+        g.strokeStyle=rankColor; g.lineWidth=1.5;
+        g.shadowBlur=rd<=1?16:0; g.shadowColor=rankColor; g.stroke(); g.shadowBlur=0;
+
+        /* Rank number */
+        const fs=Math.round(lerp(0,32,easeOut3(p*1.5)));
+        if (fs>3){
+          g.font=`200 ${fs}px "Courier New",monospace`;
+          g.fillStyle=`rgba(${rd<=1?'255,184,0':'0,255,209'},${0.95*easeOut3(p*1.5)})`;
+          g.textAlign='center'; g.textBaseline='middle';
+          g.shadowBlur=rd<=1?20:0; g.shadowColor=rd<=1?GOLD:CYN;
+          g.fillText(`#${rd}`,cx,cy); g.shadowBlur=0;
+          g.font=`400 7px "Courier New",monospace`;
+          g.fillStyle=`rgba(255,255,255,${0.25*easeOut3(p)})`;
+          g.fillText('SEARCH POSITION',cx,cy+ringR+14);
+        }
+      }
+
+      if (el<ACT.END) rafId.current=requestAnimationFrame(draw);
     };
 
-    raf.current = requestAnimationFrame(draw);
-    return () => { cancelAnimationFrame(raf.current); window.removeEventListener('resize', resize); };
-  }, [onActChange]);
-
-  return <canvas ref={ref} style={{ position:'absolute',inset:0,width:'100%',height:'100%' }}/>;
-}
-
-/* ─────────────────────────────────────────────
-   HUD CHROME — corner brackets only
-───────────────────────────────────────────── */
-function Bracket({ pos }: { pos:'tl'|'tr'|'bl'|'br' }) {
-  const P: Record<string,object> = { tl:{top:18,left:18},tr:{top:18,right:18},bl:{bottom:18,left:18},br:{bottom:18,right:18} };
-  const R: Record<string,string> = { tl:'0',tr:'90deg',bl:'-90deg',br:'180deg' };
-  return (
-    <div style={{ position:'absolute',width:32,height:32,...P[pos],transform:`rotate(${R[pos]})` }}>
-      <div style={{ position:'absolute',top:0,left:0,width:16,height:1,background:'rgba(0,255,209,0.4)' }}/>
-      <div style={{ position:'absolute',top:0,left:0,width:1,height:16,background:'rgba(0,255,209,0.4)' }}/>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   LIVE COUNTER — ticks up realistically
-───────────────────────────────────────────── */
-function LiveCounter({ base }: { base: number }) {
-  const [v, setV] = useState(base);
-  useEffect(() => {
-    /* ~98,611/sec → tick every 250ms ≈ 24,653 per tick + jitter */
-    const iv = setInterval(() => setV(c => c + 24_653 + Math.floor(Math.random()*800-400)), 250);
-    return () => clearInterval(iv);
-  }, []);
-  return <>{v.toLocaleString()}</>;
-}
-
-/* ─────────────────────────────────────────────
-   BOTTOM STRIP — single rotating strip
-   Acts 1-2: capability pills
-   Act 2: also shows learning feed (replaces pills, no overlap)
-───────────────────────────────────────────── */
-function BottomStrip({ act, feed }: { act: number; feed: string[] }) {
-  const [feedIdx, setFeedIdx] = useState(0);
-  const [feedA,   setFeedA]   = useState(1);
-  const tRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => {
-    if (act !== 2) return;
-    const cycle = () => {
-      setFeedA(0);
-      tRef.current = setTimeout(() => { setFeedIdx(i => (i+1)%feed.length); setFeedA(1); tRef.current=setTimeout(cycle,2400); }, 320);
+    rafId.current = requestAnimationFrame(draw);
+    return ()=>{
+      cancelAnimationFrame(rafId.current);
+      window.removeEventListener('resize',setSize);
+      window.removeEventListener('resize',buildNodes);
     };
-    tRef.current = setTimeout(cycle, 2400);
-    return () => clearTimeout(tRef.current);
-  }, [act, feed.length]);
+  },[onAct]);
 
-  if (act < 1 || act > 2) return null;
-
-  const base: React.CSSProperties = {
-    position:'absolute', bottom:0, left:0, right:0,
-    background:'rgba(3,6,15,0.82)', backdropFilter:'blur(8px)',
-    borderTop:'1px solid rgba(0,255,209,0.07)',
-    display:'flex', alignItems:'center', justifyContent:'center',
-    padding:'8px 24px', minHeight:36,
-    fontFamily:'"Courier New",monospace',
-    animation:'slideUp 0.5s ease forwards',
-  };
-
-  /* Act 1: capability icons */
-  if (act === 1) {
-    return (
-      <div style={base}>
-        {[['🔍','INTENT MAPPING'],['🧠','LLM CITATIONS'],['📈','RANK VELOCITY'],
-          ['🌐','GLOBAL REACH'],['⚡','ALGO ALIGNMENT'],['🎯','CONVERSION']].map(([icon,label],i) => (
-          <div key={i} style={{ display:'flex',alignItems:'center',gap:5,
-            fontSize:'clamp(0.42rem,0.68vw,0.56rem)',color:'rgba(255,255,255,0.26)',letterSpacing:'0.13em',
-            marginRight:'clamp(12px,2vw,32px)',
-            animation:`fadeIn 0.3s ${i*65+150}ms ease forwards`,opacity:0 }}>
-            <span style={{fontSize:'clamp(0.6rem,1vw,0.76rem)'}}>{icon}</span>{label}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  /* Act 2: learning feed */
-  const raw   = feed[feedIdx];
-  const colon = raw.indexOf('·');
-  const pre   = colon>-1 ? raw.slice(0,colon).trim() : '';
-  const rest  = colon>-1 ? raw.slice(colon+1).trim() : raw;
-  const col   = ({CAPTURED:CYN,PATTERN:'#a78bfa',SIGNAL:CYN,VALIDATE:GOLD,
-                  LEARNING:CYN,REFRESH:'#a78bfa',INSIGHT:GOLD,SYNC:CYN} as any)[pre] || CYN;
-  return (
-    <div style={{...base,opacity:feedA,transition:'opacity 0.3s ease'}}>
-      <div style={{width:5,height:5,borderRadius:'50%',background:col,boxShadow:`0 0 5px ${col}`,
-        flexShrink:0,animation:'blink 1.3s ease-in-out infinite',marginRight:10}}/>
-      <span style={{fontSize:'clamp(0.42rem,0.68vw,0.56rem)',color:col,letterSpacing:'0.11em',fontWeight:600,marginRight:8}}>{pre}</span>
-      <span style={{fontSize:'clamp(0.42rem,0.68vw,0.56rem)',color:'rgba(255,255,255,0.28)',letterSpacing:'0.09em'}}>{rest}</span>
-    </div>
-  );
+  return <canvas ref={ref} style={{position:'absolute',inset:0}}/>;
 }
 
-/* ─────────────────────────────────────────────
-   ACT TEXT — top zone only  (0 → ~18vh)
-   Nothing here overlaps canvas zone or bottom strip.
-───────────────────────────────────────────── */
-const MONO: React.CSSProperties = { fontFamily:'"Courier New",Courier,monospace' };
+/* ════════════════════════════════════════════════════════
+   TEXT OVERLAYS — strict zones, timed for human reading
+   Top zone 0→18vh: one statement only
+   Bottom zone 82vh→100vh: one strip only
+════════════════════════════════════════════════════════ */
+const MONO: React.CSSProperties = {fontFamily:'"Courier New",Courier,monospace'};
 
-function ActText({ act, daily }: { act: number; daily: ReturnType<typeof getDailyData> }) {
-  /* Shared top-zone style — stays strictly above 20vh */
-  const top: React.CSSProperties = {
-    position:'absolute', top:'clamp(54px,8.5vh,88px)', left:0, right:0,
-    textAlign:'center', ...MONO,
-  };
+type DomProps = {act:number};
 
+const TOP:React.CSSProperties = {
+  position:'absolute', top:'clamp(56px,8vh,88px)',
+  left:'8%', right:'8%', textAlign:'center', ...MONO,
+  pointerEvents:'none',
+};
+
+function ActOverlay({act}:DomProps) {
   return (
     <>
-      {/* ── ACT I: full-screen centred (no canvas conflict — canvas is just orb) ── */}
-      {act === 0 && (
-        <div style={{ position:'absolute',inset:0,display:'flex',flexDirection:'column',
-          alignItems:'center',justifyContent:'center',gap:9,...MONO,pointerEvents:'none',
-          animation:'textIn 0.9s cubic-bezier(0.22,1,0.36,1) forwards' }}>
-          <div style={{fontSize:'clamp(0.48rem,0.8vw,0.62rem)',letterSpacing:'0.55em',color:'rgba(0,255,209,0.42)'}}>
-            RIGHT NOW · ACROSS THE PLANET
+      {act===0 && (
+        <div key="I" style={{
+          position:'absolute',inset:0,display:'flex',flexDirection:'column',
+          alignItems:'center',justifyContent:'center',gap:10,
+          ...MONO,pointerEvents:'none',
+          animation:'textIn 1s cubic-bezier(0.22,1,0.36,1) forwards',
+        }}>
+          <div style={{fontSize:'clamp(0.5rem,0.8vw,0.65rem)',letterSpacing:'0.55em',color:'rgba(0,255,209,0.38)'}}>
+            EVERY SECOND OF EVERY DAY
           </div>
-          {/* Live search counter */}
-          <div style={{lineHeight:1.05,textAlign:'center'}}>
-            <div style={{fontSize:'clamp(2.6rem,6.5vw,5.2rem)',fontWeight:200,color:WHT,
-              letterSpacing:'-0.02em',textShadow:'0 0 60px rgba(0,255,209,0.10)'}}>
-              <LiveCounter base={daily.liveCount}/>
+          <div style={{textAlign:'center',lineHeight:1.05}}>
+            <div style={{
+              fontSize:'clamp(0.85rem,2vw,1.6rem)',fontWeight:200,color:WHT,
+              letterSpacing:'0.1em',maxWidth:'min(600px,86vw)',margin:'0 auto',lineHeight:1.5,
+            }}>
+              The internet has a pulse.
             </div>
-            <div style={{fontSize:'clamp(0.58rem,1vw,0.76rem)',color:'rgba(255,255,255,0.28)',
-              letterSpacing:'0.28em',marginTop:7}}>
-              SEARCHES HAPPENING AS YOU WATCH
+            <div style={{
+              fontSize:'clamp(0.85rem,2vw,1.6rem)',fontWeight:200,color:WHT,
+              letterSpacing:'0.1em',maxWidth:'min(600px,86vw)',margin:'6px auto 0',lineHeight:1.5,
+              animation:'fadeUp 0.7s 1.2s ease forwards',opacity:0,
+            }}>
+              8.5 billion searches. Every day.
             </div>
-          </div>
-          <div style={{height:1,width:140,background:'linear-gradient(90deg,transparent,rgba(0,255,209,0.28),transparent)',margin:'3px 0'}}/>
-          <div style={{fontSize:'clamp(0.46rem,0.76vw,0.58rem)',color:'rgba(0,255,209,0.25)',letterSpacing:'0.3em'}}>
-            EVERY ONE IS A SIGNAL · MOST BRANDS MISS ALL OF THEM
-          </div>
-          {/* Today's algo event — secondary info block */}
-          <div style={{marginTop:18,padding:'7px 16px',
-            border:'1px solid rgba(0,255,209,0.11)',background:'rgba(0,255,209,0.03)',borderRadius:3,
-            fontSize:'clamp(0.44rem,0.7vw,0.56rem)',letterSpacing:'0.14em',color:'rgba(0,255,209,0.45)',
-            animation:'fadeUp 0.6s 0.9s ease forwards',opacity:0,maxWidth:'min(520px,88vw)',textAlign:'center'}}>
-            LATEST SIGNAL · {daily.todayEvent.date.toUpperCase()} · {daily.todayEvent.name.toUpperCase()} · {daily.todayEvent.delta.toUpperCase()}
+            <div style={{
+              fontSize:'clamp(0.85rem,2vw,1.6rem)',fontWeight:200,
+              color:'rgba(0,255,209,0.7)',letterSpacing:'0.1em',
+              maxWidth:'min(600px,86vw)',margin:'6px auto 0',lineHeight:1.5,
+              animation:'fadeUp 0.7s 2.4s ease forwards',opacity:0,
+            }}>
+              Most brands are invisible to all of it.
+            </div>
           </div>
         </div>
       )}
 
-      {/* ── ACT II ── */}
-      {act === 1 && (
-        <div style={{...top,animation:'textIn 0.7s cubic-bezier(0.22,1,0.36,1) forwards'}}>
-          <div style={{fontSize:'clamp(0.46rem,0.72vw,0.58rem)',letterSpacing:'0.5em',
-            color:'rgba(0,255,209,0.38)',marginBottom:8}}>
+      {act===1 && (
+        <div key="II" style={{...TOP,animation:'textIn 0.8s cubic-bezier(0.22,1,0.36,1) forwards'}}>
+          <div style={{fontSize:'clamp(0.48rem,0.75vw,0.6rem)',letterSpacing:'0.5em',color:'rgba(0,255,209,0.35)',marginBottom:10}}>
             THE SIGNAL NETWORK
           </div>
-          <div style={{fontSize:'clamp(1.1rem,2.6vw,1.9rem)',fontWeight:300,color:WHT,lineHeight:1.3}}>
-            Every search has a story.{' '}
+          <div style={{fontSize:'clamp(1.1rem,2.5vw,1.9rem)',fontWeight:200,color:WHT,lineHeight:1.4}}>
+            Every search is a signal.{' '}
             <span style={{color:CYN}}>Every signal has a pattern.</span>
           </div>
-        </div>
-      )}
-
-      {/* ── ACT III ── */}
-      {act === 2 && (
-        <div style={{...top,animation:'textIn 0.7s cubic-bezier(0.22,1,0.36,1) forwards'}}>
-          <div style={{fontSize:'clamp(0.46rem,0.72vw,0.58rem)',letterSpacing:'0.5em',
-            color:'rgba(255,184,0,0.52)',marginBottom:8}}>
-            ONE INTELLIGENCE · TRAINED ON EVERY SIGNAL
-          </div>
-          <div style={{fontSize:'clamp(1.1rem,2.6vw,1.9rem)',fontWeight:300,color:WHT,lineHeight:1.3}}>
-            Manav doesn't just read the network.{' '}
-            <span style={{color:GOLD}}>He shapes what it says about you.</span>
-          </div>
-          <div style={{display:'flex',justifyContent:'center',gap:'clamp(10px,1.8vw,22px)',
-            marginTop:10,flexWrap:'wrap'}}>
-            {['AUTO-LEARNING','DEEP ENRICHMENT','ALGO ALIGNMENT','GEO INTELLIGENCE'].map((cap,i) => (
-              <div key={i} style={{display:'flex',alignItems:'center',gap:5,
-                fontSize:'clamp(0.42rem,0.65vw,0.52rem)',letterSpacing:'0.17em',
-                color:'rgba(255,184,0,0.42)',
-                animation:`fadeUp 0.4s ${i*85}ms ease forwards`,opacity:0}}>
-                <div style={{width:3,height:3,borderRadius:'50%',background:GOLD,boxShadow:`0 0 4px ${GOLD}`}}/>
-                {cap}
-              </div>
-            ))}
+          <div style={{
+            fontSize:'clamp(0.72rem,1.3vw,1rem)',fontWeight:200,
+            color:'rgba(255,255,255,0.35)',lineHeight:1.5,marginTop:12,
+            animation:'fadeUp 0.7s 1.5s ease forwards',opacity:0,
+          }}>
+            Algorithm updates. Competitor moves. Intent clusters.<br/>
+            This network reads them all in real time.
           </div>
         </div>
       )}
 
-      {/* ── ACT IV ── */}
-      {act === 3 && (
-        <div style={{...top,animation:'textIn 0.7s cubic-bezier(0.22,1,0.36,1) forwards'}}>
-          <div style={{fontSize:'clamp(0.46rem,0.72vw,0.58rem)',letterSpacing:'0.5em',
-            color:'rgba(0,255,209,0.36)',marginBottom:8}}>
-            WHAT INTELLIGENCE DOES FOR YOUR BRAND
+      {act===2 && (
+        <div key="III" style={{...TOP,animation:'textIn 0.8s cubic-bezier(0.22,1,0.36,1) forwards'}}>
+          <div style={{fontSize:'clamp(0.48rem,0.75vw,0.6rem)',letterSpacing:'0.5em',color:'rgba(255,184,0,0.45)',marginBottom:10}}>
+            THE INTELLIGENCE
           </div>
-          <div style={{fontSize:'clamp(1.1rem,2.6vw,1.9rem)',fontWeight:300,color:WHT,lineHeight:1.3}}>
-            From invisible to inevitable.{' '}
-            <span style={{color:CYN}}>Position #1. Every time.</span>
+          <div style={{fontSize:'clamp(1.1rem,2.5vw,1.9rem)',fontWeight:200,color:WHT,lineHeight:1.4}}>
+            Manav reads what no one else can.
+          </div>
+          <div style={{
+            fontSize:'clamp(0.72rem,1.3vw,1rem)',fontWeight:200,
+            color:'rgba(255,255,255,0.35)',lineHeight:1.5,marginTop:12,
+            animation:'fadeUp 0.7s 1.8s ease forwards',opacity:0,
+          }}>
+            Every algorithm update is captured.<br/>
+            Every signal is understood. Every gap becomes your opportunity.
+          </div>
+        </div>
+      )}
+
+      {act===3 && (
+        <div key="IV" style={{...TOP,animation:'textIn 0.8s cubic-bezier(0.22,1,0.36,1) forwards'}}>
+          <div style={{fontSize:'clamp(0.48rem,0.75vw,0.6rem)',letterSpacing:'0.5em',color:'rgba(0,255,209,0.35)',marginBottom:10}}>
+            THE RESULT
+          </div>
+          <div style={{fontSize:'clamp(1.1rem,2.5vw,1.9rem)',fontWeight:200,color:WHT,lineHeight:1.4}}>
+            From invisible.{' '}
+            <span style={{color:GOLD}}>To position #1.</span>
+          </div>
+          <div style={{
+            fontSize:'clamp(0.72rem,1.3vw,1rem)',fontWeight:200,
+            color:'rgba(255,255,255,0.35)',lineHeight:1.5,marginTop:12,
+            animation:'fadeUp 0.7s 1.4s ease forwards',opacity:0,
+          }}>
+            Not luck. Not shortcuts. Intelligence applied with precision.
           </div>
         </div>
       )}
@@ -514,186 +583,172 @@ function ActText({ act, daily }: { act: number; daily: ReturnType<typeof getDail
   );
 }
 
-/* ─────────────────────────────────────────────
-   ACT V — SEO SEASON REVEAL (full overlay)
-───────────────────────────────────────────── */
-function ActV({ onEnter, daily }: { onEnter:()=>void; daily: ReturnType<typeof getDailyData> }) {
+/* ════════════════════════════════════════════════════════
+   ACT V — SEO SEASON REVEAL
+════════════════════════════════════════════════════════ */
+function ActV({onEnter}:{onEnter:()=>void}) {
   return (
-    <div style={{ position:'absolute',inset:0,zIndex:10,
+    <div style={{
+      position:'absolute',inset:0,zIndex:10,
       display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-      background:'radial-gradient(ellipse 80% 60% at 50% 50%,rgba(3,8,20,0.97) 0%,rgba(3,6,15,0.99) 100%)',
-      animation:'actVIn 0.8s cubic-bezier(0.22,1,0.36,1) forwards',...MONO }}>
-
-      {/* Brackets */}
-      {(['tl','tr','bl','br'] as const).map((p,i) => (
-        <div key={p} style={{animation:`bracketIn 0.4s ${i*75}ms ease forwards`,opacity:0}}>
-          <Bracket pos={p}/>
+      background:'radial-gradient(ellipse 85% 65% at 50% 50%,rgba(3,8,22,0.97) 0%,rgba(3,8,16,0.99) 100%)',
+      animation:'actVIn 0.9s cubic-bezier(0.22,1,0.36,1) forwards',...MONO,
+    }}>
+      {/* Corner brackets */}
+      {(['tl','tr','bl','br'] as const).map((p,i)=>(
+        <div key={p} style={{
+          position:'absolute',width:32,height:32,
+          ...(p==='tl'?{top:20,left:20}:p==='tr'?{top:20,right:20}:p==='bl'?{bottom:20,left:20}:{bottom:20,right:20}),
+          transform:`rotate(${p==='tl'?0:p==='tr'?90:p==='bl'?-90:180}deg)`,
+          animation:`bracketIn 0.45s ${i*80}ms ease forwards`,opacity:0,
+        }}>
+          <div style={{position:'absolute',top:0,left:0,width:18,height:1,background:'rgba(0,255,209,0.4)'}}/>
+          <div style={{position:'absolute',top:0,left:0,width:1,height:18,background:'rgba(0,255,209,0.4)'}}/>
         </div>
       ))}
 
-      {/* Rules */}
-      {[{top:50},{bottom:50}].map((pos,i) => (
-        <div key={i} style={{position:'absolute',left:'8%',right:'8%',height:1,...pos,
-          background:'linear-gradient(90deg,transparent,rgba(0,255,209,0.26),transparent)',
-          animation:'ruleExpand 0.65s 0.2s ease forwards',transform:'scaleX(0)',transformOrigin:'center'}}/>
+      {/* Top / bottom rules */}
+      {[{top:48},{bottom:48}].map((pos,i)=>(
+        <div key={i} style={{
+          position:'absolute',left:'8%',right:'8%',height:1,...pos,
+          background:'linear-gradient(90deg,transparent,rgba(0,255,209,0.24),transparent)',
+          animation:'ruleExpand 0.7s 0.2s ease forwards',transform:'scaleX(0)',transformOrigin:'center',
+        }}/>
       ))}
 
       {/* Identity */}
       <div style={{textAlign:'center'}}>
-        <div style={{fontSize:'clamp(0.46rem,0.82vw,0.6rem)',letterSpacing:'0.58em',
-          color:'rgba(0,255,209,0.36)',marginBottom:13,
-          animation:'fadeUp 0.5s 0.32s ease forwards',opacity:0}}>
+        <div style={{
+          fontSize:'clamp(0.48rem,0.8vw,0.62rem)',letterSpacing:'0.58em',
+          color:'rgba(0,255,209,0.34)',marginBottom:14,
+          animation:'fadeUp 0.55s 0.3s ease forwards',opacity:0,
+        }}>
           THE INTELLIGENCE PLATFORM FOR SEARCH DOMINANCE
         </div>
         <div style={{position:'relative',display:'inline-block'}}>
-          <div style={{fontSize:'clamp(3.2rem,9vw,7.5rem)',fontWeight:100,
+          <div style={{
+            fontSize:'clamp(3.2rem,9vw,7.5rem)',fontWeight:100,
             letterSpacing:'0.24em',lineHeight:1,color:WHT,textIndent:'0.24em',
-            textShadow:'0 0 80px rgba(0,255,209,0.06)',
-            animation:'titleReveal 0.9s 0.44s cubic-bezier(0.22,1,0.36,1) forwards',opacity:0}}>
+            textShadow:'0 0 80px rgba(0,255,209,0.05)',
+            animation:'titleReveal 1.0s 0.42s cubic-bezier(0.22,1,0.36,1) forwards',opacity:0,
+          }}>
             SEO SEASON
           </div>
-          <div style={{position:'absolute',bottom:-4,left:'7%',right:'7%',height:1,
+          <div style={{
+            position:'absolute',bottom:-4,left:'6%',right:'6%',height:1,
             background:`linear-gradient(90deg,transparent,${CYN},transparent)`,
-            animation:'ruleExpand 0.5s 1.25s ease forwards',transform:'scaleX(0)',transformOrigin:'center'}}/>
+            animation:'ruleExpand 0.55s 1.28s ease forwards',transform:'scaleX(0)',transformOrigin:'center',
+          }}/>
         </div>
-        <div style={{fontSize:'clamp(0.52rem,0.95vw,0.7rem)',letterSpacing:'0.37em',
-          color:'rgba(255,255,255,0.17)',marginTop:16,
-          animation:'fadeUp 0.5s 1.28s ease forwards',opacity:0}}>
+        <div style={{
+          fontSize:'clamp(0.55rem,1vw,0.72rem)',letterSpacing:'0.38em',
+          color:'rgba(255,255,255,0.18)',marginTop:18,
+          animation:'fadeUp 0.55s 1.32s ease forwards',opacity:0,
+        }}>
           BY MANAV · WHERE INTELLIGENCE BECOMES DOMINANCE
         </div>
       </div>
 
-      {/* Stats row — last item is today's real algo event */}
-      <div style={{display:'flex',gap:'clamp(12px,3vw,30px)',marginTop:28,
-        animation:'fadeUp 0.5s 1.48s ease forwards',opacity:0,flexWrap:'wrap',justifyContent:'center'}}>
+      {/* Four values — readable, no data clutter */}
+      <div style={{
+        display:'flex',gap:'clamp(12px,3vw,32px)',marginTop:32,
+        animation:'fadeUp 0.55s 1.52s ease forwards',opacity:0,
+        flexWrap:'wrap',justifyContent:'center',
+      }}>
         {[
-          {v:'#1',     l:'SEARCH RANK',       c:GOLD},
-          {v:'94/100', l:'LLM VISIBILITY',    c:CYN },
-          {v:'+340%',  l:'TRAFFIC GROWTH',    c:CYN },
-          {v:daily.todayEvent.delta.replace(' ','\u00A0'), l:daily.todayEvent.date.toUpperCase(), c:GOLD},
-        ].map(({v,l,c},i) => (
-          <div key={i} style={{textAlign:'center',minWidth:72}}>
-            <div style={{fontSize:'clamp(1rem,2vw,1.48rem)',fontWeight:200,color:c,
-              textShadow:`0 0 16px ${c}32`}}>{v}</div>
-            <div style={{fontSize:'clamp(0.4rem,0.62vw,0.5rem)',color:'rgba(255,255,255,0.2)',
+          {v:'#1',      l:'SEARCH RANK',     c:GOLD},
+          {v:'AUTO',    l:'LEARNING ENGINE', c:CYN },
+          {v:'FULL',    l:'ALGO ALIGNMENT',  c:CYN },
+          {v:'YOURS',   l:'THE INTELLIGENCE',c:GOLD},
+        ].map(({v,l,c},i)=>(
+          <div key={i} style={{textAlign:'center',minWidth:68}}>
+            <div style={{fontSize:'clamp(1rem,2vw,1.5rem)',fontWeight:200,color:c,
+              textShadow:`0 0 16px ${c}30`}}>{v}</div>
+            <div style={{fontSize:'clamp(0.4rem,0.6vw,0.5rem)',color:'rgba(255,255,255,0.2)',
               letterSpacing:'0.17em',marginTop:4}}>{l}</div>
           </div>
         ))}
       </div>
 
-      {/* Learnings count — dynamic daily */}
-      <div style={{fontSize:'clamp(0.42rem,0.65vw,0.52rem)',color:'rgba(0,255,209,0.28)',
-        letterSpacing:'0.22em',marginTop:14,
-        animation:'fadeUp 0.5s 1.65s ease forwards',opacity:0}}>
-        {daily.learningsToday} ACTIVE LEARNINGS INTEGRATED TODAY
-      </div>
-
       {/* CTA */}
       <button onClick={onEnter} style={{
-        marginTop:28,background:'transparent',
-        border:'1px solid rgba(0,255,209,0.3)',borderRadius:0,
-        padding:'clamp(10px,1.7vh,13px) clamp(40px,6vw,60px)',
+        marginTop:30,background:'transparent',
+        border:'1px solid rgba(0,255,209,0.28)',borderRadius:0,
+        padding:'clamp(10px,1.6vh,13px) clamp(40px,5.5vw,58px)',
         cursor:'pointer',letterSpacing:'0.42em',
-        color:CYN,fontSize:'clamp(0.56rem,0.92vw,0.7rem)',fontWeight:400,
+        color:CYN,fontSize:'clamp(0.56rem,0.9vw,0.68rem)',fontWeight:400,
         fontFamily:'"Courier New",monospace',transition:'all 0.26s',
-        animation:'fadeUp 0.5s 1.82s ease forwards',opacity:0 }}
-      onMouseEnter={e=>{const el=e.currentTarget;el.style.background='rgba(0,255,209,0.05)';el.style.borderColor='rgba(0,255,209,0.6)';el.style.boxShadow='0 0 24px rgba(0,255,209,0.1)';el.style.letterSpacing='0.52em';}}
-      onMouseLeave={e=>{const el=e.currentTarget;el.style.background='transparent';el.style.borderColor='rgba(0,255,209,0.3)';el.style.boxShadow='none';el.style.letterSpacing='0.42em';}}>
+        animation:'fadeUp 0.55s 1.72s ease forwards',opacity:0,
+      }}
+      onMouseEnter={e=>{const el=e.currentTarget;el.style.background='rgba(0,255,209,0.05)';el.style.borderColor='rgba(0,255,209,0.55)';el.style.boxShadow='0 0 22px rgba(0,255,209,0.09)';el.style.letterSpacing='0.52em';}}
+      onMouseLeave={e=>{const el=e.currentTarget;el.style.background='transparent';el.style.borderColor='rgba(0,255,209,0.28)';el.style.boxShadow='none';el.style.letterSpacing='0.42em';}}>
         ENTER THE INTELLIGENCE
       </button>
 
-      <div style={{fontSize:'clamp(0.4rem,0.62vw,0.5rem)',color:'rgba(255,255,255,0.13)',
-        letterSpacing:'0.17em',marginTop:16,
-        animation:'fadeUp 0.4s 1.98s ease forwards',opacity:0}}>
+      <div style={{
+        fontSize:'clamp(0.4rem,0.6vw,0.5rem)',color:'rgba(255,255,255,0.12)',
+        letterSpacing:'0.17em',marginTop:14,
+        animation:'fadeUp 0.45s 1.88s ease forwards',opacity:0,
+      }}>
         APPROVED CLIENTS ONLY · MANAGED PERSONALLY BY MANAV
       </div>
     </div>
   );
 }
 
-/* ─────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════
    ROOT
-───────────────────────────────────────────── */
-export default function IntroAnimation({ onComplete }: { onComplete: () => void }) {
+════════════════════════════════════════════════════════ */
+export default function IntroAnimation({onComplete}:{onComplete:()=>void}) {
   const [act,     setAct]     = useState(0);
-  const [showHUD, setShowHUD] = useState(false);
   const [visible, setVisible] = useState(true);
-  const daily   = useMemo(getDailyData, []);
-  const startMs = useRef(0);
-  const rafM    = useRef(0);
+  const rafM = useRef(0);
+  const t0   = useRef(0);
 
-  useEffect(() => {
-    startMs.current = performance.now();
-    const tick = (now: number) => {
-      const el = now - startMs.current;
-      if (el > ACT.II && !showHUD) setShowHUD(true);
-      if (el < ACT.END) rafM.current = requestAnimationFrame(tick);
+  useEffect(()=>{
+    t0.current = performance.now();
+    const tick=(now:number)=>{
+      if (now-t0.current < ACT.END) rafM.current=requestAnimationFrame(tick);
     };
-    rafM.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafM.current);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    rafM.current=requestAnimationFrame(tick);
+    return ()=>cancelAnimationFrame(rafM.current);
+  },[]);
 
-  const onActChange = useCallback((a: number) => setAct(a), []);
-  const exit = useCallback((d = 380) => {
+  const onAct = useCallback((n:number)=>setAct(n),[]);
+  const exit  = useCallback((d=400)=>{
     cancelAnimationFrame(rafM.current);
     setVisible(false);
-    setTimeout(onComplete, d);
-  }, [onComplete]);
+    setTimeout(onComplete,d);
+  },[onComplete]);
 
   if (!visible) return null;
-
   return (
-    <div style={{ position:'fixed',inset:0,zIndex:99999,background:BG,overflow:'hidden' }}>
+    <div style={{position:'fixed',inset:0,zIndex:99999,background:BG,overflow:'hidden'}}>
+      <CanvasEngine onAct={onAct}/>
 
-      <SignalEngine onActChange={onActChange}/>
+      {act<4 && <ActOverlay act={act}/>}
+      {act>=4 && <ActV onEnter={()=>exit(520)}/>}
 
-      {/* Scan line — acts 1-2, thin, non-distracting */}
-      {showHUD && act >= 1 && act <= 2 && (
-        <div style={{ position:'absolute',left:0,right:0,height:1,pointerEvents:'none',
-          background:`linear-gradient(90deg,transparent,${CYN}20,transparent)`,
-          animation:'scan 4.5s linear infinite' }}/>
-      )}
-
-      {/* Corner brackets — acts 1-4 */}
-      {showHUD && act < 4 && (
-        <div style={{position:'absolute',inset:0,pointerEvents:'none'}}>
-          {(['tl','tr','bl','br'] as const).map(p=><Bracket key={p} pos={p}/>)}
-        </div>
-      )}
-
-      {/* Act texts */}
-      {act < 4 && <ActText act={act} daily={daily}/>}
-
-      {/* Bottom strip — no overlap with top text, no overlap with each other */}
-      <BottomStrip act={act} feed={daily.feedLines}/>
-
-      {/* Act V */}
-      {act >= 4 && <ActV onEnter={() => exit(520)} daily={daily}/>}
-
-      {/* SKIP — bottom-right, never in top-zone conflict */}
-      {act < 4 && (
-        <button onClick={() => exit(160)} style={{
+      {act<4 && (
+        <button onClick={()=>exit(160)} style={{
           position:'absolute',bottom:20,right:24,zIndex:20,
           background:'none',border:'none',cursor:'pointer',
-          color:'rgba(255,255,255,0.17)',fontSize:'clamp(0.5rem,0.78vw,0.6rem)',
+          color:'rgba(255,255,255,0.15)',fontSize:'clamp(0.5rem,0.75vw,0.58rem)',
           letterSpacing:'0.2em',fontFamily:'"Courier New",monospace',
-          padding:'5px 10px',transition:'color 0.2s' }}
-        onMouseEnter={e=>(e.currentTarget.style.color='rgba(0,255,209,0.6)')}
-        onMouseLeave={e=>(e.currentTarget.style.color='rgba(255,255,255,0.17)')}>
+          padding:'5px 10px',transition:'color 0.2s',
+        }}
+        onMouseEnter={e=>(e.currentTarget.style.color='rgba(0,255,209,0.55)')}
+        onMouseLeave={e=>(e.currentTarget.style.color='rgba(255,255,255,0.15)')}>
           SKIP
         </button>
       )}
 
       <style>{`
-        @keyframes textIn    { from{opacity:0;transform:translateY(8px);filter:blur(3px)} to{opacity:1;transform:none;filter:none} }
-        @keyframes fadeUp    { from{opacity:0;transform:translateY(7px)} to{opacity:1;transform:none} }
-        @keyframes fadeIn    { from{opacity:0} to{opacity:1} }
-        @keyframes slideUp   { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
-        @keyframes scan      { from{top:0} to{top:100vh} }
-        @keyframes blink     { 0%,100%{opacity:1} 50%{opacity:0.22} }
-        @keyframes actVIn    { from{opacity:0} to{opacity:1} }
-        @keyframes bracketIn { from{opacity:0;transform:scale(0.72)} to{opacity:1;transform:scale(1)} }
-        @keyframes ruleExpand{ from{transform:scaleX(0);opacity:0} to{transform:scaleX(1);opacity:1} }
+        @keyframes textIn     { from{opacity:0;transform:translateY(8px);filter:blur(3px)} to{opacity:1;transform:none;filter:none} }
+        @keyframes fadeUp     { from{opacity:0;transform:translateY(7px)} to{opacity:1;transform:none} }
+        @keyframes actVIn     { from{opacity:0} to{opacity:1} }
+        @keyframes bracketIn  { from{opacity:0;transform:scale(0.7)} to{opacity:1;transform:scale(1)} }
+        @keyframes ruleExpand { from{transform:scaleX(0);opacity:0} to{transform:scaleX(1);opacity:1} }
         @keyframes titleReveal{ from{opacity:0;letter-spacing:0.65em;filter:blur(8px)} to{opacity:1;filter:blur(0)} }
       `}</style>
     </div>
