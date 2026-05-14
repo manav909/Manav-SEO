@@ -898,5 +898,107 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     } catch (e: any) { return ok(res, { error: e.message }); }
   }
 
+
+  /* ── GET LAUNCHPAD INTEL ── Presidential Command Center data ── */
+  if (action === "get_launchpad_intel") {
+    try {
+      const db2 = db();
+      const [
+        projectsR, clientsR, learningsR, tasksR,
+        deskR, algoR, logsR, auditsR, costR
+      ] = await Promise.allSettled([
+        db2.from("projects").select("id,name,url,cms,status,keywords,goals,organic_monthly,created_at,client_id"),
+        db2.from("clients").select("id,name,company,email"),
+        db2.from("brain_learnings").select("id,project_id,status,card_type,confidence_score,created_at,applied_count,auto_captured"),
+        db2.from("task_executions").select("id,project_id,task_type,status,created_at").order("created_at",{ascending:false}).limit(60),
+        db2.from("brain_desk").select("id,project_id,content_type,created_at").order("created_at",{ascending:false}).limit(40),
+        db2.from("algorithm_knowledge").select("id,topic,freshness_score,updated_at").order("updated_at",{ascending:false}).limit(20),
+        db2.from("system_change_log").select("id,change_type,description,created_at").order("created_at",{ascending:false}).limit(20),
+        db2.from("audit_reports").select("id,project_id,created_at,score").order("created_at",{ascending:false}).limit(20),
+        db2.from("api_cost_log").select("id,cost,model,created_at,project_id").order("created_at",{ascending:false}).limit(100),
+      ]);
+
+      const get = (r: any) => r.status === "fulfilled" ? (r.value.data || []) : [];
+      const projects   = get(projectsR);
+      const clients    = get(clientsR);
+      const learnings  = get(learningsR);
+      const tasks      = get(tasksR);
+      const deskItems  = get(deskR);
+      const algoTopics = get(algoR);
+      const logs       = get(logsR);
+      const audits     = get(auditsR);
+      const costs      = get(costR);
+
+      // Per-project aggregated stats
+      const projectStats = projects.map((p: any) => {
+        const pLearnings = learnings.filter((l: any) => l.project_id === p.id);
+        const pTasks     = tasks.filter((t: any) => t.project_id === p.id);
+        const pAudits    = audits.filter((a: any) => a.project_id === p.id);
+        const pCosts     = costs.filter((c: any) => c.project_id === p.id);
+        const active     = pLearnings.filter((l: any) => l.status === "active").length;
+        const pending    = pLearnings.filter((l: any) => l.status === "pending_review").length;
+        const totalCost  = pCosts.reduce((s: number, c: any) => s + (c.cost || 0), 0);
+        // Brain quality score
+        let score = 0;
+        if (p.cms)                          score += 25;
+        if (p.keywords?.length >= 3)        score += 20;
+        if (p.goals)                        score += 15;
+        if (p.url)                          score += 10;
+        if (active >= 20)                   score += 20;
+        else if (active >= 10)              score += 12;
+        else if (active >= 5)              score += 6;
+        const lastActivity = [
+          pTasks[0]?.created_at, pAudits[0]?.created_at, pLearnings[pLearnings.length-1]?.created_at
+        ].filter(Boolean).sort().reverse()[0] || p.created_at;
+        const client = clients.find((c: any) => c.id === p.client_id);
+        return {
+          ...p, clientName: client?.name || client?.company || "",
+          activeLearnings: active, pendingLearnings: pending,
+          totalLearnings: pLearnings.length, taskCount: pTasks.length,
+          lastAuditScore: pAudits[0]?.score || null,
+          lastAuditDate: pAudits[0]?.created_at || null,
+          brainScore: score, totalCost: Math.round(totalCost * 100) / 100,
+          lastActivity,
+        };
+      });
+
+      // System totals
+      const today = new Date().toISOString().split("T")[0];
+      const todayCost   = costs.filter((c: any) => c.created_at?.startsWith(today)).reduce((s: number, c: any) => s + (c.cost || 0), 0);
+      const totalCostAll = costs.reduce((s: number, c: any) => s + (c.cost || 0), 0);
+      const todayTasks  = tasks.filter((t: any) => t.created_at?.startsWith(today)).length;
+      const activePend  = learnings.filter((l: any) => l.status === "pending_review").length;
+      const activeAll   = learnings.filter((l: any) => l.status === "active").length;
+      const institutional = learnings.filter((l: any) => !l.project_id && l.status === "active").length;
+
+      return ok(res, {
+        success: true,
+        projectStats,
+        clients,
+        totals: {
+          projects: projects.length,
+          activeProjects: projects.filter((p: any) => p.status !== "archived").length,
+          clients: clients.length,
+          totalLearnings: learnings.length,
+          activeLearnings: activeAll,
+          pendingApprovals: activePend,
+          institutionalKnowledge: institutional,
+          algoTopics: algoTopics.length,
+          totalDeskItems: deskItems.length,
+          taskCount: tasks.length,
+          todayTasks,
+          todayCost: Math.round(todayCost * 10000) / 10000,
+          totalCost: Math.round(totalCostAll * 100) / 100,
+        },
+        algoTopics: algoTopics.slice(0, 10),
+        recentLogs:  logs.slice(0, 10),
+        recentTasks: tasks.slice(0, 15),
+        pendingLearnings: learnings.filter((l: any) => l.status === "pending_review").slice(0, 20),
+      });
+    } catch (e: any) {
+      return ok(res, { error: e.message });
+    }
+  }
+
     return ok(res, { error: `Unknown action: ${action}` });
 }
