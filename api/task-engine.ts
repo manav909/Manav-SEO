@@ -15,254 +15,14 @@
  *   with same card_type for semantic overlap; flag or merge
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-
-/* ─── Inline brain helpers (self-contained) ─── */
-import { createClient as _sbCreate } from "@supabase/supabase-js";
-function _sbClient() {
-  return _sbCreate(
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
-  );
-}
+import { db } from "./_lib/db";
+import { classifyLearning as classifyAndFilterLearning, checkForConflicts } from "./_lib/classify";
+import { saveLearning, saveToDesk } from "./_lib/save";
 
 export const config = { maxDuration: 300, regions: ["iad1"] };
 
-/* ── Lazy DB ── */
-function db() {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
-  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder";
-  return createClient(url, key);
-}
-
 const SYSTEM = "You are Manav Brain — senior SEO strategist. Be direct, specific, honest. Never invent data.";
-
-/* ══════════════════════════════════════════════════════════════════════
-   LEARNING CLASSIFICATION ENGINE
-   Single gate every learning must pass before touching the database.
-   Decides: save or reject? what type? system-level or project-level?
-   how confident? needs review or auto-approve?
-══════════════════════════════════════════════════════════════════════ */
-
-interface LearningClass {
-  shouldSave:       boolean;
-  category:         string;   // card_type to store
-  isSystemLevel:    boolean;  // true → project_id forced to null
-  confidence:       number;
-  autoApprove:      boolean;
-  rejectionReason?: string;
-}
-
-/* System-level failures — not an SEO insight, belongs in system logs */
-const SYSTEM_ERROR_PAT = [
-  /supabase.*error/i, /api.?key.*missing/i, /anthropic.*key/i,
-  /enotfound/i, /connection.*refused/i, /ETIMEDOUT/i,
-  /fetch.*failed/i, /environment.*variable/i, /process\.env\./i,
-  /module.*not.*found/i, /cannot.*find.*module/i,
-  /internal.*server.*error/i, /5\d\d\s+error/i,
-];
-const SYSTEM_WARN_PAT = [
-  /max_tokens/i, /token.*limit.*reached/i,
-  /output.*truncated/i, /partial.*result/i,
-  /rate.?limit/i, /\b429\b/, /\b503\b/,
-];
-
-/* Hard rejects — error messages, AI refusals, noise */
-const REJECT_PAT = [
-  /^error:/i, /^failed:/i, /^cannot/i, /^undefined$/i,
-  /as an ai.{0,20}(i |,)/i, /i'm sorry,? i (can't|cannot)/i,
-  /i don't have (access|real|live)/i, /i'm not able to/i,
-  /no (data|context|information) (was|is|has been) provided/i,
-];
-/* Generic AI openers — reject if content is short */
-const BOILERPLATE_PAT = [
-  /^here (is|are) (my|the|a)/i, /^based on (the |your )/i,
-  /^i'll (analyze|help|provide|look)/i, /^let me (help|analyze|look)/i,
-  /^great (question|point)/i, /^of course/i, /^certainly/i,
-  /^to answer your/i,
-];
-
-const ACTIONABLE_WORDS = [
-  "improve","optimise","optimize","fix","add","remove","create","implement",
-  "increase","decrease","update","change","build","write","publish","target",
-  "monitor","test","analyse","analyze","launch","migrate","rewrite",
-  "restructure","prioritise","prioritize","rank","index","crawl","audit",
-  "deploy","configure","enable","disable","consolidate",
-];
-
-function hasActionableContent(text: string): boolean {
-  const l = text.toLowerCase();
-  return ACTIONABLE_WORDS.some(w => l.includes(w));
-}
-
-function detectCategory(content: string, source: string, requested?: string): string {
-  const c = content.toLowerCase();
-  const s = source.toLowerCase();
-
-  /* Source gives strong type hints */
-  if (s.includes("audit") || s.includes("crawl")) return "technical";
-  if (s.includes("algorithm_intel"))              return "algorithm";
-  if (s.includes("seo_agent"))                    return "technical";
-
-  /* GEO / AI-visibility */
-  if (/llm.{0,20}visib|ai.overview|perplexity|chatgpt.{0,20}cit|geo\b|ai.engine|cited.by.ai|llm.cit/i.test(c))
-    return "geo";
-
-  /* Technical SEO */
-  if (/core.?web.?vital|\blcp\b|\bfcp\b|\bcls\b|page.?speed|crawl.?budget|index.{0,10}cover|robots\.txt|sitemap|schema.?markup|canonical|technical.?seo|crawl.?error|structured.?data/i.test(c))
-    return "technical";
-
-  /* Algorithm signals */
-  if (/core.?update|helpful.?content|\bhcu\b|e-e-a-t|\beeat\b|algorithm.?signal|ranking.?factor|spam.?polic|google.?update|search.?signal/i.test(c))
-    return "algorithm";
-
-  /* Quick wins */
-  if (/quick.?win|low.?hanging|easy.?fix|simple.?change|implement.{0,20}(week|day)|within.{0,10}(week|day)/i.test(c))
-    return "quick-win";
-
-  /* Competitive */
-  if (/competitor|outrank|market.?share|\bvs\.?\s+\w|compared.?to.{0,30}site|competitor.?gap|steal.{0,20}traffic/i.test(c))
-    return "competitive";
-
-  /* Content */
-  if (/topical.?authorit|keyword.?cluster|content.?gap|pillar.?page|content.?strateg|publish.{0,20}frequenc|word.?count\b|readabilit|internal.?link/i.test(c))
-    return "content";
-
-  /* Strategy */
-  if (/roadmap|long.?term|phase\s+\d|quarter|annual.?goal|strategic.?priorit|6.month|12.month/i.test(c))
-    return "strategy";
-
-  /* Fall back to caller's choice if valid */
-  const valid = ["technical","quick-win","content","geo","competitive","insight","strategy","algorithm"];
-  return requested && valid.includes(requested) ? requested : "insight";
-}
-
-function scoreConfidence(content: string, source: string, base: number): number {
-  let s = base;
-  if (/\d+[\.\,]?\d*\s*%/.test(content))                         s += 10; // percentages = data
-  if (/https?:\/\/\S+/.test(content))                             s +=  8; // references URLs
-  if (content.length > 400)                                       s +=  5;
-  if (content.length > 800)                                       s +=  5;
-  if (/audit|crawl|pagespeed|gsc|search.?console/i.test(source)) s += 12; // factual source
-  if (/manual|brain_chat/.test(source))                           s +=  5; // intentional save
-  if (hasActionableContent(content))                              s +=  5;
-  if (content.split(/\s+/).length > 30)                           s +=  3;
-  return Math.min(100, Math.max(0, s));
-}
-
-function classifyAndFilterLearning(opts: {
-  content: string;
-  source: string;
-  title?: string;
-  requestedType?: string;
-  projectId?: string | null;
-}): LearningClass {
-  const { content, source, requestedType } = opts;
-  const trimmed = (content || "").trim();
-
-  /* Too short — no useful insight possible */
-  if (trimmed.length < 60) {
-    return { shouldSave: false, category: "insight", isSystemLevel: false,
-      confidence: 0, autoApprove: false, rejectionReason: "Too short" };
-  }
-
-  /* System errors — save as system record with no project_id */
-  if (SYSTEM_ERROR_PAT.some(p => p.test(trimmed))) {
-    return { shouldSave: true, category: "system", isSystemLevel: true,
-      confidence: 90, autoApprove: false };
-  }
-  if (SYSTEM_WARN_PAT.some(p => p.test(trimmed))) {
-    return { shouldSave: true, category: "system_warning", isSystemLevel: true,
-      confidence: 88, autoApprove: false };
-  }
-
-  /* Reject: error messages and AI refusals */
-  if (REJECT_PAT.some(p => p.test(trimmed))) {
-    return { shouldSave: false, category: "insight", isSystemLevel: false,
-      confidence: 0, autoApprove: false, rejectionReason: "Error or AI refusal" };
-  }
-
-  /* Reject: boilerplate openers with no real content following */
-  if (BOILERPLATE_PAT.some(p => p.test(trimmed)) && trimmed.length < 250) {
-    return { shouldSave: false, category: "insight", isSystemLevel: false,
-      confidence: 0, autoApprove: false, rejectionReason: "Generic opener, no insight" };
-  }
-
-  /* Reject: short text with no actionable signal at all */
-  if (!hasActionableContent(trimmed) && trimmed.length < 180) {
-    return { shouldSave: false, category: "insight", isSystemLevel: false,
-      confidence: 0, autoApprove: false, rejectionReason: "No actionable content" };
-  }
-
-  const category   = detectCategory(trimmed, source, requestedType);
-  const confidence = scoreConfidence(trimmed, source, 65);
-  const approve    = shouldAutoApprove(category, source, confidence);
-
-  return { shouldSave: true, category, isSystemLevel: false, confidence, autoApprove: approve };
-}
-
-/* ── Auto-approval logic ── */
-function shouldAutoApprove(cardType: string, source: string, confidence: number): boolean {
-  const autoTypes   = ["technical", "quick-win", "algorithm"];
-  const autoSources = ["audit_streaming", "seo_agent_audit", "crawl_analysis", "algorithm_intel"];
-  if (autoTypes.includes(cardType))   return true;
-  if (autoSources.includes(source))   return true;
-  if (confidence >= 85)               return true;
-  return false;
-}
-
-/* ── Contradiction/duplicate check ── */
-async function checkForConflicts(
-  projectId: string | null,
-  cardType: string,
-  title: string,
-  improvement: string | null
-): Promise<{ isDuplicate: boolean; isContradiction: boolean; existingId: string | null }> {
-  try {
-    const { data: existing } = await db()
-      .from("brain_learnings")
-      .select("id, card_title, improvement, status")
-      .eq("card_type", cardType)
-      .in("status", ["active", "pending_review"])
-      .limit(20);
-
-    if (!existing || existing.length === 0) return { isDuplicate: false, isContradiction: false, existingId: null };
-
-    const titleLower = title.toLowerCase();
-    const improveLower = (improvement || "").toLowerCase();
-
-    for (const l of existing as any[]) {
-      const lTitle = (l.card_title || "").toLowerCase();
-      const lImprove = (l.improvement || "").toLowerCase();
-
-      // Duplicate: >70% word overlap in title
-      const titleWords = titleLower.split(/\W+/).filter(Boolean);
-      const lWords = lTitle.split(/\W+/).filter(Boolean);
-      const overlap = titleWords.filter(w => lWords.includes(w)).length;
-      const similarity = titleWords.length > 0 ? overlap / titleWords.length : 0;
-      if (similarity > 0.7) return { isDuplicate: true, isContradiction: false, existingId: l.id };
-
-      // Contradiction: improvement contains opposite signal
-      const contradictionPairs = [
-        ["increase", "decrease"], ["add", "remove"], ["enable", "disable"],
-        ["fast", "slow"], ["more", "less"], ["do not", "should"],
-      ];
-      for (const [a, b] of contradictionPairs) {
-        if (improveLower.includes(a) && lImprove.includes(b)) {
-          return { isDuplicate: false, isContradiction: true, existingId: l.id };
-        }
-        if (improveLower.includes(b) && lImprove.includes(a)) {
-          return { isDuplicate: false, isContradiction: true, existingId: l.id };
-        }
-      }
-    }
-
-    return { isDuplicate: false, isContradiction: false, existingId: null };
-  } catch (_e) {
-    return { isDuplicate: false, isContradiction: false, existingId: null };
-  }
-}
 
 /* ── Safe ok response ── */
 function ok(res: VercelResponse, data: object) {
@@ -874,67 +634,27 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       res.end();
     }
 
-    // Background: save output + learning
+    // Background: save desk item + learning via unified pipeline
     const deskProjId = (body.projectId || context?.project?.id || null) as string | null;
     if (deskProjId && execFull.length > 300) {
       Promise.resolve().then(async () => {
-        try {
-          await _sbClient().from("brain_desk").insert({
-            project_id: deskProjId,
-            title: (card.title || "Task Output").slice(0, 200),
-            content_type: card.type === "technical" ? "code" : card.type === "audit" ? "audit" : "report",
-            content: execFull,
-            source: "task_execute",
-            tags: [card.type, "auto-saved"],
-            pinned: false,
-            metadata: { auto_saved: true },
-            updated_at: new Date().toISOString(),
-          });
-        } catch (_e) {}
-
-        // Auto-capture learning — run through classification engine first
-        const execSource = "task_execution_auto";
-        const cls = classifyAndFilterLearning({
-          content:       execFull,
-          source:        execSource,
-          requestedType: card.type,
-          projectId:     deskProjId,
+        await saveToDesk({
+          projectId:   deskProjId,
+          title:       (card.title || "Task Output").slice(0, 200),
+          content:     execFull,
+          contentType: card.type === "technical" ? "code" : card.type === "audit" ? "audit" : "report",
+          source:      "task_execute",
+          tags:        [card.type, "auto-saved"],
         });
-
-        if (cls.shouldSave) {
-          /* Extract meaningful sentences rather than raw regex matches */
-          const sentences = execFull
-            .replace(/#{1,3} /g, "")        // strip markdown headers
-            .split(/(?<=[.!?])\s+/)
-            .map(s => s.trim())
-            .filter(s => s.length > 40 && s.length < 300);
-
-          const actionSentences = sentences.filter(s => hasActionableContent(s)).slice(0, 4);
-          const gapSentences    = sentences.filter(s =>
-            /missing|lack|gap|issue|problem|not (set|configured|present)|poor|low\s/i.test(s)
-          ).slice(0, 2);
-
-          const bestImprovement = actionSentences[0] || sentences[0] || execFull.slice(0, 200);
-
-          try {
-            await _sbClient().from("brain_learnings").insert({
-              project_id:      cls.isSystemLevel ? null : deskProjId,
-              card_type:       cls.category,
-              card_title:      `${cls.category}: ${(card.title || "").slice(0, 55)}`,
-              what_worked:     actionSentences.length > 0 ? actionSentences : [],
-              what_missed:     gapSentences,
-              improvement:     bestImprovement.slice(0, 300),
-              context_summary: `${card.type} task execution`,
-              tags:            [...new Set([cls.category, card.type, "task-execute"])],
-              source:          execSource,
-              applied_count:   0,
-              status:          cls.autoApprove ? "active" : "pending_review",
-              auto_captured:   true,
-              confidence_score: cls.confidence,
-              updated_at:      new Date().toISOString(),
-            });
-          } catch (_e) {}
-        }
+        await saveLearning({
+          source:    "task_execution_auto",
+          projectId: deskProjId,
+          content:   execFull,
+          title:     `${card.type}: ${(card.title || "").slice(0, 55)}`,
+          cardType:  card.type,
+          contextSummary: `${card.type} task execution`,
+          tags:      [card.type, "task-execute"],
+        });
       }).catch(() => {});
     }
 

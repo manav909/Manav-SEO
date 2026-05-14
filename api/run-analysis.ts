@@ -1,57 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
-
-/* Lazy Anthropic client — created on first use, not at module load */
-/* Lazy Anthropic — created once, never at module level */
-function getAI(): Anthropic {
-  return new Anthropic();
-}
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { db } from './_lib/db';
+import { saveLearning, logChange } from './_lib/save';
+import { runPostAuditPipeline } from './_lib/pipeline';
 
-/* ─── Inline brain helpers (self-contained, no cross-file imports) ─── */
-import { createClient as _sbCreate } from "@supabase/supabase-js";
-function _sbClient() {
-  return _sbCreate(
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
-  );
-}
-async function extractAndSaveLearning(
-  source: string, projectId: string | null, output: string,
-  metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
-): Promise<void> {
-  if (!projectId || !output || output.length < 200 || output.startsWith("Error:")) return;
-  try {
-    const row: any = {
-      project_id: projectId, source,
-      card_type:       metadata.card_type       || "insight",
-      card_title:      (metadata.card_title     || source).slice(0, 60),
-      context_summary: metadata.context_summary || source,
-      what_worked: [], what_missed: [],
-      improvement: output.slice(0, 300),
-      tags: [source.split("_")[0]].filter(Boolean),
-      applied_count: 0, updated_at: new Date().toISOString(),
-    };
-    try {
-      await _sbClient().from("brain_learnings").insert({ ...row, status: "pending_review", auto_captured: true, confidence_score: 65 });
-    } catch (_e) {
-      try { await _sbClient().from("brain_learnings").insert(row); } catch (_e2) { /* silent */ }
-    }
-  } catch (_e) { /* never crash callers */ }
-}
-async function saveToDesk(
-  projectId: string | null, title: string, content: string,
-  contentType: string, source: string, tags: string[] = []
-): Promise<void> {
-  if (!projectId || !content || content.length < 50) return;
-  try {
-    await _sbClient().from("brain_desk").insert({
-      project_id: projectId, title: title.slice(0, 200), content_type: contentType,
-      content, source, tags: [...tags, source].filter(Boolean),
-      pinned: false, metadata: { auto_saved: true }, updated_at: new Date().toISOString(),
-    });
-  } catch (_e) { /* silent */ }
-}
-
+function getAI(): Anthropic { return new Anthropic(); }
 
 export const config = { maxDuration: 300 };
 
@@ -733,6 +686,65 @@ async function _run_analysis_h(req: VercelRequest, res: VercelResponse) {
         },
       },
     };
+
+    /* ── Server-side: save to audit_reports + run automation pipeline ── */
+    if (project_id) {
+      Promise.resolve().then(async () => {
+        try {
+          /* 1. Save audit report to DB */
+          const { data: auditRow } = await db()
+            .from("audit_reports")
+            .insert({
+              project_id,
+              url:           normalizedUrl,
+              score:         overallConfidence,
+              sections:      result.sections,
+              keywords:      keywords,
+              competitors:   competitors,
+              synced_to_metrics: false,
+              saved_by:      "auto",
+            })
+            .select("id").single();
+
+          const auditId = (auditRow as any)?.id || "unknown";
+
+          /* 2. Build sections text for learning extraction */
+          const sectionsForPipeline: Record<string, string> = {
+            technical:  [
+              synthesis.overall_verdict,
+              ...(synthesis.verified_strengths || []),
+              ...(synthesis.growth_opportunities || []),
+            ].filter(Boolean).join(" "),
+            content:    content.story || "",
+            visibility: `LLM Visibility: ${visibility.llm_visibility_score.value}/100. Perplexity citations: ${visibility.perplexity_citations.value}. ${synthesis.biggest_verified_win || ""}`,
+            ranking:    (synthesis.keyword_insights
+              ? Object.values(synthesis.keyword_insights).map((k: any) => k.current_status_message || "").join(" ")
+              : ""),
+          };
+
+          /* 3. Run the full post-audit pipeline (learnings + metrics + staleness) */
+          await runPostAuditPipeline({
+            projectId: project_id,
+            auditId,
+            url: normalizedUrl,
+            sections: sectionsForPipeline,
+            score: overallConfidence,
+          });
+
+          /* 4. Save most urgent gap as a learning if it has substance */
+          if (synthesis.most_urgent_gap && synthesis.most_urgent_gap.length > 50) {
+            await saveLearning({
+              source:    "audit_synthesis",
+              projectId: project_id,
+              content:   synthesis.most_urgent_gap,
+              title:     `Most urgent gap — ${normalizedUrl.replace(/https?:\/\//, "").slice(0, 30)}`,
+              cardType:  "technical",
+              contextSummary: `Audit synthesis for ${normalizedUrl}`,
+            });
+          }
+        } catch (_e) { /* pipeline never crashes the response */ }
+      }).catch(() => {});
+    }
 
     return res.status(200).json(result);
 
