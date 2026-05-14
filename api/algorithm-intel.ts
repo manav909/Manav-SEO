@@ -1,7 +1,7 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db }                                 from "./_lib/db";
-import { saveLearning }                       from "./_lib/save";
+import { db }                                 from "./lib/db";
+import { saveLearning }                       from "./lib/save";
 
 export const config = { maxDuration: 180 };
 

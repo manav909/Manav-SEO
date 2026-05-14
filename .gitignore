@@ -23,5 +23,5 @@ dist-ssr
 *.sln
 *.sw?
 
-# Compiled _lib (built at deploy time)
-api/_lib/*.js
+# Compiled lib (built at deploy time)
+api/lib/*.js

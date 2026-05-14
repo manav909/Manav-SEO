@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { saveLearning } from "./_lib/save";
+import { saveLearning } from "./lib/save";
 
 export const config = { maxDuration: 300 };
 
@@ -205,7 +205,7 @@ async function _seo_agent_h(req: VercelRequest, res: VercelResponse) {
   let personaSection = "";
   if (projectId) {
     try {
-      const { data: personaRow } = await (await import("./_lib/db")).db()
+      const { data: personaRow } = await (await import("./lib/db")).db()
         .from("market_personas")
         .select("persona_data")
         .eq("project_id", projectId)

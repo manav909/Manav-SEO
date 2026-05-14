@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db } from './_lib/db';
-import { saveLearning, logChange } from './_lib/save';
-import { runPostAuditPipeline } from './_lib/pipeline';
+import { db } from './lib/db';
+import { saveLearning, logChange } from './lib/save';
+import { runPostAuditPipeline } from './lib/pipeline';
 
 function getAI(): Anthropic { return new Anthropic(); }
 

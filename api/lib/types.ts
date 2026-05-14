@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Shared types across all api/ serverless functions.
-   Import with: import type { BrainContext, ... } from './_lib/types'
+   Import with: import type { BrainContext, ... } from './lib/types'
 ═══════════════════════════════════════════════════════════ */
 
 export interface ProjectMetrics {

@@ -3,7 +3,7 @@
  * Routes by: action
  * Actions: get_context | get_state | log_change | check_fingerprint | save_with_fingerprint
  */
-import { db } from "./_lib/db";
+import { db } from "./lib/db";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { maxDuration: 60 };

@@ -1,6 +1,6 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { saveLearning }                       from "./_lib/save";
+import { saveLearning }                       from "./lib/save";
 
 // Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably
 export const config = { maxDuration: 300 };

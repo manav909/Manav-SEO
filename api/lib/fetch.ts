@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    Shared URL fetch utilities.
-   Used by: api/crawl.ts, api/_lib/audit-orchestrator.ts
+   Used by: api/crawl.ts, api/lib/audit-orchestrator.ts
 
    Never duplicate these functions in individual API routes.
 ═══════════════════════════════════════════════════════════ */

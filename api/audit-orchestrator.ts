@@ -18,10 +18,10 @@
 ═══════════════════════════════════════════════════════════ */
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db } from "./_lib/db";
-import { runAuditOrchestrator } from "./_lib/audit-orchestrator";
-import type { PageSpec } from "./_lib/audit-orchestrator";
-import type { AlgoTopic } from "./_lib/types";
+import { db } from "./lib/db";
+import { runAuditOrchestrator } from "./lib/audit-orchestrator";
+import type { PageSpec } from "./lib/audit-orchestrator";
+import type { AlgoTopic } from "./lib/types";
 
 export const config = { maxDuration: 300 };
 

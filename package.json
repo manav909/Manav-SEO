@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "server": "node server.js",
-    "build": "vite build && npx esbuild api/_lib/*.ts --outdir=api/_lib --platform=node --format=cjs",
+    "build": "vite build && npx esbuild api/lib/*.ts --outdir=api/lib --platform=node --format=cjs",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
