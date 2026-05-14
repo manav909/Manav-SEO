@@ -229,10 +229,7 @@ export default function ManavBrainAssistant() {
   const { selectedProjectId: ctxProjectId } = useProject();
   const [selProj,  setSelProj]  = useState(() => ctxProjectId || localStorage.getItem('seo_season_proj') || '');
 
-  // Keep selProj in sync with global ProjectContext
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const _syncEffect = () => { if (ctxProjectId && ctxProjectId !== selProj) setSelProj(ctxProjectId); };
-  // Using ref-based sync to avoid re-render loops
+  // Keep selProj in sync with global ProjectContext (see useEffect at line ~334)
   const [ctx,      setCtx]      = useState<any>(null);
   const [learnings,setLearnings]= useState<any[]>([]);
   const [algoItems,setAlgoItems]= useState<any[]>([]);
