@@ -1,541 +1,586 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+/**
+ * SEO SEASON — COMMAND CENTER
+ * The presidential view. Everything. One screen.
+ *
+ * Design: high-tech dark, signal-based UI. No tables. No walls of text.
+ * The president scans, decides, acts. Not reads, not navigates.
+ *
+ * Sections:
+ *  PULSE BAR   — 7 live system stats across the top
+ *  PROJECT GRID — every project as a signal card with health, pending, last activity
+ *  BRAIN STATUS  — intelligence quality across all projects
+ *  OPS FEED     — last 15 tasks + recent system events
+ *  APPROVALS    — all pending learnings in one place, approve/reject in bulk
+ *  ALGO WATCH   — loaded algorithm topics and freshness
+ *  COST MONITOR — API spend today and total
+ */
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import PortalNav from '@/components/PortalNav';
+import { useAuth }     from '@/contexts/AuthContext';
+import { useProject }  from '@/contexts/ProjectContext';
 import {
-  ChevronRight, Zap, Shield, TrendingUp,
-  CheckCircle, Clock, BarChart3, Globe, Star,
-  ArrowRight, Sparkles, Target, Trophy, Brain,
-  ShieldCheck, RefreshCw, AlertTriangle,
-  CheckCircle2, Info
+  Rocket, Brain, Zap, Globe, Activity, Clock,
+  CheckCircle2, AlertTriangle, RefreshCw, ChevronRight,
+  Shield, TrendingUp, Database, BookOpen, Target,
+  Sparkles, X, Check, BarChart3, Cpu, FileText,
+  Eye, EyeOff, Terminal, Radio,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { toast } from '@/hooks/use-toast';
 
-const fmt$ = (n: number) => n >= 1000 ? `$${(n/1000).toFixed(1)}k` : `$${n}`;
+async function callEngine(action: string, body: Record<string,unknown> = {}) {
+  const r = await fetch('/api/task-engine', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...body }),
+  });
+  return r.json();
+}
 
-const phaseColors: Record<number,{ring:string;glow:string;text:string;bg:string}> = {
-  1: { ring:'#6366f1', glow:'shadow-[0_0_40px_rgba(99,102,241,0.3)]',  text:'text-primary',     bg:'bg-primary/10' },
-  2: { ring:'#06b6d4', glow:'shadow-[0_0_40px_rgba(6,182,212,0.3)]',   text:'text-cyan-400',   bg:'bg-cyan-400/10' },
-  3: { ring:'#8b5cf6', glow:'shadow-[0_0_40px_rgba(139,92,246,0.3)]',  text:'text-purple-400', bg:'bg-purple-400/10' },
-  4: { ring:'#f59e0b', glow:'shadow-[0_0_40px_rgba(245,158,11,0.3)]',  text:'text-yellow-400', bg:'bg-yellow-400/10' },
-  5: { ring:'#4ade80', glow:'shadow-[0_0_40px_rgba(74,222,128,0.3)]',  text:'text-green-400',  bg:'bg-green-400/10' },
+/* ── helpers ── */
+const ago = (iso: string) => {
+  if (!iso) return 'never';
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  if (d > 0) return `${d}d ago`;
+  if (h > 0) return `${h}h ago`;
+  if (m > 0) return `${m}m ago`;
+  return 'just now';
 };
 
-const PhaseRing = ({ pct, phase }: { pct:number; phase:number }) => {
-  const r=54, circ=2*Math.PI*r;
-  const cfg = phaseColors[phase]||phaseColors[1];
+const healthColor = (score: number) =>
+  score >= 80 ? 'text-emerald-400' : score >= 60 ? 'text-sky-400' : score >= 40 ? 'text-amber-400' : 'text-red-400';
+const healthBg = (score: number) =>
+  score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-sky-500' : score >= 40 ? 'bg-amber-500' : 'bg-red-500';
+const healthBorder = (score: number) =>
+  score >= 80 ? 'border-emerald-500/25' : score >= 60 ? 'border-sky-500/25' : score >= 40 ? 'border-amber-500/25' : 'border-red-500/25';
+
+/* ── Pulse dot ── */
+function Pulse({ color = 'bg-emerald-400', size = 'h-2 w-2' }: { color?: string; size?: string }) {
   return (
-    <div className="relative flex items-center justify-center">
-      <svg className="h-40 w-40 -rotate-90" viewBox="0 0 128 128">
-        <circle cx="64" cy="64" r={r} fill="none" stroke="hsl(var(--border))" strokeWidth="6"/>
-        <circle cx="64" cy="64" r={r} fill="none" stroke={cfg.ring} strokeWidth="6"
-          strokeLinecap="round" strokeDasharray={circ}
-          strokeDashoffset={circ*(1-pct/100)}
-          style={{transition:'stroke-dashoffset 2s ease',filter:`drop-shadow(0 0 8px ${cfg.ring})`}}/>
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-3xl font-bold">{pct}%</span>
-        <span className={`text-xs font-mono ${cfg.text} mt-0.5`}>complete</span>
-      </div>
-    </div>
+    <span className="relative flex shrink-0">
+      <span className={`animate-ping absolute inline-flex rounded-full ${color} opacity-60 ${size}`}/>
+      <span className={`relative inline-flex rounded-full ${color} ${size}`}/>
+    </span>
   );
-};
+}
 
-const PhaseTimeline = ({ current }: { current:number }) => {
-  const phases = [
-    {n:1,label:'Foundation'},{n:2,label:'Architecture'},
-    {n:3,label:'Authority'},{n:4,label:'Validation'},{n:5,label:'Dominance'},
-  ];
+/* ── Top stat tile ── */
+function PulseTile({ icon: Icon, label, value, sub, color, alert, onClick }: any) {
   return (
-    <div className="flex items-center gap-0 w-full">
-      {phases.map(({n,label},i) => {
-        const done=n<current, active=n===current, cfg=phaseColors[n];
-        return (
-          <div key={n} className="flex items-center flex-1">
-            <div className={`flex flex-col items-center gap-1.5 ${active?'scale-110':''} transition-transform`}>
-              <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${done?'bg-green-400/20 border-green-400 text-green-400':active?`${cfg.bg} border-current ${cfg.text}`:'bg-background/40 border-border text-muted-foreground'}`}>
-                {done?<CheckCircle className="h-4 w-4"/>:<span className="text-xs font-bold">{n}</span>}
-              </div>
-              <span className={`text-xs font-mono hidden sm:block ${active?cfg.text:done?'text-green-400':'text-muted-foreground'}`}>{label}</span>
-            </div>
-            {i<phases.length-1 && <div className={`flex-1 h-0.5 mx-1 ${n<current?'bg-green-400/40':'bg-border'}`}/>}
+    <button onClick={onClick}
+      className={`flex flex-col gap-1 px-4 py-3 rounded-xl border transition-all text-left ${
+        alert ? 'border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10'
+              : 'border-border bg-card/50 hover:border-primary/30 hover:bg-card/80'
+      } ${onClick ? 'cursor-pointer' : 'cursor-default'}`}>
+      <div className="flex items-center gap-1.5">
+        <Icon className={`h-3.5 w-3.5 ${color || 'text-muted-foreground'}`}/>
+        <span className="text-[10px] font-mono text-muted-foreground/60 uppercase tracking-wider">{label}</span>
+      </div>
+      <div className={`text-xl font-bold leading-none ${color || 'text-foreground'}`}>{value}</div>
+      {sub && <div className="text-[10px] text-muted-foreground/50">{sub}</div>}
+    </button>
+  );
+}
+
+/* ── Project signal card ── */
+function ProjectCard({ p, onOpen, onApprove }: { p: any; onOpen: () => void; onApprove: () => void }) {
+  const isStale = p.lastActivity && (Date.now() - new Date(p.lastActivity).getTime()) > 7 * 86400000;
+  return (
+    <div className={`rounded-xl border ${healthBorder(p.brainScore)} bg-card/60 p-4 flex flex-col gap-3 hover:bg-card/80 transition-all`}>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-sm font-semibold truncate">{p.name}</span>
+            {p.status === 'archived' && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-500/10 text-zinc-400 border border-zinc-500/20 font-mono shrink-0">ARCHIVED</span>
+            )}
           </div>
-        );
-      })}
-    </div>
-  );
-};
-
-/* Value card — marks estimated values clearly */
-const ValueCard = ({ icon:Icon, label, value, sub, color, estimated=false }: any) => (
-  <div className="rounded-2xl border border-border bg-card/60 p-5">
-    <div className="flex items-center gap-2 mb-3">
-      <div className={`h-8 w-8 rounded-lg ${color} flex items-center justify-center shrink-0`}>
-        <Icon className="h-4 w-4"/>
+          <span className="text-[10px] text-muted-foreground/50">{p.clientName || '—'}</span>
+        </div>
+        {/* Brain score ring */}
+        <div className="relative shrink-0 w-12 h-12">
+          <svg className="w-12 h-12 -rotate-90" viewBox="0 0 40 40">
+            <circle cx="20" cy="20" r="16" fill="none" stroke="hsl(var(--border))" strokeWidth="3"/>
+            <circle cx="20" cy="20" r="16" fill="none"
+              className={healthBg(p.brainScore).replace('bg-','stroke-')}
+              strokeWidth="3" strokeLinecap="round"
+              strokeDasharray={`${2*Math.PI*16}`}
+              strokeDashoffset={`${2*Math.PI*16*(1-p.brainScore/100)}`}
+              style={{ transition: 'stroke-dashoffset 1s ease' }}/>
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className={`text-[10px] font-bold ${healthColor(p.brainScore)}`}>{p.brainScore}</span>
+          </div>
+        </div>
       </div>
-      <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
-      {estimated && (
-        <span className="ml-auto text-xs text-yellow-400 font-mono bg-yellow-400/10 border border-yellow-400/20 rounded-full px-1.5 py-0.5 flex items-center gap-1">
-          <AlertTriangle className="h-2.5 w-2.5"/>~est
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        {[
+          { v: p.activeLearnings,  l: 'learnings', ok: p.activeLearnings >= 20 },
+          { v: p.pendingLearnings, l: 'pending',    ok: p.pendingLearnings === 0, warn: p.pendingLearnings > 0 },
+          { v: p.taskCount,        l: 'tasks',      ok: true },
+        ].map(({ v, l, ok, warn }) => (
+          <div key={l} className={`rounded-lg px-2 py-1.5 ${warn ? 'bg-amber-500/8' : 'bg-secondary/30'}`}>
+            <div className={`text-base font-bold leading-none ${warn ? 'text-amber-400' : 'text-foreground'}`}>{v}</div>
+            <div className="text-[9px] text-muted-foreground/50 mt-0.5">{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Flags */}
+      <div className="flex flex-wrap gap-1">
+        {!p.cms && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-mono">NO CMS</span>}
+        {!p.goals && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">NO GOALS</span>}
+        {!p.keywords?.length && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">NO KW</span>}
+        {isStale && <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-500/10 text-zinc-400 border border-zinc-500/20 font-mono">STALE 7d+</span>}
+        {p.activeLearnings >= 20 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">BRAIN READY</span>}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between pt-1 border-t border-border/40">
+        <span className="text-[10px] text-muted-foreground/40">
+          {isStale ? <span className="text-amber-400/60">⚠ {ago(p.lastActivity)}</span> : ago(p.lastActivity)}
         </span>
-      )}
-    </div>
-    <div className="text-3xl font-bold mb-1">{value ?? '—'}</div>
-    {sub && <p className="text-xs text-muted-foreground leading-relaxed">{sub}</p>}
-  </div>
-);
-
-const AcceleratorCard = ({upsell,onApprove,approving}:{upsell:any;onApprove:()=>void;approving:boolean}) => {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className="rounded-2xl border border-border bg-card/60 overflow-hidden hover:border-primary/30 transition-all duration-300">
-      <div className="h-0.5 w-full bg-gradient-to-r from-primary via-purple-400 to-cyan-400"/>
-      <div className="p-6">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xs font-mono text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5">
-                {upsell.opportunity_category}
-              </span>
-              <span className="text-xs text-muted-foreground font-mono bg-secondary/30 border border-border rounded-full px-2 py-0.5">
-                AI-generated from real audit data
-              </span>
-            </div>
-            <h3 className="font-bold text-lg">{upsell.opportunity_name}</h3>
-          </div>
-          <div className="text-right shrink-0">
-            <div className="text-2xl font-bold">{fmt$(upsell.investment_price)}</div>
-            <div className="text-xs text-muted-foreground">{upsell.timeline}</div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-3 mb-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Brain className="h-3.5 w-3.5 text-yellow-400 shrink-0"/>
-            <span className="text-xs font-mono text-yellow-400 uppercase tracking-wider">Gap Identified From Your Audit</span>
-          </div>
-          <p className="text-sm">{upsell.ai_insight}</p>
-        </div>
-
-        <div className="rounded-xl border border-orange-400/20 bg-orange-400/5 p-3 mb-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Target className="h-3.5 w-3.5 text-orange-400 shrink-0"/>
-            <span className="text-xs font-mono text-orange-400 uppercase tracking-wider">Cost of Inaction</span>
-          </div>
-          <p className="text-sm">{upsell.business_impact}</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="rounded-xl border border-border bg-background/40 p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Clock className="h-3 w-3 text-muted-foreground"/>
-              <span className="text-xs text-muted-foreground font-mono">Standard Pace</span>
-            </div>
-            <p className="text-xs text-muted-foreground">{upsell.retainer_trajectory}</p>
-          </div>
-          <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Zap className="h-3 w-3 text-green-400"/>
-              <span className="text-xs text-green-400 font-mono">Sprint Solution</span>
-            </div>
-            <p className="text-xs">{upsell.accelerator_solution}</p>
-          </div>
-        </div>
-
-        {upsell.deliverables?.length > 0 && (
-          <>
-            <button onClick={() => setExpanded(e => !e)}
-              className="w-full flex items-center justify-between text-xs text-muted-foreground hover:text-foreground mb-3 transition-colors">
-              <span className="font-mono uppercase tracking-wider">Deliverables ({upsell.deliverables.length})</span>
-              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${expanded?'rotate-90':''}`}/>
+        <div className="flex gap-1">
+          {p.pendingLearnings > 0 && (
+            <button onClick={onApprove}
+              className="h-6 px-2 rounded text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors font-mono">
+              {p.pendingLearnings} pending
             </button>
-            {expanded && (
-              <div className="space-y-1.5 mb-4">
-                {upsell.deliverables.map((d:string,i:number) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0 mt-0.5"/>
-                    <span className="text-xs">{d}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        <Button onClick={onApprove} disabled={approving}
-          className="w-full h-11 bg-gradient-to-r from-primary to-purple-500 text-white font-semibold hover:opacity-90">
-          {approving
-            ? <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin"/>
-            : <><Zap className="h-4 w-4 mr-2"/>{upsell.button_text||'Approve Accelerator Sprint'}</>}
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-export default function Launchpad() {
-  const navigate = useNavigate();
-  const { clients:authClients, projects:authProjects, loading:authLoading, authChecked } = useAuth();
-
-  const [client,       setClient]       = useState<any>(null);
-  const [project,      setProject]      = useState<any>(null);
-  const [projects,     setProjects]     = useState<any[]>([]);
-  const [allClients,   setAllClients]   = useState<any[]>([]);
-  const [dashboard,    setDashboard]    = useState<any>(null);
-  const [loading,      setLoading]      = useState(true);
-  const [approvingIdx, setApprovingIdx] = useState<number|null>(null);
-  const [generatedAt,  setGeneratedAt]  = useState('');
-  const [sourceAnalysis, setSourceAnalysis] = useState<string>('');
-
-  useEffect(() => {
-    if (!authChecked) return;
-    try {
-      const cList = authClients||[];
-      const pList = authProjects||[];
-      setAllClients(cList);
-      setProjects(pList);
-      setClient(cList[0]||null);
-      if (pList.length) setProject(pList[0]);
-    } catch(e) { console.error(e); }
-    finally { setLoading(false); }
-  }, [authChecked, authClients, authProjects]);
-
-  useEffect(() => {
-    if (!project) return;
-    if (project.launchpad_data) {
-      setDashboard(project.launchpad_data.dashboard?.executive_dashboard||null);
-      setGeneratedAt(project.launchpad_generated_at||'');
-    } else {
-      setDashboard(null);
-      setGeneratedAt('');
-    }
-    /* Show which analysis the launchpad was built from */
-    if (project.last_analysis_at) {
-      const d = new Date(project.last_analysis_at);
-      setSourceAnalysis(d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}));
-    }
-  }, [project]);
-
-  const handleProjectChange = (id: string) => {
-    const p = projects.find(x => x.id === id);
-    if (!p) return;
-    setProject(p);
-    const c = allClients.find(x => x.id === p.client_id);
-    if (c) setClient(c);
-  };
-
-  const approveAccelerator = async (idx: number, upsell: any) => {
-    if (!project) return;
-    setApprovingIdx(idx);
-    const { error } = await supabase.from('upsells').insert({
-      project_id:       project.id,
-      title:            upsell.opportunity_name,
-      description:      `${upsell.accelerator_solution}\n\nGap identified: ${upsell.ai_insight}`,
-      price:            upsell.investment_price,
-      potential_impact: upsell.business_impact,
-      status:           'approved',
-    });
-    if (!error) toast({ title:'Sprint Approved!', description:'Manav will be in touch within 24 hours.' });
-    else toast({ title:'Error', description:error.message, variant:'destructive' });
-    setApprovingIdx(null);
-  };
-
-  if (authLoading || loading) return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent animate-spin"/>
-        <p className="text-sm text-muted-foreground font-mono">Loading your strategy launchpad...</p>
-      </div>
-    </div>
-  );
-
-  if (!client) return (
-    <div className="min-h-screen bg-background text-foreground">
-      <PortalNav/>
-      <div className="flex items-center justify-center min-h-[80vh] p-6">
-        <div className="max-w-md text-center rounded-2xl border border-border bg-card/60 p-10">
-          <Clock className="h-10 w-10 text-primary/40 mx-auto mb-4"/>
-          <h2 className="text-xl font-bold mb-2">Launchpad Being Prepared</h2>
-          <p className="text-muted-foreground text-sm mb-6">Manav is setting up your strategy launchpad.</p>
-          <Button variant="outline" onClick={() => navigate('/dashboard')} className="border-border">
-            <BarChart3 className="h-4 w-4 mr-2"/>Go to Dashboard
-          </Button>
+          )}
+          <button onClick={onOpen}
+            className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
+            <ChevronRight className="h-3.5 w-3.5"/>
+          </button>
         </div>
       </div>
     </div>
   );
+}
 
-  const phaseNum = project?.current_phase||1;
-  const phaseCfg = phaseColors[phaseNum]||phaseColors[1];
-  const timeline = dashboard?.strategic_timeline;
-  const value    = dashboard?.value_realized;
-  const narrative= dashboard?.metrics_narrative;
-  const upsells  = dashboard?.accelerator_upsells||[];
+/* ── Operation feed item ── */
+function OpsItem({ item, type }: { item: any; type: 'task'|'log' }) {
+  const statusColor = item.status === 'completed' ? 'text-emerald-400' : item.status === 'failed' ? 'text-red-400' : 'text-amber-400';
+  return (
+    <div className="flex items-center gap-3 py-2 border-b border-border/30 last:border-0">
+      <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${type === 'task' ? (item.status === 'completed' ? 'bg-emerald-400' : item.status === 'failed' ? 'bg-red-400' : 'bg-amber-400') : 'bg-violet-400'}`}/>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-foreground/80 truncate">
+          {type === 'task' ? `${item.task_type || 'task'}` : item.description?.slice(0, 60) || item.change_type}
+        </p>
+      </div>
+      <span className="text-[10px] text-muted-foreground/40 shrink-0">{ago(item.created_at)}</span>
+    </div>
+  );
+}
 
-  const genAt = generatedAt
-    ? new Date(generatedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
-    : '';
+/* ═══════════════════════════════════════════════════════
+   MAIN COMMAND CENTER
+═══════════════════════════════════════════════════════ */
+export default function Launchpad() {
+  const navigate  = useNavigate();
+  const { projects } = useAuth();
+  const { setSelectedProjectId } = useProject();
+
+  const [data,         setData]         = useState<any>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [lastRefresh,  setLastRefresh]  = useState<Date>(new Date());
+  const [approving,    setApproving]    = useState<string[]>([]);
+  const [toast,        setToast]        = useState('');
+  const [showPending,  setShowPending]  = useState(false);
+  const [systemMode,   setSystemMode]   = useState<'live'|'paused'>('live');
+  const autoRef = useRef<ReturnType<typeof setInterval>>();
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const d = await callEngine('get_launchpad_intel');
+      setData(d);
+      setLastRefresh(new Date());
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+    // Auto-refresh every 90s when live
+    autoRef.current = setInterval(() => {
+      if (systemMode === 'live') load();
+    }, 90000);
+    return () => clearInterval(autoRef.current);
+  }, [load, systemMode]);
+
+  /* Bulk approve all pending for a project */
+  const approvePending = async (projectId: string, projectName: string) => {
+    const pending = data?.pendingLearnings?.filter((l: any) => l.project_id === projectId) || [];
+    if (!pending.length) return;
+    setApproving(prev => [...prev, projectId]);
+    let approved = 0;
+    for (const l of pending) {
+      const r = await callEngine('approve_learning', { id: l.id });
+      if (r.updated) approved++;
+    }
+    showToast(`✓ ${approved} learnings approved for ${projectName}`);
+    await load();
+    setApproving(prev => prev.filter(id => id !== projectId));
+  };
+
+  /* Approve single learning */
+  const approveSingle = async (id: string) => {
+    const r = await callEngine('approve_learning', { id });
+    if (r.updated) {
+      setData((prev: any) => ({
+        ...prev,
+        pendingLearnings: prev.pendingLearnings.filter((l: any) => l.id !== id),
+        totals: { ...prev.totals, pendingApprovals: prev.totals.pendingApprovals - 1 },
+      }));
+    }
+  };
+
+  const rejectSingle = async (id: string) => {
+    await callEngine('reject_learning', { id });
+    setData((prev: any) => ({
+      ...prev,
+      pendingLearnings: prev.pendingLearnings.filter((l: any) => l.id !== id),
+      totals: { ...prev.totals, pendingApprovals: prev.totals.pendingApprovals - 1 },
+    }));
+  };
+
+  const openProject = (projectId: string) => {
+    setSelectedProjectId(projectId);
+    navigate('/mission-control');
+  };
+
+  const t = data?.totals || {};
+  const projectStats: any[] = data?.projectStats || [];
+  const activeProjects = projectStats.filter(p => p.status !== 'archived');
+  const healthAvg = activeProjects.length
+    ? Math.round(activeProjects.reduce((s, p) => s + p.brainScore, 0) / activeProjects.length)
+    : 0;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <PortalNav
-        clientName={client.name}
-        companyName={`${client.company} — Strategy Launchpad`}
-        projects={projects}
-        selectedProjectId={project?.id}
-        onProjectChange={handleProjectChange}
-      />
+    <div className="min-h-screen bg-background">
+      {/* Custom dark header */}
+      <div className="sticky top-0 z-30 border-b border-border bg-card/90 backdrop-blur-md">
+        <div className="flex items-center justify-between h-14 px-4 sm:px-6 max-w-[1600px] mx-auto">
+          {/* Brand */}
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+              <Rocket className="h-4 w-4 text-amber-400"/>
+            </div>
+            <div>
+              <div className="text-sm font-bold leading-tight">Command Center</div>
+              <div className="text-[10px] text-muted-foreground/50 font-mono">SEO SEASON</div>
+            </div>
+          </div>
 
-      {!dashboard ? (
-        <div className="min-h-[80vh] flex items-center justify-center p-6">
-          <div className="max-w-lg text-center">
-            <div className="h-20 w-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-6">
-              <Sparkles className="h-10 w-10 text-primary"/>
+          {/* System mode + controls */}
+          <div className="flex items-center gap-2">
+            {/* Live indicator */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-mono transition-all ${
+              systemMode === 'live'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                : 'border-border bg-secondary/40 text-muted-foreground'
+            }`}>
+              {systemMode === 'live' ? <Pulse color="bg-emerald-400" size="h-1.5 w-1.5"/> : <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground"/>}
+              {systemMode === 'live' ? 'LIVE' : 'PAUSED'}
             </div>
-            <h2 className="text-2xl font-bold mb-3">Executive Strategy Launchpad</h2>
-            <p className="text-muted-foreground text-sm mb-4 leading-relaxed">
-              Your launchpad is generated from real audit data — keyword rankings, competitor positions, and AI visibility scores — not templates or estimates.
-            </p>
-            {sourceAnalysis ? (
-              <div className="rounded-xl border border-border bg-card/60 p-4 text-left mb-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <CheckCircle2 className="h-4 w-4 text-green-400"/>
-                  <span className="text-sm font-semibold">Audit data available</span>
-                </div>
-                <p className="text-xs text-muted-foreground">Last analysis: {sourceAnalysis}. Ask Manav to generate the launchpad from this data.</p>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4 text-left mb-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <AlertTriangle className="h-4 w-4 text-yellow-400"/>
-                  <span className="text-sm font-semibold text-yellow-400">No audit data yet</span>
-                </div>
-                <p className="text-xs text-muted-foreground">The launchpad requires a website analysis first. Ask Manav to run the audit in the admin panel.</p>
-              </div>
-            )}
-            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-              <RefreshCw className="h-3.5 w-3.5"/>
-              Will appear automatically once Manav generates it
-            </div>
+            <button onClick={() => setSystemMode(m => m === 'live' ? 'paused' : 'live')}
+              className="h-8 w-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+              {systemMode === 'live' ? <EyeOff className="h-3.5 w-3.5"/> : <Eye className="h-3.5 w-3.5"/>}
+            </button>
+            <button onClick={load} disabled={loading}
+              className="h-8 w-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}/>
+            </button>
+            <button onClick={() => navigate('/dashboard')}
+              className="h-8 px-3 rounded-lg border border-border text-[11px] text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+              Dashboard
+            </button>
           </div>
         </div>
-      ) : (
-        <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      </div>
 
-         {/* Data provenance banner */}
-          <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
-            <div className="flex items-start gap-2">
-              <ShieldCheck className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
-              <div>
-                <div className="text-xs font-semibold text-green-400 mb-1">Data Source Transparency</div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  This launchpad was generated from verified audit data{sourceAnalysis ? ` (analysis: ${sourceAnalysis})` : ''}. Strategic phase, metrics narrative, and accelerator opportunities are all derived from real keyword rankings, indexing counts, and live AI visibility tests — not templates.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-yellow-400 shrink-0 mt-0.5" />
-              <div>
-                <div className="text-xs font-semibold text-yellow-400 mb-1">Estimated Values</div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Capital saved, risks neutralised, and completion percentage are AI estimates based on real data patterns. Marked with ~ where applicable.
-                </p>
-              </div>
-            </div>
-            {genAt && (
-              <div className="text-xs text-muted-foreground font-mono pt-1 border-t border-border">
-                Launchpad generated: {genAt}
-              </div>
-            )}
-          </div>
-          
-          {/* ─ Strategic Phase ─ */}
-          <div className={`rounded-3xl border border-border bg-card/60 p-6 sm:p-8 ${phaseCfg.glow} overflow-hidden relative`}>
-            <div className="absolute top-0 right-0 h-64 w-64 rounded-full opacity-10 blur-3xl pointer-events-none" style={{background:phaseCfg.ring}}/>
-            <div className="relative grid lg:grid-cols-2 gap-8 items-center">
-              <div>
-                <div className={`inline-flex items-center gap-2 text-xs font-mono ${phaseCfg.text} ${phaseCfg.bg} border border-current/20 rounded-full px-3 py-1.5 mb-4`}>
-                  <span className="h-1.5 w-1.5 rounded-full bg-current"/>
-                  {timeline?.status_label||'In Progress'}
-                </div>
-                <h1 className="text-3xl sm:text-4xl font-bold mb-3 leading-tight">{timeline?.current_phase_name}</h1>
-                {timeline?.phase_description && (
-                  <p className="text-muted-foreground text-base mb-6 leading-relaxed">{timeline.phase_description}</p>
-                )}
-                <div className="space-y-3">
-                  {timeline?.recent_completion && (
-                    <div className="flex items-center gap-3">
-                      <CheckCircle className="h-4 w-4 text-green-400 shrink-0"/>
-                      <div>
-                        <div className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Recently Completed</div>
-                        <div className="text-sm font-semibold">{timeline.recent_completion}</div>
-                      </div>
-                    </div>
-                  )}
-                  {timeline?.active_focus && (
-                    <div className="flex items-center gap-3">
-                      <div className="h-4 w-4 rounded-full border-2 border-primary flex items-center justify-center shrink-0">
-                        <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"/>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Active Focus</div>
-                        <div className="text-sm font-semibold">{timeline.active_focus}</div>
-                      </div>
-                    </div>
-                  )}
-                  {timeline?.next_milestone && (
-                    <div className="flex items-center gap-3">
-                      <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0"/>
-                      <div>
-                        <div className="text-xs text-muted-foreground font-mono uppercase tracking-wider">Next Milestone</div>
-                        <div className="text-sm font-semibold">{timeline.next_milestone}</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex flex-col items-center gap-6">
-                <div>
-                  <PhaseRing pct={timeline?.completion_percentage||0} phase={phaseNum}/>
-                  <div className="text-xs text-center text-yellow-400/80 font-mono mt-2 flex items-center justify-center gap-1">
-                    <AlertTriangle className="h-2.5 w-2.5"/>~ completion % is AI-estimated
-                  </div>
-                </div>
-                <PhaseTimeline current={phaseNum}/>
-              </div>
-            </div>
-          </div>
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-card border border-border shadow-xl text-sm text-foreground max-w-md text-center">
+          {toast}
+        </div>
+      )}
 
-          {/* ─ Metrics Narrative ─ */}
-          {narrative && (
-            <div className="rounded-2xl border border-border bg-card/60 p-6">
-              <div className="flex items-center gap-2 mb-1">
-                <div className={`h-2 w-2 rounded-full ${narrative.momentum_indicator==='Accelerating'?'bg-green-400':narrative.momentum_indicator==='Gaining Traction'?'bg-yellow-400':'bg-primary'} animate-pulse`}/>
-                <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
-                  Momentum: {narrative.momentum_indicator}
-                </span>
-                <span className="ml-auto text-xs text-muted-foreground font-mono flex items-center gap-1">
-                  <CheckCircle2 className="h-3 w-3 text-green-400"/>From verified audit data
-                </span>
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-5 space-y-5">
+
+        {/* ══ PULSE BAR ══ */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          <PulseTile icon={Globe}       label="Active Projects"  value={t.activeProjects ?? '—'}  sub={`${t.projects ?? 0} total`}            color="text-sky-400"    onClick={() => {}}/>
+          <PulseTile icon={Brain}       label="Brain Quality"    value={loading ? '…' : healthAvg}   sub="avg across projects"                  color={healthColor(healthAvg)} onClick={() => {}}/>
+          <PulseTile icon={CheckCircle2} label="Active Learnings" value={t.activeLearnings ?? '—'} sub={`${t.institutionalKnowledge ?? 0} institutional`} color="text-emerald-400" onClick={() => {}}/>
+          <PulseTile icon={Clock}       label="Pending Approvals" value={t.pendingApprovals ?? '—'} sub="need your review"                      color={t.pendingApprovals > 0 ? 'text-amber-400' : 'text-muted-foreground'} alert={t.pendingApprovals > 0} onClick={() => setShowPending(true)}/>
+          <PulseTile icon={Cpu}         label="Algo Topics"      value={t.algoTopics ?? '—'}      sub="loaded in Brain"                        color="text-violet-400" onClick={() => navigate('/algorithm-intel')}/>
+          <PulseTile icon={Activity}    label="Tasks Today"      value={t.todayTasks ?? '—'}      sub={`${t.taskCount ?? 0} total`}           color="text-primary"    onClick={() => navigate('/brain-command')}/>
+          <PulseTile icon={Target}      label="API Cost Today"   value={t.todayCost ? `$${t.todayCost.toFixed(4)}` : '$0'} sub={`$${(t.totalCost ?? 0).toFixed(2)} lifetime`} color="text-rose-400" onClick={() => {}}/>
+        </div>
+
+        {/* ══ MAIN GRID ══ */}
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+
+          {/* LEFT: Projects + Brain Summary */}
+          <div className="space-y-5">
+
+            {/* Projects command grid */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Rocket className="h-4 w-4 text-amber-400"/>
+                  <span className="text-sm font-semibold">Active Projects</span>
+                  <span className="text-xs text-muted-foreground">({activeProjects.length})</span>
+                </div>
+                <button onClick={() => navigate('/admin')}
+                  className="text-xs text-primary hover:underline flex items-center gap-1">
+                  New project <ChevronRight className="h-3 w-3"/>
+                </button>
               </div>
-              <h2 className="text-xl font-bold mb-2">{narrative.headline}</h2>
-              <p className="text-muted-foreground text-sm leading-relaxed mb-3">{narrative.context}</p>
-              {narrative.biggest_win && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Trophy className="h-4 w-4 text-yellow-400 shrink-0"/>
-                  <span className="font-medium">{narrative.biggest_win}</span>
+              {loading && !data && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {[1,2,3].map(i => <div key={i} className="h-44 rounded-xl border border-border bg-card/30 animate-pulse"/>)}
+                </div>
+              )}
+              {activeProjects.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {activeProjects.map(p => (
+                    <ProjectCard key={p.id} p={p}
+                      onOpen={() => openProject(p.id)}
+                      onApprove={() => approvePending(p.id, p.name)}/>
+                  ))}
+                </div>
+              )}
+              {!loading && activeProjects.length === 0 && (
+                <div className="rounded-xl border border-border bg-card/40 p-10 text-center text-muted-foreground">
+                  <Rocket className="h-10 w-10 mx-auto mb-3 opacity-20"/>
+                  <p>No active projects.</p>
+                  <button onClick={() => navigate('/admin')} className="mt-3 text-sm text-primary hover:underline">Create first project →</button>
                 </div>
               )}
             </div>
-          )}
 
-          {/* ─ Value Realized ─ */}
-          {value && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-border"/>
-                <div className="flex items-center gap-2 text-xs font-mono bg-card/60 border border-border rounded-full px-3 py-1.5">
-                  <Shield className="h-3.5 w-3.5 text-primary"/>
-                  Value Realised This Engagement
-                </div>
-                <div className="h-px flex-1 bg-border"/>
+            {/* Brain Intelligence Overview */}
+            <div className="rounded-xl border border-border bg-card/60 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Brain className="h-4 w-4 text-primary"/>
+                <span className="text-sm font-semibold">Brain Intelligence Overview</span>
               </div>
-              <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-3 flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-yellow-400 shrink-0 mt-0.5"/>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Numbers marked <span className="text-yellow-400 font-mono">~ est.</span> are AI-calculated from engagement patterns and real audit findings — not externally verifiable counts. Treat them as directional. Unmarked values come directly from your audit data.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <ValueCard icon={Shield} label="Risks Neutralised"
-                  color="bg-green-400/10 text-green-400"
-                  value={value.technical_risks_neutralized}
-                  sub={value.risk_summary}
-                  estimated={true}/>
-                <ValueCard icon={CheckCircle} label="Concepts Validated"
-                  color="bg-primary/10 text-primary"
-                  value={value.prototypes_validated}
-                  sub="Strategies tested before investment"
-                  estimated={true}/>
-                <ValueCard icon={TrendingUp} label="Capital Protected"
-                  color="bg-yellow-400/10 text-yellow-400"
-                  value={value.estimated_capital_saved ? fmt$(value.estimated_capital_saved) : '—'}
-                  sub={value.capital_saved_explanation}
-                  estimated={true}/>
-                <ValueCard icon={Star} label="Months Active"
-                  color="bg-purple-400/10 text-purple-400"
-                  value={value.months_active}
-                  sub={value.retainer_roi_note}
-                  estimated={false}/>
-              </div>
-            </div>
-          )}
-
-          {/* ─ Accelerator Sprints ─ */}
-          {upsells.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-border"/>
-                <div className="flex items-center gap-2 text-xs font-mono bg-card/60 border border-border rounded-full px-3 py-1.5">
-                  <Zap className="h-3.5 w-3.5 text-yellow-400"/>
-                  AI-Identified Accelerators — From Your Audit Data
-                </div>
-                <div className="h-px flex-1 bg-border"/>
-              </div>
-
-              <div className="rounded-2xl border border-border bg-card/40 p-4 flex items-start gap-3">
-                <CheckCircle2 className="h-5 w-5 text-green-400 shrink-0 mt-0.5"/>
-                <div>
-                  <div className="text-sm font-semibold mb-1">How These Were Identified</div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Each opportunity was identified from your live audit data — specifically from keyword ranking gaps, competitor positions, and AI visibility scores verified at analysis time. These are not generic recommendations.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid lg:grid-cols-2 gap-5">
-                {upsells.map((upsell:any,i:number) => (
-                  <AcceleratorCard key={i} upsell={upsell}
-                    onApprove={() => approveAccelerator(i,upsell)}
-                    approving={approvingIdx===i}/>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Total Learnings',       value: t.totalLearnings ?? 0,        color: 'text-foreground'   },
+                  { label: 'Active',                 value: t.activeLearnings ?? 0,       color: 'text-emerald-400'  },
+                  { label: 'Pending Review',         value: t.pendingApprovals ?? 0,      color: t.pendingApprovals > 0 ? 'text-amber-400' : 'text-muted-foreground' },
+                  { label: 'Institutional Memory',   value: t.institutionalKnowledge ?? 0,color: 'text-violet-400'   },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="rounded-xl bg-secondary/30 border border-border/50 p-3 text-center">
+                    <div className={`text-2xl font-bold ${color}`}>{value}</div>
+                    <div className="text-[10px] text-muted-foreground/60 mt-1">{label}</div>
+                  </div>
                 ))}
               </div>
-            </div>
-          )}
 
-          {/* ─ Footer ─ */}
-          <div className="rounded-2xl border border-border bg-card/60 p-5">
-            <div className="flex items-center gap-4 flex-wrap justify-between">
-              <div className="flex items-center gap-3">
-                <img src="/manav.jpg" alt="Manav"
-                  className="h-10 w-10 rounded-full object-cover ring-2 ring-primary shrink-0"
-                  style={{objectPosition:'center 20%'}}
-                  onError={e=>{(e.target as HTMLImageElement).style.display='none';}}/>
-                <div>
-                  <div className="font-semibold text-sm">Managed by Manav</div>
-                  <div className="text-xs text-muted-foreground">SEO Season — Premium Growth Agency</div>
+              {/* Per-project brain quality bar list */}
+              {activeProjects.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {activeProjects.sort((a, b) => b.brainScore - a.brainScore).map(p => (
+                    <div key={p.id} className="flex items-center gap-3">
+                      <button onClick={() => openProject(p.id)} className="text-xs text-foreground/80 truncate w-32 text-left hover:text-primary transition-colors shrink-0">
+                        {p.name}
+                      </button>
+                      <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden">
+                        <div className={`h-full rounded-full ${healthBg(p.brainScore)} transition-all duration-700`} style={{ width: `${p.brainScore}%` }}/>
+                      </div>
+                      <span className={`text-xs font-mono w-8 text-right shrink-0 ${healthColor(p.brainScore)}`}>{p.brainScore}</span>
+                    </div>
+                  ))}
                 </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* RIGHT: Operations feed + Algo watch */}
+          <div className="space-y-5">
+
+            {/* Operations feed */}
+            <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border/50 bg-card/40">
+                <Terminal className="h-3.5 w-3.5 text-primary"/>
+                <span className="text-xs font-semibold">Operations Feed</span>
+                {systemMode === 'live' && <Pulse color="bg-primary/60" size="h-1.5 w-1.5"/>}
               </div>
-              <div className="flex flex-wrap gap-3">
-                {[
-                  {icon:ShieldCheck,label:'Validation-First'},
-                  {icon:Star,       label:'Fiverr Top Rated'},
-                  {icon:Globe,      label:'AI-Native SEO'},
-                ].map(({icon:Icon,label}) => (
-                  <div key={label} className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border rounded-full px-3 py-1.5">
-                    <Icon className="h-3 w-3 text-primary"/>{label}
+              <div className="px-4 py-2 max-h-64 overflow-y-auto">
+                {(data?.recentTasks || []).length === 0 && !loading && (
+                  <p className="text-xs text-muted-foreground/50 py-4 text-center">No recent operations</p>
+                )}
+                {(data?.recentTasks || []).map((t: any) => <OpsItem key={t.id} item={t} type="task"/>)}
+              </div>
+            </div>
+
+            {/* Algorithm watch */}
+            <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-card/40">
+                <div className="flex items-center gap-2">
+                  <Cpu className="h-3.5 w-3.5 text-violet-400"/>
+                  <span className="text-xs font-semibold">Algorithm Intelligence</span>
+                </div>
+                <button onClick={() => navigate('/algorithm-intel')} className="text-[10px] text-primary hover:underline">manage →</button>
+              </div>
+              <div className="px-4 py-2 space-y-1.5 max-h-52 overflow-y-auto">
+                {(data?.algoTopics || []).length === 0 && (
+                  <p className="text-xs text-muted-foreground/50 py-3 text-center">No algo topics loaded</p>
+                )}
+                {(data?.algoTopics || []).map((a: any) => (
+                  <div key={a.id} className="flex items-center gap-2 py-1.5">
+                    <Radio className="h-3 w-3 text-violet-400 shrink-0"/>
+                    <span className="text-xs text-foreground/80 truncate flex-1">{a.topic}</span>
+                    <span className="text-[10px] text-muted-foreground/40 shrink-0">{ago(a.updated_at)}</span>
                   </div>
                 ))}
               </div>
             </div>
-          </div>
 
-          <div className="text-center text-xs text-muted-foreground py-2">
-            © 2026 SEO Season · All strategy data derived from verified audit analysis · Confidential
+            {/* System events */}
+            <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border/50 bg-card/40">
+                <Shield className="h-3.5 w-3.5 text-muted-foreground"/>
+                <span className="text-xs font-semibold">System Log</span>
+              </div>
+              <div className="px-4 py-2 max-h-44 overflow-y-auto">
+                {(data?.recentLogs || []).length === 0 && (
+                  <p className="text-xs text-muted-foreground/50 py-3 text-center">No system events</p>
+                )}
+                {(data?.recentLogs || []).map((l: any) => <OpsItem key={l.id} item={l} type="log"/>)}
+              </div>
+            </div>
+
           </div>
         </div>
+
+        {/* ══ QUICK COMMANDS ══ */}
+        <div className="rounded-xl border border-border bg-card/60 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Zap className="h-4 w-4 text-amber-400"/>
+            <span className="text-sm font-semibold">Quick Commands</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: 'Strategy Canvas',    icon: Target,    href: '/playground',      color: 'hover:border-primary/40 hover:text-primary'          },
+              { label: 'Run Brain Command',  icon: Brain,     href: '/brain-command',   color: 'hover:border-emerald-500/40 hover:text-emerald-400'   },
+              { label: 'Run Audit',          icon: Activity,  href: '/audit',           color: 'hover:border-violet-500/40 hover:text-violet-400'     },
+              { label: 'Brain Learning',     icon: BookOpen,  href: '/brain-learning',  color: 'hover:border-sky-500/40 hover:text-sky-400'           },
+              { label: 'Data Room',          icon: Database,  href: '/data-room',       color: 'hover:border-cyan-500/40 hover:text-cyan-400'         },
+              { label: 'Algorithm Intel',    icon: Cpu,       href: '/algorithm-intel', color: 'hover:border-rose-500/40 hover:text-rose-400'         },
+              { label: 'Review Pending',     icon: Clock,     href: '',                 color: 'hover:border-amber-500/40 hover:text-amber-400', action: () => setShowPending(true) },
+              { label: 'Admin',              icon: Shield,    href: '/admin',           color: 'hover:border-zinc-500/40 hover:text-zinc-400'         },
+            ].map(({ label, icon: Icon, href, color, action }) => (
+              <button key={label}
+                onClick={() => action ? action() : navigate(href)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-xs text-muted-foreground transition-all ${color}`}>
+                <Icon className="h-3.5 w-3.5"/>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Last refresh */}
+        <div className="text-[10px] text-muted-foreground/30 font-mono text-center pb-2">
+          Last refreshed {lastRefresh.toLocaleTimeString()} · {systemMode === 'live' ? 'Auto-refresh every 90s' : 'Auto-refresh paused'}
+        </div>
+
+      </div>
+
+      {/* ══ PENDING APPROVALS DRAWER ══ */}
+      {showPending && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setShowPending(false)}/>
+          <div className="fixed right-0 top-0 bottom-0 z-50 w-[440px] max-w-full bg-card border-l border-border flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-amber-400"/>
+                <span className="text-sm font-semibold">Pending Approvals</span>
+                <span className="text-xs text-amber-400 font-mono bg-amber-500/10 border border-amber-500/20 rounded-full px-1.5 py-0.5">
+                  {data?.pendingLearnings?.length || 0}
+                </span>
+              </div>
+              <button onClick={() => setShowPending(false)}><X className="h-4 w-4 text-muted-foreground"/></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {(data?.pendingLearnings || []).length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
+                  <CheckCircle2 className="h-10 w-10 opacity-20"/>
+                  <p>All clear — no pending approvals</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border/50">
+                  {(data?.pendingLearnings || []).map((l: any) => {
+                    const proj = activeProjects.find(p => p.id === l.project_id);
+                    return (
+                      <div key={l.id} className="px-5 py-3.5 hover:bg-secondary/20 transition-colors">
+                        <div className="flex items-start justify-between gap-3 mb-1">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{l.card_title || 'Untitled'}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {proj && <span className="text-[10px] text-muted-foreground/50">{proj.name}</span>}
+                              <span className="text-[10px] font-mono text-muted-foreground/40 bg-secondary/40 px-1 py-0.5 rounded">{l.card_type}</span>
+                              {l.confidence_score && <span className="text-[10px] text-muted-foreground/40">{l.confidence_score}%</span>}
+                              {l.auto_captured && <span className="text-[10px] text-violet-400/60">auto</span>}
+                            </div>
+                          </div>
+                          {/* Approve / Reject */}
+                          <div className="flex gap-1 shrink-0">
+                            <button onClick={() => approveSingle(l.id)}
+                              className="h-7 w-7 rounded-lg flex items-center justify-center bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/25 transition-colors">
+                              <Check className="h-3.5 w-3.5"/>
+                            </button>
+                            <button onClick={() => rejectSingle(l.id)}
+                              className="h-7 w-7 rounded-lg flex items-center justify-center bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/25 transition-colors">
+                              <X className="h-3.5 w-3.5"/>
+                            </button>
+                          </div>
+                        </div>
+                        {l.improvement && (
+                          <p className="text-xs text-muted-foreground/60 line-clamp-2 mt-1">{l.improvement}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Bulk actions */}
+            {(data?.pendingLearnings || []).length > 0 && (
+              <div className="px-5 py-4 border-t border-border bg-card/80 flex gap-2">
+                <button
+                  onClick={async () => {
+                    const all = data?.pendingLearnings || [];
+                    let n = 0;
+                    for (const l of all) { await callEngine('approve_learning', { id: l.id }); n++; }
+                    showToast(`✓ ${n} learnings approved`);
+                    await load();
+                    setShowPending(false);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-sm font-medium hover:bg-emerald-500/20 transition-colors">
+                  <Check className="h-3.5 w-3.5"/>
+                  Approve All ({data?.pendingLearnings?.length})
+                </button>
+                <button onClick={() => navigate('/brain-learning')}
+                  className="px-4 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors">
+                  Full Review
+                </button>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
