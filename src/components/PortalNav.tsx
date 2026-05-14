@@ -34,6 +34,8 @@ export default function PortalNav({
   clientName, companyName,
   projects = [], selectedProjectId, onProjectChange,
 }: Props) {
+  // Guard: remove any null/undefined entries Supabase might return
+  const safeProjects = (projects || []).filter((p: any) => p != null && p.id != null);
   const navigate  = useNavigate();
   const location  = useLocation();
   const { signOut } = useAuth();
@@ -145,10 +147,10 @@ export default function PortalNav({
             {/* Right side */}
             <div className="flex items-center gap-1 shrink-0">
               {/* Project selector */}
-              {projects.length > 1 && onProjectChange && (
+              {safeProjects.length > 1 && onProjectChange && (
                 <select value={selectedProjectId || ''} onChange={e => onProjectChange(e.target.value)}
                   className="hidden lg:block h-8 rounded-lg border border-border bg-background/60 text-xs px-2.5 max-w-[150px] outline-none focus:border-primary/50 cursor-pointer">
-                  {projects.map((p: any) => (
+                  {safeProjects.map((p: any) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
@@ -178,10 +180,10 @@ export default function PortalNav({
         {mobileOpen && (
           <div className="md:hidden border-t border-border bg-card/95 backdrop-blur-md">
             <div className="px-4 py-3 space-y-1">
-              {projects.length > 1 && onProjectChange && (
+              {safeProjects.length > 1 && onProjectChange && (
                 <select value={selectedProjectId || ''} onChange={e => onProjectChange(e.target.value)}
                   className="w-full h-9 rounded-xl border border-border bg-background/60 text-sm px-3 mb-2 outline-none">
-                  {projects.map((p: any) => (
+                  {safeProjects.map((p: any) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>

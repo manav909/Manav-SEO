@@ -1172,7 +1172,7 @@ export default function ManavBrainAssistant() {
             <div style={{width:5,height:5,borderRadius:'50%',background:hc.color,boxShadow:`0 0 6px ${hc.glow}`,flexShrink:0}}/>
             <select value={selProj} onChange={e=>setSelProj(e.target.value)} style={{height:24,padding:'0 6px',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:6,fontSize:8,color:'rgba(255,255,255,0.55)',outline:'none',fontFamily:'monospace',cursor:'pointer',maxWidth:100,flexShrink:0}}>
               <option value="">PROJECT</option>
-              {projects.map(p => { const cl=clients.find(c=>c.id===p.client_id); return <option key={p.id} value={p.id}>{cl?.company||p.name}</option>; })}
+              {(projects||[]).filter((p:any)=>p?.id).map(p => { const cl=clients.find(c=>c.id===p.client_id); return <option key={p.id} value={p.id}>{cl?.company||p.name}</option>; })}
             </select>
             {alertCount>0 && <div style={{background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.35)',borderRadius:10,padding:'1px 6px',fontSize:7,fontFamily:'monospace',color:'#fca5a5',flexShrink:0,animation:'alertBadge 0.8s ease-in-out infinite alternate'}}>{alertCount} ERR</div>}
             {alertCount===0 && pending>0 && <div style={{background:'rgba(251,191,36,0.12)',border:'1px solid rgba(251,191,36,0.28)',borderRadius:10,padding:'1px 6px',fontSize:7,fontFamily:'monospace',color:'#fbbf24',flexShrink:0}}>{pending} P</div>}
