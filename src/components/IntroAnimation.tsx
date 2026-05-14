@@ -493,10 +493,10 @@ function ActV({onEnter}:{onEnter:()=>void}){
       </div>
 
       {/* ── MAIN TITLE: acronym cycle + SEASON ── */}
-      <div style={{position:'relative',display:'inline-flex',alignItems:'baseline',
+      <div style={{position:'relative',display:'inline-block',
         fontSize:'clamp(2.4rem,min(8.5vw,12.5vh),7rem)',
         fontWeight:100,lineHeight:1,letterSpacing:'0.24em',
-        textIndent:'0.24em',
+        whiteSpace:'nowrap',
       }}>
         {/* Cycling acronym — key triggers CSS animation on every change */}
         <span key={acro} style={{
@@ -515,12 +515,11 @@ function ActV({onEnter}:{onEnter:()=>void}){
         <span style={{
           display:'inline-block',
           color: WHT,
-          letterSpacing:'0.24em',
           opacity: showSeason ? 1 : 0,
           transform: showSeason ? 'translateX(0)' : 'translateX(-6px)',
           filter:    showSeason ? 'blur(0)' : 'blur(6px)',
           transition: 'opacity 0.7s cubic-bezier(0.22,1,0.36,1), transform 0.7s cubic-bezier(0.22,1,0.36,1), filter 0.7s cubic-bezier(0.22,1,0.36,1)',
-        }}>{'\u00A0'}SEASON</span>
+        }}>{' SEASON'}</span>
 
         {/* Underline — appears after SEASON */}
         <div style={{
