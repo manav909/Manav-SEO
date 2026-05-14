@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth }     from "@/contexts/AuthContext";
 import { ProjectProvider }             from "@/contexts/ProjectContext";
 import MissionControl                  from "./pages/MissionControl";
+import Oval                            from "./pages/Oval";
 import { DemoProvider }          from "@/contexts/DemoContext";
 import { ErrorBoundary }         from "@/components/ErrorBoundary";
 import { BrainErrorBoundary }    from "@/components/BrainErrorBoundary";
@@ -75,6 +76,7 @@ const AppRoutes = () => {
         <Route path="/desk"          element={<B name="desk">         <ApprovedRequired><Desk /></ApprovedRequired>          </B>} />
         <Route path="/brain-command"  element={<B name="brain-command"><ApprovedRequired><BrainCommand /></ApprovedRequired></B>} />
         <Route path="/mission-control" element={<B name="mission-control"><ApprovedRequired><MissionControl /></ApprovedRequired></B>} />
+        <Route path="/oval"           element={<B name="oval"><ApprovedRequired><Oval /></ApprovedRequired></B>} />
         <Route path="*"               element={<NotFound />} />
       </Routes>
 
