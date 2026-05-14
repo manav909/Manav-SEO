@@ -14,7 +14,7 @@ import React, {
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 
-const STORAGE_KEY = 'seoseason_project_v2';
+const STORAGE_KEY = 'seo_season_proj';
 
 /* ── Rich context object passed to Brain on every call ── */
 export interface ProjectBrainContext {
