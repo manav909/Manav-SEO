@@ -98,6 +98,7 @@ export default function AlgorithmIntel() {
   // Best Practices tab state
   const [practicesCat,  setPracticesCat]  = useState('');
   const [checkedItems,  setCheckedItems]  = useState<Record<string,boolean>>({});
+  const [learningFreshnessAlert, setLearningFreshnessAlert] = useState<{count:number;topic:string;learnings:any[]}|null>(null);
 
   // Scan / custom topic state
   const [scanning,      setScanning]      = useState(false);
@@ -227,6 +228,27 @@ export default function AlgorithmIntel() {
         setPreview(p => { const n = { ...p }; delete n[topicId]; return n; });
         setExpanded(e => { const n = { ...e }; delete n[topicId]; return n; });
         await Promise.all([loadCatalog(), loadLibrary()]);
+        // Check if this algorithm update affects existing Brain Learnings
+        try {
+          const freshnessRes = await fetch('/api/task-engine', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
+            body: JSON.stringify({
+              action: 'check_learning_freshness',
+              topic_title: item.title,
+              topic_category: item.category || '',
+              topic_tags: item.tags || [],
+            }),
+          });
+          const fd = await freshnessRes.json().catch(() => ({}));
+          if (fd.affected_count > 0) {
+            setLearningFreshnessAlert({ count: fd.affected_count, topic: item.title, learnings: fd.affected_learnings || [] });
+            toast({
+              title: `⚠️ ${fd.affected_count} Brain Learning${fd.affected_count > 1 ? 's' : ''} may be outdated`,
+              description: `"${item.title}" affects existing learnings. Tagged for review in Brain Learning.`,
+            });
+          }
+        } catch (_e) { /* non-fatal */ }
       } else {
         toast({ title: 'Save failed', description: data.error || 'Unknown error', variant: 'destructive' });
       }
@@ -800,6 +822,33 @@ ${sect('Priority Actions',result.priority_actions||[],(a)=>`<div class="c ${a.im
         projects={projects} selectedProjectId={selProjId} onProjectChange={setSelProjId}/>
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+        {/* Algorithm → Learning freshness alert */}
+        {learningFreshnessAlert && (
+          <div style={{padding:'14px 18px',background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.25)',borderRadius:12,display:'flex',gap:14,alignItems:'flex-start'}}>
+            <span style={{fontSize:16,flexShrink:0}}>⚠️</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#fbbf24',marginBottom:4}}>
+                {learningFreshnessAlert.count} Brain Learning{learningFreshnessAlert.count>1?'s':''} may be outdated by "{learningFreshnessAlert.topic}"
+              </div>
+              <div style={{fontSize:11,color:'rgba(255,255,255,0.5)',marginBottom:8}}>
+                Tagged "needs-algo-review" in Brain Learning for your review.
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+                {learningFreshnessAlert.learnings.map((l:any) => (
+                  <span key={l.id} style={{fontSize:10,fontFamily:'monospace',color:'rgba(251,191,36,0.75)',background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.2)',borderRadius:5,padding:'3px 8px'}}>
+                    {(l.card_title||'').slice(0,50)}
+                  </span>
+                ))}
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                <a href="/brain-learning" style={{fontSize:10,fontFamily:'monospace',color:'#fbbf24',background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:6,padding:'5px 12px',textDecoration:'none'}}>
+                  → Review in Brain Learning
+                </a>
+                <button onClick={()=>setLearningFreshnessAlert(null)} style={{fontSize:10,fontFamily:'monospace',color:'rgba(255,255,255,0.3)',background:'none',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'5px 12px',cursor:'pointer'}}>Dismiss</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-4">

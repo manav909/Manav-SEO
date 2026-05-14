@@ -1,3 +1,4 @@
+import ProjectOnboardingModal from '@/components/ProjectOnboardingModal';
 import { useEffect, useState } from 'react';
 import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { supabase } from '@/lib/supabase';
@@ -58,6 +59,10 @@ export default function Admin() {
   const [metricsForm,  setMetricsForm]  = useState<any>(EMPTY_FORM);
   const [clientForm,   setClientForm]   = useState({ name:'', company:'', industry:'', website:'', email:'', retainer_amount:'' });
   const [projectForm,  setProjectForm]  = useState({ name:'', url:'', keywords:'', competitors:'' });
+  const [onboardingProject, setOnboardingProject] = useState<{id:string;name:string;url:string}|null>(null);
+  const [projectStep,  setProjectStep]  = useState<'basics'|'intelligence'>('basics');
+  const [intelAnswers, setIntelAnswers] = useState<Record<string,string>>({});
+  const [newProjId,    setNewProjId]    = useState<string|null>(null);
   const [upsellForm,   setUpsellForm]   = useState({ title:'', description:'', price:'', potential_impact:'' });
   const [launchpadPhase,   setLaunchpadPhase]   = useState(1);
   const [launchpadContext, setLaunchpadContext] = useState('');
@@ -290,23 +295,101 @@ export default function Admin() {
     if (!selectedClient || !projectForm.name || !projectForm.url)
       return toast({ title: 'Missing fields', variant: 'destructive' });
     setLoading(true);
-    const { error } = await supabase.from('projects').insert({
+    const { data: proj, error } = await supabase.from('projects').insert({
       client_id:   selectedClient,
       name:        projectForm.name,
       url:         projectForm.url,
       keywords:    projectForm.keywords.split(',').map((k:string)=>k.trim()).filter(Boolean),
       competitors: projectForm.competitors.split(',').map((c:string)=>c.trim()).filter(Boolean),
-    });
-    if (error) toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    else {
-      toast({ title: 'Project created!' });
-      setProjectForm({ name:'', url:'', keywords:'', competitors:'' });
+    }).select().single();
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } else {
+      setNewProjId(proj.id);
+      setProjectStep('intelligence');
+      toast({ title: '✅ Project created', description: 'Now tell Brain about the project — 5 questions.' });
       fetchAll();
     }
     setLoading(false);
   };
 
-  const createUpsell = async () => {
+  const saveIntelligence = async () => {
+    if (!newProjId) return;
+    setLoading(true);
+    try {
+      // Build permanent brain_summary from all 10 answers
+      const brainSummary = [
+        intelAnswers.business_goal    ? `PRIMARY GOAL: ${intelAnswers.business_goal}`              : '',
+        intelAnswers.biggest_blocker  ? `BIGGEST BLOCKER: ${intelAnswers.biggest_blocker}`         : '',
+        intelAnswers.target_audience  ? `BUYER PERSONA: ${intelAnswers.target_audience}`           : '',
+        intelAnswers.cms_platform     ? `CMS: ${intelAnswers.cms_platform}`                        : '',
+        intelAnswers.current_ranking  ? `CURRENT RANKING: ${intelAnswers.current_ranking}`         : '',
+        intelAnswers.content_status   ? `CONTENT STATE: ${intelAnswers.content_status}`            : '',
+        intelAnswers.past_seo         ? `WHAT FAILED BEFORE: ${intelAnswers.past_seo}`             : '',
+        intelAnswers.timeline         ? `DEADLINE: ${intelAnswers.timeline}`                       : '',
+        intelAnswers.monthly_traffic  ? `ORGANIC TRAFFIC: ${intelAnswers.monthly_traffic}/mo`      : '',
+        intelAnswers.budget_resource  ? `RESOURCES: ${intelAnswers.budget_resource}`               : '',
+      ].filter(Boolean).join('\n');
+
+      // Store permanently in project record
+      const { data: currentProj } = await supabase.from('projects').select('playground_strategy').eq('id', newProjId).single();
+      const strategy = (currentProj as any)?.playground_strategy || {};
+      strategy.onboarding_data = {
+        completed_at: new Date().toISOString(),
+        answers:      intelAnswers,
+        brain_summary: brainSummary,
+      };
+      await supabase.from('projects').update({ playground_strategy: strategy }).eq('id', newProjId);
+
+      // Save as ONE permanent Brain Learning at confidence 95 (never needs re-review)
+      await supabase.from('brain_learnings').insert({
+        project_id:      newProjId,
+        card_type:       'insight',
+        card_title:      'Project Onboarding Intelligence',
+        what_worked:     [],
+        what_missed:     [intelAnswers.biggest_blocker || 'Not specified'],
+        improvement:     intelAnswers.business_goal || 'Run full audit first',
+        context_summary: brainSummary,
+        tags:            ['onboarding','permanent','project-context'],
+        source:          'project_onboarding',
+        applied_count:   0,
+        status:          'active',
+        auto_captured:   true,
+        confidence_score: 95,
+        updated_at:      new Date().toISOString(),
+      });
+
+      // Save individual learnings for high-impact answers
+      const keyLearnings = [
+        intelAnswers.past_seo        ? { type:'insight',    title:'What failed: '+intelAnswers.past_seo.slice(0,40),     improvement:'Avoid this approach' }               : null,
+        intelAnswers.biggest_blocker ? { type:'technical',  title:'Blocker: '+intelAnswers.biggest_blocker.slice(0,40),  improvement:'Resolve this first' }                : null,
+        intelAnswers.target_audience ? { type:'content',    title:'Buyer persona: '+intelAnswers.target_audience.slice(0,40), improvement:'Calibrate all content for this buyer' } : null,
+      ].filter(Boolean) as any[];
+
+      for (const l of keyLearnings) {
+        await supabase.from('brain_learnings').insert({
+          project_id: newProjId, card_type: l.type, card_title: l.title,
+          what_worked: [], what_missed: [], improvement: l.improvement,
+          context_summary: 'From project onboarding',
+          tags: ['onboarding', l.type], source: 'project_onboarding',
+          applied_count: 0, status: 'active', auto_captured: true,
+          confidence_score: 90, updated_at: new Date().toISOString(),
+        });
+      }
+
+      toast({ title: `🧠 Brain calibrated for this project`, description: `${Object.keys(intelAnswers).length} intelligence pathways activated.` });
+      setProjectStep('basics');
+      setProjectForm({ name:'', url:'', keywords:'', competitors:'' });
+      setIntelAnswers({});
+      setNewProjId(null);
+      fetchAll();
+    } catch (e: any) {
+      toast({ title: 'Error saving intelligence', description: e.message, variant: 'destructive' });
+    }
+    setLoading(false);
+  };
+
+    const createUpsell = async () => {
     if (!selectedProject || !upsellForm.title || !upsellForm.price)
       return toast({ title: 'Missing fields', variant: 'destructive' });
     setLoading(true);
@@ -689,34 +772,96 @@ export default function Admin() {
 
             <div className="rounded-2xl border border-border bg-card/60 p-6">
               <h2 className="font-bold text-base mb-4 flex items-center gap-2">
-                <Globe className="h-4 w-4 text-primary" />Add Project to Client
+                <Globe className="h-4 w-4 text-primary" />
+                {projectStep === 'basics' ? 'Add Project to Client' : '🧠 Tell Brain About This Project'}
               </h2>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <Label className={lc}>Select Client</Label>
-                  <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)}
-                    className="w-full h-10 rounded-md border border-border bg-background/60 text-sm px-3">
-                    <option value="">— Choose client —</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name} — {c.company}</option>)}
-                  </select>
-                </div>
-                {[
-                  { key:'name',        label:'Project Name',                       placeholder:'Main Website' },
-                  { key:'url',         label:'Website URL',                        placeholder:'https://example.com' },
-                  { key:'keywords',    label:'Target Keywords (comma separated)',   placeholder:'event rental dubai, av equipment' },
-                  { key:'competitors', label:'Competitor URLs (comma separated)',   placeholder:'competitor1.com, competitor2.com' },
-                ].map(({ key, label, placeholder }) => (
-                  <div key={key} className="space-y-1">
-                    <Label className={lc}>{label}</Label>
-                    <Input placeholder={placeholder} value={(projectForm as any)[key]}
-                      onChange={e => setProjectForm(f => ({ ...f, [key]: e.target.value }))} className={ic} />
-                  </div>
+
+              {/* Step indicator */}
+              <div style={{display:'flex',gap:6,marginBottom:16}}>
+                {['basics','intelligence'].map((s,i) => (
+                  <div key={s} style={{flex:1,height:3,borderRadius:2,background:
+                    s===projectStep?'#6366f1':i<(['basics','intelligence'].indexOf(projectStep))?'#10b981':'rgba(255,255,255,0.1)'}}/>
                 ))}
-                <Button onClick={createProject} disabled={loading}
-                  className="w-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground">
-                  <Plus className="h-4 w-4 mr-2" />Create Project
-                </Button>
               </div>
+
+              {projectStep === 'basics' ? (
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className={lc}>Select Client</Label>
+                    <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)}
+                      className="w-full h-10 rounded-md border border-border bg-background/60 text-sm px-3">
+                      <option value="">— Choose client —</option>
+                      {clients.map(c => <option key={c.id} value={c.id}>{c.name} — {c.company}</option>)}
+                    </select>
+                  </div>
+                  {[
+                    { key:'name',        label:'Project Name',                       placeholder:'Main Website' },
+                    { key:'url',         label:'Website URL',                        placeholder:'https://example.com' },
+                    { key:'keywords',    label:'Target Keywords (comma separated)',   placeholder:'seo software, rank tracker' },
+                    { key:'competitors', label:'Competitor URLs (comma separated)',   placeholder:'competitor1.com, competitor2.com' },
+                  ].map(({ key, label, placeholder }) => (
+                    <div key={key} className="space-y-1">
+                      <Label className={lc}>{label}</Label>
+                      <Input placeholder={placeholder} value={(projectForm as any)[key]}
+                        onChange={e => setProjectForm(f => ({ ...f, [key]: e.target.value }))} className={ic} />
+                    </div>
+                  ))}
+                  <Button onClick={createProject} disabled={loading}
+                    className="w-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground">
+                    <Plus className="h-4 w-4 mr-2" />Create & Brief Brain →
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p style={{fontSize:12,color:'rgba(255,255,255,0.5)',lineHeight:1.6,margin:0}}>
+                    Brain permanently stores these answers as project intelligence. Every future response uses this context.
+                    <strong style={{color:'rgba(165,180,252,0.8)'}}> Answers stored as active Brain Learnings — Brain never forgets.</strong>
+                  </p>
+                  {([
+                    { key:"business_goal", q:"What is the single most important business outcome in 90 days?",
+                      opts:["Rank on page 1 for 3+ target keywords","Increase organic traffic 30%+","Get cited in AI search (Perplexity/ChatGPT)","Generate B2B leads from organic","Beat a specific competitor","Recover from Google core update penalty"] },
+                    { key:"biggest_blocker", q:"What is the single biggest obstacle between you and that goal?",
+                      opts:["Technical issues blocking indexation","Content too thin or not targeting right keywords","No backlinks / low domain authority","Site too slow for ranking competition","AI search not citing us at all","Not sure — have not audited yet"] },
+                    { key:"target_audience", q:"Who is the person making the buying decision?",
+                      opts:["IT Manager / CTO at mid-market company","Marketing Director at enterprise","Founder / CEO of SMB","Operations Manager replacing paper processes","Individual consumer researching a purchase","Mixed audience"] },
+                    { key:"cms_platform", q:"What CMS or platform is the site on?",
+                      opts:["HubSpot","WordPress + Yoast/RankMath","Webflow","Shopify","Custom build","Wix / Squarespace / Other"] },
+                    { key:"current_ranking", q:"Where do most important pages rank today?",
+                      opts:["Not ranking at all (page 5+)","Page 2-4 (positions 11-40)","Page 1 bottom half (6-10)","Page 1 top half (1-5)","Mixed — some ranking, some not","No idea — have not checked yet"] },
+                    { key:"monthly_traffic", q:"Current organic monthly sessions (estimate)?",
+                      opts:["0-500 (just starting)","500-2,000","2,000-10,000","10,000-50,000","50,000+ (established)","Unknown — no analytics access"] },
+                    { key:"timeline", q:"What is the real deadline for results?",
+                      opts:["30 days — critical business milestone","60 days — seasonal peak approaching","90 days — quarterly target","6 months — strategic growth target","12 months — long-term investment","No hard deadline"] },
+                    { key:"past_seo", q:"What SEO has been tried before that did NOT work?",
+                      opts:["Keyword stuffing or exact match overuse","Bought backlinks that got penalised","Published lots of low-quality content fast","Agency work that moved nothing","Nothing — this is the first SEO effort"] },
+                  ] as {key:string;q:string;opts:string[]}[]).map(({key, q, opts}) => (
+                    <div key={key}>
+                      <div style={{fontSize:12,color:'rgba(255,255,255,0.75)',fontWeight:600,marginBottom:8,lineHeight:1.4}}>{q}</div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                        {opts.map(opt => (
+                          <button key={opt}
+                            onClick={() => setIntelAnswers(a => ({...a, [key]: a[key]===opt?'':opt}))}
+                            style={{padding:'5px 11px',fontSize:10,fontFamily:'monospace',borderRadius:6,cursor:'pointer',transition:'all 0.15s',
+                              background: intelAnswers[key]===opt?'rgba(99,102,241,0.22)':'rgba(255,255,255,0.03)',
+                              border: `1px solid ${intelAnswers[key]===opt?'rgba(99,102,241,0.55)':'rgba(255,255,255,0.09)'}`,
+                              color: intelAnswers[key]===opt?'#c7d2fe':'rgba(255,255,255,0.5)'}}>
+                            {intelAnswers[key]===opt?'✓ ':''}{opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{display:'flex',gap:8,paddingTop:4}}>
+                    <button onClick={saveIntelligence} disabled={loading} style={{flex:1,padding:'10px',fontSize:11,fontFamily:'monospace',fontWeight:700,borderRadius:8,cursor:'pointer',background:'linear-gradient(135deg,#6366f1,#4f46e5)',border:'none',color:'white',boxShadow:'0 0 16px rgba(99,102,241,0.4)'}}>
+                      🧠 Save to Brain & Activate
+                    </button>
+                    <button onClick={()=>{setProjectStep('basics');setProjectForm({name:'',url:'',keywords:'',competitors:''});setIntelAnswers({});setNewProjId(null);}}
+                      style={{padding:'10px 14px',fontSize:10,fontFamily:'monospace',borderRadius:8,cursor:'pointer',background:'none',border:'1px solid rgba(255,255,255,0.1)',color:'rgba(255,255,255,0.4)'}}>
+                      Skip
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="lg:col-span-2 rounded-2xl border border-border bg-card/60 p-6">
@@ -1299,5 +1444,6 @@ export default function Admin() {
 
       </div>
     </div>
+
   );
 }

@@ -228,6 +228,11 @@ function LearningCard({ l, onApprove, onReject, onDelete, onEdit, onDeactivate, 
             AUTO
           </span>
         )}
+        {l.tags?.includes('needs-algo-review') && (
+          <span style={{fontSize:8,fontFamily:'monospace',color:'#38bdf8',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:4,padding:'2px 6px'}}>
+            🔄 ALGO UPDATE
+          </span>
+        )}
             <SourceBadge source={l.source}/>
             {l.applied_count > 0 && (
               <span style={{background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.25)',color:'#10b981',fontSize:9,padding:'2px 6px',borderRadius:3,fontFamily:'monospace',fontWeight:700}}>
@@ -528,6 +533,29 @@ export default function BrainLearning() {
   const dimScores= calcDimScores(learnings);
   const totalApplied = active.reduce((s, l) => s + (l.applied_count || 0), 0);
 
+  /* ── Stale learnings (algorithm updated since they were created) ── */
+  const staleLearnings = active.filter(l =>
+    Array.isArray(l.tags) && l.tags.some((t: string) => t.startsWith('algo_stale:'))
+  );
+  const [staleDismissed, setStaleDismissed] = React.useState(false);
+
+  const handleMarkFresh = async (ids: string[]) => {
+    for (const id of ids) {
+      try {
+        const l = learnings.find(x => x.id === id);
+        if (!l) continue;
+        const cleanTags = (l.tags || []).filter((t: string) => !t.startsWith('algo_stale:') && t !== 'algo-updated');
+        cleanTags.push('freshness-checked');
+        await fetch('/api/task-engine', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
+          body: JSON.stringify({ action: 'update_learning', id, tags: cleanTags }),
+        });
+        setLearnings(ls => ls.map(x => x.id === id ? { ...x, tags: cleanTags } : x));
+      } catch (_e) {}
+    }
+    toast({ title: `✓ ${ids.length} learnings marked fresh` });
+  };
+
   const radarData = DIM_CONFIG.map(d => ({
     dimension: d.label,
     score:     dimScores[d.key] || 0,
@@ -776,7 +804,37 @@ export default function BrainLearning() {
                 </div>
               )}
 
-              {/* Auto-approve banner for system learnings */}
+              {/* Algorithm freshness notification */}
+            {tab === 'active' && !staleDismissed && staleLearnings.length > 0 && (
+              <div style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 14px',background:'rgba(251,191,36,0.05)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:10,marginBottom:12}}>
+                <span style={{fontSize:16,flexShrink:0}}>⚡</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:700,color:'#fbbf24'}}>
+                    Algorithm Update — {staleLearnings.length} active learning{staleLearnings.length !== 1 ? 's' : ''} may be outdated
+                  </div>
+                  <div style={{fontSize:10,color:'rgba(255,255,255,0.4)',marginTop:2,marginBottom:8}}>
+                    A new algorithm topic was saved to your library. These learnings were created before the update and may reference outdated signals. Review them using DEEPEN WITH BRAIN or mark as current.
+                  </div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    {staleLearnings.slice(0,4).map(l => (
+                      <span key={l.id} style={{fontSize:9,fontFamily:'monospace',color:'rgba(251,191,36,0.8)',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:4,padding:'2px 7px'}}>
+                        {l.card_title.slice(0,40)}
+                      </span>
+                    ))}
+                    {staleLearnings.length > 4 && <span style={{fontSize:9,color:'rgba(255,255,255,0.3)',fontFamily:'monospace'}}>+{staleLearnings.length-4} more</span>}
+                  </div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
+                  <button onClick={() => { setTab('active'); setDimFilter('all'); }} style={{background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:6,padding:'5px 10px',cursor:'pointer',color:'#fbbf24',fontSize:9,fontFamily:'monospace',fontWeight:700}}>
+                    REVIEW
+                  </button>
+                  <button onClick={() => { handleMarkFresh(staleLearnings.map(l=>l.id)); setStaleDismissed(true); }} style={{background:'none',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'5px 10px',cursor:'pointer',color:'rgba(255,255,255,0.3)',fontSize:9,fontFamily:'monospace'}}>
+                    MARK ALL FRESH
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Auto-approve banner for system learnings */}
               {tab === 'pending' && !loading && systemPendingCount > 0 && (
                 <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'rgba(16,185,129,0.06)',border:'1px solid rgba(16,185,129,0.2)',borderRadius:10,marginBottom:12}}>
                   <div style={{flex:1}}>
