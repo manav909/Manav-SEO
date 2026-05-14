@@ -3,7 +3,7 @@
  * Routes by: action
  * Actions: get_context | get_state | log_change | check_fingerprint | save_with_fingerprint
  */
-import { createClient } from "@supabase/supabase-js";
+import { db } from "./_lib/db";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { maxDuration: 60 };
@@ -33,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 async function _controlHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
-  const sb = createClient(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co", process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder");
+  const sb = db();
   const { action, projectId, payload } = req.body;
 
   /* ── GET PROJECT CONTEXT ── */

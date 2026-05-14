@@ -1,62 +1,9 @@
 import Anthropic                              from "@anthropic-ai/sdk";
-import { createClient }                      from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-
-/* ─── Inline brain helpers (self-contained, no cross-file imports) ─── */
-import { createClient as _sbCreate } from "@supabase/supabase-js";
-function _sbClient() {
-  return _sbCreate(
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
-  );
-}
-async function extractAndSaveLearning(
-  source: string, projectId: string | null, output: string,
-  metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
-): Promise<void> {
-  if (!projectId || !output || output.length < 200 || output.startsWith("Error:")) return;
-  try {
-    const row: any = {
-      project_id: projectId, source,
-      card_type:       metadata.card_type       || "insight",
-      card_title:      (metadata.card_title     || source).slice(0, 60),
-      context_summary: metadata.context_summary || source,
-      what_worked: [], what_missed: [],
-      improvement: output.slice(0, 300),
-      tags: [source.split("_")[0]].filter(Boolean),
-      applied_count: 0, updated_at: new Date().toISOString(),
-    };
-    try {
-      await _sbClient().from("brain_learnings").insert({ ...row, status: "pending_review", auto_captured: true, confidence_score: 65 });
-    } catch (_e) {
-      try { await _sbClient().from("brain_learnings").insert(row); } catch (_e2) { /* silent */ }
-    }
-  } catch (_e) { /* never crash callers */ }
-}
-async function saveToDesk(
-  projectId: string | null, title: string, content: string,
-  contentType: string, source: string, tags: string[] = []
-): Promise<void> {
-  if (!projectId || !content || content.length < 50) return;
-  try {
-    await _sbClient().from("brain_desk").insert({
-      project_id: projectId, title: title.slice(0, 200), content_type: contentType,
-      content, source, tags: [...tags, source].filter(Boolean),
-      pinned: false, metadata: { auto_saved: true }, updated_at: new Date().toISOString(),
-    });
-  } catch (_e) { /* silent */ }
-}
-
+import { db }                                 from "./_lib/db";
+import { saveLearning }                       from "./_lib/save";
 
 export const config = { maxDuration: 180 };
-
-/* ── Lazy DB — never throws on module load ── */
-function db() {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder";
-  if (!url || !key) throw new Error("Supabase env vars not configured");
-  return createClient(url, key);
-}
 
 export const TOPIC_CATALOG = [
   // Google Core Updates
@@ -218,7 +165,18 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ success: false, error: "Parse failed. Please try again." });
       }
 
-      // Auto-capture algorithm knowledge as a brain learning
+      /* Auto-capture algorithm knowledge as a brain learning (fire-and-forget) */
+      if (project_id && parsed.summary) {
+        saveLearning({
+          source:      "algorithm_intel",
+          projectId:   project_id,
+          content:     `${parsed.title}: ${parsed.summary} ${parsed.what_changed || ""}`.trim(),
+          title:       parsed.title.slice(0, 80),
+          cardType:    "algorithm",
+          contextSummary: `Algorithm intel: ${topic.label}`,
+          tags:        ["algorithm", topic.engine, topic.category].filter(Boolean),
+        }).catch(() => {});
+      }
 
       return res.status(200).json({ success: true, item: parsed, topic });
     }
@@ -257,7 +215,18 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       if (!parsed?.title) return res.status(200).json({ success: false, error: "Parse failed. Try again." });
       parsed.tags = [...new Set([...(Array.isArray(parsed.tags) ? parsed.tags : []), "custom"])];
 
-      // Auto-capture custom algorithm research as a brain learning
+      /* Auto-capture custom algorithm research as a brain learning (fire-and-forget) */
+      if (project_id && parsed.summary) {
+        saveLearning({
+          source:      "algorithm_intel",
+          projectId:   project_id,
+          content:     `${parsed.title}: ${parsed.summary} ${parsed.what_changed || ""}`.trim(),
+          title:       parsed.title.slice(0, 80),
+          cardType:    "algorithm",
+          contextSummary: `Custom algorithm topic: ${label}`,
+          tags:        ["algorithm", engine, category, "custom"].filter(Boolean),
+        }).catch(() => {});
+      }
 
       return res.status(200).json({ success: true, item: parsed });
     }
@@ -398,7 +367,21 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ success: false, error: "Audit response could not be parsed. Please try again." });
       }
 
-      // Auto-capture algorithm audit findings as a brain learning
+      /* Auto-capture algorithm audit findings as a brain learning (fire-and-forget) */
+      if (project_id && audit.verdict) {
+        const failSummary = (audit.critical_fails || []).slice(0, 3)
+          .map((f: any) => `${f.algorithm}: ${f.issue} — Fix: ${f.fix}`)
+          .join("; ");
+        saveLearning({
+          source:      "algorithm_intel",
+          projectId:   project_id,
+          content:     `Algorithm audit score ${audit.overall_score}/100 (${audit.grade}). ${audit.verdict}${failSummary ? ". Critical failures: " + failSummary : ""}`,
+          title:       `Algorithm audit: ${audit.grade} — ${audit.overall_score}/100`,
+          cardType:    "algorithm",
+          contextSummary: `Algorithm audit against knowledge library`,
+          tags:        ["algorithm", "audit", targetEngine, audit.grade || ""],
+        }).catch(() => {});
+      }
 
       return res.status(200).json({ success: true, audit });
     }

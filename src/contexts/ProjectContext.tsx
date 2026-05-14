@@ -149,7 +149,7 @@ async function loadFullContext(project: any, client: any | null): Promise<Projec
     supabase.from('algorithm_knowledge').select('id,topic,summary,freshness_score').order('freshness_score', { ascending: false }).limit(10),
   ]);
 
-  const get = <T>(r: PromiseSettledResult<any>, fb: T): T =>
+  const get = <T,>(r: PromiseSettledResult<any>, fb: T): T =>
     r.status === 'fulfilled' ? (r.value?.data ?? fb) : fb;
 
   /* Build project_knowledge map */

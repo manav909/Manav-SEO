@@ -174,6 +174,41 @@ function TaskRow({ task, onCancel, onSave }: {
   );
 }
 
+/* ── Market Intelligence mini-components ── */
+function MiCard({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderRadius: 10, border: `1px solid ${color}22`, background: `${color}08`, padding: "14px 16px" }}>
+      <div style={{ fontSize: 8, fontFamily: "monospace", color, letterSpacing: "0.1em", marginBottom: 10, fontWeight: 700 }}>{title.toUpperCase()}</div>
+      {children}
+    </div>
+  );
+}
+function MiField({ label, value, highlight }: { label: string; value?: string; highlight?: boolean }) {
+  if (!value) return null;
+  return (
+    <div style={{ marginBottom: 8 }}>
+      {label && <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 3 }}>{label.toUpperCase()}</div>}
+      <p style={{ fontSize: 10, color: highlight ? "rgba(253,224,71,0.9)" : "rgba(255,255,255,0.55)", lineHeight: 1.6, margin: 0 }}>{value}</p>
+    </div>
+  );
+}
+function MiList({ label, items, color, mono }: { label: string; items?: string[]; color: string; mono?: boolean }) {
+  if (!items?.length) return null;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      {label && <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>{label.toUpperCase()}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {items.map((item, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+            <span style={{ color, flexShrink: 0, fontSize: 9, marginTop: 1 }}>›</span>
+            <span style={{ fontSize: mono ? 9 : 10, fontFamily: mono ? "monospace" : "system-ui", color: "rgba(255,255,255,0.5)", lineHeight: 1.5 }}>{item}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Component ── */
 export default function BrainCommand() {
   const { projects, clients } = useAuth();
@@ -192,6 +227,15 @@ export default function BrainCommand() {
   const [chatLoading, setChatLoading] = useState(false);
   const [listening,   setListening]   = useState(false);
   const [projContext, setProjContext]  = useState<any>(null);
+
+  /* ── Market Intelligence state ── */
+  const [mainTab,    setMainTab]   = useState<"execution"|"market">("execution");
+  const [miPersona,  setMiPersona] = useState<any>(null);
+  const [miGoals,    setMiGoals]   = useState<any>(null);
+  const [miPatterns, setMiPatterns]= useState<any>(null);
+  const [miReport,   setMiReport]  = useState<string>("");
+  const [miLoading,  setMiLoading] = useState<string>("");   // which action is loading
+  const [miSection,  setMiSection] = useState<string>("persona"); // active section
 
   const voiceRef    = useRef<any>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -217,8 +261,77 @@ export default function BrainCommand() {
   }, [selProj]);
 
   useEffect(() => {
-    if (selProj) { localStorage.setItem("seo_season_proj", selProj); loadCanvas(); }
+    if (selProj) { localStorage.setItem("seo_season_proj", selProj); loadCanvas(); loadExistingPersona(selProj); }
   }, [selProj, loadCanvas]);
+
+  /* Load existing persona + goals from DB when project changes */
+  const loadExistingPersona = async (pid: string) => {
+    if (!pid) return;
+    const { data } = await supabase.from("market_personas").select("*").eq("project_id", pid).single();
+    if (data) {
+      if (data.persona_data) setMiPersona(data.persona_data);
+      if (data.goals_data)   setMiGoals(data.goals_data);
+    }
+  };
+
+  const miCall = async (action: string, extra: any = {}) => {
+    if (!selProj) { alert("Select a project first."); return null; }
+    setMiLoading(action);
+    try {
+      const res = await fetch("/api/market-researcher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, projectId: selProj, ...extra }),
+      });
+      return await res.json();
+    } finally {
+      setMiLoading("");
+    }
+  };
+
+  const generatePersona = async () => {
+    const data = await miCall("build_persona");
+    if (data?.persona) { setMiPersona(data.persona); setMiSection("persona"); }
+  };
+
+  const suggestGoals = async () => {
+    const data = await miCall("suggest_goals", { existingPersona: miPersona });
+    if (data?.goalPlan) { setMiGoals(data.goalPlan); setMiSection("goals"); }
+  };
+
+  const extractPatterns = async () => {
+    const selProject = projects.find(p => p.id === selProj);
+    const data = await miCall("cross_project_patterns", {
+      industry: selProject?.industry || "",
+      keywords: selProject?.keywords || [],
+    });
+    if (data?.patterns || data?.message) { setMiPatterns(data); setMiSection("patterns"); }
+  };
+
+  const researchMarket = async () => {
+    if (!selProj) { alert("Select a project first."); return; }
+    const selProject = projects.find(p => p.id === selProj);
+    setMiLoading("research_market");
+    setMiReport("");
+    setMiSection("report");
+    try {
+      const res = await fetch("/api/market-researcher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "research_market", projectId: selProj, industry: selProject?.industry || "" }),
+      });
+      if (!res.body) return;
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let acc = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += dec.decode(value, { stream: true });
+        setMiReport(acc);
+      }
+    } finally { setMiLoading(""); }
+  };
 
   /* Add card to queue */
   const addToQueue = (card: any) => {
@@ -434,6 +547,21 @@ export default function BrainCommand() {
               border: "1px solid " + p.color + "30", borderRadius: 12, padding: "2px 8px" }}>{p.label}</span>
           ))}
         </div>
+        {/* Tab switcher */}
+        <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3, border: "1px solid rgba(255,255,255,0.08)" }}>
+          {[
+            { id: "execution", label: "⚡ Execution" },
+            { id: "market",    label: "◉ Market Intelligence" },
+          ].map(t => (
+            <button key={t.id} onClick={() => setMainTab(t.id as any)}
+              style={{ padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 9,
+                fontFamily: "monospace", fontWeight: 700, transition: "all 0.2s",
+                background: mainTab === t.id ? "rgba(99,102,241,0.35)" : "transparent",
+                color: mainTab === t.id ? "#a5b4fc" : "rgba(255,255,255,0.35)",
+                boxShadow: mainTab === t.id ? "0 0 8px rgba(99,102,241,0.3)" : "none",
+              }}>{t.label}</button>
+          ))}
+        </div>
         <div style={{ flex: 1 }}/>
         {/* Project selector */}
         <select value={selProj} onChange={e => setSelProj(e.target.value)}
@@ -456,7 +584,309 @@ export default function BrainCommand() {
         </button>
       </div>
 
+      {/* ── MARKET INTELLIGENCE PANEL ── */}
+      {mainTab === "market" && (
+        <div style={{ flex: 1, overflow: "auto", position: "relative", zIndex: 1, padding: "20px 24px", display: "flex", gap: 20 }}>
+
+          {/* Left: action buttons + section nav */}
+          <div style={{ width: 200, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(165,180,252,0.5)", letterSpacing: "0.12em", marginBottom: 4 }}>
+              INTELLIGENCE ACTIONS
+            </div>
+            {[
+              { id: "persona",  label: "Build Market Persona",    action: generatePersona,    dot: !!miPersona,  active: miLoading === "build_persona" },
+              { id: "goals",    label: "Suggest Goals + KPIs",    action: suggestGoals,        dot: !!miGoals,    active: miLoading === "suggest_goals" },
+              { id: "report",   label: "Research Market",         action: researchMarket,      dot: !!miReport,   active: miLoading === "research_market" },
+              { id: "patterns", label: "Extract Industry Patterns",action: extractPatterns,    dot: !!miPatterns, active: miLoading === "cross_project_patterns" },
+            ].map(btn => (
+              <button key={btn.id} onClick={() => { btn.action(); }}
+                disabled={!!miLoading}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 8,
+                  border: miSection === btn.id ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.06)",
+                  background: miSection === btn.id ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.02)",
+                  cursor: miLoading ? "default" : "pointer", color: miSection === btn.id ? "#a5b4fc" : "rgba(255,255,255,0.45)",
+                  fontSize: 10, fontFamily: "monospace", fontWeight: 600, textAlign: "left", transition: "all 0.2s" }}>
+                {btn.active
+                  ? <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#f59e0b", flexShrink: 0, animation: "blink 0.8s step-end infinite" }}/>
+                  : <span style={{ width: 6, height: 6, borderRadius: "50%", background: btn.dot ? "#10b981" : "rgba(255,255,255,0.15)", flexShrink: 0 }}/>}
+                {btn.label}
+              </button>
+            ))}
+
+            {(miPersona || miGoals || miReport || miPatterns) && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(165,180,252,0.4)", letterSpacing: "0.12em", marginBottom: 8 }}>
+                  VIEW SECTION
+                </div>
+                {[
+                  { id: "persona",  label: "◉ Persona",   show: !!miPersona  },
+                  { id: "goals",    label: "◈ Goals",      show: !!miGoals    },
+                  { id: "report",   label: "◎ Report",     show: !!miReport   },
+                  { id: "patterns", label: "◇ Patterns",   show: !!miPatterns },
+                ].filter(s => s.show).map(s => (
+                  <button key={s.id} onClick={() => setMiSection(s.id)}
+                    style={{ display: "block", width: "100%", padding: "5px 10px", borderRadius: 6, border: "none",
+                      cursor: "pointer", fontSize: 9, fontFamily: "monospace", textAlign: "left",
+                      background: miSection === s.id ? "rgba(99,102,241,0.2)" : "transparent",
+                      color: miSection === s.id ? "#a5b4fc" : "rgba(255,255,255,0.3)",
+                      marginBottom: 2 }}>{s.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right: content panel */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {!selProj && (
+              <div style={{ textAlign: "center", padding: "60px 20px", color: "rgba(255,255,255,0.2)", fontFamily: "monospace" }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>◉</div>
+                <div style={{ fontSize: 11 }}>Select a project to activate Market Intelligence</div>
+              </div>
+            )}
+
+            {selProj && !miPersona && !miGoals && !miReport && !miPatterns && !miLoading && (
+              <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                <div style={{ fontSize: 32, marginBottom: 12, color: "rgba(99,102,241,0.4)" }}>◉</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontFamily: "monospace", marginBottom: 8 }}>
+                  Market Intelligence is empty
+                </div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", fontFamily: "monospace" }}>
+                  Start with "Build Market Persona" — the brain's understanding of who the buyer is.
+                </div>
+              </div>
+            )}
+
+            {miLoading && (
+              <div style={{ padding: "30px 20px", display: "flex", alignItems: "center", gap: 12, color: "rgba(165,180,252,0.6)", fontFamily: "monospace", fontSize: 11 }}>
+                <span style={{ animation: "blink 0.8s step-end infinite" }}>◉</span>
+                {miLoading === "build_persona"          ? "Building deep market persona — analyzing buyer psychology, search behavior, trust signals…" :
+                 miLoading === "suggest_goals"          ? "Designing goals from market intelligence — phased milestones with real KPIs…" :
+                 miLoading === "research_market"        ? "Researching the market — industry dynamics, trends, opportunities…" :
+                 miLoading === "cross_project_patterns" ? "Mining brain learnings across all projects in this industry…" : "Working…"}
+              </div>
+            )}
+
+            {/* ── PERSONA ── */}
+            {miSection === "persona" && miPersona && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* Hero */}
+                <div style={{ background: "linear-gradient(135deg,rgba(99,102,241,0.15),rgba(6,182,212,0.08))", borderRadius: 14, padding: "20px 24px", border: "1px solid rgba(99,102,241,0.25)" }}>
+                  <div style={{ fontSize: 9, fontFamily: "monospace", color: "#a5b4fc", letterSpacing: "0.1em", marginBottom: 6 }}>MARKET PERSONA · {projects.find(p=>p.id===selProj)?.industry?.toUpperCase()}</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: "#e0e7ff", marginBottom: 4 }}>{miPersona.persona_name}</div>
+                  <div style={{ fontSize: 11, color: "rgba(165,180,252,0.6)", fontFamily: "monospace", marginBottom: 12 }}>{miPersona.persona_archetype}</div>
+                  <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", lineHeight: 1.7, margin: 0 }}>{miPersona.market_context}</p>
+                </div>
+
+                {/* Manav Intelligence Note */}
+                {miPersona.manav_intelligence_note && (
+                  <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 10, padding: "12px 16px", border: "1px solid rgba(245,158,11,0.2)" }}>
+                    <div style={{ fontSize: 8, fontFamily: "monospace", color: "#f59e0b", letterSpacing: "0.1em", marginBottom: 6 }}>◈ MANAV INTELLIGENCE NOTE</div>
+                    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", lineHeight: 1.7, margin: 0 }}>{miPersona.manav_intelligence_note}</p>
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  {/* Buyer Profile */}
+                  {miPersona.buyer_profile && (
+                    <MiCard title="Buyer Profile" color="#6366f1">
+                      <MiField label="Who they are" value={miPersona.buyer_profile.who_they_are} />
+                      <MiField label="Decision timeline" value={miPersona.buyer_profile.decision_timeline} />
+                      <MiField label="Research depth" value={miPersona.buyer_profile.research_depth} />
+                      <MiField label="Budget mindset" value={miPersona.buyer_profile.budget_mindset} />
+                      {(miPersona.buyer_profile.triggers_that_start_the_search||[]).length > 0 && (
+                        <MiList label="What triggers the search" items={miPersona.buyer_profile.triggers_that_start_the_search} color="#a5b4fc"/>
+                      )}
+                    </MiCard>
+                  )}
+
+                  {/* Psychology */}
+                  {miPersona.psychology && (
+                    <MiCard title="Psychology" color="#8b5cf6">
+                      <MiList label="Pain points" items={miPersona.psychology.primary_pain_points} color="#fb923c"/>
+                      <MiField label="Deepest fear" value={miPersona.psychology.deepest_fear} highlight />
+                      <MiList label="Decision triggers" items={miPersona.psychology.decision_triggers} color="#4ade80"/>
+                      <MiList label="Objections" items={miPersona.psychology.objections_they_raise} color="#f87171"/>
+                    </MiCard>
+                  )}
+
+                  {/* Search Behavior */}
+                  {miPersona.search_behavior && (
+                    <MiCard title="Search Behavior" color="#06b6d4">
+                      <MiField label="How they search" value={miPersona.search_behavior.how_they_search} />
+                      <MiList label="First queries" items={miPersona.search_behavior.first_search_queries} color="#67e8f9" mono />
+                      <MiList label="Comparison queries" items={miPersona.search_behavior.comparison_queries} color="#a5f3fc" mono />
+                      <MiField label="Intent shift" value={miPersona.search_behavior.intent_shift} />
+                    </MiCard>
+                  )}
+
+                  {/* Language Patterns */}
+                  {miPersona.language_patterns && (
+                    <MiCard title="Language Patterns" color="#f59e0b">
+                      <MiList label="Words they use" items={miPersona.language_patterns.words_they_use} color="#fcd34d" mono />
+                      <MiList label="Words that convert" items={miPersona.language_patterns.words_that_convert} color="#4ade80" mono />
+                      <MiList label="Words that repel" items={miPersona.language_patterns.words_that_repel} color="#f87171" mono />
+                      <MiList label="Questions they Google" items={miPersona.language_patterns.questions_they_type_into_google} color="#fbbf24" mono />
+                    </MiCard>
+                  )}
+
+                  {/* Trust Signals */}
+                  {miPersona.trust_signals && (
+                    <MiCard title="Trust Signals" color="#10b981">
+                      <MiList label="Builds trust" items={miPersona.trust_signals.what_builds_immediate_trust} color="#4ade80"/>
+                      <MiList label="Proof they need" items={miPersona.trust_signals.proof_formats_they_need} color="#6ee7b7"/>
+                      <MiList label="Red flags" items={miPersona.trust_signals.what_raises_red_flags} color="#f87171"/>
+                    </MiCard>
+                  )}
+
+                  {/* SEO Implications */}
+                  {miPersona.seo_content_implications && (
+                    <MiCard title="SEO + Content Implications" color="#f472b6">
+                      <MiList label="Content gaps to fill" items={miPersona.seo_content_implications.content_gaps_this_persona_needs_filled} color="#f9a8d4"/>
+                      <MiList label="Page types needed" items={miPersona.seo_content_implications.ideal_page_types} color="#a5b4fc"/>
+                      <MiList label="Format recommendations" items={miPersona.seo_content_implications.format_recommendations} color="#6ee7b7"/>
+                      {(miPersona.seo_content_implications.keyword_intent_map||[]).map((m: any, i: number) => (
+                        <div key={i} style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.3)", marginBottom: 3 }}>{m.intent?.toUpperCase()} INTENT</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            {(m.example_keywords||[]).map((kw: string, j: number) => (
+                              <span key={j} style={{ fontSize: 9, fontFamily: "monospace", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4, padding: "2px 6px", color: "rgba(255,255,255,0.5)" }}>{kw}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </MiCard>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── GOALS ── */}
+            {miSection === "goals" && miGoals && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* Opportunity header */}
+                <div style={{ background: "linear-gradient(135deg,rgba(16,185,129,0.12),rgba(99,102,241,0.08))", borderRadius: 14, padding: "18px 22px", border: "1px solid rgba(16,185,129,0.2)" }}>
+                  <div style={{ fontSize: 9, fontFamily: "monospace", color: "#10b981", letterSpacing: "0.1em", marginBottom: 8 }}>MARKET OPPORTUNITY</div>
+                  <p style={{ fontSize: 13, color: "#e0e7ff", fontWeight: 700, lineHeight: 1.6, margin: "0 0 10px" }}>{miGoals.market_opportunity}</p>
+                  <div style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>COMPETITIVE GAP</div>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.6, margin: "0 0 10px" }}>{miGoals.competitive_gap}</p>
+                  <div style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>POSITIONING</div>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.6, margin: 0 }}>{miGoals.positioning_recommendation}</p>
+                </div>
+
+                {/* 6-month outcome */}
+                {miGoals.recommended_6month_outcome && (
+                  <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 10, padding: "12px 16px", border: "1px solid rgba(245,158,11,0.2)" }}>
+                    <div style={{ fontSize: 8, fontFamily: "monospace", color: "#f59e0b", letterSpacing: "0.1em", marginBottom: 6 }}>◈ 6-MONTH OUTCOME TARGET</div>
+                    <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", fontWeight: 600, margin: 0 }}>{miGoals.recommended_6month_outcome}</p>
+                  </div>
+                )}
+
+                {/* Phase cards */}
+                {(miGoals.phases||[]).map((phase: any) => (
+                  <div key={phase.phase} style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(99,102,241,0.06)" }}>
+                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(99,102,241,0.3)", border: "1px solid rgba(99,102,241,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontFamily: "monospace", fontWeight: 900, color: "#a5b4fc", flexShrink: 0 }}>{phase.phase}</div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#e0e7ff" }}>{phase.name}</div>
+                        <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.3)" }}>{phase.timeline}</div>
+                      </div>
+                    </div>
+                    <div style={{ padding: "12px 16px" }}>
+                      <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.6, margin: "0 0 10px" }}>{phase.strategic_focus}</p>
+                      <div style={{ fontSize: 8, fontFamily: "monospace", color: "#10b981", marginBottom: 6 }}>✓ MILESTONE: {phase.milestone}</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {(phase.kpis||[]).map((kpi: any, i: number) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.02)", borderRadius: 7, padding: "7px 10px", border: "1px solid rgba(255,255,255,0.04)" }}>
+                            <div style={{ flex: 1, fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{kpi.metric}</div>
+                            <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.25)" }}>{kpi.baseline_estimate}</div>
+                            <div style={{ fontSize: 9, fontFamily: "monospace", fontWeight: 900, color: "#4ade80" }}>→ {kpi.target}</div>
+                            <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.25)" }}>{kpi.by}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Quick wins + risks */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  {(miGoals.quick_wins||[]).length > 0 && (
+                    <MiCard title="Quick Wins — Week 1-2" color="#4ade80">
+                      <MiList label="" items={miGoals.quick_wins} color="#6ee7b7"/>
+                    </MiCard>
+                  )}
+                  {(miGoals.risk_factors||[]).length > 0 && (
+                    <MiCard title="Risk Factors" color="#f87171">
+                      <MiList label="" items={miGoals.risk_factors} color="#fca5a5"/>
+                    </MiCard>
+                  )}
+                </div>
+                {miGoals.manav_note && (
+                  <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 10, padding: "12px 16px", border: "1px solid rgba(245,158,11,0.2)" }}>
+                    <div style={{ fontSize: 8, fontFamily: "monospace", color: "#f59e0b", letterSpacing: "0.1em", marginBottom: 6 }}>◈ MANAV STRATEGIC NOTE</div>
+                    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", lineHeight: 1.7, margin: 0 }}>{miGoals.manav_note}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── MARKET REPORT ── */}
+            {miSection === "report" && miReport && (
+              <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 12, padding: "20px 24px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <pre style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, fontFamily: "system-ui,sans-serif" }}>
+                  {miReport}
+                  {miLoading === "research_market" && <span style={{ animation: "blink 0.8s step-end infinite", color: "#6366f1" }}>|</span>}
+                </pre>
+              </div>
+            )}
+
+            {/* ── PATTERNS ── */}
+            {miSection === "patterns" && miPatterns && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {miPatterns.message && (
+                  <div style={{ background: "rgba(99,102,241,0.08)", borderRadius: 10, padding: "16px 20px", border: "1px solid rgba(99,102,241,0.2)", color: "rgba(255,255,255,0.55)", fontSize: 12, lineHeight: 1.7 }}>
+                    {miPatterns.message}
+                  </div>
+                )}
+                {miPatterns.patterns && (
+                  <>
+                    <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 12, padding: "16px 20px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(165,180,252,0.5)", letterSpacing: "0.1em", marginBottom: 8 }}>
+                        CROSS-PROJECT SYNTHESIS · {miPatterns.industryCount + miPatterns.keywordCount} DATA POINTS
+                      </div>
+                      <p style={{ fontSize: 12, color: "#e0e7ff", fontWeight: 600, lineHeight: 1.7, margin: 0 }}>{miPatterns.patterns.pattern_summary}</p>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <MiCard title="What Consistently Works" color="#4ade80">
+                        <MiList label="" items={miPatterns.patterns.what_consistently_works} color="#6ee7b7"/>
+                      </MiCard>
+                      <MiCard title="What Consistently Fails" color="#f87171">
+                        <MiList label="" items={miPatterns.patterns.what_consistently_fails} color="#fca5a5"/>
+                      </MiCard>
+                      <MiCard title="Apply Immediately" color="#f59e0b">
+                        <MiList label="" items={miPatterns.patterns.apply_immediately} color="#fcd34d"/>
+                      </MiCard>
+                      <MiCard title="Surprising Insights" color="#a78bfa">
+                        <MiList label="" items={miPatterns.patterns.surprising_insights} color="#c4b5fd"/>
+                      </MiCard>
+                    </div>
+                    {miPatterns.patterns.industry_benchmarks && (
+                      <MiCard title="Industry Benchmarks" color="#06b6d4">
+                        <MiField label="Typical wins" value={miPatterns.patterns.industry_benchmarks.typical_wins} />
+                        <MiField label="Common ceiling" value={miPatterns.patterns.industry_benchmarks.common_ceiling} />
+                        <MiField label="Breakthrough factor" value={miPatterns.patterns.industry_benchmarks.breakthrough_factor} highlight/>
+                      </MiCard>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── MAIN LAYOUT: Canvas | Execution Queue | Brain Chat ── */}
+      {mainTab === "execution" && (
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "280px 1fr 340px", overflow: "hidden", position: "relative", zIndex: 1 }}>
 
         {/* LEFT: Canvas card browser */}
@@ -635,6 +1065,7 @@ export default function BrainCommand() {
           </div>
         </div>
       </div>
+      )} {/* end mainTab === execution */}
 
       <style>{`
         @keyframes spin { from{transform:rotate(0deg);}to{transform:rotate(360deg);} }

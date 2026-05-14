@@ -1,51 +1,6 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-
-/* ─── Inline brain helpers (self-contained, no cross-file imports) ─── */
-import { createClient as _sbCreate } from "@supabase/supabase-js";
-function _sbClient() {
-  return _sbCreate(
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
-  );
-}
-async function extractAndSaveLearning(
-  source: string, projectId: string | null, output: string,
-  metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
-): Promise<void> {
-  if (!projectId || !output || output.length < 200 || output.startsWith("Error:")) return;
-  try {
-    const row: any = {
-      project_id: projectId, source,
-      card_type:       metadata.card_type       || "insight",
-      card_title:      (metadata.card_title     || source).slice(0, 60),
-      context_summary: metadata.context_summary || source,
-      what_worked: [], what_missed: [],
-      improvement: output.slice(0, 300),
-      tags: [source.split("_")[0]].filter(Boolean),
-      applied_count: 0, updated_at: new Date().toISOString(),
-    };
-    try {
-      await _sbClient().from("brain_learnings").insert({ ...row, status: "pending_review", auto_captured: true, confidence_score: 65 });
-    } catch (_e) {
-      try { await _sbClient().from("brain_learnings").insert(row); } catch (_e2) { /* silent */ }
-    }
-  } catch (_e) { /* never crash callers */ }
-}
-async function saveToDesk(
-  projectId: string | null, title: string, content: string,
-  contentType: string, source: string, tags: string[] = []
-): Promise<void> {
-  if (!projectId || !content || content.length < 50) return;
-  try {
-    await _sbClient().from("brain_desk").insert({
-      project_id: projectId, title: title.slice(0, 200), content_type: contentType,
-      content, source, tags: [...tags, source].filter(Boolean),
-      pinned: false, metadata: { auto_saved: true }, updated_at: new Date().toISOString(),
-    });
-  } catch (_e) { /* silent */ }
-}
-
+import { saveLearning }                       from "./_lib/save";
 
 export const config = { maxDuration: 300 };
 
@@ -195,21 +150,28 @@ async function _playground_analysis_h(req: VercelRequest, res: VercelResponse) {
 
     const failedBatches = Object.entries(batchStatus).filter(([,s]) => s === "failed").map(([n]) => Number(n));
 
-    // Auto-capture strategy generation as a brain learning (fire-and-forget)
-    // Only when full generation (not resume) and we have meaningful output
+    /* Auto-capture strategy generation as a brain learning (fire-and-forget) */
     if (resumeBatch === 0 && results.canvas_blocks.length > 0 && project?.id) {
-      const learningContext = [
+      const learningContent = [
         `Strategy generated for ${clientData?.company || "Unknown"} (${clientData?.industry || "Unknown industry"})`,
         `Data quality: ${results.data_confidence || "unknown"}`,
-        `Canvas blocks generated: ${results.canvas_blocks.length} (${beforeFilter - afterFilter} filtered as assumptions)`,
-        `Data gaps: ${(results.data_gaps || []).join(" | ") || "none"}`,
-        `Blocked by missing data: ${(results.data_gaps_blocking || []).join(" | ") || "none"}`,
-        `Quick wins found: ${results.quick_wins?.length || 0}`,
-        `Top opportunity: ${results.biggest_opportunity || "not identified"}`,
-        `Top risk: ${results.biggest_risk || "not identified"}`,
-        `Batches: ${JSON.stringify(batchStatus)}`,
-      ].join("\n");
+        `Canvas blocks: ${results.canvas_blocks.length} (${beforeFilter - afterFilter} filtered as assumptions)`,
+        results.data_gaps?.length ? `Data gaps: ${(results.data_gaps as string[]).join(" | ")}` : "",
+        results.data_gaps_blocking?.length ? `Blocked: ${(results.data_gaps_blocking as string[]).join(" | ")}` : "",
+        `Quick wins: ${results.quick_wins?.length || 0}`,
+        results.biggest_opportunity ? `Opportunity: ${results.biggest_opportunity}` : "",
+        results.biggest_risk ? `Risk: ${results.biggest_risk}` : "",
+      ].filter(Boolean).join("\n");
 
+      saveLearning({
+        source:      "playground_strategy",
+        projectId:   project.id,
+        content:     learningContent,
+        title:       `Strategy: ${clientData?.company || "project"} — ${results.canvas_blocks.length} blocks`,
+        cardType:    "strategy",
+        contextSummary: `Playground strategy generation`,
+        tags:        ["strategy", "canvas", results.data_confidence || "unknown-quality"],
+      }).catch(() => {});
     }
 
     return res.status(200).json({

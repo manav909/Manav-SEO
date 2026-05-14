@@ -12,7 +12,7 @@ import {
   Zap, Brain, ShieldCheck, AlertTriangle, CheckCircle2,
   ChevronRight, RefreshCw, Save, BarChart3, Globe,
   ArrowUpRight, Info, Shield, Target, Sparkles, Eye,
-  FileText
+  FileText, Layers, CircleDot, XCircle, Loader2, TrendingUp
 } from 'lucide-react';
 
 /* ─── Confidence badge ─── */
@@ -98,7 +98,7 @@ export default function Audit() {
   /* ── Shared state ── */
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const handleProjectChange = useProjectSync(selectedProjectId, setSelectedProjectId);
-  const [mode, setMode] = useState<'metrics' | 'strategy'>('metrics');
+  const [mode, setMode] = useState<'metrics' | 'strategy' | 'orchestrator'>('metrics');
 
   /* ── 4-Agent analysis state ── */
   const [url,         setUrl]         = useState('');
@@ -112,6 +112,16 @@ export default function Audit() {
   const [savedId,     setSavedId]     = useState<string | null>(null);
   const [pastReports, setPastReports] = useState<any[]>([]);
 
+  /* ── Orchestrator state ── */
+  const [orchUrls,        setOrchUrls]        = useState('');
+  const [orchMode,        setOrchMode]        = useState<'quick'|'standard'|'deep'>('standard');
+  const [orchLoading,     setOrchLoading]     = useState(false);
+  const [orchEvents,      setOrchEvents]      = useState<any[]>([]);
+  const [orchPageResults, setOrchPageResults] = useState<Record<string, any>>({});
+  const [orchSynthesis,   setOrchSynthesis]   = useState('');
+  const [orchComplete,    setOrchComplete]    = useState(false);
+  const [orchExpanded,    setOrchExpanded]    = useState<Record<string, boolean>>({});
+
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const client          = clients.find(c => c.id === selectedProject?.client_id);
 
@@ -123,6 +133,7 @@ export default function Audit() {
     setCompetitors((selectedProject.competitors || []).join(', '));
     const c = clients.find(x => x.id === selectedProject.client_id);
     setBrandName(c?.company || '');
+    if (selectedProject.url) setOrchUrls(selectedProject.url);
     loadPastReports(selectedProject.id);
   }, [selectedProjectId]);
 
@@ -238,6 +249,60 @@ export default function Audit() {
     setSyncing(false);
   };
 
+  /* ── Orchestrator run ── */
+  const runOrchestrator = async () => {
+    if (!selectedProjectId) return toast({ title: 'Project required', description: 'Select a project — the orchestrator needs project context and algorithm data.', variant: 'destructive' });
+    const urlList = orchUrls.split(/[\n,]+/).map((u: string) => u.trim()).filter(Boolean);
+    if (!urlList.length) return toast({ title: 'Add at least one URL', variant: 'destructive' });
+
+    setOrchLoading(true);
+    setOrchEvents([]);
+    setOrchPageResults({});
+    setOrchSynthesis('');
+    setOrchComplete(false);
+    setOrchExpanded({});
+
+    try {
+      const res = await fetch('/api/audit-orchestrator', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: selectedProjectId, urls: urlList, mode: orchMode }),
+      });
+      if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const event = JSON.parse(trimmed);
+            setOrchEvents(prev => [...prev, event]);
+            if (event.type === 'page_done' && event.result) {
+              setOrchPageResults(prev => ({ ...prev, [event.result.url]: event.result }));
+              setOrchExpanded(prev => ({ ...prev, [event.result.url]: true }));
+            }
+            if ((event.type === 'synthesizing' || event.type === 'complete') && event.summary) {
+              setOrchSynthesis(event.summary);
+            }
+            if (event.type === 'complete') setOrchComplete(true);
+          } catch (_) {}
+        }
+      }
+    } catch (err: any) {
+      toast({ title: 'Orchestrator failed', description: err.message, variant: 'destructive' });
+    }
+    setOrchLoading(false);
+  };
+
   const s   = result?.sections;
   const syn = result?.synthesis;
 
@@ -291,6 +356,17 @@ export default function Audit() {
             <FileText className="h-4 w-4" />
             Deep Strategy Reports
           </button>
+          <button
+            onClick={() => setMode('orchestrator')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all border ${
+              mode === 'orchestrator'
+                ? 'bg-primary text-primary-foreground border-primary shadow-[0_0_20px_hsl(var(--primary)/0.3)]'
+                : 'border-border bg-card/60 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Layers className="h-4 w-4" />
+            Showroom Audit
+          </button>
         </div>
 
         {/* ── MODE DESCRIPTIONS ── */}
@@ -304,7 +380,7 @@ export default function Audit() {
                 Fast, quantitative, cross-verified.
               </p>
             </div>
-          ) : (
+          ) : mode === 'strategy' ? (
             <div className="flex items-start gap-3">
               <FileText className="h-4 w-4 text-primary shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground leading-relaxed">
@@ -312,6 +388,15 @@ export default function Audit() {
                 Technical, On-Page, Off-Page, and GEO strategy reports. When linked to a project, each audit is enriched with your
                 live keyword rankings, competitor data, health scores, and previous findings for cross-verification.
                 Reports auto-save to the project.
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-start gap-3">
+              <Layers className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <span className="text-foreground font-semibold">Showroom Audit</span> — Page-by-page audit where every URL is its own showroom.
+                Each page is crawled and checked against its own target keywords and the latest algorithm updates in your knowledge base.
+                Findings are automatically classified and saved to Brain Learnings. Requires a linked project.
               </p>
             </div>
           )}
@@ -777,6 +862,263 @@ export default function Audit() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ════════════════════════
+            MODE 3: SHOWROOM AUDIT (orchestrator)
+        ════════════════════════ */}
+        {mode === 'orchestrator' && (
+          <>
+            {/* Project + URL form */}
+            <div className="rounded-2xl border border-border bg-card/60 p-6 space-y-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                    Project <span className="text-orange-400">(required)</span>
+                  </label>
+                  <select value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)}
+                    className="w-full h-10 rounded-lg border border-border bg-background/60 text-sm px-3">
+                    <option value="">— Select a project —</option>
+                    {(clients||[]).filter((c:any)=>c?.id).map(c => {
+                      const cp = projects.filter(p => p.client_id === c.id);
+                      if (!cp.length) return null;
+                      return (
+                        <optgroup key={c.id} label={`${c.name} — ${c.company}`}>
+                          {cp.map(p => <option key={p.id} value={p.id}>{p.name} ({p.url})</option>)}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Audit Depth</label>
+                  <div className="flex gap-2 h-10">
+                    {(['quick','standard','deep'] as const).map(m => (
+                      <button key={m} onClick={() => setOrchMode(m)}
+                        className={`flex-1 rounded-lg border text-xs font-semibold capitalize transition-all ${
+                          orchMode === m
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'border-border bg-background/40 text-muted-foreground hover:text-foreground'
+                        }`}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                  URLs to audit — one per line or comma separated
+                </label>
+                <textarea
+                  value={orchUrls}
+                  onChange={e => setOrchUrls(e.target.value)}
+                  placeholder={`https://example.com\nhttps://example.com/services\nhttps://example.com/about`}
+                  rows={4}
+                  className="w-full rounded-lg border border-border bg-background/60 text-sm px-3 py-2 resize-none font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Max 10 pages. Each page is audited against the project's keywords and your latest algorithm knowledge.
+                </p>
+              </div>
+
+              <Button onClick={runOrchestrator} disabled={orchLoading || !selectedProjectId}
+                className="w-full h-12 bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold text-base">
+                {orchLoading ? (
+                  <span className="flex items-center gap-3">
+                    <Loader2 className="h-4 w-4 animate-spin" />Auditing pages...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <Layers className="h-4 w-4" />Run Showroom Audit
+                  </span>
+                )}
+              </Button>
+            </div>
+
+            {/* Live progress feed */}
+            {orchEvents.length > 0 && (
+              <div className="rounded-xl border border-border bg-card/40 p-4">
+                <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-3">Live Progress</div>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {orchEvents.map((ev, i) => {
+                    const icon =
+                      ev.type === 'page_done'     ? <CheckCircle2 size={11} className="text-green-400 shrink-0" /> :
+                      ev.type === 'page_failed'   ? <XCircle      size={11} className="text-red-400 shrink-0"   /> :
+                      ev.type === 'complete'      ? <CheckCircle2 size={11} className="text-primary shrink-0"   /> :
+                                                    <CircleDot     size={11} className="text-muted-foreground shrink-0 animate-pulse" />;
+                    const label =
+                      ev.type === 'start'          ? 'Audit started' :
+                      ev.type === 'page_crawling'  ? `Crawling ${ev.url}` :
+                      ev.type === 'page_analysing' ? `Analysing ${ev.url}` :
+                      ev.type === 'page_done'      ? `Done: ${ev.url} — score ${ev.result?.signals?.page_score ?? '?'}/100` :
+                      ev.type === 'page_failed'    ? `Failed: ${ev.url}` :
+                      ev.type === 'synthesizing'   ? 'Synthesizing cross-page patterns…' :
+                      ev.type === 'pipeline_done'  ? 'Pipeline complete — learnings saved' :
+                      ev.type === 'complete'       ? `Audit complete` :
+                      ev.progress || ev.type;
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        {icon}
+                        <span className={ev.type === 'complete' ? 'text-primary font-semibold' : 'text-muted-foreground'}>{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Per-page results */}
+            {Object.keys(orchPageResults).length > 0 && (
+              <div className="space-y-4">
+                <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Page Results</div>
+                {Object.entries(orchPageResults).map(([pageUrl, res]: [string, any]) => {
+                  const sig = res.signals;
+                  const score = sig?.page_score ?? 0;
+                  const scoreColor = score >= 75 ? 'text-green-400' : score >= 50 ? 'text-yellow-400' : 'text-orange-400';
+                  const isOpen = orchExpanded[pageUrl] !== false;
+                  return (
+                    <div key={pageUrl} className="rounded-2xl border border-border bg-card/60 overflow-hidden">
+                      {/* Page header */}
+                      <button
+                        onClick={() => setOrchExpanded(prev => ({ ...prev, [pageUrl]: !prev[pageUrl] }))}
+                        className="w-full flex items-center justify-between px-5 py-3 border-b border-border bg-background/40 text-left hover:bg-background/60 transition-colors">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {res.status === 'success'
+                            ? <CheckCircle2 size={14} className="text-green-400 shrink-0" />
+                            : <XCircle size={14} className="text-red-400 shrink-0" />}
+                          <span className="text-sm font-mono truncate">{pageUrl}</span>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 ml-3">
+                          {sig && <span className={`text-lg font-black ${scoreColor}`}>{score}<span className="text-xs font-normal text-muted-foreground">/100</span></span>}
+                          {res.learningSaved > 0 && (
+                            <span className="text-xs bg-primary/10 border border-primary/20 text-primary rounded-full px-2 py-0.5 font-mono">
+                              +{res.learningSaved} learnings
+                            </span>
+                          )}
+                          <ChevronRight size={14} className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                        </div>
+                      </button>
+
+                      {isOpen && sig && (
+                        <div className="p-5 space-y-5">
+                          {/* Keyword Coverage */}
+                          {sig.keyword_coverage?.length > 0 && (
+                            <div>
+                              <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-2">Keyword Coverage</div>
+                              <div className="space-y-1.5">
+                                {sig.keyword_coverage.map((kc: any, i: number) => (
+                                  <div key={i} className="flex items-center gap-3 text-xs">
+                                    <span className="w-40 truncate text-muted-foreground">"{kc.keyword}"</span>
+                                    <div className="flex items-center gap-1">
+                                      {(['in_title','in_h1','in_meta','in_h2','in_content'] as const).map(field => (
+                                        <span key={field} title={field.replace('in_','')}
+                                          className={`h-2 w-2 rounded-full ${(kc as any)[field] ? 'bg-green-400' : 'bg-border'}`} />
+                                      ))}
+                                    </div>
+                                    <span className={`font-mono font-bold ml-auto ${kc.score >= 70 ? 'text-green-400' : kc.score >= 40 ? 'text-yellow-400' : 'text-orange-400'}`}>
+                                      {kc.score}/100
+                                    </span>
+                                  </div>
+                                ))}
+                                <div className="text-xs text-muted-foreground/60 mt-1">Dots: title · H1 · meta · H2 · content</div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Algorithm Compliance */}
+                          {sig.algo_compliance?.length > 0 && (
+                            <div>
+                              <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-2">Algorithm Compliance</div>
+                              <div className="space-y-2">
+                                {sig.algo_compliance.map((ac: any, i: number) => {
+                                  const cfg =
+                                    ac.status === 'compliant' ? { color: 'text-green-400',  bg: 'bg-green-400/8  border-green-400/20',  icon: <CheckCircle2 size={11} className="text-green-400 shrink-0" /> } :
+                                    ac.status === 'partial'   ? { color: 'text-yellow-400', bg: 'bg-yellow-400/8 border-yellow-400/20', icon: <AlertTriangle size={11} className="text-yellow-400 shrink-0" /> } :
+                                    ac.status === 'failing'   ? { color: 'text-red-400',    bg: 'bg-red-400/8    border-red-400/20',    icon: <XCircle size={11} className="text-red-400 shrink-0" /> } :
+                                                                { color: 'text-muted-foreground', bg: 'bg-secondary/30 border-border',  icon: <CircleDot size={11} className="text-muted-foreground shrink-0" /> };
+                                  return (
+                                    <div key={i} className={`rounded-lg border p-2.5 ${cfg.bg}`}>
+                                      <div className="flex items-center gap-2 mb-1">
+                                        {cfg.icon}
+                                        <span className={`text-xs font-semibold ${cfg.color}`}>{ac.topic}</span>
+                                        <span className={`text-xs ml-auto font-mono capitalize ${cfg.color}`}>{ac.status}</span>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground">{ac.evidence}</p>
+                                      {ac.action && <p className="text-xs text-primary mt-1">{ac.action}</p>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Issues */}
+                          {sig.issues?.filter((iss: any) => iss.severity === 'critical' || iss.severity === 'high').length > 0 && (
+                            <div>
+                              <div className="text-xs font-mono text-orange-400 uppercase tracking-wider mb-2">Critical Issues</div>
+                              <div className="space-y-2">
+                                {sig.issues.filter((iss: any) => iss.severity === 'critical' || iss.severity === 'high').map((iss: any, i: number) => (
+                                  <div key={i} className="rounded-lg border border-orange-400/20 bg-orange-400/5 p-2.5">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <AlertTriangle size={11} className="text-orange-400 shrink-0" />
+                                      <span className="text-xs font-semibold text-orange-400 capitalize">{iss.severity}</span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">{iss.detail}</p>
+                                    {iss.fix && <p className="text-xs text-primary mt-1">Fix: {iss.fix}</p>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Opportunities */}
+                          {sig.opportunities?.filter((op: any) => op.effort === 'low').length > 0 && (
+                            <div>
+                              <div className="text-xs font-mono text-green-400 uppercase tracking-wider mb-2">Quick Wins</div>
+                              <div className="space-y-2">
+                                {sig.opportunities.filter((op: any) => op.effort === 'low').map((op: any, i: number) => (
+                                  <div key={i} className="rounded-lg border border-green-400/20 bg-green-400/5 p-2.5">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <TrendingUp size={11} className="text-green-400 shrink-0" />
+                                      <span className="text-xs font-semibold text-green-400">{op.action}</span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">{op.evidence}</p>
+                                    <p className="text-xs text-primary mt-1">Impact: {op.impact}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Cross-page synthesis */}
+            {orchSynthesis && (
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Target className="h-4 w-4 text-primary" />
+                  <div className="text-sm font-semibold">Cross-Page Synthesis</div>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{orchSynthesis}</p>
+              </div>
+            )}
+
+            {orchComplete && (
+              <div className="rounded-xl border border-green-400/20 bg-green-400/5 px-5 py-3 flex items-center gap-3">
+                <CheckCircle2 size={16} className="text-green-400 shrink-0" />
+                <p className="text-sm text-green-400 font-semibold">
+                  Audit complete — findings saved to Brain Learnings and will inform future strategy recommendations.
+                </p>
               </div>
             )}
           </>

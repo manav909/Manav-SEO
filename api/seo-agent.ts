@@ -1,58 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-
-/* ─── Inline brain helpers (self-contained, no cross-file imports) ─── */
-import { createClient as _sbCreate } from "@supabase/supabase-js";
-function _sbClient() {
-  return _sbCreate(
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
-  );
-}
-async function extractAndSaveLearning(
-  source: string, projectId: string | null, output: string,
-  metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
-): Promise<void> {
-  if (!projectId || !output || output.length < 200 || output.startsWith("Error:")) return;
-  try {
-    const row: any = {
-      project_id: projectId, source,
-      card_type:       metadata.card_type       || "insight",
-      card_title:      (metadata.card_title     || source).slice(0, 60),
-      context_summary: metadata.context_summary || source,
-      what_worked: [], what_missed: [],
-      improvement: output.slice(0, 300),
-      tags: [source.split("_")[0]].filter(Boolean),
-      applied_count: 0, updated_at: new Date().toISOString(),
-    };
-    try {
-      await _sbClient().from("brain_learnings").insert({ ...row, status: "pending_review", auto_captured: true, confidence_score: 65 });
-    } catch (_e) {
-      try { await _sbClient().from("brain_learnings").insert(row); } catch (_e2) { /* silent */ }
-    }
-  } catch (_e) { /* never crash callers */ }
-}
-async function saveToDesk(
-  projectId: string | null, title: string, content: string,
-  contentType: string, source: string, tags: string[] = []
-): Promise<void> {
-  if (!projectId || !content || content.length < 50) return;
-  try {
-    await _sbClient().from("brain_desk").insert({
-      project_id: projectId, title: title.slice(0, 200), content_type: contentType,
-      content, source, tags: [...tags, source].filter(Boolean),
-      pinned: false, metadata: { auto_saved: true }, updated_at: new Date().toISOString(),
-    });
-  } catch (_e) { /* silent */ }
-}
-
+import { saveLearning } from "./_lib/save";
 
 export const config = { maxDuration: 300 };
 
 type DeliverableType = "Technical" | "On-Page" | "Off-Page" | "GEO";
 
 /* ─────────────────────────────────────────────────────────────────
-   SYSTEM PROMPTS — unchanged from original
+   SYSTEM PROMPTS
 ───────────────────────────────────────────────────────────────── */
 const SYSTEM_PROMPTS: Record<DeliverableType, string> = {
   Technical: `You are a Senior Technical SEO Specialist with 15 years of experience. Analyze the provided website content and deliver a comprehensive technical SEO audit. Be specific, reference actual content from the site, and provide actionable recommendations.`.trim(),
@@ -90,15 +45,14 @@ async function fetchWebsiteContent(url: string, maxChars = 8000): Promise<string
 
 /* ─────────────────────────────────────────────────────────────────
    CONTEXT BUILDER
-   projectContext is passed from the frontend — no Supabase here
 ───────────────────────────────────────────────────────────────── */
 interface ProjectContext {
-  company?:             string;
-  industry?:            string;
-  allKeywords?:         string[];
-  competitors?:         string[];
-  latestMetric?:        any;
-  keywordRankings?:     any[];
+  company?:              string;
+  industry?:             string;
+  allKeywords?:          string[];
+  competitors?:          string[];
+  latestMetric?:         any;
+  keywordRankings?:      any[];
   recentAuditSummaries?: { date: string; types: string[]; snippet: string }[];
 }
 
@@ -210,16 +164,17 @@ function buildContextSection(ctx: ProjectContext, deliverableType: DeliverableTy
 /* ─────────────────────────────────────────────────────────────────
    MAIN HANDLER
 ───────────────────────────────────────────────────────────────── */
-/* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try { return await _seo_agent_h(req, res); }
   catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
 }
+
 async function _seo_agent_h(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed." });
 
   let url: string, keyword: string, deliverableType: DeliverableType;
   let projectContext: ProjectContext | undefined;
+  let projectId: string | null;
   let mode: 'standard' | 'deep' = 'standard';
 
   try {
@@ -227,15 +182,15 @@ async function _seo_agent_h(req: VercelRequest, res: VercelResponse) {
     keyword         = (req.body?.keyword         ?? "").toString().trim();
     deliverableType = (req.body?.deliverableType ?? "") as DeliverableType;
     projectContext  = req.body?.projectContext   ?? undefined;
+    projectId       = req.body?.projectId        ?? null;
     mode            = req.body?.mode === 'deep' ? 'deep' : 'standard';
   } catch (_e) {
     return res.status(200).json({ error: "Could not parse request body." });
   }
 
-  // Mode-specific limits
   const cfg = mode === 'deep'
-    ? { websiteChars: 15000, maxTokens: 16000, snippetNote: 'deep' }
-    : { websiteChars: 8000,  maxTokens: 8000,  snippetNote: 'standard' };
+    ? { websiteChars: 15000, maxTokens: 16000 }
+    : { websiteChars: 8000,  maxTokens: 8000  };
 
   if (!url || !keyword || !deliverableType) {
     return res.status(200).json({ error: "Missing required fields: url, keyword, deliverableType." });
@@ -245,6 +200,33 @@ async function _seo_agent_h(req: VercelRequest, res: VercelResponse) {
   }
 
   const websiteContent = await fetchWebsiteContent(url, cfg.websiteChars);
+
+  /* ── Load market persona for this project (buyer psychology layer) ── */
+  let personaSection = "";
+  if (projectId) {
+    try {
+      const { data: personaRow } = await (await import("./_lib/db")).db()
+        .from("market_personas")
+        .select("persona_data")
+        .eq("project_id", projectId)
+        .single();
+      if (personaRow?.persona_data) {
+        const p = personaRow.persona_data;
+        personaSection = [
+          `\n=== BUYER MARKET PERSONA (Manav Eyes — use this to make recommendations buyer-aware) ===`,
+          `Persona: ${p.persona_name} — ${p.persona_archetype}`,
+          p.market_context                                                ? `Market: ${p.market_context}` : "",
+          (p.psychology?.primary_pain_points||[]).length                 ? `Pain points: ${p.psychology.primary_pain_points.slice(0,3).join(" | ")}` : "",
+          (p.language_patterns?.words_that_convert||[]).length           ? `Converting words: ${p.language_patterns.words_that_convert.slice(0,5).join(", ")}` : "",
+          (p.trust_signals?.what_builds_immediate_trust||[]).length      ? `Trust signals: ${p.trust_signals.what_builds_immediate_trust.slice(0,3).join(" | ")}` : "",
+          (p.seo_content_implications?.content_gaps_this_persona_needs_filled||[]).length
+            ? `Content gaps: ${p.seo_content_implications.content_gaps_this_persona_needs_filled.slice(0,3).join(" | ")}` : "",
+          p.manav_intelligence_note                                       ? `Key insight: ${p.manav_intelligence_note}` : "",
+          `=== END PERSONA ===`,
+        ].filter(Boolean).join("\n");
+      }
+    } catch (_) {}
+  }
 
   const today = new Date().toLocaleDateString("en-GB", {
     day: "numeric", month: "long", year: "numeric",
@@ -257,7 +239,7 @@ You are analyzing a REAL website. Below you will find:
 ${projectContext
   ? "1. An intelligence brief about the project (use this to make your analysis highly specific)\n2. The live website content\n3. Your instructions"
   : "1. The live website content\n2. Your instructions"}
-${contextSection}
+${contextSection}${personaSection}
 === LIVE WEBSITE CONTENT FROM ${url} ===
 ${websiteContent}
 === END OF WEBSITE CONTENT ===
@@ -292,6 +274,8 @@ ${mode === 'deep' ? `- DEEP MODE: Be exhaustive. Every section should have maxim
     "Transfer-Encoding": "chunked",
   });
 
+  let fullOutput = "";
+
   try {
     const client = new Anthropic();
     const stream = await client.messages.stream({
@@ -304,7 +288,21 @@ ${mode === 'deep' ? `- DEEP MODE: Be exhaustive. Every section should have maxim
     for await (const chunk of stream) {
       if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
         res.write(chunk.delta.text);
+        fullOutput += chunk.delta.text;
       }
+    }
+
+    /* Auto-capture audit insights as brain learnings (fire-and-forget) */
+    if (projectId && fullOutput.length > 400) {
+      saveLearning({
+        source:      `seo_agent_${deliverableType.toLowerCase().replace("-", "_")}`,
+        projectId,
+        content:     fullOutput,
+        title:       `${deliverableType} audit — ${url.replace(/https?:\/\//, "").slice(0, 40)}`,
+        cardType:    deliverableType === "Technical" ? "technical" : deliverableType === "GEO" ? "geo" : deliverableType === "Off-Page" ? "competitive" : "content",
+        contextSummary: `${deliverableType} SEO audit on ${url}`,
+        tags:        ["audit", deliverableType.toLowerCase().replace("-", "_")],
+      }).catch(() => {});
     }
   } catch (err) {
     const message = err instanceof Anthropic.APIError

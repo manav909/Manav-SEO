@@ -1,58 +1,13 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-
-/* ─── Inline brain helpers (self-contained, no cross-file imports) ─── */
-import { createClient as _sbCreate } from "@supabase/supabase-js";
-function _sbClient() {
-  return _sbCreate(
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
-  );
-}
-async function extractAndSaveLearning(
-  source: string, projectId: string | null, output: string,
-  metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
-): Promise<void> {
-  if (!projectId || !output || output.length < 200 || output.startsWith("Error:")) return;
-  try {
-    const row: any = {
-      project_id: projectId, source,
-      card_type:       metadata.card_type       || "insight",
-      card_title:      (metadata.card_title     || source).slice(0, 60),
-      context_summary: metadata.context_summary || source,
-      what_worked: [], what_missed: [],
-      improvement: output.slice(0, 300),
-      tags: [source.split("_")[0]].filter(Boolean),
-      applied_count: 0, updated_at: new Date().toISOString(),
-    };
-    try {
-      await _sbClient().from("brain_learnings").insert({ ...row, status: "pending_review", auto_captured: true, confidence_score: 65 });
-    } catch (_e) {
-      try { await _sbClient().from("brain_learnings").insert(row); } catch (_e2) { /* silent */ }
-    }
-  } catch (_e) { /* never crash callers */ }
-}
-async function saveToDesk(
-  projectId: string | null, title: string, content: string,
-  contentType: string, source: string, tags: string[] = []
-): Promise<void> {
-  if (!projectId || !content || content.length < 50) return;
-  try {
-    await _sbClient().from("brain_desk").insert({
-      project_id: projectId, title: title.slice(0, 200), content_type: contentType,
-      content, source, tags: [...tags, source].filter(Boolean),
-      pinned: false, metadata: { auto_saved: true }, updated_at: new Date().toISOString(),
-    });
-  } catch (_e) { /* silent */ }
-}
-
+import { saveLearning }                       from "./_lib/save";
 
 // Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably
 export const config = { maxDuration: 300 };
 
 const SYSTEM = "You are Manav Brain, the senior SEO strategist embedded in SEO Season. Every finding must be based on observable data. Never invent rankings, metrics, or technical states. If you cannot verify something from the data provided, say exactly that and tell the user how to verify it manually.";
 
-// Exact field keys recognised by the Data Room UI — use these precisely
+// Exact field keys recognised by the Data Room UI
 const VALID_FIELDS = `
 ANALYTICS fields (category="analytics"):
   organic_sessions_monthly   — monthly organic sessions number
@@ -114,6 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try { return await _analysis_h(req, res); }
   catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
 }
+
 async function _analysis_h(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
@@ -171,9 +127,8 @@ async function _analysis_h(req: VercelRequest, res: VercelResponse) {
       const raw = response.content[0].type === "text" ? response.content[0].text : "{}";
       const f = raw.indexOf("{"), l = raw.lastIndexOf("}");
       let parsed: any = {};
-      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) { /* ignore */ }
+      try { parsed = JSON.parse(raw.slice(f, l + 1)); } catch (_e) {}
 
-      // Filter to valid keys only
       if (Array.isArray(parsed.knowledge_fields)) {
         parsed.knowledge_fields = parsed.knowledge_fields.filter(
           (kf: any) => kf.key && validKeySet.has(kf.key) && kf.value && String(kf.value).trim() !== ""
@@ -219,27 +174,38 @@ async function _analysis_h(req: VercelRequest, res: VercelResponse) {
             });
             const vRaw = verifyRes.content[0].type === "text" ? verifyRes.content[0].text : "{}";
             const vf = vRaw.indexOf("{"), vl = vRaw.lastIndexOf("}");
-            try { liveVerification = JSON.parse(vRaw.slice(vf, vl + 1)); } catch (_e) { /* ignore */ }
+            try { liveVerification = JSON.parse(vRaw.slice(vf, vl + 1)); } catch (_e) {}
           }
         } catch (_e) {
           liveVerification = null;
         }
       }
 
-      // Auto-capture document extraction insights as a brain learning (fire-and-forget)
+      /* Auto-capture extraction insights as brain learning (fire-and-forget) */
       if (projectId && parsed.doc_summary && (parsed.extracted?.action_items?.length || 0) > 0) {
-        const learningText = [
+        const learningContent = [
           `Document: ${fileName || "unknown"} (${docType || "unknown"})`,
           `Summary: ${parsed.doc_summary}`,
           `Data quality: ${parsed.data_quality}`,
           `Action items (${parsed.extracted?.action_items?.length || 0}):`,
           ...(parsed.extracted?.action_items || []).slice(0, 5).map((a: any) => `  [${a.priority}] ${a.action} — ${a.evidence}`),
-          `Technical issues: ${(parsed.extracted?.technical_issues || []).slice(0, 3).map((i: any) => `${i.issue} (${i.severity})`).join(" | ")}`,
+          (parsed.extracted?.technical_issues || []).length
+            ? `Technical issues: ${(parsed.extracted.technical_issues).slice(0, 3).map((i: any) => `${i.issue} (${i.severity})`).join(" | ")}`
+            : "",
           liveVerification?.discrepancies?.length
-            ? `Discrepancies found: ${liveVerification.discrepancies.map((d: any) => `${d.key}: ${d.note}`).join(" | ")}`
+            ? `Discrepancies: ${liveVerification.discrepancies.map((d: any) => `${d.key}: ${d.note}`).join(" | ")}`
             : "",
         ].filter(Boolean).join("\n");
 
+        saveLearning({
+          source:      "document_extraction",
+          projectId,
+          content:     learningContent,
+          title:       `Document insights: ${(fileName || "upload").slice(0, 50)}`,
+          cardType:    "insight",
+          contextSummary: `Extracted from ${fileName || "document"} (${docType})`,
+          tags:        ["document", "extraction", docType || "upload"].filter(Boolean),
+        }).catch(() => {});
       }
 
       return res.status(200).json({
@@ -258,10 +224,10 @@ async function _analysis_h(req: VercelRequest, res: VercelResponse) {
   if (!url) return res.status(200).json({ error: "URL required" });
 
   res.writeHead(200, {
-    "Content-Type":     "text/plain; charset=utf-8",
+    "Content-Type":      "text/plain; charset=utf-8",
     "X-Accel-Buffering": "no",
-    "Cache-Control":    "no-cache, no-transform",
-    "Transfer-Encoding":"chunked",
+    "Cache-Control":     "no-cache, no-transform",
+    "Transfer-Encoding": "chunked",
   });
 
   let siteContent = "";
@@ -306,6 +272,8 @@ async function _analysis_h(req: VercelRequest, res: VercelResponse) {
     "Ranked: Critical → High → Medium — with specific implementation steps",
   ].filter(l => l !== "").join("\n");
 
+  let fullAuditOutput = "";
+
   try {
     const anthropic = new Anthropic();
     const stream = await anthropic.messages.stream({
@@ -314,8 +282,6 @@ async function _analysis_h(req: VercelRequest, res: VercelResponse) {
       messages: [{ role: "user", content: auditPrompt }],
     });
 
-    let fullAuditOutput = "";   // accumulated for brain learning capture
-
     for await (const chunk of stream) {
       if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
         res.write(chunk.delta.text);
@@ -323,8 +289,17 @@ async function _analysis_h(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Auto-capture audit insights as a brain learning (fire-and-forget)
+    /* Auto-capture audit output as brain learning (fire-and-forget) */
     if (projectId && fullAuditOutput.length > 500) {
+      saveLearning({
+        source:      "audit_streaming",
+        projectId,
+        content:     fullAuditOutput,
+        title:       `Audit — ${url.replace(/https?:\/\//, "").slice(0, 40)}${keyword ? ` — "${keyword}"` : ""}`,
+        cardType:    "technical",
+        contextSummary: `Streaming audit for ${url}`,
+        tags:        ["audit", "full-page", mode],
+      }).catch(() => {});
     }
 
   } catch (err: any) {

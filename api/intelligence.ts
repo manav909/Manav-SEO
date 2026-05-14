@@ -4,19 +4,6 @@ import { saveLearning } from "./_lib/save";
 
 export const config = { maxDuration: 300 };
 
-async function extractAndSaveLearning(
-  source: string, projectId: string | null, output: string,
-  metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
-): Promise<void> {
-  if (!projectId || !output) return;
-  await saveLearning({
-    source, projectId, content: output,
-    title:          metadata.card_title,
-    cardType:       metadata.card_type,
-    contextSummary: metadata.context_summary,
-  });
-}
-
 /* ─── Role voices ─── */
 const ROLE_VOICE: Record<string, string> = {
   content_writer:  "You are talking directly to a Content Writer. Tell them exactly what to write, which keywords to target, and what great looks like.",
@@ -174,6 +161,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     brainAssistantContext = null,
   } = body;
 
+  /* ── Load market persona for this project (Manav Eyes → Brain) ── */
+  let marketPersonaContext = "";
+  if (projectId) {
+    try {
+      const { data: personaRow } = await db()
+        .from("market_personas")
+        .select("persona_data,industry")
+        .eq("project_id", projectId)
+        .single();
+      if (personaRow?.persona_data) {
+        const p = personaRow.persona_data;
+        marketPersonaContext = [
+          `MARKET PERSONA: ${p.persona_name} (${p.persona_archetype})`,
+          p.market_context ? `Market reality: ${p.market_context}` : "",
+          (p.psychology?.primary_pain_points||[]).length
+            ? `Buyer pain points: ${p.psychology.primary_pain_points.slice(0,3).join(" | ")}` : "",
+          (p.language_patterns?.words_that_convert||[]).length
+            ? `Words that convert: ${p.language_patterns.words_that_convert.slice(0,5).join(", ")}` : "",
+          (p.trust_signals?.what_builds_immediate_trust||[]).length
+            ? `Trust signals: ${p.trust_signals.what_builds_immediate_trust.slice(0,3).join(" | ")}` : "",
+          (p.seo_content_implications?.content_gaps_this_persona_needs_filled||[]).length
+            ? `Content gaps: ${p.seo_content_implications.content_gaps_this_persona_needs_filled.slice(0,3).join(" | ")}` : "",
+          p.manav_intelligence_note ? `Intelligence note: ${p.manav_intelligence_note}` : "",
+        ].filter(Boolean).join("\n");
+      }
+    } catch (_) {}
+  }
+
   const placed  = (blocks as any[]).filter((b: any) => b.placed);
   const library = (blocks as any[]).filter((b: any) => !b.placed);
 
@@ -226,6 +241,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         projectSummary,
       });
       systemPrompt = systemOverride || system;
+      if (marketPersonaContext) systemPrompt += `\n\n=== BUYER MARKET PERSONA ===\n${marketPersonaContext}`;
       userPrompt   = user;
 
     } else if (mode === "agenda") {
@@ -323,6 +339,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ].filter(Boolean).join("\n");
     }
 
+    /* ── Inject market persona into all non-agenda modes ── */
+    if (marketPersonaContext && mode !== "agenda" && mode !== "brain_assistant") {
+      systemPrompt += `\n\n=== BUYER MARKET PERSONA (Manav Eyes) ===\n${marketPersonaContext}\nUse this persona to make every recommendation buyer-psychology aware, not just technically correct.`;
+    }
+
     /* ── Stream the response ── */
     const stream = await new Anthropic().messages.stream({
       model:      "claude-sonnet-4-6",
@@ -358,22 +379,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try { res.end(); } catch (_e) { /* already ended */ }
 
   /* ── Background learning capture (after response is complete) ── */
-  /* Using Promise to defer — setImmediate is unreliable in Vercel */
   if (projectId && fullOutput.length > 200 &&
       (mode === "brain_assistant" || mode === "pipeline" || mode === "deep_dive")) {
-    Promise.resolve().then(() => {
-      void extractAndSaveLearning(
-        mode === "brain_assistant" ? "brain_assistant_log"
-          : mode === "pipeline"   ? "pipeline_intelligence"
-          : "deep_dive_analysis",
-        projectId,
-        fullOutput,
-        {
-          card_type:       "strategy",
-          card_title:      mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` : `Deep Dive: ${question.slice(0, 50)}`,
-          context_summary: `${mode} — ${projectSummary?.slice(0, 80)}`,
-        }
-      );
-    }).catch(() => { /* non-fatal */ });
+    saveLearning({
+      source:      mode === "brain_assistant" ? "brain_assistant_log" : mode === "pipeline" ? "pipeline_intelligence" : "deep_dive_analysis",
+      projectId,
+      content:     fullOutput,
+      title:       mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` : `Deep Dive: ${question.slice(0, 50)}`,
+      cardType:    "strategy",
+      contextSummary: `${mode} — ${(projectSummary || "").slice(0, 80)}`,
+    }).catch(() => {});
   }
 }

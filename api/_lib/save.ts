@@ -10,22 +10,30 @@ import { classifyLearning, extractImprovement, checkForConflicts } from "./class
 
 /* ── Save a learning through the full classification + dedup pipeline ── */
 export async function saveLearning(opts: {
-  source:          string;
-  projectId:       string | null;
-  content:         string;
-  title?:          string;
-  cardType?:       string;
-  contextSummary?: string;
-  whatWorked?:     string[];
-  whatMissed?:     string[];
-  tags?:           string[];
-  confidenceOverride?: number; // only set this for manual saves with known confidence
+  source:           string;
+  projectId:        string | null;
+  content:          string;
+  title?:           string;
+  cardType?:        string;
+  contextSummary?:  string;
+  whatWorked?:      string[];
+  whatMissed?:      string[];
+  tags?:            string[];
+  industry?:        string;   // adds industry tag for cross-project IQ
+  keywordCluster?:  string[]; // adds keyword tags for cross-cluster IQ
+  confidenceOverride?: number;
 }): Promise<{ saved: boolean; id?: string; reason?: string; merged?: boolean }> {
   const {
     source, projectId, content, title = "", cardType,
     contextSummary, whatWorked = [], whatMissed = [], tags = [],
+    industry, keywordCluster = [],
     confidenceOverride,
   } = opts;
+
+  /* Build cross-project tags from industry + keyword clusters */
+  const industryTag    = industry ? [industry.toLowerCase().replace(/\s+/g, "-")] : [];
+  const keywordTags    = keywordCluster.map(k => k.toLowerCase().replace(/\s+/g, "-"));
+  const enrichedTags   = [...tags, ...industryTag, ...keywordTags];
 
   if (!content || content.startsWith("Error:"))
     return { saved: false, reason: "empty_or_error" };
@@ -57,6 +65,7 @@ export async function saveLearning(opts: {
         what_missed: [...new Set([...(existing as any).what_missed || [], ...whatMissed])].slice(0, 4),
         confidence_score: Math.max((existing as any).confidence_score || 65, confidence),
         improvement: confidence >= ((existing as any).confidence_score || 65) ? improvement : (existing as any).improvement,
+        tags: [...new Set([...((existing as any).tags || []), ...enrichedTags])].filter(Boolean),
         updated_at: new Date().toISOString(),
       };
       if (cls.autoApprove) merged.status = "active";
@@ -74,7 +83,7 @@ export async function saveLearning(opts: {
     context_summary: contextSummary || source,
     what_worked:     whatWorked.slice(0, 6),
     what_missed:     whatMissed.slice(0, 4),
-    tags:            [...new Set([cls.category, source.split("_")[0], ...tags])].filter(Boolean),
+    tags:            [...new Set([cls.category, source.split("_")[0], ...enrichedTags])].filter(Boolean),
     applied_count:   0,
     status:          cls.autoApprove ? "active" : "pending_review",
     auto_captured:   source !== "manual" && source !== "brain_chat",

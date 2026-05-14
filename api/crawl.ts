@@ -1,62 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-
-/* ─── Inline brain helpers (self-contained, no cross-file imports) ─── */
-import { createClient as _sbCreate } from "@supabase/supabase-js";
-function _sbClient() {
-  return _sbCreate(
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
-    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
-  );
-}
-async function extractAndSaveLearning(
-  source: string, projectId: string | null, output: string,
-  metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
-): Promise<void> {
-  if (!projectId || !output || output.length < 200 || output.startsWith("Error:")) return;
-  try {
-    const row: any = {
-      project_id: projectId, source,
-      card_type:       metadata.card_type       || "insight",
-      card_title:      (metadata.card_title     || source).slice(0, 60),
-      context_summary: metadata.context_summary || source,
-      what_worked: [], what_missed: [],
-      improvement: output.slice(0, 300),
-      tags: [source.split("_")[0]].filter(Boolean),
-      applied_count: 0, updated_at: new Date().toISOString(),
-    };
-    try {
-      await _sbClient().from("brain_learnings").insert({ ...row, status: "pending_review", auto_captured: true, confidence_score: 65 });
-    } catch (_e) {
-      try { await _sbClient().from("brain_learnings").insert(row); } catch (_e2) { /* silent */ }
-    }
-  } catch (_e) { /* never crash callers */ }
-}
-async function saveToDesk(
-  projectId: string | null, title: string, content: string,
-  contentType: string, source: string, tags: string[] = []
-): Promise<void> {
-  if (!projectId || !content || content.length < 50) return;
-  try {
-    await _sbClient().from("brain_desk").insert({
-      project_id: projectId, title: title.slice(0, 200), content_type: contentType,
-      content, source, tags: [...tags, source].filter(Boolean),
-      pinned: false, metadata: { auto_saved: true }, updated_at: new Date().toISOString(),
-    });
-  } catch (_e) { /* silent */ }
-}
-
+import { db } from "./_lib/db";
+import { fetchUrl, cleanHtml, parseJson } from "./_lib/fetch";
 
 export const config = { maxDuration: 300 };
-
-/* ── Lazy DB — never throws on module load ── */
-function db() {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder";
-  if (!url || !key) throw new Error("Supabase env vars not configured");
-  return createClient(url, key);
-}
 
 const VALID_KEYS = new Set([
   "organic_sessions_monthly","organic_sessions_baseline_date","top_landing_pages",
@@ -70,134 +17,11 @@ const VALID_KEYS = new Set([
 ]);
 
 // ─────────────────────────────────────────────────────────────────────
-// HTML cleaning — strip everything Claude doesn't need for SEO signals
-// ─────────────────────────────────────────────────────────────────────
-function cleanHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim()
-    .slice(0, 12000);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Safe JSON parser — returns null on failure, never throws
-// ─────────────────────────────────────────────────────────────────────
-function parseJson(text: string): any | null {
-  const clean = text
-    .replace(/^```[a-z]*\n?/gm, "")
-    .replace(/^```\s*$/gm, "")
-    .trim();
-  const f = clean.indexOf("{");
-  const l = clean.lastIndexOf("}");
-  if (f < 0 || l < 0) return null;
-  try { return JSON.parse(clean.slice(f, l + 1)); } catch (_e) {}
-  // Last-ditch: try to close an unclosed JSON (truncation recovery)
-  try { return JSON.parse(clean.slice(f) + '"}]}'); } catch (_e) {}
-  try { return JSON.parse(clean.slice(f) + '"}'); } catch (_e) {}
-  try { return JSON.parse(clean.slice(f) + '}'); } catch (_e) {}
-  return null;
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Fetch strategies (4 fallbacks)
-// ─────────────────────────────────────────────────────────────────────
-const CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-const GBOT_UA   = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
-
-interface FetchResult { html: string; status: number; strategy: string; chars: number; error?: string; }
-
-async function tryFetch(url: string, ua: string, name: string, ms: number): Promise<FetchResult | null> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  try {
-    const r = await fetch(url, {
-      signal: ctrl.signal, redirect: "follow",
-      headers: { "User-Agent": ua, "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.9", "Cache-Control": "no-cache" },
-    });
-    clearTimeout(t);
-    if (!r.ok) return null;
-    const ct = r.headers.get("content-type") || "";
-    if (!ct.includes("html") && !ct.includes("text/")) return null;
-    const text = await r.text();
-    if (!text || text.trim().length < 200) return null;
-    if (text.includes("cf-browser-verification") || text.includes("Just a moment...") ||
-        text.includes("Checking your browser before accessing") || (text.includes("Enable JavaScript") && text.length < 3000)) return null;
-    const c = cleanHtml(text);
-    return { html: c, status: r.status, strategy: name, chars: c.length };
-  } catch (_e) { clearTimeout(t); return null; }
-}
-
-async function tryJina(url: string): Promise<FetchResult | null> {
-  const key = process.env.JINA_API_KEY;
-  if (!key) return null;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 15000);
-  try {
-    const r = await fetch(`https://r.jina.ai/${url}`, {
-      signal: ctrl.signal,
-      headers: { "Authorization": `Bearer ${key}`, "Accept": "text/plain", "X-Return-Format": "text", "X-Timeout": "12" },
-    });
-    clearTimeout(t);
-    if (!r.ok) return null;
-    const text = await r.text();
-    if (!text || text.trim().length < 100) return null;
-    return { html: text.slice(0, 12000), status: 200, strategy: "jina", chars: text.length };
-  } catch (_e) { clearTimeout(t); return null; }
-}
-
-async function tryGoogleCache(url: string): Promise<FetchResult | null> {
-  const r = await tryFetch(
-    `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(url)}&hl=en`,
-    CHROME_UA, "google-cache", 10000
-  );
-  return r;
-}
-
-async function fetchUrl(url: string): Promise<FetchResult & { allFailed?: boolean }> {
-  const s1 = await tryFetch(url, CHROME_UA, "chrome", 8000);
-  if (s1) return s1;
-  await new Promise(r => setTimeout(r, 300));
-  const s2 = await tryFetch(url, GBOT_UA, "googlebot", 8000);
-  if (s2) return s2;
-  const s3 = await tryJina(url);
-  if (s3) return s3;
-  await new Promise(r => setTimeout(r, 300));
-  const s4 = await tryGoogleCache(url);
-  if (s4) return s4;
-
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 5000);
-  try {
-    const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": CHROME_UA } });
-    clearTimeout(t);
-    const code = r.status;
-    return { html: "", status: code, strategy: "failed", chars: 0, allFailed: true,
-      error: code === 403 ? "Blocked (403). Add JINA_API_KEY env var to bypass." :
-             code === 429 ? "Rate limited (429)" : code === 503 ? "Server unavailable (503)" : `HTTP ${code}` };
-  } catch (e: any) {
-    clearTimeout(t);
-    const m = String(e.message || "");
-    return { html: "", status: 0, strategy: "failed", chars: 0, allFailed: true,
-      error: m.includes("abort") ? "Timeout — page too slow (>8s)" :
-             m.includes("ENOTFOUND") ? "Domain not found" :
-             m.includes("ECONNRESET") ? "Connection reset" : m.slice(0, 80) || "Unknown error" };
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Claude extraction — single combined prompt (one API call, not two)
-// Fixes: parallel extraction passing empty coreData, max_tokens truncation
+// Claude extraction — single combined prompt (one API call)
 // ─────────────────────────────────────────────────────────────────────
 async function analysePage(url: string, html: string, projectContext: string, taskHints: string[], anthropic: Anthropic): Promise<any> {
   const taskCtx = taskHints.length ? `\nCanvas tasks needing data: ${taskHints.slice(0, 3).join(" | ")}` : "";
 
-  // FIX: Single prompt covering all fields. Max tokens 3500 ensures complete JSON.
-  // Splitting into two parallel calls caused: (a) empty coreData context, (b) two API slots used.
   const prompt = `You are an SEO extraction engine. Read the HTML below and extract every SEO signal you can directly observe.
 URL: ${url}
 Project: ${projectContext}${taskCtx}
@@ -279,13 +103,13 @@ Include 3-6 issues and 3-5 opportunities. Be specific — cite exact text from t
 
   const msg = await anthropic.messages.create({
     model:      "claude-sonnet-4-6",
-    max_tokens: 3500,  // Enough for complete JSON even on content-rich pages
+    max_tokens: 3500,
     system:     "You are a precise SEO data extraction engine. Return ONLY valid JSON. No prose. No markdown fences. Every field must have a value — never null.",
     messages:   [{ role: "user", content: prompt }],
   });
 
   if (msg.stop_reason === "max_tokens") {
-    console.warn(`[crawl] analysePage hit max_tokens for ${url} — JSON may be truncated`);
+    console.warn(`[crawl] analysePage hit max_tokens for ${url}`);
   }
 
   const raw = msg.content[0].type === "text" ? msg.content[0].text : "{}";
@@ -295,7 +119,6 @@ Include 3-6 issues and 3-5 opportunities. Be specific — cite exact text from t
     return null;
   }
 
-  // Filter knowledge_fields to valid keys only
   parsed.knowledge_fields = Array.isArray(parsed.knowledge_fields)
     ? parsed.knowledge_fields.filter((k: any) => k.key && VALID_KEYS.has(k.key) && k.value && String(k.value).trim() !== "")
     : [];
@@ -405,7 +228,6 @@ async function processUrl(
     } catch (err: any) {
       console.error(`[crawl] analysePage threw for ${url}:`, err.message);
     }
-    // If analysePage returned null (parse failed), run URL-only fallback
     if (!pageAnalysis) {
       console.warn(`[crawl] falling back to URL-only for ${url}`);
       pageAnalysis = await analyseUrlOnly(url, anthropic);
@@ -456,7 +278,6 @@ function buildSummary(results: any[]) {
 // ─────────────────────────────────────────────────────────────────────
 // Handler
 // ─────────────────────────────────────────────────────────────────────
-/* ── Safe export: catches any uncaught crash before Vercel sees it ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try { return await _handler(req, res); }
   catch (e: any) { try { res.status(200).json({ error: "Unexpected: " + (e?.message||"unknown"), healthy: false }); } catch (_) {} }
@@ -530,8 +351,6 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     if (!crawlResults?.results?.length) return res.status(200).json({ error: "No crawl results" });
 
     const results = crawlResults.results as any[];
-
-    // Check we have at least one page with actual analysis
     const withData = results.filter(r => r.page_analysis);
     if (!withData.length) {
       return res.status(200).json({
@@ -539,7 +358,6 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Build compact page summaries — only include non-empty fields
     const summaries = results.map((r: any) => {
       const p = r.page_analysis;
       const cached = r.from_cache ? ` [cached ${r.cached_at?.split("T")[0]}]` : "";
@@ -626,7 +444,7 @@ Return ONLY valid JSON (absolutely no markdown fences, no prose before or after)
     try {
       const msg = await anthropic.messages.create({
         model:      "claude-sonnet-4-6",
-        max_tokens: 6000,  // Increased from 5000 — prevents truncation on multi-page analyses
+        max_tokens: 6000,
         system:     "You are Manav Brain. Return ONLY valid JSON. No markdown fences. No text before or after the JSON. Cite specific observations from the page data.",
         messages:   [{ role: "user", content: prompt }],
       });
@@ -638,7 +456,6 @@ Return ONLY valid JSON (absolutely no markdown fences, no prose before or after)
       const raw   = (msg.content[0] as any).text || "";
       const analysis = parseJson(raw);
 
-      // FIX: detect empty/failed parse and return a real error instead of {}
       if (!analysis || Object.keys(analysis).length < 3) {
         console.error("[compare] JSON parse failed. Raw response (first 300):", raw.slice(0, 300));
         return res.status(200).json({
