@@ -971,6 +971,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const activeAll   = learnings.filter((l: any) => l.status === "active").length;
       const institutional = learnings.filter((l: any) => !l.project_id && l.status === "active").length;
 
+      // Always return success if we have projects — other tables are optional
       return ok(res, {
         success: true,
         projectStats,
