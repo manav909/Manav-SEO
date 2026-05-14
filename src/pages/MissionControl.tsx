@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject }  from '@/contexts/ProjectContext';
+import { ProjectDataBanner } from '@/components/ProjectDataBanner';
 import { useAuth }     from '@/contexts/AuthContext';
 import PresidentialAdvisor from '@/components/PresidentialAdvisor';
 import {
@@ -239,6 +240,8 @@ export default function MissionControl() {
         )}
       </div>
 
+
+      <ProjectDataBanner project={selProj} onSave={load}/>
       {/* ═══ MAIN GRID — 2 cols: left=operations, right=advisor ═══ */}
       <div className="flex-1 grid grid-cols-[1fr_280px] gap-px bg-border/15 min-h-0">
 

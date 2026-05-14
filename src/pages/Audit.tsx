@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectSync } from '@/hooks/useProjectSync';
 import PortalNav from '@/components/PortalNav';
 import { SeoEngine } from '@/components/SeoEngine';
 import { Button } from '@/components/ui/button';
@@ -96,6 +97,7 @@ export default function Audit() {
 
   /* ── Shared state ── */
   const [selectedProjectId, setSelectedProjectId] = useState('');
+  const handleProjectChange = useProjectSync(selectedProjectId, setSelectedProjectId);
   const [mode, setMode] = useState<'metrics' | 'strategy'>('metrics');
 
   /* ── 4-Agent analysis state ── */
@@ -249,7 +251,7 @@ export default function Audit() {
         companyName={client?.company ? `${client.company} — SEO Audit` : 'SEO Audit Tool'}
         projects={projects}
         selectedProjectId={selectedProjectId}
-        onProjectChange={setSelectedProjectId}
+        onProjectChange={handleProjectChange}
       />
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">

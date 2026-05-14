@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProject } from '@/contexts/ProjectContext';
+import { useProjectSync } from '@/hooks/useProjectSync';
 import PortalNav from '@/components/PortalNav';
 import {
   TrendingUp, Globe, Zap, Star, Brain,
@@ -581,6 +583,14 @@ export default function Dashboard() {
     setApprovingUpsell(null);
   };
 
+  const handleProjectChangeSyncId = useProjectSync(
+    selectedProject?.id || '',
+    (id) => {
+      const proj = projects.find((x: any) => x.id === id);
+      if (proj) setSelectedProject(proj);
+    }
+  );
+
   const handleProjectChange = (projId: string) => {
     const proj = projects.find(x => x.id === projId);
     if (!proj) return;
@@ -671,7 +681,7 @@ export default function Dashboard() {
         companyName={`${client.company} — Growth Portal`}
         projects={projects}
         selectedProjectId={selectedProject?.id}
-        onProjectChange={handleProjectChange}
+        onProjectChange={(id) => { handleProjectChange(id); handleProjectChangeSyncId(id); }}
       />
 
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">

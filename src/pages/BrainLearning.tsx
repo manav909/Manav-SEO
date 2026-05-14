@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DeepEnrichModal from '@/components/DeepEnrichModal';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectSync } from '@/hooks/useProjectSync';
 import {
   Brain, Zap, RefreshCw, Search, X, ChevronDown, ChevronRight,
   CheckCircle, AlertTriangle, RotateCcw, Star, Trash2, Edit2,
@@ -373,6 +374,7 @@ function LearningCard({ l, onApprove, onReject, onDelete, onEdit, onDeactivate, 
 export default function BrainLearning() {
   const { clients, projects } = useAuth();
   const [selProjId, setSelProjId] = useState('');
+  const handleProjectChange = useProjectSync(selProjId, setSelProjId);
   const selProj = projects.find(p => p.id === selProjId);
   const client  = clients.find(c => c.id === selProj?.client_id);
 
@@ -626,7 +628,7 @@ export default function BrainLearning() {
       <div style={{position:'relative',zIndex:1}}>
         <PortalNav
           companyName={client?.company ? `${client.company} — Manav Brain` : 'Manav Brain Intelligence'}
-          projects={projects} selectedProjectId={selProjId} onProjectChange={setSelProjId}
+          projects={projects} selectedProjectId={selProjId} onProjectChange={handleProjectChange}
         />
 
         <div style={{maxWidth:1200,margin:'0 auto',padding:'32px 24px',display:'flex',flexDirection:'column',gap:28}}>

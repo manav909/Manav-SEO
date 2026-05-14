@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectSync } from '@/hooks/useProjectSync';
 import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
@@ -1952,6 +1953,7 @@ function InlineVerifyModal({ block, siteUrl, onApprove, onWait, onClose }: {
 export default function Playground() {
   const {clients,projects} = useAuth();
   const [selProjId,  setSelProjId]  = useState<string>(() => localStorage.getItem('seo_season_proj') || '');
+  const handleProjectChange = useProjectSync(selProjId, setSelProjId);
   const [tab,        setTab]        = useState<Tab>('reports');
   const [reports,    setReports]    = useState<any[]>([]);
   const [strategy,   setStrategy]   = useState<any>(null);
@@ -2868,7 +2870,7 @@ Please try again — if the problem persists, check your network connection.`);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <PortalNav companyName={client?.company?`${client.company} — Playground`:'Intelligence Playground'} projects={projects} selectedProjectId={selProjId} onProjectChange={setSelProjId} />
+      <PortalNav companyName={client?.company?`${client.company} — Playground`:'Intelligence Playground'} projects={projects} selectedProjectId={selProjId} onProjectChange={handleProjectChange} />
 
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
 

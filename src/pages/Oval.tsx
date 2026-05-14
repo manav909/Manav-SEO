@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth }     from '@/contexts/AuthContext';
 import { useProject }  from '@/contexts/ProjectContext';
+import { ProjectDataBanner } from '@/components/ProjectDataBanner';
 import { supabase }    from '@/lib/supabase';
 import PresidentialAdvisor from '@/components/PresidentialAdvisor';
 import {
@@ -326,6 +327,8 @@ export default function Oval() {
         </div>
       </div>
 
+
+      <ProjectDataBanner project={selProj} onSave={load}/>
       {/* ═══ 3-COLUMN STRATEGIC GRID ═══ */}
       <div className="flex-1 grid grid-cols-3 gap-px bg-border/15 min-h-0">
 

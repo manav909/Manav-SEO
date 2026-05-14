@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectSync } from '@/hooks/useProjectSync';
 import { supabase } from '@/lib/supabase';
 import {
   Brain, Globe, RefreshCw, Loader2, CheckCircle, XCircle, AlertTriangle,
@@ -76,6 +77,7 @@ export default function AlgorithmIntel() {
   const { clients, projects } = useAuth();
   const [tab, setTab]         = useState<Tab>('catalog');
   const [selProjId, setSelProjId] = useState('');
+  const handleProjectChange = useProjectSync(selProjId, setSelProjId);
 
   const navigate  = useNavigate();
   const selProj   = projects.find(p => p.id === selProjId);
@@ -817,7 +819,7 @@ ${sect('Priority Actions',result.priority_actions||[],(a)=>`<div class="c ${a.im
   return (
     <div className="min-h-screen bg-background text-foreground">
       <PortalNav companyName={client?.company ? `${client.company} — Algorithms` : 'Algorithm Intelligence'}
-        projects={projects} selectedProjectId={selProjId} onProjectChange={setSelProjId}/>
+        projects={projects} selectedProjectId={selProjId} onProjectChange={handleProjectChange}/>
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         {/* Algorithm → Learning freshness alert */}

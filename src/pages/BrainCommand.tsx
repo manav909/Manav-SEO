@@ -179,6 +179,7 @@ export default function BrainCommand() {
   const navigate = useNavigate();
 
   const [selProj,  setSelProj]  = useState(() => localStorage.getItem("seo_season_proj") || "");
+  const handleProjectChange = useProjectSync(selProj, setSelProj);
   const [canvas,   setCanvas]   = useState<any[]>([]);
   const [queue,    setQueue]    = useState<QueuedTask[]>([]);
   const [running,  setRunning]  = useState(false);

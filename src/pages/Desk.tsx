@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectSync } from '@/hooks/useProjectSync';
 import { supabase } from '@/lib/supabase';
 import {
   FileText, Download, Trash2, Pin, Search, Filter,
@@ -223,6 +224,7 @@ export default function Desk() {
   const { projects, clients } = useAuth();
   const navigate  = useNavigate();
   const [selProj, setSelProj]   = useState(() => localStorage.getItem('seo_season_proj') || '');
+  const handleProjectChange = useProjectSync(selProj, setSelProj);
   const [items,   setItems]     = useState<DeskItem[]>([]);
   const [loading, setLoading]   = useState(false);
   const [filter,  setFilter]    = useState('all');

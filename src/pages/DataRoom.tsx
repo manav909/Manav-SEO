@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectSync } from '@/hooks/useProjectSync';
 import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
@@ -437,6 +438,7 @@ function PageResultCard({ r, isOwn, isComp, onSelectOwn, onSelectComp, selectedO
 export default function DataRoom() {
   const { clients, projects } = useAuth();
   const [selProjId, setSelProjId] = useState('');
+  const handleProjectChange = useProjectSync(selProjId, setSelProjId);
   const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'>('overview');
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
   const [documents, setDocuments] = useState<DocRecord[]>([]);
@@ -1405,7 +1407,7 @@ Evidence: ${c.data_basis}` : ''}`,
         companyName={client?.company ? `${client.company} — Data Room` : 'Data Room'}
         projects={projects}
         selectedProjectId={selProjId}
-        onProjectChange={setSelProjId}
+        onProjectChange={handleProjectChange}
       />
 
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
