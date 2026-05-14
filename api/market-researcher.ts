@@ -156,14 +156,19 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
 }`;
 
     const response = await client.messages.create({
-      model: "claude-opus-4-7",
+      model: "claude-sonnet-4-6",
       max_tokens: 4000,
       messages: [{ role: "user", content: prompt }],
     });
 
     const raw = response.content[0].type === "text" ? response.content[0].text : "";
     const first = raw.indexOf("{"); const last = raw.lastIndexOf("}");
-    const persona = JSON.parse((first !== -1 && last !== -1) ? raw.slice(first, last + 1) : raw);
+    let persona: any;
+    try {
+      persona = JSON.parse((first !== -1 && last !== -1) ? raw.slice(first, last + 1) : raw);
+    } catch (_) {
+      return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
+    }
 
     /* Save persona to brain_learnings as market intelligence */
     if (projectId) {
@@ -331,14 +336,19 @@ Return ONLY valid JSON:
 }`;
 
     const response = await client.messages.create({
-      model: "claude-opus-4-7",
+      model: "claude-sonnet-4-6",
       max_tokens: 3500,
       messages: [{ role: "user", content: prompt }],
     });
 
     const raw = response.content[0].type === "text" ? response.content[0].text : "";
     const first = raw.indexOf("{"); const last = raw.lastIndexOf("}");
-    const goalPlan = JSON.parse((first !== -1 && last !== -1) ? raw.slice(first, last + 1) : raw);
+    let goalPlan: any;
+    try {
+      goalPlan = JSON.parse((first !== -1 && last !== -1) ? raw.slice(first, last + 1) : raw);
+    } catch (_) {
+      return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
+    }
 
     if (projectId) {
       const industryTag = industry.toLowerCase().replace(/\s+/g, "-");
@@ -419,7 +429,7 @@ Be direct, specific, and confident. Cite real search patterns and market dynamic
 
     let fullOutput = "";
     const stream = client.messages.stream({
-      model: "claude-opus-4-7",
+      model: "claude-sonnet-4-6",
       max_tokens: 4000,
       messages: [{ role: "user", content: prompt }],
     });
@@ -539,7 +549,12 @@ Return ONLY valid JSON:
 
     const raw2 = synthResponse.content[0].type === "text" ? synthResponse.content[0].text : "";
     const f2 = raw2.indexOf("{"); const l2 = raw2.lastIndexOf("}");
-    const patterns = JSON.parse((f2 !== -1 && l2 !== -1) ? raw2.slice(f2, l2 + 1) : raw2);
+    let patterns: any;
+    try {
+      patterns = JSON.parse((f2 !== -1 && l2 !== -1) ? raw2.slice(f2, l2 + 1) : raw2);
+    } catch (_) {
+      return res.status(200).json({ success: false, error: "Synthesis parse error — try again" });
+    }
 
     return res.status(200).json({
       success: true,
