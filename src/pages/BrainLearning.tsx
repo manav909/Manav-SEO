@@ -103,7 +103,6 @@ function calcDimScores(learnings: Learning[]): Record<string, number> {
 function NeuralBackground() {
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{zIndex:0}}>
-      <HelpPanel {...HELP["brain-learning"]} pageId="brain-learning" />
       {/* Dark base */}
       <div style={{position:'absolute',inset:0,background:'#030712'}}/>
       {/* Grid lines */}
@@ -395,7 +394,7 @@ export default function BrainLearning() {
     setLoading(true);
     try {
       const body: Record<string, unknown> = { action: 'get_all_learnings' };
-      if (selProjId) body.project_id = selProjId;
+      if (selProjId && selProjId.trim()) body.project_id = selProjId;
       const res  = await fetch('/api/task-engine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'brain-learning-page' },
@@ -464,7 +463,7 @@ export default function BrainLearning() {
       try {
         const updated = await callBrain('approve_learning', l.id);
         if (updated) {
-          setLearnings(ls => ls.map(x => x.id === l.id ? { ...x, ...updated } : x));
+          if (updated?.id) setLearnings(ls => ls.map(x => x.id === l.id ? { ...x, ...updated } : x));
           approved++;
         }
       } catch (_e) {}
@@ -632,6 +631,8 @@ export default function BrainLearning() {
         />
 
         <div style={{maxWidth:1200,margin:'0 auto',padding:'32px 24px',display:'flex',flexDirection:'column',gap:28}}>
+
+          <HelpPanel {...HELP["brain-learning"]} pageId="brain-learning" />
 
           {/* ── HERO HEADER ── */}
           <div style={{textAlign:'center',padding:'20px 0 8px'}}>
@@ -870,7 +871,7 @@ export default function BrainLearning() {
                 </div>
               )}
 
-              {!loading && filtered.map(l => (
+              {!loading && filtered.filter(l => l?.id).map(l => (
                 <LearningCard
                   key={l.id}
                   l={l}
