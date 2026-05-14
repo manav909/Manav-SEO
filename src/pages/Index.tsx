@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import AuthModal from '@/components/AuthModal';
 import { SeoEngine } from '@/components/SeoEngine';
 import ManavBrainGuest from '@/components/ManavBrainGuest';
+import IntroAnimation from '@/components/IntroAnimation';
 import {
   Star, Brain, ShieldCheck, CheckCircle, Globe,
   BarChart3, Zap, ArrowRight, Lock, LogOut,
@@ -157,6 +158,14 @@ const Marquee = () => {
 export default function Index() {
   const navigate = useNavigate();
   const {user,isApproved,authChecked,loading,signOut} = useAuth();
+
+  const [showIntro, setShowIntro] = useState(() => {
+    try { return sessionStorage.getItem('intro_seen') !== 'true'; } catch { return true; }
+  });
+  const handleIntroComplete = () => {
+    try { sessionStorage.setItem('intro_seen', 'true'); } catch { }
+    setShowIntro(false);
+  };
   const [showModal, setShowModal] = useState(false);
 
   
@@ -553,6 +562,26 @@ export default function Index() {
       </footer>
 
       {/* Manav Brain Guest — only shown when user is not logged in */}
+      {/* Replay intro button — bottom-left, subtle */}
+      {!showIntro && (
+        <button
+          onClick={() => setShowIntro(true)}
+          style={{
+            position: 'fixed', bottom: 68, left: 24, zIndex: 9990,
+            background: 'rgba(8,10,24,0.85)', border: '1px solid rgba(99,102,241,0.25)',
+            borderRadius: 8, padding: '5px 12px', cursor: 'pointer',
+            color: 'rgba(165,180,252,0.45)', fontSize: 10, fontFamily: 'monospace',
+            letterSpacing: '0.08em', backdropFilter: 'blur(8px)',
+            transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 6,
+          }}
+          title="Replay intro animation"
+          onMouseEnter={e => { e.currentTarget.style.color = 'rgba(165,180,252,0.9)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(165,180,252,0.45)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.25)'; }}
+        >
+          ◈ REPLAY
+        </button>
+      )}
+      {showIntro && <IntroAnimation onComplete={handleIntroComplete} />}
       {(!user || !isApproved) && <ManavBrainGuest />}
     </div>
   );
