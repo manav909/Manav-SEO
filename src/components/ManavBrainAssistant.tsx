@@ -225,7 +225,13 @@ export default function ManavBrainAssistant() {
   ]);
   const [input,    setInput]    = useState('');
   const [loading,  setLoading]  = useState(false);
-  const [selProj,  setSelProj]  = useState('');
+  const { selectedProjectId: ctxProjectId } = useProject();
+  const [selProj,  setSelProj]  = useState(() => ctxProjectId || localStorage.getItem('seo_season_proj') || '');
+
+  // Keep selProj in sync with global ProjectContext
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const _syncEffect = () => { if (ctxProjectId && ctxProjectId !== selProj) setSelProj(ctxProjectId); };
+  // Using ref-based sync to avoid re-render loops
   const [ctx,      setCtx]      = useState<any>(null);
   const [learnings,setLearnings]= useState<any[]>([]);
   const [algoItems,setAlgoItems]= useState<any[]>([]);
@@ -324,6 +330,8 @@ export default function ManavBrainAssistant() {
   }, [open]);
 
   /* Reload context on project change */
+  useEffect(() => { if (ctxProjectId && ctxProjectId !== selProj) setSelProj(ctxProjectId); }, [ctxProjectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => { if (selProj) loadContext(); }, [selProj]);
 
   /* ───────────────────────────────────────────────────────────────
