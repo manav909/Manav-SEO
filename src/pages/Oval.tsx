@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth }     from '@/contexts/AuthContext';
+import { useLaunchpadData } from '@/hooks/useLaunchpadData';
 import { useProject }  from '@/contexts/ProjectContext';
 import { ProjectDataBanner } from '@/components/ProjectDataBanner';
 import { supabase }    from '@/lib/supabase';
@@ -21,11 +22,6 @@ import {
   Check, Clock, Cpu, ArrowUp, ArrowDown, Minus,
   Eye, Layers, BookOpen, Database,
 } from 'lucide-react';
-
-async function callEngine(a: string, b: Record<string,unknown> = {}) {
-  const r = await fetch('/api/task-engine', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action:a,...b}) });
-  return r.json();
-}
 
 const greet = () => {
   const h = new Date().getHours();
@@ -208,27 +204,14 @@ export default function Oval() {
   const { user, clients, projects, refreshData } = useAuth();
   const { selectedProjectId, setSelectedProjectId, selectedProject } = useProject();
 
-  const [data,       setData]       = useState<any>(null);
-  const [algoTopics, setAlgoTopics] = useState<any[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const { data, loading, error: dataError, reload: load } = useLaunchpadData();
+  // algoTopics come from data.algoTopics
+
   const [toast,      setToast]      = useState('');
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [d, { data: algo }] = await Promise.all([
-        callEngine('get_launchpad_intel'),
-        supabase.from('algorithm_knowledge').select('id,topic,updated_at,freshness_score,summary').order('updated_at', { ascending: false }).limit(20),
-      ]);
-      if (d?.projectStats || d?.totals) setData(d);
-      if (algo) setAlgoTopics(algo);
-    } catch {}
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
+  // load() provided by useLaunchpadData
 
   const safeClients  = (clients  || []).filter((c: any) => c?.id);
   const safeProjects = (projects || []).filter((p: any) => p?.id);
@@ -257,8 +240,8 @@ export default function Oval() {
   const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   /* Live signals — combine algo topics with freshness */
-  const freshSignals  = algoTopics.filter(a => a.freshness_score >= 7).slice(0, 5);
-  const staleWarnings = algoTopics.filter(a => a.freshness_score < 4).slice(0, 3);
+  const freshSignals  = (data?.algoTopics||[]).filter(a => a.freshness_score >= 7).slice(0, 5);
+  const staleWarnings = (data?.algoTopics||[]).filter(a => a.freshness_score < 4).slice(0, 3);
 
   /* Strategy status from canvas cards */
   const strategyStatus = {
@@ -441,7 +424,7 @@ export default function Oval() {
                 ))}
               </>
             )}
-            {algoTopics.length === 0 && !loading && (
+            {(data?.algoTopics||[]).length === 0 && !loading && (
               <div className="flex flex-col items-center justify-center h-24 text-muted-foreground/20">
                 <Cpu className="h-6 w-6 mb-1 opacity-20"/>
                 <p className="text-xs">No algo intel loaded</p>

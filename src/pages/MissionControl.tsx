@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useProject }  from '@/contexts/ProjectContext';
 import { ProjectDataBanner } from '@/components/ProjectDataBanner';
 import { useAuth }     from '@/contexts/AuthContext';
+import { useLaunchpadData } from '@/hooks/useLaunchpadData';
 import PresidentialAdvisor from '@/components/PresidentialAdvisor';
 import {
   Rocket, Brain, Activity, Clock, CheckCircle2, AlertTriangle,
@@ -106,9 +107,7 @@ export default function MissionControl() {
   const { selectedProjectId, setSelectedProjectId } = useProject();
   const { projects } = useAuth();
 
-  const [data,         setData]         = useState<any>(null);
-  const [loading,      setLoading]      = useState(true);
-  const [error,        setError]        = useState('');
+  const { data, loading, error, reload: load } = useLaunchpadData();
   const [selectedId,   setSelectedId]   = useState('');
   const [liveMode,     setLiveMode]     = useState(true);
   const [approving,    setApproving]    = useState(new Set<string>());
@@ -118,21 +117,11 @@ export default function MissionControl() {
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('');
-    try {
-      const d = await callEngine('get_launchpad_intel');
-      if (d?.projectStats || d?.totals || d?.success) setData(d);
-      else if (d?.error) setError(d.error);
-    } catch (e: any) { setError(e.message || 'Load failed'); }
-    setLoading(false);
-  }, []);
-
+  // Auto-refresh when live
   useEffect(() => {
-    load();
     autoRef.current = setInterval(() => { if (liveMode) load(); }, 90000);
     return () => clearInterval(autoRef.current);
-  }, [load, liveMode]);
+  }, [liveMode, load]);
 
   useEffect(() => {
     if (!data?.projectStats?.length || selectedId) return;
