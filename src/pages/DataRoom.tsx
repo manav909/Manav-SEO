@@ -1432,7 +1432,7 @@ Evidence: ${c.data_basis}` : ''}`,
             <h3 className="font-bold text-lg mb-3">Select a project to open its data room</h3>
             <select value={selProjId} onChange={e=>setSelProjId(e.target.value)} className="h-10 rounded-lg border border-border bg-background/60 text-sm px-4">
               <option value="">— Choose project —</option>
-              {clients.map(c => {
+              {(clients||[]).filter((c:any)=>c?.id).map(c => {
                 const cp = projects.filter(p => p.client_id === c.id);
                 if (!cp.length) return null;
                 return (

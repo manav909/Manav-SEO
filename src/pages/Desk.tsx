@@ -340,7 +340,7 @@ export default function Desk() {
               border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11,
               color: 'rgba(255,255,255,0.65)', outline: 'none', cursor: 'pointer' }}>
             <option value="">Select Project</option>
-            {projects.map(p => { const cl = clients.find(c => c.id === p.client_id); return (
+            {(projects||[]).filter((p:any)=>p?.id).map(p => { const cl = clients.find(c => c.id === p.client_id); return (
               <option key={p.id} value={p.id}>{cl?.company || p.name}</option>
             ); })}
           </select>

@@ -440,7 +440,7 @@ export default function BrainCommand() {
           style={{ height: 30, padding: "0 10px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: 7, fontSize: 10, color: "rgba(255,255,255,0.6)", outline: "none", cursor: "pointer" }}>
           <option value="">Select Project</option>
-          {projects.map(p => { const cl = clients.find(c => c.id === p.client_id); return (
+          {(projects||[]).filter((p:any)=>p?.id).map(p => { const cl = clients.find(c => c.id === p.client_id); return (
             <option key={p.id} value={p.id}>{cl?.company || p.name}</option>
           ); })}
         </select>

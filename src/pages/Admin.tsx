@@ -492,7 +492,7 @@ export default function Admin() {
       <select value={selectedProject} onChange={e => handleSelectProject(e.target.value)}
         className="w-full h-10 rounded-md border border-border bg-background/60 text-sm px-3">
         <option value="">— Choose project —</option>
-        {clients.map(c => {
+        {(clients||[]).filter((c:any)=>c?.id).map(c => {
           const cp = projects.filter(p => p.client_id === c.id);
           if (!cp.length) return null;
           return (
@@ -686,7 +686,7 @@ export default function Admin() {
                 <p className="text-sm text-muted-foreground text-center py-4">No clients yet.</p>
               ) : (
                 <div className="space-y-3">
-                  {clients.map(c => {
+                  {(clients||[]).filter((c:any)=>c?.id).map(c => {
                     const cProjects = projects.filter(p => p.client_id === c.id);
                     if (!cProjects.length) return null;
                     return cProjects.map(proj => {
@@ -1419,7 +1419,7 @@ export default function Admin() {
                           <Label className={lc}>Link to Client(s) — hold Ctrl/Cmd for multiple</Label>
                           <select id={`cs-${user.id}`} multiple size={Math.min(clients.length+1, 5)}
                             className="w-full rounded-md border border-border bg-background/60 text-xs px-2 py-1">
-                            {clients.map(c => (
+                            {(clients||[]).filter((c:any)=>c?.id).map(c => (
                               <option key={c.id} value={c.id}>{c.name} — {c.company}</option>
                             ))}
                           </select>

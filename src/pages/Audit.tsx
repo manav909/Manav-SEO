@@ -348,7 +348,7 @@ export default function Audit() {
                   <select value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)}
                     className="w-full h-10 rounded-lg border border-border bg-background/60 text-sm px-3">
                     <option value="">— Standalone audit (not linked) —</option>
-                    {clients.map(c => {
+                    {(clients||[]).filter((c:any)=>c?.id).map(c => {
                       const cp = projects.filter(p => p.client_id === c.id);
                       if (!cp.length) return null;
                       return (
@@ -699,7 +699,7 @@ export default function Audit() {
                   className="w-full h-10 rounded-lg border border-border bg-background/60 text-sm px-3"
                 >
                   <option value="">— Run without project context —</option>
-                  {clients.map(c => {
+                  {(clients||[]).filter((c:any)=>c?.id).map(c => {
                     const cp = projects.filter(p => p.client_id === c.id);
                     if (!cp.length) return null;
                     return (
