@@ -27,6 +27,7 @@ import React, {
 } from 'react';
 import { useNavigate }  from 'react-router-dom';
 import { useAuth }      from '@/contexts/AuthContext';
+import { useProject }   from '@/contexts/ProjectContext';
 import { supabase }     from '@/lib/supabase';
 import {
   Brain, Send, X, Zap, Activity, Globe, Target, Shield, FileText,
