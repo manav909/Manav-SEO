@@ -13,6 +13,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProjectSync } from "@/hooks/useProjectSync";
 import { supabase } from "@/lib/supabase";
 import {
   Brain, Play, Pause, X, Zap, CheckCircle, AlertCircle, Clock,
