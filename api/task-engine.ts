@@ -375,6 +375,33 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     return ok(res, { success: true, learning: data });
   }
 
+  /* ── CHECK LEARNING FRESHNESS (called by AlgorithmIntel after save) ── */
+  if (action === "check_learning_freshness") {
+    const { topic_category = "", topic_tags = [] } = body;
+    const categoryToCardTypes: Record<string, string[]> = {
+      core_update:     ["technical","content","insight"],
+      helpful_content: ["content","insight"],
+      eeat:            ["content","insight","competitive"],
+      core_web_vitals: ["technical","quick-win"],
+      technical:       ["technical","quick-win"],
+      geo_ai:          ["geo"],
+      links:           ["competitive","technical"],
+    };
+    const relatedTypes = categoryToCardTypes[topic_category] || ["technical","content","geo","insight"];
+    try {
+      const { data: affected } = await db()
+        .from("brain_learnings")
+        .select("id, card_title, card_type, tags")
+        .in("card_type", relatedTypes)
+        .eq("status", "active")
+        .limit(20);
+      const count = affected?.length || 0;
+      return ok(res, { success: true, affected_count: count, affected_learnings: (affected || []).slice(0, 5) });
+    } catch (_e) {
+      return ok(res, { success: true, affected_count: 0, affected_learnings: [] });
+    }
+  }
+
   /* ── SAVE TO DESK ── */
   if (action === "save_to_desk") {
     const { project_id, title, content, content_type = "text", source: deskSource = "brain", tags: deskTags = [] } = body;
@@ -734,5 +761,70 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  return ok(res, { error: `Unknown action: ${action}` });
+  /* ── CHECK LEARNING FRESHNESS against algorithm update ── */
+  if (action === "check_learning_freshness") {
+    const { topic_title, topic_category, topic_tags = [], project_id } = body;
+    if (!topic_title) return ok(res, { error: "topic_title required" });
+
+    // Find learnings whose tags or card_type relate to the updated algorithm topic
+    const CATEGORY_MAP: Record<string, string[]> = {
+      "core_update":       ["content","strategy","insight","general"],
+      "helpful_content":   ["content","insight"],
+      "eeat":              ["content","insight","competitive"],
+      "technical":         ["technical","quick-win"],
+      "core_web_vitals":   ["technical","quick-win"],
+      "content":           ["content","insight"],
+      "links":             ["competitive","insight"],
+      "geo_ai":            ["geo","insight"],
+      "spam":              ["technical","content"],
+      "local":             ["geo","technical"],
+    };
+    const affectedTypes = CATEGORY_MAP[topic_category || ""] || ["insight","strategy","content","technical"];
+
+    try {
+      // Find active learnings that are potentially stale
+      let q: any = db().from("brain_learnings")
+        .select("id, card_title, card_type, tags, confidence_score, improvement, updated_at, project_id")
+        .in("status", ["active"])
+        .in("card_type", affectedTypes);
+      if (project_id) q = q.or(`project_id.eq.${project_id},project_id.is.null`);
+      const { data: affected, error: qErr } = await q.order("updated_at", { ascending: true }).limit(20);
+      if (qErr) return ok(res, { error: qErr.message });
+
+      // Filter to learnings that overlap with the topic (by tags or keywords in title/improvement)
+      const topicKeywords = [...topic_tags, topic_title.toLowerCase()].flatMap(t => t.toLowerCase().split(/\s+/));
+      const stale = (affected || []).filter((l: any) => {
+        const lText = [(l.card_title || ""), (l.improvement || ""), ...(l.tags || [])].join(" ").toLowerCase();
+        return topicKeywords.some((kw: string) => kw.length > 3 && lText.includes(kw));
+      });
+
+      // Mark as needs-review by adding tag
+      for (const l of stale) {
+        const existingTags: string[] = l.tags || [];
+        if (!existingTags.includes("needs-algo-review")) {
+          await db().from("brain_learnings").update({
+            tags: [...existingTags, "needs-algo-review"],
+            updated_at: new Date().toISOString(),
+          }).eq("id", l.id);
+        }
+      }
+
+      return ok(res, {
+        success: true,
+        affected_count: stale.length,
+        affected_learnings: stale.map((l: any) => ({
+          id: l.id, card_title: l.card_title, card_type: l.card_type,
+          improvement: l.improvement?.slice(0, 100),
+          last_updated: l.updated_at,
+        })),
+        message: stale.length > 0
+          ? `${stale.length} learning${stale.length > 1 ? "s" : ""} may be outdated by "${topic_title}". Tagged for review in Brain Learning.`
+          : `No active learnings affected by "${topic_title}"`,
+      });
+    } catch (e: any) {
+      return ok(res, { error: e.message });
+    }
+  }
+
+    return ok(res, { error: `Unknown action: ${action}` });
 }

@@ -294,6 +294,52 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         updated_at:      new Date().toISOString(),
       }).select().single();
 
+      // After saving algorithm update, scan brain_learnings for related learnings
+      // and mark them as potentially stale — async, non-blocking
+      if (!error && data) {
+        Promise.resolve().then(async () => {
+          try {
+            const algoTags = cleanTags.filter((t: string) => !t.startsWith("tid:"));
+            const category = item.category || "general";
+            
+            // Map algorithm categories to learning card_types
+            const categoryToCardTypes: Record<string, string[]> = {
+              "core_update":       ["technical","content","insight"],
+              "helpful_content":   ["content","insight"],
+              "eeat":              ["content","insight","competitive"],
+              "core_web_vitals":   ["technical","quick-win"],
+              "technical":         ["technical","quick-win"],
+              "geo_ai":            ["geo"],
+              "links":             ["competitive","technical"],
+              "spam":              ["technical","content"],
+            };
+            const relatedTypes = categoryToCardTypes[category] || ["technical","content","geo","insight"];
+            
+            // Find active learnings that match related card types
+            const { data: relatedLearnings } = await db()
+              .from("brain_learnings")
+              .select("id, card_type, card_title, tags")
+              .in("card_type", relatedTypes)
+              .eq("status", "active")
+              .limit(30);
+            
+            if (!relatedLearnings?.length) return;
+            
+            // Tag them as algorithm_stale with which algorithm updated
+            const staleTag = "algo_stale:" + (item.title || "").slice(0,30).replace(/\s+/g,"-").toLowerCase();
+            for (const l of relatedLearnings as any[]) {
+              const currentTags = Array.isArray(l.tags) ? l.tags : [];
+              if (!currentTags.includes(staleTag) && !currentTags.includes("freshness-checked")) {
+                await db().from("brain_learnings").update({
+                  tags: [...new Set([...currentTags, staleTag, "algo-updated"])],
+                  updated_at: new Date().toISOString(),
+                }).eq("id", l.id);
+              }
+            }
+          } catch (_e) { /* non-blocking — never fail save */ }
+        }).catch(() => {});
+      }
+
       if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true, item: data });
     }
