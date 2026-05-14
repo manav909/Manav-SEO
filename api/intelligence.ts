@@ -9,27 +9,124 @@ function _sbClient() {
     process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
   );
 }
+/* ── Inline learning classification (mirrors task-engine logic, no import) ── */
+const _SYS_ERR  = /\b(supabase|database|postgres|vercel|api\s*error|fetch\s*fail|connection\s*refused|ECONNREFUSED|timeout|502|503|504|internal\s*server\s*error|stack\s*trace|uncaught|unhandled\s*rejection)\b/i;
+const _SYS_WARN = /\b(rate\s*limit|quota\s*exceeded|slow\s*query|deprecated|fallback|retry|reconnect)\b/i;
+const _REJECT   = /^(i\s+(cannot|can't|am\s+unable|don't\s+have)|i\s+apologize|i'm\s+sorry|as\s+an\s+ai|i\s+don't\s+have\s+access|no\s+information\s+available|i\s+cannot\s+provide|please\s+(note|be\s+aware)|disclaimer)/i;
+const _BOILER   = /^(here\s+(is|are|'s)|sure[,!]?|of\s+course[,!]?|certainly[,!]?|great[,!]?|absolutely[,!]?)/i;
+const _ACTIONABLE = /\b(should|must|need\s+to|recommend|suggest|action|step|implement|create|publish|update|fix|improve|target|focus|prioritize|increase|decrease|test|monitor|track|avoid|instead|consider|ensure|make\s+sure)\b/i;
+const _FACTUAL_SRC = /\b(audit|analysis|research|algorithm|competitive|benchmark|data)\b/i;
+
+function _extractImprovement(text: string): string {
+  // Split into sentences, prefer ones with actionable language
+  const sentences = text
+    .replace(/\n+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 30 && s.length < 400);
+  const actionable = sentences.filter(s => _ACTIONABLE.test(s));
+  const chosen = actionable.length ? actionable : sentences;
+  // Take up to ~300 chars worth of top sentences
+  let result = '';
+  for (const s of chosen) {
+    if ((result + ' ' + s).length > 320) break;
+    result += (result ? ' ' : '') + s;
+  }
+  return result.trim() || text.slice(0, 300);
+}
+
+function _detectCategory(source: string, text: string): string {
+  if (/audit/i.test(source))           return 'technical';
+  if (/algorithm/i.test(source))       return 'algorithm';
+  if (/pipeline/i.test(source))        return 'technical';
+  if (/\b(google|bing|search\s*engine|core\s*update|ranking\s*factor)\b/i.test(text)) return 'algorithm';
+  if (/\b(speed|performance|crawl|index|schema|technical\s*seo|lighthouse)\b/i.test(text)) return 'technical';
+  if (/\b(quick\s*win|low.hanging|easy\s*fix|fast\s*result)\b/i.test(text)) return 'quick-win';
+  if (/\b(competitor|competition|rival|outrank|vs\.?\s+\w)\b/i.test(text)) return 'competitive';
+  if (/\b(content|article|post|publish|word\s*count|topical|cluster)\b/i.test(text)) return 'content';
+  if (/\b(strategy|long.term|roadmap|quarter|milestone)\b/i.test(text)) return 'strategy';
+  return 'insight';
+}
+
+function _scoreConfidence(text: string, source: string): number {
+  let score = 60;
+  if (/\d+\s*%/i.test(text))                      score += 10;
+  if (/https?:\/\//i.test(text))                   score += 8;
+  if (text.length > 500)                            score += 5;
+  if (text.length > 1000)                           score += 5;
+  if (_FACTUAL_SRC.test(source))                   score += 12;
+  if (/manual/i.test(source))                      score += 5;
+  const actionCount = (text.match(_ACTIONABLE) || []).length;
+  if (actionCount >= 3)                             score += 8;
+  else if (actionCount >= 1)                        score += 4;
+  return Math.min(score, 99);
+}
+
+interface _LearningClass {
+  shouldSave: boolean; category: string; isSystemLevel: boolean;
+  confidence: number; autoApprove: boolean; rejectionReason?: string;
+}
+
+function _classifyLearning(opts: {
+  content: string; source: string; title?: string; projectId?: string | null;
+}): _LearningClass {
+  const { content, source, title = '', projectId } = opts;
+  const combined = `${title} ${content}`.trim();
+
+  if (content.length < 100)
+    return { shouldSave: false, category: 'insight', isSystemLevel: false, confidence: 0, autoApprove: false, rejectionReason: 'too_short' };
+
+  if (_SYS_ERR.test(combined))
+    return { shouldSave: true, category: 'system', isSystemLevel: true, confidence: 80, autoApprove: false };
+
+  if (_SYS_WARN.test(combined))
+    return { shouldSave: true, category: 'system_warning', isSystemLevel: true, confidence: 70, autoApprove: false };
+
+  if (_REJECT.test(content.slice(0, 120)))
+    return { shouldSave: false, category: 'insight', isSystemLevel: false, confidence: 0, autoApprove: false, rejectionReason: 'refusal_or_disclaimer' };
+
+  if (_BOILER.test(content.slice(0, 60)) && content.length < 300)
+    return { shouldSave: false, category: 'insight', isSystemLevel: false, confidence: 0, autoApprove: false, rejectionReason: 'boilerplate' };
+
+  if (!_ACTIONABLE.test(content) && content.length < 250)
+    return { shouldSave: false, category: 'insight', isSystemLevel: false, confidence: 0, autoApprove: false, rejectionReason: 'no_actionable_content' };
+
+  const category   = _detectCategory(source, combined);
+  const confidence = _scoreConfidence(content, source);
+  const autoTypes  = ['technical', 'quick-win', 'algorithm'];
+  const autoApprove = autoTypes.includes(category) || confidence >= 85;
+
+  return { shouldSave: true, category, isSystemLevel: false, confidence, autoApprove };
+}
+
 async function extractAndSaveLearning(
   source: string, projectId: string | null, output: string,
   metadata: { card_type?: string; card_title?: string; context_summary?: string } = {}
 ): Promise<void> {
-  if (!projectId || !output || output.length < 200 || output.startsWith("Error:")) return;
+  if (!projectId || !output || output.startsWith("Error:")) return;
   try {
+    const cls = _classifyLearning({ content: output, source, title: metadata.card_title, projectId });
+    if (!cls.shouldSave) return;
+
+    const improvement = _extractImprovement(output);
+    if (!improvement || improvement.length < 60) return;
+
+    const effectiveProjectId = cls.isSystemLevel ? null : projectId;
     const row: any = {
-      project_id: projectId, source,
-      card_type:       metadata.card_type       || "insight",
-      card_title:      (metadata.card_title     || source).slice(0, 60),
+      project_id:      effectiveProjectId,
+      source,
+      card_type:       cls.isSystemLevel ? cls.category : (metadata.card_type || cls.category),
+      card_title:      (metadata.card_title || source).slice(0, 60),
       context_summary: metadata.context_summary || source,
       what_worked: [], what_missed: [],
-      improvement: output.slice(0, 300),
-      tags: [source.split("_")[0]].filter(Boolean),
+      improvement,
+      tags: [source.split("_")[0], cls.category].filter((v, i, a) => v && a.indexOf(v) === i),
       applied_count: 0, updated_at: new Date().toISOString(),
+      status:          cls.autoApprove ? 'active' : 'pending_review',
+      auto_captured:   true,
+      confidence_score: cls.confidence,
     };
-    try {
-      await _sbClient().from("brain_learnings").insert({ ...row, status: "pending_review", auto_captured: true, confidence_score: 65 });
-    } catch (_e) {
-      try { await _sbClient().from("brain_learnings").insert(row); } catch (_e2) { /* silent */ }
-    }
+    await _sbClient().from("brain_learnings").insert(row);
   } catch (_e) { /* never crash callers */ }
 }
 async function saveToDesk(
