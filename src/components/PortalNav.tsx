@@ -13,7 +13,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth }    from '@/contexts/AuthContext';
 import { useProject } from '@/contexts/ProjectContext';
 import {
-  BarChart3, Sparkles, LogOut, Settings, Zap, Layers,
+  BarChart3, Crown, Sparkles, LogOut, Settings, Zap, Layers,
   Database, Activity, Brain, ChevronDown, Menu, X,
   BookOpenCheck, Rocket,
 } from 'lucide-react';
@@ -28,9 +28,9 @@ interface Props {
 }
 
 const PRIMARY = [
-  { href: '/dashboard',  label: 'Dashboard', icon: BarChart3, desc: 'Overview & metrics'    },
+  { href: '/oval',       label: 'The Oval',   icon: Crown,    desc: 'Presidential suite'    },
+  { href: '/dashboard',  label: 'Dashboard',  icon: BarChart3,desc: 'Overview & metrics'    },
   { href: '/playground', label: 'Canvas',     icon: Layers,   desc: 'Strategy & execution'  },
-  { href: '/data-room',  label: 'Data Room',  icon: Database, desc: 'Client knowledge base' },
   { href: '/audit',      label: 'Audit',      icon: Zap,      desc: 'SEO audit tool'        },
 ];
 
@@ -80,7 +80,7 @@ export default function PortalNav({
           <div className="flex items-center justify-between h-14 gap-4">
 
             {/* Brand */}
-            <button onClick={() => navigate('/dashboard')}
+            <button onClick={() => navigate('/oval')}
               className="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
               <div className="relative">
                 <img src="/manav.jpg" alt="Manav"
