@@ -4,7 +4,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider }   from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth }     from "@/contexts/AuthContext";
+import { ProjectProvider }             from "@/contexts/ProjectContext";
+import MissionControl                  from "./pages/MissionControl";
 import { DemoProvider }          from "@/contexts/DemoContext";
 import { ErrorBoundary }         from "@/components/ErrorBoundary";
 import { BrainErrorBoundary }    from "@/components/BrainErrorBoundary";
@@ -72,6 +74,7 @@ const AppRoutes = () => {
         <Route path="/brain-learning" element={<B name="brain-learning"><ApprovedRequired><BrainLearning /></ApprovedRequired> </B>} />
         <Route path="/desk"          element={<B name="desk">         <ApprovedRequired><Desk /></ApprovedRequired>          </B>} />
         <Route path="/brain-command"  element={<B name="brain-command"><ApprovedRequired><BrainCommand /></ApprovedRequired></B>} />
+        <Route path="/mission-control" element={<B name="mission-control"><ApprovedRequired><MissionControl /></ApprovedRequired></B>} />
         <Route path="*"               element={<NotFound />} />
       </Routes>
 
@@ -91,11 +94,13 @@ const App = () => (
         <BrowserRouter>
           <ErrorBoundary>
             <AuthProvider>
+              <ProjectProvider>
               <DemoProvider>
                 <ErrorBoundary>
                   <AppRoutes />
                 </ErrorBoundary>
               </DemoProvider>
+              </ProjectProvider>
             </AuthProvider>
           </ErrorBoundary>
         </BrowserRouter>
