@@ -247,6 +247,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     /* ── Build prompt based on mode ── */
     if (mode === "brain_assistant") {
       const bac = brainAssistantContext || {};
+      const systemOverride: string | undefined = (bac as any).systemOverride;
       const { system, user } = buildBrainPrompt({
         question,
         projectContext: bac.projectContext || projectContext,
@@ -256,7 +257,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         history:        bac.history        || [],
         projectSummary,
       });
-      systemPrompt = system;
+      systemPrompt = systemOverride || system;
       userPrompt   = user;
 
     } else if (mode === "agenda") {
