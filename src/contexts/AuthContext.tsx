@@ -100,8 +100,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         supabase.from('clients').select('*').in('id', idList),
         supabase.from('projects').select('*').in('client_id', idList),
       ]);
-      setClients(cR.status === 'fulfilled' ? (cR.value.data || []) : []);
-      setProjects(pR.status === 'fulfilled' ? (pR.value.data || []) : []);
+      // Sanitize: remove any null/undefined rows Supabase might return (RLS edge cases)
+      const rawClients  = cR.status === 'fulfilled' ? (cR.value.data || []) : [];
+      const rawProjects = pR.status === 'fulfilled' ? (pR.value.data || []) : [];
+      setClients(rawClients.filter((c: any) => c != null && c.id != null));
+      setProjects(rawProjects.filter((p: any) => p != null && p.id != null));
     } catch (e) {
       console.error('loadUserData error:', e);
       setClients([]);
