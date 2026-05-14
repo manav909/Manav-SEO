@@ -1,12 +1,31 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+/**
+ * AuthContext — Single-source-of-truth session management
+ *
+ * ROOT CAUSE OF LOGOUT BUG (fixed here):
+ *
+ * The old code called BOTH supabase.auth.getSession() AND listened to
+ * onAuthStateChange simultaneously. On page load/refresh, Supabase fires
+ * onAuthStateChange with SIGNED_OUT briefly during token validation, THEN
+ * fires SIGNED_IN. The old SIGNED_OUT handler set authChecked=true with
+ * user=null — ApprovedRequired immediately redirected to "/" before the
+ * SIGNED_IN event arrived.
+ *
+ * Fix: use ONLY onAuthStateChange with the INITIAL_SESSION event.
+ * Supabase v2 guarantees INITIAL_SESSION fires exactly once on mount
+ * with the actual current session (or null). No race condition possible.
+ * SIGNED_OUT is ignored until INITIAL_SESSION has been processed.
+ */
+import React, {
+  createContext, useContext, useEffect, useState, useCallback, useRef,
+} from 'react';
 import { supabase } from '@/lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface Profile {
-  id: string;
-  email: string;
-  approved: boolean;
-  client_id?: string;
+  id:          string;
+  email:       string;
+  approved:    boolean;
+  client_id?:  string;
   client_ids?: string[];
 }
 
@@ -42,9 +61,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [projects,    setProjects]    = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
-  const loadingRef = useRef(false);
-  const currentUserId = useRef<string | null>(null);
 
+  const loadingRef          = useRef(false);
+  const currentUserId       = useRef<string | null>(null);
+  const initialSessionDone  = useRef(false);   // guards against SIGNED_OUT before INITIAL_SESSION
+
+  /* ── Load profile, clients, projects for an authenticated user ── */
   const loadUserData = useCallback(async (currentUser: User) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
@@ -54,13 +76,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (profErr) {
         if (profErr.code === 'PGRST116') {
+          // Profile doesn't exist yet — create it
           try {
             await supabase.from('profiles').insert({
-              id: currentUser.id,
-              email: currentUser.email || '',
+              id:       currentUser.id,
+              email:    currentUser.email || '',
               approved: false,
             });
-          } catch { /* ignore */ }
+          } catch { /* ignore insert error */ }
         }
         setProfile(null);
         setClients([]);
@@ -75,6 +98,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
+      // Build the list of client IDs this user has access to
       const idList: string[] = [];
       if (Array.isArray(prof.client_ids) && prof.client_ids.length) {
         idList.push(...prof.client_ids.filter(Boolean));
@@ -82,11 +106,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         idList.push(prof.client_id);
       }
 
+      // Also find clients linked by email
       if (currentUser.email) {
         const { data: byEmail } = await supabase
           .from('clients').select('id').eq('email', currentUser.email);
         byEmail?.forEach((c: any) => {
-          if (!idList.includes(c.id)) idList.push(c.id);
+          if (c?.id && !idList.includes(c.id)) idList.push(c.id);
         });
       }
 
@@ -100,13 +125,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         supabase.from('clients').select('*').in('id', idList),
         supabase.from('projects').select('*').in('client_id', idList),
       ]);
-      // Sanitize: remove any null/undefined rows Supabase might return (RLS edge cases)
+
+      // Sanitize: Supabase can return null rows with certain RLS configurations
       const rawClients  = cR.status === 'fulfilled' ? (cR.value.data || []) : [];
       const rawProjects = pR.status === 'fulfilled' ? (pR.value.data || []) : [];
       setClients(rawClients.filter((c: any) => c != null && c.id != null));
       setProjects(rawProjects.filter((p: any) => p != null && p.id != null));
     } catch (e) {
-      console.error('loadUserData error:', e);
+      console.error('[AuthContext] loadUserData error:', e);
       setClients([]);
       setProjects([]);
     } finally {
@@ -121,6 +147,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     currentUserId.current = null;
+    initialSessionDone.current = false;
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -128,43 +155,48 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProjects([]);
   }, []);
 
+  /* ── Single auth listener — INITIAL_SESSION is the source of truth ── */
   useEffect(() => {
     let mounted = true;
 
-    const hardTimeout = setTimeout(() => {
-      if (mounted) {
+    // Safety net: if Supabase never fires INITIAL_SESSION (offline, SDK bug),
+    // unblock the app after 8 seconds so the user sees the login page.
+    const fallbackTimer = setTimeout(() => {
+      if (mounted && !initialSessionDone.current) {
+        console.warn('[AuthContext] INITIAL_SESSION never fired — unblocking via timeout');
         setLoading(false);
         setAuthChecked(true);
       }
-    }, 10000);
-
-    const init = async () => {
-      try {
-        const { data: { session: s } } = await supabase.auth.getSession();
-        if (!mounted) return;
-        if (s?.user) {
-          currentUserId.current = s.user.id;
-          setSession(s);
-          setUser(s.user);
-          await loadUserData(s.user);
-        }
-      } catch (e) {
-        console.error('Auth init error:', e);
-      } finally {
-        if (mounted) {
-          clearTimeout(hardTimeout);
-          setLoading(false);
-          setAuthChecked(true);
-        }
-      }
-    };
-
-    init();
+    }, 8000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, s) => {
         if (!mounted) return;
 
+        /* ── INITIAL_SESSION: fires exactly once on mount ── */
+        if (event === 'INITIAL_SESSION') {
+          initialSessionDone.current = true;
+          if (s?.user) {
+            currentUserId.current = s.user.id;
+            setSession(s);
+            setUser(s.user);
+            await loadUserData(s.user);
+          }
+          // Whether session exists or not, auth check is now complete
+          clearTimeout(fallbackTimer);
+          if (mounted) {
+            setLoading(false);
+            setAuthChecked(true);
+          }
+          return;
+        }
+
+        /* ── Ignore all events until INITIAL_SESSION processed ──
+           This prevents a spurious SIGNED_OUT from firing before
+           the session is loaded and causing a false redirect.      */
+        if (!initialSessionDone.current) return;
+
+        /* ── SIGNED_OUT: user explicitly signed out ── */
         if (event === 'SIGNED_OUT' || !s) {
           currentUserId.current = null;
           setUser(null);
@@ -172,34 +204,39 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setProfile(null);
           setClients([]);
           setProjects([]);
-          setLoading(false);
-          setAuthChecked(true);
           return;
         }
 
-        if (event === 'TOKEN_REFRESHED') {
+        /* ── TOKEN_REFRESHED: session token renewed silently ── */
+        if (event === 'TOKEN_REFRESHED' && s) {
           setSession(s);
           return;
         }
 
-        if (event === 'SIGNED_IN') {
+        /* ── SIGNED_IN: user signed in on this tab or another ── */
+        if (event === 'SIGNED_IN' && s?.user) {
           const isNewUser = s.user.id !== currentUserId.current;
           currentUserId.current = s.user.id;
           setSession(s);
           setUser(s.user);
           if (isNewUser) {
-            setLoading(true);
             await loadUserData(s.user);
-            setLoading(false);
-            setAuthChecked(true);
           }
+          return;
+        }
+
+        /* ── USER_UPDATED: email/password changed ── */
+        if (event === 'USER_UPDATED' && s?.user) {
+          setSession(s);
+          setUser(s.user);
+          return;
         }
       }
     );
 
     return () => {
       mounted = false;
-      clearTimeout(hardTimeout);
+      clearTimeout(fallbackTimer);
       subscription.unsubscribe();
     };
   }, [loadUserData]);
