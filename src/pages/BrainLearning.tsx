@@ -218,6 +218,16 @@ function LearningCard({ l, onApprove, onReject, onDelete, onEdit, onDeactivate, 
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:6,marginBottom:6}}>
             <StatusBadge status={l.status}/>
+        {l.tags?.includes('contradiction-flagged') && (
+          <span style={{fontSize:8,fontFamily:'monospace',color:'#f59e0b',background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:4,padding:'2px 6px'}}>
+            ⚠ CONTRADICTION
+          </span>
+        )}
+        {l.auto_captured && l.status === 'pending_review' && (
+          <span style={{fontSize:8,fontFamily:'monospace',color:'rgba(99,102,241,0.7)',background:'rgba(99,102,241,0.08)',border:'1px solid rgba(99,102,241,0.2)',borderRadius:4,padding:'2px 6px'}}>
+            AUTO
+          </span>
+        )}
             <SourceBadge source={l.source}/>
             {l.applied_count > 0 && (
               <span style={{background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.25)',color:'#10b981',fontSize:9,padding:'2px 6px',borderRadius:3,fontFamily:'monospace',fontWeight:700}}>
@@ -431,6 +441,30 @@ export default function BrainLearning() {
       toast({ title: 'Activation failed', description: err?.message, variant: 'destructive' });
     }
     setApproving(null);
+  };
+
+  /* ─── Batch approve: auto-approve technical facts and audit findings ─── */
+  const handleBatchApproveSystem = async () => {
+    const systemLearnings = pending.filter(l =>
+      ['technical','quick-win'].includes(l.card_type) ||
+      ['audit_streaming','seo_agent_audit','crawl_analysis'].includes(l.source) ||
+      (l.confidence_score || 75) >= 85
+    );
+    if (!systemLearnings.length) {
+      toast({ title: 'No system learnings to auto-approve', description: 'Technical facts and audit findings with confidence ≥85 are auto-approved.' });
+      return;
+    }
+    let approved = 0;
+    for (const l of systemLearnings) {
+      try {
+        const updated = await callBrain('approve_learning', l.id);
+        if (updated) {
+          setLearnings(ls => ls.map(x => x.id === l.id ? { ...x, ...updated } : x));
+          approved++;
+        }
+      } catch (_e) {}
+    }
+    toast({ title: `⚡ ${approved} system learnings activated`, description: 'Technical facts and audit findings integrated into Brain.' });
   };
 
   const handleReject = async (id: string) => {
@@ -742,6 +776,18 @@ export default function BrainLearning() {
                 </div>
               )}
 
+              {/* Auto-approve banner for system learnings */}
+              {tab === 'pending' && !loading && systemPendingCount > 0 && (
+                <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'rgba(16,185,129,0.06)',border:'1px solid rgba(16,185,129,0.2)',borderRadius:10,marginBottom:12}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:11,fontWeight:700,color:'#10b981'}}>⚡ {systemPendingCount} system learnings ready for instant activation</div>
+                    <div style={{fontSize:10,color:'rgba(255,255,255,0.4)',marginTop:2}}>Technical facts, audit findings &amp; high-confidence (≥85) learnings — objective data, no approval needed.</div>
+                  </div>
+                  <button onClick={handleBatchApproveSystem} style={{background:'linear-gradient(135deg,rgba(16,185,129,0.2),rgba(6,182,212,0.15))',border:'1px solid rgba(16,185,129,0.4)',borderRadius:8,padding:'7px 14px',cursor:'pointer',color:'#10b981',fontSize:10,fontFamily:'monospace',fontWeight:700,whiteSpace:'nowrap'}}>
+                    ACTIVATE ALL
+                  </button>
+                </div>
+              )}
               {!loading && filtered.length === 0 && (
                 <div style={{textAlign:'center',padding:'48px 16px'}}>
                   <Brain size={40} style={{color:'rgba(255,255,255,0.05)',margin:'0 auto 16px'}}/>
