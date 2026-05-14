@@ -94,10 +94,16 @@ function buildBrainPrompt(ctx: {
   ].join("\n");
 
   const learningsLines = ctx.learnings.length > 0
-    ? ctx.learnings.slice(0, 10).map((l: any, i: number) =>
-        `[${i+1}] ${l.card_type?.toUpperCase()} — "${l.card_title}"\n    Improvement: ${l.improvement || "—"}`
-      ).join("\n")
-    : "No active learnings yet.";
+    ? ctx.learnings.slice(0, 15).map((l: any, i: number) => [
+        `[${i+1}] ${l.card_type?.toUpperCase()} | Applied: ${l.applied_count || 0}x | Confidence: ${l.confidence_score || 75}/100`,
+        `    Title: "${l.card_title}"`,
+        l.what_worked?.length ? `    ✓ Works: ${l.what_worked.slice(0, 2).join(" | ")}` : "",
+        l.what_missed?.length ? `    ✗ Gaps: ${l.what_missed.slice(0, 2).join(" | ")}` : "",
+        `    → Apply: ${l.improvement || "—"}`,
+        l.tags?.length ? `    Tags: ${l.tags.slice(0, 4).join(", ")}` : "",
+      ].filter(Boolean).join("\n")
+    ).join("\n---\n")
+    : "No active learnings yet — tell me to learn about this project.";
 
   const algoLines = ctx.algoItems.length > 0
     ? ctx.algoItems.slice(0, 8).map((a: any) =>
@@ -122,12 +128,14 @@ function buildBrainPrompt(ctx: {
 You are simultaneously a world-class SEO strategist, technical SEO expert, GEO specialist, and the operational brain of this software. You have complete knowledge of every feature and can direct the user or execute operations.
 
 RULES:
-1. ONLY state facts from the data provided. Never invent metrics.
-2. Use ACTION tags to execute operations (format below).
-3. End every response with the single highest-value next action.
-4. If data is missing, tell the user exactly which page has it.
-5. When asked to "learn", "remember", or "save" insights about a project — ALWAYS emit save_learning or save_multiple_learnings ACTION tags with the actual intelligence you've analysed. Never just describe learnings without saving them.
-6. After analysing a project, proactively save all key insights using save_multiple_learnings. Each learning needs: title (max 8 words), improvement (1 actionable sentence), cardType (technical/content/insight/geo/competitive), tags.
+1. FACTS ONLY: Never state a metric, ranking, or statistic that is not in the data provided. Flag every assumption explicitly.
+2. APPLY LEARNINGS: Every response must reference at minimum 1 Brain Learning (if available). State which learning you are applying and why.
+3. USE ACTIONS: Emit ⟦ACTION⟧ tags to execute real operations — navigate, save learning, add canvas card, fetch URL.
+4. SAVE INSIGHTS: When you discover something new or when asked to "learn", "remember", or "save" — emit save_learning or save_multiple_learnings ACTION tags immediately. Never just describe a learning in text.
+5. ESCALATE MISSING DATA: When data is missing that would change your recommendation, name the exact page to fill it and what specifically to add.
+6. END WITH HIGHEST-VALUE NEXT ACTION: Every response ends with a single, specific, executable next action.
+7. AUTO-APPROVAL: Label learnings clearly — technical facts, audit findings, and confirmed algorithm signals get confidence_score ≥ 85 (auto-approved). Hypotheses and strategic interpretations get confidence_score 65-79.
+8. NO DUPLICATION: Before saving a learning, check if you already referenced a similar one from BRAIN LEARNINGS above. If so, update it instead of creating a duplicate (use update_learning action).
 
 EXECUTABLE ACTIONS:
 Navigate: ⟦ACTION⟧{"type":"navigate","path":"/playground","label":"Open Strategy Canvas"}⟦/ACTION⟧
