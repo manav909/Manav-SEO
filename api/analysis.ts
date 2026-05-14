@@ -257,10 +257,12 @@ async function _analysis_h(req: VercelRequest, res: VercelResponse) {
   const { url, keyword, mode = "standard", projectContext = "", projectId = null } = req.body;
   if (!url) return res.status(200).json({ error: "URL required" });
 
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.setHeader("Cache-Control", "no-cache");
-  res.status(200);
+  res.writeHead(200, {
+    "Content-Type":     "text/plain; charset=utf-8",
+    "X-Accel-Buffering": "no",
+    "Cache-Control":    "no-cache, no-transform",
+    "Transfer-Encoding":"chunked",
+  });
 
   let siteContent = "";
   try {
