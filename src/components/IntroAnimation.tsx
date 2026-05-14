@@ -486,8 +486,8 @@ function ActV({onEnter}:{onEnter:()=>void}){
         animation:'ruleExpand 0.6s 0.18s ease forwards',transform:'scaleX(0)',transformOrigin:'center'}}/>
 
       {/* Sub-label above title */}
-      <div style={{fontSize:'clamp(0.36rem,min(0.68vw,1.02vh),0.54rem)',letterSpacing:'0.58em',
-        color:'rgba(0,255,209,0.26)',marginBottom:12,
+      <div style={{fontSize:'clamp(0.5rem,min(0.82vw,1.2vh),0.66rem)',letterSpacing:'0.48em',
+        color:'rgba(0,255,209,0.42)',marginBottom:12,
         animation:'fadeUp 0.5s 0.22s ease forwards',opacity:0}}>
         THE INTELLIGENCE PLATFORM FOR SEARCH DOMINANCE
       </div>
@@ -519,7 +519,8 @@ function ActV({onEnter}:{onEnter:()=>void}){
           transform: showSeason ? 'translateX(0)' : 'translateX(-6px)',
           filter:    showSeason ? 'blur(0)' : 'blur(6px)',
           transition: 'opacity 0.7s cubic-bezier(0.22,1,0.36,1), transform 0.7s cubic-bezier(0.22,1,0.36,1), filter 0.7s cubic-bezier(0.22,1,0.36,1)',
-        }}>{' SEASON'}</span>
+        marginLeft:'0.22em',
+        }}>SEASON</span>
 
         {/* Underline — appears after SEASON */}
         <div style={{
@@ -533,8 +534,8 @@ function ActV({onEnter}:{onEnter:()=>void}){
       </div>
 
       {/* By Manav */}
-      <div style={{fontSize:'clamp(0.42rem,min(0.8vw,1.2vh),0.62rem)',letterSpacing:'0.36em',
-        color:'rgba(255,255,255,0.13)',marginTop:14,
+      <div style={{fontSize:'clamp(0.55rem,min(0.9vw,1.35vh),0.72rem)',letterSpacing:'0.3em',
+        color:'rgba(255,255,255,0.32)',marginTop:14,
         opacity: showRest ? 1 : 0, transform: showRest ? 'none' : 'translateY(5px)',
         transition:'opacity 0.5s ease, transform 0.5s ease'}}>
         BY MANAV · WHERE INTELLIGENCE BECOMES DOMINANCE
@@ -549,7 +550,7 @@ function ActV({onEnter}:{onEnter:()=>void}){
           {v:'34%',l:'LLM CITATION SHARE',c:CYN},{v:'LIVE',l:'ALGO ALIGNMENT',c:GOLD}].map(({v,l,c},i)=>(
           <div key={i} style={{textAlign:'center',minWidth:60}}>
             <div style={{fontSize:'clamp(0.9rem,min(1.8vw,2.7vh),1.4rem)',fontWeight:200,color:c,textShadow:`0 0 14px ${c}28`}}>{v}</div>
-            <div style={{fontSize:'clamp(0.32rem,min(0.5vw,0.76vh),0.42rem)',color:'rgba(255,255,255,0.15)',letterSpacing:'0.14em',marginTop:3}}>{l}</div>
+            <div style={{fontSize:'clamp(0.48rem,min(0.62vw,0.92vh),0.56rem)',color:'rgba(255,255,255,0.38)',letterSpacing:'0.12em',marginTop:4}}>{l}</div>
           </div>
         ))}
       </div>
@@ -559,7 +560,7 @@ function ActV({onEnter}:{onEnter:()=>void}){
         border:'1px solid rgba(0,255,209,0.24)',borderRadius:0,
         padding:'clamp(9px,1.3vh,12px) clamp(32px,4.5vw,52px)',
         cursor:'pointer',letterSpacing:'0.4em',color:CYN,
-        fontSize:'clamp(0.5rem,min(0.8vw,1.2vh),0.62rem)',fontWeight:400,
+        fontSize:'clamp(0.6rem,min(0.9vw,1.35vh),0.72rem)',fontWeight:400,
         fontFamily:'"Courier New",monospace',transition:'all 0.25s',
         opacity: showRest ? 1 : 0, transform: showRest ? 'none' : 'translateY(6px)',
         transitionDelay:'0.2s',
@@ -569,8 +570,8 @@ function ActV({onEnter}:{onEnter:()=>void}){
         ENTER THE INTELLIGENCE
       </button>
 
-      <div style={{fontSize:'clamp(0.32rem,min(0.48vw,0.72vh),0.4rem)',color:'rgba(255,255,255,0.09)',
-        letterSpacing:'0.13em',marginTop:8,
+      <div style={{fontSize:'clamp(0.48rem,min(0.6vw,0.9vh),0.56rem)',color:'rgba(255,255,255,0.26)',
+        letterSpacing:'0.12em',marginTop:10,
         opacity: showRest ? 1 : 0, transition:'opacity 0.5s 0.35s ease'}}>
         APPROVED CLIENTS ONLY · MANAGED PERSONALLY BY MANAV
       </div>
