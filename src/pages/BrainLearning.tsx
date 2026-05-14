@@ -528,6 +528,11 @@ export default function BrainLearning() {
 
   /* ── Derived data ── */
   const pending  = learnings.filter(l => l.status === 'pending_review');
+  const systemPendingCount = pending.filter(l =>
+    ['technical','quick-win'].includes(l.card_type) ||
+    ['audit_streaming','seo_agent_audit','crawl_analysis'].includes(l.source) ||
+    (l.confidence_score || 75) >= 85
+  ).length;
   const active   = learnings.filter(l => l.status === 'active');
   const rejected = learnings.filter(l => l.status === 'rejected');
   const dimScores= calcDimScores(learnings);
