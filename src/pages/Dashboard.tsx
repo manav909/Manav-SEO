@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProject } from '@/contexts/ProjectContext';
 import { useProjectSync } from '@/hooks/useProjectSync';
 import PortalNav from '@/components/PortalNav';
 import {
