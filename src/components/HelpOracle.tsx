@@ -13,7 +13,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   HelpCircle, X, ChevronRight, Zap, Brain, Globe,
   Database, BarChart3, Layers, Cpu, BookOpen, Command,
-  Search, Sparkles, ChevronDown,
+  Search, Sparkles, ChevronDown, Rocket,
 } from 'lucide-react';
 
 /* ─── Help knowledge base ─── */
@@ -266,6 +266,48 @@ const PAGES: Record<string, {
     ],
     brainPrompt: 'Show me what\'s in my Brain Desk and tell me what I should do with the most important outputs. What needs action versus what is already done?',
   },
+
+  '/mission-control': {
+    title: 'Mission Control', icon: Rocket,
+    tagline: 'Your project\'s permanent intelligence dossier. Everything Brain needs to know, and everything you need to manage.',
+    sections: [
+      { title: 'Overview tab — what to check', icon: '🎯', items: [
+        'The 4 stat cards tell you Brain\'s health for this project: active learnings (target 20+), pending review (approve or reject these), desk items (outputs from task runs), tasks executed.',
+        'Intelligence Profile shows what Brain currently knows about this project — CMS, keywords, goals, competitors. Empty fields = Brain giving generic advice for that dimension.',
+        'The amber warning banner is critical: if CMS is not set, Brain cannot give HubSpot-specific, WordPress-specific, or Webflow-specific advice. Set it immediately.',
+        'Keywords empty = Brain aligns to nothing. Add at least 5 target keywords. Brain uses them on every canvas task and chat response.',
+        'Goals field: write specific, measurable goals (e.g. "rank #1 for X by Q3 2026") not vague ones. Brain references this to make every recommendation goal-oriented.',
+      ]},
+      { title: 'Learnings tab — managing Brain\'s memory', icon: '🧠', items: [
+        'Active learnings are injected into Brain on every response for this project. 0 active = generic advice. 20+ active = project-specific intelligence.',
+        'Pending Review learnings were auto-captured — review them before approving. Technical findings, audit results, CWV data: approve fast. Strategy and content learnings: read carefully first.',
+        'Edit a learning if its title or insight is vague. Brain reads the exact text — precision matters. "Site speed is important" teaches nothing. "LCP is 4.2s on mobile — compress hero images first" teaches everything.',
+        'Delete learnings that are wrong or outdated. Bad data is worse than no data. One wrong learning can corrupt 10 good responses.',
+        'Rejected learnings are kept for audit trail but Brain never reads them. You can delete them safely.',
+      ]},
+      { title: 'Edit tab — what impacts Brain most', icon: '⚡', items: [
+        'CMS Platform: single highest-impact field. Set it before anything else. HubSpot, WordPress, Webflow, Shopify, Framer, or custom. Brain gives platform-specific code, schema, and plugin advice only when this is set.',
+        'SEO Plugin: Yoast, RankMath, HubSpot SEO, All-in-One SEO, or none. Brain gives plugin-specific configuration steps when this is set.',
+        'Keywords: comma-separated. These seed every canvas card, every audit interpretation, every Brain chat. Add the 5–10 terms you most want to rank for.',
+        'Competitors: add 3–5. Brain builds gap analysis, identifies what they rank for that you don\'t, and frames every recommendation competitively.',
+        'Goals: one specific, measurable sentence. "Increase organic sessions from 4,000 to 20,000/month by December 2026" is useful. "Grow SEO" is not.',
+        'Organic Monthly: your current baseline. Brain uses this to calculate traffic impact for every recommendation (e.g. "this card could add ~2,400 sessions/month").',
+      ]},
+      { title: 'Danger Zone — what actually happens', icon: '🔒', items: [
+        'Archive: hides the project from active lists. All data is preserved. Canvas, desk, audits, tasks — all still browsable from Admin. Learnings migrate to global Brain knowledge.',
+        'Delete: removes the project record and associated data permanently. Cannot be undone. BUT: active learnings are always promoted to institutional knowledge first — Brain never loses what it learned.',
+        'Institutional knowledge (project_id = null): learnings from archived/deleted projects. Brain reads these for every project. Deleting 5 old projects doesn\'t delete their wisdom — it concentrates it.',
+        'When to archive vs delete: archive if the client relationship ended but you may reference the project. Delete only if the project was a test or the data is wrong.',
+      ]},
+    ],
+    tips: [
+      'Fill CMS and Keywords first — these two fields change Brain quality more than anything else.',
+      'Review pending learnings weekly — approve technical ones fast, read strategy ones carefully.',
+      'The Overview Intelligence Profile is your quick Brain health check — empty fields = Brain gaps.',
+    ],
+    brainPrompt: 'Look at this project\'s Mission Control — what\'s missing from the intelligence profile, which learnings should I prioritise reviewing, and what are the 3 most important things I should do right now to improve Brain\'s quality for this project?',
+  },
+
   '/admin': {
     title: 'Admin', icon: Sparkles,
     tagline: 'Client and project setup. Every project created here gets its own Brain intelligence.',
@@ -336,6 +378,13 @@ function buildSuggestion(page: string, activity: Record<string, Activity>): Sugg
   const totalPages = Object.keys(activity).length;
 
   const suggestions: Suggestion[] = [
+    // First time on mission-control
+    visits === 1 && page === '/mission-control' ? {
+      id: 'mc_first', page,
+      message: "Mission Control is your project\'s nerve centre. The Overview tab tells you Brain\'s health — start by filling CMS and Keywords in the Edit tab if they\'re empty.",
+      action: 'help', actionLabel: 'Show me what to fill', delay: 5000,
+    } : null,
+
     // First time on dashboard
     visits === 1 && page === '/dashboard' ? {
       id: 'welcome_dashboard', page,
