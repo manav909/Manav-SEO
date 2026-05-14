@@ -269,43 +269,43 @@ const PAGES: Record<string, {
 
   '/mission-control': {
     title: 'Mission Control', icon: Rocket,
-    tagline: 'Your project\'s permanent intelligence dossier. Everything Brain needs to know, and everything you need to manage.',
+    tagline: 'Presidential command. Every signal. One screen. Your advisor speaks only when it matters.',
     sections: [
-      { title: 'Overview tab — what to check', icon: '🎯', items: [
-        'The 4 stat cards tell you Brain\'s health for this project: active learnings (target 20+), pending review (approve or reject these), desk items (outputs from task runs), tasks executed.',
-        'Intelligence Profile shows what Brain currently knows about this project — CMS, keywords, goals, competitors. Empty fields = Brain giving generic advice for that dimension.',
-        'The amber warning banner is critical: if CMS is not set, Brain cannot give HubSpot-specific, WordPress-specific, or Webflow-specific advice. Set it immediately.',
-        'Keywords empty = Brain aligns to nothing. Add at least 5 target keywords. Brain uses them on every canvas task and chat response.',
-        'Goals field: write specific, measurable goals (e.g. "rank #1 for X by Q3 2026") not vague ones. Brain references this to make every recommendation goal-oriented.',
+      { title: 'The Vital Strip — what to read first', icon: '🎯', items: [
+        'Scan left to right. Green = healthy. Amber = decision waiting. One amber tile means one action needed.',
+        'Pending Approvals is the most important tile. Anything above zero demands your attention before anything else. Tap it — approve or reject in 30 seconds.',
+        'Brain Avg below 60 means at least one project is giving generic advice. Click the project with the lowest ring score on the left.',
+        'API Cost Today is your spend gauge. If it spikes unexpectedly, check Operations feed — something ran repeatedly.',
+        'Institutional Memory is your compound intelligence — learnings from closed projects still working for you. The higher this number, the smarter Brain is for every new project.',
       ]},
-      { title: 'Learnings tab — managing Brain\'s memory', icon: '🧠', items: [
-        'Active learnings are injected into Brain on every response for this project. 0 active = generic advice. 20+ active = project-specific intelligence.',
-        'Pending Review learnings were auto-captured — review them before approving. Technical findings, audit results, CWV data: approve fast. Strategy and content learnings: read carefully first.',
-        'Edit a learning if its title or insight is vague. Brain reads the exact text — precision matters. "Site speed is important" teaches nothing. "LCP is 4.2s on mobile — compress hero images first" teaches everything.',
-        'Delete learnings that are wrong or outdated. Bad data is worse than no data. One wrong learning can corrupt 10 good responses.',
-        'Rejected learnings are kept for audit trail but Brain never reads them. You can delete them safely.',
+      { title: 'Project Signal Cards — reading the rings', icon: '📡', items: [
+        'The ring score is everything. Green (80+): Brain is calibrated, giving specific advice. Red (<40): Brain is flying blind — act immediately.',
+        'NO CMS flag is critical. Without a CMS set, Brain cannot give platform-specific code, config, or plugin steps. Click the project → centre panel → ask Brain "what do I fix first".',
+        'STALE flag means no activity in 7+ days. Either the project is on hold (acceptable) or it has been forgotten (not acceptable).',
+        'Click any card to load its full intelligence in the centre panel. You do not need to go anywhere else.',
+        'The amber "N pending" button on each card approves all that project\'s pending learnings in one tap — no drawer needed for confident approvals.',
       ]},
-      { title: 'Edit tab — what impacts Brain most', icon: '⚡', items: [
-        'CMS Platform: single highest-impact field. Set it before anything else. HubSpot, WordPress, Webflow, Shopify, Framer, or custom. Brain gives platform-specific code, schema, and plugin advice only when this is set.',
-        'SEO Plugin: Yoast, RankMath, HubSpot SEO, All-in-One SEO, or none. Brain gives plugin-specific configuration steps when this is set.',
-        'Keywords: comma-separated. These seed every canvas card, every audit interpretation, every Brain chat. Add the 5–10 terms you most want to rank for.',
-        'Competitors: add 3–5. Brain builds gap analysis, identifies what they rank for that you don\'t, and frames every recommendation competitively.',
-        'Goals: one specific, measurable sentence. "Increase organic sessions from 4,000 to 20,000/month by December 2026" is useful. "Grow SEO" is not.',
-        'Organic Monthly: your current baseline. Brain uses this to calculate traffic impact for every recommendation (e.g. "this card could add ~2,400 sessions/month").',
+      { title: 'Centre Panel — your briefing room', icon: '🧠', items: [
+        'This is your one-on-one with the intelligence for the selected project. Brain knows its CMS, keywords, goals, and all active learnings.',
+        'Use the three quick prompts first: "What should I fix first?" gives you a priority order in under 30 seconds. No reading required.',
+        'Gap chips (amber badges under the quality bar) are specific missing fields. Each is a clickable directive — tap any chip to go to the right fix.',
+        'If you have 5 minutes: ask Brain "Give me this week\'s top 3 priorities". If you have 30 seconds: check the pending count, approve it, move on.',
+        'The centre panel stays loaded as you switch between projects on the left — your briefing updates instantly.',
       ]},
-      { title: 'Danger Zone — what actually happens', icon: '🔒', items: [
-        'Archive: hides the project from active lists. All data is preserved. Canvas, desk, audits, tasks — all still browsable from Admin. Learnings migrate to global Brain knowledge.',
-        'Delete: removes the project record and associated data permanently. Cannot be undone. BUT: active learnings are always promoted to institutional knowledge first — Brain never loses what it learned.',
-        'Institutional knowledge (project_id = null): learnings from archived/deleted projects. Brain reads these for every project. Deleting 5 old projects doesn\'t delete their wisdom — it concentrates it.',
-        'When to archive vs delete: archive if the client relationship ended but you may reference the project. Delete only if the project was a test or the data is wrong.',
+      { title: 'Operations & Command Strip — directing the system', icon: '⚡', items: [
+        'Operations feed shows what Brain has been doing. Green = completed successfully. Red = something failed — investigate.',
+        'Algo Intel watch shows which algorithm topics are loaded. Stale topics (7d+) should be refreshed — tap "manage" to open Algorithm Intel.',
+        'The Command Strip at the bottom is your direct line to every tool. You don\'t navigate to find things — you direct from here.',
+        '"Review Pending" in the Command Strip opens the full approvals drawer with every pending learning across every project.',
+        'LIVE mode auto-refreshes every 90 seconds. PAUSE it when you\'re reading the centre panel carefully.',
       ]},
     ],
     tips: [
-      'Fill CMS and Keywords first — these two fields change Brain quality more than anything else.',
-      'Review pending learnings weekly — approve technical ones fast, read strategy ones carefully.',
-      'The Overview Intelligence Profile is your quick Brain health check — empty fields = Brain gaps.',
+      'Start with Pending Approvals — clear the queue first, then assess project health.',
+      'A Brain Avg above 80 means your system is running at full intelligence. Below 60 means multiple projects need attention.',
+      'The president\'s one daily action: open Mission Control, clear pending, check rings, ask Brain one question per red project.',
     ],
-    brainPrompt: 'Look at this project\'s Mission Control — what\'s missing from the intelligence profile, which learnings should I prioritise reviewing, and what are the 3 most important things I should do right now to improve Brain\'s quality for this project?',
+    brainPrompt: 'I am reviewing Mission Control right now. Give me a presidential briefing: what is the current state of all my projects, what needs my attention today, and what are the top 3 directives I should issue to improve performance across the system? Be concise and specific — I have 5 minutes.',
   },
 
   '/admin': {
@@ -378,11 +378,17 @@ function buildSuggestion(page: string, activity: Record<string, Activity>): Sugg
   const totalPages = Object.keys(activity).length;
 
   const suggestions: Suggestion[] = [
-    // First time on mission-control
+    // Mission control — presidential advisor briefing
     visits === 1 && page === '/mission-control' ? {
       id: 'mc_first', page,
-      message: "Mission Control is your project\'s nerve centre. The Overview tab tells you Brain\'s health — start by filling CMS and Keywords in the Edit tab if they\'re empty.",
-      action: 'help', actionLabel: 'Show me what to fill', delay: 5000,
+      message: "Vital Strip first — scan for amber. Pending Approvals is your queue. Any project ring below 60 needs a directive. Your briefing is one click away.",
+      action: 'help', actionLabel: 'Full briefing', delay: 3500,
+    } : null,
+    // MC returning — nudge toward Brain briefing if not yet asked
+    visits === 3 && page === '/mission-control' ? {
+      id: 'mc_brief', page,
+      message: "Use the centre panel Brain chat — ask for this week's top 3 priorities. That's the 30-second presidential briefing.",
+      action: 'help', actionLabel: 'How to use it', delay: 5000,
     } : null,
 
     // First time on dashboard
@@ -537,12 +543,17 @@ export default function HelpOracle() {
           </div>
         )}
       </div>
-      {[
-        { icon: '📖', label: `How ${pageData.title} works`, action: () => { setPanelOpen(true); setSection(0); } },
-        { icon: '⚡', label: 'Quick tips', action: () => { setPanelOpen(true); setSection(1); } },
-        { icon: '🧠', label: 'Ask Brain about this', action: () => { setPanelOpen(true); askBrain(ctxMenu.topic ? `Help me understand: "${ctxMenu.topic}" in the context of ${pageData.title}` : pageData.brainPrompt); } },
-        ctxMenu.topic ? { icon: '🔍', label: `Search: "${ctxMenu.topic.slice(0,25)}"`, action: () => { setPanelOpen(true); setSearch(ctxMenu.topic!); } } : null,
-      ].filter(Boolean).map((item: any, i) => (
+      {(page === '/mission-control' ? [
+          { icon: '📋', label: 'Presidential briefing', action: () => { setPanelOpen(true); askBrain(pageData.brainPrompt); } },
+          { icon: '⚡', label: 'What needs action now', action: () => { setPanelOpen(true); askBrain("What needs my attention across all projects in the next 30 minutes? Prioritise by urgency."); } },
+          { icon: '🧠', label: 'Brain quality report', action: () => { setPanelOpen(true); askBrain("Brain quality report: which projects are optimal, which are weak, top action per each weak project?"); } },
+          ctxMenu.topic ? { icon: '🔍', label: `Search: "${ctxMenu.topic?.slice(0,20)}"`, action: () => { setPanelOpen(true); setSearch(ctxMenu.topic!); } } : null,
+        ] : [
+          { icon: '📖', label: `How ${pageData.title} works`, action: () => { setPanelOpen(true); setSection(0); } },
+          { icon: '⚡', label: 'Quick tips', action: () => { setPanelOpen(true); setSection(1); } },
+          { icon: '🧠', label: 'Ask Brain about this', action: () => { setPanelOpen(true); askBrain(ctxMenu.topic ? `Help me understand: "${ctxMenu.topic}" in the context of ${pageData.title}` : pageData.brainPrompt); } },
+          ctxMenu.topic ? { icon: '🔍', label: `Search: "${ctxMenu.topic?.slice(0,25)}"`, action: () => { setPanelOpen(true); setSearch(ctxMenu.topic!); } } : null,
+        ]).filter(Boolean).map((item: any, i) => (
         <button key={i} onClick={() => { item.action(); setCtxMenu(c => ({ ...c, visible: false })); }}
           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
             background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.7)',
@@ -621,23 +632,59 @@ export default function HelpOracle() {
   );
 
   /* ─── FLOATING TRIGGER ─── */
+  const isMC = page === '/mission-control';
+
   const FloatingTrigger = () => (
-    <button onClick={() => setPanelOpen(true)} style={{
-      position: 'fixed', bottom: 24, left: 24, zIndex: 9997,
-      width: 36, height: 36, borderRadius: '50%',
-      background: 'rgba(8,10,24,0.85)',
-      border: '1px solid rgba(99,102,241,0.3)',
-      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      backdropFilter: 'blur(12px)',
-      boxShadow: '0 0 0 1px rgba(99,102,241,0.15), 0 4px 16px rgba(0,0,0,0.4)',
-      transition: 'all 0.2s',
-      opacity: 0.6,
-    }}
-    title="Help & Knowledge (Right-click anywhere for more)"
-    onMouseEnter={e => { Object.assign(e.currentTarget.style, { opacity: '1', transform: 'scale(1.1)', boxShadow: '0 0 0 1px rgba(99,102,241,0.5), 0 0 20px rgba(99,102,241,0.3)' }); }}
-    onMouseLeave={e => { Object.assign(e.currentTarget.style, { opacity: '0.6', transform: 'scale(1)', boxShadow: '0 0 0 1px rgba(99,102,241,0.15), 0 4px 16px rgba(0,0,0,0.4)' }); }}
+    <button
+      onClick={() => {
+        setPanelOpen(true);
+        // On MC: auto-load the presidential briefing
+        if (isMC && !activeQ) {
+          askBrain(pageData.brainPrompt);
+        }
+      }}
+      style={{
+        position: 'fixed', bottom: 24, left: 24, zIndex: 9997,
+        height: isMC ? 32 : 36,
+        width: isMC ? 'auto' : 36,
+        padding: isMC ? '0 14px' : '0',
+        borderRadius: isMC ? 8 : '50%',
+        background: isMC ? 'rgba(255,184,0,0.1)' : 'rgba(8,10,24,0.85)',
+        border: isMC ? '1px solid rgba(255,184,0,0.35)' : '1px solid rgba(99,102,241,0.3)',
+        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: 6,
+        backdropFilter: 'blur(12px)',
+        boxShadow: isMC
+          ? '0 0 0 1px rgba(255,184,0,0.15), 0 4px 16px rgba(0,0,0,0.4)'
+          : '0 0 0 1px rgba(99,102,241,0.15), 0 4px 16px rgba(0,0,0,0.4)',
+        transition: 'all 0.2s',
+        opacity: isMC ? 0.8 : 0.6,
+        fontFamily: '"Courier New",monospace',
+      }}
+      title={isMC ? 'Presidential Briefing (Right-click for more directives)' : 'Help & Knowledge (Right-click anywhere for more)'}
+      onMouseEnter={e => {
+        Object.assign(e.currentTarget.style, {
+          opacity: '1', transform: 'scale(1.04)',
+          boxShadow: isMC
+            ? '0 0 0 1px rgba(255,184,0,0.5), 0 0 20px rgba(255,184,0,0.2)'
+            : '0 0 0 1px rgba(99,102,241,0.5), 0 0 20px rgba(99,102,241,0.3)',
+        });
+      }}
+      onMouseLeave={e => {
+        Object.assign(e.currentTarget.style, {
+          opacity: isMC ? '0.8' : '0.6', transform: 'scale(1)',
+          boxShadow: isMC
+            ? '0 0 0 1px rgba(255,184,0,0.15), 0 4px 16px rgba(0,0,0,0.4)'
+            : '0 0 0 1px rgba(99,102,241,0.15), 0 4px 16px rgba(0,0,0,0.4)',
+        });
+      }}
     >
-      <HelpCircle size={15} style={{ color: 'rgba(165,180,252,0.7)' }}/>
+      {isMC
+        ? <>
+            <span style={{ fontSize: 11, color: 'rgba(255,184,0,0.8)', letterSpacing: '0.08em', fontWeight: 700 }}>◈ ADVISOR</span>
+          </>
+        : <HelpCircle size={15} style={{ color: 'rgba(165,180,252,0.7)' }}/>
+      }
     </button>
   );
 
@@ -688,8 +735,8 @@ export default function HelpOracle() {
             <Icon size={14} style={{ color: '#a5b4fc' }}/>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, fontFamily: 'monospace', color: '#a5b4fc', fontWeight: 900, letterSpacing: '0.08em' }}>
-              ◈ HELP ORACLE — {pageData.title.toUpperCase()}
+            <div style={{ fontSize: 11, fontFamily: 'monospace', color: page === '/mission-control' ? '#FFB800' : '#a5b4fc', fontWeight: 900, letterSpacing: '0.08em' }}>
+              {page === '/mission-control' ? '◈ PRESIDENTIAL ADVISOR' : `◈ HELP ORACLE — ${pageData.title.toUpperCase()}`}
             </div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>
               {pageData.tagline}
@@ -767,7 +814,7 @@ export default function HelpOracle() {
                     boxShadow: '0 0 12px rgba(99,102,241,0.15)',
                   }}>
                   <Brain size={11}/>
-                  ASK BRAIN
+                  {page === '/mission-control' ? 'GET BRIEFING' : 'ASK BRAIN'}
                 </button>
               </div>
             </div>
