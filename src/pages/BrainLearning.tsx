@@ -403,7 +403,7 @@ export default function BrainLearning() {
       });
       const data = await res.json().catch(() => null);
       if (data && data.learnings) {
-        setLearnings(data.learnings || []);
+        setLearnings((data.learnings || []).filter((l: any) => l && l.id));
       } else if (data?.error) {
         // Show toast but don't crash - Brain Learning page still renders
         toast({ title: 'Could not load learnings', description: data.error, variant: 'destructive' });
@@ -440,7 +440,7 @@ export default function BrainLearning() {
     setApproving(id);
     try {
       const updated = await callBrain('approve_learning', id);
-      if (updated) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
+      if (updated?.id) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
       toast({ title: '⚡ NEURAL PATHWAY ACTIVATED', description: 'Learning integrated into Manav Brain.' });
     } catch (err: any) {
       toast({ title: 'Activation failed', description: err?.message, variant: 'destructive' });
@@ -475,7 +475,7 @@ export default function BrainLearning() {
   const handleReject = async (id: string) => {
     try {
       const updated = await callBrain('reject_learning', id);
-      if (updated) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
+      if (updated?.id) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
     } catch (err: any) {
       toast({ title: 'Dismiss failed', description: err?.message, variant: 'destructive' });
     }
@@ -484,7 +484,7 @@ export default function BrainLearning() {
   const handleDeactivate = async (id: string) => {
     try {
       const updated = await callBrain('deactivate_learning', id);
-      if (updated) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
+      if (updated?.id) setLearnings(ls => ls.map(l => l.id === id ? { ...l, ...updated } : l));
       toast({ title: 'Moved to review queue' });
     } catch (err: any) {
       toast({ title: 'Failed', description: err?.message, variant: 'destructive' });
@@ -517,7 +517,7 @@ export default function BrainLearning() {
       });
       const data = await res.json().catch(() => null);
       if (!data || data.error) throw new Error(data?.error || 'Update failed');
-      setLearnings(ls => ls.map(l => l.id === editingL.id ? data.learning : l));
+      setLearnings(ls => ls.map(l => l.id === editingL.id ? (data.learning || l) : l));
       setEditingL(null);
       toast({ title: 'Neural pathway updated' });
     } catch (err: any) {
@@ -555,7 +555,7 @@ export default function BrainLearning() {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'app-page' },
           body: JSON.stringify({ action: 'update_learning', id, tags: cleanTags }),
         });
-        setLearnings(ls => ls.map(x => x.id === id ? { ...x, tags: cleanTags } : x));
+        if (id) setLearnings(ls => ls.map(x => x.id === id ? { ...x, tags: cleanTags } : x));
       } catch (_e) {}
     }
     toast({ title: `✓ ${ids.length} learnings marked fresh` });
