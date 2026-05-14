@@ -76,6 +76,7 @@ const AppRoutes = () => {
 
       {/* Manav Brain — only for approved/signed-in users. Guests have ManavBrainGuest on Index. */}
       {isApproved && <ManavBrainAssistant />}
+      {isApproved && <HelpOracle />}
     </>
   );
 };
