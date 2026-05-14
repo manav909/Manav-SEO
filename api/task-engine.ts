@@ -32,7 +32,7 @@ export const config = { maxDuration: 300, regions: ["iad1"] };
 /* ── Lazy DB ── */
 function db() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder";
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder";
   return createClient(url, key);
 }
 
