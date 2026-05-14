@@ -9,7 +9,7 @@
  * - Manav Brain integration for on-demand answers
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   HelpCircle, X, ChevronRight, Zap, Brain, Globe,
   Database, BarChart3, Layers, Cpu, BookOpen, Command,
@@ -381,6 +381,7 @@ function buildSuggestion(page: string, activity: Record<string, Activity>): Sugg
 /* ─── Main component ─── */
 export default function HelpOracle() {
   const location = useLocation();
+  const navigate  = useNavigate();
   const page     = location.pathname;
   const pageData = PAGES[page];
 
@@ -548,7 +549,7 @@ export default function HelpOracle() {
                 setBubbleSeen(s => new Set([...s, bubble.id]));
                 setBubble(null);
                 if (bubble.action === 'help') setPanelOpen(true);
-                if (bubble.action === 'navigate' && bubble.page.startsWith('/')) window.location.href = '/algorithm-intel';
+                if (bubble.action === 'navigate') navigate('/algorithm-intel');
               }} style={{
                 background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.4)',
                 borderRadius: 6, padding: '4px 10px', cursor: 'pointer',

@@ -54,8 +54,9 @@ export class BrainErrorBoundary extends React.Component<Props, State> {
   };
 
   handleGoHome = () => {
+    // Use pushState to navigate without a full reload — preserves session
     this.setState({ hasError: false, error: null });
-    window.location.href = '/dashboard';
+    try { window.history.pushState({}, '', '/dashboard'); } catch (_e) { /* ignore */ }
   };
 
   render() {
