@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import PortalNav from '@/components/PortalNav';
@@ -27,7 +26,6 @@ const ConfBadge = ({ confidence }: { confidence: number }) => {
   const Icon = confidence >= 80 ? CheckCircle2 : confidence >= 50 ? Info : AlertTriangle;
   return (
     <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-mono ${cfg.bg} ${cfg.color}`}>
-      <HelpPanel {...HELP["audit"]} pageId="audit" />
       <Icon className="h-2.5 w-2.5" />{cfg.label}
     </span>
   );

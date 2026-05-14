@@ -3,7 +3,6 @@
  * Searchable, filterable, exportable as PDF / Markdown / JSON.
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -138,7 +137,6 @@ function DeskCard({ item, onPin, onDelete, onExport }: {
       borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 8,
       transition: 'border-color 0.2s',
     }}>
-      <HelpPanel {...HELP["desk"]} pageId="desk" />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ width: 28, height: 28, borderRadius: 7, background: `${cfg.color}14`,

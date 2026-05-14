@@ -1,5 +1,4 @@
 import { useEffect, useState, useMemo } from 'react';
-import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -124,7 +123,6 @@ const ConfidenceBadge = ({ confidence, source }: { confidence: Confidence; sourc
   const Icon = cfg.icon;
   return (
     <div className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color}`}>
-      <HelpPanel {...HELP["dashboard"]} pageId="dashboard" />
       <Icon className="h-2.5 w-2.5" />
       <span className="font-mono font-semibold">{cfg.label}</span>
       <span className="opacity-60">· {source}</span>

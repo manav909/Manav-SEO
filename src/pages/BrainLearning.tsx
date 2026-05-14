@@ -1,6 +1,5 @@
 import { supabase } from '@/lib/supabase';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import HelpPanel, { HELP } from '@/components/HelpPanel';
 import DeepEnrichModal from '@/components/DeepEnrichModal';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -631,8 +630,6 @@ export default function BrainLearning() {
         />
 
         <div style={{maxWidth:1200,margin:'0 auto',padding:'32px 24px',display:'flex',flexDirection:'column',gap:28}}>
-
-          <HelpPanel {...HELP["brain-learning"]} pageId="brain-learning" />
 
           {/* ── HERO HEADER ── */}
           <div style={{textAlign:'center',padding:'20px 0 8px'}}>

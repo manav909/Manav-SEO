@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import HelpPanel, { HELP } from '@/components/HelpPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import {
@@ -817,7 +816,6 @@ ${sect('Priority Actions',result.priority_actions||[],(a)=>`<div class="c ${a.im
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <HelpPanel {...HELP["algorithm-intel"]} pageId="algorithm-intel" />
       <PortalNav companyName={client?.company ? `${client.company} — Algorithms` : 'Algorithm Intelligence'}
         projects={projects} selectedProjectId={selProjId} onProjectChange={setSelProjId}/>
 
