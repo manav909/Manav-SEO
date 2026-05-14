@@ -258,7 +258,7 @@ export default function MissionControl() {
             badge={t.pendingApprovals}
             defaultOpen={true}
             action={
-              <button onClick={() => navigate('/admin')} className="text-[9px] text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); navigate('/admin'); }}>
+              <button onClick={e => { e.stopPropagation(); navigate('/admin'); }} className="text-[9px] text-primary hover:underline flex items-center gap-0.5">
                 <Plus className="h-2.5 w-2.5"/>New
               </button>
             }>
