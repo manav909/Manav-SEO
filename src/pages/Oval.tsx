@@ -107,7 +107,10 @@ function CompetitiveRadar({ competitors, keywords }: { competitors: string[]; ke
 }
 
 /* ── What-IF Simulator ── */
-function WhatIfSimulator({ project, projectContext }: { project: any; projectContext: string }) {
+function WhatIfSimulator({ project, projectContext, learnings, algoItems, canvasCards }: {
+  project: any; projectContext: string;
+  learnings?: any[]; algoItems?: any[]; canvasCards?: any[];
+}) {
   const [scenario, setScenario] = useState('');
   const [result,   setResult]   = useState('');
   const [running,  setRunning]  = useState(false);
@@ -128,14 +131,18 @@ function WhatIfSimulator({ project, projectContext }: { project: any; projectCon
       const r = await fetch('/api/intelligence', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
-          mode: 'chat',
+          mode: 'brain_assistant',
           question: `WHAT-IF SCENARIO: "${s}"
 Based on: ${projectContext}
 Run a strategic simulation. Predict: traffic impact, timeline, risks, and the one thing that must happen for this scenario to succeed. Be specific with numbers. Format: IMPACT | TIMELINE | RISK | KEY CONDITION`,
           projectSummary: projectContext,
           brainAssistantContext: {
-            systemOverride: 'You are a strategic simulation engine for SEO Season. Give precise, data-driven scenario predictions. Always include estimated numbers.',
-            projectContext: {}, learnings: [], algoItems: [], canvasBlocks: [], history: [],
+            systemOverride: 'You are a strategic simulation engine for SEO Season. Give precise, data-driven scenario predictions. Always include estimated numbers from the brain learnings and canvas context provided.',
+            projectContext: project || {},
+            learnings:    learnings    || [],
+            algoItems:    algoItems    || [],
+            canvasBlocks: canvasCards  || [],
+            history: [],
           },
         }),
       });
@@ -205,13 +212,11 @@ export default function Oval() {
   const { selectedProjectId, setSelectedProjectId, selectedProject } = useProject();
 
   const { data, loading, error: dataError, reload: load } = useLaunchpadData();
-  // algoTopics come from data.algoTopics
 
-  const [toast,      setToast]      = useState('');
+  const [toast,          setToast]          = useState('');
+  const [activeLearnings, setActiveLearnings] = useState<any[]>([]);
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
-
-  // load() provided by useLaunchpadData
 
   const safeClients  = (clients  || []).filter((c: any) => c?.id);
   const safeProjects = (projects || []).filter((p: any) => p?.id);
@@ -219,29 +224,58 @@ export default function Oval() {
   const activeProjs  = allProjs.filter((p: any) => p.status !== 'archived');
   const t            = data?.totals || {};
 
-  /* Canvas cards from selected project — from projects table playground_canvas */
+  /* Canvas cards from selected project */
   const [canvasCards, setCanvasCards] = useState<any[]>([]);
   useEffect(() => {
     if (!selectedProjectId) return;
     supabase.from('projects').select('playground_canvas').eq('id', selectedProjectId).single()
-      .then(({ data }) => {
-        if (data?.playground_canvas) {
-          try { setCanvasCards(JSON.parse(data.playground_canvas) || []); } catch { setCanvasCards([]); }
+      .then(({ data: d }) => {
+        if (d?.playground_canvas) {
+          try { setCanvasCards(JSON.parse(d.playground_canvas) || []); } catch { setCanvasCards([]); }
         } else { setCanvasCards([]); }
       });
   }, [selectedProjectId]);
 
+  /* Active learnings for selected project — feed into Brain's context */
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    supabase
+      .from('brain_learnings')
+      .select('id,card_type,card_title,improvement,tags,confidence_score,applied_count,what_worked,what_missed')
+      .eq('project_id', selectedProjectId)
+      .eq('status', 'active')
+      .order('applied_count', { ascending: false })
+      .limit(15)
+      .then(({ data: d }) => setActiveLearnings(d || []));
+  }, [selectedProjectId]);
+
   /* Build project context string for advisor */
-  const selProj    = allProjs.find((p: any) => p.id === selectedProjectId) || selectedProject;
-  const projCtx    = selProj
-    ? `Project: ${selProj.name} | CMS: ${selProj.cms || 'not set'} | Keywords: ${(selProj.keywords || []).slice(0, 5).join(', ') || 'not set'} | Competitors: ${(selProj.competitors || []).join(', ') || 'none'} | Brain score: ${selProj.brainScore || 0}/100 | Goals: ${selProj.goals || 'not set'}`
+  const selProj = allProjs.find((p: any) => p.id === selectedProjectId) || selectedProject;
+  const projCtx = selProj
+    ? `Project: ${selProj.name} | CMS: ${selProj.cms || 'not set'} | Keywords: ${(selProj.keywords || []).slice(0, 5).join(', ') || 'not set'} | Competitors: ${(selProj.competitors || []).join(', ') || 'none'} | Brain score: ${selProj.brainScore || 0}/100 | Active learnings: ${selProj.activeLearnings || 0} | Goals: ${selProj.goals || 'not set'}`
     : `Empire overview: ${activeProjs.length} active projects across ${safeClients.length} clients`;
+
+  /* Map algo topics into the shape intelligence.ts expects */
+  const algoForAdvisor = (data?.algoTopics || []).map((a: any) => ({
+    title:        a.topic,
+    summary:      a.summary || '',
+    impact_level: a.freshness_score >= 7 ? 'high' : a.freshness_score >= 4 ? 'medium' : 'low',
+    engine:       'google',
+  }));
 
   const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  /* Live signals — combine algo topics with freshness */
+  /* Live signals */
   const freshSignals  = (data?.algoTopics||[]).filter(a => a.freshness_score >= 7).slice(0, 5);
   const staleWarnings = (data?.algoTopics||[]).filter(a => a.freshness_score < 4).slice(0, 3);
+
+  /* Brain activity — recent tasks + pending learnings for selected project */
+  const recentActivity = (data?.recentTasks || [])
+    .filter((t: any) => !selectedProjectId || t.project_id === selectedProjectId)
+    .slice(0, 6);
+  const pendingForProject = (data?.pendingLearnings || [])
+    .filter((l: any) => !selectedProjectId || l.project_id === selectedProjectId)
+    .slice(0, 5);
 
   /* Strategy status from canvas cards */
   const strategyStatus = {
@@ -358,7 +392,10 @@ export default function Oval() {
           <div className="flex-1 px-3 py-2.5 min-h-0 overflow-hidden flex flex-col">
             <WhatIfSimulator
               project={selProj}
-              projectContext={projCtx}/>
+              projectContext={projCtx}
+              learnings={activeLearnings}
+              algoItems={algoForAdvisor}
+              canvasCards={canvasCards}/>
           </div>
         </div>
 
@@ -432,21 +469,55 @@ export default function Oval() {
               </div>
             )}
 
-            {/* All projects brain health */}
-            {activeProjs.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-border/15">
-                <div className="text-[9px] font-mono text-muted-foreground/30 mb-2">EMPIRE BRAIN QUALITY</div>
-                {activeProjs.slice(0, 5).map((p: any) => (
-                  <div key={p.id} className="flex items-center gap-2 mb-1.5">
-                    <button onClick={() => { setSelectedProjectId(p.id); }} className="text-[10px] text-foreground/55 truncate w-20 text-left hover:text-primary transition-colors shrink-0">{p.name}</button>
-                    <div className="flex-1 h-1 rounded-full bg-secondary/30 overflow-hidden">
-                      <div className={`h-full rounded-full ${scBg(p.brainScore??0)} transition-all duration-700`} style={{ width: `${p.brainScore ?? 0}%` }}/>
-                    </div>
-                    <span className={`text-[9px] font-mono w-5 text-right shrink-0 ${scColor(p.brainScore??0)}`}>{p.brainScore ?? 0}</span>
-                  </div>
-                ))}
+            {/* Brain Activity Feed */}
+            <div className="mt-3 pt-3 border-t border-border/15">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1 text-[9px] font-mono text-violet-400/50">
+                  <Activity className="h-2.5 w-2.5"/> BRAIN ACTIVITY
+                </div>
+                {pendingForProject.length > 0 && (
+                  <button onClick={() => navigate('/brain-learning')}
+                    className="text-[9px] text-amber-400/60 hover:text-amber-400 font-mono">
+                    {pendingForProject.length} pending →
+                  </button>
+                )}
               </div>
-            )}
+
+              {/* Pending learnings needing approval */}
+              {pendingForProject.slice(0, 3).map((l: any) => (
+                <div key={l.id} className="flex items-start gap-2 py-1.5 border-b border-border/10 last:border-0">
+                  <div className="h-1.5 w-1.5 rounded-full bg-amber-400/70 shrink-0 mt-1"/>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-amber-300/70 truncate">{l.card_title || l.card_type}</p>
+                    {l.improvement && <p className="text-[9px] text-muted-foreground/35 mt-0.5 line-clamp-1">{l.improvement}</p>}
+                  </div>
+                  <span className="text-[8px] font-mono text-amber-400/40 shrink-0">REVIEW</span>
+                </div>
+              ))}
+
+              {/* Recent task executions */}
+              {recentActivity.length > 0 && (
+                <>
+                  <div className="text-[9px] font-mono text-muted-foreground/25 mt-2 mb-1">RECENT TASKS</div>
+                  {recentActivity.slice(0, 4).map((t: any, i: number) => {
+                    const statusColor = t.status === 'completed' ? 'bg-emerald-400' : t.status === 'failed' ? 'bg-red-400' : 'bg-sky-400';
+                    return (
+                      <div key={t.id || i} className="flex items-center gap-2 py-1 border-b border-border/10 last:border-0">
+                        <div className={`h-1.5 w-1.5 rounded-full ${statusColor} shrink-0`}/>
+                        <p className="flex-1 text-[10px] text-foreground/50 truncate">{t.task_type || 'task'}</p>
+                        <span className="text-[8px] font-mono text-muted-foreground/30 shrink-0">
+                          {t.created_at ? new Date(t.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+
+              {recentActivity.length === 0 && pendingForProject.length === 0 && !loading && (
+                <p className="text-[10px] text-muted-foreground/20 text-center py-2">No recent brain activity</p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -457,7 +528,10 @@ export default function Oval() {
             <PresidentialAdvisor
               mode="strategic"
               projectName={selProj?.name}
-              projectContext={projCtx}/>
+              projectContext={projCtx}
+              learnings={activeLearnings}
+              algoItems={algoForAdvisor}
+              canvasBlocks={canvasCards}/>
           </div>
 
           {/* Quick navigation */}

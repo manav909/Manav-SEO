@@ -13,6 +13,9 @@ interface Props {
   projectName?: string;
   projectContext?: string;
   compact?: boolean;
+  learnings?: any[];
+  algoItems?: any[];
+  canvasBlocks?: any[];
 }
 
 const STRATEGIC_PROMPTS = [
@@ -30,7 +33,7 @@ const OPERATIONAL_PROMPTS = [
   "Top 3 directives to issue across all projects today.",
 ];
 
-export default function PresidentialAdvisor({ mode, projectName, projectContext, compact }: Props) {
+export default function PresidentialAdvisor({ mode, projectName, projectContext, compact, learnings, algoItems, canvasBlocks }: Props) {
   const [input,    setInput]    = useState('');
   const [answer,   setAnswer]   = useState('');
   const [asking,   setAsking]   = useState(false);
@@ -54,6 +57,10 @@ export default function PresidentialAdvisor({ mode, projectName, projectContext,
     const q = query.trim();
     setInput('');
     setAnswer('');
+    const historyForApi = history.slice(-6).map(h => [
+      { role: 'user', content: h.q },
+      { role: 'assistant', content: h.a },
+    ]).flat();
 
     const systemContext = isStrategic
       ? `You are the Chief Strategist to President Manav, the founder of SEO Season — an elite intelligence-led SEO empire. Your role is to give bold, specific, competitive strategic advice. Think like a war room advisor: scenarios, predictions, competitive moves, leverage points. Never hedge. Never give generic advice. Every response should make the president more confident and capable.${projectName ? ` Current focus: ${projectName}.` : ''}${projectContext ? ` Context: ${projectContext}` : ''}`
@@ -70,7 +77,10 @@ export default function PresidentialAdvisor({ mode, projectName, projectContext,
           brainAssistantContext: {
             systemOverride: systemContext,
             projectContext: { name: projectName || 'SEO Season' },
-            learnings: [], algoItems: [], canvasBlocks: [], history: [],
+            learnings:    learnings    || [],
+            algoItems:    algoItems    || [],
+            canvasBlocks: canvasBlocks || [],
+            history:      historyForApi,
           },
         }),
       });
@@ -90,7 +100,7 @@ export default function PresidentialAdvisor({ mode, projectName, projectContext,
       setAnswer('Your advisor is unavailable. Check the API is running.');
     }
     setAsking(false);
-  }, [asking, isStrategic, projectName, projectContext]);
+  }, [asking, isStrategic, projectName, projectContext, learnings, algoItems, canvasBlocks, history]);
 
   if (compact && !expanded) {
     return (

@@ -9,6 +9,7 @@ import { useProject }  from '@/contexts/ProjectContext';
 import { ProjectDataBanner } from '@/components/ProjectDataBanner';
 import { useAuth }     from '@/contexts/AuthContext';
 import { useLaunchpadData } from '@/hooks/useLaunchpadData';
+import { supabase }         from '@/lib/supabase';
 import PresidentialAdvisor from '@/components/PresidentialAdvisor';
 import {
   Rocket, Brain, Activity, Clock, CheckCircle2, AlertTriangle,
@@ -108,11 +109,12 @@ export default function MissionControl() {
   const { projects } = useAuth();
 
   const { data, loading, error, reload: load } = useLaunchpadData();
-  const [selectedId,   setSelectedId]   = useState('');
-  const [liveMode,     setLiveMode]     = useState(true);
-  const [approving,    setApproving]    = useState(new Set<string>());
-  const [toast,        setToast]        = useState('');
-  const [showApprovals,setShowApprovals]= useState(false);
+  const [selectedId,    setSelectedId]    = useState('');
+  const [liveMode,      setLiveMode]      = useState(true);
+  const [approving,     setApproving]     = useState(new Set<string>());
+  const [toast,         setToast]         = useState('');
+  const [showApprovals, setShowApprovals] = useState(false);
+  const [activeLearnings, setActiveLearnings] = useState<any[]>([]);
   const autoRef = useRef<ReturnType<typeof setInterval>>();
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
@@ -133,6 +135,19 @@ export default function MissionControl() {
     if (selectedId) setSelectedProjectId(selectedId);
   }, [selectedId]);
 
+  /* Active learnings for selected project — feeds advisor context */
+  useEffect(() => {
+    if (!selectedId) return;
+    supabase
+      .from('brain_learnings')
+      .select('id,card_type,card_title,improvement,tags,confidence_score,applied_count,what_worked,what_missed')
+      .eq('project_id', selectedId)
+      .eq('status', 'active')
+      .order('applied_count', { ascending: false })
+      .limit(15)
+      .then(({ data: d }) => setActiveLearnings(d || []));
+  }, [selectedId]);
+
   const approveAll = async (projectId: string, name: string) => {
     const pending = (data?.pendingLearnings || []).filter((l: any) => l.project_id === projectId);
     if (!pending.length) return;
@@ -146,17 +161,11 @@ export default function MissionControl() {
 
   const approveSingle = async (id: string) => {
     await callEngine('approve_learning', { id });
-    setData((prev: any) => ({
-      ...prev, pendingLearnings: prev.pendingLearnings.filter((l: any) => l.id !== id),
-      totals: { ...prev.totals, pendingApprovals: Math.max(0, (prev.totals?.pendingApprovals||1)-1) },
-    }));
+    await load();
   };
   const rejectSingle = async (id: string) => {
     await callEngine('reject_learning', { id });
-    setData((prev: any) => ({
-      ...prev, pendingLearnings: prev.pendingLearnings.filter((l: any) => l.id !== id),
-      totals: { ...prev.totals, pendingApprovals: Math.max(0, (prev.totals?.pendingApprovals||1)-1) },
-    }));
+    await load();
   };
 
   const t = data?.totals || {};
@@ -164,6 +173,13 @@ export default function MissionControl() {
   const activeProjs = allProjs.filter(p => p.status !== 'archived');
   const selProj = allProjs.find(p => p.id === selectedId);
   const avgBrain = activeProjs.length ? Math.round(activeProjs.reduce((s, p) => s+p.brainScore, 0)/activeProjs.length) : 0;
+
+  const algoForAdvisor = (data?.algoTopics || []).map((a: any) => ({
+    title:        a.topic,
+    summary:      a.summary || '',
+    impact_level: a.freshness_score >= 7 ? 'high' : a.freshness_score >= 4 ? 'medium' : 'low',
+    engine:       'google',
+  }));
 
   const projCtx = selProj
     ? `Project: ${selProj.name} | Brain: ${selProj.brainScore}/100 | Learnings: ${selProj.activeLearnings} active | Pending: ${selProj.pendingLearnings} | CMS: ${selProj.cms||'not set'} | Tasks: ${selProj.taskCount}`
@@ -371,7 +387,9 @@ export default function MissionControl() {
           <PresidentialAdvisor
             mode="operational"
             projectName={selProj?.name}
-            projectContext={projCtx}/>
+            projectContext={projCtx}
+            learnings={activeLearnings}
+            algoItems={algoForAdvisor}/>
         </div>
       </div>
 
