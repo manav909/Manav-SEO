@@ -73,7 +73,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function _handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(200).json({ error: "POST only" });
+  /* ── GET — markdown feed reader (token via x-read-token header or ?token= query param) ── */
+  if (req.method === "GET") {
+    const token = (req.headers["x-read-token"] as string) || (req.query?.token as string) || "";
+    const expected = process.env.BRIDGE_READ_TOKEN || process.env.BRIDGE_SECRET || "";
+    if (!expected) return res.status(401).send("# Error\nBRIDGE_READ_TOKEN not configured on server.");
+    if (!token)    return res.status(401).send("# Error\nMissing token. Pass ?token=<BRIDGE_READ_TOKEN> or X-Read-Token header.");
+    if (token !== expected && token !== (process.env.BRIDGE_SECRET || "")) {
+      return res.status(401).send("# Error\nInvalid token.");
+    }
+    const sbc = db();
+    if (!sbc) return res.status(500).send("# Error\nDatabase unavailable.");
+    const { data, error } = await sbc
+      .from("claude_bridge")
+      .select("id, kind, title, body, metadata, created_by, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) return res.status(500).send(`# Error\n${error.message}`);
+    const rows = data || [];
+    const lines: string[] = [
+      `# Claude Bridge — Latest 50 Messages`,
+      `_Generated: ${new Date().toISOString()} · ${rows.length} rows_`,
+      ``,
+    ];
+    for (const m of rows) {
+      const ts   = new Date(m.created_at).toISOString().replace("T", " ").slice(0, 19);
+      const meta = m.metadata && Object.keys(m.metadata).length
+        ? `  \`${JSON.stringify(m.metadata).slice(0, 120)}\``
+        : "";
+      lines.push(`---`);
+      lines.push(`### [${m.kind}] ${m.title || "(no title)"}`);
+      lines.push(`**by** \`${m.created_by}\` · **at** \`${ts}\` · **id** \`${m.id}\``);
+      if (meta) lines.push(meta);
+      lines.push(``);
+      if (m.body) lines.push((m.body as string).slice(0, 600) + ((m.body as string).length > 600 ? "\n…(truncated)" : ""));
+      lines.push(``);
+    }
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.status(200).send(lines.join("\n"));
+  }
+
+  if (req.method !== "POST") return res.status(200).json({ error: "GET or POST only" });
   const body = req.body || {};
   const action = body.action;
   if (!action) return res.status(200).json({ error: "Missing action" });
