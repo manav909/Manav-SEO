@@ -36,7 +36,7 @@
 **Command:** npx tsc --noEmit 2>&1 | head -30
 **PostAction:** bridge tsc results, fix if errors found
 
-### TASK-007 [PENDING]
+### TASK-007 [DONE 2026-05-16 04:56]
 **Action:** Generate first morning brief for empire
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H 'Content-Type: application/json' -d '{"action":"generate_morning_brief","scope":"empire"}' | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('headline','done'))"
 **PostAction:** bridge morning brief result
