@@ -26,7 +26,7 @@
 **Command:** python3 ~/Downloads/empire_migrate.py
 **PostAction:** bridge status with table counts
 
-### TASK-005 [PENDING]
+### TASK-005 [DONE 2026-05-16 04:56]
 **Action:** Run empire_reporter.py — full status report to bridge
 **Command:** python3 ~/Downloads/empire_reporter.py
 **PostAction:** bridge full report
