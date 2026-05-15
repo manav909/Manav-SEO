@@ -16,6 +16,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useProjectSync } from "@/hooks/useProjectSync";
 import { supabase } from "@/lib/supabase";
 import { getRuntimeCompiler } from "@/lib/runtimeCompiler";
+import { MarketPersonaBriefing } from "@/components/MarketPersonaBriefing";
 import {
   Brain, Play, Pause, X, Zap, CheckCircle, AlertCircle, Clock,
   Loader2, ArrowLeft, Send, Mic, MicOff, ChevronRight,
@@ -483,6 +484,17 @@ export default function BrainCommand() {
   }, [queue, selProj]);
 
   /* Brain chat */
+  /* ── askBrain: fire a prompt from persona briefing into Brain chat ── */
+  const askBrain = useCallback((prompt: string) => {
+    setMainTab("execution"); // switch to execution tab where chat lives
+    setChatIn(prompt);
+    // Small delay so tab switch completes before auto-send focus
+    setTimeout(() => {
+      const inp = document.querySelector<HTMLInputElement>("[data-brain-chat-input]");
+      if (inp) { inp.focus(); inp.dispatchEvent(new Event("input", { bubbles: true })); }
+    }, 100);
+  }, []);
+
   const sendChat = useCallback(async () => {
     const text = chatIn.trim();
     if (!text || chatLoading) return;
@@ -726,8 +738,16 @@ export default function BrainCommand() {
             {/* ── PERSONA ── */}
             {miSection === "persona" && miPersona && (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {/* Hero */}
-                <div style={{ background: "linear-gradient(135deg,rgba(99,102,241,0.15),rgba(6,182,212,0.08))", borderRadius: 14, padding: "20px 24px", border: "1px solid rgba(99,102,241,0.25)" }}>
+                {/* ── NEW: Interactive Intelligence Briefing ── */}
+                <MarketPersonaBriefing
+                  persona={miPersona}
+                  goals={miGoals}
+                  onAskBrain={askBrain}
+                  crossProjectCount={miPatterns?.industryCount || 0}
+                />
+                {/* legacy hero hidden — briefing replaces it */}
+                <div style={{ display: "none" }}>
+                  <div style={{ background: "linear-gradient(135deg,rgba(99,102,241,0.15),rgba(6,182,212,0.08))", borderRadius: 14, padding: "20px 24px", border: "1px solid rgba(99,102,241,0.25)" }}>
                   <div style={{ fontSize: 9, fontFamily: "monospace", color: "#a5b4fc", letterSpacing: "0.1em", marginBottom: 6 }}>MARKET PERSONA · {projects.find(p=>p.id===selProj)?.industry?.toUpperCase()}</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: "#e0e7ff", marginBottom: 4 }}>{miPersona.persona_name}</div>
                   <div style={{ fontSize: 11, color: "rgba(165,180,252,0.6)", fontFamily: "monospace", marginBottom: 12 }}>{miPersona.persona_archetype}</div>
@@ -814,6 +834,7 @@ export default function BrainCommand() {
                     </MiCard>
                   )}
                 </div>
+                </div>{/* end hidden legacy */}
               </div>
             )}
 
@@ -1101,6 +1122,7 @@ export default function BrainCommand() {
               <input value={chatIn} onChange={e => setChatIn(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
                 disabled={chatLoading} placeholder="Tell Brain what to do..."
+                data-brain-chat-input="true"
                 style={{ flex: 1, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)",
                   borderRadius: 7, padding: "6px 9px", fontSize: 10, color: "rgba(255,255,255,0.75)", outline: "none" }}/>
               <button onClick={toggleVoice} title={listening ? "Stop" : "Voice"}
