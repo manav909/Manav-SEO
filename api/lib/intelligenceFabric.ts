@@ -21,23 +21,29 @@ export const ACTION_THRESHOLDS: Record<string, number> = {
 };
 
 export type ProtectedCategory = "project_core" | "goals" | "metrics" | "competitors" | "comments";
+/* Paths use REAL Supabase schema. Keep in sync with src/lib/intelligenceFabric.ts. */
 export const PROTECTED_FIELDS: Record<string, ProtectedCategory> = {
   "project.url": "project_core", "project.name": "project_core",
   "project.industry": "project_core", "project.country": "project_core",
-  "project.city": "project_core", "project.region": "project_core",
-  "goals.primary": "goals", "goals.timeline": "goals", "goals.success": "goals",
-  "goals.success_metric": "goals", "goals.baseline": "goals",
-  "goals.keywords": "goals", "goals.target_keywords": "goals",
+  "project.city": "project_core",
+  "goal.primary_goal": "goals", "goal.target_timeline": "goals",
+  "goal.success_metric": "goals", "goal.current_baseline": "goals",
+  "goal.target_keywords": "goals", "goal.budget_monthly": "goals",
+  "goal.reporting_cadence": "goals",
+  "analytics.organic_sessions_monthly": "metrics",
+  "analytics.organic_sessions_baseline_date": "metrics",
+  "analytics.gsc_total_impressions": "metrics",
+  "analytics.gsc_total_clicks": "metrics",
+  "analytics.gsc_avg_position": "metrics",
+  "analytics.conversions_monthly": "metrics",
   "metrics.llm_visibility_score": "metrics", "metrics.eeat_score": "metrics",
-  "metrics.authority_score": "metrics", "metrics.algorithm_health": "metrics",
-  "analytics.organic_monthly": "metrics", "analytics.gsc_clicks": "metrics",
-  "analytics.gsc_impressions": "metrics", "analytics.gsc_avg_position": "metrics",
-  "analytics.conversions": "metrics",
-  "competitors.c1": "competitors", "competitors.c1_dr": "competitors",
-  "competitors.c2": "competitors", "competitors.c2_dr": "competitors",
-  "competitors.our_dr": "competitors",
-  "comments.client_question": "comments", "comments.user_note": "comments",
-  "comments.meeting_note": "comments",
+  "metrics.algorithm_health_score": "metrics", "metrics.content_authority_score": "metrics",
+  "metrics.overall_growth_score": "metrics",
+  "competitor.competitor_1": "competitors", "competitor.competitor_1_dr": "competitors",
+  "competitor.competitor_2": "competitors", "competitor.competitor_2_dr": "competitors",
+  "competitor.our_domain_rating": "competitors", "competitor.our_referring_domains": "competitors",
+  "comment.client_question": "comments", "comment.user_note": "comments",
+  "comment.meeting_note": "comments",
 };
 
 export function isProtectedField(path: string): boolean { return path in PROTECTED_FIELDS; }

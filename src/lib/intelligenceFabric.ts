@@ -78,42 +78,49 @@ export const ACTION_THRESHOLDS: Record<string, number> = {
    ──────────────────────────────────────────────────────────────────── */
 export type ProtectedCategory = "project_core" | "goals" | "metrics" | "competitors" | "comments";
 
+/* Paths use the REAL Supabase schema (singular categories, real field_keys).
+   For project_knowledge rows: <category>.<field_key>
+   For columns on the projects table: project.<column>
+   For the metrics table: metrics.<column> (these are auto-scored, NEVER user-writable). */
 export const PROTECTED_FIELDS: Record<string, ProtectedCategory> = {
-  /* Project core */
-  "project.url":                  "project_core",
-  "project.name":                 "project_core",
-  "project.industry":             "project_core",
-  "project.country":              "project_core",
-  "project.city":                 "project_core",
-  "project.region":               "project_core",
-  /* Goals */
-  "goals.primary":                "goals",
-  "goals.timeline":               "goals",
-  "goals.success":                "goals",
-  "goals.success_metric":         "goals",
-  "goals.baseline":               "goals",
-  "goals.keywords":               "goals",
-  "goals.target_keywords":        "goals",
-  /* Real measured metrics — read-only from AI side */
-  "metrics.llm_visibility_score": "metrics",
-  "metrics.eeat_score":           "metrics",
-  "metrics.authority_score":      "metrics",
-  "metrics.algorithm_health":     "metrics",
-  "analytics.organic_monthly":    "metrics",
-  "analytics.gsc_clicks":         "metrics",
-  "analytics.gsc_impressions":    "metrics",
-  "analytics.gsc_avg_position":   "metrics",
-  "analytics.conversions":        "metrics",
-  /* Competitors */
-  "competitors.c1":               "competitors",
-  "competitors.c1_dr":            "competitors",
-  "competitors.c2":               "competitors",
-  "competitors.c2_dr":            "competitors",
-  "competitors.our_dr":           "competitors",
-  /* Personal notes & client communication */
-  "comments.client_question":     "comments",
-  "comments.user_note":           "comments",
-  "comments.meeting_note":        "comments",
+  /* Project core (columns on `projects` table) */
+  "project.url":                          "project_core",
+  "project.name":                         "project_core",
+  "project.industry":                     "project_core",
+  "project.country":                      "project_core",
+  "project.city":                         "project_core",
+  /* Goals (project_knowledge category=goal) */
+  "goal.primary_goal":                    "goals",
+  "goal.target_timeline":                 "goals",
+  "goal.success_metric":                  "goals",
+  "goal.current_baseline":                "goals",
+  "goal.target_keywords":                 "goals",
+  "goal.budget_monthly":                  "goals",
+  "goal.reporting_cadence":               "goals",
+  /* Analytics (project_knowledge category=analytics — manually entered measurements) */
+  "analytics.organic_sessions_monthly":   "metrics",
+  "analytics.organic_sessions_baseline_date": "metrics",
+  "analytics.gsc_total_impressions":      "metrics",
+  "analytics.gsc_total_clicks":           "metrics",
+  "analytics.gsc_avg_position":           "metrics",
+  "analytics.conversions_monthly":        "metrics",
+  /* System-computed metrics (metrics table — READ-ONLY, never written via approval) */
+  "metrics.llm_visibility_score":         "metrics",
+  "metrics.eeat_score":                   "metrics",
+  "metrics.algorithm_health_score":       "metrics",
+  "metrics.content_authority_score":      "metrics",
+  "metrics.overall_growth_score":         "metrics",
+  /* Competitors (project_knowledge category=competitor) */
+  "competitor.competitor_1":              "competitors",
+  "competitor.competitor_1_dr":           "competitors",
+  "competitor.competitor_2":              "competitors",
+  "competitor.competitor_2_dr":           "competitors",
+  "competitor.our_domain_rating":         "competitors",
+  "competitor.our_referring_domains":     "competitors",
+  /* Personal notes & client communication (project_knowledge category=comment) */
+  "comment.client_question":              "comments",
+  "comment.user_note":                    "comments",
+  "comment.meeting_note":                 "comments",
 };
 
 export function isProtectedField(path: string): boolean {

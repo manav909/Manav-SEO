@@ -929,23 +929,40 @@ Return ONLY valid JSON:
     if (!id || !["approved", "rejected"].includes(decision)) {
       return res.status(200).json({ error: "Invalid proposal resolution" });
     }
-    /* If approved — apply the change to the right table (projects | project_knowledge) */
+    /* If approved — apply the change to the right table (projects | project_knowledge).
+       metrics.* (system-computed) is NEVER written even on approval. */
     if (decision === "approved") {
       const { data: prop } = await sb().from("field_update_proposals").select("*").eq("id", id).single();
       if (prop) {
-        const [table, ...rest] = prop.field_path.split(".");
+        const [cat, ...rest] = prop.field_path.split(".");
         const key = rest.join(".");
         try {
-          if (table === "project") {
-            await sb().from("projects").update({ [key]: prop.proposed_value }).eq("id", prop.project_id);
-          } else if (table === "goals" || table === "competitors" || table === "comments") {
+          if (cat === "project") {
+            /* Columns on the projects table — allowed list ONLY */
+            const allowed = ["url", "name", "industry", "country", "city"];
+            if (allowed.includes(key)) {
+              await sb().from("projects").update({ [key]: prop.proposed_value }).eq("id", prop.project_id);
+            }
+          } else if (cat === "metrics") {
+            /* System-computed metrics — NEVER overwrite via approval. Log a note but no write. */
+            try {
+              await sb().from("field_update_proposals").update({
+                review_note: ((prop.review_note || "") + " [Note: metrics.* are system-computed, not written via approval]").slice(0, 500),
+              }).eq("id", id);
+            } catch (_e) {}
+          } else if (["goal", "competitor", "comment", "analytics"].includes(cat)) {
+            /* project_knowledge rows */
             await sb().from("project_knowledge").upsert({
-              project_id: prop.project_id, category: table, field_key: key,
-              field_value: prop.proposed_value, updated_at: new Date().toISOString(),
+              project_id:   prop.project_id,
+              category:     cat,
+              field_key:    key,
+              field_value:  prop.proposed_value,
+              source:       "ai_proposal_approved",
+              updated_at:   new Date().toISOString(),
             }, { onConflict: "project_id,category,field_key" });
           }
-          // metrics & analytics are READ-ONLY (measured), even after approval — log but don't write
-        } catch (_e) { /* non-fatal */ }
+          /* Any other category: ignored (unknown path — safer not to write) */
+        } catch (_e) { /* non-fatal — proposal status still updates below */ }
       }
     }
     try {
@@ -1046,7 +1063,7 @@ Return ONLY raw JSON (no markdown, no prose):
     {"field":"<exact Data Room field name>","why_it_blocks":"<which analyses would sharpen with this>","priority":"high|medium|low"}
   ],
   "field_update_proposals": [
-    {"field_path":"goals.primary","proposed_value":"<the value evidence suggests>","reasoning":"<why>","confidence":<int>}
+    {"field_path":"<EXACT path from this list ONLY: project.url, project.name, project.industry, project.country, project.city, goal.primary_goal, goal.target_timeline, goal.success_metric, goal.current_baseline, goal.target_keywords, analytics.organic_sessions_monthly, analytics.gsc_total_clicks, analytics.gsc_avg_position, competitor.competitor_1, competitor.competitor_1_dr, competitor.competitor_2, competitor.our_domain_rating, comment.client_question, comment.user_note. NEVER propose metrics.* — those are system-computed.>","proposed_value":"<the value evidence suggests>","reasoning":"<why>","confidence":<int 0-100>}
   ],
   "overall_brain_health": {
     "consistency_score": <0-100>,
@@ -1086,17 +1103,23 @@ Return ONLY raw JSON (no markdown, no prose):
       } catch (_e) {}
     }
 
-    /* Queue field-update proposals (these ARE protected — never auto-applied) */
+    /* Queue field-update proposals (these ARE protected — never auto-applied).
+       Map field_path prefix → field_category matching PROTECTED_FIELDS values. */
+    const CAT_MAP: Record<string, string> = {
+      project: "project_core", goal: "goals", competitor: "competitors",
+      comment: "comments", metrics: "metrics", analytics: "metrics",
+    };
     for (const prop of (report.field_update_proposals || [])) {
       if (!prop.field_path || !prop.proposed_value) continue;
+      const prefix = prop.field_path.split(".")[0];
+      const category = CAT_MAP[prefix];
+      if (!category) continue;          // unknown prefix — skip (don't pollute the queue)
+      if (prefix === "metrics") continue; // never propose changes to system-computed metrics
       try {
         await sb().from("field_update_proposals").insert({
           project_id:          projectId,
           field_path:          prop.field_path,
-          field_category:      (prop.field_path.split(".")[0] === "project" ? "project_core" :
-                                prop.field_path.split(".")[0] === "goals"   ? "goals"        :
-                                prop.field_path.split(".")[0] === "metrics" ? "metrics"      :
-                                prop.field_path.split(".")[0] === "competitors" ? "competitors" : "comments"),
+          field_category:      category,
           proposed_value:      String(prop.proposed_value).slice(0, 2000),
           proposed_by:         "deep_learn",
           proposer_confidence: Math.max(0, Math.min(100, Math.round(prop.confidence || 60))),
