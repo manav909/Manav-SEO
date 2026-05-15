@@ -354,8 +354,13 @@ export default function BrainCommand() {
       catch (_) { parsed = { error: `Server error (${res.status}): ${text.slice(0, 200)}` }; }
 
       if (parsed?.error) {
-        // Record failure so compiler learns
-        rc.recordFailure("/api/market-researcher", action, parsed.error, payload);
+        // Record failure so compiler learns — include debug payload (stop_reason, raw tail) when present
+        const debug = parsed.debug ? ` [stop:${parsed.debug.stopReason} rawLen:${parsed.debug.rawLength}]` : "";
+        rc.recordFailure("/api/market-researcher", action, parsed.error + debug, payload);
+        // Surface debug to user via miError so we can diagnose truncation vs other issues
+        if (parsed.debug?.stopReason === "max_tokens") {
+          setMiError(`${parsed.error} (Output was ${parsed.debug.rawLength} chars before truncation.)`);
+        }
       } else {
         rc.recordSuccess("/api/market-researcher", action);
       }

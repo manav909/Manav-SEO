@@ -384,7 +384,7 @@ Return ONLY valid JSON. Be SPECIFIC. Reference real numbers from project data wh
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 6000,
+      max_tokens: 14000,    // bumped — schema now includes actionable_canvas_cards + suggested_brain_learnings + data_room_gaps + live-content references
       system: "You are a market research expert. Return ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Start your response with { and end with }.",
       messages: [
         { role: "user",      content: prompt },
@@ -392,10 +392,46 @@ Return ONLY valid JSON. Be SPECIFIC. Reference real numbers from project data wh
     });
 
     const rawText = response.content[0].type === "text" ? response.content[0].text : "";
+    const stopReason = response.stop_reason || "unknown";
     const raw = rawText;
-    const persona = extractJson(raw);
+    let persona = extractJson(raw);
+
+    /* ── Truncation recovery: if Claude hit max_tokens mid-JSON, try to repair by closing braces ── */
+    if (!persona?.persona_name && stopReason === "max_tokens") {
+      const trimmed = raw.trimEnd();
+      // Count unmatched braces/brackets and try simple completion
+      let depth = 0, brackDepth = 0, inStr = false, esc = false;
+      for (let i = 0; i < trimmed.length; i++) {
+        const ch = trimmed[i];
+        if (esc) { esc = false; continue; }
+        if (ch === "\\" && inStr) { esc = true; continue; }
+        if (ch === '"') { inStr = !inStr; continue; }
+        if (inStr) continue;
+        if (ch === "{") depth++;
+        else if (ch === "}") depth--;
+        else if (ch === "[") brackDepth++;
+        else if (ch === "]") brackDepth--;
+      }
+      // Drop the final partial line, then close everything
+      const lastComma = trimmed.lastIndexOf(",");
+      const lastBraceOrBracket = Math.max(trimmed.lastIndexOf("}"), trimmed.lastIndexOf("]"));
+      const cutAt = Math.max(lastComma, lastBraceOrBracket);
+      if (cutAt > 0) {
+        const head = trimmed.slice(0, cutAt).replace(/,\s*$/, "");
+        const repaired = head + "]".repeat(Math.max(0, brackDepth)) + "}".repeat(Math.max(0, depth));
+        persona = extractJson(repaired);
+      }
+    }
+
     if (!persona?.persona_name) {
-      return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
+      console.error("[market-researcher] persona JSON parse failed", { stopReason, rawLen: raw.length, tail: raw.slice(-300) });
+      return res.status(200).json({
+        success: false,
+        error: stopReason === "max_tokens"
+          ? "Persona generation hit token limit — Claude couldn't finish the JSON. Try again or fill missing Data Room fields to shorten the input context."
+          : `Claude returned invalid JSON (stop: ${stopReason}) — try again`,
+        debug: { stopReason, rawLength: raw.length, rawHead: raw.slice(0, 200), rawTail: raw.slice(-200) },
+      });
     }
 
     /* Save persona to brain_learnings as market intelligence */

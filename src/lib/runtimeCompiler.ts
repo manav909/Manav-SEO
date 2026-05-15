@@ -182,6 +182,12 @@ export class RuntimeCompiler {
         action: "Remove all { role: 'assistant', content: '...' } prefill entries from the messages array. Pass the full prompt in the user message instead.",
       };
     }
+    if (body.includes("returned invalid json") || body.includes("invalid json") || body.includes("hit token limit") || body.includes("stop:max_tokens")) {
+      return {
+        diagnosis: "Claude's response was truncated (max_tokens hit) or malformed. The persona/output JSON couldn't be parsed.",
+        action: "Server already retries with brace-repair. If you still see this: (1) reduce input context (fill fewer Data Room fields temporarily, or trim live URL fetches), or (2) bump max_tokens further in api/market-researcher.ts.",
+      };
+    }
     if (body.includes("column") && body.includes("does not exist")) {
       return {
         diagnosis: "A Supabase migration has not been run — the query references a column that doesn't exist in the table yet.",
