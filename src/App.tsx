@@ -29,6 +29,7 @@ import BrainCommand   from './pages/BrainCommand';
 import Build          from './pages/Build';
 import ClientPortal from "@/pages/ClientPortal";
 import RevenueProof from "@/pages/RevenueProof";
+import ScaleControl from "@/pages/ScaleControl";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -83,6 +84,7 @@ const AppRoutes = () => {
         <Route path="/oval"           element={<B name="oval"><ApprovedRequired><Oval /></ApprovedRequired></B>} />
         <Route path="/client-portal" element={<ClientPortal />} />
           <Route path="/revenue-proof" element={<RevenueProof />} />
+          <Route path="/scale-control" element={<ScaleControl />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 
