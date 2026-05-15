@@ -1120,7 +1120,40 @@ Respond with JSON only:
   if (action === "evaluate") {
     const { card, output: executedOutput, executedRole, executedInputs, projectId } = body;
     if (!executedOutput) return ok(res, { error: "No output to evaluate" });
-    if (!card) return ok(res, { error: "Missing card" });
+    
+if (action === 'weekly_brain_brief') {
+  const { projectIds } = body;
+  if (!projectIds || !projectIds.length) {
+    return ok(res, { error: 'projectIds required' });
+  }
+  const briefItems: any[] = [];
+  for (const pid of projectIds.slice(0, 10)) {
+    const [projR, metricsR, learnR, verifyR] = await Promise.allSettled([
+      db().from('projects').select('name,url,goals,cms,keywords').eq('id', pid).single(),
+      db().from('metrics').select('llm_visibility_score,algorithm_health_score').eq('project_id', pid).order('recorded_at',{ascending:false}).limit(1),
+      db().from('brain_learnings').select('id').eq('project_id', pid).eq('status','active').limit(1),
+      db().from('verification_queue').select('id').eq('project_id', pid).eq('status','pending'),
+    ]);
+    const proj    = projR.status==='fulfilled'    ? projR.value.data    : null;
+    const metrics = metricsR.status==='fulfilled' ? metricsR.value.data?.[0] : null;
+    const hasLearn = learnR.status==='fulfilled'  ? (learnR.value.data?.length || 0) > 0 : false;
+    const pending  = verifyR.status==='fulfilled' ? verifyR.value.data?.length || 0 : 0;
+    if (!proj) continue;
+    let action_item = '';
+    let priority = 'medium';
+    if (!proj.goals)             { action_item = 'Set campaign goals in Data Room to unlock strategy recommendations'; priority='high'; }
+    else if (!proj.cms)          { action_item = 'Add CMS to Data Room — unlocks technical audit accuracy'; priority='high'; }
+    else if (pending > 3)        { action_item = `${pending} verifications pending — run check to close the loop`; priority='high'; }
+    else if (!hasLearn)          { action_item = 'No learnings yet — run first audit to start building Brain memory'; priority='medium'; }
+    else if (metrics && (metrics.algorithm_health_score||0) < 50)
+                                 { action_item = 'Algorithm health low — review recent updates and fix exposed areas'; priority='high'; }
+    else                         { action_item = 'Review canvas and advance highest-priority pending task'; priority='low'; }
+    briefItems.push({ projectId: pid, projectName: proj.name, actionItem: action_item, priority, verificationsPending: pending });
+  }
+  return ok(res, { success: true, brief: briefItems, generatedAt: new Date().toISOString(), weekLabel: `Week of ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}` });
+}
+
+  if (!card) return ok(res, { error: "Missing card" });
 
     const prompt = [
       "Evaluate your own output honestly as Manav Brain reviewing your work.",
