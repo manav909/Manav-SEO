@@ -98,7 +98,7 @@ function deriveState(rows: BridgeRow[]) {
     const n = parseInt(r.module || "0");
     if (n < 1 || n > 12) return;
     const m = modules[n - 1];
-    if (r.content.includes("MODULE_0" + n + "_DONE") || r.content.includes(`MODULE_${String(n).padStart(2,"0")}_DONE`)) {
+    if ((r.content ?? "").includes("MODULE_0" + n + "_DONE") || (r.content ?? "").includes(`MODULE_${String(n).padStart(2,"0")}_DONE`)) {
       m.status = "done"; m.updatedAt = r.created_at;
     } else if ((r.status === "pending" || r.status === "executing") && r.role === "claude_chat" && r.type === "instruction") {
       if (m.status === "pending") { m.status = "building"; m.updatedAt = r.created_at; }
@@ -116,7 +116,7 @@ function deriveState(rows: BridgeRow[]) {
   /* Activity feed */
   const feed: ActivityLine[] = rows.slice(0, 12).map(r => {
     const time = new Date(r.created_at).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
-    const preview = r.content.slice(0, 70);
+    const preview = (r.content ?? "").slice(0, 70);
     if (r.type === "thinking") return { id: r.id, time, icon: "→", color: "#3b82f6", text: preview };
     if (r.content.includes("_DONE")) return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
     if (r.status === "blocked") return { id: r.id, time, icon: "✗", color: "#ef4444", text: preview };
@@ -143,9 +143,10 @@ function deriveState(rows: BridgeRow[]) {
   /* News headlines */
   const news: string[] = [
     ...rows.slice(0, 5).map(r => {
-      if (r.content.includes("_DONE")) return `✓ ${r.content.slice(0, 60)}`;
-      if (r.type === "thinking") return `→ ${r.content.slice(0, 55)}`;
-      return `· ${r.content.slice(0, 55)}`;
+      const c = r.content ?? "";
+      if (c.includes("_DONE")) return `✓ ${c.slice(0, 60)}`;
+      if (r.type === "thinking") return `→ ${c.slice(0, 55)}`;
+      return `· ${c.slice(0, 55)}`;
     }),
     "👑 Foundation sealed — Brain quality gate universal across the empire",
     "⚡ Module 02 building — The Closed Loop activates next",
@@ -690,8 +691,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
 
 /* ══════════════════════════════════════════════════════════
    KINGDOM 4: VISION (Glass)
-══════════════════════════════════════════════════════════ */
-const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
+══════════════════════════════════════════════════════════ */const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"empire"|"modules"|"vision"|"creator">("empire");
   const GC = ({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) => (
     <div style={{ background: "rgba(255,255,255,.055)", border: ".5px solid rgba(255,255,255,.1)", borderRadius: 18, padding: 14, position: "relative", overflow: "hidden", ...style }}>
