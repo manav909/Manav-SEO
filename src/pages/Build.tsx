@@ -296,6 +296,117 @@ function findActiveTask(messages: BridgeMsg[]): BridgeMsg | null {
   return sorted[0] || null;
 }
 
+interface ActivityLine {
+  id:    string;
+  icon:  string;
+  color: string;
+  text:  string;
+  time:  string;
+}
+
+function deriveActivityLines(messages: BridgeMsg[]): ActivityLine[] {
+  const lines: ActivityLine[] = [];
+  const sorted = [...messages].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+
+  for (const m of sorted) {
+    const meta  = m.metadata || {};
+    const title = m.title    || "";
+    const body  = m.body     || "";
+    const kind  = m.kind;
+
+    if (kind === "thinking") {
+      const t = body || title;
+      lines.push({
+        id:    m.id + ":thinking",
+        icon:  "→",
+        color: C.blue,
+        text:  "Starting: " + t.slice(0, 60) + (t.length > 60 ? "…" : ""),
+        time:  m.created_at,
+      });
+    } else if (kind === "dump") {
+      lines.push({
+        id:    m.id + ":dump",
+        icon:  "⚙",
+        color: C.gray,
+        text:  "System snapshot posted",
+        time:  m.created_at,
+      });
+    } else if (kind === "response") {
+      if (meta.tsc_clean || meta.ts_status === "clean") {
+        lines.push({
+          id:    m.id + ":ts",
+          icon:  "✓",
+          color: C.green,
+          text:  "TypeScript: clean",
+          time:  m.created_at,
+        });
+      }
+      if (meta.sha) {
+        lines.push({
+          id:    m.id + ":commit",
+          icon:  "✓",
+          color: C.green,
+          text:  `Committed: ${meta.sha}${meta.branch ? ` (${meta.branch})` : ""}`,
+          time:  m.created_at,
+        });
+      }
+      if (!meta.tsc_clean && !meta.ts_status && !meta.sha && meta.status === "done") {
+        const t = title || body.slice(0, 60);
+        lines.push({
+          id:    m.id + ":response",
+          icon:  "✓",
+          color: C.green,
+          text:  t.slice(0, 60) + (t.length > 60 ? "…" : ""),
+          time:  m.created_at,
+        });
+      }
+    } else if (kind === "status") {
+      if (meta.status === "blocked") {
+        const t = title || body;
+        lines.push({
+          id:    m.id + ":blocked",
+          icon:  "!",
+          color: C.yellow,
+          text:  "Blocked: " + t.slice(0, 55) + (t.length > 55 ? "…" : ""),
+          time:  m.created_at,
+        });
+      } else if (meta.task && meta.status === "done") {
+        lines.push({
+          id:    m.id + ":task-done",
+          icon:  "✓",
+          color: C.green,
+          text:  `${meta.task} complete`,
+          time:  m.created_at,
+        });
+      } else if (meta.module_done) {
+        const t = title.slice(0, 60);
+        lines.push({
+          id:    m.id + ":module-done",
+          icon:  "✓",
+          color: C.green,
+          text:  t || "Module complete",
+          time:  m.created_at,
+        });
+      }
+    } else if (kind === "instruction") {
+      const t = title || body.slice(0, 60);
+      lines.push({
+        id:    m.id + ":instruction",
+        icon:  "→",
+        color: C.indigo,
+        text:  t.slice(0, 60) + (t.length > 60 ? "…" : ""),
+        time:  m.created_at,
+      });
+    }
+
+    if (lines.length >= 12) break;
+  }
+
+  return lines;
+}
+
 /* ═══════════════════════════════════════════════════════════
    API
 ═══════════════════════════════════════════════════════════ */
@@ -496,6 +607,50 @@ function ModuleRow({
   );
 }
 
+/** Animates trailing dots: "." → ".." → "..." → repeat, 500ms each */
+function useDotsAnimation(active: boolean): string {
+  const [dots, setDots] = useState(1);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setDots(d => (d === 3 ? 1 : d + 1)), 500);
+    return () => clearInterval(id);
+  }, [active]);
+  return ".".repeat(dots);
+}
+
+/** Branded "👑 Manav …" pill badge */
+function ManavBadge({ variant }: { variant: "coding" | "blocked" | "delivered" | "ready" }) {
+  const dots = useDotsAnimation(variant === "coding");
+
+  const cfg = {
+    coding:    { text: `👑 Manav Coding${dots}`, border: "#6366f1", color: "#818cf8" },
+    blocked:   { text: "👑 Manav Needs You",      border: "#ef4444", color: "#ef4444" },
+    delivered: { text: "👑 Manav Delivered",       border: "#10b981", color: "#10b981" },
+    ready:     { text: "👑 Manav Ready",           border: "#374151", color: "#6b7280" },
+  }[variant];
+
+  return (
+    <span
+      style={{
+        display:         "inline-flex",
+        alignItems:      "center",
+        background:      "linear-gradient(135deg, #1a1040 0%, #0d0820 100%)",
+        border:          `0.5px solid ${cfg.border}`,
+        color:           cfg.color,
+        fontSize:        12,
+        fontWeight:      500,
+        borderRadius:    20,
+        padding:         "4px 14px",
+        letterSpacing:   "0.01em",
+        whiteSpace:      "nowrap",
+        transition:      "color 0.3s, border-color 0.3s",
+      }}
+    >
+      {cfg.text}
+    </span>
+  );
+}
+
 /** Elapsed timer — ticks every second from a start ISO timestamp */
 function useElapsed(startIso: string | null): string {
   const [, setTick] = useState(0);
@@ -542,11 +697,14 @@ function ActiveTaskCard({
         className="rounded-xl border p-6 flex flex-col gap-3"
         style={{ borderColor: C.border, background: C.card, minHeight: 140 }}
       >
-        <div className="flex items-center gap-2">
-          <Clock size={14} style={{ color: C.muted }} />
-          <span className="text-[10px] font-mono font-bold tracking-widest uppercase" style={{ color: C.muted }}>
-            ⏳ STANDING BY
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock size={14} style={{ color: C.muted }} />
+            <span className="text-[10px] font-mono font-bold tracking-widest uppercase" style={{ color: C.muted }}>
+              ⏳ STANDING BY
+            </span>
+          </div>
+          <ManavBadge variant="ready" />
         </div>
         <p className="text-sm leading-relaxed" style={{ color: "#8080a0" }}>
           Empire is ready. Claude Chat will post the next instruction.
@@ -577,13 +735,16 @@ function ActiveTaskCard({
           boxShadow:   `0 0 20px rgba(239,68,68,0.12)`,
         }}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <span className="text-xs font-mono font-bold px-2 py-1 rounded" style={{ color: C.red, background: `${C.red}20`, border: `1px solid ${C.red}40` }}>
             🚫 NEEDS YOUR ATTENTION
           </span>
-          <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-            Stopped at {fmtTime(blocked!.created_at)}
-          </span>
+          <div className="flex items-center gap-3">
+            <ManavBadge variant="blocked" />
+            <span className="text-[9px] font-mono" style={{ color: C.muted }}>
+              Stopped at {fmtTime(blocked!.created_at)}
+            </span>
+          </div>
         </div>
         {(blocked!.metadata?.module_num || blocked!.metadata?.task) && (
           <div className="text-[10px] font-mono" style={{ color: C.muted }}>
@@ -624,14 +785,9 @@ function ActiveTaskCard({
       }}
     >
       {/* Header row */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <span
-            className="text-[10px] font-mono font-bold px-2 py-0.5 rounded"
-            style={{ color: C.blue, background: `${C.blue}18`, border: `1px solid ${C.blue}35` }}
-          >
-            {isThinking ? "💭 THINKING" : "⚡ BUILDING"}
-          </span>
+          <ManavBadge variant="coding" />
           {(moduleNum || taskId) && (
             <span className="text-[10px] font-mono font-semibold" style={{ color: C.muted }}>
               {moduleNum && `MODULE ${moduleNum}`}{taskId && ` · TASK ${taskId}`}
@@ -682,6 +838,59 @@ function ActiveTaskCard({
             </span>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Running activity stream — plain-English lines derived from bridge messages */
+function LiveActivity({ messages }: { messages: BridgeMsg[] }) {
+  const lines = deriveActivityLines(messages);
+  if (lines.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 px-0.5">
+        <Activity size={10} style={{ color: C.muted }} />
+        <span
+          className="text-[9px] font-mono font-bold uppercase tracking-widest"
+          style={{ color: C.muted }}
+        >
+          Live Activity
+        </span>
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {lines.map((line, i) => (
+          <div
+            key={line.id}
+            className="flex items-start gap-2 py-1.5 px-2.5 rounded-lg"
+            style={{
+              background:      "rgba(255,255,255,0.025)",
+              border:          "1px solid rgba(255,255,255,0.045)",
+              animation:       "slideIn 250ms ease-out both",
+              animationDelay:  `${i * 50}ms`,
+            }}
+          >
+            <span
+              className="text-[12px] font-mono flex-shrink-0 leading-none mt-0.5"
+              style={{ color: line.color, minWidth: 12, textAlign: "center" }}
+            >
+              {line.icon}
+            </span>
+            <span
+              className="text-[10px] font-mono flex-1 leading-relaxed break-words"
+              style={{ color: "#9090b8" }}
+            >
+              {line.text}
+            </span>
+            <span
+              className="text-[9px] font-mono flex-shrink-0 mt-0.5"
+              style={{ color: "#3c3c58" }}
+            >
+              {fmtRelative(line.time)}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1474,8 +1683,9 @@ export default function Build() {
           Active Right Now
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-4" style={{ scrollbarWidth: "thin" }}>
+      <div className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-4" style={{ scrollbarWidth: "thin" }}>
         <ActiveTaskCard messages={messages} />
+        <LiveActivity messages={messages} />
       </div>
     </div>
   );
@@ -1528,7 +1738,7 @@ export default function Build() {
         </div>
         <MobileTabBar active={activeTab} onChange={t => { setActiveTab(t); if (t === "log") setLogBadgeCount(0); }} logBadge={logBadgeCount} />
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
       </div>
     );
   }
@@ -1560,7 +1770,7 @@ export default function Build() {
           <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
         </div>
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
       </div>
     );
   }
@@ -1591,7 +1801,7 @@ export default function Build() {
           <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
         </div>
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
       </div>
     );
   }
@@ -1631,7 +1841,7 @@ export default function Build() {
         </div>
       </div>
       {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </div>
   );
 }
