@@ -55,22 +55,32 @@ async function quickDesk(projectId: string, title: string, content: string, cont
 
 export const config = { maxDuration: 300 };
 
-/* Robust JSON extractor — handles markdown fences, trailing text, nested braces */
+/* Robust JSON extractor — correctly handles strings, escapes, markdown fences */
 function extractJson(raw: string): any | null {
   if (!raw) return null;
-  // Strip markdown code fences
-  const stripped = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
-  // Walk the string tracking brace depth to find the outermost { ... }
-  let start = -1, depth = 0;
-  for (let i = 0; i < stripped.length; i++) {
-    const ch = stripped[i];
-    if (ch === "{") { if (depth === 0) start = i; depth++; }
-    else if (ch === "}") { depth--; if (depth === 0 && start !== -1) {
-      try { return JSON.parse(stripped.slice(start, i + 1)); } catch (_) { start = -1; }
-    }}
+  // Strip markdown code fences (multiline)
+  const s = raw.replace(/^```(?:json)?\s*/im, "").replace(/\s*```\s*$/im, "").trim();
+  // Try direct parse first (clean output)
+  try { return JSON.parse(s); } catch (_) {}
+  // Walk character-by-character tracking string context + brace depth
+  // This correctly skips { and } that appear inside string values
+  let start = -1, depth = 0, inString = false, escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (escape)              { escape = false; continue; }
+    if (ch === "\\" && inString) { escape = true;  continue; }
+    if (ch === '"')          { inString = !inString; continue; }
+    if (inString)            { continue; }  // skip everything inside strings
+    if (ch === "{")          { if (depth === 0) start = i; depth++; }
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try { return JSON.parse(s.slice(start, i + 1)); }
+        catch (_) { start = -1; depth = 0; } // malformed — keep scanning
+      }
+    }
   }
-  // Last resort: try parsing the whole stripped string
-  try { return JSON.parse(stripped); } catch (_) { return null; }
+  return null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -216,12 +226,16 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 4000,
+      max_tokens: 6000,
       system: "You are a market research expert. Return ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Start your response with { and end with }.",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "user",      content: prompt },
+        { role: "assistant", content: "{" },
+      ],
     });
 
-    const raw = response.content[0].type === "text" ? response.content[0].text : "";
+    const rawText = response.content[0].type === "text" ? response.content[0].text : "";
+    const raw = "{" + rawText; // prepend the assistant prefill brace
     const persona = extractJson(raw);
     if (!persona?.persona_name) {
       return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
@@ -376,12 +390,16 @@ Return ONLY valid JSON:
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 3500,
+      max_tokens: 5000,
       system: "You are an SEO growth strategist. Return ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Start your response with { and end with }.",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "user",      content: prompt },
+        { role: "assistant", content: "{" },
+      ],
     });
 
-    const raw = response.content[0].type === "text" ? response.content[0].text : "";
+    const rawText2 = response.content[0].type === "text" ? response.content[0].text : "";
+    const raw = "{" + rawText2;
     const goalPlan = extractJson(raw);
     if (!goalPlan?.phases) {
       return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
@@ -462,7 +480,7 @@ Be direct, specific, and confident. Cite real search patterns and market dynamic
     let fullOutput = "";
     const stream = client.messages.stream({
       model: "claude-sonnet-4-6",
-      max_tokens: 4000,
+      max_tokens: 6000,
       messages: [{ role: "user", content: prompt }],
     });
 
@@ -563,11 +581,13 @@ Return ONLY valid JSON:
   "confidence_level": "<high|medium|low — based on volume and quality of cross-project data>",
   "data_points_synthesized": ${(industryLearnings?.length || 0) + keywordLearnings.length}
 }`,
-      }],
+      },
+      { role: "assistant", content: "{" },
+      ],
     });
 
-    const raw2 = synthResponse.content[0].type === "text" ? synthResponse.content[0].text : "";
-    const patterns = extractJson(raw2);
+    const rawSynth = synthResponse.content[0].type === "text" ? synthResponse.content[0].text : "";
+    const patterns = extractJson("{" + rawSynth);
     if (!patterns?.pattern_summary) {
       return res.status(200).json({ success: false, error: "Synthesis parse error — try again" });
     }
