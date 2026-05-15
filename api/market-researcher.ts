@@ -86,52 +86,34 @@ function sb() {
 
 /* ── Fire-and-forget save with classification gate + dedup guard ──
    Market-researcher outputs (persona, market research, industry patterns,
-   goal plans) are FULL analytical artifacts grounded in real industry data
-   — they auto-approve as "active" with high confidence.
-   Reject refusals / boilerplate / too-short. Dedup by title within project. */
+   goal plans) route through /api/task-engine for classification and dedup.
+   Fire-and-forget — never blocks the response stream. */
 async function quickSave(projectId: string, title: string, content: string, tags: string[]) {
   if (!projectId || !content || content.length < 100) return;
-  /* Classification: reject AI refusals + obvious error text */
-  if (/^error:|cannot find|i (cannot|don'?t have access)|as an ai/i.test(content)) return;
-
-  const cardTitle = title.slice(0, 100);
-  const confidence = 82;     // market-researcher outputs are well-grounded — higher floor
-
   try {
-    const sbc = sb();
-    /* Dedup guard — bump confidence on existing match instead of inserting clone */
-    const { data: existing } = await sbc
-      .from("brain_learnings")
-      .select("id, confidence_score")
-      .eq("project_id", projectId)
-      .ilike("card_title", cardTitle.slice(0, 60))
-      .limit(1)
-      .maybeSingle();
-    if (existing) {
-      if (confidence > ((existing as any).confidence_score ?? 0)) {
-        await sbc.from("brain_learnings")
-          .update({ confidence_score: confidence, updated_at: new Date().toISOString() })
-          .eq("id", (existing as any).id);
-      }
-      return;
-    }
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000";
 
-    await sbc.from("brain_learnings").insert({
-      project_id:      projectId,
-      source:          "market_researcher",
-      card_type:       "market",
-      card_title:      cardTitle,
-      improvement:     content.slice(0, 400),
-      context_summary: "market_researcher",
-      what_worked:     [], what_missed: [],
-      tags:            [...new Set(tags)],
-      applied_count:   0,
-      status:          "active",         // market outputs auto-approve — they're full analyses, not chat hypotheses
-      auto_captured:   true,
-      confidence_score: confidence,
-      updated_at:      new Date().toISOString(),
+    await fetch(`${baseUrl}/api/task-engine`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        action:          "save_learning",
+        project_id:      projectId,
+        card_type:       "market",
+        card_title:      title,
+        improvement:     content,
+        what_worked:     [],
+        what_missed:     [],
+        tags:            [...new Set(["market", "market_researcher", ...tags])],
+        source:          "market_researcher",
+        context_summary: "market_researcher",
+      }),
     });
-  } catch (_) {}
+  } catch (_e) {
+    // fire-and-forget — never block the stream
+  }
 }
 
 /* Jina URL fetch — pulls live page content (max 2500 chars) so persona is grounded in reality, not assumption */
