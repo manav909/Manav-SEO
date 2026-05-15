@@ -133,16 +133,39 @@ async function main() {
       break;
     }
     case "status": {
-      const [, ...rest] = args;
-      const text = rest.join(" ");
-      if (!text) die("Usage: bridge status <message>");
+      const rawArgs  = process.argv.slice(3);
+      const msgIdx   = rawArgs.findIndex(a => !a.startsWith("--"));
+      const msg      = msgIdx >= 0 ? rawArgs[msgIdx] : "";
+
+      const modFlag  = rawArgs.indexOf("--module");
+      const taskFlag = rawArgs.indexOf("--task");
+      const typeFlag = rawArgs.indexOf("--type");
+
+      const modStr   = modFlag  >= 0 ? rawArgs[modFlag  + 1] : null;
+      const task     = taskFlag >= 0 ? rawArgs[taskFlag + 1] : null;
+      const kind     = typeFlag >= 0 ? rawArgs[typeFlag + 1] : "status";
+
+      // Convert module string to number for dashboard buildModuleMap
+      const moduleNum = modStr ? parseInt(modStr, 10) || null : null;
+
+      // Detect explicit MODULE_NN_DONE marker so the dashboard flips to DONE
+      const isDone = /MODULE_\d+_DONE/i.test(msg);
+
+      if (!msg) die('Usage: bridge status "message" [--module "01"] [--task "A"] [--type "response"]');
+
       const r = await call("post", {
-        kind:       "status",
-        title:      text,
-        body:       text,
+        kind,
+        title:      msg,
+        body:       msg,
         created_by: "claude_code",
-        metadata:   { status: "info" },
+        metadata:   {
+          status:     "done",
+          ...(moduleNum !== null && { module_num: moduleNum }),
+          ...(task        && { task }),
+          ...(isDone      && { module_done: true }),
+        },
       }, true);
+      console.log(`✓ Status posted. Module: ${modStr || "—"} Task: ${task || "—"}`);
       console.log(JSON.stringify(r, null, 2));
       break;
     }
