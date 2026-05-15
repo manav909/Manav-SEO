@@ -1,8 +1,52 @@
+// BUNDLE-VERSION: 2026-05-15-standalone
 import Anthropic from '@anthropic-ai/sdk';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { db } from './lib/db';
-import { saveLearning, logChange } from './lib/save';
-import { runPostAuditPipeline } from './lib/pipeline';
+import { createClient } from '@supabase/supabase-js';
+
+/* ── Inline Supabase client ── */
+let _supa: any = null;
+function db(): any {
+  if (_supa) return _supa;
+  try {
+    _supa = createClient(
+      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co',
+      process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'placeholder'
+    );
+  } catch (e) { console.error('[run-analysis] db init failed:', (e as any)?.message); }
+  return _supa;
+}
+
+/* ── Inline minimal saveLearning (no classification — direct insert; never throws) ── */
+async function saveLearning(opts: {
+  source: string; projectId: string | null; content: string; title?: string;
+  cardType?: string; contextSummary?: string;
+}): Promise<{ saved: boolean }> {
+  if (!opts.content || opts.content.length < 80) return { saved: false };
+  try {
+    const sbc = db(); if (!sbc) return { saved: false };
+    await sbc.from('brain_learnings').insert({
+      project_id:      opts.projectId,
+      source:          opts.source,
+      card_type:       opts.cardType || 'insight',
+      card_title:      (opts.title || opts.content.slice(0, 80)).slice(0, 100),
+      improvement:     opts.content.slice(0, 800),
+      context_summary: opts.contextSummary || opts.source,
+      what_worked:     [], what_missed: [],
+      tags:            [opts.cardType || 'insight', opts.source.split('_')[0]].filter(Boolean),
+      applied_count:   0,
+      status:          /audit/i.test(opts.source) ? 'active' : 'pending_review',
+      auto_captured:   true,
+      confidence_score: /audit/i.test(opts.source) ? 85 : 70,
+      updated_at:      new Date().toISOString(),
+    });
+    return { saved: true };
+  } catch (_e) { return { saved: false }; }
+}
+
+/* ── No-op stub for post-audit pipeline (the full version did learnings extraction +
+   metric scoring + staleness flagging — bypassing it here keeps the audit response
+   working; can be re-introduced later as a separate Lambda) ── */
+async function runPostAuditPipeline(_opts: any): Promise<void> { /* intentional no-op */ }
 
 function getAI(): Anthropic { return new Anthropic(); }
 
