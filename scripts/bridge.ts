@@ -114,6 +114,38 @@ async function main() {
       console.log(JSON.stringify(r, null, 2));
       break;
     }
+    case "respond": {
+      const [, title, ...rest] = args;
+      const content = rest.join(" ");
+      if (!title || !content) die("Usage: bridge respond <title> <text>");
+      const tokenEstimate = Math.round(content.length / 4);
+      const r = await call("post", {
+        kind:       "response",
+        title,
+        body:       content,
+        created_by: "claude_code",
+        metadata:   {
+          tokens_estimated:           tokenEstimate,
+          cumulative_session_cost_usd: null,
+        },
+      }, true);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    }
+    case "status": {
+      const [, ...rest] = args;
+      const text = rest.join(" ");
+      if (!text) die("Usage: bridge status <message>");
+      const r = await call("post", {
+        kind:       "status",
+        title:      text,
+        body:       text,
+        created_by: "claude_code",
+        metadata:   { status: "info" },
+      }, true);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    }
     case "list": {
       const [, kind, limit] = args;
       const r = await call("list", { kind: kind || undefined, limit: limit ? Number(limit) : 25 });
@@ -149,6 +181,8 @@ Commands:
   dump                              run brain-dump.sh + post as kind:'dump'
   post <kind> <title> <file>        post a file's contents
   note <title> <text>               quick one-line note
+  respond <title> <text>            post kind:'response' with token estimate in metadata
+  status <message>                  post kind:'status' update
   list [kind] [limit]               list recent messages
   get <id>                          fetch one (full body)
   read <id>                         mark as read

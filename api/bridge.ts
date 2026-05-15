@@ -165,5 +165,80 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true });
   }
 
+  /* ── USAGE (read — aggregate stats for dashboard) ── */
+  if (action === "usage") {
+    const a = authRead(req);
+    if (!a.ok) return res.status(200).json({ error: a.reason });
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayISO = todayStart.toISOString();
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const monthISO = monthStart.toISOString();
+
+    try {
+      // Total message count
+      const { count: totalMessages } = await sbc
+        .from("claude_bridge")
+        .select("*", { count: "exact", head: true });
+
+      // Claude Code responses completed today
+      const { count: completedToday } = await sbc
+        .from("claude_bridge")
+        .select("*", { count: "exact", head: true })
+        .eq("created_by", "claude_code")
+        .eq("kind", "response")
+        .gte("created_at", todayISO);
+
+      // All messages today — for token sum + blocked count
+      const { data: todayMsgs } = await sbc
+        .from("claude_bridge")
+        .select("metadata")
+        .gte("created_at", todayISO);
+
+      const tokensToday = (todayMsgs || []).reduce((sum: number, m: any) => {
+        return sum + (Number(m.metadata?.tokens_estimated) || 0);
+      }, 0);
+
+      const blockedToday = (todayMsgs || []).filter(
+        (m: any) => m.metadata?.status === "blocked"
+      ).length;
+
+      const costTodayUsd = Number((tokensToday * 0.000003).toFixed(4));
+
+      // Monthly cost from api_cost_log (graceful — table may not exist)
+      let monthCostUsd: number | null = null;
+      try {
+        const { data: monthLogs } = await sbc
+          .from("api_cost_log")
+          .select("cost_usd")
+          .gte("created_at", monthISO);
+        if (monthLogs) {
+          monthCostUsd = Number(
+            (monthLogs as any[]).reduce((sum, r) => sum + (Number(r.cost_usd) || 0), 0).toFixed(4)
+          );
+        }
+      } catch { /* table doesn't exist yet */ }
+
+      return res.status(200).json({
+        ok: true,
+        usage: {
+          total_messages:    totalMessages  || 0,
+          completed_today:   completedToday || 0,
+          tokens_today:      tokensToday,
+          cost_today_usd:    costTodayUsd,
+          blocked_today:     blockedToday,
+          month_cost_usd:    monthCostUsd,
+          generated_at:      new Date().toISOString(),
+        },
+      });
+    } catch (e: any) {
+      return res.status(200).json({ error: e?.message || "usage query failed" });
+    }
+  }
+
   return res.status(200).json({ error: `Unknown action: ${action}` });
 }

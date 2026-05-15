@@ -8,7 +8,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   RefreshCw, ChevronDown, ChevronUp, Terminal, MessageSquare,
   GitCommit, Activity, Clock, CheckCircle2,
-  Loader2, Zap, Brain, Radio, Code2,
+  Loader2, Zap, Brain, Radio, Code2, PauseCircle, PlayCircle,
+  TrendingUp, AlertTriangle, DollarSign,
 } from "lucide-react";
 import { Button }   from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -42,6 +43,7 @@ interface SummaryState {
   lastCommit:      string;
   tsHealth:        "clean" | "errors" | "unknown";
   moduleProgress:  ModuleStatus[];
+  convLength:      number | null; // words in latest claude_chat message
 }
 
 interface ModuleStatus {
@@ -50,11 +52,30 @@ interface ModuleStatus {
   status: "pending" | "in_progress" | "done" | "blocked" | "not_started";
 }
 
+interface UsageStats {
+  total_messages:  number;
+  completed_today: number;
+  tokens_today:    number;
+  cost_today_usd:  number;
+  blocked_today:   number;
+  month_cost_usd:  number | null;
+  generated_at:    string;
+}
+
 /* ═══════════════════════════════════════════════════════════
    Constants
 ═══════════════════════════════════════════════════════════ */
 
 const BRIDGE_READ_TOKEN = import.meta.env.VITE_BRIDGE_READ_TOKEN as string | undefined;
+const BRIDGE_SECRET     = import.meta.env.VITE_BRIDGE_SECRET     as string | undefined;
+
+// Typical session budget — traffic light thresholds
+const SESSION_TOKEN_BUDGET = 100_000;
+const WARN_PCT  = 0.70;
+const PAUSE_PCT = 0.90;
+
+// Context window budget (words)
+const CONTEXT_WARN_WORDS = 80_000;
 
 const MODULES: { num: number; name: string }[] = [
   { num:  1, name: "Foundation & Auth" },
@@ -72,10 +93,10 @@ const MODULES: { num: number; name: string }[] = [
 ];
 
 const WHO_COLORS: Record<string, string> = {
-  claude_code: "#818cf8", // indigo
-  claude_chat: "#34d399", // emerald
-  manav:       "#fb923c", // orange
-  unknown:     "#94a3b8", // slate
+  claude_code: "#818cf8",
+  claude_chat: "#34d399",
+  manav:       "#fb923c",
+  unknown:     "#94a3b8",
 };
 
 const WHO_LABELS: Record<string, string> = {
@@ -114,7 +135,7 @@ function fmtTime(iso: string): string {
 function fmtRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const s = Math.floor(diff / 1000);
-  if (s < 60)  return `${s}s ago`;
+  if (s < 60)   return `${s}s ago`;
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   return `${Math.floor(s / 3600)}h ago`;
 }
@@ -126,8 +147,35 @@ function fmtDate(iso: string): string {
   });
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 function resolveKind(kind: string): string {
   return KIND_BADGE[kind] ? kind : "message";
+}
+
+function trafficLight(tokensToday: number): { color: string; label: string; pct: number } {
+  const pct = tokensToday / SESSION_TOKEN_BUDGET;
+  if (pct >= PAUSE_PCT) return { color: "#f87171", label: "PAUSE — refill needed", pct };
+  if (pct >= WARN_PCT)  return { color: "#fbbf24", label: "HIGH — consider pausing", pct };
+  return { color: "#4ade80", label: "HEALTHY", pct };
+}
+
+async function bridgePost(action: string, payload: Record<string, any>, useSecret = false): Promise<any> {
+  const token = useSecret ? BRIDGE_SECRET : BRIDGE_READ_TOKEN;
+  if (!token) return { error: "No token" };
+  const res = await fetch(`/api/bridge?token=${encodeURIComponent(token)}`, {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  return res.json();
 }
 
 function buildSummary(messages: BridgeMessage[]): SummaryState {
@@ -135,18 +183,18 @@ function buildSummary(messages: BridgeMessage[]): SummaryState {
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 
-  // Find latest module/task ref
   let activeModule    = "—";
   let activeModuleNum = 0;
   let activeTask      = "—";
   let lastCommit      = "—";
   let tsHealth: SummaryState["tsHealth"] = "unknown";
+  let convLength: number | null = null;
 
   for (const m of sorted) {
     const meta = m.metadata || {};
-    if (activeModule === "—" && meta.module)     { activeModule = meta.module; }
-    if (activeModuleNum === 0 && meta.module_num){ activeModuleNum = Number(meta.module_num); }
-    if (activeTask === "—"   && meta.task)       { activeTask = meta.task; }
+    if (activeModule === "—" && meta.module)      activeModule = meta.module;
+    if (activeModuleNum === 0 && meta.module_num) activeModuleNum = Number(meta.module_num);
+    if (activeTask === "—"   && meta.task)        activeTask = meta.task;
     if (lastCommit === "—"   && (meta.sha || meta.commit)) {
       lastCommit = meta.sha || meta.commit;
       if (meta.branch) lastCommit += ` (${meta.branch})`;
@@ -154,17 +202,18 @@ function buildSummary(messages: BridgeMessage[]): SummaryState {
     if (tsHealth === "unknown" && meta.ts_status) {
       tsHealth = meta.ts_status === "clean" ? "clean" : "errors";
     }
-    if (activeModule !== "—" && activeTask !== "—" && lastCommit !== "—" && tsHealth !== "unknown") break;
+    // Conversation length from claude_chat messages
+    if (convLength === null && m.created_by === "claude_chat" && meta.conversation_length) {
+      convLength = Number(meta.conversation_length);
+    }
   }
 
-  // Counts
   const statuses = sorted.map(m => (m.metadata?.status as string) || "");
   const pending  = statuses.filter(s => s === "pending").length;
   const done     = statuses.filter(s => s === "done").length;
   const blocked  = statuses.filter(s => s === "blocked").length;
 
-  // Module progress — scan all messages for module refs
-  const moduleMap: Record<number, BridgeMessage["metadata"]["status"][]> = {};
+  const moduleMap: Record<number, string[]> = {};
   for (const m of messages) {
     const num = Number(m.metadata?.module_num);
     if (num >= 1 && num <= 12) {
@@ -174,26 +223,22 @@ function buildSummary(messages: BridgeMessage[]): SummaryState {
   }
 
   const moduleProgress: ModuleStatus[] = MODULES.map(mod => {
-    const statuses = moduleMap[mod.num] || [];
+    const ss = moduleMap[mod.num] || [];
     let status: ModuleStatus["status"] = "not_started";
-    if (statuses.length > 0) {
-      if (statuses.some(s => s === "blocked"))       status = "blocked";
-      else if (statuses.some(s => s === "executing")) status = "in_progress";
-      else if (statuses.every(s => s === "done"))     status = "done";
-      else if (statuses.some(s => s === "done"))      status = "in_progress";
-      else                                             status = "pending";
+    if (ss.length > 0) {
+      if (ss.some(s => s === "blocked"))        status = "blocked";
+      else if (ss.some(s => s === "executing")) status = "in_progress";
+      else if (ss.every(s => s === "done"))     status = "done";
+      else if (ss.some(s => s === "done"))      status = "in_progress";
+      else                                       status = "pending";
     }
     return { ...mod, status };
   });
 
-  // Infer current module from latest message with module_num
   if (activeModuleNum === 0) {
     const withModule = sorted.find(m => m.metadata?.module_num);
     if (withModule) activeModuleNum = Number(withModule.metadata.module_num);
   }
-
-  const doneModules = moduleProgress.filter(m => m.status === "done").length;
-  const progressPct = Math.round((doneModules / 12) * 100);
 
   return {
     activeModule:    activeModule === "—" ? MODULES[(activeModuleNum || 11) - 1]?.name || "Claude Bridge" : activeModule,
@@ -207,6 +252,7 @@ function buildSummary(messages: BridgeMessage[]): SummaryState {
     lastCommit,
     tsHealth,
     moduleProgress,
+    convLength,
   };
 }
 
@@ -230,7 +276,7 @@ function WhoChip({ creator }: { creator: string }) {
 }
 
 function KindChip({ kind }: { kind: string }) {
-  const k = resolveKind(kind);
+  const k   = resolveKind(kind);
   const cfg = KIND_BADGE[k] || KIND_BADGE.message;
   return (
     <span
@@ -267,17 +313,20 @@ function ModuleStatusDot({ status }: { status: ModuleStatus["status"] }) {
   return (
     <span
       className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-      style={{ background: colors[status], boxShadow: status === "in_progress" ? `0 0 6px ${colors[status]}` : undefined }}
+      style={{
+        background: colors[status],
+        boxShadow:  status === "in_progress" ? `0 0 6px ${colors[status]}` : undefined,
+      }}
     />
   );
 }
 
 function MessageCard({ msg }: { msg: BridgeMessage }) {
   const [expanded, setExpanded] = useState(false);
-  const meta = msg.metadata || {};
+  const meta      = msg.metadata || {};
+  const body      = msg.body || "";
   const previewLen = 160;
-  const body = msg.body || "";
-  const preview = body.length > previewLen ? body.slice(0, previewLen) + "…" : body;
+  const preview   = body.length > previewLen ? body.slice(0, previewLen) + "…" : body;
 
   return (
     <div
@@ -287,13 +336,11 @@ function MessageCard({ msg }: { msg: BridgeMessage }) {
         background:  expanded ? "rgba(129,140,248,0.04)" : "rgba(255,255,255,0.02)",
       }}
     >
-      {/* Header row */}
       <button
         className="w-full flex items-start gap-3 p-3 text-left hover:bg-white/[0.02] transition-colors"
         onClick={() => setExpanded(v => !v)}
       >
         <div className="flex-1 min-w-0">
-          {/* Top meta row */}
           <div className="flex items-center flex-wrap gap-1.5 mb-1.5">
             <WhoChip creator={msg.created_by} />
             <KindChip kind={msg.kind} />
@@ -304,19 +351,21 @@ function MessageCard({ msg }: { msg: BridgeMessage }) {
                 {meta.task ? ` · ${meta.task}` : ""}
               </span>
             )}
+            {meta.tokens_estimated && (
+              <span className="text-[10px] font-mono text-slate-700">
+                ~{fmtTokens(meta.tokens_estimated)} tok
+              </span>
+            )}
           </div>
 
-          {/* Title */}
           {msg.title && (
             <p className="text-sm font-medium text-slate-200 mb-0.5 truncate">{msg.title}</p>
           )}
 
-          {/* Preview */}
           {!expanded && (
             <p className="text-xs text-slate-500 font-mono leading-relaxed">{preview}</p>
           )}
 
-          {/* Git / TS meta */}
           {(meta.sha || meta.ts_status) && (
             <div className="flex items-center gap-3 mt-1.5">
               {meta.sha && (
@@ -341,11 +390,13 @@ function MessageCard({ msg }: { msg: BridgeMessage }) {
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
           <span className="text-[10px] text-slate-600 font-mono">{fmtTime(msg.created_at)}</span>
           <span className="text-[10px] text-slate-700 font-mono">{fmtRelative(msg.created_at)}</span>
-          {expanded ? <ChevronUp size={12} className="text-slate-500 mt-1" /> : <ChevronDown size={12} className="text-slate-600 mt-1" />}
+          {expanded
+            ? <ChevronUp   size={12} className="text-slate-500 mt-1" />
+            : <ChevronDown size={12} className="text-slate-600 mt-1" />
+          }
         </div>
       </button>
 
-      {/* Expanded body */}
       {expanded && (
         <div className="px-3 pb-3 border-t border-white/[0.05]">
           <pre
@@ -355,13 +406,16 @@ function MessageCard({ msg }: { msg: BridgeMessage }) {
             {body}
           </pre>
 
-          {/* Rich metadata */}
-          {Object.keys(meta).filter(k => !["status", "module_num", "task", "sha", "branch", "ts_status"].includes(k) && meta[k]).length > 0 && (
+          {Object.keys(meta).filter(k =>
+            !["status","module_num","task","sha","branch","ts_status","tokens_estimated","cumulative_session_cost_usd"].includes(k) && meta[k]
+          ).length > 0 && (
             <details className="mt-3">
-              <summary className="text-[10px] font-mono text-slate-600 cursor-pointer hover:text-slate-400">metadata</summary>
+              <summary className="text-[10px] font-mono text-slate-600 cursor-pointer hover:text-slate-400">
+                metadata
+              </summary>
               <pre className="text-[10px] font-mono text-slate-600 mt-1 leading-relaxed">
                 {JSON.stringify(
-                  Object.fromEntries(Object.entries(meta).filter(([k]) => !["sha", "branch"].includes(k))),
+                  Object.fromEntries(Object.entries(meta).filter(([k]) => !["sha","branch"].includes(k))),
                   null, 2
                 )}
               </pre>
@@ -383,45 +437,204 @@ function MessageCard({ msg }: { msg: BridgeMessage }) {
   );
 }
 
+/* ── Usage Panel ── */
+function UsagePanel({
+  usage,
+  summary,
+  onPause,
+  onResume,
+  posting,
+}: {
+  usage:    UsageStats | null;
+  summary:  SummaryState | null;
+  onPause:  () => void;
+  onResume: () => void;
+  posting:  boolean;
+}) {
+  const light = usage ? trafficLight(usage.tokens_today) : null;
+  const usagePct = usage ? Math.min(100, Math.round((usage.tokens_today / SESSION_TOKEN_BUDGET) * 100)) : 0;
+
+  const convWords   = summary?.convLength ?? null;
+  const convWarn    = convWords !== null && convWords > CONTEXT_WARN_WORDS;
+
+  return (
+    <div
+      className="rounded-xl border p-4 flex flex-col gap-4"
+      style={{ borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}
+    >
+      <div className="text-[10px] font-mono text-slate-600 uppercase tracking-wider">Usage & Limits</div>
+
+      {/* ── Claude Chat context ── */}
+      <div>
+        <div className="text-[10px] font-mono text-slate-500 mb-1.5 flex items-center gap-1.5">
+          <MessageSquare size={9} className="text-emerald-500" />
+          CLAUDE CHAT
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+            style={{ background: convWarn ? "#fbbf24" : "#334155" }}
+          />
+          {convWarn ? (
+            <span className="text-[11px] font-mono text-amber-400 flex items-center gap-1">
+              <AlertTriangle size={9} />
+              Fresh chat needed soon ({(convWords! / 1000).toFixed(0)}k words)
+            </span>
+          ) : convWords !== null ? (
+            <span className="text-[11px] font-mono text-slate-500">
+              Context: {(convWords / 1000).toFixed(0)}k / {(CONTEXT_WARN_WORDS / 1000).toFixed(0)}k words
+            </span>
+          ) : (
+            <span className="text-[11px] font-mono text-slate-700">
+              No conversation_length in metadata yet
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Claude Code today ── */}
+      <div>
+        <div className="text-[10px] font-mono text-slate-500 mb-2 flex items-center gap-1.5">
+          <Terminal size={9} className="text-indigo-400" />
+          CLAUDE CODE — TODAY
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {[
+            {
+              label: "Tasks completed",
+              value: usage ? String(usage.completed_today) : "—",
+              color: "#4ade80",
+            },
+            {
+              label: "Tokens estimated",
+              value: usage ? fmtTokens(usage.tokens_today) : "—",
+              color: "#818cf8",
+            },
+            {
+              label: "Est. cost today",
+              value: usage ? `$${usage.cost_today_usd.toFixed(4)}` : "—",
+              color: "#fb923c",
+            },
+            {
+              label: "Running this month",
+              value: usage?.month_cost_usd != null
+                ? `$${usage.month_cost_usd.toFixed(2)}`
+                : "—",
+              color: "#f472b6",
+            },
+          ].map(row => (
+            <div key={row.label} className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-slate-600">{row.label}</span>
+              <span className="text-[11px] font-mono font-semibold" style={{ color: row.color }}>
+                {row.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Traffic light ── */}
+      {light && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-mono text-slate-600 uppercase">Session Budget</span>
+            <span className="text-[10px] font-mono" style={{ color: light.color }}>
+              {Math.round(light.pct * 100)}%
+            </span>
+          </div>
+          <Progress
+            value={usagePct}
+            className="h-1.5 mb-1.5"
+            style={{ background: "rgba(255,255,255,0.06)" }}
+          />
+          <div className="flex items-center gap-1.5">
+            <span
+              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              style={{
+                background: light.color,
+                boxShadow:  light.pct >= PAUSE_PCT ? `0 0 6px ${light.color}` : undefined,
+              }}
+            />
+            <span className="text-[10px] font-mono" style={{ color: light.color }}>
+              {light.label}
+            </span>
+          </div>
+          <div className="text-[9px] font-mono text-slate-700 mt-1">
+            ≥70% warn · ≥90% pause · budget: {fmtTokens(SESSION_TOKEN_BUDGET)} tok
+          </div>
+        </div>
+      )}
+
+      {/* ── Pause / Resume ── */}
+      <div className="flex gap-2 pt-1">
+        <Button
+          size="sm"
+          className="flex-1 h-7 text-[10px] font-mono gap-1"
+          style={{ background: "rgba(248,113,113,0.15)", color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}
+          onClick={onPause}
+          disabled={posting}
+        >
+          {posting ? <Loader2 size={10} className="animate-spin" /> : <PauseCircle size={10} />}
+          Pause Build
+        </Button>
+        <Button
+          size="sm"
+          className="flex-1 h-7 text-[10px] font-mono gap-1"
+          style={{ background: "rgba(74,222,128,0.10)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}
+          onClick={onResume}
+          disabled={posting}
+        >
+          {posting ? <Loader2 size={10} className="animate-spin" /> : <PlayCircle size={10} />}
+          Resume Build
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    Main page
 ═══════════════════════════════════════════════════════════ */
 
 export default function Build() {
-  const [messages,    setMessages]    = useState<BridgeMessage[]>([]);
-  const [summary,     setSummary]     = useState<SummaryState | null>(null);
-  const [loading,     setLoading]     = useState(false);
-  const [lastFetch,   setLastFetch]   = useState<Date | null>(null);
-  const [countdown,   setCountdown]   = useState(20);
-  const [error,       setError]       = useState<string | null>(null);
-  const [pulse,       setPulse]       = useState(false);
+  const [messages,  setMessages]  = useState<BridgeMessage[]>([]);
+  const [summary,   setSummary]   = useState<SummaryState | null>(null);
+  const [usage,     setUsage]     = useState<UsageStats | null>(null);
+  const [loading,   setLoading]   = useState(false);
+  const [lastFetch, setLastFetch] = useState<Date | null>(null);
+  const [countdown, setCountdown] = useState(20);
+  const [error,     setError]     = useState<string | null>(null);
+  const [pulse,     setPulse]     = useState(false);
+  const [posting,   setPosting]   = useState(false);
 
-  const feedRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cdRef       = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* ── Fetch ── */
-  const fetchMessages = useCallback(async () => {
+  /* ── Fetch messages + usage ── */
+  const fetchAll = useCallback(async () => {
     if (!BRIDGE_READ_TOKEN) {
-      setError("VITE_BRIDGE_READ_TOKEN not set in .env — build the .env file first.");
+      setError("VITE_BRIDGE_READ_TOKEN not set in .env");
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/bridge?token=${encodeURIComponent(BRIDGE_READ_TOKEN)}`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ action: "list", limit: 200 }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setMessages(data.messages || []);
-        setSummary(buildSummary(data.messages || []));
+      const [listRes, usageRes] = await Promise.all([
+        bridgePost("list",  { limit: 200 }),
+        bridgePost("usage", {}),
+      ]);
+
+      if (listRes.ok) {
+        setMessages(listRes.messages || []);
+        setSummary(buildSummary(listRes.messages || []));
         setPulse(true);
         setTimeout(() => setPulse(false), 600);
       } else {
-        setError(data.error || "Unknown error from bridge");
+        setError(listRes.error || "List failed");
+      }
+
+      if (usageRes.ok) {
+        setUsage(usageRes.usage);
       }
     } catch (e: any) {
       setError(e?.message || "Fetch failed");
@@ -432,16 +645,39 @@ export default function Build() {
     }
   }, []);
 
-  /* ── Auto-refresh ── */
   useEffect(() => {
-    fetchMessages();
-    intervalRef.current = setInterval(fetchMessages, 20_000);
+    fetchAll();
+    intervalRef.current = setInterval(fetchAll, 20_000);
     cdRef.current = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (cdRef.current)       clearInterval(cdRef.current);
     };
-  }, [fetchMessages]);
+  }, [fetchAll]);
+
+  /* ── Pause / Resume ── */
+  const postControl = useCallback(async (label: string, statusVal: string) => {
+    if (!BRIDGE_SECRET) {
+      alert("VITE_BRIDGE_SECRET not set — cannot post control messages.");
+      return;
+    }
+    setPosting(true);
+    try {
+      await bridgePost("post", {
+        kind:       "status",
+        title:      label,
+        body:       label,
+        created_by: "claude_code",
+        metadata:   { status: statusVal, control: true },
+      }, true);
+      await fetchAll();
+    } finally {
+      setPosting(false);
+    }
+  }, [fetchAll]);
+
+  const handlePause  = () => postControl("PAUSED — awaiting refill", "blocked");
+  const handleResume = () => postControl("RESUMED — continue build", "executing");
 
   /* ── Sorted messages (newest first) ── */
   const sorted = [...messages].sort(
@@ -461,7 +697,11 @@ export default function Build() {
       {/* ── Top bar ── */}
       <div
         className="sticky top-0 z-20 flex items-center justify-between px-6 py-3 border-b"
-        style={{ background: "rgba(9,12,20,0.92)", backdropFilter: "blur(12px)", borderColor: "rgba(255,255,255,0.06)" }}
+        style={{
+          background:    "rgba(9,12,20,0.92)",
+          backdropFilter: "blur(12px)",
+          borderColor:   "rgba(255,255,255,0.06)",
+        }}
       >
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -472,11 +712,13 @@ export default function Build() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Live indicator */}
           <div className="flex items-center gap-1.5">
             <span
               className="w-1.5 h-1.5 rounded-full"
-              style={{ background: error ? "#f87171" : "#4ade80", boxShadow: error ? undefined : "0 0 6px #4ade80" }}
+              style={{
+                background: error ? "#f87171" : "#4ade80",
+                boxShadow:  error ? undefined : "0 0 6px #4ade80",
+              }}
             />
             <span className="text-[10px] font-mono text-slate-500">
               {error ? "ERR" : `LIVE · ${countdown}s`}
@@ -493,7 +735,7 @@ export default function Build() {
             size="sm"
             variant="outline"
             className="h-7 px-2 text-[11px] font-mono border-white/10 text-slate-400 hover:text-slate-200 bg-transparent hover:bg-white/5"
-            onClick={fetchMessages}
+            onClick={fetchAll}
             disabled={loading}
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
@@ -516,7 +758,6 @@ export default function Build() {
           style={{ borderColor: "rgba(99,102,241,0.2)", background: "rgba(99,102,241,0.04)" }}
         >
           <div className="flex items-start gap-8 flex-wrap">
-            {/* Module */}
             <div>
               <div className="text-[10px] font-mono text-slate-600 mb-1 uppercase tracking-wider">Active Module</div>
               <div className="flex items-center gap-2">
@@ -530,13 +771,11 @@ export default function Build() {
               </div>
             </div>
 
-            {/* Task */}
             <div>
               <div className="text-[10px] font-mono text-slate-600 mb-1 uppercase tracking-wider">Current Task</div>
               <div className="text-sm text-slate-300 font-mono">{summary.activeTask}</div>
             </div>
 
-            {/* Last activity */}
             <div>
               <div className="text-[10px] font-mono text-slate-600 mb-1 uppercase tracking-wider">Last Activity</div>
               <div className="text-sm text-slate-300 font-mono flex items-center gap-1.5">
@@ -545,7 +784,22 @@ export default function Build() {
               </div>
             </div>
 
-            {/* Progress */}
+            {usage && (
+              <div>
+                <div className="text-[10px] font-mono text-slate-600 mb-1 uppercase tracking-wider">Today</div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-mono text-slate-300 flex items-center gap-1">
+                    <TrendingUp size={11} className="text-indigo-400" />
+                    {fmtTokens(usage.tokens_today)} tok
+                  </span>
+                  <span className="text-sm font-mono text-slate-300 flex items-center gap-1">
+                    <DollarSign size={11} className="text-orange-400" />
+                    ${usage.cost_today_usd.toFixed(4)}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 min-w-[200px]">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] font-mono text-slate-600 uppercase tracking-wider">Empire Progress</span>
@@ -561,9 +815,9 @@ export default function Build() {
       )}
 
       {/* ── Body: feed + sidebar ── */}
-      <div className="flex gap-4 mx-6 mt-4 pb-8" style={{ minHeight: "calc(100vh - 260px)" }}>
+      <div className="flex gap-4 mx-6 mt-4 pb-8" style={{ minHeight: "calc(100vh - 280px)" }}>
 
-        {/* ─── Feed (main) ─── */}
+        {/* ─── Feed ─── */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -583,12 +837,14 @@ export default function Build() {
             )}
           </div>
 
-          <div ref={feedRef} className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             {sorted.length === 0 && !loading && (
               <div className="rounded-lg border border-white/[0.04] p-8 text-center">
                 <Brain size={24} className="text-slate-700 mx-auto mb-2" />
                 <p className="text-sm font-mono text-slate-600">No messages yet.</p>
-                <p className="text-xs font-mono text-slate-700 mt-1">Post via: npx tsx scripts/bridge.ts dump</p>
+                <p className="text-xs font-mono text-slate-700 mt-1">
+                  Post via: npx tsx scripts/bridge.ts dump
+                </p>
               </div>
             )}
             {sorted.map(msg => (
@@ -600,7 +856,16 @@ export default function Build() {
         {/* ─── Sidebar ─── */}
         <div className="w-64 flex-shrink-0 flex flex-col gap-3">
 
-          {/* Stats */}
+          {/* Usage panel */}
+          <UsagePanel
+            usage={usage}
+            summary={summary}
+            onPause={handlePause}
+            onResume={handleResume}
+            posting={posting}
+          />
+
+          {/* Message counts */}
           {summary && (
             <div
               className="rounded-xl border p-4"
@@ -623,7 +888,7 @@ export default function Build() {
             </div>
           )}
 
-          {/* Git + TS */}
+          {/* Build health */}
           {summary && (
             <div
               className="rounded-xl border p-4"
@@ -650,15 +915,13 @@ export default function Build() {
             </div>
           )}
 
-          {/* Module progress list */}
+          {/* Module progress */}
           {summary && (
             <div
               className="rounded-xl border p-4 flex-1"
               style={{ borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}
             >
-              <div className="text-[10px] font-mono text-slate-600 uppercase tracking-wider mb-3">
-                Modules
-              </div>
+              <div className="text-[10px] font-mono text-slate-600 uppercase tracking-wider mb-3">Modules</div>
               <div className="flex flex-col gap-2">
                 {summary.moduleProgress.map(mod => (
                   <div key={mod.num} className="flex items-center gap-2">
