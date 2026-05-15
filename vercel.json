@@ -79,12 +79,6 @@
         "iad1"
       ]
     },
-    "api/health-diagnostic.ts": {
-      "maxDuration": 15,
-      "regions": [
-        "iad1"
-      ]
-    },
     "api/market-researcher.ts": {
       "maxDuration": 300,
       "regions": [

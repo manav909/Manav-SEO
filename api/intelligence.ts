@@ -478,13 +478,23 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
   /* ── Background learning capture (after response is complete) ── */
   if (projectId && fullOutput.length > 200 &&
-      (mode === "brain_assistant" || mode === "pipeline" || mode === "deep_dive")) {
+      (mode === "brain_assistant" || mode === "pipeline" || mode === "deep_dive" || mode === "strategy" || mode === "agenda")) {
     saveLearningLocal({
-      source:      mode === "brain_assistant" ? "brain_assistant_log" : mode === "pipeline" ? "pipeline_intelligence" : "deep_dive_analysis",
+      source:
+        mode === "brain_assistant" ? "brain_assistant_log" :
+        mode === "pipeline"        ? "pipeline_intelligence" :
+        mode === "deep_dive"       ? "deep_dive_analysis" :
+        mode === "strategy"        ? "strategy_generation" :
+                                     "agenda_output",
       projectId,
       content:     fullOutput,
-      title:       mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` : `Deep Dive: ${question.slice(0, 50)}`,
-      cardType:    "strategy",
+      title:
+        mode === "strategy"        ? `Strategy: ${question.slice(0, 50)}` :
+        mode === "agenda"          ? `Agenda: ${question.slice(0, 50)}` :
+        mode === "brain_assistant" ? `Brain: ${question.slice(0, 50)}` :
+        mode === "pipeline"        ? `Pipeline: ${question.slice(0, 50)}` :
+                                     `Deep Dive: ${question.slice(0, 50)}`,
+      cardType:    mode === "agenda" ? "insight" : "strategy",
       contextSummary: `${mode} — ${(projectSummary || "").slice(0, 80)}`,
     }).catch(() => {});
 

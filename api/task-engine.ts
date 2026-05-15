@@ -179,6 +179,102 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  /* ── HEALTH DIAGNOSTIC (full env + connectivity + Anthropic live test) ──
+     Merged from former api/health-diagnostic.ts. Call: POST /api/task-engine
+     with { action: "health_diagnostic" } ── */
+  if (action === "health_diagnostic") {
+    const results: Record<string, any> = {};
+
+    /* 1. Env vars */
+    results.env = {
+      SUPABASE_URL:             !!process.env.SUPABASE_URL,
+      SUPABASE_URL_value:       (process.env.SUPABASE_URL || "").slice(0, 30) + "...",
+      VITE_SUPABASE_URL:        !!process.env.VITE_SUPABASE_URL,
+      SUPABASE_ANON_KEY:        !!process.env.SUPABASE_ANON_KEY,
+      VITE_SUPABASE_ANON_KEY:   !!process.env.VITE_SUPABASE_ANON_KEY,
+      SUPABASE_SERVICE_KEY:     !!process.env.SUPABASE_SERVICE_KEY,
+      ANTHROPIC_API_KEY:        !!process.env.ANTHROPIC_API_KEY,
+      ANTHROPIC_KEY_PREFIX:     (process.env.ANTHROPIC_API_KEY || "").slice(0, 12),
+      JINA_API_KEY:             !!process.env.JINA_API_KEY,
+      NODE_VERSION:             process.version,
+      NODE_ENV:                 process.env.NODE_ENV || "unknown",
+      VERCEL_ENV:               process.env.VERCEL_ENV || "unknown",
+      VERCEL_REGION:            process.env.VERCEL_REGION || "unknown",
+    };
+
+    /* 2. Supabase live ping */
+    try {
+      const sbc = db();
+      if (sbc) {
+        const { data, error } = await sbc.from("brain_learnings").select("id").limit(1);
+        results.supabase = error
+          ? { status: "ERROR", reason: error.message, code: (error as any).code }
+          : { status: "OK", rows: data?.length ?? 0 };
+      } else { results.supabase = { status: "ERROR", reason: "db() returned null" }; }
+    } catch (e: any) { results.supabase = { status: "CRASH", reason: e?.message }; }
+
+    /* 3. Anthropic key validation */
+    const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
+    results.anthropic = {
+      key_present:      !!anthropicKey,
+      key_valid_format: anthropicKey.startsWith("sk-ant-"),
+      key_prefix:       anthropicKey.slice(0, 12),
+      note: anthropicKey
+        ? (anthropicKey.startsWith("sk-ant-") ? "Key looks valid" : "WARNING: Key should start with sk-ant-")
+        : "MISSING — Anthropic calls will fail with authentication error",
+    };
+
+    /* 4. Anthropic live 1-token test */
+    if (anthropicKey) {
+      try {
+        const client = new Anthropic({ apiKey: anthropicKey });
+        const msg = await client.messages.create({
+          model: "claude-sonnet-4-6", max_tokens: 1,
+          messages: [{ role: "user", content: "hi" }],
+        });
+        results.anthropic_live_test = { status: "OK", stop_reason: msg.stop_reason };
+      } catch (e: any) {
+        results.anthropic_live_test = {
+          status: "ERROR",
+          reason: (e?.message || "").slice(0, 200),
+          is_auth_error:  /401|authentication/i.test(e?.message || ""),
+          is_rate_limit:  /429|rate/i.test(e?.message || ""),
+          is_model_error: /model|404/i.test(e?.message || ""),
+        };
+      }
+    }
+
+    /* 5. Network */
+    try {
+      const r = await fetch("https://api.anthropic.com/health", { signal: AbortSignal.timeout(3000) });
+      results.network = { anthropic_reachable: r.status < 500, status: r.status };
+    } catch (e: any) { results.network = { anthropic_reachable: false, reason: e?.message }; }
+
+    /* 6. Memory */
+    const mem = process.memoryUsage();
+    results.memory = {
+      rss_mb:      Math.round(mem.rss / 1024 / 1024),
+      heap_mb:     Math.round(mem.heapUsed / 1024 / 1024),
+      heap_max_mb: Math.round(mem.heapTotal / 1024 / 1024),
+    };
+
+    return ok(res, {
+      timestamp: new Date().toISOString(),
+      diagnosis: results,
+      summary: {
+        can_reach_supabase:  results.supabase?.status === "OK",
+        can_reach_anthropic: results.anthropic_live_test?.status === "OK",
+        env_vars_ok:         (results.env.SUPABASE_URL || results.env.VITE_SUPABASE_URL) && results.env.ANTHROPIC_API_KEY,
+        critical_issues: [
+          !results.env.SUPABASE_URL && !results.env.VITE_SUPABASE_URL ? "SUPABASE_URL missing" : null,
+          !results.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY missing" : null,
+          results.anthropic?.key_present && !results.anthropic?.key_valid_format ? "ANTHROPIC_API_KEY wrong format (should start sk-ant-)" : null,
+          results.anthropic_live_test?.is_auth_error ? "ANTHROPIC_API_KEY invalid — authentication rejected" : null,
+        ].filter(Boolean),
+      },
+    });
+  }
+
   /* ── GET ALL LEARNINGS ── */
   if (action === "get_all_learnings") {
     const { project_id } = body;
@@ -646,6 +742,26 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const raw = r.content[0].type === "text" ? r.content[0].text : "{}";
       let parsed: any = {};
       try { parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)); } catch (_e) {}
+
+      /* ── Auto-learning from verify verdict (fire-and-forget) ── */
+      const verifyProjId = (body.projectId || null) as string | null;
+      if (verifyProjId && parsed.verdict && parsed.verdict !== "waiting" && parsed.verdict !== "cannot_determine") {
+        Promise.resolve().then(async () => {
+          await saveLearning({
+            source:         "verify_outcome",
+            projectId:      verifyProjId,
+            content:        `Verdict: ${parsed.verdict}. ${parsed.hod_note || parsed.timeline_note || ""}. Evidence: ${(parsed.evidence_found || []).join(". ")}`,
+            title:          `Verified: ${card.type} — ${(card.title || "").slice(0, 55)}`,
+            cardType:       card.type,
+            whatWorked:     parsed.evidence_found   || [],
+            whatMissed:     parsed.evidence_missing || [],
+            contextSummary: `verify_outcome — ${card.type}: ${card.title}. Verdict: ${parsed.verdict}`,
+            tags:           [card.type, "verified", parsed.verdict],
+            confidenceOverride: parsed.confidence || undefined,
+          });
+        }).catch(() => {});
+      }
+
       return ok(res, {
         success: true, ...parsed,
         waiting_status: { waitDays, daysSince, daysLeft, waitExpired: daysLeft === 0 },
@@ -785,6 +901,25 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const raw = r.content[0].type === "text" ? r.content[0].text : "{}";
       let parsed: any = {};
       try { parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)); } catch (_e) {}
+
+      /* ── Auto-learning from evaluation output (fire-and-forget) ── */
+      const evalProjId = (projectId || (body as any).context?.project?.id || null) as string | null;
+      if (evalProjId && parsed.quality_score != null) {
+        Promise.resolve().then(async () => {
+          await saveLearning({
+            source:         "evaluate_output",
+            projectId:      evalProjId,
+            content:        `Quality ${parsed.quality_score}/100. ${parsed.manav_note || ""}. ${(parsed.what_worked || []).join(". ")}`,
+            title:          `Eval: ${card.type} — ${(card.title || "").slice(0, 55)}`,
+            cardType:       card.type,
+            whatWorked:     parsed.what_worked  || [],
+            whatMissed:     parsed.what_missed  || [],
+            contextSummary: `evaluate_output — ${card.type}: ${card.title}`,
+            tags:           [card.type, "evaluated", parsed.was_role_right === "no" ? "role-mismatch" : "role-ok"],
+          });
+        }).catch(() => {});
+      }
+
       return ok(res, { success: true, evaluation: parsed });
     } catch (e: any) {
       return ok(res, { success: false, error: e.message });
