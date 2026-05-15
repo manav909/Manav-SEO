@@ -16,31 +16,62 @@ function db(): any {
   return _supa;
 }
 
-/* ── Inline minimal saveLearning (no classification — direct insert; never throws) ── */
+/* ── Inline minimal saveLearning with dedup guard
+   Never throws. Re-running the same audit no longer stacks duplicate learnings:
+   if a row with a matching title exists for this project, bump its confidence
+   instead of inserting a clone. ── */
 async function saveLearning(opts: {
   source: string; projectId: string | null; content: string; title?: string;
   cardType?: string; contextSummary?: string;
-}): Promise<{ saved: boolean }> {
-  if (!opts.content || opts.content.length < 80) return { saved: false };
+}): Promise<{ saved: boolean; reason?: string; id?: string }> {
+  if (!opts.content || opts.content.length < 80) return { saved: false, reason: "too_short" };
+  const sbc = db(); if (!sbc) return { saved: false, reason: "no_db" };
+
+  const title      = (opts.title || opts.content.slice(0, 80)).slice(0, 100);
+  const isAudit    = /audit/i.test(opts.source);
+  const confidence = isAudit ? 85 : 70;
+
+  /* Dedup guard — only when we have a project_id (project-less rows are rare; skip dedup for them) */
+  if (opts.projectId) {
+    try {
+      const { data: existing } = await sbc
+        .from("brain_learnings")
+        .select("id, confidence_score")
+        .eq("project_id", opts.projectId)
+        .ilike("card_title", title.slice(0, 60))   // first 60 chars — robust to trailing variations
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        /* Existing learning found — bump confidence if this audit scored higher; never lower it */
+        if (confidence > ((existing as any).confidence_score ?? 0)) {
+          await sbc.from("brain_learnings")
+            .update({ confidence_score: confidence, updated_at: new Date().toISOString() })
+            .eq("id", (existing as any).id);
+        }
+        return { saved: false, reason: "duplicate_title", id: (existing as any).id };
+      }
+    } catch (_e) { /* no match / lookup failed — proceed to insert below */ }
+  }
+
   try {
-    const sbc = db(); if (!sbc) return { saved: false };
-    await sbc.from('brain_learnings').insert({
+    const { data } = await sbc.from('brain_learnings').insert({
       project_id:      opts.projectId,
       source:          opts.source,
       card_type:       opts.cardType || 'insight',
-      card_title:      (opts.title || opts.content.slice(0, 80)).slice(0, 100),
+      card_title:      title,
       improvement:     opts.content.slice(0, 800),
       context_summary: opts.contextSummary || opts.source,
       what_worked:     [], what_missed: [],
       tags:            [opts.cardType || 'insight', opts.source.split('_')[0]].filter(Boolean),
       applied_count:   0,
-      status:          /audit/i.test(opts.source) ? 'active' : 'pending_review',
+      status:          isAudit ? 'active' : 'pending_review',
       auto_captured:   true,
-      confidence_score: /audit/i.test(opts.source) ? 85 : 70,
+      confidence_score: confidence,
       updated_at:      new Date().toISOString(),
-    });
-    return { saved: true };
-  } catch (_e) { return { saved: false }; }
+    }).select("id").single();
+    return { saved: true, id: (data as any)?.id };
+  } catch (_e) { return { saved: false, reason: "insert_failed" }; }
 }
 
 /* ── Inline minimal logChange (audit trail) ── */
