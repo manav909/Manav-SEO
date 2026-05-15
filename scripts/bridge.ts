@@ -194,6 +194,32 @@ async function main() {
       console.log(JSON.stringify(r, null, 2));
       break;
     }
+    case "thinking": {
+      const rawArgs  = process.argv.slice(3);
+      const msgIdx   = rawArgs.findIndex(a => !a.startsWith("--"));
+      const msg      = msgIdx >= 0 ? rawArgs[msgIdx] : "";
+      const modFlag  = rawArgs.indexOf("--module");
+      const taskFlag = rawArgs.indexOf("--task");
+      const modStr   = modFlag  >= 0 ? rawArgs[modFlag  + 1] : null;
+      const task     = taskFlag >= 0 ? rawArgs[taskFlag + 1] : null;
+      const moduleNum = modStr ? (parseInt(modStr, 10) || null) : null;
+      if (!msg) die('Usage: bridge thinking "plain English message" [--module "01"] [--task "A"]');
+      const r = await call("post", {
+        kind:       "thinking",
+        title:      msg,
+        body:       msg,
+        created_by: "claude_code",
+        metadata:   {
+          status: "executing",
+          ...(moduleNum !== null && { module_num: moduleNum }),
+          ...(task              && { task }),
+          ...(modStr            && { module: modStr }),
+        },
+      }, true);
+      console.log(`✓ Thinking posted. Module: ${modStr || "—"} Task: ${task || "—"}`);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    }
     case "list": {
       const [, kind, limit] = args;
       const r = await call("list", { kind: kind || undefined, limit: limit ? Number(limit) : 25 });
@@ -231,7 +257,8 @@ Commands:
   note <title> <text>               quick one-line note
   respond <title> <text>            post kind:'response' with token estimate in metadata
   status "msg" [--module N] [--task A] [--type response]   post status with metadata
-  context <0-100> <status> [detail] post chat context %% for dashboard gauge
+  thinking "plain English" [--module N] [--task A]         post what is being built and why
+  context <0-100> <status> [detail]                        post chat context % for dashboard gauge
   list [kind] [limit]               list recent messages
   get <id>                          fetch one (full body)
   read <id>                         mark as read

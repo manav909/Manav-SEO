@@ -163,6 +163,7 @@ const WHO_CFG: Record<string, { color: string; label: string }> = {
 const KIND_CFG: Record<string, { color: string; label: string }> = {
   instruction: { color: C.indigo,  label: "instruction" },
   response:    { color: C.teal,    label: "response"    },
+  thinking:    { color: C.blue,    label: "thinking"    },
   status:      { color: C.gray,    label: "status"      },
   dump:        { color: "#374151", label: "brain_dump"  },
   note:        { color: C.cyan,    label: "note"        },
@@ -495,100 +496,191 @@ function ModuleRow({
   );
 }
 
-function ActiveTaskCard({ msg }: { msg: BridgeMsg | null }) {
-  const [expanded, setExpanded] = useState(false);
+/** Elapsed timer — ticks every second from a start ISO timestamp */
+function useElapsed(startIso: string | null): string {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!startIso) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+  if (!startIso) return "";
+  const s = Math.floor((Date.now() - new Date(startIso).getTime()) / 1000);
+  if (s < 60)    return `${s}s`;
+  if (s < 3600)  return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
 
-  if (!msg) {
+function ActiveTaskCard({
+  messages,
+}: {
+  messages: BridgeMsg[];
+}) {
+  const sorted = [...messages].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+
+  // Priority 1 — latest thinking message
+  const thinking = sorted.find(m => m.kind === "thinking");
+  // Priority 2 — latest instruction
+  const instruction = sorted.find(m => m.kind === "instruction");
+  // Blocked signal — check most recent non-done message
+  const blocked = sorted.find(m => m.metadata?.status === "blocked");
+  // Last completed — for standing-by state
+  const lastDone = sorted.find(
+    m => m.metadata?.status === "done" || /MODULE_\d+_DONE/i.test(m.title || "") || m.metadata?.module_done
+  );
+
+  const primary = thinking || instruction || null;
+  const isBlocked = !!blocked && !thinking;
+  const elapsed = useElapsed(primary?.created_at || null);
+
+  /* ── STANDING BY — nothing active ── */
+  if (!primary) {
     return (
       <div
-        className="rounded-xl border p-6 flex flex-col items-center justify-center"
-        style={{ borderColor: C.border, background: C.card, minHeight: 120 }}
+        className="rounded-xl border p-6 flex flex-col gap-3"
+        style={{ borderColor: C.border, background: C.card, minHeight: 140 }}
       >
-        <Clock size={20} style={{ color: C.muted, marginBottom: 8 }} />
-        <p className="text-sm font-mono" style={{ color: C.muted }}>⏳ Waiting for next instruction…</p>
+        <div className="flex items-center gap-2">
+          <Clock size={14} style={{ color: C.muted }} />
+          <span className="text-[10px] font-mono font-bold tracking-widest uppercase" style={{ color: C.muted }}>
+            ⏳ STANDING BY
+          </span>
+        </div>
+        <p className="text-sm leading-relaxed" style={{ color: "#8080a0" }}>
+          Empire is ready. Claude Chat will post the next instruction.
+        </p>
+        {lastDone && (
+          <div className="border-t pt-3 flex flex-col gap-0.5" style={{ borderColor: C.border }}>
+            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Last completed</span>
+            <span className="text-[11px] font-mono" style={{ color: C.green }}>
+              {lastDone.title || lastDone.body?.slice(0, 80) || "—"}
+            </span>
+            <span className="text-[9px] font-mono" style={{ color: C.muted }}>
+              {fmtRelative(lastDone.created_at)}
+            </span>
+          </div>
+        )}
       </div>
     );
   }
 
-  const meta    = msg.metadata || {};
-  const isBlk   = meta.status === "blocked";
-  const whoC    = WHO_CFG[msg.created_by] || WHO_CFG.unknown;
-  const preview = msg.body?.slice(0, 300) || "";
+  /* ── BLOCKED ── */
+  if (isBlocked) {
+    return (
+      <div
+        className="rounded-xl border p-5 flex flex-col gap-3 transition-all"
+        style={{
+          borderColor: `${C.red}60`,
+          background:  "rgba(239,68,68,0.06)",
+          boxShadow:   `0 0 20px rgba(239,68,68,0.12)`,
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-mono font-bold px-2 py-1 rounded" style={{ color: C.red, background: `${C.red}20`, border: `1px solid ${C.red}40` }}>
+            🚫 NEEDS YOUR ATTENTION
+          </span>
+          <span className="text-[9px] font-mono" style={{ color: C.muted }}>
+            Stopped at {fmtTime(blocked!.created_at)}
+          </span>
+        </div>
+        {(blocked!.metadata?.module_num || blocked!.metadata?.task) && (
+          <div className="text-[10px] font-mono" style={{ color: C.muted }}>
+            {blocked!.metadata?.module_num && `MODULE ${String(blocked!.metadata.module_num).padStart(2,"0")}`}
+            {blocked!.metadata?.task && ` · TASK ${blocked!.metadata.task}`}
+          </div>
+        )}
+        <div className="border-t border-b py-3" style={{ borderColor: `${C.red}25` }}>
+          <p className="text-sm leading-relaxed font-medium" style={{ color: "#f0a0a0" }}>
+            {blocked!.body || blocked!.title || "Blocked — check the build log for details."}
+          </p>
+        </div>
+        <p className="text-[9px] font-mono" style={{ color: C.muted }}>
+          Resolve the blocker, then post a bridge status to resume.
+        </p>
+      </div>
+    );
+  }
+
+  /* ── ACTIVE (thinking or instruction) ── */
+  const meta       = primary.metadata || {};
+  const moduleNum  = meta.module_num  ? String(meta.module_num).padStart(2, "0") : null;
+  const taskId     = meta.task        || (meta.module ? meta.module : null);
+  const isThinking = primary.kind === "thinking";
+
+  // Split body into first sentence (headline) and rest (why it matters)
+  const bodyText   = primary.body || primary.title || "";
+  const sentenceEnd = bodyText.search(/(?<=[.!?])\s+[A-Z]/);
+  const headline   = sentenceEnd > 0 ? bodyText.slice(0, sentenceEnd + 1) : bodyText;
+  const whyText    = sentenceEnd > 0 ? bodyText.slice(sentenceEnd + 1).trim() : "";
 
   return (
     <div
-      className="rounded-xl border p-4 transition-all"
+      className="rounded-xl border p-5 flex flex-col gap-4 transition-all"
       style={{
-        borderColor: isBlk ? `${C.red}60` : `${C.blue}30`,
-        background:  isBlk ? `rgba(239,68,68,0.06)` : C.card,
-        boxShadow:   isBlk ? `0 0 16px rgba(239,68,68,0.15)` : undefined,
+        borderColor: isThinking ? `${C.blue}35` : `${C.indigo}30`,
+        background:  C.card,
       }}
     >
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          {isBlk && (
-            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded" style={{ color: C.red, background: `${C.red}20`, border: `1px solid ${C.red}40` }}>
-              ⚠ NEEDS ATTENTION
-            </span>
-          )}
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
           <span
             className="text-[10px] font-mono font-bold px-2 py-0.5 rounded"
-            style={{ color: whoC.color, background: `${whoC.color}18`, border: `1px solid ${whoC.color}40` }}
+            style={{ color: C.blue, background: `${C.blue}18`, border: `1px solid ${C.blue}35` }}
           >
-            {msg.created_by === "claude_chat" ? "🤖 CLAUDE CHAT" : "⚡ CLAUDE CODE"}
+            {isThinking ? "💭 THINKING" : "⚡ BUILDING"}
           </span>
-          {msg.created_by === "claude_chat" && (
-            <>
-              <span className="text-[10px] font-mono" style={{ color: C.muted }}>→</span>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded" style={{ color: C.cyan, background: `${C.cyan}18`, border: `1px solid ${C.cyan}40` }}>
-                CLAUDE CODE
-              </span>
-            </>
+          {(moduleNum || taskId) && (
+            <span className="text-[10px] font-mono font-semibold" style={{ color: C.muted }}>
+              {moduleNum && `MODULE ${moduleNum}`}{taskId && ` · TASK ${taskId}`}
+            </span>
           )}
         </div>
-        <span className="text-[10px] font-mono" style={{ color: C.muted }}>{fmtRelative(msg.created_at)}</span>
+        <span className="text-[9px] font-mono" style={{ color: C.muted }}>
+          {fmtRelative(primary.created_at)}
+        </span>
       </div>
 
-      {(meta.module_num || meta.task) && (
-        <div className="text-[10px] font-mono mb-2" style={{ color: C.muted }}>
-          {meta.module_num && `Module ${String(meta.module_num).padStart(2, "0")}`}
-          {meta.task && ` · ${meta.task}`}
+      {/* Main text — large, readable, plain English */}
+      <div className="border-t border-b py-4" style={{ borderColor: C.border }}>
+        <p className="text-[15px] leading-relaxed font-medium" style={{ color: "#dde0f0", letterSpacing: "0.01em" }}>
+          {headline}
+        </p>
+      </div>
+
+      {/* Why it matters */}
+      {whyText && (
+        <div className="flex flex-col gap-1">
+          <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: C.muted }}>
+            WHY THIS MATTERS
+          </span>
+          <p className="text-[12px] leading-relaxed" style={{ color: "#8888a8" }}>
+            {whyText}
+          </p>
         </div>
       )}
 
-      <div className="border-b mb-3" style={{ borderColor: C.border }} />
-      {msg.title && <p className="text-sm font-semibold mb-2" style={{ color: C.text }}>{msg.title}</p>}
-
-      <p className="text-xs font-mono leading-relaxed mb-3" style={{ color: "#a0a0b0" }}>
-        {expanded ? msg.body : preview}
-        {!expanded && (msg.body?.length || 0) > 300 && (
-          <button className="ml-1 hover:underline" style={{ color: C.blue }} onClick={() => setExpanded(true)}>
-            View full ↓
-          </button>
-        )}
-        {expanded && (
-          <button className="ml-1 hover:underline" style={{ color: C.blue }} onClick={() => setExpanded(false)}>
-            {" "}Collapse ↑
-          </button>
-        )}
-      </p>
-
-      <div className="flex items-center gap-3 flex-wrap">
-        {meta.status && <StatusBadge status={meta.status} />}
+      {/* Footer — started + elapsed */}
+      <div className="flex items-center gap-6 pt-1">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: C.muted }}>STARTED</span>
+          <span className="text-[10px] font-mono" style={{ color: "#7070a0" }}>{fmtTime(primary.created_at)}</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: C.muted }}>ELAPSED</span>
+          <span className="text-[10px] font-mono" style={{ color: elapsed ? C.blue : C.muted }}>
+            {elapsed || "—"}
+          </span>
+        </div>
         {meta.sha && (
-          <span className="flex items-center gap-1 text-[9px] font-mono" style={{ color: C.muted }}>
-            <GitCommit size={8} /> {meta.sha}
-          </span>
-        )}
-        {meta.ts_status && (
-          <span className="flex items-center gap-1 text-[9px] font-mono" style={{ color: meta.ts_status === "clean" ? C.green : C.red }}>
-            <Code2 size={8} /> TS: {meta.ts_status}
-          </span>
-        )}
-        {meta.tokens_estimated && (
-          <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-            ~{fmtTokens(meta.tokens_estimated)} tok
-          </span>
+          <div className="flex flex-col gap-0.5 ml-auto">
+            <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: C.muted }}>COMMIT</span>
+            <span className="flex items-center gap-1 text-[10px] font-mono" style={{ color: "#7070a0" }}>
+              <GitCommit size={8} /> {meta.sha}
+            </span>
+          </div>
         )}
       </div>
     </div>
@@ -1074,7 +1166,7 @@ export default function Build() {
   const moduleMap   = buildModuleMap(messages);
   const doneCount   = MODULES.filter(m => deriveModuleStatus(moduleMap[m.num] || []) === "done").length;
   const sorted      = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  const activeTask  = findActiveTask(messages);
+  const activeTask  = findActiveTask(messages); // used in generateHandoff
   const progressPct = Math.round((doneCount / 12) * 100);
 
   // Bridge-first context pct (for Fresh Chat button threshold)
@@ -1383,7 +1475,7 @@ export default function Build() {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-4" style={{ scrollbarWidth: "thin" }}>
-        <ActiveTaskCard msg={activeTask} />
+        <ActiveTaskCard messages={messages} />
       </div>
     </div>
   );
