@@ -298,7 +298,8 @@ export default function BrainCommand() {
   /* Load existing persona + goals from DB when project changes */
   const loadExistingPersona = async (pid: string) => {
     if (!pid) return;
-    const { data } = await supabase.from("market_personas").select("*").eq("project_id", pid).single();
+    /* maybeSingle — returns null instead of HTTP 406 when no row exists */
+    const { data } = await supabase.from("market_personas").select("*").eq("project_id", pid).maybeSingle();
     if (data) {
       if (data.persona_data) setMiPersona(data.persona_data);
       if (data.goals_data)   setMiGoals(data.goals_data);

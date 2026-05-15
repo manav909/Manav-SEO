@@ -708,7 +708,7 @@ Trust signals: ${(p.trust_signals?.what_builds_immediate_trust || []).join(", ")
 Content gaps: ${(p.seo_content_implications?.content_gaps_this_persona_needs_filled || []).join(", ")}
 `;
     } else if (projectId) {
-      const { data: p } = await sb().from("market_personas").select("persona_data").eq("project_id", projectId).single();
+      const { data: p } = await sb().from("market_personas").select("persona_data").eq("project_id", projectId).maybeSingle();
       if (p?.persona_data) {
         const pd = p.persona_data;
         personaContext = `BUYER PERSONA: ${pd.persona_name}\nMarket context: ${pd.market_context}\nContent gaps: ${(pd.seo_content_implications?.content_gaps_this_persona_needs_filled || []).join(", ")}`;

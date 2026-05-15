@@ -267,7 +267,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         .from("market_personas")
         .select("persona_data,industry")
         .eq("project_id", projectId)
-        .single();
+        .maybeSingle();
       if (personaRow?.persona_data) {
         const p = personaRow.persona_data;
         marketPersonaContext = [
