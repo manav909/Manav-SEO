@@ -1,7 +1,46 @@
+// BUNDLE-VERSION: 2026-05-15-v3 — force Vercel Lambda rebuild
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { saveLearning } from "./lib/save";
-import { db } from "./lib/db";
+import { createClient } from "@supabase/supabase-js";
+
+/* ── Inline Supabase client (avoid ./lib/db import resolution at Lambda cold start) ── */
+let _supa: any = null;
+function db(): any {
+  if (_supa) return _supa;
+  try {
+    _supa = createClient(
+      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
+      process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
+    );
+  } catch (e) { console.error("[intelligence] db() init failed:", (e as any)?.message); _supa = null; }
+  return _supa;
+}
+
+/* ── Minimal local saveLearning replacement (no ./lib/save import) ── */
+async function saveLearningLocal(opts: {
+  source: string; projectId: string | null; content: string; title?: string;
+  cardType?: string; contextSummary?: string; whatWorked?: string[];
+  whatMissed?: string[]; tags?: string[]; industry?: string; keywordCluster?: string[];
+}): Promise<void> {
+  if (!opts.content || opts.content.length < 100) return;
+  try {
+    const sbc = db(); if (!sbc) return;
+    await sbc.from("brain_learnings").insert({
+      project_id:      opts.projectId,
+      source:          opts.source,
+      card_type:       opts.cardType || "strategy",
+      card_title:      (opts.title || opts.content.slice(0, 80)).slice(0, 100),
+      improvement:     opts.content.slice(0, 800),
+      context_summary: opts.contextSummary || opts.source,
+      what_worked:     (opts.whatWorked || []).slice(0, 6),
+      what_missed:     (opts.whatMissed || []).slice(0, 4),
+      tags:            [...new Set([...(opts.tags || []), opts.source.split("_")[0]])].filter(Boolean),
+      applied_count:   0, status: "pending_review",
+      auto_captured:   true, confidence_score: 72,
+      updated_at:      new Date().toISOString(),
+    });
+  } catch (_e) { /* never crash callers */ }
+}
 
 /* ── INLINED Intelligence Fabric (Lambda-safe — no extra lib/ imports) ── */
 type SourceType = "manual_user" | "user_comment" | "gsc_live" | "ga_live" | "audit_run" |
@@ -440,7 +479,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   /* ── Background learning capture (after response is complete) ── */
   if (projectId && fullOutput.length > 200 &&
       (mode === "brain_assistant" || mode === "pipeline" || mode === "deep_dive")) {
-    saveLearning({
+    saveLearningLocal({
       source:      mode === "brain_assistant" ? "brain_assistant_log" : mode === "pipeline" ? "pipeline_intelligence" : "deep_dive_analysis",
       projectId,
       content:     fullOutput,
