@@ -283,7 +283,11 @@ export default function BrainCommand() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, projectId: selProj, ...extra }),
       });
-      return await res.json();
+      const text = await res.text();
+      try { return JSON.parse(text); }
+      catch (_) { return { error: `Server error (${res.status}): ${text.slice(0, 200)}` }; }
+    } catch (e: any) {
+      return { error: e?.message || "Network error" };
     } finally {
       setMiLoading("");
     }
@@ -291,11 +295,13 @@ export default function BrainCommand() {
 
   const generatePersona = async () => {
     const data = await miCall("build_persona");
+    if (data?.error) { alert(`Persona error: ${data.error}`); return; }
     if (data?.persona) { setMiPersona(data.persona); setMiSection("persona"); }
   };
 
   const suggestGoals = async () => {
     const data = await miCall("suggest_goals", { existingPersona: miPersona });
+    if (data?.error) { alert(`Goals error: ${data.error}`); return; }
     if (data?.goalPlan) { setMiGoals(data.goalPlan); setMiSection("goals"); }
   };
 
@@ -305,6 +311,7 @@ export default function BrainCommand() {
       industry: selProject?.industry || "",
       keywords: selProject?.keywords || [],
     });
+    if (data?.error) { alert(`Patterns error: ${data.error}`); return; }
     if (data?.patterns || data?.message) { setMiPatterns(data); setMiSection("patterns"); }
   };
 
