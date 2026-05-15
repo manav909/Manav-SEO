@@ -494,6 +494,81 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/* ── Module Status Icon (40×40, per-status premium styling) ── */
+function ModStatusIcon({ status, compact = false }: { status: ModStatus; compact?: boolean }) {
+  const sz  = compact ? 32 : 40;
+  const r   = compact ? 8  : 10;
+  const fsz = compact ? 14 : 18;
+
+  const cfg: Record<ModStatus, { bg: string; border: string; shadow?: string; anim?: string; icon: React.ReactNode }> = {
+    pending:  { bg: "#0d0d1a", border: "1.5px solid #2a2a3a", icon: null },
+    building: {
+      bg: "#0d1830", border: "1.5px solid #3b82f6",
+      shadow: "0 0 12px rgba(59,130,246,0.3)", anim: "pulseBlue 2s ease-in-out infinite",
+      icon: <span style={{ fontSize: fsz }}>⚡</span>,
+    },
+    testing:  {
+      bg: "#1a1400", border: "1.5px solid #eab308",
+      shadow: "0 0 12px rgba(234,179,8,0.2)",
+      icon: <span style={{ fontSize: fsz }}>🔬</span>,
+    },
+    done:     {
+      bg: "#051008", border: "1.5px solid #10b981",
+      shadow: "0 0 16px rgba(16,185,129,0.25)",
+      icon: <span style={{ fontSize: compact ? 16 : 20, fontWeight: 700, color: "#10b981", lineHeight: 1 }}>✓</span>,
+    },
+    blocked:  {
+      bg: "#1a0505", border: "1.5px solid #ef4444",
+      anim: "pulseRed 2s ease-in-out infinite",
+      icon: <span style={{ fontSize: fsz, color: "#ef4444" }}>✗</span>,
+    },
+    paused:   {
+      bg: "#1a0e00", border: "1.5px solid #f97316",
+      icon: <span style={{ fontSize: fsz, color: "#f97316" }}>⏸</span>,
+    },
+  };
+
+  const c = cfg[status];
+  return (
+    <div style={{
+      width: sz, height: sz, borderRadius: r, flexShrink: 0,
+      background: c.bg, border: c.border, boxShadow: c.shadow,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      animation: c.anim,
+      transition: "box-shadow 0.3s",
+    }}>
+      {c.icon}
+    </div>
+  );
+}
+
+/* ── Module Status Pill badge ── */
+function ModStatusPill({ status }: { status: ModStatus }) {
+  const cfg: Record<ModStatus, { bg: string; color: string; border: string }> = {
+    pending:  { bg: "#0d0d1a", color: "#4b4b6a", border: "0.5px solid #2a2a3a" },
+    building: { bg: "#0d1830", color: "#3b82f6", border: "0.5px solid #3b82f6" },
+    testing:  { bg: "#1a1400", color: "#eab308", border: "0.5px solid #eab308" },
+    done:     { bg: "#0a2010", color: "#10b981", border: "0.5px solid #10b981" },
+    blocked:  { bg: "#1a0505", color: "#ef4444", border: "0.5px solid #ef4444" },
+    paused:   { bg: "#1a0e00", color: "#f97316", border: "0.5px solid #f97316" },
+  };
+  const labels: Record<ModStatus, string> = {
+    pending: "PENDING", building: "BUILDING", testing: "TESTING",
+    done: "DONE", blocked: "BLOCKED", paused: "PAUSED",
+  };
+  const c = cfg[status];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center",
+      fontSize: 9, fontFamily: "monospace", fontWeight: 600, letterSpacing: "0.08em",
+      padding: "2px 8px", borderRadius: 20,
+      background: c.bg, color: c.color, border: c.border,
+    }}>
+      {labels[status]}
+    </span>
+  );
+}
+
 function ModuleRow({
   mod, msgs, expanded, onToggle, compact = false,
 }: {
@@ -503,103 +578,117 @@ function ModuleRow({
   onToggle: () => void;
   compact?: boolean;
 }) {
-  const status     = deriveModuleStatus(msgs);
-  const cfg        = MOD_STATUS_CFG[status];
-  const latest     = msgs[0] || null;
-  const tasks      = extractModuleTasks(msgs);
-  const isBuilding = status === "building";
+  const status  = deriveModuleStatus(msgs);
+  const latest  = msgs[0] || null;
+  const tasks   = extractModuleTasks(msgs);
+
+  const leftBorderColor: Record<ModStatus, string> = {
+    done:     "#10b981", building: "#3b82f6", testing:  "#eab308",
+    blocked:  "#ef4444", paused:   "#f97316", pending:  "transparent",
+  };
+  const cardBg: Record<ModStatus, string> = {
+    done:     "linear-gradient(to right, rgba(16,185,129,0.05), transparent)",
+    building: "linear-gradient(to right, rgba(59,130,246,0.05), transparent)",
+    testing:  "linear-gradient(to right, rgba(234,179,8,0.04), transparent)",
+    blocked:  "linear-gradient(to right, rgba(239,68,68,0.05), transparent)",
+    paused:   "linear-gradient(to right, rgba(249,115,22,0.04), transparent)",
+    pending:  "#0d0d1a",
+  };
+  const outerBorder: Record<ModStatus, string> = {
+    done:     "rgba(16,185,129,0.2)", building: "rgba(59,130,246,0.2)",
+    testing:  "rgba(234,179,8,0.2)",  blocked:  "rgba(239,68,68,0.3)",
+    paused:   "rgba(249,115,22,0.2)", pending:  "#1e1e2e",
+  };
 
   return (
     <div
-      className="rounded-lg border transition-all overflow-hidden"
       style={{
-        borderColor: expanded ? `${cfg.color}40` : C.border,
-        background:  expanded ? `${cfg.color}08` : "transparent",
-        boxShadow:   status === "blocked" ? `0 0 8px ${C.red}30` : undefined,
+        borderRadius: 12,
+        border:       `1px solid ${outerBorder[status]}`,
+        borderLeft:   `3px solid ${leftBorderColor[status]}`,
+        background:   cardBg[status],
+        overflow:     "hidden",
+        boxShadow:    status === "blocked"  ? "0 0 16px rgba(239,68,68,0.1)"
+                    : status === "building" ? "0 0 16px rgba(59,130,246,0.08)"
+                    : undefined,
+        transition:   "box-shadow 0.3s",
       }}
     >
+      {/* ── Header button ── */}
       <button
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.02] transition-colors"
+        className="w-full text-left transition-colors hover:bg-white/[0.025]"
+        style={{ padding: compact ? "10px 14px" : "14px 16px" }}
         onClick={onToggle}
       >
-        <span
-          className="text-sm flex-shrink-0"
-          style={{
-            filter:    isBuilding ? "drop-shadow(0 0 4px #3b82f6)" : undefined,
-            animation: isBuilding ? "pulse 1.5s ease-in-out infinite" : undefined,
-          }}
-        >
-          {cfg.icon}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: compact ? 12 : 16 }}>
+          <ModStatusIcon status={status} compact={compact} />
 
-        <div className="flex-1 min-w-0">
-          {!compact && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono text-slate-600">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color: "#4b4b6a", fontFamily: "monospace" }}>
                 MODULE {String(mod.num).padStart(2, "0")}
               </span>
-              <span
-                className="text-[9px] font-mono font-bold px-1 rounded"
-                style={{ color: cfg.color, background: `${cfg.color}18` }}
-              >
-                {cfg.label}
-              </span>
+              {latest && (
+                <span style={{ fontSize: 11, color: "#4b4b6a", flexShrink: 0 }}>
+                  {fmtRelative(latest.created_at)}
+                </span>
+              )}
             </div>
-          )}
-          <div className="text-xs font-medium truncate" style={{ color: C.text }}>
-            {compact ? `${String(mod.num).padStart(2,"0")}. ${mod.name}` : mod.name}
+            <div style={{ fontSize: compact ? 13 : 15, fontWeight: 600, color: "#f0f0ff", marginTop: 3, lineHeight: 1.25 }}>
+              {mod.name}
+            </div>
+            <div style={{ marginTop: 6 }}>
+              <ModStatusPill status={status} />
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {latest && !compact && (
-            <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-              {fmtRelative(latest.created_at)}
-            </span>
-          )}
-          {expanded
-            ? <ChevronUp  size={11} style={{ color: C.muted }} />
-            : <ChevronDown size={11} style={{ color: C.muted }} />
-          }
+          {/* Animated chevron */}
+          <div style={{
+            transform:  expanded ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 220ms ease",
+            color:      "#4b4b6a",
+            flexShrink: 0,
+          }}>
+            <ChevronDown size={18} />
+          </div>
         </div>
       </button>
 
+      {/* ── Expanded detail ── */}
       {expanded && (
-        <div className="px-3 pb-3 border-t" style={{ borderColor: `${cfg.color}20` }}>
-          {tasks.length > 0 && (
-            <div className="mt-2 mb-3">
-              <div className="text-[9px] font-mono uppercase mb-1.5" style={{ color: C.muted }}>Tasks</div>
-              <div className="flex flex-col gap-1">
-                {tasks.map(t => {
-                  const tc = MOD_STATUS_CFG[t.status];
-                  return (
-                    <div key={t.name} className="flex items-center gap-2">
-                      <span className="text-xs flex-shrink-0">{tc.icon}</span>
-                      <span className="text-[10px] font-mono truncate flex-1" style={{ color: C.text }}>{t.name}</span>
-                      <span className="text-[9px] font-mono" style={{ color: tc.color }}>{tc.label}</span>
+        <div style={{ background: "#090912", borderTop: "1px solid #1e1e3a", padding: "12px 16px 14px 68px" }}>
+          {tasks.length > 0 ? (
+            <div>
+              {tasks.map((t, i) => {
+                const tc = MOD_STATUS_CFG[t.status];
+                return (
+                  <div key={t.name}>
+                    {i > 0 && <div style={{ borderTop: "1px dashed #1e1e3a", margin: "8px 0" }} />}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: tc.color, flexShrink: 0 }} />
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: "#6060a0", letterSpacing: "0.05em" }}>
+                        TASK {t.name}
+                      </span>
+                      <ModStatusPill status={t.status} />
+                      {t.latest && (
+                        <span style={{ fontSize: 9, color: "#4b4b6a", marginLeft: "auto" }}>
+                          {fmtRelative(t.latest.created_at)}
+                        </span>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                    {t.latest && (t.latest.title || t.latest.body) && (
+                      <p style={{ fontSize: 10, fontFamily: "monospace", color: "#6868a0", marginTop: 3, lineHeight: 1.4 }}>
+                        {(t.latest.title || t.latest.body || "").slice(0, 80)}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          )}
-          {latest && (
-            <div className="rounded p-2" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}` }}>
-              <div className="text-[9px] font-mono mb-1" style={{ color: C.muted }}>
-                Latest · {fmtTime(latest.created_at)}
-              </div>
-              <p className="text-[10px] font-mono leading-relaxed line-clamp-3" style={{ color: C.text }}>
-                {latest.title || latest.body?.slice(0, 120)}
-              </p>
-              {latest.metadata?.sha && (
-                <div className="flex items-center gap-1 mt-1.5">
-                  <GitCommit size={8} style={{ color: C.muted }} />
-                  <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-                    {latest.metadata.sha}{latest.metadata.branch ? ` (${latest.metadata.branch})` : ""}
-                  </span>
-                </div>
-              )}
-            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: "#4b4b6a", fontStyle: "italic" }}>
+              Tasks load as Claude Code begins this module
+            </p>
           )}
         </div>
       )}
@@ -884,44 +973,87 @@ function LiveActivity({ messages }: { messages: BridgeMsg[] }) {
   );
 }
 
+/* ── King's News Headline Generator ── */
+const HEADLINE_SEEDS: string[] = [
+  "👑 SEO Season — the only system that learns from every client forever",
+  "🧠 9 intelligence streams now feeding Brain Memory automatically",
+  "🌍 Any market · Any language · Any culture — empire without borders",
+  "⚡ The Closed Loop — tasks that verify themselves are building next",
+  "📈 Every verified outcome is a brick in the moat no competitor can cross",
+  "🏰 Module 01 complete — foundation of the most intelligent SEO empire ever built",
+];
+
+function generateNewsHeadlines(messages: BridgeMsg[]): string[] {
+  const headlines: string[] = [];
+  const seen = new Set<string>();
+  const add = (h: string) => {
+    if (!seen.has(h) && h.length <= 88) { seen.add(h); headlines.push(h); }
+  };
+  const sorted = [...messages].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+  for (const m of sorted.slice(0, 50)) {
+    const text = ((m.title || "") + " " + (m.body || "")).toLowerCase();
+    if (/MODULE_01_DONE/i.test(text) || (m.metadata?.module_done && m.metadata?.module_num === 1))
+      add("👑 Foundation sealed — Brain quality gate now universal across the empire");
+    if (text.includes("savelearninglocal") || text.includes("save_learning"))
+      add("🧠 Intelligence pipeline hardened — every AI insight classified and remembered forever");
+    if (text.includes("quicksave") || text.includes("market-researcher"))
+      add("⚡ Market intelligence now flows into Brain memory — zero insight lost");
+    if (text.includes("system_errors") || text.includes("logerror"))
+      add("🔍 Empire-wide error visibility live — nothing fails in silence anymore");
+    if (text.includes("dashboard") || text.includes("build.tsx"))
+      add("👁 King's Command Centre online — 12 modules under live surveillance");
+    if (text.includes("bridge"))
+      add("🌉 Neural bridge active — Claude Chat and Claude Code in direct communication");
+    if (m.kind === "dump")
+      add("📡 Empire intelligence snapshot taken — all systems mapped and verified");
+    if ((m.metadata?.status === "done" || m.metadata?.module_done) && headlines.length < 4) {
+      const raw = (m.title || m.body || "").replace(/[<>{}[\]]/g, "").trim().slice(0, 60);
+      if (raw.length > 8) add(`✓ ${raw}`);
+    }
+    if (headlines.length >= 5) break;
+  }
+  for (const s of HEADLINE_SEEDS) add(s);
+  return headlines;
+}
+
 /* ── King's News Ticker ── */
 function NewsTicker({ messages }: { messages: BridgeMsg[] }) {
-  const items = [...messages]
-    .filter(m => m.metadata?.status === "done" || m.metadata?.module_done || (m.kind === "status" && m.metadata?.status !== "blocked"))
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5);
-
-  if (items.length === 0) return null;
-
-  const tickerText = items
-    .map(m => `✓ ${(m.title || m.body || "").slice(0, 70)}`)
-    .join("   ·   ") + "   ·   ";
+  const headlines = generateNewsHeadlines(messages);
 
   return (
     <div
-      className="flex-shrink-0 overflow-hidden"
+      className="flex-shrink-0 relative overflow-hidden"
       style={{
-        height: 32,
-        background: "rgba(99,102,241,0.08)",
-        borderTop:  "0.5px solid #1e1e3a",
-        borderBottom: "0.5px solid #1e1e3a",
-        display:    "flex",
-        alignItems: "center",
+        height:       36,
+        background:   "linear-gradient(to right, rgba(99,102,241,0.12), rgba(99,102,241,0.06), rgba(99,102,241,0.12))",
+        borderTop:    "0.5px solid rgba(99,102,241,0.3)",
+        borderBottom: "0.5px solid rgba(99,102,241,0.3)",
+        display: "flex", alignItems: "center",
       }}
     >
+      {/* Fade edges */}
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 40, zIndex: 2, background: "linear-gradient(to right, #0a0a0f, transparent)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 40, zIndex: 2, background: "linear-gradient(to left, #0a0a0f, transparent)", pointerEvents: "none" }} />
+
       <div
         style={{
-          display:         "inline-block",
-          whiteSpace:      "nowrap",
-          fontSize:        12,
-          color:           "#818cf8",
-          animation:       "ticker 40s linear infinite",
-          paddingLeft:     20,
+          display: "inline-flex", alignItems: "center",
+          whiteSpace: "nowrap",
+          fontSize: 12, fontWeight: 500, color: "#a5b4fc",
+          animation: "ticker 60s linear infinite",
+          paddingLeft: 20,
         }}
         onMouseEnter={e => ((e.currentTarget as HTMLDivElement).style.animationPlayState = "paused")}
         onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.animationPlayState = "running")}
       >
-        {tickerText}{tickerText}
+        {[0, 1].map(copy => headlines.map((h, i) => (
+          <React.Fragment key={`${copy}-${i}`}>
+            <span>{h}</span>
+            <span style={{ color: "#6366f1", fontSize: 14, padding: "0 10px" }}>✦</span>
+          </React.Fragment>
+        )))}
       </div>
     </div>
   );
@@ -1710,7 +1842,15 @@ export default function Build() {
           <div className="text-[10px] font-mono" style={{ color: C.muted }}>{doneCount}/12</div>
         </div>
         <div className="mt-2">
-          <Progress value={progressPct} className="h-1" style={{ background: "rgba(255,255,255,0.06)" }} />
+          {/* Gradient progress bar — 6px, #6366f1 → #10b981 */}
+          <div style={{ height: 6, borderRadius: 3, background: "#1e1e3a", overflow: "hidden" }}>
+            <div style={{
+              height: "100%", width: `${progressPct}%`,
+              background: "linear-gradient(to right, #6366f1, #10b981)",
+              borderRadius: 3,
+              transition: "width 0.6s ease",
+            }} />
+          </div>
           <div className="flex items-center justify-between mt-1">
             <ModuleSummaryBar moduleMap={moduleMap} />
             <span className="text-[9px] font-mono" style={{ color: C.muted }}>{progressPct}%</span>
@@ -1796,7 +1936,7 @@ export default function Build() {
         </div>
         <MobileTabBar active={activeTab} onChange={t => { setActiveTab(t); if (t === "log") setLogBadgeCount(0); }} logBadge={logBadgeCount} />
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } @keyframes pulseBlue { 0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 22px rgba(59,130,246,0.65); } } @keyframes pulseRed { 0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 18px rgba(239,68,68,0.55); } }`}</style>
       </div>
     );
   }
@@ -1829,7 +1969,7 @@ export default function Build() {
           <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
         </div>
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } @keyframes pulseBlue { 0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 22px rgba(59,130,246,0.65); } } @keyframes pulseRed { 0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 18px rgba(239,68,68,0.55); } }`}</style>
       </div>
     );
   }
@@ -1861,7 +2001,7 @@ export default function Build() {
           <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
         </div>
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } @keyframes pulseBlue { 0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 22px rgba(59,130,246,0.65); } } @keyframes pulseRed { 0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 18px rgba(239,68,68,0.55); } }`}</style>
       </div>
     );
   }
@@ -1902,7 +2042,7 @@ export default function Build() {
         </div>
       </div>
       {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } @keyframes pulseBlue { 0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 22px rgba(59,130,246,0.65); } } @keyframes pulseRed { 0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 18px rgba(239,68,68,0.55); } }`}</style>
     </div>
   );
 }
