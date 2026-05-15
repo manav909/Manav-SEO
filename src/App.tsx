@@ -28,6 +28,7 @@ import Desk           from './pages/Desk';
 import BrainCommand   from './pages/BrainCommand';
 import Build          from './pages/Build';
 import ClientPortal from "@/pages/ClientPortal";
+import RevenueProof from "@/pages/RevenueProof";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -81,6 +82,7 @@ const AppRoutes = () => {
         <Route path="/mission-control" element={<B name="mission-control"><ApprovedRequired><MissionControl /></ApprovedRequired></B>} />
         <Route path="/oval"           element={<B name="oval"><ApprovedRequired><Oval /></ApprovedRequired></B>} />
         <Route path="/client-portal" element={<ClientPortal />} />
+          <Route path="/revenue-proof" element={<RevenueProof />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 
