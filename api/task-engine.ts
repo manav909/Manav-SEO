@@ -879,6 +879,45 @@ Respond with JSON only:
     return ok(res,{success:true,id:data.id,daysToImpact:days,delta});
   }
 
+
+  if (action === 'mine_patterns') {
+    const { minProjects = 3, minConfidence = 65 } = body;
+    // Find brain_learnings that repeat across multiple projects
+    const { data: learnings } = await db()
+      .from('brain_learnings')
+      .select('card_type,card_title,what_worked,project_id,confidence_score,applied_count')
+      .eq('status','active')
+      .gte('confidence_score', minConfidence)
+      .order('applied_count', { ascending: false })
+      .limit(200);
+    if (!learnings?.length) return ok(res, { patterns: [], message: 'No learnings yet' });
+    // Group by normalised title similarity
+    const groups: Record<string, any[]> = {};
+    for (const l of learnings) {
+      const key = (l.card_type + ':' + l.card_title.toLowerCase().slice(0,40)).replace(/\s+/g,'_');
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(l);
+    }
+    const patterns = [];
+    for (const [key, items] of Object.entries(groups)) {
+      const projectIds = [...new Set(items.map((i:any) => i.project_id))];
+      if (projectIds.length < minProjects) continue;
+      const existing = await db().from('empire_patterns').select('id').eq('title', items[0].card_title).single();
+      if (!existing.data) {
+        await db().from('empire_patterns').insert({
+          pattern_type: items[0].card_type, title: items[0].card_title,
+          description: `Proven across ${projectIds.length} projects`,
+          evidence: items.slice(0,5).map((i:any)=>({project:i.project_id,worked:i.what_worked})),
+          project_count: projectIds.length,
+          confidence: Math.round(items.reduce((s:number,i:any)=>s+(i.confidence_score||65),0)/items.length),
+          tags: [items[0].card_type],
+        });
+        patterns.push({ title: items[0].card_title, projects: projectIds.length });
+      }
+    }
+    return ok(res, { success:true, newPatterns: patterns.length, patterns });
+  }
+
   if (!card) return ok(res, { error: "Missing card" });
 
     const BLUEPRINTS: Record<string, any> = {
