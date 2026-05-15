@@ -25,7 +25,13 @@ interface BriefingProps {
   persona: any;
   goals?: any;
   project?: any;                         // raw project record from DB
+  projectContext?: any;                  // get_context() payload (analytics, metrics, gaps, etc.)
+  learnings?: any[];                     // active Brain Learnings for this project
+  algoItems?: any[];                     // current algorithm intel
+  canvasBlocks?: any[];                  // current canvas state
   onAskBrain: (prompt: string) => void;
+  onSaveLearning?: (insight: any) => Promise<boolean>;   // persist an insight as a Brain Learning
+  onAddToCanvas?: (card: any) => Promise<boolean>;        // add a suggested card to the canvas
   crossProjectCount?: number;
 }
 
@@ -270,6 +276,161 @@ function PromptsPanel({ section, role, onAskBrain }: {
 }
 
 /* ─────────────────────── Data Transparency Panel ─────────────────────── */
+/* ─────────────────────── Powered-By panel ───────────────────────
+   Shows EXACTLY which Brain Command data sources fed this persona.
+   Trust signal: the user can see this isn't generic — it used their real data. */
+function PoweredByPanel({ persona, learningsCount, algoCount, canvasCount, projectContext }: {
+  persona: any; learningsCount: number; algoCount: number; canvasCount: number; projectContext?: any;
+}) {
+  const bm = persona?._provenance?.brainMemory || {};
+  const sources: { label: string; value: string; ok: boolean }[] = [
+    { label: "Project data",       value: projectContext?.project?.name || "—", ok: !!projectContext },
+    { label: "Brain Learnings",    value: `${bm.projectLearningsCount ?? learningsCount} active`,   ok: (bm.projectLearningsCount ?? learningsCount) > 0 },
+    { label: "Algorithm Intel",    value: `${bm.algoIntelCount ?? algoCount} items`,                ok: (bm.algoIntelCount ?? algoCount) > 0 },
+    { label: "Canvas state",       value: `${bm.canvasCardsCount ?? canvasCount} cards`,            ok: true },
+    { label: "Analytics / GSC",    value: bm.hasAnalytics ? "loaded" : "missing",                   ok: !!bm.hasAnalytics },
+    { label: "LLM/E-E-A-T metrics", value: bm.hasMetrics  ? "loaded" : "missing",                   ok: !!bm.hasMetrics },
+    { label: "Audit history",      value: bm.hasAudits   ? "loaded" : "none yet",                   ok: !!bm.hasAudits },
+    { label: "Live crawl data",    value: bm.hasCrawl    ? "loaded" : "not run",                    ok: !!bm.hasCrawl },
+    { label: "Live URL fetch",     value: bm.siteFetched ? `homepage + ${bm.competitorsFetched || 0} competitor(s)` : "skipped", ok: !!bm.siteFetched },
+    { label: "Cross-project wisdom", value: `${bm.industryWisdomCount || 0} industry learnings`,    ok: (bm.industryWisdomCount || 0) > 0 },
+    { label: "Prior persona",      value: bm.priorPersonaExists ? "evolved from previous" : "first generation", ok: true },
+  ];
+  return (
+    <div style={{ background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: 10, padding: 12, marginBottom: 10 }}>
+      <div style={{ fontSize: 9, color: "#a5b4fc", letterSpacing: "0.12em", marginBottom: 8, fontFamily: "monospace", fontWeight: 700 }}>
+        ◉ POWERED BY · BRAIN COMMAND MEMORY
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 6 }}>
+        {sources.map(s => (
+          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, padding: "5px 8px", borderRadius: 6, background: s.ok ? "rgba(16,185,129,0.06)" : "rgba(245,158,11,0.05)", border: `1px solid ${s.ok ? "rgba(16,185,129,0.18)" : "rgba(245,158,11,0.15)"}` }}>
+            <span style={{ color: s.ok ? "#10b981" : "#f59e0b", fontFamily: "monospace", flexShrink: 0 }}>{s.ok ? "✓" : "○"}</span>
+            <span style={{ color: "rgba(255,255,255,0.55)", flex: 1 }}>{s.label}:</span>
+            <span style={{ color: s.ok ? "#10b981" : "rgba(245,158,11,0.9)", fontFamily: "monospace", fontSize: 9 }}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 8, fontStyle: "italic" }}>
+        Every insight below is grounded in these sources. Where a source is missing, you'll see a flag inline.
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────── Actionable Cards & Suggested Learnings ─────────────────────── */
+function ActionableSection({ persona, onSaveLearning, onAddToCanvas }: {
+  persona: any; onSaveLearning?: (insight: any) => Promise<boolean>; onAddToCanvas?: (card: any) => Promise<boolean>;
+}) {
+  const cards = persona?.actionable_canvas_cards || [];
+  const learnings = persona?.suggested_brain_learnings || [];
+  const gaps = persona?.data_room_gaps_to_close || [];
+  const [savedCards, setSavedCards] = useState<Record<number, "saving" | "saved" | "error">>({});
+  const [savedLearns, setSavedLearns] = useState<Record<number, "saving" | "saved" | "error">>({});
+
+  if (!cards.length && !learnings.length && !gaps.length) return null;
+
+  const doAddCard = async (i: number, c: any) => {
+    if (!onAddToCanvas) return;
+    setSavedCards(s => ({ ...s, [i]: "saving" }));
+    const ok = await onAddToCanvas(c);
+    setSavedCards(s => ({ ...s, [i]: ok ? "saved" : "error" }));
+  };
+  const doSaveLearning = async (i: number, l: any) => {
+    if (!onSaveLearning) return;
+    setSavedLearns(s => ({ ...s, [i]: "saving" }));
+    const ok = await onSaveLearning(l);
+    setSavedLearns(s => ({ ...s, [i]: ok ? "saved" : "error" }));
+  };
+
+  return (
+    <div style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.05), rgba(6,182,212,0.04))", border: "1px solid rgba(16,185,129,0.22)", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+      <div style={{ fontSize: 11, color: "#10b981", letterSpacing: "0.1em", marginBottom: 10, fontFamily: "monospace", fontWeight: 700 }}>
+        ▶ TAKE ACTION — TURN THIS PERSONA INTO EXECUTION
+      </div>
+
+      {cards.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginBottom: 6, fontFamily: "monospace" }}>SUGGESTED CANVAS CARDS · BRAIN-GENERATED FROM PERSONA</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {cards.map((c: any, i: number) => {
+              const st = savedCards[i];
+              return (
+                <div key={i} style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: "#fff", fontWeight: 600, marginBottom: 3 }}>{c.title}</div>
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.5, marginBottom: 4 }}>{c.content}</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", fontSize: 9, color: "rgba(255,255,255,0.4)", fontFamily: "monospace" }}>
+                        <span style={{ padding: "2px 6px", background: "rgba(99,102,241,0.12)", borderRadius: 4, color: "#a5b4fc" }}>{c.cardType}</span>
+                        <span style={{ padding: "2px 6px", background: "rgba(245,158,11,0.12)", borderRadius: 4, color: "#fbbf24" }}>{c.priority}</span>
+                        <span style={{ padding: "2px 6px", background: "rgba(16,185,129,0.12)", borderRadius: 4, color: "#34d399" }}>week {c.week}</span>
+                        {c.persona_pain_point_served && <span style={{ fontStyle: "italic" }}>serves: {c.persona_pain_point_served}</span>}
+                      </div>
+                    </div>
+                    <button onClick={() => doAddCard(i, c)} disabled={st === "saving" || st === "saved"} style={{
+                      flexShrink: 0, padding: "6px 10px", borderRadius: 6, fontSize: 10, fontFamily: "monospace", cursor: st === "saved" ? "default" : "pointer",
+                      background: st === "saved" ? "rgba(16,185,129,0.2)" : st === "error" ? "rgba(239,68,68,0.2)" : "rgba(99,102,241,0.18)",
+                      border: `1px solid ${st === "saved" ? "rgba(16,185,129,0.4)" : st === "error" ? "rgba(239,68,68,0.4)" : "rgba(99,102,241,0.35)"}`,
+                      color: st === "saved" ? "#10b981" : st === "error" ? "#ef4444" : "#a5b4fc",
+                    }}>
+                      {st === "saving" ? "Adding…" : st === "saved" ? "✓ On Canvas" : st === "error" ? "Retry" : "+ Add to Canvas"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {learnings.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginBottom: 6, fontFamily: "monospace" }}>SUGGESTED BRAIN LEARNINGS · PERSISTENT INSIGHTS</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {learnings.map((l: any, i: number) => {
+              const st = savedLearns[i];
+              return (
+                <div key={i} style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: "#fff", fontWeight: 600, marginBottom: 3 }}>{l.title}</div>
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.5, marginBottom: 4 }}>{l.improvement}</div>
+                      {l.summary && <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", fontStyle: "italic" }}>{l.summary}</div>}
+                    </div>
+                    <button onClick={() => doSaveLearning(i, l)} disabled={st === "saving" || st === "saved"} style={{
+                      flexShrink: 0, padding: "6px 10px", borderRadius: 6, fontSize: 10, fontFamily: "monospace", cursor: st === "saved" ? "default" : "pointer",
+                      background: st === "saved" ? "rgba(16,185,129,0.2)" : st === "error" ? "rgba(239,68,68,0.2)" : "rgba(168,85,247,0.18)",
+                      border: `1px solid ${st === "saved" ? "rgba(16,185,129,0.4)" : st === "error" ? "rgba(239,68,68,0.4)" : "rgba(168,85,247,0.35)"}`,
+                      color: st === "saved" ? "#10b981" : st === "error" ? "#ef4444" : "#c4b5fd",
+                    }}>
+                      {st === "saving" ? "Saving…" : st === "saved" ? "✓ Learned" : st === "error" ? "Retry" : "+ Save Learning"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {gaps.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginBottom: 6, fontFamily: "monospace" }}>CLOSE THESE DATA ROOM GAPS · SHARPENS NEXT PERSONA</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {gaps.map((g: any, i: number) => (
+              <div key={i} style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.18)", borderRadius: 6, padding: "8px 10px", fontSize: 10 }}>
+                <div style={{ color: "#fbbf24", fontFamily: "monospace", marginBottom: 2 }}>⚠ {g.field}</div>
+                <div style={{ color: "rgba(255,255,255,0.6)" }}>{g.why_it_matters}</div>
+                {g.accuracy_boost && <div style={{ color: "rgba(255,255,255,0.4)", fontStyle: "italic", marginTop: 2 }}>→ {g.accuracy_boost}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DataTransparencyPanel({ persona, project }: { persona: any; project?: any }) {
   const [open, setOpen] = useState(true);
   const di = persona?.data_intelligence;
@@ -474,7 +635,7 @@ function DataTransparencyPanel({ persona, project }: { persona: any; project?: a
 }
 
 /* ─────────────────────── Main export ─────────────────────── */
-export function MarketPersonaBriefing({ persona, goals, project, onAskBrain, crossProjectCount = 0 }: BriefingProps) {
+export function MarketPersonaBriefing({ persona, goals, project, projectContext, learnings = [], algoItems = [], canvasBlocks = [], onAskBrain, onSaveLearning, onAddToCanvas, crossProjectCount = 0 }: BriefingProps) {
   const [role, setRole] = useState<PersonaRole>("agency");
   if (!persona) return null;
 
@@ -534,6 +695,18 @@ export function MarketPersonaBriefing({ persona, goals, project, onAskBrain, cro
 
       {/* ── DATA TRANSPARENCY PANEL ── */}
       <DataTransparencyPanel persona={persona} project={project} />
+
+      {/* ── POWERED BY · BRAIN COMMAND MEMORY ── */}
+      <PoweredByPanel
+        persona={persona}
+        learningsCount={learnings.length}
+        algoCount={algoItems.length}
+        canvasCount={canvasBlocks.length}
+        projectContext={projectContext}
+      />
+
+      {/* ── ACTIONABLE: Canvas cards + Brain Learnings + Data Room gaps ── */}
+      <ActionableSection persona={persona} onSaveLearning={onSaveLearning} onAddToCanvas={onAddToCanvas} />
 
       {/* ── ROLE SWITCHER ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5, marginBottom: 10 }}>

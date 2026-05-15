@@ -239,6 +239,9 @@ export default function BrainCommand() {
   const [miLoading,  setMiLoading] = useState<string>("");   // which action is loading
   const [miSection,  setMiSection] = useState<string>("persona"); // active section
   const [miError,    setMiError]   = useState<string>("");   // last MI error
+  /* Project Brain memory — loaded once per project, fed into every Market Intelligence call */
+  const [learnings,  setLearnings] = useState<any[]>([]);
+  const [algoItems,  setAlgoItems] = useState<any[]>([]);
 
   const voiceRef    = useRef<any>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -260,6 +263,25 @@ export default function BrainCommand() {
         body: JSON.stringify({ action: "get_context", projectId: selProj }) });
       const json = await res.json().catch(() => ({}));
       if (json.context) setProjContext(json.context);
+    } catch (_e) {}
+
+    /* Load Brain Learnings + Algorithm Intel — these feed into every persona/intelligence call */
+    try {
+      const [learnR, algoR] = await Promise.allSettled([
+        supabase.from("brain_learnings")
+          .select("id,card_type,card_title,improvement,confidence_score,applied_count,tags,what_worked,what_missed,status,context_summary")
+          .eq("project_id", selProj)
+          .in("status", ["active", "pending_review"])
+          .order("applied_count", { ascending: false })
+          .order("confidence_score", { ascending: false })
+          .limit(25),
+        supabase.from("algorithm_knowledge")
+          .select("id,topic,summary,freshness_score,engine,impact_level")
+          .order("freshness_score", { ascending: false })
+          .limit(12),
+      ]);
+      if (learnR.status === "fulfilled") setLearnings(learnR.value.data || []);
+      if (algoR.status === "fulfilled")  setAlgoItems(algoR.value.data || []);
     } catch (_e) {}
   }, [selProj]);
 
@@ -285,7 +307,27 @@ export default function BrainCommand() {
   const miCall = async (action: string, extra: any = {}) => {
     if (!selProj) { setMiError("Select a project first."); return null; }
     const rc = getRuntimeCompiler(supabase as any);
-    const payload = { action, projectId: selProj, ...extra };
+
+    /* ── Feed the FULL Brain Command memory into Market Intelligence ──
+       No more generic outputs — Claude now has every data point this project owns. */
+    const selProject = projects.find(p => p.id === selProj);
+    const brainMemory = {
+      project: selProject ? {
+        id: selProject.id, name: selProject.name, url: selProject.url,
+        industry: (selProject as any).industry || "",
+        keywords: (selProject as any).keywords || [],
+        competitors: (selProject as any).competitors || [],
+        country: (selProject as any).country || "",
+        city: (selProject as any).city || "",
+      } : null,
+      projectContext: projContext || null,  // goals, analytics, tech, technical, competitors, metrics, audits, documents, crawl_data, gaps
+      canvasBlocks:  canvas || [],
+      learnings:     learnings || [],
+      algoItems:     algoItems || [],
+      priorPersona:  miPersona || null,     // for diff/evolution awareness
+      priorGoals:    miGoals   || null,
+    };
+    const payload = { action, projectId: selProj, brainMemory, ...extra };
 
     // ── Pre-flight validation ──
     const check = rc.validate("/api/market-researcher", action, payload);
@@ -503,6 +545,59 @@ export default function BrainCommand() {
     }, 100);
   }, []);
 
+  /* ── saveAsLearning: persist a persona insight as a Brain Learning ── */
+  const saveAsLearning = useCallback(async (insight: {
+    cardType?: string; title: string; improvement: string;
+    whatWorked?: string[]; whatMissed?: string[]; summary?: string; tags?: string[];
+  }) => {
+    if (!selProj) { setMiError("Select a project first."); return false; }
+    const row: any = {
+      project_id:      selProj,
+      card_type:       (insight.cardType || "insight").toLowerCase(),
+      card_title:      insight.title.slice(0, 100),
+      what_worked:     Array.isArray(insight.whatWorked) ? insight.whatWorked : [],
+      what_missed:     Array.isArray(insight.whatMissed) ? insight.whatMissed : [],
+      improvement:     insight.improvement || "",
+      context_summary: insight.summary || "",
+      tags:            Array.isArray(insight.tags) ? insight.tags : ["market-persona"],
+      source:          "market_persona_briefing",
+      applied_count:   0,
+      updated_at:      new Date().toISOString(),
+    };
+    const { error: e1 } = await supabase.from("brain_learnings").insert({
+      ...row, status: "active", auto_captured: true, confidence_score: 80,
+    });
+    if (e1) {
+      const { error: e2 } = await supabase.from("brain_learnings").insert(row);
+      if (e2) { setMiError(`Could not save learning: ${e2.message}`); return false; }
+    }
+    // Refresh learnings so next persona call sees it
+    setLearnings(prev => [{ ...row, status: "active", confidence_score: 80 }, ...prev]);
+    return true;
+  }, [selProj]);
+
+  /* ── addToCanvas: add a suggested card from the persona briefing onto the canvas ── */
+  const addToCanvas = useCallback(async (card: {
+    cardType?: string; title: string; content: string; priority?: string; week?: number;
+  }) => {
+    if (!selProj) { setMiError("Select a project first."); return false; }
+    try {
+      const res = await fetch("/api/task-engine", { method: "POST",
+        headers: { "Content-Type": "application/json", "X-Brain-Source": "app-page" },
+        body: JSON.stringify({ action: "add_canvas_card", project_id: selProj,
+          card: { type: card.cardType || "content", title: card.title, content: card.content,
+                  priority: card.priority || "medium", week: card.week || 1 } }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.error) { setMiError(`Could not add card: ${data.error}`); return false; }
+      await loadCanvas(); // refresh canvas state
+      return true;
+    } catch (e: any) {
+      setMiError(`Could not add card: ${e?.message || "Network error"}`);
+      return false;
+    }
+  }, [selProj, loadCanvas]);
+
   const sendChat = useCallback(async () => {
     const text = chatIn.trim();
     if (!text || chatLoading) return;
@@ -527,8 +622,8 @@ export default function BrainCommand() {
           brainAssistantContext: {
             projectContext: projContext,
             canvasBlocks: canvas.slice(0, 20),
-            learnings: [],
-            algoItems: [],
+            learnings: learnings.slice(0, 15),   // Brain now remembers what it learned about THIS project
+            algoItems: algoItems.slice(0, 8),    // and current algorithm intel
             history: chatMsgs.slice(-6).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text.slice(0, 200) })),
           },
         }),
@@ -751,7 +846,13 @@ export default function BrainCommand() {
                   persona={miPersona}
                   goals={miGoals}
                   project={projects.find(p => p.id === selProj) || null}
+                  projectContext={projContext}
+                  learnings={learnings}
+                  algoItems={algoItems}
+                  canvasBlocks={canvas}
                   onAskBrain={askBrain}
+                  onSaveLearning={saveAsLearning}
+                  onAddToCanvas={addToCanvas}
                   crossProjectCount={miPatterns?.industryCount || 0}
                 />
                 {/* legacy hero hidden — briefing replaces it */}

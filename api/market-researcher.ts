@@ -41,6 +41,19 @@ async function quickSave(projectId: string, title: string, content: string, tags
   } catch (_) {}
 }
 
+/* Jina URL fetch — pulls live page content (max 2500 chars) so persona is grounded in reality, not assumption */
+async function fetchUrl(url: string): Promise<string> {
+  if (!url) return "";
+  try {
+    const u = url.startsWith("http") ? url : `https://${url}`;
+    const r = await fetch(`https://r.jina.ai/${u}`, {
+      headers: { Accept: "text/plain", "X-Return-Format": "markdown", "X-Timeout": "12" },
+      signal: AbortSignal.timeout(14000),
+    });
+    return r.ok ? (await r.text()).slice(0, 2500) : "";
+  } catch (_e) { return ""; }
+}
+
 async function quickDesk(projectId: string, title: string, content: string, contentType: string, tags: string[]) {
   if (!projectId || content.length < 50) return;
   try {
@@ -149,19 +162,29 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
   /* ═══════════════════════════════════════════
      ACTION: build_persona
-     Deep market persona — no website needed.
-     Pure market intelligence + buyer psychology.
+     Now uses the FULL Brain Command memory:
+     project data + analytics + metrics + audits + crawl + learnings + algorithm intel + canvas + live URL fetches.
+     No more generic outputs — every insight is grounded in real project data.
   ═══════════════════════════════════════════ */
   if (action === "build_persona") {
-    /* Pull cross-project industry learnings to inform persona */
+    /* ── Pull rich Brain memory from BrainCommand ── */
+    const bm = body.brainMemory || {};
+    const pc:  any = bm.projectContext || null;        // get_context() payload
+    const cb:  any[] = bm.canvasBlocks || [];
+    const pLearn: any[] = bm.learnings || [];          // PROJECT-specific learnings
+    const algo:   any[] = bm.algoItems || [];          // current algorithm intel
+    const prior:  any = bm.priorPersona || null;       // last persona (for evolution awareness)
+
+    /* ── Cross-project industry learnings (separate from project-specific) ── */
     let industryWisdom = "";
     if (industry) {
       const { data: crossLearnings } = await sb()
         .from("brain_learnings")
-        .select("card_title,improvement,card_type,confidence_score")
+        .select("card_title,improvement,card_type,confidence_score,project_id")
         .contains("tags", [industry.toLowerCase().replace(/\s+/g, "-")])
+        .neq("project_id", projectId || "")
         .order("confidence_score", { ascending: false })
-        .limit(20);
+        .limit(15);
       if (crossLearnings?.length) {
         industryWisdom = crossLearnings.map((l: any) =>
           `[${l.card_type}] ${l.card_title}: ${l.improvement?.slice(0, 150)}`
@@ -169,34 +192,113 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    const prompt = `You are a world-class market researcher and buyer psychologist.
-Your task: build a detailed, HONEST buyer persona.
+    /* ── Live URL fetch (project + top 2 competitors, parallel, fail-soft) ── */
+    const compUrls: string[] = (pc?.competitors?.c1 ? [pc.competitors.c1] : [])
+      .concat(pc?.competitors?.c2 ? [pc.competitors.c2] : [])
+      .filter((c: string) => /^https?:\/\//i.test(c) || c.includes("."));
+    const [siteLive, comp1Live, comp2Live] = await Promise.all([
+      url ? fetchUrl(url) : Promise.resolve(""),
+      compUrls[0] ? fetchUrl(compUrls[0]) : Promise.resolve(""),
+      compUrls[1] ? fetchUrl(compUrls[1]) : Promise.resolve(""),
+    ]);
+
+    /* ── Build RICH data provenance using EVERY data point we actually have ── */
+    if (pc?.analytics?.organicMonthly)   dataProvided.push(`Organic traffic: ${pc.analytics.organicMonthly}/month (from Data Room)`);
+    if (pc?.analytics?.gscClicks)        dataProvided.push(`GSC clicks: ${pc.analytics.gscClicks} | Impressions: ${pc.analytics.gscImpressions || "?"} | Avg position: ${pc.analytics.gscAvgPos || "?"}`);
+    if (pc?.metrics?.llmVisibility != null) dataProvided.push(`LLM Visibility: ${pc.metrics.llmVisibility}/100 (Perplexity citations: ${pc.metrics.perplexity || 0}, ChatGPT: ${pc.metrics.chatgpt || 0}, Google AI: ${pc.metrics.googleAI || 0})`);
+    if (pc?.metrics?.eeat != null)       dataProvided.push(`E-E-A-T: ${pc.metrics.eeat}/100 | Authority: ${pc.metrics.authority || "?"}/100 | Algo Health: ${pc.metrics.algorithmHealth || "?"}/100`);
+    if (pc?.technical?.pagesIndexed)     dataProvided.push(`Pages indexed: ${pc.technical.pagesIndexed} | Crawl errors: ${pc.technical.crawlErrors || 0} | Schema: ${pc.technical.schema || "unknown"}`);
+    if (pc?.tech?.cms)                   dataProvided.push(`Tech stack: ${pc.tech.cms}${pc.tech.seoPlugin ? ` + ${pc.tech.seoPlugin}` : ""}${pc.tech.hosting ? ` on ${pc.tech.hosting}` : ""} | PageSpeed mobile: ${pc.tech.pagespdMobile || "?"}`);
+    if (pc?.goals?.primary)              dataProvided.push(`Primary goal: ${pc.goals.primary} | Timeline: ${pc.goals.timeline || "not set"} | Success metric: ${pc.goals.success || "not set"}`);
+    if (pc?.competitors?.c1)             dataProvided.push(`Competitor 1: ${pc.competitors.c1} (DR ${pc.competitors.c1dr || "?"}) | Our DR: ${pc.competitors.ourDR || "?"}`);
+    if (pLearn.length)                   dataProvided.push(`${pLearn.length} active Brain Learning(s) about THIS project`);
+    if (algo.length)                     dataProvided.push(`${algo.length} algorithm-intel items loaded (most recent SEO/GEO patterns)`);
+    if (cb.length)                       dataProvided.push(`Canvas has ${cb.length} card(s) — current execution state`);
+    if (pc?.audits?.length)              dataProvided.push(`${pc.audits.length} prior audit(s) — latest from ${pc.audits[0]?.date || "?"}`);
+    if (pc?.crawl_data?.page_count)      dataProvided.push(`Live crawl available: ${pc.crawl_data.page_count} pages analyzed on ${pc.crawl_data.crawled_at || "recent date"}`);
+    if (siteLive)                        dataProvided.push(`Live homepage fetched (${siteLive.length} chars) — actual current content`);
+    if (comp1Live)                       dataProvided.push(`Competitor 1 page fetched (${comp1Live.length} chars)`);
+    if (prior)                           dataProvided.push(`Prior persona exists ("${prior.persona_name || "unnamed"}") — this analysis will note what evolved`);
+
+    /* ── Honest gaps ── */
+    if (pc?.gaps?.noGoal)                dataAssumed.push("Primary goal is empty in Data Room — recommendations will be based on typical industry objectives");
+    if (pc?.gaps?.noAnalytics)           dataAssumed.push("No analytics data in Data Room — buyer journey claims are inferred from industry patterns");
+    if (pc?.gaps?.noCompetitors)         dataAssumed.push("No competitors specified — competitive analysis uses typical industry alternatives");
+    if (pc?.gaps?.noTechnical)           dataAssumed.push("No technical data — cannot validate site readiness for this persona");
+    if (pc?.gaps?.noMetrics)             dataAssumed.push("No LLM/E-E-A-T metrics — cannot assess current AI search visibility");
+
+    /* ── Compose project-specific learning context (what we ALREADY know about THIS project) ── */
+    const projectLearningsText = pLearn.length > 0
+      ? pLearn.slice(0, 10).map((l: any, i: number) => {
+          const conf = l.confidence_score || 75;
+          const worked = (l.what_worked || []).slice(0, 2).join(" | ");
+          const missed = (l.what_missed || []).slice(0, 2).join(" | ");
+          return `[L${i+1}|${l.card_type}|conf ${conf}] ${l.card_title}\n   → ${l.improvement?.slice(0, 200) || "—"}${worked ? `\n   ✓ ${worked}` : ""}${missed ? `\n   ✗ ${missed}` : ""}`;
+        }).join("\n")
+      : "No prior learnings for this specific project yet.";
+
+    /* ── Algorithm intel context — recent SEO/GEO patterns that affect persona's search behavior ── */
+    const algoText = algo.length > 0
+      ? algo.slice(0, 8).map((a: any) => `• [${a.impact_level || "?"}|${a.engine || "?"}] ${a.topic}: ${(a.summary || "").slice(0, 140)}`).join("\n")
+      : "No algorithm intel available.";
+
+    /* ── Canvas state — what's already being worked on (so persona doesn't suggest duplicates) ── */
+    const canvasText = cb.length > 0
+      ? cb.slice(0, 15).map((c: any) => `[${c.type || "?"}|${c.status || "?"}|wk${c.week || "?"}] ${c.title}`).join("\n")
+      : "Canvas is empty — no execution work in progress.";
+
+    /* ── Live site snapshot (real content, not assumed) ── */
+    const liveSnapshot = [
+      siteLive   ? `═ LIVE HOMEPAGE (actual content, ${siteLive.length} chars):\n${siteLive.slice(0, 1500)}` : "",
+      comp1Live  ? `\n═ COMPETITOR 1 LIVE (${pc?.competitors?.c1}):\n${comp1Live.slice(0, 1200)}` : "",
+      comp2Live  ? `\n═ COMPETITOR 2 LIVE (${pc?.competitors?.c2}):\n${comp2Live.slice(0, 1200)}` : "",
+    ].filter(Boolean).join("\n");
+
+    /* ── Prior persona reference ── */
+    const priorPersonaText = prior
+      ? `═ PRIOR PERSONA (for evolution awareness):\nName: ${prior.persona_name || "?"} | Archetype: ${prior.persona_archetype || "?"}\nKey pain points: ${(prior.psychology?.primary_pain_points || []).slice(0,3).join(" | ")}\nNote: if your new analysis differs, briefly explain WHAT CHANGED and WHY in manav_intelligence_note.`
+      : "";
+
+    const prompt = `You are a world-class market researcher and buyer psychologist working INSIDE the SEO Season Brain.
+Your task: build a HONEST, DEEP, ACTIONABLE buyer persona that is specifically grounded in this project's real data.
 
 CRITICAL RULES — never break these:
-1. NEVER invent specific statistics, percentages, or numbers you don't know (e.g. "73% of buyers..."). Say "many", "most", "typically" instead.
-2. CLEARLY distinguish between what you know from the provided data vs what you are inferring from industry knowledge.
-3. If the industry is vague or not provided, say so explicitly in data_intelligence.
-4. Your analysis must be directly usable by a digital marketing agency presenting to a client.
-5. Every insight must be honest — if you are uncertain, say so rather than sounding more confident than you are.
+1. NEVER invent specific statistics, percentages, or numbers you don't know (e.g. "73% of buyers..."). Say "many", "most", "typically".
+2. CLEARLY distinguish what you know from PROJECT DATA vs what you are inferring from industry patterns.
+3. Reference SPECIFIC data points where available — e.g. "Given the site's LLM Visibility of 20/100, this persona is searching AI engines but won't find this brand…"
+4. If you cite a Brain Learning, reference it as [L1], [L2] etc.
+5. Your output must be presentation-ready for an agency talking to a client. No fluff, no generic claims.
+6. Cross-reference: if the canvas already covers something, suggest a DIFFERENT angle, not a duplicate.
 
-═══ WHAT WAS PROVIDED TO THIS ANALYSIS ═══
+═══ PROJECT DATA PROVIDED (use these specifics in your analysis) ═══
 ${dataProvided.length > 0 ? dataProvided.map(d => `✓ ${d}`).join("\n") : "✗ No project data provided — analysis based entirely on industry pattern knowledge"}
 
-═══ WHAT WAS NOT PROVIDED (ASSUMPTIONS REQUIRED) ═══
+═══ DATA GAPS (be honest about these) ═══
 ${dataAssumed.length > 0 ? dataAssumed.map(d => `⚠ ${d}`).join("\n") : "All key data was provided."}
 
-═══ CROSS-PROJECT INDUSTRY INTELLIGENCE ═══
-${industryWisdom ? `From ${industryWisdom.split("\n").length} learnings across other projects in this industry:\n${industryWisdom}` : "No prior cross-project data exists for this industry — this will be the pioneer analysis."}
+═══ WHAT BRAIN ALREADY KNOWS ABOUT THIS PROJECT (${pLearn.length} learnings) ═══
+${projectLearningsText}
 
+═══ CURRENT ALGORITHM INTELLIGENCE (affects how the persona searches today) ═══
+${algoText}
+
+═══ CANVAS STATE (current execution — don't suggest duplicates) ═══
+${canvasText}
+
+═══ CROSS-PROJECT INDUSTRY WISDOM (other projects in ${industry || "this industry"}) ═══
+${industryWisdom || "No prior cross-project data exists for this industry — this is the pioneer analysis."}
+
+${liveSnapshot ? `═══ LIVE WEB CONTENT (just fetched, ground your claims in this) ═══\n${liveSnapshot}\n` : ""}
+${priorPersonaText ? `${priorPersonaText}\n` : ""}
 ═══ BUILD THE PERSONA FOR ═══
 Industry: ${effectiveIndustry}
 Company: ${company || "not specified"}
-Region/Market: ${region || "not specified — use global/English-speaking market patterns"}
-Keywords: ${keywords.slice(0, 8).join(", ") || "none provided"}
+Region/Market: ${region || "global/English-speaking"}
+Keywords: ${keywords.slice(0, 10).join(", ") || "none provided"}
 Competitors: ${competitors.slice(0, 5).join(", ") || "none provided"}
-Goals: ${goals || "not specified"}
+Goals: ${goals || pc?.goals?.primary || "not specified"}
 
-Return ONLY valid JSON. Be specific where you have data. Be honest where you are inferring.
+Return ONLY valid JSON. Be SPECIFIC. Reference real numbers from project data when you have them.
 
 {
   "data_intelligence": {
@@ -265,7 +367,19 @@ Return ONLY valid JSON. Be specific where you have data. Be honest where you are
     ],
     "format_recommendations": ["<specific format recommendation with reason>"]
   },
-  "manav_intelligence_note": "<the single most important insight — must be specific to this industry/company, not a generic statement. If data was limited, say so.>"
+  "actionable_canvas_cards": [
+    {"cardType":"content","title":"<specific card title, ≤60 chars>","content":"<2-3 sentences: what to execute, why this persona needs it, expected outcome — reference real project data>","priority":"high|medium|low","week":1,"persona_pain_point_served":"<which pain point from psychology.primary_pain_points this addresses>"},
+    {"cardType":"technical","title":"<...>","content":"<...>","priority":"high|medium|low","week":1,"persona_pain_point_served":"<...>"},
+    {"cardType":"strategy","title":"<...>","content":"<...>","priority":"medium","week":2,"persona_pain_point_served":"<...>"}
+  ],
+  "suggested_brain_learnings": [
+    {"cardType":"insight","title":"<≤80 chars — a discrete, persistent insight this project should remember>","improvement":"<the actionable lesson>","whatWorked":["<observed strength>"],"whatMissed":["<observed gap>"],"summary":"<1 sentence context>","tags":["market-persona","<industry-tag>","<keyword-tag>"]},
+    {"cardType":"strategy","title":"<...>","improvement":"<...>","whatWorked":[],"whatMissed":[],"summary":"<...>","tags":["market-persona","<industry-tag>"]}
+  ],
+  "data_room_gaps_to_close": [
+    {"field":"<exact Data Room field name to fill, e.g. 'analytics.organic_sessions_monthly'>","why_it_matters":"<1 sentence: how this would sharpen the persona>","accuracy_boost":"<rough qualitative gain: 'sharpens search behavior model' or 'unlocks competitive gap analysis'>"}
+  ],
+  "manav_intelligence_note": "<the single most important insight — must be specific to this project (reference real data points), not generic. If a prior persona existed, mention what changed vs it.>"
 }`;
 
     const response = await client.messages.create({
@@ -315,8 +429,25 @@ Return ONLY valid JSON. Be specific where you have data. Be honest where you are
     return res.status(200).json({
       success: true,
       persona,
-      // Pass provenance to UI so it can display exactly what was used
-      _provenance: { dataProvided, dataAssumed, industry: effectiveIndustry, company, region, keywordCount: keywords.length, competitorCount: competitors.length },
+      // Rich "Powered by" provenance — every data source actually consumed
+      _provenance: {
+        dataProvided, dataAssumed,
+        industry: effectiveIndustry, company, region,
+        keywordCount: keywords.length, competitorCount: competitors.length,
+        brainMemory: {
+          projectLearningsCount: pLearn.length,
+          algoIntelCount: algo.length,
+          canvasCardsCount: cb.length,
+          hasMetrics: !!pc?.metrics,
+          hasAnalytics: !!pc?.analytics?.organicMonthly,
+          hasAudits: (pc?.audits?.length || 0) > 0,
+          hasCrawl: !!pc?.crawl_data?.page_count,
+          siteFetched: siteLive.length > 0,
+          competitorsFetched: (comp1Live.length > 0 ? 1 : 0) + (comp2Live.length > 0 ? 1 : 0),
+          industryWisdomCount: industryWisdom ? industryWisdom.split("\n").length : 0,
+          priorPersonaExists: !!prior,
+        },
+      },
     });
   }
 
