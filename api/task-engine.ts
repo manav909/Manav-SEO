@@ -918,6 +918,36 @@ Respond with JSON only:
     return ok(res, { success:true, newPatterns: patterns.length, patterns });
   }
 
+
+  if (action === 'generate_role_brief') {
+    const { projectId, role = 'strategist', context: ctx2 } = body;
+    if (!projectId) return ok(res, { error: 'projectId required' });
+    const voiceMap: Record<string,string> = {
+      king:       'You are briefing the founder. Be direct, strategic, and visionary. Lead with wins, then risks, then what to decide. No fluff.',
+      strategist: 'You are briefing a senior SEO strategist. Technical depth welcome. Show the data, explain the pattern, recommend the action.',
+      writer:     'You are briefing a content writer. Plain language. Tell them what to write, why it matters, what the angle should be. No scores or metrics.',
+      client:     'You are briefing a business owner. Translate everything to business impact. No SEO jargon. Focus on traffic, leads, and revenue implications.',
+      executive:  'You are briefing a C-suite executive. One paragraph max. ROI focus. What was invested, what returned, what is the trajectory.',
+    };
+    const voice = voiceMap[role] || voiceMap.strategist;
+    const [projR, taskR, learnR] = await Promise.allSettled([
+      db().from('projects').select('name,goals,url').eq('id',projectId).single(),
+      db().from('task_executions').select('task_type,output').eq('project_id',projectId).eq('status','done').order('created_at',{ascending:false}).limit(5),
+      db().from('brain_learnings').select('card_title,what_worked').eq('project_id',projectId).order('applied_count',{ascending:false}).limit(3),
+    ]);
+    const proj  = projR.status==='fulfilled'  ? projR.value.data    : null;
+    const tasks = taskR.status==='fulfilled'  ? taskR.value.data||[] : [];
+    const learns= learnR.status==='fulfilled' ? learnR.value.data||[] : [];
+    if (!proj) return ok(res, { error: 'Project not found' });
+    const prompt = `${voice}\n\nProject: ${proj.name}\nGoals: ${proj.goals||'not set'}\nRecent tasks: ${tasks.map((t:any)=>t.task_type).join(', ')||'none'}\nProven learnings: ${learns.map((l:any)=>l.card_title).join('; ')||'accumulating'}\n${ctx2||''}`;
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,messages:[{role:'user',content:prompt}]}),
+    });
+    const aiJson=await aiRes.json() as any;
+    return ok(res,{success:true,brief:aiJson?.content?.[0]?.text||'Failed',role,projectName:proj.name});
+  }
+
   if (!card) return ok(res, { error: "Missing card" });
 
     const BLUEPRINTS: Record<string, any> = {
