@@ -568,5 +568,9 @@ Return ONLY valid JSON:
     });
   }
 
+  if (action === "health_check") {
+    return res.status(200).json({ status: "ok", service: "market-researcher" });
+  }
+
   return res.status(200).json({ error: `Unknown action: ${action}` });
 }

@@ -572,14 +572,45 @@ export default function ManavBrainAssistant() {
     }
 
     // Algorithm intel health check
+    const checkAlgorithmIntel = async (): Promise<'ok'|'error'> => {
+      try {
+        const r = await brainFetch('/api/algorithm-intel', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action: 'get_catalog' }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (r.ok) return 'ok';
+        const text = await r.text().catch(() => '');
+        return text.length > 0 ? 'ok' : 'error';
+      } catch (_e) { return 'error'; }
+    };
+    next['algorithm-intel'] = await checkAlgorithmIntel();
+    if (next['algorithm-intel'] === 'error') {
+      await new Promise(r => setTimeout(r, 3000));
+      next['algorithm-intel'] = await checkAlgorithmIntel();
+    }
+
+    // Intelligence health check
     try {
-      const r = await brainFetch('/api/algorithm-intel', {
+      const r = await brainFetch('/api/intelligence', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action: 'get_catalog' }),
-        signal: AbortSignal.timeout(6000),
+        body: JSON.stringify({ action: 'health_check', mode: 'health_check' }),
+        signal: AbortSignal.timeout(10000),
       });
-      next['algorithm-intel'] = r.ok ? 'ok' : 'error';
-    } catch (_e) { next['algorithm-intel'] = 'error'; }
+      const text = await r.text().catch(() => '');
+      next['intelligence'] = (r.ok || text.length > 0) ? 'ok' : 'error';
+    } catch (_e) { next['intelligence'] = 'error'; }
+
+    // Market researcher health check
+    try {
+      const r = await brainFetch('/api/market-researcher', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'health_check' }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const text = await r.text().catch(() => '');
+      next['market-researcher'] = (r.ok || text.length > 0) ? 'ok' : 'error';
+    } catch (_e) { next['market-researcher'] = 'error'; }
 
     // Supabase direct check (uses supabase client, not fetch override)
     try {
@@ -1290,9 +1321,11 @@ export default function ManavBrainAssistant() {
               <div>
                 <div style={{fontSize:8,fontFamily:'monospace',color:'rgba(255,255,255,0.22)',letterSpacing:'0.12em',marginBottom:8}}>API ENDPOINT STATUS</div>
                 {[
-                  {name:'task-engine',    label:'Task Engine',    icon:Zap},
-                  {name:'algorithm-intel',label:'Algorithm Intel',icon:Cpu},
-                  {name:'supabase',       label:'Supabase DB',    icon:Database},
+                  {name:'task-engine',      label:'Task Engine',     icon:Zap},
+                  {name:'algorithm-intel',  label:'Algorithm Intel', icon:Cpu},
+                  {name:'intelligence',     label:'Brain AI',        icon:Brain},
+                  {name:'market-researcher',label:'Market Research', icon:Radio},
+                  {name:'supabase',         label:'Supabase DB',     icon:Database},
                 ].map(ep => {
                   const s = apiStatus[ep.name] || 'checking';
                   const c = s==='ok'?'#10b981':s==='error'?'#ef4444':'#6366f1';
@@ -1328,13 +1361,29 @@ export default function ManavBrainAssistant() {
                 </div>
               )}
 
-              {unresolvedErrors.length===0 && (
-                <div style={{textAlign:'center',padding:'20px 0'}}>
-                  <CheckCircle size={28} style={{color:'#10b981',margin:'0 auto 8px'}}/>
-                  <div style={{fontSize:10,fontFamily:'monospace',color:'#10b981'}}>ALL SYSTEMS NOMINAL</div>
-                  <div style={{fontSize:9,color:'rgba(255,255,255,0.18)',marginTop:4}}>{resolvedErrors.length>0?`${resolvedErrors.length} past errors resolved`:'No errors detected'}</div>
-                </div>
-              )}
+              {(() => {
+                const hasOfflineEndpoints = Object.values(apiStatus).some(v => v === 'error');
+                return (
+                  <>
+                    {unresolvedErrors.length===0 && !hasOfflineEndpoints && (
+                      <div style={{textAlign:'center',padding:'20px 0'}}>
+                        <CheckCircle size={28} style={{color:'#10b981',margin:'0 auto 8px'}}/>
+                        <div style={{fontSize:10,fontFamily:'monospace',color:'#10b981'}}>ALL SYSTEMS NOMINAL</div>
+                        <div style={{fontSize:9,color:'rgba(255,255,255,0.18)',marginTop:4}}>{resolvedErrors.length>0?`${resolvedErrors.length} past errors resolved`:'No errors detected'}</div>
+                      </div>
+                    )}
+                    {unresolvedErrors.length===0 && hasOfflineEndpoints && (
+                      <div style={{textAlign:'center',padding:'16px 0'}}>
+                        <div style={{fontSize:28,marginBottom:8}}>⚠</div>
+                        <div style={{fontSize:10,fontFamily:'monospace',color:'#f59e0b',fontWeight:700}}>ENDPOINTS DEGRADED</div>
+                        <div style={{fontSize:9,color:'rgba(255,255,255,0.28)',marginTop:4,fontFamily:'monospace'}}>
+                          {Object.entries(apiStatus).filter(([,v])=>v==='error').map(([k])=>k).join(', ')} — run SCAN NOW to recheck
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Quick actions */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:'auto'}}>

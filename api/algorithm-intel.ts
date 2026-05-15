@@ -1,7 +1,27 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db }                                 from "./lib/db";
-import { saveLearning }                       from "./lib/save";
+import { createClient }                       from "@supabase/supabase-js";
+
+function sb() {
+  return createClient(
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
+    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ""
+  );
+}
+
+async function quickSave(projectId: string | null, title: string, content: string, tags: string[]) {
+  if (!projectId || !content || content.length < 60) return;
+  try {
+    await sb().from("brain_learnings").insert({
+      project_id: projectId, source: "algorithm_intel",
+      card_type: "algorithm", card_title: title.slice(0, 100),
+      improvement: content.slice(0, 400), context_summary: "algorithm_intel",
+      what_worked: [], what_missed: [], tags: [...new Set(["algorithm", "algorithm_intel", ...tags])],
+      applied_count: 0, status: "active", auto_captured: true,
+      confidence_score: 85, updated_at: new Date().toISOString(),
+    });
+  } catch (_) {}
+}
 
 export const config = { maxDuration: 180 };
 
@@ -115,7 +135,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
     // ══ GET CATALOG ══════════════════════════════════════════════════
     if (action === "get_catalog") {
-      const { data } = await db().from("algorithm_knowledge")
+      const { data } = await sb().from("algorithm_knowledge")
         .select("id,title,updated_at,tags")
         .order("updated_at", { ascending: false });
 
@@ -167,15 +187,12 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
       /* Auto-capture algorithm knowledge as a brain learning (fire-and-forget) */
       if (project_id && parsed.summary) {
-        saveLearning({
-          source:      "algorithm_intel",
-          projectId:   project_id,
-          content:     `${parsed.title}: ${parsed.summary} ${parsed.what_changed || ""}`.trim(),
-          title:       parsed.title.slice(0, 80),
-          cardType:    "algorithm",
-          contextSummary: `Algorithm intel: ${topic.label}`,
-          tags:        ["algorithm", topic.engine, topic.category].filter(Boolean),
-        }).catch(() => {});
+        quickSave(
+          project_id,
+          parsed.title.slice(0, 80),
+          `${parsed.title}: ${parsed.summary} ${parsed.what_changed || ""}`.trim(),
+          ["algorithm", topic.engine, topic.category].filter(Boolean),
+        );
       }
 
       return res.status(200).json({ success: true, item: parsed, topic });
@@ -217,15 +234,12 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
       /* Auto-capture custom algorithm research as a brain learning (fire-and-forget) */
       if (project_id && parsed.summary) {
-        saveLearning({
-          source:      "algorithm_intel",
-          projectId:   project_id,
-          content:     `${parsed.title}: ${parsed.summary} ${parsed.what_changed || ""}`.trim(),
-          title:       parsed.title.slice(0, 80),
-          cardType:    "algorithm",
-          contextSummary: `Custom algorithm topic: ${label}`,
-          tags:        ["algorithm", engine, category, "custom"].filter(Boolean),
-        }).catch(() => {});
+        quickSave(
+          project_id,
+          parsed.title.slice(0, 80),
+          `${parsed.title}: ${parsed.summary} ${parsed.what_changed || ""}`.trim(),
+          ["algorithm", engine, category, "custom"].filter(Boolean),
+        );
       }
 
       return res.status(200).json({ success: true, item: parsed });
@@ -243,10 +257,10 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         ...(tidTag ? [tidTag] : []),
       ])];
 
-      if (tidTag) await db().from("algorithm_knowledge").delete().contains("tags", [tidTag]);
-      await db().from("algorithm_knowledge").delete().eq("title", item.title);
+      if (tidTag) await sb().from("algorithm_knowledge").delete().contains("tags", [tidTag]);
+      await sb().from("algorithm_knowledge").delete().eq("title", item.title);
 
-      const { data, error } = await db().from("algorithm_knowledge").insert({
+      const { data, error } = await sb().from("algorithm_knowledge").insert({
         engine:          item.engine          || "google",
         category:        item.category        || "general",
         title:           item.title,
@@ -285,7 +299,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
             const relatedTypes = categoryToCardTypes[category] || ["technical","content","geo","insight"];
             
             // Find active learnings that match related card types
-            const { data: relatedLearnings } = await db()
+            const { data: relatedLearnings } = await sb()
               .from("brain_learnings")
               .select("id, card_type, card_title, tags")
               .in("card_type", relatedTypes)
@@ -299,7 +313,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
             for (const l of relatedLearnings as any[]) {
               const currentTags = Array.isArray(l.tags) ? l.tags : [];
               if (!currentTags.includes(staleTag) && !currentTags.includes("freshness-checked")) {
-                await db().from("brain_learnings").update({
+                await sb().from("brain_learnings").update({
                   tags: [...new Set([...currentTags, staleTag, "algo-updated"])],
                   updated_at: new Date().toISOString(),
                 }).eq("id", l.id);
@@ -316,7 +330,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     // ══ GET ALL ══════════════════════════════════════════════════════
     if (action === "get_all") {
       const { engine, category, impact_level } = req.body;
-      let q: any = db().from("algorithm_knowledge").select("*").order("updated_at", { ascending: false });
+      let q: any = sb().from("algorithm_knowledge").select("*").order("updated_at", { ascending: false });
       if (engine)       q = q.eq("engine", engine);
       if (category)     q = q.eq("category", category);
       if (impact_level) q = q.eq("impact_level", impact_level);
@@ -329,7 +343,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     if (action === "delete_item") {
       const { id } = req.body;
       if (!id) return res.status(200).json({ error: "id required" });
-      const { error } = await db().from("algorithm_knowledge").delete().eq("id", id);
+      const { error } = await sb().from("algorithm_knowledge").delete().eq("id", id);
       if (error) return res.status(200).json({ error: error.message });
       return res.status(200).json({ success: true });
     }
@@ -340,7 +354,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       const { pageData, projectContext = "", targetEngine = "google", project_id = null } = req.body;
       if (!pageData) return res.status(200).json({ error: "pageData required" });
 
-      const { data: knowledge } = await db().from("algorithm_knowledge")
+      const { data: knowledge } = await sb().from("algorithm_knowledge")
         .select("*").in("engine", [targetEngine, "general"])
         .order("impact_level", { ascending: true });
 
@@ -372,15 +386,12 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         const failSummary = (audit.critical_fails || []).slice(0, 3)
           .map((f: any) => `${f.algorithm}: ${f.issue} — Fix: ${f.fix}`)
           .join("; ");
-        saveLearning({
-          source:      "algorithm_intel",
-          projectId:   project_id,
-          content:     `Algorithm audit score ${audit.overall_score}/100 (${audit.grade}). ${audit.verdict}${failSummary ? ". Critical failures: " + failSummary : ""}`,
-          title:       `Algorithm audit: ${audit.grade} — ${audit.overall_score}/100`,
-          cardType:    "algorithm",
-          contextSummary: `Algorithm audit against knowledge library`,
-          tags:        ["algorithm", "audit", targetEngine, audit.grade || ""],
-        }).catch(() => {});
+        quickSave(
+          project_id,
+          `Algorithm audit: ${audit.grade} — ${audit.overall_score}/100`,
+          `Algorithm audit score ${audit.overall_score}/100 (${audit.grade}). ${audit.verdict}${failSummary ? ". Critical failures: " + failSummary : ""}`,
+          ["algorithm", "audit", targetEngine, audit.grade || ""].filter(Boolean),
+        );
       }
 
       return res.status(200).json({ success: true, audit });
