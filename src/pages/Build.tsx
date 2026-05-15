@@ -1,34 +1,34 @@
 /* ═══════════════════════════════════════════════════════════
    src/pages/Build.tsx — King's Command Dashboard
-   Fully responsive: mobile / tablet / desktop / ultrawide
+   Fixed-position architecture: header / ticker / sidebar /
+   content-area / bottom-nav / right-aside.
+   Every element is permanently mounted; panels toggle via
+   visibility + pointer-events so layout never reflows.
 ═══════════════════════════════════════════════════════════ */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
-  RefreshCw, Loader2, Crown, Radio, Terminal, MessageSquare,
-  ChevronDown, ChevronUp, GitCommit, Code2,
+  RefreshCw, Loader2, Crown, GitCommit,
   DollarSign, Activity, Pause, Play,
-  Clock, X, Layers, BarChart2, CheckSquare,
+  Clock, X, MessageSquare, Terminal, Radio,
 } from "lucide-react";
-import { Button }   from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 
 /* ═══════════════════════════════════════════════════════════
    ENV
 ═══════════════════════════════════════════════════════════ */
 
-const BRIDGE_TOKEN  = import.meta.env.VITE_BRIDGE_READ_TOKEN  as string | undefined;
-const BRIDGE_SECRET = import.meta.env.VITE_BRIDGE_SECRET      as string | undefined;
+const BRIDGE_TOKEN  = import.meta.env.VITE_BRIDGE_READ_TOKEN as string | undefined;
+const BRIDGE_SECRET = import.meta.env.VITE_BRIDGE_SECRET     as string | undefined;
 const BRIDGE_URL    = "/api/bridge";
 
 /* ═══════════════════════════════════════════════════════════
    Types
 ═══════════════════════════════════════════════════════════ */
 
-type ModStatus  = "pending" | "building" | "testing" | "done" | "blocked" | "paused";
-type Breakpoint = "mobile" | "tablet" | "desktop" | "ultrawide";
-type ActiveTab  = "modules" | "active" | "log" | "health";
+type ModStatus = "pending" | "building" | "testing" | "done" | "blocked" | "paused";
+type ActiveTab = "modules" | "active" | "log" | "health";
 
 interface BridgeMsg {
   id:          string;
@@ -72,97 +72,119 @@ interface ModuleTask {
   latest: BridgeMsg | null;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Responsive hook
-═══════════════════════════════════════════════════════════ */
-
-function getBreakpoint(w: number): Breakpoint {
-  if (w < 768)  return "mobile";
-  if (w < 1280) return "tablet";
-  if (w < 1920) return "desktop";
-  return "ultrawide";
+interface ActivityLine {
+  id:    string;
+  icon:  string;
+  color: string;
+  text:  string;
+  time:  string;
 }
 
-function useScreenSize() {
-  const [size, setSize] = useState({
-    width:      typeof window !== "undefined" ? window.innerWidth  : 1280,
-    height:     typeof window !== "undefined" ? window.innerHeight : 800,
-    breakpoint: getBreakpoint(typeof window !== "undefined" ? window.innerWidth : 1280) as Breakpoint,
+/* ═══════════════════════════════════════════════════════════
+   useScreen hook — RAF-debounced, rich breakpoint flags
+═══════════════════════════════════════════════════════════ */
+
+function useScreen() {
+  const [screen, setScreen] = useState({
+    width:  typeof window !== "undefined" ? window.innerWidth  : 1280,
+    height: typeof window !== "undefined" ? window.innerHeight : 800,
   });
+
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
+    let rafId: number;
     const handle = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => setSize({
-        width:      window.innerWidth,
-        height:     window.innerHeight,
-        breakpoint: getBreakpoint(window.innerWidth),
-      }), 150);
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() =>
+        setScreen({ width: window.innerWidth, height: window.innerHeight })
+      );
     };
     window.addEventListener("resize", handle);
-    return () => { window.removeEventListener("resize", handle); clearTimeout(timer); };
+    return () => { window.removeEventListener("resize", handle); cancelAnimationFrame(rafId); };
   }, []);
-  return size;
+
+  const { width, height } = screen;
+  return {
+    width, height,
+    isMobile:  width < 1024,
+    isDesktop: width >= 1024,
+    isWide:    width >= 1440,
+    isUltra:   width >= 1920,
+    label: width < 768  ? "mobile"
+         : width < 1024 ? "tablet"
+         : width < 1440 ? "desktop"
+         : width < 1920 ? "wide"
+         : "ultrawide",
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Pull-to-refresh hook (mobile-first, ref-based, no stale closures)
+   CSS variables — injected once into <head>
 ═══════════════════════════════════════════════════════════ */
 
-function usePullToRefresh(onRefresh: () => Promise<void> | void) {
-  const onRefreshRef = useRef(onRefresh);
-  useEffect(() => { onRefreshRef.current = onRefresh; }, [onRefresh]);
-
-  const startY      = useRef(0);
-  const pulling     = useRef(false);
-  const pullDistRef = useRef(0);
-  const [pullPx,       setPullPx]       = useState(0);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  useEffect(() => {
-    const THRESHOLD = 60;
-
-    const onStart = (e: TouchEvent) => {
-      const el = document.scrollingElement || document.documentElement;
-      if (el.scrollTop > 2) return; // tolerance for sub-pixel
-      startY.current  = e.touches[0].clientY;
-      pulling.current = true;
-    };
-
-    const onMove = (e: TouchEvent) => {
-      if (!pulling.current) return;
-      const dy = e.touches[0].clientY - startY.current;
-      if (dy > 0) {
-        pullDistRef.current = Math.min(dy, 90);
-        setPullPx(pullDistRef.current);
-      }
-    };
-
-    const onEnd = async () => {
-      if (!pulling.current) return;
-      pulling.current = false;
-      const dist = pullDistRef.current;
-      pullDistRef.current = 0;
-      setPullPx(0);
-      if (dist >= THRESHOLD) {
-        setIsRefreshing(true);
-        await onRefreshRef.current();
-        setIsRefreshing(false);
-      }
-    };
-
-    window.addEventListener("touchstart", onStart, { passive: true });
-    window.addEventListener("touchmove",  onMove,  { passive: true });
-    window.addEventListener("touchend",   onEnd);
-    return () => {
-      window.removeEventListener("touchstart", onStart);
-      window.removeEventListener("touchmove",  onMove);
-      window.removeEventListener("touchend",   onEnd);
-    };
-  }, []); // stable — all state via refs
-
-  return { pullPx, isRefreshing };
-}
+const EMPIRE_CSS = `
+  :root {
+    --header-h:    56px;
+    --ticker-h:    36px;
+    --chrome-h:    92px;
+    --nav-h:       60px;
+    --sidebar-w:   260px;
+    --aside-w:     300px;
+    --safe-top:    env(safe-area-inset-top,    0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left:   env(safe-area-inset-left,   0px);
+    --safe-right:  env(safe-area-inset-right,  0px);
+    --void:    #070710;
+    --surface: #0d0d1a;
+    --elevated:#12122a;
+    --border:  #1e1e3a;
+    --border-dim: #141428;
+    --text-1:  #f0f0ff;
+    --text-2:  #8b8ba8;
+    --text-3:  #4b4b6a;
+    --brain:        #6366f1;
+    --brain-light:  #818cf8;
+    --crown:        #f59e0b;
+    --green:        #10b981;
+    --blue:         #3b82f6;
+    --yellow:       #eab308;
+    --red:          #ef4444;
+    --orange:       #f97316;
+    --cyan:         #06b6d4;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--void); margin: 0; }
+  @keyframes ticker-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  @keyframes pulse-blue {
+    0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); }
+    50%     { box-shadow: 0 0 22px rgba(59,130,246,0.65); }
+  }
+  @keyframes pulse-red {
+    0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); }
+    50%     { box-shadow: 0 0 18px rgba(239,68,68,0.55); }
+  }
+  @keyframes live-dot {
+    0%,100% { opacity: 1; }
+    50%     { opacity: 0.3; }
+  }
+  @keyframes activity-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes ptr-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 2px; }
+`;
 
 /* ═══════════════════════════════════════════════════════════
    Constants
@@ -184,64 +206,6 @@ const MODULES: { num: number; name: string }[] = [
 ];
 
 const SESSION_TOKEN_BUDGET = 100_000;
-
-/* ═══════════════════════════════════════════════════════════
-   Palette
-═══════════════════════════════════════════════════════════ */
-
-const C = {
-  bg:     "#0a0a0f",
-  card:   "#12121a",
-  border: "#1e1e2e",
-  text:   "#e2e2e8",
-  muted:  "#6b6b80",
-  green:  "#22c55e",
-  blue:   "#3b82f6",
-  yellow: "#eab308",
-  red:    "#ef4444",
-  orange: "#f97316",
-  gray:   "#4b5563",
-  purple: "#a855f7",
-  cyan:   "#06b6d4",
-  indigo: "#6366f1",
-  teal:   "#14b8a6",
-};
-
-const MOD_STATUS_CFG: Record<ModStatus, { icon: string; color: string; label: string }> = {
-  pending:  { icon: "⬜", color: C.gray,   label: "PENDING"  },
-  building: { icon: "⚡", color: C.blue,   label: "BUILDING" },
-  testing:  { icon: "🔬", color: C.yellow, label: "TESTING"  },
-  done:     { icon: "✅", color: C.green,  label: "DONE"     },
-  blocked:  { icon: "🚫", color: C.red,    label: "BLOCKED"  },
-  paused:   { icon: "⏸",  color: C.orange, label: "PAUSED"   },
-};
-
-const WHO_CFG: Record<string, { color: string; label: string }> = {
-  claude_chat: { color: C.purple, label: "CLAUDE CHAT" },
-  claude_code: { color: C.cyan,   label: "CLAUDE CODE" },
-  manav:       { color: C.orange, label: "MANAV"       },
-  unknown:     { color: C.gray,   label: "SYSTEM"      },
-};
-
-const KIND_CFG: Record<string, { color: string; label: string }> = {
-  instruction: { color: C.indigo,  label: "instruction" },
-  response:    { color: C.teal,    label: "response"    },
-  thinking:    { color: C.blue,    label: "thinking"    },
-  status:      { color: C.gray,    label: "status"      },
-  dump:        { color: "#374151", label: "brain_dump"  },
-  note:        { color: C.cyan,    label: "note"        },
-  request:     { color: C.orange,  label: "question"    },
-  message:     { color: C.gray,    label: "message"     },
-};
-
-const STATUS_BADGE_CFG: Record<string, { color: string; bg: string; label: string }> = {
-  pending:   { color: C.yellow, bg: "rgba(234,179,8,0.12)",   label: "pending"   },
-  executing: { color: C.blue,   bg: "rgba(59,130,246,0.12)",  label: "executing" },
-  done:      { color: C.green,  bg: "rgba(34,197,94,0.12)",   label: "done"      },
-  blocked:   { color: C.red,    bg: "rgba(239,68,68,0.12)",   label: "blocked"   },
-  paused:    { color: C.orange, bg: "rgba(249,115,22,0.12)",  label: "paused"    },
-  info:      { color: C.muted,  bg: "rgba(107,107,128,0.12)", label: "info"      },
-};
 
 /* ═══════════════════════════════════════════════════════════
    Helpers
@@ -267,54 +231,32 @@ function fmtTokens(n: number) {
   return String(n);
 }
 
-function resolveKind(k: string) {
-  return KIND_CFG[k] ? k : "message";
-}
-
 /**
- * Derive module status from its bridge messages (newest first).
- *
- * DONE requires an EXPLICIT signal — never inferred from fuzzy body text:
- *   • meta.module_done === true
- *   • body or title contains MODULE_NN_DONE (case-insensitive)
- *
- * Everything else uses the latest message's kind + metadata.status only.
+ * Derive module status — DONE only from explicit signals:
+ *   meta.module_done === true  OR  MODULE_NN_DONE in body/title
  */
 function deriveModuleStatus(msgs: BridgeMsg[]): ModStatus {
   if (!msgs.length) return "pending";
-
-  // ── Pass 1: scan ALL messages for an explicit done marker ──
   for (const m of msgs) {
-    const meta  = m.metadata || {};
-    if (meta.module_done === true) return "done";
-    if (/MODULE_\d+_DONE/i.test(m.body  || "")) return "done";
-    if (/MODULE_\d+_DONE/i.test(m.title || "")) return "done";
+    if (m.metadata?.module_done === true)          return "done";
+    if (/MODULE_\d+_DONE/i.test(m.body  || ""))   return "done";
+    if (/MODULE_\d+_DONE/i.test(m.title || ""))   return "done";
   }
-
-  // ── Pass 2: derive current phase from the LATEST message ──
   const latest = msgs[0];
   const meta   = latest.metadata || {};
   const status = (meta.status as string) || "";
   const kind   = latest.kind;
   const body   = (latest.body || "").toLowerCase();
 
-  // Explicit halt states take priority
   if (status === "blocked") return "blocked";
   if (status === "paused")  return "paused";
-
-  // Active instruction → building
   if (kind === "instruction" && (status === "pending" || status === "executing" || !status)) return "building";
-
-  // Response marked done → entered test phase (requires explicit DONE marker to advance to done)
   if (kind === "response" && (status === "done" || meta.tsc_clean || meta.ts_status === "clean")) return "testing";
-
-  // Status messages: only derive halt states — never derive DONE from body text
   if (kind === "status") {
-    if (body.includes("paused"))                              return "paused";
-    if (body.includes("blocked"))                             return "blocked";
+    if (body.includes("paused"))                               return "paused";
+    if (body.includes("blocked"))                              return "blocked";
     if (body.includes("resumed") || body.includes("building")) return "building";
   }
-
   return "pending";
 }
 
@@ -343,130 +285,58 @@ function extractModuleTasks(msgs: BridgeMsg[]): ModuleTask[] {
     }
   }
   return Object.entries(taskMap).map(([name, tmsgs]) => {
-    const sorted = [...tmsgs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return { name, status: deriveModuleStatus(sorted), latest: sorted[0] || null };
+    const s = [...tmsgs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return { name, status: deriveModuleStatus(s), latest: s[0] || null };
   });
 }
 
 function findActiveTask(messages: BridgeMsg[]): BridgeMsg | null {
-  const sorted = [...messages].sort((a, b) =>
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
-  const blocked   = sorted.find(m => m.metadata?.status === "blocked");
-  if (blocked) return blocked;
-  const executing = sorted.find(m => m.metadata?.status === "executing" || m.metadata?.status === "pending");
-  if (executing) return executing;
-  return sorted[0] || null;
-}
-
-interface ActivityLine {
-  id:    string;
-  icon:  string;
-  color: string;
-  text:  string;
-  time:  string;
+  const s = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return s.find(m => m.metadata?.status === "blocked")
+      || s.find(m => m.metadata?.status === "executing" || m.metadata?.status === "pending")
+      || s[0] || null;
 }
 
 function deriveActivityLines(messages: BridgeMsg[]): ActivityLine[] {
   const lines: ActivityLine[] = [];
-  const sorted = [...messages].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  const sorted = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   for (const m of sorted) {
     const meta  = m.metadata || {};
-    const title = m.title    || "";
-    const body  = m.body     || "";
+    const title = m.title || "";
+    const body  = m.body  || "";
     const kind  = m.kind;
 
     if (kind === "thinking") {
       const t = body || title;
-      lines.push({
-        id:    m.id + ":thinking",
-        icon:  "→",
-        color: C.blue,
-        text:  "Starting: " + t.slice(0, 60) + (t.length > 60 ? "…" : ""),
-        time:  m.created_at,
-      });
+      lines.push({ id: m.id + ":thinking", icon: "→", color: "#3b82f6", text: "Starting: " + t.slice(0, 60) + (t.length > 60 ? "…" : ""), time: m.created_at });
     } else if (kind === "dump") {
-      lines.push({
-        id:    m.id + ":dump",
-        icon:  "⚙",
-        color: C.gray,
-        text:  "System snapshot posted",
-        time:  m.created_at,
-      });
+      lines.push({ id: m.id + ":dump", icon: "⚙", color: "#4b5563", text: "System snapshot posted", time: m.created_at });
     } else if (kind === "response") {
-      if (meta.tsc_clean || meta.ts_status === "clean") {
-        lines.push({
-          id:    m.id + ":ts",
-          icon:  "✓",
-          color: C.green,
-          text:  "TypeScript: clean",
-          time:  m.created_at,
-        });
-      }
-      if (meta.sha) {
-        lines.push({
-          id:    m.id + ":commit",
-          icon:  "✓",
-          color: C.green,
-          text:  `Committed: ${meta.sha}${meta.branch ? ` (${meta.branch})` : ""}`,
-          time:  m.created_at,
-        });
-      }
+      if (meta.tsc_clean || meta.ts_status === "clean")
+        lines.push({ id: m.id + ":ts", icon: "✓", color: "#10b981", text: "TypeScript: clean", time: m.created_at });
+      if (meta.sha)
+        lines.push({ id: m.id + ":commit", icon: "✓", color: "#10b981", text: `Committed: ${meta.sha}${meta.branch ? ` (${meta.branch})` : ""}`, time: m.created_at });
       if (!meta.tsc_clean && !meta.ts_status && !meta.sha && meta.status === "done") {
         const t = title || body.slice(0, 60);
-        lines.push({
-          id:    m.id + ":response",
-          icon:  "✓",
-          color: C.green,
-          text:  t.slice(0, 60) + (t.length > 60 ? "…" : ""),
-          time:  m.created_at,
-        });
+        lines.push({ id: m.id + ":response", icon: "✓", color: "#10b981", text: t.slice(0, 60) + (t.length > 60 ? "…" : ""), time: m.created_at });
       }
     } else if (kind === "status") {
       if (meta.status === "blocked") {
         const t = title || body;
-        lines.push({
-          id:    m.id + ":blocked",
-          icon:  "!",
-          color: C.yellow,
-          text:  "Blocked: " + t.slice(0, 55) + (t.length > 55 ? "…" : ""),
-          time:  m.created_at,
-        });
+        lines.push({ id: m.id + ":blocked", icon: "!", color: "#eab308", text: "Blocked: " + t.slice(0, 55) + (t.length > 55 ? "…" : ""), time: m.created_at });
       } else if (meta.task && meta.status === "done") {
-        lines.push({
-          id:    m.id + ":task-done",
-          icon:  "✓",
-          color: C.green,
-          text:  `${meta.task} complete`,
-          time:  m.created_at,
-        });
+        lines.push({ id: m.id + ":task-done", icon: "✓", color: "#10b981", text: `${meta.task} complete`, time: m.created_at });
       } else if (meta.module_done) {
-        const t = title.slice(0, 60);
-        lines.push({
-          id:    m.id + ":module-done",
-          icon:  "✓",
-          color: C.green,
-          text:  t || "Module complete",
-          time:  m.created_at,
-        });
+        lines.push({ id: m.id + ":mod-done", icon: "✓", color: "#10b981", text: title.slice(0, 60) || "Module complete", time: m.created_at });
       }
     } else if (kind === "instruction") {
       const t = title || body.slice(0, 60);
-      lines.push({
-        id:    m.id + ":instruction",
-        icon:  "→",
-        color: C.indigo,
-        text:  t.slice(0, 60) + (t.length > 60 ? "…" : ""),
-        time:  m.created_at,
-      });
+      lines.push({ id: m.id + ":instr", icon: "→", color: "#6366f1", text: t.slice(0, 60) + (t.length > 60 ? "…" : ""), time: m.created_at });
     }
 
-    if (lines.length >= 12) break;
+    if (lines.length >= 14) break;
   }
-
   return lines;
 }
 
@@ -476,12 +346,10 @@ function deriveActivityLines(messages: BridgeMsg[]): ActivityLine[] {
 
 async function bridgeCall(action: string, payload: Record<string, any> = {}, useWrite = false): Promise<any> {
   const token = useWrite ? BRIDGE_SECRET : BRIDGE_TOKEN;
-  if (!token) return { error: "No token configured" };
+  if (!token) return { error: "No token" };
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (useWrite) headers["Authorization"] = `Bearer ${token}`;
-  const url = useWrite
-    ? BRIDGE_URL
-    : `${BRIDGE_URL}?token=${encodeURIComponent(token)}`;
+  const url = useWrite ? BRIDGE_URL : `${BRIDGE_URL}?token=${encodeURIComponent(token)}`;
   try {
     const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ action, ...payload }) });
     return res.json();
@@ -491,552 +359,37 @@ async function bridgeCall(action: string, payload: Record<string, any> = {}, use
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Handoff doc generator
+   Handoff generator
 ═══════════════════════════════════════════════════════════ */
 
 function generateHandoff(messages: BridgeMsg[], modMap: Record<number, BridgeMsg[]>): string {
-  const now  = new Date().toISOString();
-  const done = MODULES.filter(m => deriveModuleStatus(modMap[m.num] || []) === "done").length;
-  const lines: string[] = [
-    `# SEO SEASON — EMPIRE BUILD HANDOFF`,
-    `Generated: ${now}`,
-    ``,
+  const done  = MODULES.filter(m => deriveModuleStatus(modMap[m.num] || []) === "done").length;
+  const lines = [
+    "# SEO SEASON — EMPIRE BUILD HANDOFF",
+    `Generated: ${new Date().toISOString()}`,
+    "",
     `## Module Status (${done}/12 complete)`,
-    ``,
+    "",
+    ...MODULES.map(m => {
+      const s = deriveModuleStatus(modMap[m.num] || []);
+      return `${s === "done" ? "✅" : s === "building" ? "⚡" : s === "blocked" ? "🚫" : "⬜"} MODULE ${String(m.num).padStart(2, "0")} — ${m.name} [${s.toUpperCase()}]`;
+    }),
   ];
-  for (const mod of MODULES) {
-    const s   = deriveModuleStatus(modMap[mod.num] || []);
-    const cfg = MOD_STATUS_CFG[s];
-    lines.push(`${cfg.icon} MODULE ${String(mod.num).padStart(2, "0")} — ${mod.name} [${cfg.label}]`);
-  }
-  const recent = [...messages]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5);
-  if (recent.length) {
-    lines.push(``, `## Recent Messages`, ``);
-    for (const m of recent) {
-      lines.push(
-        `[${m.created_by}] [${m.kind}] ${m.title || "(no title)"} — ${fmtRelative(m.created_at)}`,
-        m.body ? m.body.slice(0, 200) + (m.body.length > 200 ? "…" : "") : "",
-        ``,
-      );
-    }
-  }
   const active = findActiveTask(messages);
   if (active) {
-    lines.push(
-      `## Active Task`, ``,
+    lines.push("", "## Active Task", "",
       `Module: ${active.metadata?.module_num ?? "?"} · Task: ${active.metadata?.task ?? "?"}`,
-      active.body?.slice(0, 400) || "(no body)", ``,
-    );
+      active.body?.slice(0, 400) || "(no body)", "");
   }
-  lines.push(
-    `## Pending Modules`, ``,
-    ...MODULES
-      .filter(m => deriveModuleStatus(modMap[m.num] || []) === "pending")
-      .map(m => `• MODULE ${String(m.num).padStart(2, "0")} — ${m.name}`),
-    ``, `---`,
-    `Paste this into a new Claude Chat session to continue the build.`,
-  );
+  lines.push("", "---", "Paste into a new Claude Chat to continue the build.");
   return lines.join("\n");
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Sub-components
+   News ticker headlines
 ═══════════════════════════════════════════════════════════ */
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg = (STATUS_BADGE_CFG as any)[status] || { color: C.gray, bg: "rgba(75,85,99,0.15)", label: status };
-  return (
-    <span
-      className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold uppercase"
-      style={{ color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.color}30` }}
-    >
-      {cfg.label}
-    </span>
-  );
-}
-
-/* ── Module Status Icon (40×40, per-status premium styling) ── */
-function ModStatusIcon({ status, compact = false }: { status: ModStatus; compact?: boolean }) {
-  const sz  = compact ? 32 : 40;
-  const r   = compact ? 8  : 10;
-  const fsz = compact ? 14 : 18;
-
-  const cfg: Record<ModStatus, { bg: string; border: string; shadow?: string; anim?: string; icon: React.ReactNode }> = {
-    pending:  { bg: "#0d0d1a", border: "1.5px solid #2a2a3a", icon: null },
-    building: {
-      bg: "#0d1830", border: "1.5px solid #3b82f6",
-      shadow: "0 0 12px rgba(59,130,246,0.3)", anim: "pulseBlue 2s ease-in-out infinite",
-      icon: <span style={{ fontSize: fsz }}>⚡</span>,
-    },
-    testing:  {
-      bg: "#1a1400", border: "1.5px solid #eab308",
-      shadow: "0 0 12px rgba(234,179,8,0.2)",
-      icon: <span style={{ fontSize: fsz }}>🔬</span>,
-    },
-    done:     {
-      bg: "#051008", border: "1.5px solid #10b981",
-      shadow: "0 0 16px rgba(16,185,129,0.25)",
-      icon: <span style={{ fontSize: compact ? 16 : 20, fontWeight: 700, color: "#10b981", lineHeight: 1 }}>✓</span>,
-    },
-    blocked:  {
-      bg: "#1a0505", border: "1.5px solid #ef4444",
-      anim: "pulseRed 2s ease-in-out infinite",
-      icon: <span style={{ fontSize: fsz, color: "#ef4444" }}>✗</span>,
-    },
-    paused:   {
-      bg: "#1a0e00", border: "1.5px solid #f97316",
-      icon: <span style={{ fontSize: fsz, color: "#f97316" }}>⏸</span>,
-    },
-  };
-
-  const c = cfg[status];
-  return (
-    <div style={{
-      width: sz, height: sz, borderRadius: r, flexShrink: 0,
-      background: c.bg, border: c.border, boxShadow: c.shadow,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      animation: c.anim,
-      transition: "box-shadow 0.3s",
-    }}>
-      {c.icon}
-    </div>
-  );
-}
-
-/* ── Module Status Pill badge ── */
-function ModStatusPill({ status }: { status: ModStatus }) {
-  const cfg: Record<ModStatus, { bg: string; color: string; border: string }> = {
-    pending:  { bg: "#0d0d1a", color: "#4b4b6a", border: "0.5px solid #2a2a3a" },
-    building: { bg: "#0d1830", color: "#3b82f6", border: "0.5px solid #3b82f6" },
-    testing:  { bg: "#1a1400", color: "#eab308", border: "0.5px solid #eab308" },
-    done:     { bg: "#0a2010", color: "#10b981", border: "0.5px solid #10b981" },
-    blocked:  { bg: "#1a0505", color: "#ef4444", border: "0.5px solid #ef4444" },
-    paused:   { bg: "#1a0e00", color: "#f97316", border: "0.5px solid #f97316" },
-  };
-  const labels: Record<ModStatus, string> = {
-    pending: "PENDING", building: "BUILDING", testing: "TESTING",
-    done: "DONE", blocked: "BLOCKED", paused: "PAUSED",
-  };
-  const c = cfg[status];
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center",
-      fontSize: 9, fontFamily: "monospace", fontWeight: 600, letterSpacing: "0.08em",
-      padding: "2px 8px", borderRadius: 20,
-      background: c.bg, color: c.color, border: c.border,
-    }}>
-      {labels[status]}
-    </span>
-  );
-}
-
-function ModuleRow({
-  mod, msgs, expanded, onToggle, compact = false,
-}: {
-  mod:      typeof MODULES[0];
-  msgs:     BridgeMsg[];
-  expanded: boolean;
-  onToggle: () => void;
-  compact?: boolean;
-}) {
-  const status  = deriveModuleStatus(msgs);
-  const latest  = msgs[0] || null;
-  const tasks   = extractModuleTasks(msgs);
-
-  const leftBorderColor: Record<ModStatus, string> = {
-    done:     "#10b981", building: "#3b82f6", testing:  "#eab308",
-    blocked:  "#ef4444", paused:   "#f97316", pending:  "transparent",
-  };
-  const cardBg: Record<ModStatus, string> = {
-    done:     "linear-gradient(to right, rgba(16,185,129,0.05), transparent)",
-    building: "linear-gradient(to right, rgba(59,130,246,0.05), transparent)",
-    testing:  "linear-gradient(to right, rgba(234,179,8,0.04), transparent)",
-    blocked:  "linear-gradient(to right, rgba(239,68,68,0.05), transparent)",
-    paused:   "linear-gradient(to right, rgba(249,115,22,0.04), transparent)",
-    pending:  "#0d0d1a",
-  };
-  const outerBorder: Record<ModStatus, string> = {
-    done:     "rgba(16,185,129,0.2)", building: "rgba(59,130,246,0.2)",
-    testing:  "rgba(234,179,8,0.2)",  blocked:  "rgba(239,68,68,0.3)",
-    paused:   "rgba(249,115,22,0.2)", pending:  "#1e1e2e",
-  };
-
-  return (
-    <div
-      style={{
-        borderRadius: 12,
-        border:       `1px solid ${outerBorder[status]}`,
-        borderLeft:   `3px solid ${leftBorderColor[status]}`,
-        background:   cardBg[status],
-        overflow:     "hidden",
-        boxShadow:    status === "blocked"  ? "0 0 16px rgba(239,68,68,0.1)"
-                    : status === "building" ? "0 0 16px rgba(59,130,246,0.08)"
-                    : undefined,
-        transition:   "box-shadow 0.3s",
-      }}
-    >
-      {/* ── Header button ── */}
-      <button
-        className="w-full text-left transition-colors hover:bg-white/[0.025]"
-        style={{ padding: compact ? "10px 14px" : "14px 16px" }}
-        onClick={onToggle}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: compact ? 12 : 16 }}>
-          <ModStatusIcon status={status} compact={compact} />
-
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color: "#4b4b6a", fontFamily: "monospace" }}>
-                MODULE {String(mod.num).padStart(2, "0")}
-              </span>
-              {latest && (
-                <span style={{ fontSize: 11, color: "#4b4b6a", flexShrink: 0 }}>
-                  {fmtRelative(latest.created_at)}
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: compact ? 13 : 15, fontWeight: 600, color: "#f0f0ff", marginTop: 3, lineHeight: 1.25 }}>
-              {mod.name}
-            </div>
-            <div style={{ marginTop: 6 }}>
-              <ModStatusPill status={status} />
-            </div>
-          </div>
-
-          {/* Animated chevron */}
-          <div style={{
-            transform:  expanded ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 220ms ease",
-            color:      "#4b4b6a",
-            flexShrink: 0,
-          }}>
-            <ChevronDown size={18} />
-          </div>
-        </div>
-      </button>
-
-      {/* ── Expanded detail ── */}
-      {expanded && (
-        <div style={{ background: "#090912", borderTop: "1px solid #1e1e3a", padding: "12px 16px 14px 68px" }}>
-          {tasks.length > 0 ? (
-            <div>
-              {tasks.map((t, i) => {
-                const tc = MOD_STATUS_CFG[t.status];
-                return (
-                  <div key={t.name}>
-                    {i > 0 && <div style={{ borderTop: "1px dashed #1e1e3a", margin: "8px 0" }} />}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: tc.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: 10, fontFamily: "monospace", color: "#6060a0", letterSpacing: "0.05em" }}>
-                        TASK {t.name}
-                      </span>
-                      <ModStatusPill status={t.status} />
-                      {t.latest && (
-                        <span style={{ fontSize: 9, color: "#4b4b6a", marginLeft: "auto" }}>
-                          {fmtRelative(t.latest.created_at)}
-                        </span>
-                      )}
-                    </div>
-                    {t.latest && (t.latest.title || t.latest.body) && (
-                      <p style={{ fontSize: 10, fontFamily: "monospace", color: "#6868a0", marginTop: 3, lineHeight: 1.4 }}>
-                        {(t.latest.title || t.latest.body || "").slice(0, 80)}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p style={{ fontSize: 13, color: "#4b4b6a", fontStyle: "italic" }}>
-              Tasks load as Claude Code begins this module
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Animates trailing dots: "." → ".." → "..." → repeat, 500ms each */
-function useDotsAnimation(active: boolean): string {
-  const [dots, setDots] = useState(1);
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => setDots(d => (d === 3 ? 1 : d + 1)), 500);
-    return () => clearInterval(id);
-  }, [active]);
-  return ".".repeat(dots);
-}
-
-/** Branded "👑 Manav …" pill badge */
-function ManavBadge({ variant }: { variant: "coding" | "blocked" | "delivered" | "ready" }) {
-  const dots = useDotsAnimation(variant === "coding");
-
-  const cfg = {
-    coding:    { text: `👑 Manav Coding${dots}`, border: "#6366f1", color: "#818cf8" },
-    blocked:   { text: "👑 Manav Needs You",      border: "#ef4444", color: "#ef4444" },
-    delivered: { text: "👑 Manav Delivered",       border: "#10b981", color: "#10b981" },
-    ready:     { text: "👑 Manav Ready",           border: "#374151", color: "#6b7280" },
-  }[variant];
-
-  return (
-    <span
-      style={{
-        display:         "inline-flex",
-        alignItems:      "center",
-        background:      "linear-gradient(135deg, #1a1040 0%, #0d0820 100%)",
-        border:          `0.5px solid ${cfg.border}`,
-        color:           cfg.color,
-        fontSize:        12,
-        fontWeight:      500,
-        borderRadius:    20,
-        padding:         "4px 14px",
-        letterSpacing:   "0.01em",
-        whiteSpace:      "nowrap",
-        transition:      "color 0.3s, border-color 0.3s",
-      }}
-    >
-      {cfg.text}
-    </span>
-  );
-}
-
-/** Elapsed timer — ticks every second from a start ISO timestamp */
-function useElapsed(startIso: string | null): string {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (!startIso) return;
-    const id = setInterval(() => setTick(t => t + 1), 1000);
-    return () => clearInterval(id);
-  }, [startIso]);
-  if (!startIso) return "";
-  const s = Math.floor((Date.now() - new Date(startIso).getTime()) / 1000);
-  if (s < 60)    return `${s}s`;
-  if (s < 3600)  return `${Math.floor(s / 60)}m ${s % 60}s`;
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-}
-
-function ActiveTaskCard({
-  messages,
-}: {
-  messages: BridgeMsg[];
-}) {
-  const sorted = [...messages].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
-
-  // Priority 1 — latest thinking message
-  const thinking = sorted.find(m => m.kind === "thinking");
-  // Priority 2 — latest instruction
-  const instruction = sorted.find(m => m.kind === "instruction");
-  // Blocked signal — check most recent non-done message
-  const blocked = sorted.find(m => m.metadata?.status === "blocked");
-  // Last completed — for standing-by state
-  const lastDone = sorted.find(
-    m => m.metadata?.status === "done" || /MODULE_\d+_DONE/i.test(m.title || "") || m.metadata?.module_done
-  );
-
-  const primary = thinking || instruction || null;
-  const isBlocked = !!blocked && !thinking;
-  const elapsed = useElapsed(primary?.created_at || null);
-
-  /* ── STANDING BY — nothing active ── */
-  if (!primary) {
-    return (
-      <div
-        className="rounded-xl border p-6 flex flex-col gap-3"
-        style={{ borderColor: C.border, background: C.card, minHeight: 140 }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Clock size={14} style={{ color: C.muted }} />
-            <span className="text-[10px] font-mono font-bold tracking-widest uppercase" style={{ color: C.muted }}>
-              ⏳ STANDING BY
-            </span>
-          </div>
-          <ManavBadge variant="ready" />
-        </div>
-        <p className="text-sm leading-relaxed" style={{ color: "#8080a0" }}>
-          Empire is ready. Claude Chat will post the next instruction.
-        </p>
-        {lastDone && (
-          <div className="border-t pt-3 flex flex-col gap-0.5" style={{ borderColor: C.border }}>
-            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Last completed</span>
-            <span className="text-[11px] font-mono" style={{ color: C.green }}>
-              {lastDone.title || lastDone.body?.slice(0, 80) || "—"}
-            </span>
-            <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-              {fmtRelative(lastDone.created_at)}
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  /* ── BLOCKED ── */
-  if (isBlocked) {
-    return (
-      <div
-        className="rounded-xl border p-5 flex flex-col gap-3 transition-all"
-        style={{
-          borderColor: `${C.red}60`,
-          background:  "rgba(239,68,68,0.06)",
-          boxShadow:   `0 0 20px rgba(239,68,68,0.12)`,
-        }}
-      >
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <span className="text-xs font-mono font-bold px-2 py-1 rounded" style={{ color: C.red, background: `${C.red}20`, border: `1px solid ${C.red}40` }}>
-            🚫 NEEDS YOUR ATTENTION
-          </span>
-          <div className="flex items-center gap-3">
-            <ManavBadge variant="blocked" />
-            <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-              Stopped at {fmtTime(blocked!.created_at)}
-            </span>
-          </div>
-        </div>
-        {(blocked!.metadata?.module_num || blocked!.metadata?.task) && (
-          <div className="text-[10px] font-mono" style={{ color: C.muted }}>
-            {blocked!.metadata?.module_num && `MODULE ${String(blocked!.metadata.module_num).padStart(2,"0")}`}
-            {blocked!.metadata?.task && ` · TASK ${blocked!.metadata.task}`}
-          </div>
-        )}
-        <div className="border-t border-b py-3" style={{ borderColor: `${C.red}25` }}>
-          <p className="text-sm leading-relaxed font-medium" style={{ color: "#f0a0a0" }}>
-            {blocked!.body || blocked!.title || "Blocked — check the build log for details."}
-          </p>
-        </div>
-        <p className="text-[9px] font-mono" style={{ color: C.muted }}>
-          Resolve the blocker, then post a bridge status to resume.
-        </p>
-      </div>
-    );
-  }
-
-  /* ── ACTIVE (thinking or instruction) ── */
-  const meta       = primary.metadata || {};
-  const moduleNum  = meta.module_num  ? String(meta.module_num).padStart(2, "0") : null;
-  const taskId     = meta.task        || (meta.module ? meta.module : null);
-  const isThinking = primary.kind === "thinking";
-
-  // Split body into first sentence (headline) and rest (why it matters)
-  const bodyText   = primary.body || primary.title || "";
-  const sentenceEnd = bodyText.search(/(?<=[.!?])\s+[A-Z]/);
-  const headline   = sentenceEnd > 0 ? bodyText.slice(0, sentenceEnd + 1) : bodyText;
-  const whyText    = sentenceEnd > 0 ? bodyText.slice(sentenceEnd + 1).trim() : "";
-
-  return (
-    <div
-      className="rounded-xl border p-5 flex flex-col gap-4 transition-all"
-      style={{
-        borderColor: isThinking ? `${C.blue}35` : `${C.indigo}30`,
-        background:  C.card,
-      }}
-    >
-      {/* Header row — badge alone, elapsed at right */}
-      <div className="flex items-center justify-between gap-2">
-        <ManavBadge variant="coding" />
-        <span className="text-[10px] font-mono tabular-nums" style={{ color: elapsed ? C.blue : C.muted }}>
-          {elapsed || "—"}
-        </span>
-      </div>
-
-      {/* Main text — large, readable, plain English */}
-      <div className="border-t border-b py-4" style={{ borderColor: C.border }}>
-        <p className="text-[15px] leading-relaxed font-medium" style={{ color: "#dde0f0", letterSpacing: "0.01em" }}>
-          {headline}
-        </p>
-      </div>
-
-      {/* Why it matters */}
-      {whyText && (
-        <div className="flex flex-col gap-1">
-          <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: C.muted }}>
-            WHY THIS MATTERS
-          </span>
-          <p className="text-[12px] leading-relaxed" style={{ color: "#8888a8" }}>
-            {whyText}
-          </p>
-        </div>
-      )}
-
-      {/* Footer — module · task · started */}
-      <div className="flex items-center gap-3 flex-wrap pt-1 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
-        {(moduleNum || taskId) && (
-          <span className="text-[10px] font-mono" style={{ color: C.muted }}>
-            {moduleNum && `Module ${moduleNum}`}{taskId && ` · Task ${taskId}`}
-          </span>
-        )}
-        <span className="text-[10px] font-mono" style={{ color: "#3c3c58" }}>
-          Started {fmtTime(primary.created_at)}
-        </span>
-        {meta.sha && (
-          <span className="flex items-center gap-1 text-[10px] font-mono ml-auto" style={{ color: "#3c3c58" }}>
-            <GitCommit size={8} /> {meta.sha}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Running activity stream — accepts pre-computed lines (memoized by parent) */
-function LiveActivity({ lines }: { lines: ActivityLine[] }) {
-  if (lines.length === 0) return null;
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 px-0.5">
-        <Activity size={10} style={{ color: C.muted }} />
-        <span
-          className="text-[9px] font-mono font-bold uppercase tracking-widest"
-          style={{ color: C.muted }}
-        >
-          Live Activity
-        </span>
-      </div>
-      <div className="flex flex-col gap-0.5">
-        {lines.map((line, i) => (
-          <div
-            key={line.id}
-            className="flex items-start gap-2 py-1.5 px-2.5 rounded-lg"
-            style={{
-              background:      "rgba(255,255,255,0.025)",
-              border:          "1px solid rgba(255,255,255,0.045)",
-              animation:       "slideIn 250ms ease-out both",
-              animationDelay:  `${i * 50}ms`,
-            }}
-          >
-            <span
-              className="text-[12px] font-mono flex-shrink-0 leading-none mt-0.5"
-              style={{ color: line.color, minWidth: 12, textAlign: "center" }}
-            >
-              {line.icon}
-            </span>
-            <span
-              className="text-[10px] font-mono flex-1 leading-relaxed break-words"
-              style={{ color: "#9090b8" }}
-            >
-              {line.text}
-            </span>
-            <span
-              className="text-[9px] font-mono flex-shrink-0 mt-0.5"
-              style={{ color: "#3c3c58" }}
-            >
-              {fmtRelative(line.time)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ── King's News Headline Generator ── */
-const HEADLINE_SEEDS: string[] = [
+const HEADLINE_SEEDS = [
   "👑 SEO Season — the only system that learns from every client forever",
   "🧠 9 intelligence streams now feeding Brain Memory automatically",
   "🌍 Any market · Any language · Any culture — empire without borders",
@@ -1048,12 +401,8 @@ const HEADLINE_SEEDS: string[] = [
 function generateNewsHeadlines(messages: BridgeMsg[]): string[] {
   const headlines: string[] = [];
   const seen = new Set<string>();
-  const add = (h: string) => {
-    if (!seen.has(h) && h.length <= 88) { seen.add(h); headlines.push(h); }
-  };
-  const sorted = [...messages].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  const add = (h: string) => { if (!seen.has(h) && h.length <= 90) { seen.add(h); headlines.push(h); } };
+  const sorted = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   for (const m of sorted.slice(0, 50)) {
     const text = ((m.title || "") + " " + (m.body || "")).toLowerCase();
     if (/MODULE_01_DONE/i.test(text) || (m.metadata?.module_done && m.metadata?.module_num === 1))
@@ -1080,611 +429,370 @@ function generateNewsHeadlines(messages: BridgeMsg[]): string[] {
   return headlines;
 }
 
-/* ── King's News Ticker ── */
-function NewsTicker({ headlines }: { headlines: string[] }) {
+/* ═══════════════════════════════════════════════════════════
+   Small reusable components
+═══════════════════════════════════════════════════════════ */
+
+function ModStatusPill({ status }: { status: ModStatus }) {
+  const cfg: Record<ModStatus, { bg: string; color: string; border: string; label: string }> = {
+    pending:  { bg: "#0d0d1a", color: "#4b4b6a", border: "0.5px solid #2a2a3a", label: "PENDING"  },
+    building: { bg: "#0d1830", color: "#3b82f6", border: "0.5px solid #3b82f6", label: "BUILDING" },
+    testing:  { bg: "#1a1400", color: "#eab308", border: "0.5px solid #eab308", label: "TESTING"  },
+    done:     { bg: "#051008", color: "#10b981", border: "0.5px solid #10b981", label: "DONE"     },
+    blocked:  { bg: "#1a0505", color: "#ef4444", border: "0.5px solid #ef4444", label: "BLOCKED"  },
+    paused:   { bg: "#1a0e00", color: "#f97316", border: "0.5px solid #f97316", label: "PAUSED"   },
+  };
+  const c = cfg[status];
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", fontSize: 9, fontFamily: "monospace", fontWeight: 600, letterSpacing: "0.08em", padding: "2px 8px", borderRadius: 20, background: c.bg, color: c.color, border: c.border }}>
+      {c.label}
+    </span>
+  );
+}
+
+function useDotsAnimation(active: boolean): string {
+  const [dots, setDots] = useState(1);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setDots(d => d === 3 ? 1 : d + 1), 500);
+    return () => clearInterval(id);
+  }, [active]);
+  return ".".repeat(dots);
+}
+
+function ManavBadge({ variant }: { variant: "coding" | "blocked" | "delivered" | "ready" }) {
+  const dots = useDotsAnimation(variant === "coding");
+  const cfg = {
+    coding:    { text: `👑 Manav Coding${dots}`, border: "#6366f1", color: "#818cf8" },
+    blocked:   { text: "👑 Manav Needs You",      border: "#ef4444", color: "#ef4444" },
+    delivered: { text: "👑 Manav Delivered",       border: "#10b981", color: "#10b981" },
+    ready:     { text: "👑 Manav Ready",           border: "#374151", color: "#6b7280" },
+  }[variant];
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", background: "linear-gradient(135deg,#1a1040,#0d0820)", border: `0.5px solid ${cfg.border}`, color: cfg.color, fontSize: 12, fontWeight: 500, borderRadius: 20, padding: "4px 14px", whiteSpace: "nowrap", transition: "color 0.3s, border-color 0.3s" }}>
+      {cfg.text}
+    </span>
+  );
+}
+
+function useElapsed(startIso: string | null): string {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!startIso) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+  if (!startIso) return "";
+  const s = Math.floor((Date.now() - new Date(startIso).getTime()) / 1000);
+  if (s < 60)   return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ActiveHeroCard — extracted so useElapsed is called
+   unconditionally at the top of a proper component.
+═══════════════════════════════════════════════════════════ */
+
+function ActiveHeroCard({ msgs, lastDone }: {
+  msgs:     BridgeMsg[];
+  lastDone: BridgeMsg | null;
+}) {
+  const thinking    = msgs.find(m => m.kind === "thinking");
+  const instruction = msgs.find(m => m.kind === "instruction");
+  const blocked     = msgs.find(m => m.metadata?.status === "blocked");
+  const primary     = thinking || instruction || null;
+  const isBlocked   = !!blocked && !thinking;
+
+  /* useElapsed is called unconditionally — no hooks-after-conditional */
+  const elapsed = useElapsed(primary?.created_at ?? null);
+
+  if (!primary) {
+    return (
+      <div style={{ borderRadius: 16, border: "0.5px solid var(--border)", background: "var(--surface)", padding: "48px 20px", textAlign: "center", marginBottom: 16 }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>⏳</div>
+        <div style={{ fontSize: 11, letterSpacing: "2px", color: "var(--text-3)", marginBottom: 8 }}>STANDING BY</div>
+        <div style={{ fontSize: 14, color: "#6b6b80" }}>Waiting for next instruction</div>
+        {lastDone && (
+          <div style={{ marginTop: 20, padding: "12px 16px", background: "var(--void)", borderRadius: 10, border: "0.5px solid var(--border)", textAlign: "left" }}>
+            <div style={{ fontSize: 9, color: "var(--text-3)", marginBottom: 4 }}>LAST COMPLETED</div>
+            <div style={{ fontSize: 13, color: "#10b981", fontWeight: 600 }}>{lastDone.title || lastDone.body?.slice(0, 80)}</div>
+            <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 3 }}>{fmtRelative(lastDone.created_at)}</div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (isBlocked) {
+    return (
+      <div style={{ borderRadius: 16, border: "0.5px solid rgba(239,68,68,0.5)", background: "rgba(239,68,68,0.06)", padding: 20, marginBottom: 16, boxShadow: "0 0 20px rgba(239,68,68,0.1)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+          <span style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, padding: "4px 10px", borderRadius: 6, color: "#ef4444", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)" }}>🚫 NEEDS ATTENTION</span>
+          <ManavBadge variant="blocked" />
+        </div>
+        {(blocked!.metadata?.module_num || blocked!.metadata?.task) && (
+          <div style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-3)", marginBottom: 10 }}>
+            {blocked!.metadata?.module_num && `MODULE ${String(blocked!.metadata.module_num).padStart(2,"0")}`}
+            {blocked!.metadata?.task && ` · TASK ${blocked!.metadata.task}`}
+          </div>
+        )}
+        <p style={{ fontSize: 15, lineHeight: 1.6, color: "#f0a0a0", margin: "0 0 12px" }}>
+          {blocked!.body || blocked!.title || "Blocked — check build log."}
+        </p>
+        <p style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-3)", margin: 0 }}>
+          Resolve then post a bridge status to resume.
+        </p>
+      </div>
+    );
+  }
+
+  const meta      = primary.metadata || {};
+  const moduleNum = meta.module_num ? String(meta.module_num).padStart(2, "0") : null;
+  const taskId    = meta.task || null;
+  const bodyText  = primary.body || primary.title || "";
+  const sentEnd   = bodyText.search(/(?<=[.!?])\s+[A-Z]/);
+  const headline  = sentEnd > 0 ? bodyText.slice(0, sentEnd + 1) : bodyText;
+  const whyText   = sentEnd > 0 ? bodyText.slice(sentEnd + 1).trim() : "";
 
   return (
-    <div
-      className="flex-shrink-0 relative overflow-hidden"
-      style={{
-        height:       36,
-        background:   "linear-gradient(to right, rgba(99,102,241,0.12), rgba(99,102,241,0.06), rgba(99,102,241,0.12))",
-        borderTop:    "0.5px solid rgba(99,102,241,0.3)",
-        borderBottom: "0.5px solid rgba(99,102,241,0.3)",
-        display: "flex", alignItems: "center",
-      }}
-    >
-      {/* Fade edges */}
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 40, zIndex: 2, background: "linear-gradient(to right, #0a0a0f, transparent)", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 40, zIndex: 2, background: "linear-gradient(to left, #0a0a0f, transparent)", pointerEvents: "none" }} />
+    <div style={{ borderRadius: 16, border: `0.5px solid ${primary.kind === "thinking" ? "rgba(59,130,246,0.3)" : "rgba(99,102,241,0.25)"}`, background: "var(--surface)", padding: 20, marginBottom: 16, position: "relative", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--text-3)" }}>ACTIVE RIGHT NOW</div>
+        <ManavBadge variant="coding" />
+      </div>
 
-      <div
-        style={{
-          display: "inline-flex", alignItems: "center",
-          whiteSpace: "nowrap",
-          fontSize: 12, fontWeight: 500, color: "#a5b4fc",
-          animation: "ticker 60s linear infinite",
-          paddingLeft: 20,
-        }}
-        onMouseEnter={e => ((e.currentTarget as HTMLDivElement).style.animationPlayState = "paused")}
-        onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.animationPlayState = "running")}
-      >
-        {[0, 1].map(copy => headlines.map((h, i) => (
-          <React.Fragment key={`${copy}-${i}`}>
-            <span>{h}</span>
-            <span style={{ color: "#6366f1", fontSize: 14, padding: "0 10px" }}>✦</span>
-          </React.Fragment>
-        )))}
+      <p style={{ fontSize: "clamp(16px,4vw,22px)", fontWeight: 500, color: "var(--text-1)", lineHeight: 1.55, margin: "0 0 16px" }}>
+        {headline}
+      </p>
+
+      {whyText && (
+        <>
+          <div style={{ height: 1, background: "var(--border)", margin: "0 0 16px" }} />
+          <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 4, letterSpacing: "0.8px" }}>WHY THIS MATTERS</div>
+          <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 16px" }}>{whyText}</p>
+        </>
+      )}
+
+      <div style={{ height: 1, background: "var(--border)", margin: "0 0 12px" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-3)" }}>
+        <span>{moduleNum && `Module ${moduleNum}`}{taskId && ` · Task ${taskId}`}</span>
+        <span style={{ fontFamily: "monospace", color: "#6366f1" }}>{elapsed}</span>
       </div>
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Module card
+═══════════════════════════════════════════════════════════ */
+
+function ModuleCard({
+  mod, msgs, expanded, onToggle,
+}: {
+  mod:      typeof MODULES[0];
+  msgs:     BridgeMsg[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const status = deriveModuleStatus(msgs);
+  const latest = msgs[0] || null;
+  const tasks  = extractModuleTasks(msgs);
+
+  const accentColor: Record<ModStatus, string> = {
+    done: "#10b981", building: "#3b82f6", testing: "#eab308",
+    blocked: "#ef4444", paused: "#f97316", pending: "transparent",
+  };
+  const boxBg: Record<ModStatus, string> = {
+    pending:  "#0d0d1a",
+    done:     "linear-gradient(135deg,rgba(16,185,129,0.04) 0%,transparent 60%)",
+    building: "linear-gradient(135deg,rgba(59,130,246,0.05) 0%,transparent 60%)",
+    testing:  "linear-gradient(135deg,rgba(234,179,8,0.04) 0%,transparent 60%)",
+    blocked:  "linear-gradient(135deg,rgba(239,68,68,0.05) 0%,transparent 60%)",
+    paused:   "linear-gradient(135deg,rgba(249,115,22,0.04) 0%,transparent 60%)",
+  };
+  const statusIcon: Record<ModStatus, { icon: string; color: string; anim?: string }> = {
+    pending:  { icon: "",   color: "#2a2a3a" },
+    done:     { icon: "✓",  color: "#10b981" },
+    building: { icon: "⚡", color: "#3b82f6", anim: "pulse-blue 2s ease-in-out infinite" },
+    testing:  { icon: "◎",  color: "#eab308" },
+    blocked:  { icon: "✕",  color: "#ef4444", anim: "pulse-red 1.5s ease-in-out infinite" },
+    paused:   { icon: "⏸", color: "#f97316" },
+  };
+  const si = statusIcon[status];
+
+  return (
+    <div style={{
+      marginBottom: 8, borderRadius: 14, overflow: "hidden", position: "relative",
+      border: `0.5px solid ${status === "pending" ? "var(--border)" : accentColor[status] + "50"}`,
+      background: boxBg[status],
+      boxShadow: status === "blocked" ? "0 0 16px rgba(239,68,68,0.08)"
+               : status === "building" ? "0 0 12px rgba(59,130,246,0.06)"
+               : undefined,
+    }}>
+      {/* Left accent bar */}
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, borderRadius: "14px 0 0 14px", background: accentColor[status] }} />
+
+      {/* Header */}
+      <button
+        onClick={onToggle}
+        style={{ width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "14px 14px 14px 18px", display: "flex", alignItems: "center", gap: 12, minHeight: 68, userSelect: "none" }}
+      >
+        {/* Status box */}
+        <div style={{
+          width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 18, fontWeight: 700, color: si.color,
+          border: `1.5px solid ${accentColor[status] === "transparent" ? "#2a2a3a" : accentColor[status]}`,
+          background: status === "pending" ? "#0d0d1a"
+                    : status === "done"    ? "rgba(16,185,129,0.1)"
+                    : status === "building" ? "rgba(59,130,246,0.1)"
+                    : status === "testing"  ? "rgba(234,179,8,0.08)"
+                    : status === "blocked"  ? "rgba(239,68,68,0.1)"
+                    : "rgba(249,115,22,0.08)",
+          animation: si.anim,
+          transition: "all 250ms ease",
+        }}>
+          {si.icon}
+        </div>
+
+        {/* Text */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 3 }}>
+            MODULE {String(mod.num).padStart(2, "0")}
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)", whiteSpace: expanded ? "normal" : "nowrap", overflow: expanded ? "visible" : "hidden", textOverflow: "ellipsis", lineHeight: 1.25 }}>
+            {mod.name}
+          </div>
+          <div style={{ marginTop: 5 }}>
+            <ModStatusPill status={status} />
+          </div>
+        </div>
+
+        {/* Right */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+          {latest && <span style={{ fontSize: 10, color: "var(--text-3)" }}>{fmtRelative(latest.created_at)}</span>}
+          <span style={{ fontSize: 14, color: "var(--text-3)", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 250ms ease", marginTop: 4, display: "block" }}>▾</span>
+        </div>
+      </button>
+
+      {/* Expanded body — max-height transition */}
+      <div style={{ maxHeight: expanded ? 400 : 0, overflow: "hidden", transition: "max-height 350ms ease" }}>
+        <div style={{ borderTop: "0.5px solid #1a1a2e", padding: "12px 14px 14px 74px" }}>
+          {tasks.length > 0 ? tasks.map((t, i) => (
+            <div key={t.name} style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 36, paddingTop: 6, paddingBottom: 6, borderBottom: i < tasks.length - 1 ? "0.5px dashed #1a1a2e" : "none" }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.status === "done" ? "#10b981" : t.status === "building" ? "#3b82f6" : t.status === "blocked" ? "#ef4444" : "#4b4b6a", flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: "var(--text-2)", flex: 1 }}>Task {t.name}</span>
+              <ModStatusPill status={t.status} />
+              {t.latest && <span style={{ fontSize: 10, color: "var(--text-3)", marginLeft: 4 }}>{fmtRelative(t.latest.created_at)}</span>}
+            </div>
+          )) : (
+            <p style={{ fontSize: 12, color: "var(--text-3)", fontStyle: "italic", margin: 0 }}>Tasks load as this module begins</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Feed entry (log panel)
+═══════════════════════════════════════════════════════════ */
 
 function FeedEntry({ msg, isNew = false }: { msg: BridgeMsg; isNew?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const meta  = msg.metadata || {};
-  const whoC  = WHO_CFG[msg.created_by] || WHO_CFG.unknown;
-  const kindK = resolveKind(msg.kind);
-  const kindC = KIND_CFG[kindK] || KIND_CFG.message;
-  const preview = msg.body?.slice(0, 130) || "";
+  const whoColor = msg.created_by === "claude_chat" ? "#a855f7"
+                 : msg.created_by === "claude_code"  ? "#06b6d4"
+                 : "#f97316";
+  const whoLabel = msg.created_by === "claude_chat" ? "CHAT"
+                 : msg.created_by === "claude_code"  ? "CODE"
+                 : "SYS";
+  const kindColor = msg.kind === "thinking"    ? "#3b82f6"
+                  : msg.kind === "instruction" ? "#6366f1"
+                  : msg.kind === "response"    ? "#14b8a6"
+                  : msg.kind === "status"      ? "#4b5563"
+                  : "#06b6d4";
 
   return (
-    <div
-      className="rounded-lg border transition-all overflow-hidden"
-      style={{
-        borderColor: isNew ? `${C.blue}50` : (expanded ? `${whoC.color}30` : C.border),
-        background:  isNew ? `rgba(59,130,246,0.06)` : (expanded ? `${whoC.color}05` : "rgba(18,18,26,0.5)"),
-        boxShadow:   isNew ? `0 0 8px rgba(59,130,246,0.15)` : undefined,
-        animation:   isNew ? "fadeIn 0.4s ease-out" : undefined,
-      }}
-    >
-      <button
-        className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-white/[0.015] transition-colors"
-        onClick={() => setExpanded(v => !v)}
-      >
-        <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-mono font-bold flex-shrink-0 mt-0.5"
-          style={{ color: whoC.color, background: `${whoC.color}18`, border: `1px solid ${whoC.color}30` }}>
-          {msg.created_by === "claude_chat" ? "CHAT" : msg.created_by === "claude_code" ? "CODE" : "SYS"}
-        </span>
-        <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-mono flex-shrink-0 mt-0.5"
-          style={{ color: kindC.color, background: `${kindC.color}18`, border: `1px solid ${kindC.color}25` }}>
-          {kindC.label}
-        </span>
-        {meta.module_num && (
-          <span className="text-[9px] font-mono flex-shrink-0 mt-0.5" style={{ color: C.muted }}>
-            M{String(meta.module_num).padStart(2, "0")}{meta.task ? `·${meta.task}` : ""}
-          </span>
-        )}
-        <div className="flex-1 min-w-0">
-          {msg.title && <p className="text-[10px] font-semibold truncate" style={{ color: C.text }}>{msg.title}</p>}
-          {!expanded && <p className="text-[10px] font-mono truncate" style={{ color: C.muted }}>{preview}</p>}
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
-          {meta.status && <StatusBadge status={meta.status} />}
-          <span className="text-[9px] font-mono" style={{ color: C.muted }}>{fmtRelative(msg.created_at)}</span>
-          {expanded ? <ChevronUp size={10} style={{ color: C.muted }} /> : <ChevronDown size={10} style={{ color: C.muted }} />}
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="px-3 pb-3 border-t" style={{ borderColor: C.border }}>
-          <pre className="text-[10px] font-mono leading-relaxed whitespace-pre-wrap break-words mt-2 max-h-72 overflow-y-auto" style={{ color: "#a0a0b0", scrollbarWidth: "thin" }}>
-            {msg.body}
-          </pre>
-          <div className="flex items-center gap-3 flex-wrap mt-2">
-            <span className="text-[9px] font-mono" style={{ color: C.muted }}>{fmtTime(msg.created_at)}</span>
-            {meta.sha && (
-              <span className="flex items-center gap-1 text-[9px] font-mono" style={{ color: C.muted }}>
-                <GitCommit size={7} /> {meta.sha}{meta.branch ? ` (${meta.branch})` : ""}
-              </span>
-            )}
-            {meta.ts_status && (
-              <span className="flex items-center gap-1 text-[9px] font-mono" style={{ color: meta.ts_status === "clean" ? C.green : C.red }}>
-                <Code2 size={7} /> TS: {meta.ts_status}
-              </span>
-            )}
-            {meta.tokens_estimated && (
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>~{fmtTokens(meta.tokens_estimated)} tok</span>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Bottom Strip ── */
-function BottomStrip({
-  usage, cost, health, messages, breakpoint,
-}: {
-  usage:      UsageStats | null;
-  cost:       CostData | null;
-  health:     HealthState;
-  messages:   BridgeMsg[];
-  breakpoint: Breakpoint;
-}) {
-  // Prefer explicit bridge context post (bridge context <pct> <status> <detail>),
-  // fall back to conversation_length metadata from claude_chat messages.
-  const ctxFromBridge = (() => {
-    const sorted = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    const m = sorted.find(m => m.metadata?.task === "chat_context" && m.metadata?.percent != null);
-    if (!m) return null;
-    return {
-      pct:    Math.min(100, Math.max(0, Number(m.metadata.percent))),
-      detail: (m.metadata.detail as string) || "",
-      label:  (m.metadata.label  as string) || "",
-    };
-  })();
-
-  const ctxFromWords = (() => {
-    const sorted = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    const cc = sorted.find(m => m.created_by === "claude_chat" && m.metadata?.conversation_length);
-    return cc ? Math.min(100, Math.round((Number(cc.metadata.conversation_length) / 100_000) * 100)) : null;
-  })();
-
-  const ctxPct    = ctxFromBridge?.pct ?? ctxFromWords;
-  const ctxDetail = ctxFromBridge?.detail ?? null;
-  const ctxColor  = ctxPct == null ? C.muted : ctxPct >= 90 ? C.red : ctxPct >= 70 ? C.yellow : C.green;
-  const ctxLabel  = ctxFromBridge?.label
-    || (ctxPct == null ? "unknown" : ctxPct >= 90 ? "⚠ START FRESH" : ctxPct >= 70 ? "Consider fresh chat" : "OK");
-
-  const tokenPct   = usage ? Math.min(100, Math.round((usage.tokens_today / SESSION_TOKEN_BUDGET) * 100)) : 0;
-  const tokenColor = tokenPct >= 90 ? C.red : tokenPct >= 70 ? C.yellow : C.green;
-
-  const healthItems = [
-    { label: "TS",    ok: health.ts !== "errors",   val: health.ts    === "clean"  ? "✅ CLEAN" : health.ts    === "errors" ? "❌ ERR" : "—" },
-    { label: "Git",   ok: health.git !== "stale",   val: health.git   === "synced" ? "✅ SYNC"  : health.git  === "stale"  ? "⚠ OLD" : "—" },
-    { label: "DB",    ok: health.db !== "error",    val: health.db    === "ok"     ? "✅ OK"    : health.db   === "error"  ? "❌ ERR" : "—" },
-    { label: "Build", ok: health.build !== "stale", val: health.build === "ok"     ? "✅ OK"    : health.build === "stale" ? "⚠ OLD" : "—" },
-  ];
-
-  const tile      = "rounded-xl border p-3 flex flex-col gap-2";
-  const tileStyle = { borderColor: C.border, background: C.card };
-  const isMobile  = breakpoint === "mobile";
-  const isTablet  = breakpoint === "tablet";
-
-  // Mobile: 2 tiles only (Context + Health)
-  // Tablet: 3 tiles (Context, Code Today, Health)
-  // Desktop+: 4 tiles
-
-  // Latest instruction from Claude Chat
-  const chatInstruction = (() => {
-    const sorted = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return sorted.find(m => m.created_by === "claude_chat" && m.kind === "instruction") || null;
-  })();
-
-  return (
-    <div className={`flex gap-3 ${isMobile ? "flex-col" : ""}`}>
-      {/* CLAUDE CHAT */}
-      <div className={tile} style={{ ...tileStyle, flex: 1 }}>
-        <div className="flex items-center gap-2">
-          <MessageSquare size={11} style={{ color: C.purple }} />
-          <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Claude Chat</span>
-        </div>
-        {chatInstruction ? (
-          <>
-            <p className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.purple }}>
-              💬 Currently thinking:
-            </p>
-            <p
-              className="text-[10px] font-mono leading-relaxed line-clamp-3"
-              style={{ color: "#9090b8" }}
-            >
-              &ldquo;{(chatInstruction.body || chatInstruction.title || "").slice(0, 120)}&rdquo;
-            </p>
-            <div className="border-t pt-1.5 flex flex-col gap-0.5" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-                Last instruction: {fmtRelative(chatInstruction.created_at)}
-              </span>
-              {(chatInstruction.metadata?.module_num || chatInstruction.metadata?.task) && (
-                <span className="text-[9px] font-mono" style={{ color: "#4444aa" }}>
-                  Waiting for: Module {chatInstruction.metadata?.module_num
-                    ? String(chatInstruction.metadata.module_num).padStart(2, "0")
-                    : "?"}{chatInstruction.metadata?.task ? ` · Task ${chatInstruction.metadata.task}` : ""} completion
-                </span>
-              )}
-            </div>
-          </>
-        ) : (
-          <p className="text-[10px] font-mono leading-relaxed" style={{ color: C.muted }}>
-            Claude Chat is connected. Instructions will appear here.
-          </p>
-        )}
+    <div style={{
+      borderRadius: 12, border: `0.5px solid ${isNew ? "#3b82f680" : "var(--border)"}`,
+      background: isNew ? "rgba(59,130,246,0.06)" : "var(--surface)",
+      marginBottom: 8, overflow: "hidden", cursor: "pointer",
+      boxShadow: isNew ? "0 0 8px rgba(59,130,246,0.15)" : undefined,
+      animation: isNew ? "fade-in 0.4s ease" : undefined,
+    }} onClick={() => setExpanded(v => !v)}>
+      {/* Header row */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", padding: "10px 12px 6px" }}>
+        <span style={{ fontSize: 9, fontFamily: "monospace", fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: whoColor + "20", color: whoColor, border: `1px solid ${whoColor}30` }}>{whoLabel}</span>
+        <span style={{ fontSize: 9, fontFamily: "monospace", padding: "2px 6px", borderRadius: 4, background: kindColor + "18", color: kindColor, border: `1px solid ${kindColor}25` }}>{msg.kind}</span>
+        {meta.module_num && <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-3)" }}>M{String(meta.module_num).padStart(2, "0")}{meta.task ? `·${meta.task}` : ""}</span>}
+        <span style={{ marginLeft: "auto", fontSize: 9, fontFamily: "monospace", color: "var(--text-3)" }}>{fmtRelative(msg.created_at)}</span>
       </div>
-
-      {/* CODE TODAY */}
-      <div className={tile} style={{ ...tileStyle, flex: 1 }}>
-        <div className="flex items-center gap-2">
-          <Terminal size={11} style={{ color: C.cyan }} />
-          <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Code Today</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <div className="flex justify-between">
-            <span className="text-[10px] font-mono" style={{ color: C.muted }}>Tasks done</span>
-            <span className="text-[10px] font-mono font-bold" style={{ color: C.green }}>{usage?.completed_today ?? "—"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-[10px] font-mono" style={{ color: C.muted }}>Tokens</span>
-            <span className="text-[10px] font-mono font-bold" style={{ color: C.blue }}>{usage ? `~${fmtTokens(usage.tokens_today)}` : "—"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-[10px] font-mono" style={{ color: C.muted }}>Est. cost</span>
-            <span className="text-[10px] font-mono font-bold" style={{ color: tokenColor }}>{usage ? `~$${usage.cost_today_usd.toFixed(4)}` : "—"}</span>
-          </div>
-          <Progress value={tokenPct} className="h-1 mt-1" style={{ background: "rgba(255,255,255,0.06)" }} />
-        </div>
+      {/* Content */}
+      {msg.title && <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-1)", padding: "0 12px 4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.title}</div>}
+      <div style={{ maxHeight: expanded ? 800 : 40, overflow: "hidden", transition: "max-height 300ms ease", padding: "0 12px 10px", fontSize: 11, fontFamily: "monospace", color: "var(--text-3)", lineHeight: 1.5 }}>
+        {msg.body}
       </div>
-
-      {/* THIS MONTH — hidden on mobile */}
-      {!isMobile && (
-        <div className={tile} style={{ ...tileStyle, flex: 1 }}>
-          <div className="flex items-center gap-2">
-            <DollarSign size={11} style={{ color: C.orange }} />
-            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>This Month</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="flex justify-between">
-              <span className="text-[10px] font-mono" style={{ color: C.muted }}>API cost</span>
-              <span className="text-[10px] font-mono font-bold" style={{ color: C.orange }}>
-                {cost?.month_usd != null ? `$${cost.month_usd.toFixed(2)}` : usage?.month_cost_usd != null ? `$${usage.month_cost_usd.toFixed(2)}` : "—"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[10px] font-mono" style={{ color: C.muted }}>Tasks</span>
-              <span className="text-[10px] font-mono font-bold" style={{ color: C.text }}>{cost?.month_tasks ?? usage?.total_messages ?? "—"}</span>
-            </div>
-            <div className="flex items-center gap-1 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: C.green, boxShadow: `0 0 4px ${C.green}` }} />
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Normal</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* HEALTH — hidden on tablet too (only desktop+) for space */}
-      {!isMobile && !isTablet && (
-        <div className={tile} style={{ ...tileStyle, flex: 1 }}>
-          <div className="flex items-center gap-2">
-            <Activity size={11} style={{ color: C.green }} />
-            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Health</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            {healthItems.map(h => (
-              <div key={h.label} className="flex justify-between">
-                <span className="text-[10px] font-mono" style={{ color: C.muted }}>{h.label}:</span>
-                <span className="text-[10px] font-mono" style={{ color: h.ok ? C.green : C.red }}>{h.val}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* On tablet: inline health as mini dots */}
-      {isTablet && (
-        <div className={tile} style={{ ...tileStyle, flex: 1 }}>
-          <div className="flex items-center gap-2">
-            <Activity size={11} style={{ color: C.green }} />
-            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Health</span>
-          </div>
-          <div className="grid grid-cols-2 gap-1">
-            {healthItems.map(h => (
-              <div key={h.label} className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: h.ok ? C.green : C.red }} />
-                <span className="text-[9px] font-mono" style={{ color: C.muted }}>{h.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Last Completed Card (ultrawide sidebar) ── */
-function LastCompletedCard({ messages }: { messages: BridgeMsg[] }) {
-  const last = [...messages]
-    .filter(m => m.metadata?.status === "done" || (m.kind === "status" && (m.body || "").toLowerCase().includes("complete")))
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null;
-
-  return (
-    <div className="rounded-xl border p-4" style={{ borderColor: C.border, background: C.card }}>
-      <div className="text-[9px] font-mono uppercase tracking-wider mb-2" style={{ color: C.muted }}>
-        Last Completed
-      </div>
-      {last ? (
-        <>
-          <p className="text-xs font-semibold truncate mb-1" style={{ color: C.green }}>{last.title || last.body?.slice(0, 60)}</p>
-          <p className="text-[10px] font-mono" style={{ color: C.muted }}>{fmtRelative(last.created_at)}</p>
-          {last.metadata?.module_num && (
-            <p className="text-[9px] font-mono mt-1" style={{ color: C.teal }}>
-              Module {String(last.metadata.module_num).padStart(2, "0")}
-            </p>
-          )}
-        </>
-      ) : (
-        <p className="text-[10px] font-mono" style={{ color: C.muted }}>No completions yet</p>
-      )}
-    </div>
-  );
-}
-
-/* ── Empire Timeline (ultrawide, 14-day sparkline) ── */
-function EmpireTimeline({ messages }: { messages: BridgeMsg[] }) {
-  const days = 14;
-  const bars: { date: string; count: number; doneCount: number }[] = [];
-
-  for (let i = days - 1; i >= 0; i--) {
-    const d     = new Date();
-    d.setDate(d.getDate() - i);
-    const label = d.toLocaleDateString("en-US", { month: "numeric", day: "numeric" });
-    const dStart = new Date(d); dStart.setHours(0, 0, 0, 0);
-    const dEnd   = new Date(d); dEnd.setHours(23, 59, 59, 999);
-    const dayMsgs = messages.filter(m => {
-      const t = new Date(m.created_at).getTime();
-      return t >= dStart.getTime() && t <= dEnd.getTime();
-    });
-    bars.push({
-      date:      label,
-      count:     dayMsgs.length,
-      doneCount: dayMsgs.filter(m => m.metadata?.status === "done").length,
-    });
-  }
-
-  const maxCount = Math.max(...bars.map(b => b.count), 1);
-
-  return (
-    <div className="rounded-xl border p-4" style={{ borderColor: C.border, background: C.card }}>
-      <div className="text-[9px] font-mono uppercase tracking-wider mb-3" style={{ color: C.muted }}>
-        14-Day Activity
-      </div>
-      <div className="flex items-end gap-1 h-16">
-        {bars.map((b, i) => {
-          const h = Math.max(2, Math.round((b.count / maxCount) * 56));
-          return (
-            <div key={i} className="flex flex-col items-center gap-0.5 flex-1" title={`${b.date}: ${b.count} msgs, ${b.doneCount} done`}>
-              <div
-                className="w-full rounded-sm"
-                style={{
-                  height:     h,
-                  background: b.doneCount > 0 ? C.green : b.count > 0 ? C.blue : "rgba(255,255,255,0.04)",
-                  opacity:    b.count > 0 ? 1 : 0.3,
-                }}
-              />
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex justify-between mt-1">
-        <span className="text-[8px] font-mono" style={{ color: C.muted }}>{bars[0]?.date}</span>
-        <span className="text-[8px] font-mono" style={{ color: C.muted }}>today</span>
-      </div>
-    </div>
-  );
-}
-
-/* ── Fresh Chat Modal ── */
-function FreshChatModal({ content, onClose }: { content: string; onClose: () => void }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}
-      onClick={onClose}
-    >
-      <div
-        className="relative rounded-xl border p-6 flex flex-col gap-4 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden"
-        style={{ background: C.card, borderColor: C.purple + "60" }}
-        onClick={e => e.stopPropagation()}
-      >
-        <button className="absolute top-4 right-4" style={{ color: C.muted }} onClick={onClose}>
-          <X size={16} />
-        </button>
-        <div>
-          <h2 className="text-sm font-bold mb-1" style={{ color: C.purple }}>🔄 FRESH CHAT HANDOFF</h2>
-          <p className="text-[11px] font-mono" style={{ color: C.muted }}>Copy into a new Claude Chat to continue the build.</p>
-        </div>
-        <div className="flex-1 overflow-y-auto rounded p-3" style={{ background: "#0a0a0f", border: `1px solid ${C.border}`, scrollbarWidth: "thin" }}>
-          <pre className="text-[10px] font-mono leading-relaxed whitespace-pre-wrap" style={{ color: "#a0a0b0" }}>
-            {content}
-          </pre>
-        </div>
-        <Button
-          onClick={copy}
-          className="self-start h-8 text-xs font-mono px-4"
-          style={{ background: copied ? C.green : C.purple, color: "#fff" }}
-        >
-          {copied ? "✓ Copied!" : "Copy to clipboard"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/* ── Mobile Tab Bar — animated pill indicator ── */
-function MobileTabBar({
-  active, onChange, logBadge,
-}: {
-  active:   ActiveTab;
-  onChange: (t: ActiveTab) => void;
-  logBadge: number;
-}) {
-  const tabs: { id: ActiveTab; icon: React.ReactNode; label: string }[] = [
-    { id: "modules", icon: <Layers size={16} />,      label: "Modules" },
-    { id: "active",  icon: <CheckSquare size={16} />, label: "Active"  },
-    { id: "log",     icon: <Radio size={16} />,       label: "Log"     },
-    { id: "health",  icon: <Activity size={16} />,    label: "Health"  },
-  ];
-  const activeIdx = tabs.findIndex(t => t.id === active);
-
-  return (
-    <nav
-      className="flex-shrink-0 flex relative border-t"
-      style={{
-        background:    "rgba(10,10,15,0.97)",
-        backdropFilter: "blur(12px)",
-        borderColor:   C.border,
-        paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))",
-        minHeight:     "var(--nav-height, 56px)",
-      }}
-    >
-      {/* Animated pill indicator */}
-      <div
-        aria-hidden="true"
-        style={{
-          position:   "absolute",
-          top:        6,
-          left:       `calc(${activeIdx * 25}% + 6px)`,
-          width:      "calc(25% - 12px)",
-          height:     36,
-          background: "rgba(99,102,241,0.14)",
-          border:     "0.5px solid rgba(99,102,241,0.35)",
-          borderRadius: 10,
-          transition: "left 260ms cubic-bezier(0.34,1.56,0.64,1)",
-          pointerEvents: "none",
-          zIndex:     1,
-        }}
-      />
-
-      {tabs.map(t => {
-        const isActive = t.id === active;
-        return (
-          <button
-            key={t.id}
-            className="flex-1 flex flex-col items-center gap-1 pt-2.5 pb-1 relative"
-            style={{
-              color:   isActive ? "#818cf8" : C.muted,
-              zIndex:  2,
-              minHeight: 44, // 44px touch target
-              transition: "color 220ms ease",
-            }}
-            onClick={() => onChange(t.id)}
-          >
-            {t.id === "log" && logBadge > 0 && (
-              <span
-                style={{
-                  position:  "absolute",
-                  top:       8,
-                  right:     "calc(50% - 18px)",
-                  width:     16,
-                  height:    16,
-                  borderRadius: "50%",
-                  background: C.red,
-                  color:     "#fff",
-                  fontSize:  8,
-                  fontWeight: 700,
-                  display:   "flex",
-                  alignItems:     "center",
-                  justifyContent: "center",
-                }}
-              >
-                {logBadge > 9 ? "9+" : logBadge}
-              </span>
-            )}
-            {t.icon}
-            <span className="text-[9px] font-mono">{t.label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
-/* ── Module progress summary ── */
-function ModuleSummaryBar({ moduleMap }: { moduleMap: Record<number, BridgeMsg[]> }) {
-  const counts = (["done", "building", "blocked", "paused"] as ModStatus[]).map(s => ({
-    s, l: MOD_STATUS_CFG[s].icon, c: MOD_STATUS_CFG[s].color,
-    cnt: MODULES.filter(m => deriveModuleStatus(moduleMap[m.num] || []) === s).length,
-  })).filter(x => x.cnt > 0);
-
-  return (
-    <div className="text-[10px] font-mono flex items-center gap-3" style={{ color: C.muted }}>
-      {counts.map(({ s, l, c, cnt }) => (
-        <span key={s} className="flex items-center gap-1" style={{ color: c }}>
-          {l} {cnt}
-        </span>
-      ))}
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Global CSS — keyframes + CSS custom properties
+   Fresh Chat Modal
 ═══════════════════════════════════════════════════════════ */
 
-const EMPIRE_CSS = `
-  :root {
-    --safe-top:    env(safe-area-inset-top,    0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --safe-left:   env(safe-area-inset-left,   0px);
-    --safe-right:  env(safe-area-inset-right,  0px);
-    --nav-height:  56px;
-    --header-height: 44px;
-    --ticker-height: 36px;
-  }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-4px); }
-    to   { opacity: 1; transform: translateY(0);    }
-  }
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(-8px); }
-    to   { opacity: 1; transform: translateY(0);    }
-  }
-  @keyframes ticker {
-    0%   { transform: translateX(0);    }
-    100% { transform: translateX(-50%); }
-  }
-  @keyframes pulseBlue {
-    0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3);  }
-    50%     { box-shadow: 0 0 22px rgba(59,130,246,0.65); }
-  }
-  @keyframes pulseRed {
-    0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2);  }
-    50%     { box-shadow: 0 0 18px rgba(239,68,68,0.55); }
-  }
-  @keyframes ptr-spin {
-    from { transform: rotate(0deg);   }
-    to   { transform: rotate(360deg); }
-  }
-  @keyframes pulse {
-    0%,100% { opacity: 1;   }
-    50%     { opacity: 0.4; }
-  }
-`;
+function FreshChatModal({ content, onClose }: { content: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => { navigator.clipboard.writeText(content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#12121a", border: "0.5px solid #a855f760", borderRadius: 16, padding: 24, maxWidth: 640, width: "calc(100% - 32px)", maxHeight: "80vh", display: "flex", flexDirection: "column", gap: 16, position: "relative" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: "#6b6b80", fontSize: 18 }}>✕</button>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#a855f7" }}>🔄 FRESH CHAT HANDOFF</div>
+          <div style={{ fontSize: 11, fontFamily: "monospace", color: "#6b6b80" }}>Copy into a new Claude Chat to continue the build.</div>
+        </div>
+        <div style={{ flex: 1, overflow: "auto", background: "#070710", border: "0.5px solid var(--border)", borderRadius: 8, padding: 12 }}>
+          <pre style={{ fontSize: 10, fontFamily: "monospace", color: "#a0a0b0", whiteSpace: "pre-wrap", margin: 0 }}>{content}</pre>
+        </div>
+        <button onClick={copy} style={{ alignSelf: "flex-start", background: copied ? "#10b981" : "#a855f7", color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", fontSize: 12, fontFamily: "monospace", cursor: "pointer" }}>
+          {copied ? "✓ Copied!" : "Copy to clipboard"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════
-   Main Page
+   Main Build component
 ═══════════════════════════════════════════════════════════ */
 
 export default function Build() {
-  const screen = useScreenSize();
-  const bp     = screen.breakpoint;
+  const screen = useScreen();
+  const { isMobile, isDesktop, isWide } = screen;
 
-  const [messages,       setMessages]       = useState<BridgeMsg[]>([]);
-  const [usage,          setUsage]          = useState<UsageStats | null>(null);
-  const [cost,           setCost]           = useState<CostData | null>(null);
-  const [health,         setHealth]         = useState<HealthState>({
-    ts: "unknown", git: "unknown", db: "unknown", build: "unknown", ts_sha: "",
-  });
-  const [loading,        setLoading]        = useState(false);
-  const [lastFetch,      setLastFetch]      = useState<Date | null>(null);
-  const [countdown,      setCountdown]      = useState(20);
-  const [error,          setError]          = useState<string | null>(null);
-  const [isPaused,       setIsPaused]       = useState(false);
-  const [posting,        setPosting]        = useState(false);
-  const [expandedMod,    setExpandedMod]    = useState<number | null>(null);
-  const [showFreshChat,  setShowFreshChat]  = useState(false);
-  const [handoffContent, setHandoffContent] = useState("");
-  const [activeTab,      setActiveTab]      = useState<ActiveTab>("modules");
-  const [logBadgeCount,  setLogBadgeCount]  = useState(0);
-  const [newMsgIds,      setNewMsgIds]      = useState<Set<string>>(new Set());
-  const [refreshFlash,   setRefreshFlash]   = useState(false);
+  /* ── State ── */
+  const [messages,      setMessages]      = useState<BridgeMsg[]>([]);
+  const [usage,         setUsage]         = useState<UsageStats | null>(null);
+  const [cost,          setCost]          = useState<CostData | null>(null);
+  const [health,        setHealth]        = useState<HealthState>({ ts: "unknown", git: "unknown", db: "unknown", build: "unknown", ts_sha: "" });
+  const [loading,       setLoading]       = useState(false);
+  const [lastFetch,     setLastFetch]     = useState<Date | null>(null);
+  const [countdown,     setCountdown]     = useState(20);
+  const [error,         setError]         = useState<string | null>(null);
+  const [isPaused,      setIsPaused]      = useState(false);
+  const [posting,       setPosting]       = useState(false);
+  const [expandedMod,   setExpandedMod]   = useState<number | null>(null);
+  const [showFreshChat, setShowFreshChat] = useState(false);
+  const [handoffContent,setHandoffContent]= useState("");
+  const [activeTab,     setActiveTab]     = useState<ActiveTab>("modules");
+  const [logBadge,      setLogBadge]      = useState(0);
+  const [newMsgIds,     setNewMsgIds]     = useState<Set<string>>(new Set());
+  const [refreshFlash,  setRefreshFlash]  = useState(false);
+  const [pullVisible,   setPullVisible]   = useState(false);
 
+  /* ── Refs ── */
   const intervalRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const cdRef           = useRef<ReturnType<typeof setInterval> | null>(null);
   const feedScrollRef   = useRef<HTMLDivElement | null>(null);
@@ -1694,16 +802,25 @@ export default function Build() {
   const prevMsgIdsRef   = useRef<Set<string>>(new Set());
   const activeTabRef    = useRef<ActiveTab>("modules");
   const kbHandlerRef    = useRef<(e: KeyboardEvent) => void>(() => {});
+  const pullRef         = useRef({ startY: 0, pulling: false });
+  const fetchAllRef     = useRef<() => Promise<void>>(() => Promise.resolve());
+
+  /* ── Inject CSS ── */
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.textContent = EMPIRE_CSS;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
 
   /* ── Derived (memoized) ── */
-  const moduleMap     = useMemo(() => buildModuleMap(messages),  [messages]);
+  const moduleMap     = useMemo(() => buildModuleMap(messages), [messages]);
   const doneCount     = useMemo(() => MODULES.filter(m => deriveModuleStatus(moduleMap[m.num] || []) === "done").length, [moduleMap]);
   const sorted        = useMemo(() => [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), [messages]);
   const progressPct   = useMemo(() => Math.round((doneCount / 12) * 100), [doneCount]);
   const newsHeadlines = useMemo(() => generateNewsHeadlines(messages), [messages]);
-  const activityLines = useMemo(() => deriveActivityLines(messages),   [messages]);
-
-  // activeTask used only in generateHandoff — derive lazily inside that fn
+  const activityLines = useMemo(() => deriveActivityLines(messages), [messages]);
+  const hasBlocked    = useMemo(() => sorted.some(m => m.metadata?.status === "blocked"), [sorted]);
   const ctxPct = useMemo(() => {
     const bridgeCtx = sorted.find(m => m.metadata?.task === "chat_context" && m.metadata?.percent != null);
     if (bridgeCtx) return Math.min(100, Math.max(0, Number(bridgeCtx.metadata.percent)));
@@ -1711,49 +828,21 @@ export default function Build() {
     return cc ? Math.min(100, Math.round((Number(cc.metadata.conversation_length) / 100_000) * 100)) : 0;
   }, [sorted]);
 
-  /* ── Keyboard shortcuts (stable ref pattern) ── */
-  kbHandlerRef.current = (e: KeyboardEvent) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    switch (e.key.toLowerCase()) {
-      case "r": fetchAll(); break;
-      case "p": isPaused ? handleResume() : handlePause(); break;
-      case "1": setActiveTab("modules"); break;
-      case "2": setActiveTab("active");  break;
-      case "3": setActiveTab("log"); setLogBadgeCount(0); break;
-      case "4": setActiveTab("health");  break;
-      case "escape": setExpandedMod(null); break;
-    }
-  };
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => kbHandlerRef.current(e);
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  /* ── Keep activeTabRef current so fetchBridge can read it without stale closure ── */
+  /* ── Keep activeTabRef current ── */
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   /* ── Auto-expand building module ── */
   useEffect(() => {
-    const buildingMod = MODULES.find(m => deriveModuleStatus(moduleMap[m.num] || []) === "building");
-    if (buildingMod && expandedMod === null) {
-      setExpandedMod(buildingMod.num);
-    }
+    const building = MODULES.find(m => deriveModuleStatus(moduleMap[m.num] || []) === "building");
+    if (building && expandedMod === null) setExpandedMod(building.num);
   }, [messages]);
 
   /* ── Fetch ── */
-  // fetchBridge has no stale deps — uses refs for activeTab and previous msg IDs.
-  // Returns the freshly fetched messages so fetchAll can pass them to fetchHealth immediately.
   const fetchBridge = useCallback(async (): Promise<BridgeMsg[]> => {
-    if (!BRIDGE_TOKEN) { setError("VITE_BRIDGE_READ_TOKEN not set in .env"); return []; }
-    setLoading(true);
-    setError(null);
-
-    // Save scroll positions before state update reflushes the DOM
+    if (!BRIDGE_TOKEN) { setError("VITE_BRIDGE_READ_TOKEN not set"); return []; }
+    setLoading(true); setError(null);
     if (feedScrollRef.current)   savedFeedScroll.current = feedScrollRef.current.scrollTop;
     if (moduleScrollRef.current) savedModScroll.current  = moduleScrollRef.current.scrollTop;
-
     try {
       const [listR, usageR] = await Promise.all([
         bridgeCall("list",  { limit: 200 }),
@@ -1762,34 +851,26 @@ export default function Build() {
       let freshMsgs: BridgeMsg[] = [];
       if (listR.ok) {
         freshMsgs = listR.messages || [];
-        const freshIds = new Set(
-          freshMsgs.filter(m => !prevMsgIdsRef.current.has(m.id)).map(m => m.id)
-        );
+        const freshIds = new Set(freshMsgs.filter(m => !prevMsgIdsRef.current.has(m.id)).map(m => m.id));
         if (freshIds.size > 0) {
           setNewMsgIds(freshIds);
-          if (activeTabRef.current !== "log") setLogBadgeCount(c => c + freshIds.size);
+          if (activeTabRef.current !== "log") setLogBadge(c => c + freshIds.size);
           setTimeout(() => setNewMsgIds(new Set()), 3000);
         }
         prevMsgIdsRef.current = new Set(freshMsgs.map(m => m.id));
         setMessages(freshMsgs);
-      } else {
-        setError(listR.error || "Bridge list failed");
-      }
+      } else { setError(listR.error || "Bridge list failed"); }
       if (usageR.ok) setUsage(usageR.usage);
       return freshMsgs;
-    } catch (e: any) {
-      setError(e?.message || "Bridge fetch failed");
-      return [];
-    } finally {
-      setLoading(false);
-      setLastFetch(new Date());
-      setCountdown(20);
+    } catch (e: any) { setError(e?.message || "Fetch failed"); return []; }
+    finally {
+      setLoading(false); setLastFetch(new Date()); setCountdown(20);
       requestAnimationFrame(() => {
         if (feedScrollRef.current)   feedScrollRef.current.scrollTop   = savedFeedScroll.current;
         if (moduleScrollRef.current) moduleScrollRef.current.scrollTop = savedModScroll.current;
       });
     }
-  }, []); // stable — no stale closure deps
+  }, []);
 
   const fetchCosts = useCallback(async () => {
     try {
@@ -1797,7 +878,7 @@ export default function Build() {
       const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
       const [todayR, monthR] = await Promise.allSettled([
         supabase.from("api_cost_log").select("cost_usd").gte("created_at", todayStart.toISOString()),
-        supabase.from("api_cost_log").select("cost_usd, created_at").gte("created_at", monthStart.toISOString()),
+        supabase.from("api_cost_log").select("cost_usd").gte("created_at", monthStart.toISOString()),
       ]);
       const todayRows = todayR.status === "fulfilled" ? (todayR.value.data || []) : [];
       const monthRows = monthR.status === "fulfilled" ? (monthR.value.data || []) : [];
@@ -1812,36 +893,21 @@ export default function Build() {
     const tsMsg     = allSorted.find(m => m.metadata?.ts_status);
     const tsStatus: HealthState["ts"] = tsMsg ? (tsMsg.metadata.ts_status === "clean" ? "clean" : "errors") : "unknown";
     const gitMsg    = allSorted.find(m => m.metadata?.sha);
-    let gitStatus: HealthState["git"] = "unknown";
-    if (gitMsg) {
-      const age = Date.now() - new Date(gitMsg.created_at).getTime();
-      gitStatus = age < 2 * 3600 * 1000 ? "synced" : "stale";
-    }
+    const gitStatus: HealthState["git"] = gitMsg ? ((Date.now() - new Date(gitMsg.created_at).getTime()) < 2 * 3600 * 1000 ? "synced" : "stale") : "unknown";
     let dbStatus: HealthState["db"] = "unknown";
-    try {
-      const { error: dbErr } = await supabase.from("claude_bridge").select("id").limit(1);
-      dbStatus = dbErr ? "error" : "ok";
-    } catch { dbStatus = "error"; }
-    const buildStatus: HealthState["build"] = allSorted[0]
-      ? (Date.now() - new Date(allSorted[0].created_at).getTime() < 6 * 3600 * 1000 ? "ok" : "stale")
-      : "unknown";
+    try { const { error: e } = await supabase.from("claude_bridge").select("id").limit(1); dbStatus = e ? "error" : "ok"; } catch { dbStatus = "error"; }
+    const buildStatus: HealthState["build"] = allSorted[0] ? ((Date.now() - new Date(allSorted[0].created_at).getTime()) < 6 * 3600 * 1000 ? "ok" : "stale") : "unknown";
     setHealth({ ts: tsStatus, git: gitStatus, db: dbStatus, build: buildStatus, ts_sha: tsMsg?.metadata?.sha || "" });
   }, []);
 
-  // fetchAll is the single refresh entry point.
-  // All derived data (health, costs) is rebuilt from the fresh messages in one pass.
   const fetchAll = useCallback(async () => {
     setRefreshFlash(true);
     const freshMsgs = await fetchBridge();
-    await Promise.all([
-      fetchCosts(),
-      freshMsgs.length > 0 ? fetchHealth(freshMsgs) : Promise.resolve(),
-    ]);
+    await Promise.all([fetchCosts(), freshMsgs.length > 0 ? fetchHealth(freshMsgs) : Promise.resolve()]);
     setTimeout(() => setRefreshFlash(false), 200);
   }, [fetchBridge, fetchCosts, fetchHealth]);
 
-  /* ── Pull-to-refresh (mobile) ── */
-  const { pullPx, isRefreshing } = usePullToRefresh(fetchAll);
+  useEffect(() => { fetchAllRef.current = fetchAll; }, [fetchAll]);
 
   useEffect(() => {
     fetchAll();
@@ -1858,15 +924,8 @@ export default function Build() {
     if (!BRIDGE_SECRET) { alert("VITE_BRIDGE_SECRET not set"); return; }
     setPosting(true);
     try {
-      await bridgeCall("post", {
-        kind: "status",
-        title: "PAUSED — King paused the build.",
-        body: "PAUSED — King paused the build. Claude Chat: stop sending instructions until RESUMED status posted.",
-        created_by: "claude_code",
-        metadata: { status: "paused", control: true },
-      }, true);
-      setIsPaused(true);
-      await fetchAll();
+      await bridgeCall("post", { kind: "status", title: "PAUSED", body: "PAUSED — King paused the build.", created_by: "claude_code", metadata: { status: "paused", control: true } }, true);
+      setIsPaused(true); await fetchAll();
     } finally { setPosting(false); }
   }, [fetchAll]);
 
@@ -1874,193 +933,336 @@ export default function Build() {
     if (!BRIDGE_SECRET) { alert("VITE_BRIDGE_SECRET not set"); return; }
     setPosting(true);
     try {
-      await bridgeCall("post", {
-        kind: "status",
-        title: "RESUMED — continue build",
-        body: "RESUMED — continue build",
-        created_by: "claude_code",
-        metadata: { status: "executing", control: true },
-      }, true);
-      setIsPaused(false);
-      await fetchAll();
+      await bridgeCall("post", { kind: "status", title: "RESUMED", body: "RESUMED — continue build", created_by: "claude_code", metadata: { status: "executing", control: true } }, true);
+      setIsPaused(false); await fetchAll();
     } finally { setPosting(false); }
   }, [fetchAll]);
 
-  const openFreshChat = () => {
-    setHandoffContent(generateHandoff(messages, moduleMap));
-    setShowFreshChat(true);
+  /* ── Keyboard shortcuts ── */
+  kbHandlerRef.current = (e: KeyboardEvent) => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    switch (e.key.toLowerCase()) {
+      case "r": fetchAll(); break;
+      case "p": isPaused ? handleResume() : handlePause(); break;
+      case "1": setActiveTab("modules"); break;
+      case "2": setActiveTab("active");  break;
+      case "3": setActiveTab("log"); setLogBadge(0); break;
+      case "4": setActiveTab("health");  break;
+      case "escape": setExpandedMod(null); break;
+    }
   };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => kbHandlerRef.current(e);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
-  /* ── Shared top bar ── */
-  const isMobile = bp === "mobile";
+  /* ── Pull-to-refresh (active panel only) ── */
+  const onActiveTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop === 0) pullRef.current = { startY: e.touches[0].clientY, pulling: true };
+  }, []);
+  const onActiveTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (!pullRef.current.pulling) return;
+    const dy = e.touches[0].clientY - pullRef.current.startY;
+    if (dy > 50) setPullVisible(true);
+  }, []);
+  const onActiveTouchEnd = useCallback(() => {
+    if (pullRef.current.pulling && pullVisible) {
+      fetchAllRef.current();
+      setTimeout(() => setPullVisible(false), 800);
+    }
+    pullRef.current.pulling = false;
+  }, [pullVisible]);
 
-  const TopBar = (
-    <div
-      className="flex-shrink-0 flex items-center justify-between px-4 border-b z-20"
-      style={{
-        background:    "rgba(10,10,15,0.97)",
-        backdropFilter: "blur(12px)",
-        borderColor:   C.border,
-        paddingTop:    `calc(var(--safe-top, env(safe-area-inset-top, 0px)) + 10px)`,
-        paddingBottom: 10,
-        paddingLeft:   `calc(var(--safe-left, env(safe-area-inset-left, 0px)) + 16px)`,
-        paddingRight:  `calc(var(--safe-right, env(safe-area-inset-right, 0px)) + 16px)`,
-      }}
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        <Crown size={14} style={{ color: "#fbbf24", flexShrink: 0 }} />
-        <span className="text-xs font-bold tracking-wider truncate" style={{ color: C.text }}>
-          {isMobile ? "EMPIRE BUILD" : "SEO SEASON — EMPIRE BUILD COMMAND"}
+  /* ── Helpers ── */
+  const switchTab = (t: ActiveTab) => { setActiveTab(t); if (t === "log") setLogBadge(0); };
+
+  /* ═══════════════════════════════════════════════════════
+     RENDER
+  ═══════════════════════════════════════════════════════ */
+
+  /* Panel visibility helper */
+  const panel = (tab: ActiveTab): React.CSSProperties => ({
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    overflowY: "auto",
+    overflowX: "hidden",
+    WebkitOverflowScrolling: "touch" as any,
+    visibility: activeTab === tab ? "visible" : "hidden",
+    pointerEvents: activeTab === tab ? "auto" : "none",
+    opacity: refreshFlash && activeTab === tab ? 0.8 : 1,
+    transition: "opacity 200ms ease",
+  });
+
+  /* ── Fixed Header ── */
+  const header = (
+    <header style={{
+      position: "fixed", top: 0, left: 0, right: 0,
+      height: "calc(var(--header-h) + var(--safe-top))",
+      paddingTop: "var(--safe-top)",
+      paddingLeft: "max(var(--safe-left), 16px)",
+      paddingRight: "max(var(--safe-right), 16px)",
+      background: "rgba(7,7,16,0.97)",
+      backdropFilter: "blur(20px)",
+      WebkitBackdropFilter: "blur(20px)",
+      borderBottom: "0.5px solid var(--border)",
+      zIndex: 100,
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      boxSizing: "border-box",
+    }}>
+      {/* Left */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{ fontSize: 18, color: "#f59e0b", flexShrink: 0 }}>👑</span>
+        <span style={{ fontSize: isMobile ? 13 : 14, fontWeight: 700, color: "var(--text-1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {isMobile ? "EMPIRE" : "SEO SEASON — EMPIRE BUILD COMMAND"}
         </span>
         {!isMobile && lastFetch && (
-          <span className="text-[10px] font-mono hidden sm:block" style={{ color: C.muted }}>
+          <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-3)", flexShrink: 0 }}>
             {fmtTime(lastFetch.toISOString())}
           </span>
         )}
-        {!isMobile && (
-          <span className="text-[9px] font-mono hidden md:block" style={{ color: C.muted }}>
-            {screen.width}×{screen.height} · {bp}
+        {isDesktop && (
+          <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-3)", flexShrink: 0 }}>
+            {screen.width}×{screen.height} · {screen.label}
           </span>
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <div className="flex items-center gap-1 mr-1">
-          <span className="w-2 h-2 rounded-full" style={{
-            background: error ? C.red : C.green,
-            boxShadow:  error ? undefined : `0 0 6px ${C.green}`,
-            animation:  error ? undefined : "pulse 2s infinite",
-          }} />
-          {!isMobile && (
-            <span className="text-[10px] font-mono" style={{ color: C.muted }}>
-              {error ? "ERR" : `${countdown}s`}
-            </span>
-          )}
+      {/* Right */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {/* Live dot */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, marginRight: 4 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: error ? "#ef4444" : "#10b981", boxShadow: error ? undefined : "0 0 6px #10b981", animation: error ? undefined : "live-dot 2s infinite" }} />
+          {!isMobile && <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-3)" }}>{error ? "ERR" : `${countdown}s`}</span>}
         </div>
 
+        {/* Fresh chat */}
         {ctxPct >= 70 && (
-          <Button size="sm" className="h-7 px-2 text-[10px] font-mono gap-1"
-            style={{ background: `${C.purple}20`, color: C.purple, border: `1px solid ${C.purple}40` }}
-            onClick={openFreshChat}>
-            <MessageSquare size={10} />
-            {!isMobile && "Fresh Chat"}
-          </Button>
+          <button onClick={() => { setHandoffContent(generateHandoff(messages, moduleMap)); setShowFreshChat(true); }}
+            style={{ height: 30, padding: "0 10px", background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.4)", borderRadius: 6, color: "#a855f7", fontSize: 11, fontFamily: "monospace", cursor: "pointer" }}>
+            {isMobile ? "🔄" : "🔄 Fresh Chat"}
+          </button>
         )}
 
+        {/* Pause/Resume */}
         {isPaused ? (
-          <Button size="sm" disabled={posting} className="h-7 px-2 text-[10px] font-mono gap-1"
-            style={{ background: `${C.green}20`, color: C.green, border: `1px solid ${C.green}40` }}
-            onClick={handleResume}>
-            {posting ? <Loader2 size={10} className="animate-spin" /> : <Play size={10} />}
-            {!isMobile && "Resume"}
-          </Button>
+          <button onClick={handleResume} disabled={posting} style={{ height: 30, padding: "0 10px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: 6, color: "#10b981", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            {posting ? <Loader2 size={10} style={{ animation: "ptr-spin 1s linear infinite" }} /> : <Play size={10} />}
+            {!isMobile && " Resume"}
+          </button>
         ) : (
-          <Button size="sm" disabled={posting} className="h-7 px-2 text-[10px] font-mono gap-1"
-            style={{ background: `${C.orange}15`, color: C.orange, border: `1px solid ${C.orange}40` }}
-            onClick={handlePause}>
-            {posting ? <Loader2 size={10} className="animate-spin" /> : <Pause size={10} />}
-            {!isMobile && "Pause"}
-          </Button>
+          <button onClick={handlePause} disabled={posting} style={{ height: 30, padding: "0 10px", background: "rgba(249,115,22,0.12)", border: "1px solid rgba(249,115,22,0.4)", borderRadius: 6, color: "#f97316", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            {posting ? <Loader2 size={10} style={{ animation: "ptr-spin 1s linear infinite" }} /> : <Pause size={10} />}
+            {!isMobile && " Pause"}
+          </button>
         )}
 
-        <Button size="sm" disabled={loading} variant="outline"
-          className="h-7 px-2 text-[10px] font-mono gap-1 border-white/10 text-slate-400 hover:text-slate-200 bg-transparent hover:bg-white/5"
-          onClick={fetchAll}>
-          {loading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-          {!isMobile && "Refresh"}
-        </Button>
+        {/* Refresh */}
+        <button onClick={fetchAll} disabled={loading} style={{ width: 44, height: 44, background: "none", border: "none", cursor: "pointer", color: "var(--text-2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {loading ? <Loader2 size={16} style={{ animation: "ptr-spin 1s linear infinite" }} /> : <RefreshCw size={16} />}
+        </button>
+      </div>
+    </header>
+  );
+
+  /* ── Fixed Ticker ── */
+  const ticker = (
+    <div style={{
+      position: "fixed",
+      top: "calc(var(--header-h) + var(--safe-top))",
+      left: 0, right: 0,
+      height: "var(--ticker-h)",
+      zIndex: 99, overflow: "hidden",
+      background: "rgba(99,102,241,0.07)",
+      borderBottom: "0.5px solid rgba(99,102,241,0.2)",
+      display: "flex", alignItems: "center",
+    }}>
+      {/* Fade edges */}
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 48, zIndex: 2, background: "linear-gradient(to right,#070710,transparent)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 48, zIndex: 2, background: "linear-gradient(to left,#070710,transparent)", pointerEvents: "none" }} />
+
+      <div
+        style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", fontSize: 12, fontWeight: 500, color: "#a5b4fc", animation: "ticker-scroll 80s linear infinite", paddingLeft: 20 }}
+        onMouseEnter={e => (e.currentTarget.style.animationPlayState = "paused")}
+        onMouseLeave={e => (e.currentTarget.style.animationPlayState = "running")}
+      >
+        {[0, 1].map(copy => newsHeadlines.map((h, i) => (
+          <React.Fragment key={`${copy}-${i}`}>
+            <span>{h}</span>
+            <span style={{ color: "#6366f1", fontSize: 14, padding: "0 16px" }}>✦</span>
+          </React.Fragment>
+        )))}
       </div>
     </div>
   );
 
-  /* ── Banners ── */
-  const Banners = (
-    <>
-      {isPaused && (
-        <div className="flex-shrink-0 px-4 py-2 text-center text-xs font-mono font-bold"
-          style={{ background: `${C.orange}20`, color: C.orange, borderBottom: `1px solid ${C.orange}30` }}>
-          ⏸ BUILD PAUSED — waiting for RESUME
-        </div>
-      )}
-      {error && (
-        <div className="flex-shrink-0 mx-4 mt-3 px-3 py-2 rounded-lg text-xs font-mono"
-          style={{ background: `${C.red}12`, color: C.red, border: `1px solid ${C.red}30` }}>
-          ⚠ {error}
-        </div>
-      )}
-    </>
-  );
+  /* ── Pause banner ── */
+  const pauseBanner = isPaused ? (
+    <div style={{ position: "fixed", top: "calc(var(--chrome-h) + var(--safe-top))", left: isDesktop ? "var(--sidebar-w)" : 0, right: isWide ? "var(--aside-w)" : 0, zIndex: 90, padding: "8px 16px", textAlign: "center", fontSize: 12, fontFamily: "monospace", fontWeight: 700, color: "#f97316", background: "rgba(249,115,22,0.15)", borderBottom: "1px solid rgba(249,115,22,0.3)" }}>
+      ⏸ BUILD PAUSED — waiting for RESUME
+    </div>
+  ) : null;
 
-  /* ── Module panel (shared across layouts) ── */
-  const ModulePanel = (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="px-4 pt-4 pb-2 flex-shrink-0">
-        <div className="flex items-center justify-between mb-0.5">
-          <div className="text-xs font-bold tracking-wider" style={{ color: C.text }}>EMPIRE MODULES</div>
-          <div className="text-[10px] font-mono" style={{ color: C.muted }}>{doneCount}/12</div>
+  /* ── Fixed Sidebar (desktop >= 1024px) ── */
+  const sidebar = isDesktop ? (
+    <aside style={{
+      position: "fixed", top: 0, left: "var(--safe-left)", bottom: 0,
+      width: "var(--sidebar-w)",
+      background: "#0a0a16",
+      borderRight: "0.5px solid var(--border)",
+      zIndex: 50, display: "flex", flexDirection: "column",
+      overflowY: "auto", overflowX: "hidden",
+    }}>
+      {/* Sidebar header — below the global header */}
+      <div style={{ paddingTop: "calc(var(--header-h) + var(--ticker-h) + var(--safe-top) + 20px)", paddingLeft: 16, paddingRight: 16, paddingBottom: 16, borderBottom: "0.5px solid var(--border)", flexShrink: 0 }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text-1)", lineHeight: 1.2 }}>👑 SEO SEASON</div>
+        <div style={{ fontSize: 10, color: "var(--text-3)", letterSpacing: "2px", marginTop: 2 }}>EMPIRE BUILD</div>
+        {/* Progress bar */}
+        <div style={{ marginTop: 12, height: 6, borderRadius: 3, background: "#1e1e3a", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg,#6366f1,#10b981)", borderRadius: 3, transition: "width 0.6s ease" }} />
         </div>
-        <div className="mt-2">
-          {/* Gradient progress bar — 6px, #6366f1 → #10b981 */}
-          <div style={{ height: 6, borderRadius: 3, background: "#1e1e3a", overflow: "hidden" }}>
-            <div style={{
-              height: "100%", width: `${progressPct}%`,
-              background: "linear-gradient(to right, #6366f1, #10b981)",
-              borderRadius: 3,
-              transition: "width 0.6s ease",
-            }} />
-          </div>
-          <div className="flex items-center justify-between mt-1">
-            <ModuleSummaryBar moduleMap={moduleMap} />
-            <span className="text-[9px] font-mono" style={{ color: C.muted }}>{progressPct}%</span>
-          </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4, fontSize: 11, color: "var(--text-3)" }}>
+          {doneCount}/12 complete
         </div>
       </div>
-      <div ref={moduleScrollRef} className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-1.5" style={{ scrollbarWidth: "thin" }}>
+
+      {/* Module list */}
+      <div ref={moduleScrollRef} style={{ flex: 1, overflowY: "auto", padding: "12px 8px" }}>
         {MODULES.map(mod => (
-          <ModuleRow
+          <ModuleCard
             key={mod.num}
             mod={mod}
             msgs={moduleMap[mod.num] || []}
             expanded={expandedMod === mod.num}
             onToggle={() => setExpandedMod(v => v === mod.num ? null : mod.num)}
-            compact={bp === "ultrawide"}
+          />
+        ))}
+      </div>
+
+      {/* Sidebar footer — health */}
+      <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--border)", flexShrink: 0 }}>
+        <div style={{ fontSize: 9, letterSpacing: "1px", color: "var(--text-3)", marginBottom: 6 }}>SYSTEM HEALTH</div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {[
+            { label: "TS",    ok: health.ts    !== "errors", val: health.ts    === "clean"  ? "✓" : health.ts    === "errors" ? "✗" : "?" },
+            { label: "Git",   ok: health.git   !== "stale",  val: health.git   === "synced" ? "✓" : health.git  === "stale"  ? "⚠" : "?" },
+            { label: "DB",    ok: health.db    !== "error",  val: health.db    === "ok"     ? "✓" : health.db   === "error"  ? "✗" : "?" },
+            { label: "Build", ok: health.build !== "stale",  val: health.build === "ok"     ? "✓" : health.build === "stale" ? "⚠" : "?" },
+          ].map(h => (
+            <div key={h.label} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ fontSize: 10, color: "var(--text-3)" }}>{h.label}</span>
+              <span style={{ fontSize: 10, color: h.ok ? "#10b981" : "#ef4444" }}>{h.val}</span>
+            </div>
+          ))}
+        </div>
+        {error && <div style={{ marginTop: 8, fontSize: 10, color: "#ef4444", fontFamily: "monospace" }}>⚠ {error.slice(0, 60)}</div>}
+        {lastFetch && <div style={{ marginTop: 4, fontSize: 9, fontFamily: "monospace", color: "var(--text-3)" }}>Synced {fmtRelative(lastFetch.toISOString())}</div>}
+      </div>
+    </aside>
+  ) : null;
+
+  /* ── Fixed content area ── */
+  const contentTop = isPaused
+    ? "calc(var(--chrome-h) + var(--safe-top) + 37px)"
+    : "calc(var(--chrome-h) + var(--safe-top))";
+
+  const contentStyle: React.CSSProperties = {
+    position: "fixed",
+    top: contentTop,
+    bottom: isMobile ? "calc(var(--nav-h) + var(--safe-bottom))" : 0,
+    left:  isDesktop ? "var(--sidebar-w)" : 0,
+    right: isWide    ? "var(--aside-w)"   : 0,
+    overflow: "hidden",
+    background: "var(--void)",
+  };
+
+  /* ── MODULES panel ── */
+  const modulesPanel = (
+    <div style={panel("modules")}>
+      <div style={{ padding: "16px 12px 24px" }}>
+        {/* Progress header (mobile only — sidebar shows it on desktop) */}
+        {isMobile && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--text-3)" }}>EMPIRE MODULES</span>
+              <span style={{ fontSize: 11, color: "var(--text-3)" }}>{doneCount}/12 · {progressPct}%</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: "#1e1e3a", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg,#6366f1,#10b981)", borderRadius: 3, transition: "width 0.6s ease" }} />
+            </div>
+          </div>
+        )}
+        {MODULES.map(mod => (
+          <ModuleCard
+            key={mod.num}
+            mod={mod}
+            msgs={moduleMap[mod.num] || []}
+            expanded={expandedMod === mod.num}
+            onToggle={() => setExpandedMod(v => v === mod.num ? null : mod.num)}
           />
         ))}
       </div>
     </div>
   );
 
-  /* ── Active task panel ── */
-  const ActivePanel = (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="px-4 pt-4 pb-2 flex-shrink-0">
-        <div className="text-[10px] font-mono font-bold uppercase tracking-wider" style={{ color: C.muted }}>
-          Active Right Now
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-4" style={{ scrollbarWidth: "thin" }}>
-        <ActiveTaskCard messages={messages} />
-        <LiveActivity lines={activityLines} />
+  /* ── ACTIVE panel ── */
+  const activeLastDone = useMemo(
+    () => sorted.find(m => m.metadata?.status === "done" || /MODULE_\d+_DONE/i.test(m.title || "") || m.metadata?.module_done) ?? null,
+    [sorted]
+  );
+
+  const activePanel = (
+    <div
+      style={panel("active")}
+      onTouchStart={onActiveTouchStart}
+      onTouchMove={onActiveTouchMove}
+      onTouchEnd={onActiveTouchEnd}
+    >
+      {/* Pull indicator */}
+      {pullVisible && (
+        <div style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 10, fontSize: 24, animation: "ptr-spin 0.6s linear infinite" }}>👑</div>
+      )}
+
+      <div style={{ padding: "16px 12px" }}>
+        <ActiveHeroCard msgs={sorted} lastDone={activeLastDone} />
+
+        {/* Live activity */}
+        {activityLines.length > 0 && (
+          <div style={{ borderRadius: 14, border: "0.5px solid var(--border)", background: "var(--surface)", overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderBottom: "0.5px solid var(--border-dim)" }}>
+              <span style={{ fontSize: 10, letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--text-3)" }}>LIVE ACTIVITY</span>
+              <span style={{ fontSize: 11, color: "#10b981", display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", animation: "live-dot 1.5s infinite", display: "inline-block" }} />
+                LIVE
+              </span>
+            </div>
+            {activityLines.map((line, i) => (
+              <div key={line.id} style={{ display: "grid", gridTemplateColumns: "48px 20px 1fr", gap: 8, padding: "10px 14px", minHeight: 44, alignItems: "start", borderBottom: "0.5px solid #0f0f1e", animation: "activity-in 300ms ease forwards", animationDelay: `${i * 30}ms`, opacity: 0 }}>
+                <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-3)" }}>{fmtRelative(line.time).replace(" ago", "")}</span>
+                <span style={{ fontSize: 13, color: line.color }}>{line.icon}</span>
+                <span style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.5 }}>{line.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 
-  /* ── Feed panel ── */
-  const FeedPanel = (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-shrink-0 flex items-center gap-2 px-4 pt-3 pb-2">
-        <Radio size={11} style={{ color: C.indigo }} />
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wider" style={{ color: C.muted }}>Build Log</span>
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full" style={{ background: `${C.indigo}20`, color: C.indigo }}>
-          {sorted.length}
-        </span>
-      </div>
-      <div ref={feedScrollRef} className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-1.5" style={{ scrollbarWidth: "thin" }}>
+  /* ── LOG panel ── */
+  const logPanel = (
+    <div style={panel("log")} ref={feedScrollRef}>
+      <div style={{ padding: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <Radio size={12} style={{ color: "#6366f1" }} />
+          <span style={{ fontSize: 10, fontFamily: "monospace", fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--text-3)" }}>BUILD LOG</span>
+          <span style={{ fontSize: 9, fontFamily: "monospace", padding: "1px 6px", borderRadius: 10, background: "rgba(99,102,241,0.15)", color: "#6366f1" }}>{sorted.length}</span>
+        </div>
         {sorted.length === 0 && !loading && (
-          <div className="rounded-xl border p-8 text-center" style={{ borderColor: C.border, background: C.card }}>
-            <Clock size={20} style={{ color: C.muted, margin: "0 auto 8px" }} />
-            <p className="text-sm font-mono" style={{ color: C.muted }}>No messages yet.</p>
-            <p className="text-[10px] font-mono mt-1" style={{ color: "#3b3b52" }}>npx tsx scripts/bridge.ts dump</p>
+          <div style={{ textAlign: "center", padding: "48px 16px", color: "var(--text-3)" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📭</div>
+            <div style={{ fontSize: 13 }}>No messages yet</div>
           </div>
         )}
         {sorted.map(msg => (
@@ -2070,284 +1272,227 @@ export default function Build() {
     </div>
   );
 
-  /* ── Health panel (mobile tab — replaces "usage") ── */
-  const healthItems = [
-    { label: "TypeScript", ok: health.ts    !== "errors",  val: health.ts    === "clean"  ? "✅ CLEAN" : health.ts    === "errors" ? "❌ ERRORS" : "—" },
-    { label: "Git",        ok: health.git   !== "stale",   val: health.git   === "synced" ? "✅ SYNCED" : health.git  === "stale"  ? "⚠ STALE"  : "—" },
-    { label: "Database",   ok: health.db    !== "error",   val: health.db    === "ok"     ? "✅ OK"    : health.db   === "error"  ? "❌ ERROR"  : "—" },
-    { label: "Bridge",     ok: health.build !== "stale",   val: health.build === "ok"     ? "✅ ACTIVE" : health.build === "stale" ? "⚠ STALE" : "—" },
-  ];
+  /* ── HEALTH panel ── */
   const tokenPct   = usage ? Math.min(100, Math.round((usage.tokens_today / SESSION_TOKEN_BUDGET) * 100)) : 0;
-  const tokenColor = tokenPct >= 90 ? C.red : tokenPct >= 70 ? C.yellow : C.green;
+  const tokenColor = tokenPct >= 90 ? "#ef4444" : tokenPct >= 70 ? "#eab308" : "#10b981";
+  const chatInstr  = sorted.find(m => m.created_by === "claude_chat" && m.kind === "instruction") || null;
 
-  const HealthPanel = (
-    <div className="flex flex-col h-full overflow-y-auto p-4" style={{ scrollbarWidth: "thin", gap: 16 }}>
-      {/* 2×2 grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-
-        {/* System Health */}
-        <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: C.border, background: C.card }}>
-          <div className="flex items-center gap-2">
-            <Activity size={11} style={{ color: C.green }} />
-            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>System</span>
+  const healthPanel = (
+    <div style={panel("health")}>
+      <div style={{ padding: "16px 12px" }}>
+        {/* System — full width */}
+        <div style={{ gridColumn: "1 / -1", borderRadius: 14, border: "0.5px solid var(--border)", background: "var(--surface)", padding: 14, marginBottom: 10 }}>
+          <div style={{ fontSize: 10, letterSpacing: "1px", color: "var(--text-3)", marginBottom: 10 }}>SYSTEM HEALTH</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {[
+              { label: "TypeScript", ok: health.ts    !== "errors", val: health.ts    === "clean"  ? "✅ CLEAN"  : health.ts    === "errors" ? "❌ ERRORS" : "—" },
+              { label: "Git",        ok: health.git   !== "stale",  val: health.git   === "synced" ? "✅ SYNCED" : health.git  === "stale"  ? "⚠ STALE"  : "—" },
+              { label: "Database",   ok: health.db    !== "error",  val: health.db    === "ok"     ? "✅ OK"     : health.db   === "error"  ? "❌ ERROR"  : "—" },
+              { label: "Bridge",     ok: health.build !== "stale",  val: health.build === "ok"     ? "✅ ACTIVE" : health.build === "stale" ? "⚠ STALE"  : "—" },
+            ].map(h => (
+              <div key={h.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "0.5px solid var(--border-dim)" }}>
+                <span style={{ fontSize: 11, color: "var(--text-3)" }}>{h.label}</span>
+                <span style={{ fontSize: 10, fontFamily: "monospace", color: h.ok ? "#10b981" : "#ef4444" }}>{h.val}</span>
+              </div>
+            ))}
           </div>
-          {healthItems.map(h => (
-            <div key={h.label} className="flex justify-between items-center gap-1">
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>{h.label}</span>
-              <span className="text-[9px] font-mono font-bold" style={{ color: h.ok ? C.green : C.red }}>{h.val}</span>
-            </div>
-          ))}
         </div>
 
-        {/* Code Today */}
-        <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: C.border, background: C.card }}>
-          <div className="flex items-center gap-2">
-            <Terminal size={11} style={{ color: C.cyan }} />
-            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Today</span>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="flex justify-between">
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Tasks</span>
-              <span className="text-[9px] font-mono font-bold" style={{ color: C.green }}>{usage?.completed_today ?? "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Tokens</span>
-              <span className="text-[9px] font-mono font-bold" style={{ color: C.blue }}>{usage ? `~${fmtTokens(usage.tokens_today)}` : "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Cost</span>
-              <span className="text-[9px] font-mono font-bold" style={{ color: tokenColor }}>{usage ? `~$${usage.cost_today_usd.toFixed(4)}` : "—"}</span>
-            </div>
+        {/* 2-col grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          {/* Today */}
+          <div style={{ borderRadius: 14, border: "0.5px solid var(--border)", background: "var(--surface)", padding: 14 }}>
+            <div style={{ fontSize: 10, letterSpacing: "1px", color: "var(--text-3)", marginBottom: 8 }}>TODAY</div>
+            <div style={{ fontSize: "clamp(20px,5vw,26px)", fontWeight: 700, color: "var(--text-1)", marginBottom: 4 }}>{usage?.completed_today ?? "—"}</div>
+            <div style={{ fontSize: 10, color: "var(--text-3)", marginBottom: 8 }}>tasks done</div>
+            <div style={{ fontSize: 12, color: tokenColor, marginBottom: 4 }}>~{usage ? fmtTokens(usage.tokens_today) : "—"} tok</div>
             <div style={{ height: 4, borderRadius: 2, background: "#1e1e3a", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${tokenPct}%`, background: `linear-gradient(to right, #6366f1, ${tokenColor})`, borderRadius: 2, transition: "width 0.6s ease" }} />
+              <div style={{ height: "100%", width: `${tokenPct}%`, background: `linear-gradient(90deg,#6366f1,${tokenColor})`, borderRadius: 2, transition: "width 0.6s ease" }} />
             </div>
           </div>
-        </div>
 
-        {/* This Month */}
-        <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: C.border, background: C.card }}>
-          <div className="flex items-center gap-2">
-            <DollarSign size={11} style={{ color: C.orange }} />
-            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Month</span>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="flex justify-between">
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>API cost</span>
-              <span className="text-[9px] font-mono font-bold" style={{ color: C.orange }}>
-                {cost?.month_usd != null ? `$${cost.month_usd.toFixed(2)}` : usage?.month_cost_usd != null ? `$${usage.month_cost_usd.toFixed(2)}` : "—"}
-              </span>
+          {/* Month */}
+          <div style={{ borderRadius: 14, border: "0.5px solid var(--border)", background: "var(--surface)", padding: 14 }}>
+            <div style={{ fontSize: 10, letterSpacing: "1px", color: "var(--text-3)", marginBottom: 8 }}>THIS MONTH</div>
+            <div style={{ fontSize: "clamp(20px,5vw,26px)", fontWeight: 700, color: "#f97316", marginBottom: 4 }}>
+              {cost?.month_usd != null ? `$${cost.month_usd.toFixed(2)}` : usage?.month_cost_usd != null ? `$${usage.month_cost_usd.toFixed(2)}` : "—"}
             </div>
-            <div className="flex justify-between">
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Tasks</span>
-              <span className="text-[9px] font-mono font-bold" style={{ color: C.text }}>{cost?.month_tasks ?? usage?.total_messages ?? "—"}</span>
-            </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: C.green, boxShadow: `0 0 4px ${C.green}` }} />
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Budget normal</span>
+            <div style={{ fontSize: 10, color: "var(--text-3)", marginBottom: 8 }}>API spend</div>
+            <div style={{ fontSize: 12, color: "var(--text-2)" }}>{cost?.month_tasks ?? usage?.total_messages ?? "—"} tasks</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", boxShadow: "0 0 4px #10b981" }} />
+              <span style={{ fontSize: 9, color: "var(--text-3)" }}>Budget normal</span>
             </div>
           </div>
         </div>
 
         {/* Claude Chat */}
-        <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: C.border, background: C.card }}>
-          <div className="flex items-center gap-2">
-            <MessageSquare size={11} style={{ color: C.purple }} />
-            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Chat</span>
+        <div style={{ borderRadius: 14, border: "0.5px solid var(--border)", background: "var(--surface)", padding: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+            <MessageSquare size={11} style={{ color: "#a855f7" }} />
+            <span style={{ fontSize: 10, letterSpacing: "1px", color: "var(--text-3)" }}>CLAUDE CHAT</span>
           </div>
-          {(() => {
-            const chatInstruction = sorted.find(m => m.created_by === "claude_chat" && m.kind === "instruction") || null;
-            return chatInstruction ? (
-              <div className="flex flex-col gap-1">
-                <p className="text-[9px] font-mono leading-relaxed line-clamp-3" style={{ color: "#9090b8" }}>
-                  &ldquo;{(chatInstruction.body || chatInstruction.title || "").slice(0, 80)}&rdquo;
-                </p>
-                <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-                  {fmtRelative(chatInstruction.created_at)}
-                </span>
-              </div>
-            ) : (
-              <p className="text-[9px] font-mono" style={{ color: C.muted }}>Waiting for instruction</p>
-            );
-          })()}
+          {chatInstr ? (
+            <>
+              <p style={{ fontSize: 11, fontFamily: "monospace", color: "#9090b8", lineHeight: 1.5, margin: "0 0 8px" }}>
+                &ldquo;{(chatInstr.body || chatInstr.title || "").slice(0, 120)}&rdquo;
+              </p>
+              <span style={{ fontSize: 10, color: "var(--text-3)" }}>{fmtRelative(chatInstr.created_at)}</span>
+              {(chatInstr.metadata?.module_num || chatInstr.metadata?.task) && (
+                <div style={{ fontSize: 10, color: "#4444aa", marginTop: 4 }}>
+                  Waiting for: Module {chatInstr.metadata?.module_num ? String(chatInstr.metadata.module_num).padStart(2,"0") : "?"}{chatInstr.metadata?.task ? ` · Task ${chatInstr.metadata.task}` : ""} completion
+                </div>
+              )}
+            </>
+          ) : (
+            <p style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-3)", margin: 0 }}>Waiting for instruction</p>
+          )}
         </div>
-
       </div>
-
-      {/* Full bottom strip beneath the grid */}
-      <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
     </div>
   );
 
-  /* ══════════════════════════════════════════════════════════
-     MOBILE LAYOUT — tabs
-  ══════════════════════════════════════════════════════════ */
-  if (bp === "mobile") {
-    return (
-      <div
-        className="flex flex-col font-sans select-none overflow-hidden"
-        style={{ height: "100dvh", background: C.bg, color: C.text, position: "relative" }}
-      >
-        {/* Pull-to-refresh indicator */}
-        {(pullPx > 0 || isRefreshing) && (
-          <div style={{
-            position:        "absolute",
-            top:             `calc(var(--safe-top, env(safe-area-inset-top, 0px)) + 44px + 36px + ${pullPx * 0.5}px)`,
-            left:            "50%",
-            transform:       "translateX(-50%)",
-            width:           40,
-            height:          40,
-            borderRadius:    "50%",
-            background:      "rgba(99,102,241,0.2)",
-            border:          "1px solid rgba(99,102,241,0.4)",
-            display:         "flex",
-            alignItems:      "center",
-            justifyContent:  "center",
-            fontSize:        20,
-            zIndex:          50,
-            boxShadow:       "0 4px 16px rgba(99,102,241,0.25)",
-            transition:      isRefreshing ? "top 0.2s ease" : "none",
-          }}>
-            {isRefreshing
-              ? <Loader2 size={18} style={{ animation: "ptr-spin 0.8s linear infinite", color: "#818cf8" }} />
-              : "👑"
-            }
-          </div>
+  /* ── Fixed Bottom Nav (mobile < 1024px) ── */
+  const NAV_TABS: { id: ActiveTab; emoji: string; label: string }[] = [
+    { id: "modules", emoji: "⬡", label: "MODULES" },
+    { id: "active",  emoji: "⚡", label: "ACTIVE"  },
+    { id: "log",     emoji: "📋", label: "LOG"     },
+    { id: "health",  emoji: "♥",  label: "HEALTH"  },
+  ];
+  const activeNavIdx = NAV_TABS.findIndex(t => t.id === activeTab);
+
+  const bottomNav = isMobile ? (
+    <nav style={{
+      position: "fixed", bottom: 0, left: 0, right: 0,
+      height: "calc(var(--nav-h) + var(--safe-bottom))",
+      paddingBottom: "var(--safe-bottom)",
+      background: "rgba(7,7,16,0.97)",
+      backdropFilter: "blur(20px)",
+      WebkitBackdropFilter: "blur(20px)",
+      borderTop: "0.5px solid var(--border)",
+      zIndex: 100, display: "flex", alignItems: "flex-start",
+      paddingTop: 8,
+    }}>
+      {NAV_TABS.map((t, i) => {
+        const isActive = t.id === activeTab;
+        return (
+          <button key={t.id} onClick={() => switchTab(t.id)}
+            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 0", minHeight: 44, border: "none", background: "none", cursor: "pointer", position: "relative" }}>
+            {/* Active indicator bar */}
+            {isActive && (
+              <div style={{ position: "absolute", top: 0, width: 24, height: 3, borderRadius: "0 0 3px 3px", background: "#6366f1" }} />
+            )}
+            {/* Notification dot */}
+            {t.id === "log" && logBadge > 0 && (
+              <div style={{ position: "absolute", top: 4, right: "calc(50% - 18px)", width: 16, height: 16, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {logBadge > 9 ? "9+" : logBadge}
+              </div>
+            )}
+            {t.id === "modules" && hasBlocked && (
+              <div style={{ position: "absolute", top: 4, right: "calc(50% - 18px)", width: 8, height: 8, borderRadius: "50%", background: "#ef4444" }} />
+            )}
+            <span style={{ fontSize: 20, filter: isActive ? "drop-shadow(0 0 4px #6366f1)" : undefined, opacity: isActive ? 1 : 0.4, lineHeight: 1 }}>{t.emoji}</span>
+            {isActive && <span style={{ fontSize: 9, fontFamily: "monospace", color: "#818cf8", letterSpacing: "0.5px" }}>{t.label}</span>}
+          </button>
+        );
+      })}
+    </nav>
+  ) : null;
+
+  /* ── Fixed Right Aside (wide >= 1440px) ── */
+  const aside = isWide ? (
+    <aside style={{
+      position: "fixed",
+      top: "calc(var(--chrome-h) + var(--safe-top))",
+      right: "var(--safe-right)",
+      bottom: 0,
+      width: "var(--aside-w)",
+      background: "#080812",
+      borderLeft: "0.5px solid var(--border)",
+      zIndex: 50,
+      overflowY: "auto", overflowX: "hidden",
+      padding: 16,
+    }}>
+      {/* Claude Chat */}
+      <div style={{ borderRadius: 12, border: "0.5px solid var(--border)", background: "var(--surface)", padding: 14, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          <MessageSquare size={11} style={{ color: "#a855f7" }} />
+          <span style={{ fontSize: 10, letterSpacing: "1px", color: "var(--text-3)" }}>CLAUDE CHAT</span>
+        </div>
+        {chatInstr ? (
+          <>
+            <p style={{ fontSize: 11, fontFamily: "monospace", color: "#9090b8", lineHeight: 1.5, margin: "0 0 6px" }}>
+              &ldquo;{(chatInstr.body || chatInstr.title || "").slice(0, 100)}&rdquo;
+            </p>
+            <span style={{ fontSize: 10, color: "var(--text-3)" }}>{fmtRelative(chatInstr.created_at)}</span>
+          </>
+        ) : (
+          <p style={{ fontSize: 11, color: "var(--text-3)", margin: 0 }}>Waiting for instruction</p>
         )}
-
-        {TopBar}
-        <NewsTicker headlines={newsHeadlines} />
-        {Banners}
-        <div
-          className="flex-1 overflow-hidden"
-          style={{ opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}
-        >
-          {activeTab === "modules" && ModulePanel}
-          {activeTab === "active"  && ActivePanel}
-          {activeTab === "log"     && FeedPanel}
-          {activeTab === "health"  && HealthPanel}
-        </div>
-        <MobileTabBar
-          active={activeTab}
-          onChange={t => { setActiveTab(t); if (t === "log") setLogBadgeCount(0); }}
-          logBadge={logBadgeCount}
-        />
-        {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{EMPIRE_CSS}</style>
       </div>
-    );
-  }
 
-  /* ══════════════════════════════════════════════════════════
-     TABLET LAYOUT — 2 column (40 / 60)
-  ══════════════════════════════════════════════════════════ */
-  if (bp === "tablet") {
-    return (
-      <div
-        className="flex flex-col font-sans select-none overflow-hidden"
-        style={{ height: "100dvh", background: C.bg, color: C.text }}
-      >
-        {TopBar}
-        <NewsTicker headlines={newsHeadlines} />
-        {Banners}
-        <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
-          {/* Left: modules */}
-          <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: "40%", borderColor: C.border }}>
-            {ModulePanel}
-          </div>
-          {/* Right: active + feed stacked */}
-          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-            <div className="flex-shrink-0 border-b overflow-hidden" style={{ borderColor: C.border, maxHeight: "45%" }}>
-              {ActivePanel}
-            </div>
-            <div className="flex-1 overflow-hidden">
-              {FeedPanel}
-            </div>
-          </div>
+      {/* Today + Month */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+        <div style={{ borderRadius: 12, border: "0.5px solid var(--border)", background: "var(--surface)", padding: 12 }}>
+          <div style={{ fontSize: 9, color: "var(--text-3)", marginBottom: 6 }}>TODAY</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-1)" }}>{usage?.completed_today ?? "—"}</div>
+          <div style={{ fontSize: 10, color: tokenColor }}>~{usage ? fmtTokens(usage.tokens_today) : "—"} tok</div>
         </div>
-        <div className="flex-shrink-0 px-4 py-3 border-t" style={{ borderColor: C.border, background: "rgba(10,10,15,0.8)" }}>
-          <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
+        <div style={{ borderRadius: 12, border: "0.5px solid var(--border)", background: "var(--surface)", padding: 12 }}>
+          <div style={{ fontSize: 9, color: "var(--text-3)", marginBottom: 6 }}>MONTH</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#f97316" }}>
+            {cost?.month_usd != null ? `$${cost.month_usd.toFixed(2)}` : "—"}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-3)" }}>{cost?.month_tasks ?? "—"} tasks</div>
         </div>
-        {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{EMPIRE_CSS}</style>
       </div>
-    );
-  }
 
-  /* ══════════════════════════════════════════════════════════
-     DESKTOP LAYOUT — 3 column (25% / 40% / 35%)
-  ══════════════════════════════════════════════════════════ */
-  if (bp === "desktop") {
-    return (
-      <div
-        className="flex flex-col font-sans select-none overflow-hidden"
-        style={{ height: "100dvh", background: C.bg, color: C.text }}
-      >
-        {TopBar}
-        <NewsTicker headlines={newsHeadlines} />
-        {Banners}
-        <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
-          {/* Col 1: modules */}
-          <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: "25%", borderColor: C.border }}>
-            {ModulePanel}
+      {/* System health */}
+      <div style={{ borderRadius: 12, border: "0.5px solid var(--border)", background: "var(--surface)", padding: 14, marginBottom: 12 }}>
+        <div style={{ fontSize: 10, letterSpacing: "1px", color: "var(--text-3)", marginBottom: 8 }}>SYSTEM HEALTH</div>
+        {[
+          { label: "TypeScript", ok: health.ts    !== "errors", val: health.ts    === "clean"  ? "✅ CLEAN"  : health.ts    === "errors" ? "❌ ERRORS" : "—" },
+          { label: "Git",        ok: health.git   !== "stale",  val: health.git   === "synced" ? "✅ SYNCED" : "⚠ STALE" },
+          { label: "Database",   ok: health.db    !== "error",  val: health.db    === "ok"     ? "✅ OK"     : "❌ ERROR" },
+          { label: "Bridge",     ok: health.build !== "stale",  val: health.build === "ok"     ? "✅ ACTIVE" : "⚠ STALE" },
+        ].map(h => (
+          <div key={h.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "0.5px solid var(--border-dim)" }}>
+            <span style={{ fontSize: 11, color: "var(--text-3)" }}>{h.label}</span>
+            <span style={{ fontSize: 10, color: h.ok ? "#10b981" : "#ef4444" }}>{h.val}</span>
           </div>
-          {/* Col 2: active task */}
-          <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: "40%", borderColor: C.border }}>
-            {ActivePanel}
-          </div>
-          {/* Col 3: feed */}
-          <div className="flex-1 overflow-hidden">
-            {FeedPanel}
-          </div>
-        </div>
-        <div className="flex-shrink-0 px-5 py-3 border-t" style={{ borderColor: C.border, background: "rgba(10,10,15,0.8)" }}>
-          <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
-        </div>
-        {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{EMPIRE_CSS}</style>
+        ))}
       </div>
-    );
-  }
 
-  /* ══════════════════════════════════════════════════════════
-     ULTRAWIDE LAYOUT — 3 column, max-width 1800px, extras
-  ══════════════════════════════════════════════════════════ */
+      {/* Recent log entries */}
+      <div style={{ fontSize: 10, letterSpacing: "1px", color: "var(--text-3)", marginBottom: 8 }}>RECENT LOG</div>
+      {sorted.slice(0, 5).map(msg => (
+        <div key={msg.id} style={{ padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--border)", background: "var(--void)", marginBottom: 6 }}>
+          <div style={{ fontSize: 9, fontFamily: "monospace", color: "#6366f1", marginBottom: 3 }}>{msg.kind} · {fmtRelative(msg.created_at)}</div>
+          <div style={{ fontSize: 11, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{msg.title || msg.body?.slice(0, 60)}</div>
+        </div>
+      ))}
+    </aside>
+  ) : null;
+
+  /* ── Final render ── */
   return (
-    <div
-      className="flex flex-col font-sans select-none overflow-hidden"
-      style={{ height: "100dvh", background: C.bg, color: C.text }}
-    >
-      {TopBar}
-      <NewsTicker headlines={newsHeadlines} />
-      {Banners}
-      <div className="flex-1 overflow-hidden flex justify-center" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
-        <div className="w-full flex overflow-hidden" style={{ maxWidth: 1800 }}>
-          {/* Col 1: modules (22%) */}
-          <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: "22%", borderColor: C.border }}>
-            {ModulePanel}
-          </div>
-          {/* Col 2: active + extras below (38%) */}
-          <div className="flex-shrink-0 border-r flex flex-col overflow-hidden" style={{ width: "38%", borderColor: C.border }}>
-            <div className="flex-1 overflow-hidden">
-              {ActivePanel}
-            </div>
-            <div className="flex-shrink-0 flex flex-col gap-3 p-4 border-t" style={{ borderColor: C.border }}>
-              <LastCompletedCard messages={messages} />
-              <EmpireTimeline messages={messages} />
-            </div>
-          </div>
-          {/* Col 3: feed (40%) */}
-          <div className="flex-1 overflow-hidden">
-            {FeedPanel}
-          </div>
-        </div>
+    <div style={{ background: "var(--void)", minHeight: "100dvh", fontFamily: "system-ui, -apple-system, sans-serif", color: "var(--text-1)" }}>
+      {header}
+      {ticker}
+      {pauseBanner}
+      {sidebar}
+      {aside}
+
+      {/* Content area — all 4 panels mounted simultaneously */}
+      <div style={contentStyle}>
+        {modulesPanel}
+        {activePanel}
+        {logPanel}
+        {healthPanel}
       </div>
-      <div className="flex-shrink-0 px-5 py-3 border-t flex justify-center" style={{ borderColor: C.border, background: "rgba(10,10,15,0.8)" }}>
-        <div className="w-full" style={{ maxWidth: 1800 }}>
-          <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
-        </div>
-      </div>
+
+      {bottomNav}
       {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-      <style>{EMPIRE_CSS}</style>
     </div>
   );
 }
