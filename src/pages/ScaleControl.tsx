@@ -1,7 +1,17 @@
 import React,{useState,useEffect} from "react";
 import {supabase} from "@/lib/supabase";
+
+interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  plan: 'agency' | 'enterprise' | 'partner';
+  config: Record<string, any>;
+  api_quota: number;
+  created_at: string;
+}
 export default function ScaleControl(){
-  const [tenants,setTenants]=useState<any[]>([]);
+  const [tenants,setTenants]=useState<Tenant[]>([]);
   const [loading,setLoading]=useState(true);
   const [form,setForm]=useState({name:"",slug:"",plan:"agency"});
   const [adding,setAdding]=useState(false);

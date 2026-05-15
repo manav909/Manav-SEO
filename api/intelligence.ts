@@ -1,3 +1,4 @@
+import { extractAndSaveLearning } from './lib/ai-cache';
 // BUNDLE-VERSION: 2026-05-15-v3 — force Vercel Lambda rebuild
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";

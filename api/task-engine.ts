@@ -794,6 +794,16 @@ Respond with JSON only:
         }
 
         results.push({ id: item.id, title: item.card_title, verdict });
+      // Auto-extract learning from verification
+      if (item.project_id && parsed.hod_note) {
+        extractAndSaveLearning({
+          source: 'verify_outcome',
+          projectId: item.project_id,
+          content: `Verdict: ${verdict}. ${parsed.hod_note} Evidence found: ${(parsed.evidence_found||[]).join(', ')}`,
+          context: `Verification of: ${item.card_title}`,
+          cardType: item.card_type,
+        });
+      }
 
       } catch (err: any) {
         await db()

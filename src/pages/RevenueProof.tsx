@@ -1,8 +1,19 @@
 import React,{useState,useEffect} from "react";
 import {supabase} from "@/lib/supabase";
 import {AreaChart,Area,XAxis,YAxis,Tooltip,ResponsiveContainer} from "recharts";
+
+interface RevMetric {
+  id: string;
+  project_id: string;
+  recorded_at: string;
+  organic_sessions: number;
+  organic_value_usd: number;
+  leads_generated: number;
+  revenue_attributed: number;
+}
+interface Project { id: string; name: string; }
 export default function RevenueProof(){
-  const [projects,setProjects]=useState<any[]>([]);
+  const [projects,setProjects]=useState<Project[]>([]);
   const [sel,setSel]=useState<string|null>(null);
   const [rev,setRev]=useState<any[]>([]);
   const [brief,setBrief]=useState("");

@@ -1,3 +1,4 @@
+import { extractAndSaveLearning } from './lib/ai-cache';
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { saveLearning } from "./lib/save";

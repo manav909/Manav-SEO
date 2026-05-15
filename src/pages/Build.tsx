@@ -41,6 +41,22 @@ interface HealthState {
   db: "ok"|"error"|"unknown"; build: "ok"|"stale"|"unknown";
 }
 
+
+const MODULE_DESCRIPTIONS: Record<number, { unlock: string; impact: string; before: string; after: string }> = {
+  1:  { unlock: "Universal learning quality gate",            impact: "transform", before: "Learnings stuck in pending, duplicates stacking", after: "Every insight auto-approved, clean, feeding Brain" },
+  2:  { unlock: "Autonomous verification — zero human triggers", impact: "transform", before: "You manually trigger every verify. Most never run.", after: "Every task auto-verified. Every verdict in Brain." },
+  3:  { unlock: "Every metric visible, every pattern seeable", impact: "high",      before: "No visibility into what Brain knows",             after: "Brain Score, velocity, algorithm radar all live" },
+  4:  { unlock: "Empire runs while you sleep",                impact: "transform", before: "Weekly briefs need manual requests",               after: "Monday brief auto-generated, highest leverage surfaced" },
+  5:  { unlock: "Any market, any language, natively",         impact: "transform", before: "English only — markets locked out",               after: "12 languages, AI thinks in project native tongue" },
+  6:  { unlock: "Every client relationship handled with data", impact: "high",     before: "AM walks into calls unprepared",                  after: "Progress/renewal/objection/upsell briefs on demand" },
+  7:  { unlock: "Every person gets exactly what they need",   impact: "high",      before: "One view for all roles, confusing everyone",      after: "Client portal, role-specific views, plain language" },
+  8:  { unlock: "Actions connected to outcomes — real proof", impact: "transform", before: "No connection between tasks and rankings",         after: "Attribution log, timing model, ROI provable" },
+  9:  { unlock: "Every kingdom makes the empire stronger",    impact: "transform", before: "Each project isolated, no cross-learning",        after: "Patterns proven across 3+ projects become universal" },
+  10: { unlock: "Right information to the right person",     impact: "high",      before: "Same AI voice for king and client",               after: "Role-calibrated: king/strategist/writer/client/exec" },
+  11: { unlock: "The business case always ready",            impact: "high",      before: "Renewal conversations driven by hope",            after: "Traffic value, revenue attribution, proof ready" },
+  12: { unlock: "One empire becomes many",                   impact: "transform", before: "Single agency, single territory",                 after: "Multi-tenant, white-label, partner network" },
+};
+
 const MODULE_NAMES = [
   "Foundation Hardening","The Closed Loop","The Visual Empire",
   "The Automation Layer","The Language Layer","The Conversation Layer",
