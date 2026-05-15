@@ -859,6 +859,26 @@ Respond with JSON only:
     return ok(res, { success:true, brief:aiJson?.content?.[0]?.text||'Failed', briefType, projectName:proj.name });
   }
 
+
+  if (action === 'record_attribution') {
+    const { projectId,taskId,taskType,taskTitle,completedAt,metricBefore,metricAfter,notes } = body;
+    if (!projectId||!taskId) return ok(res,{error:'projectId+taskId required'});
+    const before=metricBefore||{};const after=metricAfter||{};
+    const delta:Record<string,number>={};
+    for(const k of Object.keys(after)){if(typeof after[k]==='number'&&typeof before[k]==='number')delta[k]=after[k]-before[k];}
+    const completed=new Date(completedAt||Date.now());
+    const days=Math.round((Date.now()-completed.getTime())/864e5);
+    const positive=Object.values(delta).some((v:any)=>(v as number)>0);
+    const {data,error}=await db().from('attribution_log').insert({
+      project_id:projectId,task_id:taskId,task_type:taskType||'general',task_title:taskTitle||'',
+      completed_at:completed.toISOString(),verified_at:new Date().toISOString(),
+      metric_before:before,metric_after:after,delta,
+      attribution_confidence:positive?75:40,days_to_impact:days,notes:notes||''
+    }).select().single();
+    if(error)return ok(res,{success:false,error:error.message});
+    return ok(res,{success:true,id:data.id,daysToImpact:days,delta});
+  }
+
   if (!card) return ok(res, { error: "Missing card" });
 
     const BLUEPRINTS: Record<string, any> = {
