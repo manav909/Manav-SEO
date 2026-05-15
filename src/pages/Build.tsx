@@ -88,7 +88,22 @@ function useBridgeData(refresh: number) {
 }
 
 /* ── Data Derivation ───────────────────────────────────── */
-function deriveState(rows: BridgeRow[]) {
+function deriveState(rawRows: BridgeRow[]) {
+  /* Schema normalization — claude_bridge uses body/kind/created_by + nested metadata.
+     Older interface expected content/type/role/module/task/status at top level.
+     This maps whichever shape the bridge returns into the expected fields. */
+  const rows: BridgeRow[] = (rawRows || []).map((r: any) => ({
+    id:         r.id,
+    role:       r.role        ?? r.created_by               ?? "",
+    type:       r.type        ?? r.kind                     ?? "",
+    module:     r.module      ?? (r.metadata?.module_num != null ? String(r.metadata.module_num) : null),
+    task:       r.task        ?? r.metadata?.task           ?? null,
+    content:    r.content     ?? r.body                     ?? "",
+    status:     r.status      ?? r.metadata?.status         ?? "",
+    metadata:   r.metadata    ?? {},
+    created_at: r.created_at,
+  }));
+
   /* Modules */
   const modules: ModuleState[] = Array.from({ length: 12 }, (_, i) => ({
     num: i + 1, name: MODULE_NAMES[i], status: "pending" as ModStatus,
