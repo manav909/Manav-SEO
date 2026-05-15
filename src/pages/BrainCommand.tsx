@@ -358,8 +358,12 @@ export default function BrainCommand() {
         // Record failure so compiler learns — include debug payload (stop_reason, raw tail) when present
         const debug = parsed.debug ? ` [stop:${parsed.debug.stopReason} rawLen:${parsed.debug.rawLength}]` : "";
         rc.recordFailure("/api/market-researcher", action, parsed.error + debug, payload);
-        // Surface debug to user via miError so we can diagnose truncation vs other issues
-        if (parsed.debug?.stopReason === "max_tokens") {
+
+        // ── Runtime Compiler autoFix: turn raw Vercel errors into actionable diagnoses ──
+        const auto = rc.autoFix(`${parsed.error} ${text.slice(0, 400)} status:${res.status}`);
+        if (auto) {
+          setMiError(`⚡ ${auto.diagnosis}\n\nFix: ${auto.action}`);
+        } else if (parsed.debug?.stopReason === "max_tokens") {
           setMiError(`${parsed.error} (Output was ${parsed.debug.rawLength} chars before truncation.)`);
         }
       } else {

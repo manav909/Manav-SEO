@@ -1,8 +1,42 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { saveLearning } from "./lib/save";
-import { saveIntelligenceOutput, source, type SourceUsage } from "./lib/intelligenceFabric";
 import { db } from "./lib/db";
+
+/* ── INLINED Intelligence Fabric (Lambda-safe — no extra lib/ imports) ── */
+type SourceType = "manual_user" | "user_comment" | "gsc_live" | "ga_live" | "audit_run" |
+  "crawl_jina" | "brain_learning" | "algorithm_intel" | "intelligence_output" |
+  "claude_inference" | "industry_pattern" | "unknown";
+interface SourceUsage { source: SourceType; confidence: number; weight?: number; label?: string; count?: number; }
+const SOURCE_CONFIDENCE: Record<SourceType, number> = {
+  manual_user: 98, user_comment: 98, gsc_live: 95, ga_live: 95, audit_run: 88,
+  crawl_jina: 85, brain_learning: 80, algorithm_intel: 82, intelligence_output: 80,
+  claude_inference: 65, industry_pattern: 45, unknown: 30,
+};
+function source(type: SourceType, opts: { label?: string; weight?: number; count?: number; overrideConfidence?: number } = {}): SourceUsage {
+  return { source: type, confidence: opts.overrideConfidence ?? SOURCE_CONFIDENCE[type], weight: opts.weight ?? 1, label: opts.label, count: opts.count };
+}
+function computeWeightedConfidence(sources: SourceUsage[]): number {
+  if (!sources.length) return 0; let s = 0, w = 0;
+  for (const x of sources) { const ww = x.weight ?? 1; s += (x.confidence ?? SOURCE_CONFIDENCE[x.source] ?? 30) * ww; w += ww; }
+  return w > 0 ? Math.round(s / w) : 0;
+}
+async function saveIntelligenceOutput(sbc: any, p: {
+  projectId: string; analysisType: string; title?: string; summary?: string;
+  output: any; sources: SourceUsage[]; modelUsed?: string; createdBy?: string;
+}): Promise<string | null> {
+  try {
+    const { data } = await sbc.from("intelligence_outputs").insert({
+      project_id: p.projectId, analysis_type: p.analysisType,
+      title: p.title?.slice(0, 200) || null, summary: p.summary?.slice(0, 500) || null,
+      output: p.output, sources_used: p.sources,
+      weighted_confidence: computeWeightedConfidence(p.sources),
+      model_used: p.modelUsed || null, status: "active",
+      created_by: p.createdBy || "system", generated_at: new Date().toISOString(),
+    }).select("id").single();
+    return data?.id || null;
+  } catch (_e) { return null; }
+}
 
 export const config = { maxDuration: 300 };
 
