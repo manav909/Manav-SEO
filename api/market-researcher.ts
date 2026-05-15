@@ -55,6 +55,24 @@ async function quickDesk(projectId: string, title: string, content: string, cont
 
 export const config = { maxDuration: 300 };
 
+/* Robust JSON extractor — handles markdown fences, trailing text, nested braces */
+function extractJson(raw: string): any | null {
+  if (!raw) return null;
+  // Strip markdown code fences
+  const stripped = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  // Walk the string tracking brace depth to find the outermost { ... }
+  let start = -1, depth = 0;
+  for (let i = 0; i < stripped.length; i++) {
+    const ch = stripped[i];
+    if (ch === "{") { if (depth === 0) start = i; depth++; }
+    else if (ch === "}") { depth--; if (depth === 0 && start !== -1) {
+      try { return JSON.parse(stripped.slice(start, i + 1)); } catch (_) { start = -1; }
+    }}
+  }
+  // Last resort: try parsing the whole stripped string
+  try { return JSON.parse(stripped); } catch (_) { return null; }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try { return await _handler(req, res); }
   catch (e: any) {
@@ -199,15 +217,13 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4000,
+      system: "You are a market research expert. Return ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Start your response with { and end with }.",
       messages: [{ role: "user", content: prompt }],
     });
 
     const raw = response.content[0].type === "text" ? response.content[0].text : "";
-    const first = raw.indexOf("{"); const last = raw.lastIndexOf("}");
-    let persona: any;
-    try {
-      persona = JSON.parse((first !== -1 && last !== -1) ? raw.slice(first, last + 1) : raw);
-    } catch (_) {
+    const persona = extractJson(raw);
+    if (!persona?.persona_name) {
       return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
     }
 
@@ -361,15 +377,13 @@ Return ONLY valid JSON:
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 3500,
+      system: "You are an SEO growth strategist. Return ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Start your response with { and end with }.",
       messages: [{ role: "user", content: prompt }],
     });
 
     const raw = response.content[0].type === "text" ? response.content[0].text : "";
-    const first = raw.indexOf("{"); const last = raw.lastIndexOf("}");
-    let goalPlan: any;
-    try {
-      goalPlan = JSON.parse((first !== -1 && last !== -1) ? raw.slice(first, last + 1) : raw);
-    } catch (_) {
+    const goalPlan = extractJson(raw);
+    if (!goalPlan?.phases) {
       return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
     }
 
@@ -523,6 +537,7 @@ Be direct, specific, and confident. Cite real search patterns and market dynamic
     const synthResponse = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 2000,
+      system: "Return ONLY raw JSON — no markdown fences, no prose before or after. Start with { and end with }.",
       messages: [{
         role: "user",
         content: `You are Manav's Brain synthesizing cross-project intelligence.
@@ -552,11 +567,8 @@ Return ONLY valid JSON:
     });
 
     const raw2 = synthResponse.content[0].type === "text" ? synthResponse.content[0].text : "";
-    const f2 = raw2.indexOf("{"); const l2 = raw2.lastIndexOf("}");
-    let patterns: any;
-    try {
-      patterns = JSON.parse((f2 !== -1 && l2 !== -1) ? raw2.slice(f2, l2 + 1) : raw2);
-    } catch (_) {
+    const patterns = extractJson(raw2);
+    if (!patterns?.pattern_summary) {
       return res.status(200).json({ success: false, error: "Synthesis parse error — try again" });
     }
 
