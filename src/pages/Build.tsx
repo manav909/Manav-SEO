@@ -230,7 +230,7 @@ const EMPIRE_CSS = `
   .pull-indicator.visible { opacity:1; }
   .ks-sheet { transition:transform .4s cubic-bezier(.2,.8,.4,1); }
   .ks-sheet.hidden { transform:translateY(100%); }
-  @media(min-width:1440px){ #empire-content { right:calc(300px + var(--safe-r)); } }
+  
   @media(min-width:1920px){ #empire-header,#empire-ticker,#empire-sidebar,#empire-content { max-width:1800px; } }
 `;
 
@@ -321,7 +321,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
 
   return (
     <div style={{ background: S.bg, height: "100%", display: "flex", flexDirection: "column" }}>
-      {mobile && (
+      {true && (
         <div style={{ display: "flex", borderBottom: `1px solid ${S.border}`, background: S.bg, flexShrink: 0 }}>
           {tabs.map(t => (
             <div key={t.id} onClick={() => setActiveTab(t.id)}
@@ -334,7 +334,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
 
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {/* OPS — Active Mission + Feed */}
-        <div className={`empire-panel${mobile && activeTab !== "ops" ? " hidden" : ""}`} style={{ padding: "10px" }}>
+        <div className={`empire-panel${activeTab !== "ops" ? " hidden" : ""}`} style={{ padding: "10px" }}>
           {/* Active mission */}
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 5, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// CURRENT MISSION</div>
           <div style={{ background: "#040e04", border: `1px dashed ${S.text}`, borderRadius: 6, padding: "9px 10px", marginBottom: 10 }}>
@@ -379,7 +379,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
         </div>
 
         {/* MAP — Sector Map */}
-        <div className={`empire-panel${mobile && activeTab !== "map" ? " hidden" : ""}`} style={{ padding: "10px" }}>
+        <div className={`empire-panel${activeTab !== "map" ? " hidden" : ""}`} style={{ padding: "10px" }}>
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// SECTOR MAP — 12 MODULES</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginBottom: 12 }}>
             {modules.map((m: ModuleState) => (
@@ -406,7 +406,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
         </div>
 
         {/* COMMS — Log */}
-        <div className={`empire-panel${mobile && activeTab !== "comms" ? " hidden" : ""}`} style={{ padding: "10px" }}>
+        <div className={`empire-panel${activeTab !== "comms" ? " hidden" : ""}`} style={{ padding: "10px" }}>
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// COMMS LOG</div>
           {feed.map((f: ActivityLine) => (
             <div key={f.id} style={{ background: "#040e04", border: `1px dashed ${S.border}`, borderRadius: 5, padding: "7px 9px", marginBottom: 5 }}>
@@ -420,7 +420,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
         </div>
 
         {/* SYS — Health */}
-        <div className={`empire-panel${mobile && activeTab !== "sys" ? " hidden" : ""}`} style={{ padding: "10px" }}>
+        <div className={`empire-panel${activeTab !== "sys" ? " hidden" : ""}`} style={{ padding: "10px" }}>
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// SYSTEM STATUS</div>
           {[["TYPESCRIPT", health.ts === "clean" ? "CLEAN" : "ERROR", health.ts === "clean" ? S.text : "#ef4444"], ["GIT.STATUS", "SYNCED", S.text], ["DATABASE", "OK", S.text], ["VERCEL.BUILD", "LIVE", S.text]].map(([l, v, c]) => (
             <div key={String(l)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "#040e04", border: `1px dashed ${S.border}`, borderRadius: 5, marginBottom: 5 }}>
@@ -452,7 +452,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
 
   return (
     <div style={{ background: S.bg, height: "100%", display: "flex", flexDirection: "column" }}>
-      {mobile && (
+      {true && (
         <div style={{ display: "flex", borderBottom: `0.5px solid ${S.border}`, background: "rgba(12,6,24,.95)", flexShrink: 0 }}>
           {[["court","♛","Court"],["scroll","◈","Scroll"],["treasury","◆","Treasury"],["realm","⊞","Realm"]].map(([id,ic,lb]) => (
             <div key={id} onClick={() => setActiveTab(id as any)}
@@ -465,7 +465,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
 
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {/* COURT — Main dashboard */}
-        <div className={`empire-panel${mobile && activeTab !== "court" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div className={`empire-panel${activeTab !== "court" ? " hidden" : ""}`} style={{ padding: "14px" }}>
           {/* Crown ring + Progress */}
           <div style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 16, marginBottom: 12, position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: -20, right: -20, width: 80, height: 80, borderRadius: "50%", background: "radial-gradient(circle,rgba(245,158,11,.08),transparent 70%)" }} />
@@ -527,7 +527,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
         </div>
 
         {/* SCROLL — Royal Decrees */}
-        <div className={`empire-panel${mobile && activeTab !== "scroll" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div className={`empire-panel${activeTab !== "scroll" ? " hidden" : ""}`} style={{ padding: "14px" }}>
           <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Today's Royal Decrees</div>
           {feed.slice(0, 8).map((f: ActivityLine) => (
             <div key={f.id} style={{ display: "flex", gap: 10, padding: "9px 12px", background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 12, marginBottom: 6 }}>
@@ -538,7 +538,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
         </div>
 
         {/* TREASURY */}
-        <div className={`empire-panel${mobile && activeTab !== "treasury" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div className={`empire-panel${activeTab !== "treasury" ? " hidden" : ""}`} style={{ padding: "14px" }}>
           <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Royal Treasury</div>
           {[["Today's Expenditure", `$${daily.costToday.toFixed(2)}`, 0.75], ["This Moon's Total", `$${daily.costMonth.toFixed(2)}`, 0.85], ["Tasks Completed", `${daily.monthTasks}`, 0.6]].map(([l, v, fill]) => (
             <div key={String(l)} style={{ background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 14, padding: "12px 14px", marginBottom: 8 }}>
@@ -556,7 +556,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
         </div>
 
         {/* REALM — Health */}
-        <div className={`empire-panel${mobile && activeTab !== "realm" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div className={`empire-panel${activeTab !== "realm" ? " hidden" : ""}`} style={{ padding: "14px" }}>
           <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Kingdom Health</div>
           {[["TypeScript", health.ts === "clean" ? "✦ Clean" : "✗ Errors", health.ts === "clean"], ["Git Repository", "✦ Synced", true], ["Database", "✦ Connected", true], ["Vercel Build", "✦ Live", true]].map(([l, v, ok]) => (
             <div key={String(l)} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 12, marginBottom: 6 }}>
@@ -589,7 +589,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         ))}
       </div>
 
-      {mobile && (
+      {true && (
         <div style={{ display: "flex", borderBottom: `0.5px solid ${S.border}`, background: "#020810", flexShrink: 0 }}>
           {[["neural","◉","NEURAL"],["nodes","⊕","NODES"],["signal","≡","SIGNAL"],["synapse","⌇","SYNAPSE"]].map(([id,ic,lb]) => (
             <div key={id} onClick={() => setActiveTab(id as any)}
@@ -602,7 +602,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
 
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {/* NEURAL — Active output */}
-        <div className={`empire-panel${mobile && activeTab !== "neural" ? " hidden" : ""}`} style={{ padding: "12px 12px 10px" }}>
+        <div className={`empire-panel${activeTab !== "neural" ? " hidden" : ""}`} style={{ padding: "12px 12px 10px" }}>
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: S.cyan, display: "inline-block" }} className="blink-build" />
             neural output
@@ -630,7 +630,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* NODES — Module registry */}
-        <div className={`empire-panel${mobile && activeTab !== "nodes" ? " hidden" : ""}`} style={{ padding: "12px" }}>
+        <div className={`empire-panel${activeTab !== "nodes" ? " hidden" : ""}`} style={{ padding: "12px" }}>
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 10 }}>module registry</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
             {modules.map((m: ModuleState) => (
@@ -652,7 +652,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* SIGNAL — Bars */}
-        <div className={`empire-panel${mobile && activeTab !== "signal" ? " hidden" : ""}`} style={{ padding: "12px" }}>
+        <div className={`empire-panel${activeTab !== "signal" ? " hidden" : ""}`} style={{ padding: "12px" }}>
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 10 }}>system signals</div>
           {[["ts.check", 100, "#10b981"], ["git.sync", 100, "#10b981"], ["db.conn", 100, "#10b981"], ["velocity", 80, S.cyan], ["quality", 100, S.cyan], ["blockers", 5, "#10b981"], ["month.cost", 35, "#818cf8"], ["days.streak", 60, "#818cf8"]].map(([l, v, c]) => (
             <div key={String(l)} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -666,7 +666,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* SYNAPSE */}
-        <div className={`empire-panel${mobile && activeTab !== "synapse" ? " hidden" : ""}`} style={{ padding: "12px" }}>
+        <div className={`empire-panel${activeTab !== "synapse" ? " hidden" : ""}`} style={{ padding: "12px" }}>
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 10 }}>synaptic activity</div>
           <div style={{ background: S.accent, border: `.5px solid ${S.border}`, borderRadius: 12, padding: "16px 12px", marginBottom: 12 }}>
             <SynBars color1={S.cyan} color2="#818cf8" />
@@ -720,7 +720,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
       <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 5 }}>
 
         {/* EMPIRE */}
-        <div className={`empire-panel${mobile && activeTab !== "empire" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div className={`empire-panel${activeTab !== "empire" ? " hidden" : ""}`} style={{ padding: "14px" }}>
           <GC style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.6)", textTransform: "uppercase", marginBottom: 6 }}>The mission</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", lineHeight: 1.25, marginBottom: 6, letterSpacing: "-.3px" }}>The SEO system that gets smarter every day</div>
@@ -747,7 +747,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* MODULES */}
-        <div className={`empire-panel${mobile && activeTab !== "modules" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div className={`empire-panel${activeTab !== "modules" ? " hidden" : ""}`} style={{ padding: "14px" }}>
           {modules.map((m: ModuleState) => (
             <div key={m.num} style={{ background: m.status === "done" ? "rgba(16,185,129,.05)" : m.status === "building" ? "rgba(99,102,241,.06)" : "rgba(255,255,255,.03)", border: `.5px solid ${m.status === "done" ? "rgba(16,185,129,.2)" : m.status === "building" ? "rgba(99,102,241,.25)" : "rgba(255,255,255,.07)"}`, borderRadius: 14, padding: 13, marginBottom: 8, position: "relative", overflow: "hidden" }} className={m.status === "building" ? "card-glow" : ""}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent)" }} />
@@ -766,7 +766,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* VISION */}
-        <div className={`empire-panel${mobile && activeTab !== "vision" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div className={`empire-panel${activeTab !== "vision" ? " hidden" : ""}`} style={{ padding: "14px" }}>
           <GC style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.6)", textTransform: "uppercase", marginBottom: 6 }}>The compounding curve</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -793,7 +793,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* CREATOR */}
-        <div className={`empire-panel${mobile && activeTab !== "creator" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div className={`empire-panel${activeTab !== "creator" ? " hidden" : ""}`} style={{ padding: "14px" }}>
           <div style={{ background: "rgba(255,255,255,.04)", border: ".5px solid rgba(255,255,255,.1)", borderRadius: 20, padding: 16, textAlign: "center", marginBottom: 12, position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: -30, left: "50%", transform: "translateX(-50%)", width: 100, height: 100, borderRadius: "50%", background: "radial-gradient(circle,rgba(139,92,246,.12),transparent 70%)" }} />
             <div style={{ width: 60, height: 60, borderRadius: "50%", background: "linear-gradient(135deg,rgba(139,92,246,.3),rgba(6,182,212,.2))", border: ".5px solid rgba(255,255,255,.15)", margin: "0 auto 10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, position: "relative", zIndex: 1 }}>👑</div>
