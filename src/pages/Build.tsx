@@ -118,7 +118,7 @@ function deriveState(rows: BridgeRow[]) {
     const time = new Date(r.created_at).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
     const preview = (r.content ?? "").slice(0, 70);
     if (r.type === "thinking") return { id: r.id, time, icon: "→", color: "#3b82f6", text: preview };
-    if (r.content.includes("_DONE")) return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
+    if ((r.content ?? "").includes("_DONE")) return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
     if (r.status === "blocked") return { id: r.id, time, icon: "✗", color: "#ef4444", text: preview };
     if (r.type === "brain_dump") return { id: r.id, time, icon: "⊙", color: "#6b6b80", text: "System snapshot posted" };
     if (r.role === "claude_code" && r.type === "response") return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
