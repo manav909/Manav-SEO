@@ -3,7 +3,7 @@
    Fully responsive: mobile / tablet / desktop / ultrawide
 ═══════════════════════════════════════════════════════════ */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   RefreshCw, Loader2, Crown, Radio, Terminal, MessageSquare,
   ChevronDown, ChevronUp, GitCommit, Code2,
@@ -28,7 +28,7 @@ const BRIDGE_URL    = "/api/bridge";
 
 type ModStatus  = "pending" | "building" | "testing" | "done" | "blocked" | "paused";
 type Breakpoint = "mobile" | "tablet" | "desktop" | "ultrawide";
-type ActiveTab  = "modules" | "active" | "log" | "usage";
+type ActiveTab  = "modules" | "active" | "log" | "health";
 
 interface BridgeMsg {
   id:          string;
@@ -90,15 +90,78 @@ function useScreenSize() {
     breakpoint: getBreakpoint(typeof window !== "undefined" ? window.innerWidth : 1280) as Breakpoint,
   });
   useEffect(() => {
-    const handle = () => setSize({
-      width:      window.innerWidth,
-      height:     window.innerHeight,
-      breakpoint: getBreakpoint(window.innerWidth),
-    });
+    let timer: ReturnType<typeof setTimeout>;
+    const handle = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setSize({
+        width:      window.innerWidth,
+        height:     window.innerHeight,
+        breakpoint: getBreakpoint(window.innerWidth),
+      }), 150);
+    };
     window.addEventListener("resize", handle);
-    return () => window.removeEventListener("resize", handle);
+    return () => { window.removeEventListener("resize", handle); clearTimeout(timer); };
   }, []);
   return size;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Pull-to-refresh hook (mobile-first, ref-based, no stale closures)
+═══════════════════════════════════════════════════════════ */
+
+function usePullToRefresh(onRefresh: () => Promise<void> | void) {
+  const onRefreshRef = useRef(onRefresh);
+  useEffect(() => { onRefreshRef.current = onRefresh; }, [onRefresh]);
+
+  const startY      = useRef(0);
+  const pulling     = useRef(false);
+  const pullDistRef = useRef(0);
+  const [pullPx,       setPullPx]       = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    const THRESHOLD = 60;
+
+    const onStart = (e: TouchEvent) => {
+      const el = document.scrollingElement || document.documentElement;
+      if (el.scrollTop > 2) return; // tolerance for sub-pixel
+      startY.current  = e.touches[0].clientY;
+      pulling.current = true;
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (!pulling.current) return;
+      const dy = e.touches[0].clientY - startY.current;
+      if (dy > 0) {
+        pullDistRef.current = Math.min(dy, 90);
+        setPullPx(pullDistRef.current);
+      }
+    };
+
+    const onEnd = async () => {
+      if (!pulling.current) return;
+      pulling.current = false;
+      const dist = pullDistRef.current;
+      pullDistRef.current = 0;
+      setPullPx(0);
+      if (dist >= THRESHOLD) {
+        setIsRefreshing(true);
+        await onRefreshRef.current();
+        setIsRefreshing(false);
+      }
+    };
+
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchmove",  onMove,  { passive: true });
+    window.addEventListener("touchend",   onEnd);
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchmove",  onMove);
+      window.removeEventListener("touchend",   onEnd);
+    };
+  }, []); // stable — all state via refs
+
+  return { pullPx, isRefreshing };
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -920,9 +983,8 @@ function ActiveTaskCard({
   );
 }
 
-/** Running activity stream — plain-English lines derived from bridge messages */
-function LiveActivity({ messages }: { messages: BridgeMsg[] }) {
-  const lines = deriveActivityLines(messages);
+/** Running activity stream — accepts pre-computed lines (memoized by parent) */
+function LiveActivity({ lines }: { lines: ActivityLine[] }) {
   if (lines.length === 0) return null;
 
   return (
@@ -1019,8 +1081,7 @@ function generateNewsHeadlines(messages: BridgeMsg[]): string[] {
 }
 
 /* ── King's News Ticker ── */
-function NewsTicker({ messages }: { messages: BridgeMsg[] }) {
-  const headlines = generateNewsHeadlines(messages);
+function NewsTicker({ headlines }: { headlines: string[] }) {
 
   return (
     <div
@@ -1445,7 +1506,7 @@ function FreshChatModal({ content, onClose }: { content: string; onClose: () => 
   );
 }
 
-/* ── Mobile Tab Bar ── */
+/* ── Mobile Tab Bar — animated pill indicator ── */
 function MobileTabBar({
   active, onChange, logBadge,
 }: {
@@ -1454,42 +1515,83 @@ function MobileTabBar({
   logBadge: number;
 }) {
   const tabs: { id: ActiveTab; icon: React.ReactNode; label: string }[] = [
-    { id: "modules", icon: <Layers size={16} />,      label: "Modules"   },
-    { id: "active",  icon: <CheckSquare size={16} />, label: "Active"    },
-    { id: "log",     icon: <Radio size={16} />,       label: "Log"       },
-    { id: "usage",   icon: <BarChart2 size={16} />,   label: "Usage"     },
+    { id: "modules", icon: <Layers size={16} />,      label: "Modules" },
+    { id: "active",  icon: <CheckSquare size={16} />, label: "Active"  },
+    { id: "log",     icon: <Radio size={16} />,       label: "Log"     },
+    { id: "health",  icon: <Activity size={16} />,    label: "Health"  },
   ];
+  const activeIdx = tabs.findIndex(t => t.id === active);
+
   return (
-    <div
-      className="flex-shrink-0 flex border-t"
-      style={{ background: "rgba(10,10,15,0.97)", borderColor: C.border }}
+    <nav
+      className="flex-shrink-0 flex relative border-t"
+      style={{
+        background:    "rgba(10,10,15,0.97)",
+        backdropFilter: "blur(12px)",
+        borderColor:   C.border,
+        paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))",
+        minHeight:     "var(--nav-height, 56px)",
+      }}
     >
+      {/* Animated pill indicator */}
+      <div
+        aria-hidden="true"
+        style={{
+          position:   "absolute",
+          top:        6,
+          left:       `calc(${activeIdx * 25}% + 6px)`,
+          width:      "calc(25% - 12px)",
+          height:     36,
+          background: "rgba(99,102,241,0.14)",
+          border:     "0.5px solid rgba(99,102,241,0.35)",
+          borderRadius: 10,
+          transition: "left 260ms cubic-bezier(0.34,1.56,0.64,1)",
+          pointerEvents: "none",
+          zIndex:     1,
+        }}
+      />
+
       {tabs.map(t => {
         const isActive = t.id === active;
         return (
           <button
             key={t.id}
-            className="flex-1 flex flex-col items-center gap-1 py-2 relative transition-colors"
-            style={{ color: isActive ? C.blue : C.muted }}
+            className="flex-1 flex flex-col items-center gap-1 pt-2.5 pb-1 relative"
+            style={{
+              color:   isActive ? "#818cf8" : C.muted,
+              zIndex:  2,
+              minHeight: 44, // 44px touch target
+              transition: "color 220ms ease",
+            }}
             onClick={() => onChange(t.id)}
           >
             {t.id === "log" && logBadge > 0 && (
               <span
-                className="absolute top-1.5 right-1/4 w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center"
-                style={{ background: C.red, color: "#fff" }}
+                style={{
+                  position:  "absolute",
+                  top:       8,
+                  right:     "calc(50% - 18px)",
+                  width:     16,
+                  height:    16,
+                  borderRadius: "50%",
+                  background: C.red,
+                  color:     "#fff",
+                  fontSize:  8,
+                  fontWeight: 700,
+                  display:   "flex",
+                  alignItems:     "center",
+                  justifyContent: "center",
+                }}
               >
                 {logBadge > 9 ? "9+" : logBadge}
               </span>
             )}
             {t.icon}
             <span className="text-[9px] font-mono">{t.label}</span>
-            {isActive && (
-              <span className="absolute top-0 left-0 right-0 h-0.5" style={{ background: C.blue }} />
-            )}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }
 
@@ -1510,6 +1612,50 @@ function ModuleSummaryBar({ moduleMap }: { moduleMap: Record<number, BridgeMsg[]
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Global CSS — keyframes + CSS custom properties
+═══════════════════════════════════════════════════════════ */
+
+const EMPIRE_CSS = `
+  :root {
+    --safe-top:    env(safe-area-inset-top,    0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left:   env(safe-area-inset-left,   0px);
+    --safe-right:  env(safe-area-inset-right,  0px);
+    --nav-height:  56px;
+    --header-height: 44px;
+    --ticker-height: 36px;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0);    }
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0);    }
+  }
+  @keyframes ticker {
+    0%   { transform: translateX(0);    }
+    100% { transform: translateX(-50%); }
+  }
+  @keyframes pulseBlue {
+    0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3);  }
+    50%     { box-shadow: 0 0 22px rgba(59,130,246,0.65); }
+  }
+  @keyframes pulseRed {
+    0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2);  }
+    50%     { box-shadow: 0 0 18px rgba(239,68,68,0.55); }
+  }
+  @keyframes ptr-spin {
+    from { transform: rotate(0deg);   }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1;   }
+    50%     { opacity: 0.4; }
+  }
+`;
 
 /* ═══════════════════════════════════════════════════════════
    Main Page
@@ -1549,20 +1695,21 @@ export default function Build() {
   const activeTabRef    = useRef<ActiveTab>("modules");
   const kbHandlerRef    = useRef<(e: KeyboardEvent) => void>(() => {});
 
-  /* ── Derived ── */
-  const moduleMap   = buildModuleMap(messages);
-  const doneCount   = MODULES.filter(m => deriveModuleStatus(moduleMap[m.num] || []) === "done").length;
-  const sorted      = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  const activeTask  = findActiveTask(messages); // used in generateHandoff
-  const progressPct = Math.round((doneCount / 12) * 100);
+  /* ── Derived (memoized) ── */
+  const moduleMap     = useMemo(() => buildModuleMap(messages),  [messages]);
+  const doneCount     = useMemo(() => MODULES.filter(m => deriveModuleStatus(moduleMap[m.num] || []) === "done").length, [moduleMap]);
+  const sorted        = useMemo(() => [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), [messages]);
+  const progressPct   = useMemo(() => Math.round((doneCount / 12) * 100), [doneCount]);
+  const newsHeadlines = useMemo(() => generateNewsHeadlines(messages), [messages]);
+  const activityLines = useMemo(() => deriveActivityLines(messages),   [messages]);
 
-  // Bridge-first context pct (for Fresh Chat button threshold)
-  const ctxPct = (() => {
+  // activeTask used only in generateHandoff — derive lazily inside that fn
+  const ctxPct = useMemo(() => {
     const bridgeCtx = sorted.find(m => m.metadata?.task === "chat_context" && m.metadata?.percent != null);
     if (bridgeCtx) return Math.min(100, Math.max(0, Number(bridgeCtx.metadata.percent)));
     const cc = sorted.find(m => m.created_by === "claude_chat" && m.metadata?.conversation_length);
     return cc ? Math.min(100, Math.round((Number(cc.metadata.conversation_length) / 100_000) * 100)) : 0;
-  })();
+  }, [sorted]);
 
   /* ── Keyboard shortcuts (stable ref pattern) ── */
   kbHandlerRef.current = (e: KeyboardEvent) => {
@@ -1573,7 +1720,7 @@ export default function Build() {
       case "1": setActiveTab("modules"); break;
       case "2": setActiveTab("active");  break;
       case "3": setActiveTab("log"); setLogBadgeCount(0); break;
-      case "4": setActiveTab("usage");   break;
+      case "4": setActiveTab("health");  break;
       case "escape": setExpandedMod(null); break;
     }
   };
@@ -1693,6 +1840,9 @@ export default function Build() {
     setTimeout(() => setRefreshFlash(false), 200);
   }, [fetchBridge, fetchCosts, fetchHealth]);
 
+  /* ── Pull-to-refresh (mobile) ── */
+  const { pullPx, isRefreshing } = usePullToRefresh(fetchAll);
+
   useEffect(() => {
     fetchAll();
     intervalRef.current = setInterval(fetchAll, 20_000);
@@ -1746,8 +1896,16 @@ export default function Build() {
 
   const TopBar = (
     <div
-      className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b z-20"
-      style={{ background: "rgba(10,10,15,0.97)", backdropFilter: "blur(12px)", borderColor: C.border, position: "sticky", top: 0 }}
+      className="flex-shrink-0 flex items-center justify-between px-4 border-b z-20"
+      style={{
+        background:    "rgba(10,10,15,0.97)",
+        backdropFilter: "blur(12px)",
+        borderColor:   C.border,
+        paddingTop:    `calc(var(--safe-top, env(safe-area-inset-top, 0px)) + 10px)`,
+        paddingBottom: 10,
+        paddingLeft:   `calc(var(--safe-left, env(safe-area-inset-left, 0px)) + 16px)`,
+        paddingRight:  `calc(var(--safe-right, env(safe-area-inset-right, 0px)) + 16px)`,
+      }}
     >
       <div className="flex items-center gap-2 min-w-0">
         <Crown size={14} style={{ color: "#fbbf24", flexShrink: 0 }} />
@@ -1882,7 +2040,7 @@ export default function Build() {
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-4" style={{ scrollbarWidth: "thin" }}>
         <ActiveTaskCard messages={messages} />
-        <LiveActivity messages={messages} />
+        <LiveActivity lines={activityLines} />
       </div>
     </div>
   );
@@ -1912,9 +2070,110 @@ export default function Build() {
     </div>
   );
 
-  /* ── Usage panel (mobile tab) ── */
-  const UsagePanel = (
-    <div className="flex flex-col gap-4 p-4 overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
+  /* ── Health panel (mobile tab — replaces "usage") ── */
+  const healthItems = [
+    { label: "TypeScript", ok: health.ts    !== "errors",  val: health.ts    === "clean"  ? "✅ CLEAN" : health.ts    === "errors" ? "❌ ERRORS" : "—" },
+    { label: "Git",        ok: health.git   !== "stale",   val: health.git   === "synced" ? "✅ SYNCED" : health.git  === "stale"  ? "⚠ STALE"  : "—" },
+    { label: "Database",   ok: health.db    !== "error",   val: health.db    === "ok"     ? "✅ OK"    : health.db   === "error"  ? "❌ ERROR"  : "—" },
+    { label: "Bridge",     ok: health.build !== "stale",   val: health.build === "ok"     ? "✅ ACTIVE" : health.build === "stale" ? "⚠ STALE" : "—" },
+  ];
+  const tokenPct   = usage ? Math.min(100, Math.round((usage.tokens_today / SESSION_TOKEN_BUDGET) * 100)) : 0;
+  const tokenColor = tokenPct >= 90 ? C.red : tokenPct >= 70 ? C.yellow : C.green;
+
+  const HealthPanel = (
+    <div className="flex flex-col h-full overflow-y-auto p-4" style={{ scrollbarWidth: "thin", gap: 16 }}>
+      {/* 2×2 grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+
+        {/* System Health */}
+        <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: C.border, background: C.card }}>
+          <div className="flex items-center gap-2">
+            <Activity size={11} style={{ color: C.green }} />
+            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>System</span>
+          </div>
+          {healthItems.map(h => (
+            <div key={h.label} className="flex justify-between items-center gap-1">
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>{h.label}</span>
+              <span className="text-[9px] font-mono font-bold" style={{ color: h.ok ? C.green : C.red }}>{h.val}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Code Today */}
+        <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: C.border, background: C.card }}>
+          <div className="flex items-center gap-2">
+            <Terminal size={11} style={{ color: C.cyan }} />
+            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Today</span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex justify-between">
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Tasks</span>
+              <span className="text-[9px] font-mono font-bold" style={{ color: C.green }}>{usage?.completed_today ?? "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Tokens</span>
+              <span className="text-[9px] font-mono font-bold" style={{ color: C.blue }}>{usage ? `~${fmtTokens(usage.tokens_today)}` : "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Cost</span>
+              <span className="text-[9px] font-mono font-bold" style={{ color: tokenColor }}>{usage ? `~$${usage.cost_today_usd.toFixed(4)}` : "—"}</span>
+            </div>
+            <div style={{ height: 4, borderRadius: 2, background: "#1e1e3a", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${tokenPct}%`, background: `linear-gradient(to right, #6366f1, ${tokenColor})`, borderRadius: 2, transition: "width 0.6s ease" }} />
+            </div>
+          </div>
+        </div>
+
+        {/* This Month */}
+        <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: C.border, background: C.card }}>
+          <div className="flex items-center gap-2">
+            <DollarSign size={11} style={{ color: C.orange }} />
+            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Month</span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex justify-between">
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>API cost</span>
+              <span className="text-[9px] font-mono font-bold" style={{ color: C.orange }}>
+                {cost?.month_usd != null ? `$${cost.month_usd.toFixed(2)}` : usage?.month_cost_usd != null ? `$${usage.month_cost_usd.toFixed(2)}` : "—"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Tasks</span>
+              <span className="text-[9px] font-mono font-bold" style={{ color: C.text }}>{cost?.month_tasks ?? usage?.total_messages ?? "—"}</span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: C.green, boxShadow: `0 0 4px ${C.green}` }} />
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>Budget normal</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Claude Chat */}
+        <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: C.border, background: C.card }}>
+          <div className="flex items-center gap-2">
+            <MessageSquare size={11} style={{ color: C.purple }} />
+            <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Chat</span>
+          </div>
+          {(() => {
+            const chatInstruction = sorted.find(m => m.created_by === "claude_chat" && m.kind === "instruction") || null;
+            return chatInstruction ? (
+              <div className="flex flex-col gap-1">
+                <p className="text-[9px] font-mono leading-relaxed line-clamp-3" style={{ color: "#9090b8" }}>
+                  &ldquo;{(chatInstruction.body || chatInstruction.title || "").slice(0, 80)}&rdquo;
+                </p>
+                <span className="text-[9px] font-mono" style={{ color: C.muted }}>
+                  {fmtRelative(chatInstruction.created_at)}
+                </span>
+              </div>
+            ) : (
+              <p className="text-[9px] font-mono" style={{ color: C.muted }}>Waiting for instruction</p>
+            );
+          })()}
+        </div>
+
+      </div>
+
+      {/* Full bottom strip beneath the grid */}
       <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
     </div>
   );
@@ -1924,19 +2183,56 @@ export default function Build() {
   ══════════════════════════════════════════════════════════ */
   if (bp === "mobile") {
     return (
-      <div className="h-screen flex flex-col font-sans select-none overflow-hidden" style={{ background: C.bg, color: C.text }}>
+      <div
+        className="flex flex-col font-sans select-none overflow-hidden"
+        style={{ height: "100dvh", background: C.bg, color: C.text, position: "relative" }}
+      >
+        {/* Pull-to-refresh indicator */}
+        {(pullPx > 0 || isRefreshing) && (
+          <div style={{
+            position:        "absolute",
+            top:             `calc(var(--safe-top, env(safe-area-inset-top, 0px)) + 44px + 36px + ${pullPx * 0.5}px)`,
+            left:            "50%",
+            transform:       "translateX(-50%)",
+            width:           40,
+            height:          40,
+            borderRadius:    "50%",
+            background:      "rgba(99,102,241,0.2)",
+            border:          "1px solid rgba(99,102,241,0.4)",
+            display:         "flex",
+            alignItems:      "center",
+            justifyContent:  "center",
+            fontSize:        20,
+            zIndex:          50,
+            boxShadow:       "0 4px 16px rgba(99,102,241,0.25)",
+            transition:      isRefreshing ? "top 0.2s ease" : "none",
+          }}>
+            {isRefreshing
+              ? <Loader2 size={18} style={{ animation: "ptr-spin 0.8s linear infinite", color: "#818cf8" }} />
+              : "👑"
+            }
+          </div>
+        )}
+
         {TopBar}
-        <NewsTicker messages={messages} />
+        <NewsTicker headlines={newsHeadlines} />
         {Banners}
-        <div className="flex-1 overflow-hidden" style={{ opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
+        <div
+          className="flex-1 overflow-hidden"
+          style={{ opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}
+        >
           {activeTab === "modules" && ModulePanel}
           {activeTab === "active"  && ActivePanel}
           {activeTab === "log"     && FeedPanel}
-          {activeTab === "usage"   && UsagePanel}
+          {activeTab === "health"  && HealthPanel}
         </div>
-        <MobileTabBar active={activeTab} onChange={t => { setActiveTab(t); if (t === "log") setLogBadgeCount(0); }} logBadge={logBadgeCount} />
+        <MobileTabBar
+          active={activeTab}
+          onChange={t => { setActiveTab(t); if (t === "log") setLogBadgeCount(0); }}
+          logBadge={logBadgeCount}
+        />
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } @keyframes pulseBlue { 0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 22px rgba(59,130,246,0.65); } } @keyframes pulseRed { 0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 18px rgba(239,68,68,0.55); } }`}</style>
+        <style>{EMPIRE_CSS}</style>
       </div>
     );
   }
@@ -1946,9 +2242,12 @@ export default function Build() {
   ══════════════════════════════════════════════════════════ */
   if (bp === "tablet") {
     return (
-      <div className="h-screen flex flex-col font-sans select-none overflow-hidden" style={{ background: C.bg, color: C.text }}>
+      <div
+        className="flex flex-col font-sans select-none overflow-hidden"
+        style={{ height: "100dvh", background: C.bg, color: C.text }}
+      >
         {TopBar}
-        <NewsTicker messages={messages} />
+        <NewsTicker headlines={newsHeadlines} />
         {Banners}
         <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
           {/* Left: modules */}
@@ -1969,7 +2268,7 @@ export default function Build() {
           <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
         </div>
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } @keyframes pulseBlue { 0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 22px rgba(59,130,246,0.65); } } @keyframes pulseRed { 0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 18px rgba(239,68,68,0.55); } }`}</style>
+        <style>{EMPIRE_CSS}</style>
       </div>
     );
   }
@@ -1979,9 +2278,12 @@ export default function Build() {
   ══════════════════════════════════════════════════════════ */
   if (bp === "desktop") {
     return (
-      <div className="h-screen flex flex-col font-sans select-none overflow-hidden" style={{ background: C.bg, color: C.text }}>
+      <div
+        className="flex flex-col font-sans select-none overflow-hidden"
+        style={{ height: "100dvh", background: C.bg, color: C.text }}
+      >
         {TopBar}
-        <NewsTicker messages={messages} />
+        <NewsTicker headlines={newsHeadlines} />
         {Banners}
         <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
           {/* Col 1: modules */}
@@ -2001,7 +2303,7 @@ export default function Build() {
           <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
         </div>
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } @keyframes pulseBlue { 0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 22px rgba(59,130,246,0.65); } } @keyframes pulseRed { 0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 18px rgba(239,68,68,0.55); } }`}</style>
+        <style>{EMPIRE_CSS}</style>
       </div>
     );
   }
@@ -2010,9 +2312,12 @@ export default function Build() {
      ULTRAWIDE LAYOUT — 3 column, max-width 1800px, extras
   ══════════════════════════════════════════════════════════ */
   return (
-    <div className="h-screen flex flex-col font-sans select-none overflow-hidden" style={{ background: C.bg, color: C.text }}>
+    <div
+      className="flex flex-col font-sans select-none overflow-hidden"
+      style={{ height: "100dvh", background: C.bg, color: C.text }}
+    >
       {TopBar}
-      <NewsTicker messages={messages} />
+      <NewsTicker headlines={newsHeadlines} />
       {Banners}
       <div className="flex-1 overflow-hidden flex justify-center" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
         <div className="w-full flex overflow-hidden" style={{ maxWidth: 1800 }}>
@@ -2042,7 +2347,7 @@ export default function Build() {
         </div>
       </div>
       {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } @keyframes pulseBlue { 0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 22px rgba(59,130,246,0.65); } } @keyframes pulseRed { 0%,100% { box-shadow: 0 0 8px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 18px rgba(239,68,68,0.55); } }`}</style>
+      <style>{EMPIRE_CSS}</style>
     </div>
   );
 }
