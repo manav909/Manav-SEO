@@ -1,6 +1,8 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { saveLearning } from "./lib/save";
+import { saveIntelligenceOutput, source, type SourceUsage } from "./lib/intelligenceFabric";
+import { db } from "./lib/db";
 
 export const config = { maxDuration: 300 };
 
@@ -398,5 +400,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cardType:    "strategy",
       contextSummary: `${mode} — ${(projectSummary || "").slice(0, 80)}`,
     }).catch(() => {});
+
+    /* ── Intelligence Fabric: persist EVERY meaningful AI output (global memory) ── */
+    try {
+      const bac = brainAssistantContext || {};
+      const learnCount = (bac.learnings  || []).length;
+      const algoCount  = (bac.algoItems  || []).length;
+      const canvasCount = ((bac.canvasBlocks || placed) as any[]).length;
+      const sources: SourceUsage[] = [
+        source("manual_user",       { label: "User question / context",     weight: 2 }),
+        source("claude_inference",  { label: "Brain reasoning",             weight: 2 }),
+        ...(learnCount  ? [source("brain_learning",      { label: `${learnCount} Brain Learnings`,    weight: 2, count: learnCount  })] : []),
+        ...(algoCount   ? [source("algorithm_intel",     { label: `${algoCount} Algorithm Intel items`, weight: 1, count: algoCount  })] : []),
+        ...(canvasCount ? [source("intelligence_output", { label: `${canvasCount} canvas cards`,       weight: 1, count: canvasCount })] : []),
+        ...(marketPersonaContext ? [source("intelligence_output", { label: "Buyer persona context",   weight: 2 })] : []),
+        ...(liveContent           ? [source("crawl_jina",         { label: "Live URL fetched",         weight: 2 })] : []),
+      ];
+      await saveIntelligenceOutput(db(), {
+        projectId,
+        analysisType: mode,
+        title:        mode === "brain_assistant" ? `Brain Chat: ${question.slice(0, 80)}` :
+                      mode === "pipeline"        ? `Pipeline: ${(projectSummary || "").slice(0, 60)}` :
+                      mode === "deep_dive"       ? `Deep Dive: ${question.slice(0, 60)}` :
+                                                   `${mode}: ${question.slice(0, 60)}`,
+        summary:      fullOutput.slice(0, 480),
+        output:       { question, response: fullOutput, role, mode, projectSummary },
+        sources,
+        modelUsed:    "claude-sonnet-4-6",
+        createdBy:    "intelligence_api",
+      });
+    } catch (_e) { /* non-fatal */ }
   }
 }

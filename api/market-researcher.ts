@@ -18,6 +18,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { saveIntelligenceOutput, supersedePriorOutputs, source, computeWeightedConfidence,
+         type SourceUsage, fingerprint } from "./lib/intelligenceFabric";
 
 /* Inline Supabase client — avoids local lib/ import resolution issues in Lambda */
 function sb() {
@@ -462,6 +464,59 @@ Return ONLY valid JSON. Be SPECIFIC. Reference real numbers from project data wh
       } catch (_e) { /* non-fatal */ }
     }
 
+    /* ═══ INTELLIGENCE FABRIC: persist + score this output ═══ */
+    let outputId: string | null = null;
+    let weighted = 0;
+    let fabricSources: SourceUsage[] = [];
+    if (projectId) {
+      fabricSources = [
+        company   ? source("manual_user",      { label: "Company / project name", weight: 2 }) : null,
+        industry  ? source("manual_user",      { label: "Industry",               weight: 2 }) : null,
+        url       ? source("manual_user",      { label: "Website URL",            weight: 1 }) : null,
+        keywords.length      ? source("manual_user", { label: `${keywords.length} target keywords`,    weight: 2, count: keywords.length })   : null,
+        competitors.length   ? source("manual_user", { label: `${competitors.length} competitors`,     weight: 1, count: competitors.length }): null,
+        pc?.analytics?.organicMonthly ? source("ga_live",   { label: "Organic traffic (GA/manual)",   weight: 3 }) : null,
+        pc?.analytics?.gscClicks      ? source("gsc_live",  { label: "GSC clicks/impressions",         weight: 3 }) : null,
+        pc?.metrics?.llmVisibility != null ? source("audit_run", { label: "LLM visibility metric",     weight: 2 }) : null,
+        pc?.audits?.length            ? source("audit_run", { label: `${pc.audits.length} prior audit(s)`, weight: 2, count: pc.audits.length }) : null,
+        pc?.crawl_data?.page_count    ? source("crawl_jina", { label: `Site crawl (${pc.crawl_data.page_count} pages)`, weight: 2, count: pc.crawl_data.page_count }) : null,
+        siteLive    ? source("crawl_jina", { label: "Live homepage fetched",            weight: 2 }) : null,
+        comp1Live   ? source("crawl_jina", { label: "Live competitor page fetched",     weight: 1 }) : null,
+        comp2Live   ? source("crawl_jina", { label: "Live competitor 2 fetched",        weight: 1 }) : null,
+        pLearn.length ? source("brain_learning", { label: `${pLearn.length} project Brain Learnings`, weight: 2, count: pLearn.length,
+                                                   overrideConfidence: Math.round(pLearn.reduce((s: number, l: any) => s + (l.confidence_score || 75), 0) / pLearn.length) }) : null,
+        algo.length   ? source("algorithm_intel", { label: `${algo.length} algorithm intel items`,    weight: 1, count: algo.length }) : null,
+        industryWisdom ? source("intelligence_output", { label: `${industryWisdom.split("\n").length} cross-project industry learnings`, weight: 1 }) : null,
+        prior         ? source("intelligence_output", { label: "Prior persona (evolution context)",   weight: 1 }) : null,
+        // Always present: Claude's own inference work
+        source("claude_inference", { label: "Claude buyer-psychology inference", weight: 2 }),
+      ].filter(Boolean) as SourceUsage[];
+
+      weighted = computeWeightedConfidence(fabricSources);
+
+      outputId = await saveIntelligenceOutput(sb(), {
+        projectId,
+        analysisType:    "persona",
+        title:           `Persona: ${persona.persona_name}${industry ? " — " + industry : ""}`,
+        summary:         (persona.market_context || persona.manav_intelligence_note || "").slice(0, 480),
+        output:          persona,
+        sources:         fabricSources,
+        modelUsed:       "claude-sonnet-4-6",
+        inputFingerprint: fingerprint({ projectId, industry, keywords, competitors, url, goalsHash: pc?.goals }),
+        sourceBreakdown: {
+          provided:      dataProvided.length,
+          assumed:       dataAssumed.length,
+          learnings:     pLearn.length,
+          algo_items:    algo.length,
+          live_fetches:  (siteLive ? 1 : 0) + (comp1Live ? 1 : 0) + (comp2Live ? 1 : 0),
+          canvas_cards:  cb.length,
+        },
+        createdBy: "market_researcher",
+      });
+      // Mark older personas for this project as superseded
+      if (outputId) await supersedePriorOutputs(sb(), projectId, "persona", outputId);
+    }
+
     return res.status(200).json({
       success: true,
       persona,
@@ -470,6 +525,10 @@ Return ONLY valid JSON. Be SPECIFIC. Reference real numbers from project data wh
         dataProvided, dataAssumed,
         industry: effectiveIndustry, company, region,
         keywordCount: keywords.length, competitorCount: competitors.length,
+        // Intelligence Fabric data
+        outputId,
+        weightedConfidence: weighted,
+        sources: fabricSources,
         brainMemory: {
           projectLearningsCount: pLearn.length,
           algoIntelCount: algo.length,
@@ -819,6 +878,276 @@ Return ONLY valid JSON:
 
   if (action === "health_check") {
     return res.status(200).json({ status: "ok", service: "market-researcher" });
+  }
+
+  /* ═══════════════════════════════════════════
+     ACTION: list_intelligence
+     List all prior intelligence outputs for a project (memory panel)
+  ═══════════════════════════════════════════ */
+  if (action === "list_intelligence") {
+    if (!projectId) return res.status(200).json({ error: "Missing projectId" });
+    const { data: outputs } = await sb().from("intelligence_outputs")
+      .select("id,analysis_type,title,summary,weighted_confidence,sources_used,source_breakdown,model_used,status,generated_at,viewed_at")
+      .eq("project_id", projectId).eq("status", "active")
+      .order("generated_at", { ascending: false }).limit(80);
+    const { data: pending } = await sb().from("field_update_proposals")
+      .select("id,field_path,field_category,current_value,proposed_value,proposed_by,proposer_confidence,reasoning,created_at")
+      .eq("project_id", projectId).eq("status", "pending")
+      .order("created_at", { ascending: false }).limit(20);
+    const { data: contradictions } = await sb().from("intelligence_contradictions")
+      .select("id,contradiction_summary,severity,output_a_id,output_b_id,created_at")
+      .eq("project_id", projectId).eq("status", "open")
+      .order("created_at", { ascending: false }).limit(10);
+    return res.status(200).json({
+      success: true,
+      outputs:        outputs || [],
+      pendingProposals: pending || [],
+      contradictions:   contradictions || [],
+    });
+  }
+
+  /* ═══════════════════════════════════════════
+     ACTION: get_intelligence
+     Fetch the full output for a single intelligence_outputs row
+  ═══════════════════════════════════════════ */
+  if (action === "get_intelligence") {
+    const id = body.id;
+    if (!id) return res.status(200).json({ error: "Missing id" });
+    const { data } = await sb().from("intelligence_outputs").select("*").eq("id", id).single();
+    if (!data) return res.status(200).json({ error: "Not found" });
+    // Mark as viewed
+    try { await sb().from("intelligence_outputs").update({ viewed_at: new Date().toISOString() }).eq("id", id); } catch (_e) {}
+    return res.status(200).json({ success: true, output: data });
+  }
+
+  /* ═══════════════════════════════════════════
+     ACTION: resolve_proposal
+     User approves/rejects a protected-field change
+  ═══════════════════════════════════════════ */
+  if (action === "resolve_proposal") {
+    const { id, decision, reviewer, reviewNote } = body;
+    if (!id || !["approved", "rejected"].includes(decision)) {
+      return res.status(200).json({ error: "Invalid proposal resolution" });
+    }
+    /* If approved — apply the change to the right table (projects | project_knowledge) */
+    if (decision === "approved") {
+      const { data: prop } = await sb().from("field_update_proposals").select("*").eq("id", id).single();
+      if (prop) {
+        const [table, ...rest] = prop.field_path.split(".");
+        const key = rest.join(".");
+        try {
+          if (table === "project") {
+            await sb().from("projects").update({ [key]: prop.proposed_value }).eq("id", prop.project_id);
+          } else if (table === "goals" || table === "competitors" || table === "comments") {
+            await sb().from("project_knowledge").upsert({
+              project_id: prop.project_id, category: table, field_key: key,
+              field_value: prop.proposed_value, updated_at: new Date().toISOString(),
+            }, { onConflict: "project_id,category,field_key" });
+          }
+          // metrics & analytics are READ-ONLY (measured), even after approval — log but don't write
+        } catch (_e) { /* non-fatal */ }
+      }
+    }
+    try {
+      await sb().from("field_update_proposals").update({
+        status: decision, reviewed_at: new Date().toISOString(),
+        reviewed_by: reviewer || "user", review_note: reviewNote?.slice(0, 500) || null,
+      }).eq("id", id);
+    } catch (_e) {}
+    return res.status(200).json({ success: true });
+  }
+
+  /* ═══════════════════════════════════════════
+     ACTION: deep_learn
+     Brain meta-analysis: read EVERY intelligence_output for this project,
+     surface contradictions, propose confidence adjustments to brain_learnings,
+     output a "learning evolution report".
+  ═══════════════════════════════════════════ */
+  if (action === "deep_learn") {
+    if (!projectId) return res.status(200).json({ error: "Missing projectId" });
+
+    /* Load everything */
+    const [outputsR, learningsR, algoR, contradictionsR] = await Promise.all([
+      sb().from("intelligence_outputs")
+        .select("id,analysis_type,title,summary,output,weighted_confidence,generated_at")
+        .eq("project_id", projectId).eq("status", "active")
+        .order("generated_at", { ascending: false }).limit(50),
+      sb().from("brain_learnings")
+        .select("id,card_type,card_title,improvement,confidence_score,applied_count,what_worked,what_missed,tags,updated_at")
+        .eq("project_id", projectId).in("status", ["active", "pending_review"])
+        .order("applied_count", { ascending: false }).limit(40),
+      sb().from("algorithm_knowledge")
+        .select("topic,summary,freshness_score,engine,impact_level")
+        .order("freshness_score", { ascending: false }).limit(15),
+      sb().from("intelligence_contradictions")
+        .select("contradiction_summary,severity,created_at")
+        .eq("project_id", projectId).eq("status", "open").limit(10),
+    ]);
+
+    const outputs:    any[] = outputsR.data || [];
+    const learnings:  any[] = learningsR.data || [];
+    const algo:       any[] = algoR.data || [];
+    const contradictions: any[] = contradictionsR.data || [];
+
+    if (outputs.length < 2) {
+      return res.status(200).json({
+        error: "Not enough intelligence outputs yet for deep-learn. Need at least 2 prior analyses — run a persona + an audit (or several Brain chats) first.",
+        outputCount: outputs.length,
+      });
+    }
+
+    /* Build the deep-learn prompt */
+    const outputsText = outputs.slice(0, 25).map((o, i) =>
+      `[O${i+1}|${o.analysis_type}|conf ${o.weighted_confidence}|${o.generated_at?.split("T")[0]}] ${o.title}\n   ${(o.summary || "").slice(0, 300)}`
+    ).join("\n");
+
+    const learningsText = learnings.slice(0, 25).map((l, i) =>
+      `[L${i+1}|${l.card_type}|conf ${l.confidence_score}|applied ${l.applied_count || 0}x] ${l.card_title}\n   → ${(l.improvement || "").slice(0, 200)}`
+    ).join("\n");
+
+    const dlPrompt = `You are the META-COGNITION of the SEO Season Brain doing a deep learning pass.
+
+Your job: read every analysis this project has accumulated and tell us:
+1. What patterns CONSISTENTLY hold across multiple outputs? (high-confidence truths)
+2. What CONTRADICTIONS exist between outputs? (need resolution)
+3. Which Brain Learnings should have confidence INCREASED (validated repeatedly) or DECREASED (never applied or contradicted)?
+4. What NEW insights emerge from the collection that no single output saw alone?
+5. What HARD DATA gaps are blocking better analysis? (specific Data Room fields to fill)
+
+CRITICAL: Be honest. If outputs disagree, say so. If a learning has applied_count=0 and isn't backed by other outputs, mark it for confidence-down. If multiple outputs independently support an idea, mark it for confidence-up.
+
+═══ ALL ACCUMULATED INTELLIGENCE OUTPUTS (${outputs.length}) ═══
+${outputsText}
+
+═══ ACTIVE BRAIN LEARNINGS (${learnings.length}) ═══
+${learningsText}
+
+═══ ALGORITHM INTEL CONTEXT ═══
+${algo.slice(0, 6).map(a => `• [${a.impact_level}|${a.engine}] ${a.topic}: ${(a.summary || "").slice(0, 120)}`).join("\n")}
+
+${contradictions.length ? `═══ PREVIOUSLY-LOGGED CONTRADICTIONS ═══\n${contradictions.map(c => `• [${c.severity}] ${c.contradiction_summary}`).join("\n")}` : ""}
+
+Return ONLY raw JSON (no markdown, no prose):
+
+{
+  "consistent_patterns": [
+    {"pattern":"<the recurring truth>","supported_by_outputs":["O1","O3","O7"],"confidence":85}
+  ],
+  "contradictions": [
+    {"summary":"<what disagrees>","output_a":"O2","output_b":"O5","severity":"high|medium|low","resolution":"<how to reconcile or what data to gather>"}
+  ],
+  "learning_confidence_adjustments": [
+    {"learning_ref":"L1","direction":"up|down","new_confidence":<int 0-100>,"reason":"<why>","supporting_outputs":["O1","O3"]}
+  ],
+  "new_emergent_insights": [
+    {"title":"<the new truth>","reasoning":"<how it emerged from cross-output analysis>","confidence":<int>,"suggested_save_as":"insight|strategy|technical"}
+  ],
+  "hard_data_gaps_blocking_better_analysis": [
+    {"field":"<exact Data Room field name>","why_it_blocks":"<which analyses would sharpen with this>","priority":"high|medium|low"}
+  ],
+  "field_update_proposals": [
+    {"field_path":"goals.primary","proposed_value":"<the value evidence suggests>","reasoning":"<why>","confidence":<int>}
+  ],
+  "overall_brain_health": {
+    "consistency_score": <0-100>,
+    "data_richness_score": <0-100>,
+    "learning_velocity": "<accelerating|steady|stale>",
+    "next_recommended_action": "<single most valuable next step>"
+  }
+}`;
+
+    const dlResponse = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 12000,
+      system: "You are the meta-cognition layer. Return ONLY raw JSON — no markdown fences, no prose. Start with { end with }.",
+      messages: [{ role: "user", content: dlPrompt }],
+    });
+
+    const dlRaw = dlResponse.content[0].type === "text" ? dlResponse.content[0].text : "";
+    const report = extractJson(dlRaw);
+    if (!report) {
+      return res.status(200).json({
+        error: "Deep-learn returned invalid JSON",
+        debug: { stopReason: dlResponse.stop_reason, rawLen: dlRaw.length, tail: dlRaw.slice(-200) },
+      });
+    }
+
+    /* Apply confidence adjustments to brain_learnings (these are NOT protected) */
+    const adjustments = report.learning_confidence_adjustments || [];
+    for (const adj of adjustments) {
+      const refIdx = parseInt((adj.learning_ref || "").replace(/^L/, "")) - 1;
+      const target = learnings[refIdx];
+      if (!target?.id || typeof adj.new_confidence !== "number") continue;
+      try {
+        await sb().from("brain_learnings").update({
+          confidence_score: Math.max(0, Math.min(100, adj.new_confidence)),
+          updated_at: new Date().toISOString(),
+        }).eq("id", target.id);
+      } catch (_e) {}
+    }
+
+    /* Queue field-update proposals (these ARE protected — never auto-applied) */
+    for (const prop of (report.field_update_proposals || [])) {
+      if (!prop.field_path || !prop.proposed_value) continue;
+      try {
+        await sb().from("field_update_proposals").insert({
+          project_id:          projectId,
+          field_path:          prop.field_path,
+          field_category:      (prop.field_path.split(".")[0] === "project" ? "project_core" :
+                                prop.field_path.split(".")[0] === "goals"   ? "goals"        :
+                                prop.field_path.split(".")[0] === "metrics" ? "metrics"      :
+                                prop.field_path.split(".")[0] === "competitors" ? "competitors" : "comments"),
+          proposed_value:      String(prop.proposed_value).slice(0, 2000),
+          proposed_by:         "deep_learn",
+          proposer_confidence: Math.max(0, Math.min(100, Math.round(prop.confidence || 60))),
+          reasoning:           (prop.reasoning || "").slice(0, 1000),
+          status:              "pending",
+        });
+      } catch (_e) {}
+    }
+
+    /* Log new contradictions */
+    for (const c of (report.contradictions || [])) {
+      if (!c.summary) continue;
+      try {
+        await sb().from("intelligence_contradictions").insert({
+          project_id:            projectId,
+          contradiction_summary: c.summary.slice(0, 1000),
+          severity:              c.severity || "medium",
+          detected_by:           "deep_learn",
+          status:                "open",
+        });
+      } catch (_e) {}
+    }
+
+    /* Save the deep-learn report itself as an intelligence_output */
+    const dlSources: SourceUsage[] = [
+      source("intelligence_output", { label: `${outputs.length} prior intelligence outputs`, weight: 3, count: outputs.length }),
+      source("brain_learning",      { label: `${learnings.length} Brain Learnings`,           weight: 2, count: learnings.length,
+                                       overrideConfidence: learnings.length ? Math.round(learnings.reduce((s, l) => s + (l.confidence_score || 75), 0) / learnings.length) : 75 }),
+      source("algorithm_intel",     { label: `${algo.length} algorithm items`,                weight: 1, count: algo.length }),
+      source("claude_inference",    { label: "Meta-cognition reasoning",                      weight: 2 }),
+    ];
+    const dlOutputId = await saveIntelligenceOutput(sb(), {
+      projectId, analysisType: "deep_learn",
+      title:   `Deep Learn Report — ${new Date().toISOString().split("T")[0]} (${outputs.length} outputs reviewed)`,
+      summary: `Patterns: ${(report.consistent_patterns || []).length} | Contradictions: ${(report.contradictions || []).length} | Adjustments: ${adjustments.length} | New insights: ${(report.new_emergent_insights || []).length} | Field proposals: ${(report.field_update_proposals || []).length}`,
+      output: report, sources: dlSources, modelUsed: "claude-sonnet-4-6", createdBy: "deep_learn",
+    });
+
+    return res.status(200).json({
+      success: true,
+      report,
+      stats: {
+        outputsReviewed:           outputs.length,
+        learningsReviewed:         learnings.length,
+        confidenceAdjustments:     adjustments.length,
+        newProposals:              (report.field_update_proposals || []).length,
+        newContradictions:         (report.contradictions || []).length,
+        emergentInsights:          (report.new_emergent_insights || []).length,
+        outputId:                  dlOutputId,
+      },
+    });
   }
 
   return res.status(200).json({ error: `Unknown action: ${action}` });

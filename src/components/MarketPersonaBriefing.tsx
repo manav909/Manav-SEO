@@ -296,10 +296,25 @@ function PoweredByPanel({ persona, learningsCount, algoCount, canvasCount, proje
     { label: "Cross-project wisdom", value: `${bm.industryWisdomCount || 0} industry learnings`,    ok: (bm.industryWisdomCount || 0) > 0 },
     { label: "Prior persona",      value: bm.priorPersonaExists ? "evolved from previous" : "first generation", ok: true },
   ];
+  const weightedConf: number | null = persona?._provenance?.weightedConfidence ?? null;
+  const confColor = weightedConf == null ? "#6366f1" : weightedConf >= 85 ? "#10b981" : weightedConf >= 70 ? "#06b6d4" : weightedConf >= 55 ? "#f59e0b" : weightedConf >= 40 ? "#fb923c" : "#ef4444";
+  const confLabel = weightedConf == null ? "" : weightedConf >= 85 ? "High" : weightedConf >= 70 ? "Solid" : weightedConf >= 55 ? "Moderate" : weightedConf >= 40 ? "Weak" : "Too low";
   return (
     <div style={{ background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: 10, padding: 12, marginBottom: 10 }}>
-      <div style={{ fontSize: 9, color: "#a5b4fc", letterSpacing: "0.12em", marginBottom: 8, fontFamily: "monospace", fontWeight: 700 }}>
-        ◉ POWERED BY · BRAIN COMMAND MEMORY
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontSize: 9, color: "#a5b4fc", letterSpacing: "0.12em", fontFamily: "monospace", fontWeight: 700 }}>
+          ◉ POWERED BY · BRAIN COMMAND MEMORY
+        </div>
+        {weightedConf != null && (
+          <div title="Weighted confidence — computed from every source that fed this analysis" style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 12,
+            background: `${confColor}1f`, border: `1px solid ${confColor}40`,
+          }}>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", fontFamily: "monospace" }}>CONFIDENCE</span>
+            <span style={{ fontSize: 12, color: confColor, fontWeight: 700, fontFamily: "monospace" }}>{weightedConf}/100</span>
+            <span style={{ fontSize: 9, color: confColor, fontFamily: "monospace" }}>· {confLabel}</span>
+          </div>
+        )}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 6 }}>
         {sources.map(s => (

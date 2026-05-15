@@ -17,6 +17,7 @@ import { useProjectSync } from "@/hooks/useProjectSync";
 import { supabase } from "@/lib/supabase";
 import { getRuntimeCompiler } from "@/lib/runtimeCompiler";
 import { MarketPersonaBriefing } from "@/components/MarketPersonaBriefing";
+import { IntelligenceMemory }   from "@/components/IntelligenceMemory";
 import {
   Brain, Play, Pause, X, Zap, CheckCircle, AlertCircle, Clock,
   Loader2, ArrowLeft, Send, Mic, MicOff, ChevronRight,
@@ -777,7 +778,7 @@ export default function BrainCommand() {
               </button>
             ))}
 
-            {(miPersona || miGoals || miReport || miPatterns) && (
+            {(miPersona || miGoals || miReport || miPatterns || selProj) && (
               <div style={{ marginTop: 16 }}>
                 <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(165,180,252,0.4)", letterSpacing: "0.12em", marginBottom: 8 }}>
                   VIEW SECTION
@@ -787,6 +788,7 @@ export default function BrainCommand() {
                   { id: "goals",    label: "◈ Goals",      show: !!miGoals    },
                   { id: "report",   label: "◎ Report",     show: !!miReport   },
                   { id: "patterns", label: "◇ Patterns",   show: !!miPatterns },
+                  { id: "memory",   label: "◈ Memory",    show: !!selProj    },
                 ].filter(s => s.show).map(s => (
                   <button key={s.id} onClick={() => setMiSection(s.id)}
                     style={{ display: "block", width: "100%", padding: "5px 10px", borderRadius: 6, border: "none",
@@ -1073,6 +1075,11 @@ export default function BrainCommand() {
                   </>
                 )}
               </div>
+            )}
+
+            {/* ── INTELLIGENCE MEMORY — every AI output ever, with confidence + sources ── */}
+            {miSection === "memory" && (
+              <IntelligenceMemory projectId={selProj || null} onAskBrain={askBrain} />
             )}
           </div>
         </div>
