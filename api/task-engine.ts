@@ -72,6 +72,26 @@ async function checkForConflicts(
   return { isDuplicate: false, isContradiction: false };
 }
 
+/* ── Inline logError (mirror of ./lib/db logError — kept inline to avoid Lambda cold-start crash) ── */
+async function logError(opts: {
+  source:     string;
+  action?:    string;
+  error:      any;
+  projectId?: string;
+  metadata?:  Record<string, any>;
+}): Promise<void> {
+  try {
+    await db().from("system_errors").insert({
+      source:     opts.source,
+      action:     opts.action    || null,
+      error_msg:  String(opts.error?.message || opts.error || "unknown"),
+      error_code: String(opts.error?.code    || ""),
+      project_id: opts.projectId || null,
+      metadata:   opts.metadata  || {},
+    });
+  } catch (_) { /* never throw from the error logger */ }
+}
+
 /* ── Inline minimal saveLearning ── */
 async function saveLearning(opts: {
   source: string; projectId: string | null; content: string; title?: string;
@@ -162,9 +182,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function _run(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return ok(res, { error: "POST only" });
+  /* Vercel cron trigger (GET or x-vercel-cron header) — auto-routes to verification runner */
+  const isCron = req.method === "GET" || req.headers["x-vercel-cron"] === "1";
 
-  const body = req.body || {};
+  if (!isCron && req.method !== "POST") return ok(res, { error: "POST only" });
+
+  const body: any = isCron ? { action: "run_scheduled_verifications" } : (req.body || {});
   const { action } = body;
 
   /* ── HEALTH CHECK ── */
@@ -649,7 +672,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       .single();
 
     if (error) {
-      console.error("[task-engine] schedule_verification error:", error);
+      await logError({ source: "task-engine", action: "schedule_verification", error }).catch(() => {});
       return ok(res, { success: false, error: error.message });
     }
 
@@ -658,6 +681,148 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       id:             data.id,
       scheduledFor:   scheduledFor.toISOString(),
       daysUntilCheck: days,
+    });
+  }
+
+  /* ── RUN SCHEDULED VERIFICATIONS — Module 02 The Closed Loop runner ── */
+  if (action === "run_scheduled_verifications") {
+    const now = new Date().toISOString();
+
+    /* Get all pending verifications due now */
+    const { data: due } = await db()
+      .from("verification_queue")
+      .select("*")
+      .eq("status", "pending")
+      .lte("scheduled_for", now)
+      .limit(10);
+
+    if (!due || due.length === 0) {
+      return ok(res, { success: true, processed: 0, message: "No verifications due" });
+    }
+
+    const results: any[] = [];
+
+    for (const item of due) {
+      /* Mark as executing */
+      await db()
+        .from("verification_queue")
+        .update({ status: "executing", updated_at: new Date().toISOString() })
+        .eq("id", item.id);
+
+      try {
+        const daysSince =
+          item.check_type === "quick" ? 3 :
+          item.check_type === "deep"  ? 14 : 7;
+
+        const prompt = `You are verifying whether an SEO task produced real results.
+
+TASK: "${item.card_title}"
+TYPE: ${item.card_type}
+SITE: ${item.site_url || "Not specified"}
+SCHEDULED: ${item.scheduled_for}
+DAYS SINCE COMPLETION: approximately ${daysSince}
+
+Check: Did this ${item.card_type} task likely produce measurable results by now?
+Consider: typical timeframes for this task type, common success patterns.
+
+Respond with JSON only:
+{
+  "verdict": "working" | "not_working" | "too_early" | "cannot_determine",
+  "confidence": 0-100,
+  "evidence_found": ["what signals suggest it worked"],
+  "evidence_missing": ["what would confirm it better"],
+  "hod_note": "one sentence summary for the king"
+}`;
+
+        const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type":     "application/json",
+            "x-api-key":        process.env.ANTHROPIC_API_KEY || "",
+            "anthropic-version":"2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 500,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+
+        const aiData = await aiRes.json() as any;
+        const rawText = aiData?.content?.[0]?.text || "{}";
+
+        let parsed: any = {};
+        try {
+          const clean = rawText.replace(/```json|```/g, "").trim();
+          parsed = JSON.parse(clean);
+        } catch (_) {
+          parsed = { verdict: "cannot_determine", confidence: 0 };
+        }
+
+        const verdict = parsed.verdict || "cannot_determine";
+
+        /* Update queue item */
+        await db()
+          .from("verification_queue")
+          .update({
+            status:     "done",
+            verdict,
+            evidence: {
+              found:   parsed.evidence_found   || [],
+              missing: parsed.evidence_missing || [],
+              note:    parsed.hod_note || "",
+            },
+            attempts:   (item.attempts || 0) + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id);
+
+        /* Auto-save as Brain Learning (fire and forget) */
+        if (verdict !== "cannot_determine" && verdict !== "too_early" && item.project_id) {
+          Promise.resolve().then(async () => {
+            await saveLearning({
+              source:        "verify_outcome",
+              projectId:     item.project_id,
+              content:       `Verdict: ${verdict}. ${parsed.hod_note || ""}`,
+              title:         `Verified: ${item.card_type} — ${(item.card_title || "").slice(0, 55)}`,
+              cardType:      item.card_type,
+              whatWorked:    parsed.evidence_found   || [],
+              whatMissed:    parsed.evidence_missing || [],
+              contextSummary:`Auto-verified after ${item.check_type} check. Site: ${item.site_url}`,
+            } as any);
+          }).catch(() => {});
+        }
+
+        results.push({ id: item.id, title: item.card_title, verdict });
+
+      } catch (err: any) {
+        await db()
+          .from("verification_queue")
+          .update({
+            status:     "failed",
+            attempts:   (item.attempts || 0) + 1,
+            evidence:   { error: err?.message || "unknown" },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id);
+
+        await logError({
+          source:    "task-engine",
+          action:    "run_scheduled_verifications",
+          error:     err,
+          projectId: item.project_id,
+          metadata:  { queueId: item.id, taskId: item.task_id },
+        }).catch(() => {});
+
+        results.push({ id: item.id, title: item.card_title, verdict: "error" });
+      }
+    }
+
+    return ok(res, {
+      success:   true,
+      processed: results.length,
+      results,
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -922,6 +1087,31 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         });
       }).catch(() => {});
     }
+
+    /* ── Module 02 — auto-schedule verification (fire and forget) ── */
+    Promise.resolve().then(async () => {
+      const projId  = (body.projectId || context?.project?.id || null) as string | null;
+      const taskUrl = context?.project?.url || (context as any)?.url || null;
+      if (projId && card?.id) {
+        const daysMap: Record<string, number> = {
+          technical: 5, content: 14, geo: 7, "quick-win": 3, competitive: 10,
+        };
+        const d = new Date();
+        d.setDate(d.getDate() + (daysMap[card.type] || 7));
+        await db()
+          .from("verification_queue")
+          .insert({
+            project_id:    projId,
+            task_id:       card.id,
+            card_type:     card.type || "general",
+            card_title:    card.title || "",
+            site_url:      taskUrl,
+            check_type:    "standard",
+            scheduled_for: d.toISOString(),
+            status:        "pending",
+          });
+      }
+    }).catch(() => {});
 
     return;
   }

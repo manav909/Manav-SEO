@@ -107,5 +107,11 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/task-engine",
+      "schedule": "0 6 * * *"
+    }
   ]
 }
