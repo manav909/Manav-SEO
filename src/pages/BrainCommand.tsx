@@ -331,7 +331,15 @@ export default function BrainCommand() {
     setMiError("");
     const data = await miCall("build_persona");
     if (data?.error) { setMiError(data.error); return; }
-    if (data?.persona) { setMiPersona(data.persona); setMiSection("persona"); }
+    if (data?.persona) {
+      // Merge server-side provenance into persona for transparent display
+      const personaWithProvenance = {
+        ...data.persona,
+        _provenance: data._provenance || null,
+      };
+      setMiPersona(personaWithProvenance);
+      setMiSection("persona");
+    }
   };
 
   const suggestGoals = async () => {
@@ -742,6 +750,7 @@ export default function BrainCommand() {
                 <MarketPersonaBriefing
                   persona={miPersona}
                   goals={miGoals}
+                  project={projects.find(p => p.id === selProj) || null}
                   onAskBrain={askBrain}
                   crossProjectCount={miPatterns?.industryCount || 0}
                 />

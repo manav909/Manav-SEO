@@ -111,13 +111,41 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     project = data;
   }
 
-  const industry: string    = body.industry || project?.industry || "digital services";
-  const keywords: string[]  = body.keywords  || project?.keywords  || [];
+  const industry: string      = body.industry || project?.industry || "";
+  const keywords: string[]    = body.keywords  || project?.keywords  || [];
   const competitors: string[] = body.competitors || project?.competitors || [];
-  const company: string     = body.company || project?.name || "";
-  const url: string         = body.url || project?.url || "";
-  const goals: string       = body.goals || (project?.goals ? String(project.goals) : "");
-  const region: string      = [project?.city, project?.country].filter(Boolean).join(", ");
+  const company: string       = body.company || project?.name || "";
+  const url: string           = body.url || project?.url || "";
+  const goals: string         = body.goals || (project?.goals ? String(project.goals) : "");
+  const region: string        = [project?.city, project?.country].filter(Boolean).join(", ");
+
+  /* ── Build explicit data provenance record ── */
+  /* This tells Claude (and the UI) exactly what was provided vs missing */
+  const dataProvided: string[] = [];
+  const dataAssumed: string[]  = [];
+
+  if (company)              dataProvided.push(`Company name: "${company}"`);
+  else                      dataAssumed.push("Company name: not provided — analysis is generic for the industry");
+
+  if (industry)             dataProvided.push(`Industry: "${industry}"`);
+  else                      dataAssumed.push("Industry: NOT PROVIDED — Claude will infer from context or use general digital services; accuracy will be low");
+
+  if (url)                  dataProvided.push(`Website URL: ${url}`);
+  else                      dataAssumed.push("Website URL: not provided — cannot analyse actual site content or positioning");
+
+  if (keywords.length)      dataProvided.push(`Target keywords (${keywords.length}): ${keywords.slice(0,6).join(", ")}`);
+  else                      dataAssumed.push("Target keywords: none provided — search behavior analysis will be based on industry patterns only");
+
+  if (competitors.length)   dataProvided.push(`Competitors (${competitors.length}): ${competitors.slice(0,4).join(", ")}`);
+  else                      dataAssumed.push("Competitors: none provided — competitive analysis will use typical industry alternatives");
+
+  if (goals)                dataProvided.push(`Business goals: provided`);
+  else                      dataAssumed.push("Business goals: not provided — recommendations will be based on typical industry objectives");
+
+  if (region)               dataProvided.push(`Market region: ${region}`);
+  else                      dataAssumed.push("Market region: not specified — defaulting to global/English-speaking market patterns");
+
+  const effectiveIndustry = industry || "the industry (not specified — you must state this assumption clearly)";
 
   /* ═══════════════════════════════════════════
      ACTION: build_persona
@@ -142,86 +170,102 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const prompt = `You are a world-class market researcher and buyer psychologist.
-Your task: build the most detailed, accurate buyer persona for a business in the ${industry} industry.
+Your task: build a detailed, HONEST buyer persona.
 
-BUSINESS CONTEXT:
+CRITICAL RULES — never break these:
+1. NEVER invent specific statistics, percentages, or numbers you don't know (e.g. "73% of buyers..."). Say "many", "most", "typically" instead.
+2. CLEARLY distinguish between what you know from the provided data vs what you are inferring from industry knowledge.
+3. If the industry is vague or not provided, say so explicitly in data_intelligence.
+4. Your analysis must be directly usable by a digital marketing agency presenting to a client.
+5. Every insight must be honest — if you are uncertain, say so rather than sounding more confident than you are.
+
+═══ WHAT WAS PROVIDED TO THIS ANALYSIS ═══
+${dataProvided.length > 0 ? dataProvided.map(d => `✓ ${d}`).join("\n") : "✗ No project data provided — analysis based entirely on industry pattern knowledge"}
+
+═══ WHAT WAS NOT PROVIDED (ASSUMPTIONS REQUIRED) ═══
+${dataAssumed.length > 0 ? dataAssumed.map(d => `⚠ ${d}`).join("\n") : "All key data was provided."}
+
+═══ CROSS-PROJECT INDUSTRY INTELLIGENCE ═══
+${industryWisdom ? `From ${industryWisdom.split("\n").length} learnings across other projects in this industry:\n${industryWisdom}` : "No prior cross-project data exists for this industry — this will be the pioneer analysis."}
+
+═══ BUILD THE PERSONA FOR ═══
+Industry: ${effectiveIndustry}
 Company: ${company || "not specified"}
-Website: ${url || "not specified"}
-Industry: ${industry}
-Region/Market: ${region || "global"}
-Keywords they want to rank for: ${keywords.slice(0, 8).join(", ") || "not specified"}
-Competitors: ${competitors.slice(0, 5).join(", ") || "not specified"}
-Current goals: ${goals || "not specified"}
+Region/Market: ${region || "not specified — use global/English-speaking market patterns"}
+Keywords: ${keywords.slice(0, 8).join(", ") || "none provided"}
+Competitors: ${competitors.slice(0, 5).join(", ") || "none provided"}
+Goals: ${goals || "not specified"}
 
-EXISTING BRAIN INTELLIGENCE (from other projects in this industry):
-${industryWisdom || "No prior data — pioneer analysis."}
-
-Build a persona based on your deep understanding of:
-1. WHO actually searches for and buys ${industry} services/products
-2. What triggers their search (the moment that makes them look)
-3. How they evaluate options (what signals trust vs. distrust)
-4. What language they use vs. what the business uses (the gap)
-5. What content formats they trust
-6. What their journey looks like from awareness → decision
-7. What the market looks like from a buyers perspective
-8. What they WISH a business would tell them but almost none do
-
-Return ONLY valid JSON, no markdown, no text outside JSON:
+Return ONLY valid JSON. Be specific where you have data. Be honest where you are inferring.
 
 {
-  "persona_name": "<name that captures the archetype, e.g. 'The Cautious Procurement Lead'>",
+  "data_intelligence": {
+    "industry_analyzed": "<exact industry name you analyzed — be specific, e.g. 'B2B SaaS project management software' not just 'software'>",
+    "market_region": "<specific market region or 'Global English-speaking markets' if not specified>",
+    "company_analyzed": "<company name or 'Not specified'>",
+    "analysis_generated": "${new Date().toISOString()}",
+    "data_completeness": "<high|medium|low — based on how much project data was provided>",
+    "data_completeness_reason": "<1 sentence: why this completeness rating — e.g. 'Industry, keywords, and competitors provided but no website URL or current goals'>",
+    "what_was_provided": ${JSON.stringify(dataProvided)},
+    "what_was_assumed": ${JSON.stringify(dataAssumed)},
+    "cross_project_learnings_used": ${industryWisdom ? `"${industryWisdom.split("\n").length} learnings from existing projects in this industry"` : `"None — no prior data exists for this industry"`},
+    "analysis_basis": "<1-2 sentences: what this entire analysis is grounded in — e.g. 'Industry keyword data provided by client, supplemented by buyer psychology patterns from the ${effectiveIndustry} market'>",
+    "recency_note": "<honest statement about how current this analysis is — e.g. 'Based on established market patterns; does not reflect events after mid-2025. Validate search queries against live Google data before client presentation.'>",
+    "what_would_improve_accuracy": ["<specific thing to add>", "<second thing>"]
+  },
+  "persona_name": "<archetype name — e.g. 'The Cautious Procurement Lead'>",
   "persona_archetype": "<B2B Decision Maker | B2C Impulse Buyer | Research-First Professional | ...>",
-  "market_context": "<2-3 sentences: what is the market reality for buyers in this industry right now>",
+  "market_context": "<2-3 sentences: market reality for buyers in this industry right now — be specific to the industry provided>",
   "buyer_profile": {
-    "who_they_are": "<specific description of the person — role, situation, mindset>",
+    "who_they_are": "<specific description — role, situation, mindset>",
     "triggers_that_start_the_search": ["<trigger 1>", "<trigger 2>", "<trigger 3>"],
-    "research_depth": "<do they spend 10 minutes or 3 weeks researching>",
-    "decision_timeline": "<hours | days | weeks | months>",
-    "budget_mindset": "<price-sensitive | value-focused | premium-seeking | budget-first>",
-    "decision_authority": "<sole decider | committee | influencer | approver>"
+    "research_depth": "<how long they research — be specific e.g. '2-4 weeks' not just 'weeks'>",
+    "decision_timeline": "<realistic timeline — e.g. 'Typically 3-8 weeks from first search to contract'>",
+    "budget_mindset": "<how they think about price — be specific>",
+    "decision_authority": "<who makes the call — be specific to the industry>"
   },
   "psychology": {
-    "primary_pain_points": ["<pain 1>", "<pain 2>", "<pain 3>", "<pain 4>"],
-    "deepest_fear": "<the one thing they most fear getting wrong>",
-    "decision_triggers": ["<what finally makes them act>"],
-    "what_they_actually_want": "<beyond the product — the outcome, the feeling, the transformation>",
-    "objections_they_raise": ["<objection 1>", "<objection 2>", "<objection 3>"]
+    "primary_pain_points": ["<specific, honest pain point — not generic>", "<pain 2>", "<pain 3>", "<pain 4>"],
+    "deepest_fear": "<the one thing they most fear — be honest if this varies by segment>",
+    "decision_triggers": ["<what finally makes them act — be specific>"],
+    "what_they_actually_want": "<the real outcome beyond the product>",
+    "objections_they_raise": ["<real objection 1>", "<real objection 2>", "<real objection 3>"]
   },
   "search_behavior": {
-    "how_they_search": "<describe the typical search journey from first thought to converted>",
-    "first_search_queries": ["<what they type first>", "<second search>", "<third search>"],
-    "refinement_queries": ["<when they narrow down>"],
-    "comparison_queries": ["<when they're nearly decided>"],
-    "intent_shift": "<how their intent evolves from awareness to decision>"
+    "how_they_search": "<describe the typical journey — if keywords were provided, reference them; if not, use industry patterns>",
+    "first_search_queries": ["<realistic query 1>", "<realistic query 2>", "<realistic query 3>"],
+    "refinement_queries": ["<query when narrowing down>", "<second refinement>"],
+    "comparison_queries": ["<comparison query>", "<vs query>"],
+    "intent_shift": "<how intent evolves — be specific>"
   },
   "language_patterns": {
-    "words_they_use": ["<terms from their world>"],
-    "words_that_convert": ["<terms that resonate, trigger action>"],
+    "words_they_use": ["<real terms from their world>"],
+    "words_that_convert": ["<terms that resonate — grounded in the industry>"],
     "words_that_repel": ["<jargon or terms that create distance>"],
-    "questions_they_type_into_google": ["<actual question-format queries>"]
+    "questions_they_type_into_google": ["<real question-format queries>"]
   },
   "trust_signals": {
-    "what_builds_immediate_trust": ["<signal 1>", "<signal 2>"],
-    "proof_formats_they_need": ["<case studies | numbers | testimonials | certifications | ...>"],
-    "what_raises_red_flags": ["<what makes them leave immediately>"],
-    "content_they_share_or_save": "<what type of content is valuable enough to save>"
+    "what_builds_immediate_trust": ["<specific trust signal>", "<second signal>"],
+    "proof_formats_they_need": ["<case studies | numbers | testimonials | certifications — be specific to industry>"],
+    "what_raises_red_flags": ["<specific red flag>", "<second red flag>"],
+    "content_they_share_or_save": "<what type of content — be specific>"
   },
   "competitive_awareness": {
-    "alternatives_they_consider": ["<alt 1>", "<alt 2>"],
-    "why_they_choose_one_over_another": "<the real deciding factor>",
+    "alternatives_they_consider": ["<realistic alternative 1>", "<realistic alternative 2>"],
+    "why_they_choose_one_over_another": "<the real deciding factor — be honest, may be price, trust, speed>",
     "why_they_leave_and_try_someone_else": "<the main switching trigger>"
   },
   "seo_content_implications": {
-    "content_gaps_this_persona_needs_filled": ["<gap 1>", "<gap 2>", "<gap 3>"],
-    "ideal_page_types": ["<page type 1>", "<page type 2>"],
+    "content_gaps_this_persona_needs_filled": ["<specific gap tied to buyer needs>", "<gap 2>", "<gap 3>"],
+    "ideal_page_types": ["<specific page type 1>", "<specific page type 2>"],
     "keyword_intent_map": [
-      {"intent": "<awareness>", "example_keywords": ["..."]},
-      {"intent": "<consideration>", "example_keywords": ["..."]},
-      {"intent": "<decision>", "example_keywords": ["..."]}
+      {"intent": "awareness", "example_keywords": ["<realistic keyword>", "<keyword 2>"], "basis": "<provided keywords | industry inference>"},
+      {"intent": "consideration", "example_keywords": ["<keyword>", "<keyword>"], "basis": "<provided keywords | industry inference>"},
+      {"intent": "decision", "example_keywords": ["<keyword>", "<keyword>"], "basis": "<provided keywords | industry inference>"}
     ],
-    "format_recommendations": ["<long-form guide | FAQ page | comparison page | ...>"]
+    "format_recommendations": ["<specific format recommendation with reason>"]
   },
-  "manav_intelligence_note": "<1-2 sentences: the single most important insight from this analysis that most SEO agencies miss>"
+  "manav_intelligence_note": "<the single most important insight — must be specific to this industry/company, not a generic statement. If data was limited, say so.>"
 }`;
 
     const response = await client.messages.create({
@@ -268,7 +312,12 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
       } catch (_e) { /* non-fatal */ }
     }
 
-    return res.status(200).json({ success: true, persona });
+    return res.status(200).json({
+      success: true,
+      persona,
+      // Pass provenance to UI so it can display exactly what was used
+      _provenance: { dataProvided, dataAssumed, industry: effectiveIndustry, company, region, keywordCount: keywords.length, competitorCount: competitors.length },
+    });
   }
 
   /* ═══════════════════════════════════════════

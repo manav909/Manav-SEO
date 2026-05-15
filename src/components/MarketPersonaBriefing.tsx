@@ -1,20 +1,21 @@
 /**
  * ◈ MARKET INTELLIGENCE BRIEFING — Manav Brain
  *
- * An interactive, role-aware intelligence briefing that replaces the plain
- * text persona dump. Features:
- *  - Role switcher (Client / SEO Director / CMO / Agency)
- *  - Confidence scores + data basis on every section
- *  - Expandable deep-dive cards
- *  - Predictive prompts — expert vs native, changes by role
- *  - One-click to ask Brain (fires into Brain chat)
- *  - Trust signals and credibility layer on the meta level
- *  - Progressive disclosure — most important insight first, details on demand
+ * Design principles (hardcoded into this file — never change):
+ *  1. NEVER show a confidence score unless it is derived from real data
+ *  2. ALWAYS show what data was provided vs what was assumed
+ *  3. ALWAYS show the industry, company, and region being analyzed
+ *  4. ALWAYS show when the analysis was generated and what it's based on
+ *  5. Every section labels its basis: provided data | industry pattern | AI inference
+ *  6. Presentation-ready: a client can see this and trust it immediately
+ *  7. Interactive: prompts that fire into Brain chat, expandable sections
+ *  8. Role-aware: Client / SEO Director / CMO / Agency each see their angle
  */
 import React, { useState } from "react";
 import {
   ChevronDown, ChevronRight, Zap, Brain, Target, Shield, Search,
-  MessageSquare, TrendingUp, AlertTriangle, Eye, Star, Cpu,
+  MessageSquare, TrendingUp, AlertTriangle, Eye, CheckCircle,
+  XCircle, AlertCircle, Clock, Database, Cpu, Info,
 } from "lucide-react";
 
 /* ─────────────────────── Types ─────────────────────── */
@@ -23,527 +24,679 @@ export type PersonaRole = "client" | "seo_director" | "cmo" | "agency";
 interface BriefingProps {
   persona: any;
   goals?: any;
-  onAskBrain: (prompt: string) => void; // fires prompt into Brain chat
-  crossProjectCount?: number;           // how many other projects informed this
+  project?: any;                         // raw project record from DB
+  onAskBrain: (prompt: string) => void;
+  crossProjectCount?: number;
+}
+
+/* ─────────────────────── Helpers ─────────────────────── */
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  } catch { return iso; }
+}
+
+function completenessColor(level?: string): string {
+  if (!level) return "#6366f1";
+  if (level === "high")   return "#10b981";
+  if (level === "medium") return "#f59e0b";
+  return "#ef4444";
 }
 
 /* ─────────────────────── Role config ─────────────────────── */
 const ROLES: Record<PersonaRole, { label: string; color: string; icon: any; tagline: string }> = {
-  client:       { label: "Client View",    color: "#10b981", icon: Eye,       tagline: "What your buyers actually want" },
-  seo_director: { label: "SEO Director",   color: "#6366f1", icon: Search,    tagline: "Keyword intent & content strategy" },
-  cmo:          { label: "CMO",            color: "#f59e0b", icon: TrendingUp, tagline: "Positioning & market opportunity" },
-  agency:       { label: "Agency Brief",   color: "#06b6d4", icon: Cpu,       tagline: "Full intelligence for client presentation" },
-};
-
-/* ─────────────────────── Confidence per section ─────────────────────── */
-const CONFIDENCE: Record<string, { score: number; basis: string; icon: any }> = {
-  psychology:       { score: 88, basis: "Universal buyer psychology + pattern recognition", icon: Brain },
-  search_behavior:  { score: 93, basis: "Search intent modeling + query journey analysis",  icon: Search },
-  language:         { score: 91, basis: "Linguistic conversion pattern research",            icon: MessageSquare },
-  trust:            { score: 84, basis: "Industry trust signal frameworks",                  icon: Shield },
-  competitive:      { score: 77, basis: "Competitive market gap analysis",                   icon: Target },
-  seo_implications: { score: 89, basis: "SEO content strategy + intent mapping",            icon: Zap },
+  client:       { label: "Client View",    color: "#10b981", icon: Eye,       tagline: "What your buyers actually want — plain language" },
+  seo_director: { label: "SEO Director",   color: "#6366f1", icon: Search,    tagline: "Keyword intent, content architecture, E-E-A-T" },
+  cmo:          { label: "CMO",            color: "#f59e0b", icon: TrendingUp, tagline: "Positioning, market opportunity, campaign strategy" },
+  agency:       { label: "Agency Brief",   color: "#06b6d4", icon: Cpu,       tagline: "Full intelligence brief — client presentation ready" },
 };
 
 /* ─────────────────────── Predictive prompts per section × role ─────────────────────── */
-const PROMPTS: Record<string, Record<PersonaRole, { expert: string; quick: string }[]>> = {
+const PROMPTS: Record<string, Record<PersonaRole, { label: string; prompt: string }[]>> = {
   psychology: {
     client: [
-      { quick: "How do I address buyer fears on my website?",               expert: "What messaging architecture converts this persona's deepest fear into an immediate trust signal on the homepage?" },
-      { quick: "What should I say in my sales pitch?",                       expert: "Map the objection sequence this buyer raises chronologically and define the counter-narrative for each stage." },
+      { label: "How to address buyer fears on my website",       prompt: "Based on the market persona, write specific homepage copy that addresses the buyer's deepest fear and turns it into a trust signal. Be direct — no generic advice." },
+      { label: "What to say in sales calls for this buyer",      prompt: "Using the buyer psychology from the market persona, write a sales call script structure that handles the main objections in sequence. What do I say when they raise each one?" },
     ],
     seo_director: [
-      { quick: "Map pain points to keyword clusters",                        expert: "Which pain points correlate with high-commercial-intent queries and what is the estimated traffic opportunity per cluster?" },
-      { quick: "Which objections need dedicated landing pages?",             expert: "Design a topic authority architecture where each primary pain point is an anchor page with supporting satellite content." },
+      { label: "Map pain points to keyword clusters",            prompt: "Using the market persona psychology, build a keyword cluster map where each primary pain point becomes an anchor page. Show the cluster structure, estimated intent, and content type for each." },
+      { label: "Which objections need dedicated landing pages",   prompt: "From the persona objections, identify which ones represent high-intent search queries and need dedicated landing pages. What should each page contain and target?" },
     ],
     cmo: [
-      { quick: "What's our positioning around the deepest fear?",            expert: "Define the messaging platform where this persona's primary fear becomes our brand's competitive differentiator." },
-      { quick: "What campaign angle wins with this buyer?",                   expert: "Build a full-funnel creative strategy where emotional triggers map to specific campaign moments and channels." },
+      { label: "Messaging framework from the deepest fear",      prompt: "Using the persona's deepest fear as the positioning anchor, write a brand messaging platform: headline, value proposition, proof statement, and CTA — all grounded in this specific fear." },
+      { label: "Full-funnel campaign strategy for this buyer",   prompt: "Design a full-funnel campaign strategy based on this buyer's emotional journey. What message hits them at awareness? What converts at decision? What retains them?" },
     ],
     agency: [
-      { quick: "Build a buyer psychology executive summary",                  expert: "Synthesize this persona's psychology into a client-ready strategic narrative: fear → trigger → journey → conversion signal." },
-      { quick: "What's the creative brief for this buyer?",                   expert: "Write a psychology-backed creative brief that defines tone, message hierarchy, and emotional journey for all content." },
+      { label: "Client-ready strategic narrative from psychology", prompt: "Turn the buyer psychology into a client-presentation narrative: market reality → buyer mindset → strategic implication → our recommendation. Write it as an executive summary slide." },
+      { label: "Creative brief based on buyer psychology",        prompt: "Write a creative brief for a campaign targeting this buyer persona. Include: tone of voice, key message, emotional hook, proof requirements, and call to action format." },
     ],
   },
   search_behavior: {
     client: [
-      { quick: "What should I rank for first?",                              expert: "Which keywords represent the highest-intent, lowest-competition entry point for this buyer's search journey?" },
-      { quick: "How long do buyers research before contacting me?",          expert: "Map the research timeline and identify the 3 critical decision moments where content can accelerate the journey." },
+      { label: "What should I rank for first",                   prompt: "Based on the buyer's search journey in the persona, tell me exactly which 3-5 keywords to prioritise first. Why those, and what content do I need to rank for them?" },
+      { label: "How long until buyers find me organically",      prompt: "Using the buyer search journey from the persona, realistically explain the timeline from 'buyer starts searching' to 'they contact us' — and where SEO can shorten that timeline." },
     ],
     seo_director: [
-      { quick: "Build a full keyword cluster for this buyer journey",         expert: "Create a 3-tier keyword architecture (awareness → consideration → decision) with estimated search volumes and content types." },
-      { quick: "Which queries convert at the highest rate?",                  expert: "Identify bottom-of-funnel queries with strongest purchase intent signals and design the conversion page architecture." },
+      { label: "Full keyword architecture for the buyer journey", prompt: "Using the persona's search behavior, build a 3-tier keyword architecture: awareness tier (informational), consideration tier (comparative), decision tier (transactional). Include content format for each tier." },
+      { label: "Which queries convert at highest rate",           prompt: "From the persona's comparison and decision-stage queries, identify the top 5 conversion-intent keywords. What landing page structure maximises conversion for each?" },
     ],
     cmo: [
-      { quick: "Where in the buyer journey are we invisible?",               expert: "Conduct a buyer journey visibility audit: where does this persona search and where are we absent from the conversation?" },
-      { quick: "Paid vs organic priority based on this intent data?",         expert: "Define budget allocation logic between paid and organic based on intent stage distribution and competitive density." },
+      { label: "Where in the buyer journey are we invisible",    prompt: "Based on the search journey in the persona, run a buyer journey visibility audit: at which stages is a typical business in this industry absent from the conversation? What's the cost of that gap?" },
+      { label: "Paid vs organic strategy based on intent data",  prompt: "Using the persona's intent map, recommend a paid vs organic budget split with reasoning. Which stages need paid support and why?" },
     ],
     agency: [
-      { quick: "Design the topical authority map for this client",            expert: "Build a full topical authority roadmap: pillar topics, cluster architecture, publishing sequence, and authority acceleration strategy." },
-      { quick: "What quick wins exist in the awareness phase?",               expert: "Identify informational keywords with featured snippet opportunities where this client can achieve fast visibility." },
+      { label: "Topical authority roadmap for this client",      prompt: "Using the persona's search journey, build a topical authority roadmap: pillar topics, supporting cluster content, publishing sequence, and the authority signal each piece builds." },
+      { label: "Quick wins in the awareness phase",              prompt: "From the persona's first-search queries, identify the 3 fastest-to-rank opportunities with featured snippet or PAA potential. What content do we create first?" },
     ],
   },
   language: {
     client: [
-      { quick: "Rewrite my homepage using their language",                    expert: "Apply the conversion vocabulary to redesign the above-fold messaging hierarchy: headline → subhead → CTA." },
-      { quick: "What words am I using that push buyers away?",                expert: "Audit our current copy against the repel-word list and provide direct replacement copy using the conversion vocabulary." },
+      { label: "Rewrite my homepage headline using their words", prompt: "Using the conversion vocabulary from the market persona, write 5 homepage headline options. Each must use the words buyers actually use, address a specific pain point, and avoid the repel words listed." },
+      { label: "Audit my current copy against repel words",      prompt: "I want to audit my current website copy. Based on the persona's repel words and buyer language, what questions should I ask to identify copy that's pushing buyers away?" },
     ],
     seo_director: [
-      { quick: "Generate title tags using buyer language",                    expert: "Create a title tag framework using high-resonance query language that matches buyer search vocabulary and boosts CTR." },
-      { quick: "Which phrases need to be in meta descriptions?",              expert: "Build a meta description template system using the exact trigger phrases that move buyers from search to click." },
+      { label: "Title tag framework using buyer language",        prompt: "Using the persona's conversion vocabulary and Google questions, write a title tag framework for each intent stage. Include the exact buyer language patterns and keyword placement rules." },
+      { label: "Meta description templates for each intent",     prompt: "Write meta description templates for awareness, consideration, and decision pages — using the persona's conversion vocabulary and addressing the psychological triggers identified." },
     ],
     cmo: [
-      { quick: "Build a brand vocabulary guide from this",                    expert: "Develop a brand language system: approved vocabulary, banned terms, tone-of-voice rules, and message hierarchy by channel." },
-      { quick: "What A/B test should we run first on language?",             expert: "Design a 3-variant messaging test using conversion words vs repel words vs industry standard — with measurement framework." },
+      { label: "Brand language guide from this persona",         prompt: "Create a brand language guide based on this persona's language patterns: approved vocabulary, banned terms, tone rules, and message hierarchy by channel and audience." },
+      { label: "A/B test design for conversion vocabulary",      prompt: "Design a 3-variant A/B test using this persona's language patterns. What's the hypothesis, what are the 3 variants, and how do we measure which converts best?" },
     ],
     agency: [
-      { quick: "Create a content brief using this buyer's language",          expert: "Build a content brief template with mandatory language elements, banned terms, and conversion-intent requirements per page type." },
-      { quick: "What's the headline formula for this buyer?",                 expert: "Define the headline architecture formula that maps buyer language patterns to conversion intent for each funnel stage." },
+      { label: "Content brief template using buyer language",    prompt: "Create a content brief template that uses this persona's language patterns as mandatory requirements. Include: required vocabulary, banned terms, tone guide, and conversion intent checklist." },
+      { label: "Headline formula for each funnel stage",         prompt: "Write a headline formula for each funnel stage based on the persona's language patterns. What's the structure, what emotional trigger does each formula activate, and show 2 examples each." },
     ],
   },
   trust: {
     client: [
-      { quick: "What proof do I need to close more deals?",                  expert: "Define the minimum proof stack required per stage of the buyer journey to eliminate friction and accelerate decision." },
-      { quick: "What makes buyers leave my site immediately?",                expert: "Map the specific red flags against our current website and provide the exact copy/design changes to eliminate each." },
+      { label: "Minimum proof I need to close more deals",       prompt: "From the trust signals in the persona, tell me exactly what proof I need on my website to eliminate the top 3 buyer objections. What format, where on the page, and what it should say." },
+      { label: "Why buyers are leaving my site immediately",     prompt: "Using the red flags from the trust signals section, which ones are most commonly found on websites in this industry? How do I check if I have them and what do I change?" },
     ],
     seo_director: [
-      { quick: "Which trust signals affect E-E-A-T for this industry?",      expert: "Map trust signal requirements to specific E-E-A-T criteria and define the content assets that satisfy each signal." },
-      { quick: "What schema markup matches buyer proof needs?",               expert: "Define a schema implementation priority list that aligns structured data types with this persona's proof format preferences." },
+      { label: "Trust signals that affect E-E-A-T ranking",      prompt: "Map the trust signals from this persona to specific E-E-A-T criteria (Experience, Expertise, Authoritativeness, Trustworthiness). Which ones have the most impact on ranking in this industry?" },
+      { label: "Schema markup for buyer proof requirements",     prompt: "Based on the proof formats this persona requires, recommend specific schema markup types that signal these trust elements to Google. Prioritise by impact." },
     ],
     cmo: [
-      { quick: "What proof assets do we build this quarter?",                 expert: "Prioritise proof asset production by ROI potential: which trust signals unlock the most buyer segments and reduce longest objections?" },
-      { quick: "Design a trust-first content calendar",                       expert: "Build a 90-day content calendar where every piece advances at least one trust signal across the buyer's evaluation criteria." },
+      { label: "Proof asset production roadmap for Q1",          prompt: "From the trust signals in the persona, build a Q1 proof asset production plan. What do we create, in what order, and what business impact does each asset unlock?" },
+      { label: "Trust-first content calendar for 90 days",       prompt: "Design a 90-day content calendar where every piece advances at least one trust signal from the persona. Include content type, target trust signal, and where it lives on the site." },
     ],
     agency: [
-      { quick: "Audit trust gap vs competitors",                              expert: "Run a trust signal competitive audit: where does this client's current trust stack underperform vs buyer expectations and competitors?" },
-      { quick: "What's the trust gap competitors haven't solved?",            expert: "Identify the trust vacuum in this market — what proof signal does no competitor own yet — and design an ownership strategy." },
+      { label: "Trust audit framework for the client",           prompt: "Using the trust signals from this persona, create a trust audit checklist I can use with any client in this industry. Score each element present/absent and show what the impact of each gap is." },
+      { label: "The trust gap no competitor has solved yet",     prompt: "Based on this persona's trust requirements, identify which proof signals are typically missing across competitors in this industry — the trust vacuum we can own and build authority around." },
     ],
   },
   competitive: {
     client: [
-      { quick: "How do I stand out from competitors?",                        expert: "Define the unique positioning angle that no competitor currently owns based on this buyer's unmet decision criteria." },
-      { quick: "What makes buyers switch to someone else?",                   expert: "Map the switching trigger sequence and design retention content that preemptively addresses each defection risk." },
+      { label: "How to stand out from my competitors",           prompt: "Using the competitive awareness section of the persona, tell me exactly how to position differently. What do I say that no competitor is saying, and why will buyers choose me?" },
+      { label: "What makes buyers switch providers",             prompt: "From the switching trigger in the persona, design a retention strategy and an acquisition strategy. How do I stop losing clients and win clients from competitors?" },
     ],
     seo_director: [
-      { quick: "Which competitor content gaps can we own in 90 days?",       expert: "Identify high-volume keyword clusters competitors rank for but fail to serve well — and define the content angle to outrank." },
-      { quick: "Build a competitive content matrix",                          expert: "Create a 3×3 competitive matrix: keyword ownership × content quality × buyer intent coverage — and mark our entry points." },
+      { label: "Competitor content gaps I can own in 90 days",  prompt: "Using the alternatives buyers consider from the persona, identify keyword clusters where competitors rank but fail to serve the buyer well. What content can we create to outrank them in 90 days?" },
+      { label: "Competitive content matrix",                     prompt: "Build a competitive content matrix based on the persona: columns are intent stages, rows are competitors. Where are the gaps? Where do we have a realistic path to rank above them?" },
     ],
     cmo: [
-      { quick: "What defensible niche does this persona need?",               expert: "Define the market microposition — a niche specific enough to dominate but large enough to scale — and validate with search demand." },
-      { quick: "Design our positioning to own the switching trigger",         expert: "Build a switching-trigger campaign strategy: identify when buyers are most likely to switch and intercept with the right message." },
+      { label: "The defensible niche based on buyer decision",   prompt: "Using the persona's deciding factor and switching trigger, identify a market microposition specific enough to dominate but large enough to scale. Validate with the search demand data from the persona." },
+      { label: "Positioning to own the switching trigger",       prompt: "Design a campaign that intercepts buyers at the moment they're most likely to switch providers. What message do we show, on what channel, and what proof do we lead with?" },
     ],
     agency: [
-      { quick: "Top 3 competitive opportunities from this analysis",          expert: "Prioritise competitive attack vectors by: (1) speed to rank, (2) buyer impact, (3) competitor weakness depth." },
-      { quick: "Fastest path to market differentiation?",                     expert: "Design a differentiation sprint: 3 actions in 60 days that create measurable competitive distance without requiring domain authority." },
+      { label: "Top 3 competitive opportunities ranked by ROI",  prompt: "From the persona's competitive analysis, prioritise the top 3 competitive attack vectors by: speed to execute, buyer impact, and depth of competitor weakness. Give a clear recommendation for each." },
+      { label: "Differentiation sprint — 60 days",               prompt: "Design a 60-day differentiation sprint based on this persona's competitive landscape. 3 specific actions that create measurable competitive distance without requiring high domain authority." },
     ],
   },
   seo_implications: {
     client: [
-      { quick: "What content should I create first?",                         expert: "Define the content creation priority sequence based on buyer journey stage, search volume, and competitive difficulty." },
-      { quick: "What pages does my site need?",                               expert: "Design the minimum viable content architecture that satisfies this persona's full research journey from awareness to conversion." },
+      { label: "What content to create first",                   prompt: "From the content gaps and keyword intent map in the persona, tell me exactly which 3 pieces of content to create first, why, and what each should contain. No generic advice." },
+      { label: "What pages my site needs",                       prompt: "Design the minimum viable content architecture for my site based on this buyer's full research journey. What pages, in what structure, covering what topics — and what's the priority order?" },
     ],
     seo_director: [
-      { quick: "Map keyword intent to content types",                         expert: "Build a content type specification matrix: for each intent category, define format, depth, structure, and conversion mechanism." },
-      { quick: "Design the internal linking architecture",                     expert: "Create an internal linking strategy where topical authority flows from pillar pages through clusters to conversion pages." },
+      { label: "Content type specification by intent",           prompt: "Using the intent map from the persona, specify the exact content type, format, depth, and conversion mechanism for each intent stage. Include internal linking structure between them." },
+      { label: "Internal linking architecture for topical depth", prompt: "Design the internal linking structure based on the persona's content gaps and intent map. Which pages link to which, what anchor text patterns use the buyer's language, and what does this achieve?" },
     ],
     cmo: [
-      { quick: "What's the content ROI priority for this quarter?",           expert: "Rank content investment by projected revenue impact: which content type × keyword cluster × buyer stage combination has highest ROI?" },
-      { quick: "How does content support the sales cycle?",                   expert: "Map content pieces to specific sales cycle moments and define how each piece reduces time-to-close." },
+      { label: "Content investment ROI priority this quarter",   prompt: "Rank the content gaps from the persona by projected revenue impact. Which content type × keyword cluster × buyer stage combination has the highest short-term ROI? Include reasoning." },
+      { label: "How content maps to sales cycle reduction",      prompt: "Map each content gap from the persona to a specific stage of the sales cycle. Which piece, if created, would most reduce time-to-close and why?" },
     ],
     agency: [
-      { quick: "Build the full content brief for this persona",               expert: "Create a persona-driven content specification: format requirements, word count rationale, E-E-A-T signals, and conversion architecture per page type." },
-      { quick: "What's the 6-month content roadmap?",                        expert: "Design a 6-month content roadmap with publishing sequence, internal linking plan, authority targets, and measurement milestones." },
+      { label: "Full content specification for this persona",    prompt: "Create a persona-driven content specification sheet: for each content gap, write the format, word count rationale, E-E-A-T signals required, conversion architecture, and success metric." },
+      { label: "6-month content roadmap with sequence",          prompt: "Design a 6-month content roadmap based on this persona. Include: publishing sequence, internal linking plan, authority targets per phase, and measurement milestones." },
     ],
   },
 };
 
 /* ─────────────────────── Sub-components ─────────────────────── */
 
-function ConfidencePill({ section }: { section: string }) {
-  const c = CONFIDENCE[section];
-  if (!c) return null;
-  const color = c.score >= 90 ? "#10b981" : c.score >= 80 ? "#6366f1" : "#f59e0b";
+function BasisTag({ basis }: { basis: "provided" | "inferred" | "industry" }) {
+  const cfg = {
+    provided: { color: "#10b981", bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", label: "✓ Project data" },
+    inferred: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.2)", label: "~ Industry pattern" },
+    industry: { color: "#6366f1", bg: "rgba(99,102,241,0.08)", border: "rgba(99,102,241,0.2)", label: "◦ AI synthesis" },
+  }[basis];
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ display: "flex", gap: 2 }}>
-        {[...Array(5)].map((_, i) => (
-          <div key={i} style={{
-            width: 5, height: 5, borderRadius: "50%",
-            background: i < Math.round(c.score / 20) ? color : "rgba(255,255,255,0.08)",
-          }}/>
-        ))}
-      </div>
-      <span style={{ fontSize: 7, fontFamily: "monospace", color, fontWeight: 700 }}>{c.score}%</span>
-      <span style={{ fontSize: 7, color: "rgba(255,255,255,0.2)", fontFamily: "monospace" }}>confidence</span>
-    </div>
+    <span style={{ fontSize: 7, fontFamily: "monospace", color: cfg.color,
+      background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 4, padding: "1px 5px" }}>
+      {cfg.label}
+    </span>
   );
 }
 
-function DataBasis({ section }: { section: string }) {
-  const c = CONFIDENCE[section];
-  if (!c) return null;
-  return (
-    <div style={{ fontSize: 7, color: "rgba(255,255,255,0.18)", fontFamily: "monospace", marginTop: 2 }}>
-      ◦ {c.basis}
-    </div>
-  );
-}
-
-function SectionHeader({
-  title, section, expanded, onToggle, icon: Icon
-}: { title: string; section: string; expanded: boolean; onToggle: () => void; icon: any }) {
-  const c = CONFIDENCE[section];
-  const dotColor = c ? (c.score >= 90 ? "#10b981" : c.score >= 80 ? "#6366f1" : "#f59e0b") : "#6366f1";
+function SectionHeader({ title, icon: Icon, color, expanded, onToggle, basis }: {
+  title: string; icon: any; color: string; expanded: boolean;
+  onToggle: () => void; basis: "provided" | "inferred" | "industry";
+}) {
   return (
     <button onClick={onToggle} style={{
       width: "100%", display: "flex", alignItems: "center", gap: 8,
-      background: "none", border: "none", cursor: "pointer", padding: "10px 14px",
-      borderBottom: expanded ? "1px solid rgba(255,255,255,0.05)" : "none",
+      background: "none", border: "none", cursor: "pointer",
+      padding: "10px 14px", borderBottom: expanded ? "1px solid rgba(255,255,255,0.05)" : "none",
     }}>
-      <div style={{ width: 24, height: 24, borderRadius: 7, background: `${dotColor}14`, border: `1px solid ${dotColor}28`,
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Icon size={11} style={{ color: dotColor }} />
+      <div style={{ width: 26, height: 26, borderRadius: 7, background: `${color}12`,
+        border: `1px solid ${color}25`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Icon size={11} style={{ color }} />
       </div>
       <div style={{ flex: 1, textAlign: "left" }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.75)", fontFamily: "monospace", letterSpacing: "0.05em" }}>{title}</div>
-        <ConfidencePill section={section} />
+        <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.78)",
+          fontFamily: "monospace", letterSpacing: "0.04em", marginBottom: 3 }}>{title}</div>
+        <BasisTag basis={basis} />
       </div>
       {expanded
-        ? <ChevronDown size={11} style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }} />
-        : <ChevronRight size={11} style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }} />}
+        ? <ChevronDown size={11} style={{ color: "rgba(255,255,255,0.18)", flexShrink: 0 }} />
+        : <ChevronRight size={11} style={{ color: "rgba(255,255,255,0.18)", flexShrink: 0 }} />}
     </button>
   );
 }
 
-function InsightCard({
-  title, section, color, defaultOpen = false, icon, children
-}: { title: string; section: string; color: string; defaultOpen?: boolean; icon: any; children: React.ReactNode }) {
+function InsightCard({ title, icon, color, basis, defaultOpen = false, children }: {
+  title: string; icon: any; color: string;
+  basis: "provided" | "inferred" | "industry"; defaultOpen?: boolean; children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div style={{ borderRadius: 10, border: `1px solid ${open ? color + "28" : "rgba(255,255,255,0.06)"}`,
-      background: open ? `${color}05` : "rgba(255,255,255,0.02)", overflow: "hidden", transition: "all 0.2s" }}>
-      <SectionHeader title={title} section={section} expanded={open} onToggle={() => setOpen(o => !o)} icon={icon} />
+    <div style={{ borderRadius: 10, overflow: "hidden", transition: "all 0.2s",
+      border: `1px solid ${open ? color + "25" : "rgba(255,255,255,0.05)"}`,
+      background: open ? `${color}04` : "rgba(255,255,255,0.015)" }}>
+      <SectionHeader title={title} icon={icon} color={color} basis={basis}
+        expanded={open} onToggle={() => setOpen(o => !o)} />
+      {open && <div style={{ padding: "12px 14px" }}>{children}</div>}
+    </div>
+  );
+}
+
+function FactRow({ text, color = "#6366f1" }: { text: string; color?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 7,
+      padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+      <div style={{ width: 2, borderRadius: 1, background: color, flexShrink: 0,
+        alignSelf: "stretch", minHeight: 12, marginTop: 3 }} />
+      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.6 }}>{text}</span>
+    </div>
+  );
+}
+
+function TagPill({ text, color }: { text: string; color: string }) {
+  return (
+    <span style={{ fontSize: 9, fontFamily: "monospace", padding: "3px 8px",
+      background: `${color}10`, border: `1px solid ${color}22`, borderRadius: 5, color: `${color}cc` }}>
+      {text}
+    </span>
+  );
+}
+
+function PromptsPanel({ section, role, onAskBrain }: {
+  section: string; role: PersonaRole; onAskBrain: (p: string) => void;
+}) {
+  const prompts = PROMPTS[section]?.[role] || [];
+  if (!prompts.length) return null;
+  return (
+    <div style={{ marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: 10 }}>
+      <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.2)",
+        letterSpacing: "0.1em", marginBottom: 6 }}>FIRE INTO BRAIN CHAT →</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {prompts.map((p, i) => (
+          <button key={i} onClick={() => onAskBrain(p.prompt)} style={{
+            textAlign: "left", background: "rgba(99,102,241,0.05)",
+            border: "1px solid rgba(99,102,241,0.14)", borderRadius: 7,
+            padding: "7px 10px", cursor: "pointer",
+            display: "flex", alignItems: "flex-start", gap: 7,
+          }}>
+            <Brain size={9} style={{ color: "#6366f1", flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontSize: 9, color: "rgba(165,180,252,0.72)", lineHeight: 1.5 }}>{p.label}</span>
+            <span style={{ marginLeft: "auto", fontSize: 7, fontFamily: "monospace",
+              color: "rgba(99,102,241,0.35)", flexShrink: 0 }}>→</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────── Data Transparency Panel ─────────────────────── */
+function DataTransparencyPanel({ persona, project }: { persona: any; project?: any }) {
+  const [open, setOpen] = useState(true);
+  const di = persona?.data_intelligence;
+  const prov = persona?._provenance;
+
+  // Determine what we can show — prefer AI-filled data_intelligence, fallback to server provenance
+  const industry        = di?.industry_analyzed || prov?.industry || project?.industry || null;
+  const company         = di?.company_analyzed  || prov?.company  || project?.name     || null;
+  const region          = di?.market_region     || prov?.region   || null;
+  const generated       = di?.analysis_generated ? formatDate(di.analysis_generated) : new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const completeness    = di?.data_completeness  || null;
+  const completenessReason = di?.data_completeness_reason || null;
+  const provided        = di?.what_was_provided  || prov?.dataProvided || [];
+  const assumed         = di?.what_was_assumed   || prov?.dataAssumed  || [];
+  const basis           = di?.analysis_basis     || null;
+  const recency         = di?.recency_note       || null;
+  const improvements    = di?.what_would_improve_accuracy || [];
+  const crossProject    = di?.cross_project_learnings_used || null;
+
+  const cColor = completenessColor(completeness);
+
+  return (
+    <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)",
+      background: "rgba(0,0,0,0.2)", overflow: "hidden", marginBottom: 12 }}>
+
+      {/* Always-visible header */}
+      <button onClick={() => setOpen(o => !o)} style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 10,
+        background: "rgba(255,255,255,0.02)", border: "none", cursor: "pointer",
+        padding: "12px 14px", borderBottom: open ? "1px solid rgba(255,255,255,0.05)" : "none",
+      }}>
+        <Database size={11} style={{ color: "#06b6d4", flexShrink: 0 }} />
+        <div style={{ flex: 1, textAlign: "left" }}>
+          <div style={{ fontSize: 9, fontFamily: "monospace", color: "#06b6d4",
+            letterSpacing: "0.1em", fontWeight: 700, marginBottom: 2 }}>
+            INTELLIGENCE DATA BASIS
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {industry && (
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)" }}>
+                <span style={{ color: "rgba(255,255,255,0.25)" }}>Industry: </span>{industry}
+              </span>
+            )}
+            {company && company !== "Not specified" && (
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)" }}>
+                <span style={{ color: "rgba(255,255,255,0.25)" }}>Company: </span>{company}
+              </span>
+            )}
+            {region && region !== "Global English-speaking markets" && (
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)" }}>
+                <span style={{ color: "rgba(255,255,255,0.25)" }}>Market: </span>{region}
+              </span>
+            )}
+          </div>
+        </div>
+        {completeness && (
+          <div style={{ padding: "2px 8px", borderRadius: 5,
+            background: `${cColor}12`, border: `1px solid ${cColor}28`, flexShrink: 0 }}>
+            <span style={{ fontSize: 7, fontFamily: "monospace", color: cColor, fontWeight: 700 }}>
+              {completeness.toUpperCase()} DATA
+            </span>
+          </div>
+        )}
+        {open
+          ? <ChevronDown size={10} style={{ color: "rgba(255,255,255,0.15)", flexShrink: 0 }} />
+          : <ChevronRight size={10} style={{ color: "rgba(255,255,255,0.15)", flexShrink: 0 }} />}
+      </button>
+
       {open && (
-        <div style={{ padding: "12px 14px" }}>
-          <DataBasis section={section} />
-          <div style={{ marginTop: 10 }}>{children}</div>
+        <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+
+          {/* No industry warning */}
+          {!industry && (
+            <div style={{ background: "rgba(239,68,68,0.08)", borderRadius: 8, padding: "10px 12px",
+              border: "1px solid rgba(239,68,68,0.25)", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <AlertTriangle size={13} style={{ color: "#ef4444", flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <div style={{ fontSize: 9, fontFamily: "monospace", color: "#ef4444", fontWeight: 700, marginBottom: 3 }}>
+                  NO INDUSTRY PROVIDED
+                </div>
+                <p style={{ fontSize: 9, color: "rgba(252,165,165,0.8)", margin: 0, lineHeight: 1.6 }}>
+                  This analysis was run without specifying an industry. Add your industry in Project Settings for accurate, specific results. The persona below is based on general digital services market patterns.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Generated timestamp + basis */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <Clock size={9} style={{ color: "rgba(255,255,255,0.25)" }} />
+              <span style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.35)" }}>
+                Generated: {generated}
+              </span>
+            </div>
+            {crossProject && (
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <Database size={9} style={{ color: "rgba(255,255,255,0.25)" }} />
+                <span style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.35)" }}>
+                  {crossProject}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Analysis basis */}
+          {basis && (
+            <div style={{ background: "rgba(6,182,212,0.06)", borderRadius: 7, padding: "8px 10px",
+              border: "1px solid rgba(6,182,212,0.15)" }}>
+              <div style={{ fontSize: 7, fontFamily: "monospace", color: "#06b6d4", marginBottom: 4 }}>
+                ANALYSIS BASIS
+              </div>
+              <p style={{ fontSize: 9, color: "rgba(103,232,249,0.7)", margin: 0, lineHeight: 1.6 }}>{basis}</p>
+            </div>
+          )}
+
+          {/* Provided vs Assumed */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ background: "rgba(16,185,129,0.05)", borderRadius: 8, padding: "8px 10px",
+              border: "1px solid rgba(16,185,129,0.15)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+                <CheckCircle size={9} style={{ color: "#10b981" }} />
+                <span style={{ fontSize: 7, fontFamily: "monospace", color: "#10b981", fontWeight: 700 }}>
+                  PROVIDED ({provided.length})
+                </span>
+              </div>
+              {provided.length === 0 ? (
+                <p style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", margin: 0 }}>Nothing provided</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  {provided.map((item: string, i: number) => (
+                    <div key={i} style={{ fontSize: 8, color: "rgba(110,231,183,0.7)", lineHeight: 1.5 }}>
+                      ✓ {item.replace(/^✓\s*/, "")}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ background: "rgba(245,158,11,0.05)", borderRadius: 8, padding: "8px 10px",
+              border: "1px solid rgba(245,158,11,0.15)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+                <AlertCircle size={9} style={{ color: "#f59e0b" }} />
+                <span style={{ fontSize: 7, fontFamily: "monospace", color: "#f59e0b", fontWeight: 700 }}>
+                  ASSUMED ({assumed.length})
+                </span>
+              </div>
+              {assumed.length === 0 ? (
+                <div style={{ fontSize: 8, color: "rgba(110,231,183,0.7)" }}>All data provided ✓</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  {assumed.map((item: string, i: number) => (
+                    <div key={i} style={{ fontSize: 8, color: "rgba(253,186,116,0.7)", lineHeight: 1.5 }}>
+                      ~ {item.replace(/^⚠\s*/, "").split("—")[0].trim()}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Completeness reason */}
+          {completenessReason && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+              <Info size={9} style={{ color: cColor, flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", margin: 0, lineHeight: 1.5 }}>
+                {completenessReason}
+              </p>
+            </div>
+          )}
+
+          {/* Recency note */}
+          {recency && (
+            <div style={{ background: "rgba(239,68,68,0.04)", borderRadius: 7, padding: "7px 10px",
+              border: "1px solid rgba(239,68,68,0.1)" }}>
+              <div style={{ fontSize: 7, fontFamily: "monospace", color: "#f87171", marginBottom: 3 }}>
+                ⚠ RECENCY — VALIDATE BEFORE CLIENT PRESENTATION
+              </div>
+              <p style={{ fontSize: 8, color: "rgba(252,165,165,0.6)", margin: 0, lineHeight: 1.5 }}>
+                {recency}
+              </p>
+            </div>
+          )}
+
+          {/* What would improve accuracy */}
+          {improvements.length > 0 && (
+            <div>
+              <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.2)",
+                marginBottom: 5, letterSpacing: "0.08em" }}>ADD THIS DATA FOR BETTER ACCURACY</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {improvements.map((item: string, i: number) => (
+                  <span key={i} style={{ fontSize: 8, color: "rgba(255,255,255,0.4)",
+                    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 5, padding: "2px 8px" }}>+ {item}</span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function FactChip({ text, color }: { text: string; color: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "6px 0",
-      borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-      <div style={{ width: 3, borderRadius: 2, alignSelf: "stretch", background: color, flexShrink: 0, minHeight: 14, marginTop: 2 }}/>
-      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.6 }}>{text}</span>
-    </div>
-  );
-}
-
-function TagCloud({ items, color, mono }: { items: string[]; color: string; mono?: boolean }) {
-  if (!items?.length) return null;
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-      {items.map((item, i) => (
-        <span key={i} style={{
-          fontSize: mono ? 8 : 9, fontFamily: mono ? "monospace" : "system-ui",
-          background: `${color}12`, border: `1px solid ${color}22`, borderRadius: 5,
-          padding: "3px 8px", color: `${color}cc`,
-        }}>{item}</span>
-      ))}
-    </div>
-  );
-}
-
-function RoleInterpretation({ section, role, persona }: { section: string; role: PersonaRole; persona: any }) {
-  const interps: Partial<Record<string, Record<PersonaRole, string>>> = {
-    psychology: {
-      client: `Your buyers' deepest fear is: "${persona.psychology?.deepest_fear}". Address this in your first above-fold message.`,
-      seo_director: `The pain points above map directly to commercial intent queries. Each one is a cluster you can own.`,
-      cmo: `This psychological profile defines your messaging platform. The deepest fear is your positioning anchor.`,
-      agency: `Use this psychology map as your strategic brief. The fear → objection sequence defines the campaign narrative arc.`,
-    },
-    trust: {
-      client: `You need these proof elements on your homepage before buyers will contact you.`,
-      seo_director: `Each trust signal correlates with E-E-A-T signals. Prioritise content that satisfies the proof formats listed.`,
-      cmo: `Your proof asset production roadmap comes from this list. The gaps are your Q1 content investment.`,
-      agency: `Present this to your client as a trust audit. The red flags are action items with clear business impact.`,
-    },
-    competitive: {
-      client: `The switching trigger is your acquisition angle. Understand why buyers leave current providers and be the answer.`,
-      seo_director: `Each alternative they consider is a comparison keyword cluster. Own the "X vs Y" and "best X for Z" queries.`,
-      cmo: `The deciding factor is your value proposition. The switching trigger is your campaign hook.`,
-      agency: `Lead with the competitive gap in your pitch. It's the one thing no competitor has claimed yet.`,
-    },
-  };
-  const text = interps[section]?.[role];
-  if (!text) return null;
-  return (
-    <div style={{ background: "rgba(99,102,241,0.07)", borderRadius: 7, padding: "8px 10px", marginTop: 8,
-      border: "1px solid rgba(99,102,241,0.15)" }}>
-      <div style={{ fontSize: 7, fontFamily: "monospace", color: "#a5b4fc", marginBottom: 4, letterSpacing: "0.08em" }}>
-        ◈ WHAT THIS MEANS FOR YOU
-      </div>
-      <p style={{ fontSize: 9, color: "rgba(165,180,252,0.7)", lineHeight: 1.6, margin: 0 }}>{text}</p>
-    </div>
-  );
-}
-
-function PredictivePrompts({
-  section, role, onAskBrain
-}: { section: string; role: PersonaRole; onAskBrain: (p: string) => void }) {
-  const prompts = PROMPTS[section]?.[role] || [];
-  const [showExpert, setShowExpert] = useState(false);
-  if (!prompts.length) return null;
-  return (
-    <div style={{ marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <span style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em" }}>
-          ASK BRAIN →
-        </span>
-        <button onClick={() => setShowExpert(e => !e)} style={{
-          fontSize: 7, fontFamily: "monospace", background: showExpert ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.04)",
-          border: `1px solid ${showExpert ? "rgba(245,158,11,0.3)" : "rgba(255,255,255,0.08)"}`,
-          borderRadius: 4, padding: "2px 6px", color: showExpert ? "#fbbf24" : "rgba(255,255,255,0.25)", cursor: "pointer",
-        }}>
-          {showExpert ? "⚡ EXPERT" : "◦ QUICK"}
-        </button>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        {prompts.map((p, i) => {
-          const text = showExpert ? p.expert : p.quick;
-          return (
-            <button key={i} onClick={() => onAskBrain(p.expert)} style={{
-              textAlign: "left", background: "rgba(99,102,241,0.06)",
-              border: "1px solid rgba(99,102,241,0.15)", borderRadius: 7, padding: "7px 10px",
-              cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 7,
-            }}>
-              <Brain size={9} style={{ color: "#6366f1", flexShrink: 0, marginTop: 1 }} />
-              <span style={{ fontSize: 9, color: "rgba(165,180,252,0.75)", lineHeight: 1.5 }}>{text}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* ─────────────────────── Main export ─────────────────────── */
-export function MarketPersonaBriefing({ persona, goals, onAskBrain, crossProjectCount = 0 }: BriefingProps) {
+export function MarketPersonaBriefing({ persona, goals, project, onAskBrain, crossProjectCount = 0 }: BriefingProps) {
   const [role, setRole] = useState<PersonaRole>("agency");
-
   if (!persona) return null;
 
   const rc = ROLES[role];
   const RoleIcon = rc.icon;
+  const di = persona.data_intelligence;
+
+  // Determine data basis for each section — honest labelling
+  const hasBasisData = (di?.what_was_provided || []).length > 0;
+  const hasKeywords  = (persona._provenance?.keywordCount || 0) > 0 || (di?.what_was_provided || []).some((s: string) => s.includes("keyword"));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
 
-      {/* ── META TRUST LAYER ── */}
-      <div style={{ background: "linear-gradient(135deg,rgba(6,182,212,0.08),rgba(99,102,241,0.06))",
-        borderRadius: 12, border: "1px solid rgba(6,182,212,0.18)", padding: "14px 16px", marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 7, fontFamily: "monospace", color: "#06b6d4", letterSpacing: "0.12em", marginBottom: 6 }}>
-              ◈ INTELLIGENCE BRIEF — MARKET PERSONA
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 900, color: "#e0e7ff", lineHeight: 1.2, marginBottom: 3 }}>
-              {persona.persona_name}
-            </div>
-            <div style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(165,180,252,0.5)", marginBottom: 8 }}>
-              {persona.persona_archetype}
-            </div>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, margin: 0 }}>
-              {persona.market_context}
-            </p>
-          </div>
+      {/* ── IDENTITY HEADER ── */}
+      <div style={{ background: "linear-gradient(135deg,rgba(6,182,212,0.07),rgba(99,102,241,0.05))",
+        borderRadius: 12, border: "1px solid rgba(6,182,212,0.15)",
+        padding: "16px 18px", marginBottom: 10 }}>
+        <div style={{ fontSize: 7, fontFamily: "monospace", color: "#06b6d4",
+          letterSpacing: "0.14em", marginBottom: 8, fontWeight: 700 }}>
+          ◈ MARKET INTELLIGENCE BRIEF
+          {di?.industry_analyzed && (
+            <span style={{ color: "rgba(255,255,255,0.3)", fontWeight: 400 }}>
+              {" "}— {di.industry_analyzed.toUpperCase()}
+              {di.market_region && di.market_region !== "Global English-speaking markets"
+                ? ` · ${di.market_region.toUpperCase()}` : ""}
+            </span>
+          )}
         </div>
-
-        {/* Trust metrics row */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-          {[
-            { label: "AVG CONFIDENCE", value: "86%",  color: "#10b981" },
-            { label: "SECTIONS",        value: "6",    color: "#6366f1" },
-            { label: "DATA BASIS",      value: "Multi-layer", color: "#06b6d4" },
-            { label: "CROSS-PROJECT",   value: crossProjectCount > 0 ? `${crossProjectCount} learnings` : "First in industry", color: "#f59e0b" },
-          ].map(m => (
-            <div key={m.label} style={{ background: `${m.color}0d`, border: `1px solid ${m.color}20`,
-              borderRadius: 6, padding: "4px 8px" }}>
-              <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.2)", marginBottom: 1 }}>{m.label}</div>
-              <div style={{ fontSize: 10, fontFamily: "monospace", fontWeight: 700, color: m.color }}>{m.value}</div>
-            </div>
-          ))}
+        <div style={{ fontSize: 20, fontWeight: 900, color: "#e0e7ff", lineHeight: 1.2, marginBottom: 3 }}>
+          {persona.persona_name || "Market Persona"}
         </div>
+        <div style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(165,180,252,0.5)", marginBottom: 10 }}>
+          {persona.persona_archetype}
+        </div>
+        {persona.market_context && (
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 1.7, margin: 0 }}>
+            {persona.market_context}
+          </p>
+        )}
 
-        {/* Manav Intelligence Note — the killer insight */}
+        {/* Manav Key Insight */}
         {persona.manav_intelligence_note && (
-          <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 8, padding: "10px 12px",
-            border: "1px solid rgba(245,158,11,0.2)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
-              <Star size={9} style={{ color: "#f59e0b" }} />
-              <span style={{ fontSize: 7, fontFamily: "monospace", color: "#f59e0b", letterSpacing: "0.1em", fontWeight: 700 }}>
-                MANAV KEY INSIGHT — WHAT MOST AGENCIES MISS
-              </span>
+          <div style={{ marginTop: 12, background: "rgba(245,158,11,0.08)", borderRadius: 8,
+            padding: "10px 12px", border: "1px solid rgba(245,158,11,0.2)" }}>
+            <div style={{ fontSize: 7, fontFamily: "monospace", color: "#f59e0b",
+              marginBottom: 5, letterSpacing: "0.1em", fontWeight: 700 }}>
+              ◈ MANAV KEY INSIGHT — WHAT MOST MISS IN THIS MARKET
             </div>
-            <p style={{ fontSize: 10, color: "rgba(253,224,71,0.85)", lineHeight: 1.7, margin: 0, fontWeight: 500 }}>
+            <p style={{ fontSize: 10, color: "rgba(253,224,71,0.82)", fontWeight: 500,
+              lineHeight: 1.7, margin: 0 }}>
               {persona.manav_intelligence_note}
             </p>
           </div>
         )}
       </div>
 
+      {/* ── DATA TRANSPARENCY PANEL ── */}
+      <DataTransparencyPanel persona={persona} project={project} />
+
       {/* ── ROLE SWITCHER ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5, marginBottom: 10 }}>
         {(Object.entries(ROLES) as [PersonaRole, typeof ROLES[PersonaRole]][]).map(([key, cfg]) => {
           const active = role === key;
           const Ico = cfg.icon;
           return (
             <button key={key} onClick={() => setRole(key)} style={{
-              background: active ? `${cfg.color}14` : "rgba(255,255,255,0.02)",
-              border: `1px solid ${active ? cfg.color + "40" : "rgba(255,255,255,0.06)"}`,
-              borderRadius: 8, padding: "7px 5px", cursor: "pointer", textAlign: "center",
-              transition: "all 0.15s",
+              background: active ? `${cfg.color}12` : "rgba(255,255,255,0.02)",
+              border: `1px solid ${active ? cfg.color + "35" : "rgba(255,255,255,0.05)"}`,
+              borderRadius: 8, padding: "7px 5px", cursor: "pointer", textAlign: "center", transition: "all 0.15s",
             }}>
-              <Ico size={11} style={{ color: active ? cfg.color : "rgba(255,255,255,0.2)", margin: "0 auto 3px" }} />
-              <div style={{ fontSize: 7, fontFamily: "monospace", fontWeight: 700,
-                color: active ? cfg.color : "rgba(255,255,255,0.25)", letterSpacing: "0.05em", lineHeight: 1.3 }}>
+              <Ico size={11} style={{ color: active ? cfg.color : "rgba(255,255,255,0.18)", margin: "0 auto 3px" }} />
+              <div style={{ fontSize: 7, fontFamily: "monospace", fontWeight: 700, letterSpacing: "0.04em",
+                color: active ? cfg.color : "rgba(255,255,255,0.22)", lineHeight: 1.3 }}>
                 {cfg.label.toUpperCase()}
               </div>
             </button>
           );
         })}
       </div>
-
-      {/* Role tagline */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10,
-        padding: "6px 10px", background: `${rc.color}08`, borderRadius: 7, border: `1px solid ${rc.color}18` }}>
-        <RoleIcon size={9} style={{ color: rc.color, flexShrink: 0 }} />
-        <span style={{ fontSize: 9, color: `${rc.color}cc`, fontFamily: "monospace" }}>
-          {rc.tagline}
-        </span>
+      <div style={{ fontSize: 8, color: `${rc.color}aa`, fontFamily: "monospace",
+        padding: "5px 8px", marginBottom: 10, background: `${rc.color}07`,
+        borderRadius: 6, border: `1px solid ${rc.color}15` }}>
+        <RoleIcon size={8} style={{ display: "inline", verticalAlign: "middle", marginRight: 5 }} />
+        {rc.tagline}
       </div>
 
       {/* ── INTELLIGENCE SECTIONS ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
 
-        {/* BUYER PROFILE — always open */}
+        {/* BUYER PROFILE */}
         {persona.buyer_profile && (
-          <InsightCard title="Buyer Profile" section="psychology" color="#a78bfa" defaultOpen icon={Brain}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-              {[
-                { label: "Who they are",       value: persona.buyer_profile.who_they_are },
-                { label: "Decision timeline",  value: persona.buyer_profile.decision_timeline },
-                { label: "Research depth",     value: persona.buyer_profile.research_depth },
-                { label: "Budget mindset",     value: persona.buyer_profile.budget_mindset },
-                { label: "Decision authority", value: persona.buyer_profile.decision_authority },
-              ].filter(r => r.value).map(r => (
-                <FactChip key={r.label} text={`${r.label}: ${r.value}`} color="#a78bfa" />
-              ))}
-              {(persona.buyer_profile.triggers_that_start_the_search || []).length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>
-                    WHAT TRIGGERS THE SEARCH
-                  </div>
-                  {(persona.buyer_profile.triggers_that_start_the_search || []).map((t: string, i: number) => (
-                    <FactChip key={i} text={t} color="#c4b5fd" />
-                  ))}
+          <InsightCard title="Buyer Profile" icon={Brain} color="#a78bfa"
+            basis={hasBasisData ? "provided" : "industry"} defaultOpen>
+            {[
+              { k: "Who they are",         v: persona.buyer_profile.who_they_are },
+              { k: "Decision timeline",    v: persona.buyer_profile.decision_timeline },
+              { k: "Research depth",       v: persona.buyer_profile.research_depth },
+              { k: "Budget mindset",       v: persona.buyer_profile.budget_mindset },
+              { k: "Decision authority",   v: persona.buyer_profile.decision_authority },
+            ].filter(r => r.v).map(r => <FactRow key={r.k} text={`${r.k}: ${r.v}`} color="#a78bfa" />)}
+            {(persona.buyer_profile.triggers_that_start_the_search || []).length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 5 }}>
+                  WHAT TRIGGERS THE SEARCH
                 </div>
-              )}
-            </div>
-            <RoleInterpretation section="psychology" role={role} persona={persona} />
+                {(persona.buyer_profile.triggers_that_start_the_search || []).map((t: string, i: number) => (
+                  <FactRow key={i} text={t} color="#c4b5fd" />
+                ))}
+              </div>
+            )}
+            <PromptsPanel section="psychology" role={role} onAskBrain={onAskBrain} />
           </InsightCard>
         )}
 
         {/* PSYCHOLOGY */}
         {persona.psychology && (
-          <InsightCard title="Buyer Psychology" section="psychology" color="#fb923c" icon={Brain}>
+          <InsightCard title="Buyer Psychology & Fears" icon={Brain} color="#fb923c" basis="industry">
             {persona.psychology.deepest_fear && (
               <div style={{ background: "rgba(239,68,68,0.07)", borderRadius: 8, padding: "10px 12px",
                 border: "1px solid rgba(239,68,68,0.2)", marginBottom: 10 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#ef4444", marginBottom: 4, letterSpacing: "0.1em" }}>
-                  ⚠ DEEPEST FEAR — YOUR MOST POWERFUL HOOK
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#ef4444",
+                  marginBottom: 4, letterSpacing: "0.08em" }}>
+                  ⚠ DEEPEST FEAR — MOST POWERFUL HOOK
                 </div>
-                <p style={{ fontSize: 11, color: "rgba(252,165,165,0.85)", fontWeight: 600, margin: 0, lineHeight: 1.6 }}>
+                <p style={{ fontSize: 11, color: "rgba(252,165,165,0.85)", fontWeight: 600,
+                  margin: 0, lineHeight: 1.6 }}>
                   {persona.psychology.deepest_fear}
                 </p>
               </div>
             )}
-            {(persona.psychology.primary_pain_points || []).map((p: string, i: number) => (
-              <FactChip key={i} text={p} color="#fb923c" />
-            ))}
-            {(persona.psychology.decision_triggers || []).length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>
-                  WHAT FINALLY MAKES THEM ACT
-                </div>
-                {(persona.psychology.decision_triggers || []).map((t: string, i: number) => (
-                  <FactChip key={i} text={t} color="#4ade80" />
-                ))}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 5 }}>
+                PRIMARY PAIN POINTS
               </div>
-            )}
+              {(persona.psychology.primary_pain_points || []).map((p: string, i: number) => (
+                <FactRow key={i} text={p} color="#fb923c" />
+              ))}
+            </div>
             {persona.psychology.what_they_actually_want && (
-              <div style={{ background: "rgba(16,185,129,0.07)", borderRadius: 7, padding: "8px 10px",
-                border: "1px solid rgba(16,185,129,0.15)", marginTop: 8 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#10b981", marginBottom: 4 }}>
-                  WHAT THEY REALLY WANT (beyond the product)
+              <div style={{ background: "rgba(16,185,129,0.06)", borderRadius: 7, padding: "8px 10px",
+                border: "1px solid rgba(16,185,129,0.14)", marginBottom: 8 }}>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#10b981", marginBottom: 3 }}>
+                  WHAT THEY REALLY WANT
                 </div>
-                <p style={{ fontSize: 10, color: "rgba(110,231,183,0.8)", margin: 0, lineHeight: 1.6 }}>
+                <p style={{ fontSize: 10, color: "rgba(110,231,183,0.75)", margin: 0, lineHeight: 1.6 }}>
                   {persona.psychology.what_they_actually_want}
                 </p>
               </div>
             )}
-            {(persona.psychology.objections_they_raise || []).length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>
-                  OBJECTIONS THEY RAISE
+            {(persona.psychology.decision_triggers || []).length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 5 }}>
+                  WHAT FINALLY MAKES THEM ACT
                 </div>
-                {(persona.psychology.objections_they_raise || []).map((o: string, i: number) => (
-                  <FactChip key={i} text={o} color="#f87171" />
+                {(persona.psychology.decision_triggers || []).map((t: string, i: number) => (
+                  <FactRow key={i} text={t} color="#4ade80" />
                 ))}
               </div>
             )}
-            <PredictivePrompts section="psychology" role={role} onAskBrain={onAskBrain} />
+            {(persona.psychology.objections_they_raise || []).length > 0 && (
+              <div>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 5 }}>
+                  OBJECTIONS THEY RAISE
+                </div>
+                {(persona.psychology.objections_they_raise || []).map((o: string, i: number) => (
+                  <FactRow key={i} text={o} color="#f87171" />
+                ))}
+              </div>
+            )}
+            <PromptsPanel section="psychology" role={role} onAskBrain={onAskBrain} />
           </InsightCard>
         )}
 
         {/* SEARCH BEHAVIOR */}
         {persona.search_behavior && (
-          <InsightCard title="Search Behavior & Intent Journey" section="search_behavior" color="#67e8f9" icon={Search}>
+          <InsightCard title="Search Behavior & Intent Journey" icon={Search} color="#67e8f9"
+            basis={hasKeywords ? "provided" : "inferred"}>
+            {!hasKeywords && (
+              <div style={{ fontSize: 8, color: "rgba(245,158,11,0.7)", fontFamily: "monospace",
+                marginBottom: 8, padding: "4px 8px", background: "rgba(245,158,11,0.06)",
+                borderRadius: 5, border: "1px solid rgba(245,158,11,0.15)" }}>
+                ~ No keywords provided — queries below are industry pattern inference, not your specific site
+              </div>
+            )}
             {persona.search_behavior.how_they_search && (
-              <FactChip text={persona.search_behavior.how_they_search} color="#67e8f9" />
+              <FactRow text={persona.search_behavior.how_they_search} color="#67e8f9" />
             )}
             {persona.search_behavior.intent_shift && (
-              <div style={{ background: "rgba(6,182,212,0.07)", borderRadius: 7, padding: "8px 10px",
-                border: "1px solid rgba(6,182,212,0.15)", margin: "8px 0" }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#06b6d4", marginBottom: 4 }}>INTENT SHIFT PATTERN</div>
-                <p style={{ fontSize: 10, color: "rgba(103,232,249,0.75)", margin: 0, lineHeight: 1.6 }}>
+              <div style={{ background: "rgba(6,182,212,0.06)", borderRadius: 7, padding: "7px 10px",
+                border: "1px solid rgba(6,182,212,0.14)", margin: "8px 0" }}>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#06b6d4", marginBottom: 3 }}>
+                  INTENT SHIFT
+                </div>
+                <p style={{ fontSize: 9, color: "rgba(103,232,249,0.7)", margin: 0, lineHeight: 1.6 }}>
                   {persona.search_behavior.intent_shift}
                 </p>
               </div>
             )}
             {[
-              { label: "FIRST SEARCHES (awareness)", items: persona.search_behavior.first_search_queries, color: "#67e8f9" },
-              { label: "REFINEMENT QUERIES (consideration)", items: persona.search_behavior.refinement_queries, color: "#a5f3fc" },
-              { label: "COMPARISON QUERIES (decision)", items: persona.search_behavior.comparison_queries, color: "#22d3ee" },
+              { label: "FIRST SEARCHES",      items: persona.search_behavior.first_search_queries,  color: "#67e8f9" },
+              { label: "REFINEMENT QUERIES",  items: persona.search_behavior.refinement_queries,    color: "#a5f3fc" },
+              { label: "COMPARISON QUERIES",  items: persona.search_behavior.comparison_queries,    color: "#22d3ee" },
             ].filter(g => g.items?.length).map(g => (
               <div key={g.label} style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 4 }}>{g.label}</div>
-                <TagCloud items={g.items} color={g.color} mono />
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 4 }}>
+                  {g.label}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {(g.items || []).map((q: string, i: number) => <TagPill key={i} text={q} color={g.color} />)}
+                </div>
               </div>
             ))}
-            <PredictivePrompts section="search_behavior" role={role} onAskBrain={onAskBrain} />
+            <PromptsPanel section="search_behavior" role={role} onAskBrain={onAskBrain} />
           </InsightCard>
         )}
 
         {/* LANGUAGE PATTERNS */}
         {persona.language_patterns && (
-          <InsightCard title="Language & Conversion Vocabulary" section="language" color="#fcd34d" icon={MessageSquare}>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", lineHeight: 1.5, marginBottom: 8 }}>
-              The exact words your buyers use — and the words that convert them vs push them away.
+          <InsightCard title="Language & Conversion Vocabulary" icon={MessageSquare} color="#fcd34d" basis="industry">
+            <div style={{ fontSize: 8, color: "rgba(255,255,255,0.28)", marginBottom: 8 }}>
+              The exact words buyers use — and which convert vs repel.
             </div>
             {[
               { label: "WORDS THEY ACTUALLY USE",  items: persona.language_patterns.words_they_use,    color: "#fcd34d" },
@@ -551,21 +704,23 @@ export function MarketPersonaBriefing({ persona, goals, onAskBrain, crossProject
               { label: "WORDS THAT REPEL THEM",     items: persona.language_patterns.words_that_repel,   color: "#f87171" },
             ].filter(g => g.items?.length).map(g => (
               <div key={g.label} style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>{g.label}</div>
-                <TagCloud items={g.items} color={g.color} mono />
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 5 }}>{g.label}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {(g.items || []).map((w: string, i: number) => <TagPill key={i} text={w} color={g.color} />)}
+                </div>
               </div>
             ))}
             {(persona.language_patterns.questions_they_type_into_google || []).length > 0 && (
-              <div style={{ marginTop: 4 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>
-                  ACTUAL GOOGLE QUESTIONS THEY TYPE
+              <div>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 6 }}>
+                  GOOGLE QUESTIONS THEY TYPE
                 </div>
                 {(persona.language_patterns.questions_they_type_into_google || []).map((q: string, i: number) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 5 }}>
                     <span style={{ fontSize: 8, color: "#fbbf24", flexShrink: 0, marginTop: 2 }}>?</span>
-                    <span style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(252,211,77,0.65)", lineHeight: 1.5 }}>{q}</span>
-                    <button onClick={() => onAskBrain(`Based on the market persona, create optimised content targeting the query: "${q}"`)}
-                      style={{ marginLeft: "auto", flexShrink: 0, background: "rgba(99,102,241,0.1)",
+                    <span style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(252,211,77,0.65)", lineHeight: 1.5, flex: 1 }}>{q}</span>
+                    <button onClick={() => onAskBrain(`Create a detailed SEO content brief for the query: "${q}". Use the buyer persona context. Include: title, meta description, content structure, word count, and what conversion action to target.`)}
+                      style={{ flexShrink: 0, background: "rgba(99,102,241,0.1)",
                         border: "1px solid rgba(99,102,241,0.2)", borderRadius: 4, padding: "2px 5px",
                         cursor: "pointer", fontSize: 7, color: "#a5b4fc", fontFamily: "monospace" }}>
                       BRIEF →
@@ -574,27 +729,25 @@ export function MarketPersonaBriefing({ persona, goals, onAskBrain, crossProject
                 ))}
               </div>
             )}
-            <PredictivePrompts section="language" role={role} onAskBrain={onAskBrain} />
+            <PromptsPanel section="language" role={role} onAskBrain={onAskBrain} />
           </InsightCard>
         )}
 
         {/* TRUST SIGNALS */}
         {persona.trust_signals && (
-          <InsightCard title="Trust Signals & Proof Requirements" section="trust" color="#10b981" icon={Shield}>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", lineHeight: 1.5, marginBottom: 8 }}>
-              Exactly what this buyer needs to see before they contact you — and what makes them leave.
-            </div>
+          <InsightCard title="Trust Signals & Proof Requirements" icon={Shield} color="#10b981" basis="industry">
             {(persona.trust_signals.what_raises_red_flags || []).length > 0 && (
-              <div style={{ background: "rgba(239,68,68,0.06)", borderRadius: 8, padding: "8px 10px",
-                border: "1px solid rgba(239,68,68,0.15)", marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+              <div style={{ background: "rgba(239,68,68,0.07)", borderRadius: 8, padding: "10px 12px",
+                border: "1px solid rgba(239,68,68,0.2)", marginBottom: 10 }}>
+                <div style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 6 }}>
                   <AlertTriangle size={9} style={{ color: "#ef4444" }} />
-                  <span style={{ fontSize: 7, fontFamily: "monospace", color: "#ef4444", letterSpacing: "0.08em" }}>
+                  <span style={{ fontSize: 7, fontFamily: "monospace", color: "#ef4444",
+                    letterSpacing: "0.08em", fontWeight: 700 }}>
                     RED FLAGS — CAUSES IMMEDIATE BOUNCE
                   </span>
                 </div>
                 {(persona.trust_signals.what_raises_red_flags || []).map((f: string, i: number) => (
-                  <FactChip key={i} text={f} color="#f87171" />
+                  <FactRow key={i} text={f} color="#f87171" />
                 ))}
               </div>
             )}
@@ -604,49 +757,56 @@ export function MarketPersonaBriefing({ persona, goals, onAskBrain, crossProject
                   ✓ WHAT BUILDS IMMEDIATE TRUST
                 </div>
                 {(persona.trust_signals.what_builds_immediate_trust || []).map((t: string, i: number) => (
-                  <FactChip key={i} text={t} color="#4ade80" />
+                  <FactRow key={i} text={t} color="#4ade80" />
                 ))}
               </div>
             )}
             {(persona.trust_signals.proof_formats_they_need || []).length > 0 && (
               <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>
-                  PROOF FORMATS THEY REQUIRE
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 5 }}>
+                  PROOF FORMATS REQUIRED
                 </div>
-                <TagCloud items={persona.trust_signals.proof_formats_they_need} color="#6ee7b7" />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {(persona.trust_signals.proof_formats_they_need || []).map((p: string, i: number) => (
+                    <TagPill key={i} text={p} color="#6ee7b7" />
+                  ))}
+                </div>
               </div>
             )}
             {persona.trust_signals.content_they_share_or_save && (
-              <div style={{ background: "rgba(16,185,129,0.07)", borderRadius: 7, padding: "8px 10px",
-                border: "1px solid rgba(16,185,129,0.15)", marginTop: 8 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#10b981", marginBottom: 4 }}>
-                  CONTENT THEY SAVE & SHARE
-                </div>
-                <p style={{ fontSize: 10, color: "rgba(110,231,183,0.8)", margin: 0, lineHeight: 1.6 }}>
-                  {persona.trust_signals.content_they_share_or_save}
-                </p>
-              </div>
+              <FactRow text={`Content they share/save: ${persona.trust_signals.content_they_share_or_save}`} color="#10b981" />
             )}
-            <RoleInterpretation section="trust" role={role} persona={persona} />
-            <PredictivePrompts section="trust" role={role} onAskBrain={onAskBrain} />
+            <PromptsPanel section="trust" role={role} onAskBrain={onAskBrain} />
           </InsightCard>
         )}
 
         {/* COMPETITIVE AWARENESS */}
         {persona.competitive_awareness && (
-          <InsightCard title="Competitive Awareness" section="competitive" color="#f472b6" icon={Target}>
-            {[
-              { label: "ALTERNATIVES THEY CONSIDER", items: persona.competitive_awareness.alternatives_they_consider, color: "#f9a8d4" },
-            ].filter(g => g.items?.length).map(g => (
-              <div key={g.label} style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>{g.label}</div>
-                <TagCloud items={g.items} color={g.color} />
+          <InsightCard title="Competitive Awareness" icon={Target} color="#f472b6"
+            basis={persona._provenance?.competitorCount > 0 ? "provided" : "inferred"}>
+            {persona._provenance?.competitorCount > 0 ? null : (
+              <div style={{ fontSize: 8, color: "rgba(245,158,11,0.7)", fontFamily: "monospace",
+                marginBottom: 8, padding: "4px 8px", background: "rgba(245,158,11,0.06)",
+                borderRadius: 5, border: "1px solid rgba(245,158,11,0.15)" }}>
+                ~ No competitors provided — alternatives below are typical for this industry
               </div>
-            ))}
+            )}
+            {(persona.competitive_awareness.alternatives_they_consider || []).length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.22)", marginBottom: 5 }}>
+                  ALTERNATIVES THEY CONSIDER
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {(persona.competitive_awareness.alternatives_they_consider || []).map((a: string, i: number) => (
+                    <TagPill key={i} text={a} color="#f9a8d4" />
+                  ))}
+                </div>
+              </div>
+            )}
             {persona.competitive_awareness.why_they_choose_one_over_another && (
               <div style={{ background: "rgba(244,114,182,0.07)", borderRadius: 7, padding: "8px 10px",
                 border: "1px solid rgba(244,114,182,0.18)", marginBottom: 8 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#f472b6", marginBottom: 4 }}>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#f472b6", marginBottom: 3 }}>
                   THE REAL DECIDING FACTOR
                 </div>
                 <p style={{ fontSize: 10, color: "rgba(249,168,212,0.8)", fontWeight: 600, margin: 0, lineHeight: 1.6 }}>
@@ -656,30 +816,34 @@ export function MarketPersonaBriefing({ persona, goals, onAskBrain, crossProject
             )}
             {persona.competitive_awareness.why_they_leave_and_try_someone_else && (
               <div style={{ background: "rgba(239,68,68,0.06)", borderRadius: 7, padding: "8px 10px",
-                border: "1px solid rgba(239,68,68,0.15)" }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#ef4444", marginBottom: 4 }}>
-                  ⚡ SWITCHING TRIGGER — ACQUISITION OPPORTUNITY
+                border: "1px solid rgba(239,68,68,0.14)" }}>
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#ef4444", marginBottom: 3 }}>
+                  ⚡ SWITCHING TRIGGER
                 </div>
                 <p style={{ fontSize: 10, color: "rgba(252,165,165,0.8)", margin: 0, lineHeight: 1.6 }}>
                   {persona.competitive_awareness.why_they_leave_and_try_someone_else}
                 </p>
               </div>
             )}
-            <RoleInterpretation section="competitive" role={role} persona={persona} />
-            <PredictivePrompts section="competitive" role={role} onAskBrain={onAskBrain} />
+            <PromptsPanel section="competitive" role={role} onAskBrain={onAskBrain} />
           </InsightCard>
         )}
 
-        {/* SEO + CONTENT IMPLICATIONS */}
+        {/* SEO & CONTENT IMPLICATIONS */}
         {persona.seo_content_implications && (
-          <InsightCard title="SEO & Content Implications" section="seo_implications" color="#818cf8" icon={Zap}>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", lineHeight: 1.5, marginBottom: 8 }}>
-              Direct translation from buyer intelligence to content strategy decisions.
-            </div>
+          <InsightCard title="SEO & Content Implications" icon={Zap} color="#818cf8"
+            basis={hasKeywords ? "provided" : "industry"}>
+            {!hasKeywords && (
+              <div style={{ fontSize: 8, color: "rgba(245,158,11,0.7)", fontFamily: "monospace",
+                marginBottom: 8, padding: "4px 8px", background: "rgba(245,158,11,0.06)",
+                borderRadius: 5, border: "1px solid rgba(245,158,11,0.15)" }}>
+                ~ No keywords provided — keyword examples below are industry inferences, validate against real search data
+              </div>
+            )}
             {(persona.seo_content_implications.content_gaps_this_persona_needs_filled || []).length > 0 && (
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#818cf8", marginBottom: 5 }}>
-                  CONTENT GAPS TO FILL — RANKED BY BUYER NEED
+                <div style={{ fontSize: 7, fontFamily: "monospace", color: "#818cf8", marginBottom: 6 }}>
+                  CONTENT GAPS — RANKED BY BUYER NEED
                 </div>
                 {(persona.seo_content_implications.content_gaps_this_persona_needs_filled || []).map((g: string, i: number) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 5 }}>
@@ -687,9 +851,9 @@ export function MarketPersonaBriefing({ persona, goals, onAskBrain, crossProject
                       background: "rgba(129,140,248,0.1)", borderRadius: 3, padding: "1px 5px", flexShrink: 0 }}>
                       {i + 1}
                     </span>
-                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", lineHeight: 1.5 }}>{g}</span>
-                    <button onClick={() => onAskBrain(`Create a detailed content brief for this gap: "${g}". Use the buyer persona and target ${role === "seo_director" ? "high-intent keywords" : "the buyer's language"}.`)}
-                      style={{ marginLeft: "auto", flexShrink: 0, background: "rgba(129,140,248,0.08)",
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", lineHeight: 1.5, flex: 1 }}>{g}</span>
+                    <button onClick={() => onAskBrain(`Write a detailed content brief for this gap: "${g}". Include: target audience, angle, format, word count, SEO requirements, and what conversion this supports.`)}
+                      style={{ flexShrink: 0, background: "rgba(129,140,248,0.08)",
                         border: "1px solid rgba(129,140,248,0.2)", borderRadius: 4, padding: "2px 5px",
                         cursor: "pointer", fontSize: 7, color: "#a5b4fc", fontFamily: "monospace" }}>
                       BRIEF →
@@ -698,61 +862,56 @@ export function MarketPersonaBriefing({ persona, goals, onAskBrain, crossProject
                 ))}
               </div>
             )}
-            {(persona.seo_content_implications.keyword_intent_map || []).length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>
-                  KEYWORD INTENT MAP
-                </div>
-                {(persona.seo_content_implications.keyword_intent_map || []).map((m: any, i: number) => {
-                  const intentColor = m.intent?.includes("aware") ? "#67e8f9" : m.intent?.includes("consid") ? "#a5b4fc" : "#4ade80";
-                  return (
-                    <div key={i} style={{ marginBottom: 8, background: "rgba(255,255,255,0.02)",
-                      borderRadius: 7, padding: "7px 10px", border: "1px solid rgba(255,255,255,0.04)" }}>
-                      <div style={{ fontSize: 7, fontFamily: "monospace", color: intentColor,
-                        marginBottom: 5, letterSpacing: "0.08em", fontWeight: 700 }}>
-                        {(m.intent || "").toUpperCase()} INTENT
-                      </div>
-                      <TagCloud items={m.example_keywords || []} color={intentColor} mono />
+            {(persona.seo_content_implications.keyword_intent_map || []).map((m: any, i: number) => {
+              const intentColor = m.intent?.includes("aware") ? "#67e8f9" : m.intent?.includes("consid") ? "#a5b4fc" : "#4ade80";
+              return (
+                <div key={i} style={{ marginBottom: 8, background: "rgba(255,255,255,0.02)",
+                  borderRadius: 7, padding: "7px 10px", border: "1px solid rgba(255,255,255,0.04)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                    <div style={{ fontSize: 7, fontFamily: "monospace", color: intentColor,
+                      letterSpacing: "0.08em", fontWeight: 700 }}>
+                      {(m.intent || "").toUpperCase()} INTENT
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            {(persona.seo_content_implications.ideal_page_types || []).length > 0 && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.25)", marginBottom: 5 }}>
-                  PAGE TYPES NEEDED
+                    {m.basis && (
+                      <BasisTag basis={m.basis === "provided keywords" || m.basis?.includes("provided") ? "provided" : "inferred"} />
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {(m.example_keywords || []).map((kw: string, j: number) => (
+                      <TagPill key={j} text={kw} color={intentColor} />
+                    ))}
+                  </div>
                 </div>
-                <TagCloud items={persona.seo_content_implications.ideal_page_types} color="#a5b4fc" />
-              </div>
-            )}
-            <PredictivePrompts section="seo_implications" role={role} onAskBrain={onAskBrain} />
+              );
+            })}
+            <PromptsPanel section="seo_implications" role={role} onAskBrain={onAskBrain} />
           </InsightCard>
         )}
       </div>
 
-      {/* ── GLOBAL BRAIN PROMPTS ── */}
-      <div style={{ marginTop: 12, padding: "12px 14px", background: "rgba(99,102,241,0.05)",
-        borderRadius: 10, border: "1px solid rgba(99,102,241,0.12)" }}>
-        <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", marginBottom: 8 }}>
-          ◈ WHAT EXPERTS DO NEXT WITH THIS INTELLIGENCE
+      {/* ── EXPERT ACTIONS ── */}
+      <div style={{ marginTop: 12, padding: "12px 14px", background: "rgba(99,102,241,0.04)",
+        borderRadius: 10, border: "1px solid rgba(99,102,241,0.1)" }}>
+        <div style={{ fontSize: 7, fontFamily: "monospace", color: "rgba(255,255,255,0.18)",
+          letterSpacing: "0.1em", marginBottom: 8 }}>
+          ◈ WHAT EXPERTS DO WITH THIS INTELLIGENCE
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {[
-            { label: "Build content strategy", prompt: `Using this full market persona, build a comprehensive 90-day content strategy for a ${role === "seo_director" ? "topical authority" : role === "cmo" ? "market positioning" : "buyer journey"} approach. Include keyword priorities, content types, and publishing sequence.` },
-            { label: "Write homepage brief",    prompt: `Using this buyer persona, write a detailed homepage conversion brief: headline, subheadline, above-fold CTA, trust signals to show, and the exact language to use.` },
-            { label: "Competitive battle card", prompt: `Create a competitive battle card using this persona's competitive awareness data. Include how to position against each alternative, what our winning message is, and how to handle the main switching trigger.` },
-            { label: "Client presentation deck outline", prompt: `Create a market intelligence executive summary for a client presentation. Use this persona data to write a compelling narrative: market reality → buyer psychology → our strategic recommendation.` },
+            { label: "Build full 90-day content strategy", prompt: `Using this full market persona and buyer intelligence for ${di?.industry_analyzed || "this industry"}, build a comprehensive 90-day content strategy. Include: keyword priority order, content types, publishing sequence, and success metrics. Be specific — no generic frameworks.` },
+            { label: "Write homepage conversion brief",    prompt: `Using this buyer persona, write a detailed homepage conversion brief: exact headline options using buyer language, subheadline, above-fold proof elements needed, CTA text, and what the hero section must NOT say (repel words).` },
+            { label: "Competitive battle card",            prompt: `Create a competitive battle card from this persona's competitive analysis. How do we position vs each alternative they consider? What's our winning narrative for the deciding factor? How do we intercept the switching trigger?` },
+            { label: "Executive summary for client",       prompt: `Write a 1-page market intelligence executive summary for client presentation. Structure: Market reality (2 sentences) → Who your buyer actually is (3 bullet points) → What they fear most → What makes them trust → Strategic recommendation → Immediate action.` },
           ].map((item, i) => (
             <button key={i} onClick={() => onAskBrain(item.prompt)} style={{
-              textAlign: "left", background: "rgba(99,102,241,0.06)",
-              border: "1px solid rgba(99,102,241,0.12)", borderRadius: 7, padding: "7px 10px",
-              cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
+              textAlign: "left", background: "rgba(99,102,241,0.05)",
+              border: "1px solid rgba(99,102,241,0.11)", borderRadius: 7,
+              padding: "7px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
             }}>
               <Zap size={9} style={{ color: "#6366f1", flexShrink: 0 }} />
-              <span style={{ fontSize: 9, color: "rgba(165,180,252,0.7)" }}>{item.label}</span>
+              <span style={{ fontSize: 9, color: "rgba(165,180,252,0.68)" }}>{item.label}</span>
               <span style={{ marginLeft: "auto", fontSize: 7, fontFamily: "monospace",
-                color: "rgba(99,102,241,0.4)" }}>→ BRAIN</span>
+                color: "rgba(99,102,241,0.35)" }}>→ BRAIN</span>
             </button>
           ))}
         </div>
