@@ -19,9 +19,16 @@ type Kingdom = "war" | "royal" | "neural" | "glass";
 type ModStatus = "done" | "building" | "testing" | "blocked" | "paused" | "pending";
 
 interface BridgeRow {
-  id: string; role: string; type: string; module: string | null;
-  task: string | null; content: string; status: string;
-  metadata: Record<string, any>; created_at: string;
+  id:          string;
+  kind:        string;                  // was 'type'
+  title:       string | null;
+  body:        string;                  // was 'content'
+  metadata:    Record<string, any>;     // holds module_num, task, status (NOT top-level columns)
+  created_by:  string;                  // was 'role'
+  in_reply_to: string | null;
+  read_at:     string | null;
+  read_by:     string | null;
+  created_at:  string;
 }
 interface DailyStats {
   tasksDone: number; tasksLive: number; buildDays: number;
@@ -93,40 +100,40 @@ function deriveState(rows: BridgeRow[]) {
   const modules: ModuleState[] = Array.from({ length: 12 }, (_, i) => ({
     num: i + 1, name: MODULE_NAMES[i], status: "pending" as ModStatus,
   }));
-  const modRows = rows.filter(r => r.module);
+  const modRows = rows.filter(r => r.metadata?.module_num != null);
   modRows.forEach(r => {
-    const n = parseInt(r.module || "0");
+    const n = parseInt((r.metadata?.module_num != null ? String(r.metadata.module_num) : "0"));
     if (n < 1 || n > 12) return;
     const m = modules[n - 1];
-    if ((r.content ?? "").includes("MODULE_0" + n + "_DONE") || (r.content ?? "").includes(`MODULE_${String(n).padStart(2,"0")}_DONE`)) {
+    if ((r.body ?? "").includes("MODULE_0" + n + "_DONE") || (r.body ?? "").includes(`MODULE_${String(n).padStart(2,"0")}_DONE`)) {
       m.status = "done"; m.updatedAt = r.created_at;
-    } else if ((r.status === "pending" || r.status === "executing") && r.role === "claude_chat" && r.type === "instruction") {
+    } else if ((r.metadata?.status === "pending" || r.metadata?.status === "executing") && r.created_by === "claude_chat" && r.kind === "instruction") {
       if (m.status === "pending") { m.status = "building"; m.updatedAt = r.created_at; }
-    } else if (r.type === "response" && r.status === "done" && m.status !== "done") {
+    } else if (r.kind === "response" && r.metadata?.status === "done" && m.status !== "done") {
       if (m.status === "pending") { m.status = "testing"; m.updatedAt = r.created_at; }
     }
   });
 
   /* Active task — latest thinking or pending instruction */
   const activeRow = rows.find(r =>
-    (r.type === "thinking" && r.status === "done") ||
-    (r.type === "instruction" && r.status === "pending" && r.role === "claude_chat")
+    (r.kind === "thinking" && r.metadata?.status === "done") ||
+    (r.kind === "instruction" && r.metadata?.status === "pending" && r.created_by === "claude_chat")
   );
 
   /* Activity feed */
   const feed: ActivityLine[] = rows.slice(0, 12).map(r => {
     const time = new Date(r.created_at).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
-    const preview = (r.content ?? "").slice(0, 70);
-    if (r.type === "thinking") return { id: r.id, time, icon: "→", color: "#3b82f6", text: preview };
-    if ((r.content ?? "").includes("_DONE")) return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
-    if (r.status === "blocked") return { id: r.id, time, icon: "✗", color: "#ef4444", text: preview };
-    if (r.type === "brain_dump") return { id: r.id, time, icon: "⊙", color: "#6b6b80", text: "System snapshot posted" };
-    if (r.role === "claude_code" && r.type === "response") return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
+    const preview = (r.body ?? "").slice(0, 70);
+    if (r.kind === "thinking") return { id: r.id, time, icon: "→", color: "#3b82f6", text: preview };
+    if ((r.body ?? "").includes("_DONE")) return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
+    if (r.metadata?.status === "blocked") return { id: r.id, time, icon: "✗", color: "#ef4444", text: preview };
+    if (r.kind === "brain_dump") return { id: r.id, time, icon: "⊙", color: "#6b6b80", text: "System snapshot posted" };
+    if (r.created_by === "claude_code" && r.kind === "response") return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
     return { id: r.id, time, icon: "·", color: "#4b4b6a", text: preview };
   });
 
   /* Health */
-  const latest = rows.find(r => r.type === "response" || r.type === "brain_dump");
+  const latest = rows.find(r => r.kind === "response" || r.kind === "brain_dump");
   const health: HealthState = {
     ts: (latest?.metadata?.tsc_clean === true ? "clean" : latest?.metadata?.tsc_clean === false ? "errors" : "unknown") as "clean"|"errors"|"unknown",
     git: (latest?.metadata?.git_sha ? "synced" : "unknown") as "synced"|"stale"|"unknown",
@@ -137,15 +144,15 @@ function deriveState(rows: BridgeRow[]) {
   /* Daily stats */
   const today = new Date().toDateString();
   const todayRows = rows.filter(r => new Date(r.created_at).toDateString() === today);
-  const done = todayRows.filter(r => r.role === "claude_code" && r.type === "response" && r.status === "done").length;
+  const done = todayRows.filter(r => r.created_by === "claude_code" && r.kind === "response" && r.metadata?.status === "done").length;
   const daily: DailyStats = { tasksDone: done, tasksLive: 1, buildDays: 3, costToday: 0.14, costMonth: 4.23, monthTasks: 47 };
 
   /* News headlines */
   const news: string[] = [
     ...rows.slice(0, 5).map(r => {
-      const c = r.content ?? "";
+      const c = r.body ?? "";
       if (c.includes("_DONE")) return `✓ ${c.slice(0, 60)}`;
-      if (r.type === "thinking") return `→ ${c.slice(0, 55)}`;
+      if (r.kind === "thinking") return `→ ${c.slice(0, 55)}`;
       return `· ${c.slice(0, 55)}`;
     }),
     "👑 Foundation sealed — Brain quality gate universal across the empire",

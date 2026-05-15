@@ -614,6 +614,53 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  /* ── SCHEDULE VERIFICATION — Module 02 The Closed Loop ── */
+  if (action === "schedule_verification") {
+    const { projectId, taskId, cardType, cardTitle, siteUrl, checkType } = body;
+    if (!projectId || !taskId) {
+      return ok(res, { error: "projectId and taskId required" });
+    }
+
+    /* Days-until-verify by card type */
+    const daysMap: Record<string, number> = {
+      technical:    5,
+      content:      14,
+      geo:          7,
+      "quick-win":  3,
+      competitive:  10,
+    };
+    const days = daysMap[cardType] || 7;
+    const scheduledFor = new Date();
+    scheduledFor.setDate(scheduledFor.getDate() + days);
+
+    const { data, error } = await db()
+      .from("verification_queue")
+      .insert({
+        project_id:    projectId,
+        task_id:       taskId,
+        card_type:     cardType || "general",
+        card_title:    cardTitle || "",
+        site_url:      siteUrl || null,
+        check_type:    checkType || "standard",
+        scheduled_for: scheduledFor.toISOString(),
+        status:        "pending",
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("[task-engine] schedule_verification error:", error);
+      return ok(res, { success: false, error: error.message });
+    }
+
+    return ok(res, {
+      success:        true,
+      id:             data.id,
+      scheduledFor:   scheduledFor.toISOString(),
+      daysUntilCheck: days,
+    });
+  }
+
   /* ── REQUIREMENTS ── */
   if (action === "requirements") {
     const { card, context = {}, userInputs = {} } = body;
