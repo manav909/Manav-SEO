@@ -829,124 +829,6 @@ Respond with JSON only:
   /* ── REQUIREMENTS ── */
   if (action === "requirements") {
     const { card, context = {}, userInputs = {} } = body;
-  
-  if (action === 'client_brief') {
-    const { projectId, briefType = 'progress' } = body;
-    if (!projectId) return ok(res, { error: 'projectId required' });
-    const [projR,metricsR,taskR,learnR] = await Promise.allSettled([
-      db().from('projects').select('name,url,goals,industry').eq('id',projectId).single(),
-      db().from('metrics').select('llm_visibility_score,algorithm_health_score').eq('project_id',projectId).order('recorded_at',{ascending:false}).limit(1),
-      db().from('task_executions').select('task_type,status').eq('project_id',projectId).eq('status','done').order('created_at',{ascending:false}).limit(10),
-      db().from('brain_learnings').select('card_title').eq('project_id',projectId).eq('status','active').order('applied_count',{ascending:false}).limit(5),
-    ]);
-    const proj    = projR.status==='fulfilled'    ? projR.value.data         : null;
-    const metrics = metricsR.status==='fulfilled' ? metricsR.value.data?.[0] : null;
-    const tasks   = taskR.status==='fulfilled'    ? taskR.value.data   || [] : [];
-    const learns  = learnR.status==='fulfilled'   ? learnR.value.data  || [] : [];
-    if (!proj) return ok(res, { error: 'Project not found' });
-    const templates: Record<string,string> = {
-      progress: `Write a professional 3-paragraph client progress update for ${proj.name}. Goals: ${proj.goals||'being established'}. Tasks done: ${tasks.length}. Key learnings: ${learns.map((l:any)=>l.card_title).join('; ')||'accumulating'}. Scores: ${metrics?`LLM ${metrics.llm_visibility_score}/100`:'first audit pending'}. Plain business language, no jargon. End with what happens next week.`,
-      renewal:  `Write a compelling renewal brief for ${proj.name}. ${tasks.length} tasks completed. ${learns.length} proven strategies captured. ${metrics?`Current LLM score: ${metrics.llm_visibility_score}/100.`:''} Make the ROI case clearly in plain language.`,
-      objection:`Client questioning the strategy for ${proj.name}. Write a confident, data-grounded response. ${tasks.length} tasks done, ${learns.length} learnings proven. Address concerns with facts, propose clear next steps.`,
-      upsell:   `Identify 3 expansion opportunities for ${proj.name} in ${proj.industry||'their industry'}. Format: Opportunity → Why now → Expected impact. Be specific and compelling.`,
-    };
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:900,messages:[{role:'user',content:templates[briefType]||templates.progress}]}),
-    });
-    const aiJson = await aiRes.json() as any;
-    return ok(res, { success:true, brief:aiJson?.content?.[0]?.text||'Failed', briefType, projectName:proj.name });
-  }
-
-
-  if (action === 'record_attribution') {
-    const { projectId,taskId,taskType,taskTitle,completedAt,metricBefore,metricAfter,notes } = body;
-    if (!projectId||!taskId) return ok(res,{error:'projectId+taskId required'});
-    const before=metricBefore||{};const after=metricAfter||{};
-    const delta:Record<string,number>={};
-    for(const k of Object.keys(after)){if(typeof after[k]==='number'&&typeof before[k]==='number')delta[k]=after[k]-before[k];}
-    const completed=new Date(completedAt||Date.now());
-    const days=Math.round((Date.now()-completed.getTime())/864e5);
-    const positive=Object.values(delta).some((v:any)=>(v as number)>0);
-    const {data,error}=await db().from('attribution_log').insert({
-      project_id:projectId,task_id:taskId,task_type:taskType||'general',task_title:taskTitle||'',
-      completed_at:completed.toISOString(),verified_at:new Date().toISOString(),
-      metric_before:before,metric_after:after,delta,
-      attribution_confidence:positive?75:40,days_to_impact:days,notes:notes||''
-    }).select().single();
-    if(error)return ok(res,{success:false,error:error.message});
-    return ok(res,{success:true,id:data.id,daysToImpact:days,delta});
-  }
-
-
-  if (action === 'mine_patterns') {
-    const { minProjects = 3, minConfidence = 65 } = body;
-    // Find brain_learnings that repeat across multiple projects
-    const { data: learnings } = await db()
-      .from('brain_learnings')
-      .select('card_type,card_title,what_worked,project_id,confidence_score,applied_count')
-      .eq('status','active')
-      .gte('confidence_score', minConfidence)
-      .order('applied_count', { ascending: false })
-      .limit(200);
-    if (!learnings?.length) return ok(res, { patterns: [], message: 'No learnings yet' });
-    // Group by normalised title similarity
-    const groups: Record<string, any[]> = {};
-    for (const l of learnings) {
-      const key = (l.card_type + ':' + l.card_title.toLowerCase().slice(0,40)).replace(/\s+/g,'_');
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(l);
-    }
-    const patterns = [];
-    for (const [key, items] of Object.entries(groups)) {
-      const projectIds = [...new Set(items.map((i:any) => i.project_id))];
-      if (projectIds.length < minProjects) continue;
-      const existing = await db().from('empire_patterns').select('id').eq('title', items[0].card_title).single();
-      if (!existing.data) {
-        await db().from('empire_patterns').insert({
-          pattern_type: items[0].card_type, title: items[0].card_title,
-          description: `Proven across ${projectIds.length} projects`,
-          evidence: items.slice(0,5).map((i:any)=>({project:i.project_id,worked:i.what_worked})),
-          project_count: projectIds.length,
-          confidence: Math.round(items.reduce((s:number,i:any)=>s+(i.confidence_score||65),0)/items.length),
-          tags: [items[0].card_type],
-        });
-        patterns.push({ title: items[0].card_title, projects: projectIds.length });
-      }
-    }
-    return ok(res, { success:true, newPatterns: patterns.length, patterns });
-  }
-
-
-  if (action === 'generate_role_brief') {
-    const { projectId, role = 'strategist', context: ctx2 } = body;
-    if (!projectId) return ok(res, { error: 'projectId required' });
-    const voiceMap: Record<string,string> = {
-      king:       'You are briefing the founder. Be direct, strategic, and visionary. Lead with wins, then risks, then what to decide. No fluff.',
-      strategist: 'You are briefing a senior SEO strategist. Technical depth welcome. Show the data, explain the pattern, recommend the action.',
-      writer:     'You are briefing a content writer. Plain language. Tell them what to write, why it matters, what the angle should be. No scores or metrics.',
-      client:     'You are briefing a business owner. Translate everything to business impact. No SEO jargon. Focus on traffic, leads, and revenue implications.',
-      executive:  'You are briefing a C-suite executive. One paragraph max. ROI focus. What was invested, what returned, what is the trajectory.',
-    };
-    const voice = voiceMap[role] || voiceMap.strategist;
-    const [projR, taskR, learnR] = await Promise.allSettled([
-      db().from('projects').select('name,goals,url').eq('id',projectId).single(),
-      db().from('task_executions').select('task_type,output').eq('project_id',projectId).eq('status','done').order('created_at',{ascending:false}).limit(5),
-      db().from('brain_learnings').select('card_title,what_worked').eq('project_id',projectId).order('applied_count',{ascending:false}).limit(3),
-    ]);
-    const proj  = projR.status==='fulfilled'  ? projR.value.data    : null;
-    const tasks = taskR.status==='fulfilled'  ? taskR.value.data||[] : [];
-    const learns= learnR.status==='fulfilled' ? learnR.value.data||[] : [];
-    if (!proj) return ok(res, { error: 'Project not found' });
-    const prompt = `${voice}\n\nProject: ${proj.name}\nGoals: ${proj.goals||'not set'}\nRecent tasks: ${tasks.map((t:any)=>t.task_type).join(', ')||'none'}\nProven learnings: ${learns.map((l:any)=>l.card_title).join('; ')||'accumulating'}\n${ctx2||''}`;
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,messages:[{role:'user',content:prompt}]}),
-    });
-    const aiJson=await aiRes.json() as any;
-    return ok(res,{success:true,brief:aiJson?.content?.[0]?.text||'Failed',role,projectName:proj.name});
-  }
 
   if (!card) return ok(res, { error: "Missing card" });
 
@@ -1233,6 +1115,126 @@ Respond with JSON only:
     }).catch(() => {});
 
     return;
+  }
+
+
+  
+  if (action === 'client_brief') {
+    const { projectId, briefType = 'progress' } = body;
+    if (!projectId) return ok(res, { error: 'projectId required' });
+    const [projR,metricsR,taskR,learnR] = await Promise.allSettled([
+      db().from('projects').select('name,url,goals,industry').eq('id',projectId).single(),
+      db().from('metrics').select('llm_visibility_score,algorithm_health_score').eq('project_id',projectId).order('recorded_at',{ascending:false}).limit(1),
+      db().from('task_executions').select('task_type,status').eq('project_id',projectId).eq('status','done').order('created_at',{ascending:false}).limit(10),
+      db().from('brain_learnings').select('card_title').eq('project_id',projectId).eq('status','active').order('applied_count',{ascending:false}).limit(5),
+    ]);
+    const proj    = projR.status==='fulfilled'    ? projR.value.data         : null;
+    const metrics = metricsR.status==='fulfilled' ? metricsR.value.data?.[0] : null;
+    const tasks   = taskR.status==='fulfilled'    ? taskR.value.data   || [] : [];
+    const learns  = learnR.status==='fulfilled'   ? learnR.value.data  || [] : [];
+    if (!proj) return ok(res, { error: 'Project not found' });
+    const templates: Record<string,string> = {
+      progress: `Write a professional 3-paragraph client progress update for ${proj.name}. Goals: ${proj.goals||'being established'}. Tasks done: ${tasks.length}. Key learnings: ${learns.map((l:any)=>l.card_title).join('; ')||'accumulating'}. Scores: ${metrics?`LLM ${metrics.llm_visibility_score}/100`:'first audit pending'}. Plain business language, no jargon. End with what happens next week.`,
+      renewal:  `Write a compelling renewal brief for ${proj.name}. ${tasks.length} tasks completed. ${learns.length} proven strategies captured. ${metrics?`Current LLM score: ${metrics.llm_visibility_score}/100.`:''} Make the ROI case clearly in plain language.`,
+      objection:`Client questioning the strategy for ${proj.name}. Write a confident, data-grounded response. ${tasks.length} tasks done, ${learns.length} learnings proven. Address concerns with facts, propose clear next steps.`,
+      upsell:   `Identify 3 expansion opportunities for ${proj.name} in ${proj.industry||'their industry'}. Format: Opportunity → Why now → Expected impact. Be specific and compelling.`,
+    };
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:900,messages:[{role:'user',content:templates[briefType]||templates.progress}]}),
+    });
+    const aiJson = await aiRes.json() as any;
+    return ok(res, { success:true, brief:aiJson?.content?.[0]?.text||'Failed', briefType, projectName:proj.name });
+  }
+
+
+  if (action === 'record_attribution') {
+    const { projectId,taskId,taskType,taskTitle,completedAt,metricBefore,metricAfter,notes } = body;
+    if (!projectId||!taskId) return ok(res,{error:'projectId+taskId required'});
+    const before=metricBefore||{};const after=metricAfter||{};
+    const delta:Record<string,number>={};
+    for(const k of Object.keys(after)){if(typeof after[k]==='number'&&typeof before[k]==='number')delta[k]=after[k]-before[k];}
+    const completed=new Date(completedAt||Date.now());
+    const days=Math.round((Date.now()-completed.getTime())/864e5);
+    const positive=Object.values(delta).some((v:any)=>(v as number)>0);
+    const {data,error}=await db().from('attribution_log').insert({
+      project_id:projectId,task_id:taskId,task_type:taskType||'general',task_title:taskTitle||'',
+      completed_at:completed.toISOString(),verified_at:new Date().toISOString(),
+      metric_before:before,metric_after:after,delta,
+      attribution_confidence:positive?75:40,days_to_impact:days,notes:notes||''
+    }).select().single();
+    if(error)return ok(res,{success:false,error:error.message});
+    return ok(res,{success:true,id:data.id,daysToImpact:days,delta});
+  }
+
+
+  if (action === 'mine_patterns') {
+    const { minProjects = 3, minConfidence = 65 } = body;
+    // Find brain_learnings that repeat across multiple projects
+    const { data: learnings } = await db()
+      .from('brain_learnings')
+      .select('card_type,card_title,what_worked,project_id,confidence_score,applied_count')
+      .eq('status','active')
+      .gte('confidence_score', minConfidence)
+      .order('applied_count', { ascending: false })
+      .limit(200);
+    if (!learnings?.length) return ok(res, { patterns: [], message: 'No learnings yet' });
+    // Group by normalised title similarity
+    const groups: Record<string, any[]> = {};
+    for (const l of learnings) {
+      const key = (l.card_type + ':' + l.card_title.toLowerCase().slice(0,40)).replace(/\s+/g,'_');
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(l);
+    }
+    const patterns = [];
+    for (const [key, items] of Object.entries(groups)) {
+      const projectIds = [...new Set(items.map((i:any) => i.project_id))];
+      if (projectIds.length < minProjects) continue;
+      const existing = await db().from('empire_patterns').select('id').eq('title', items[0].card_title).single();
+      if (!existing.data) {
+        await db().from('empire_patterns').insert({
+          pattern_type: items[0].card_type, title: items[0].card_title,
+          description: `Proven across ${projectIds.length} projects`,
+          evidence: items.slice(0,5).map((i:any)=>({project:i.project_id,worked:i.what_worked})),
+          project_count: projectIds.length,
+          confidence: Math.round(items.reduce((s:number,i:any)=>s+(i.confidence_score||65),0)/items.length),
+          tags: [items[0].card_type],
+        });
+        patterns.push({ title: items[0].card_title, projects: projectIds.length });
+      }
+    }
+    return ok(res, { success:true, newPatterns: patterns.length, patterns });
+  }
+
+
+  if (action === 'generate_role_brief') {
+    const { projectId, role = 'strategist', context: ctx2 } = body;
+    if (!projectId) return ok(res, { error: 'projectId required' });
+    const voiceMap: Record<string,string> = {
+      king:       'You are briefing the founder. Be direct, strategic, and visionary. Lead with wins, then risks, then what to decide. No fluff.',
+      strategist: 'You are briefing a senior SEO strategist. Technical depth welcome. Show the data, explain the pattern, recommend the action.',
+      writer:     'You are briefing a content writer. Plain language. Tell them what to write, why it matters, what the angle should be. No scores or metrics.',
+      client:     'You are briefing a business owner. Translate everything to business impact. No SEO jargon. Focus on traffic, leads, and revenue implications.',
+      executive:  'You are briefing a C-suite executive. One paragraph max. ROI focus. What was invested, what returned, what is the trajectory.',
+    };
+    const voice = voiceMap[role] || voiceMap.strategist;
+    const [projR, taskR, learnR] = await Promise.allSettled([
+      db().from('projects').select('name,goals,url').eq('id',projectId).single(),
+      db().from('task_executions').select('task_type,output').eq('project_id',projectId).eq('status','done').order('created_at',{ascending:false}).limit(5),
+      db().from('brain_learnings').select('card_title,what_worked').eq('project_id',projectId).order('applied_count',{ascending:false}).limit(3),
+    ]);
+    const proj  = projR.status==='fulfilled'  ? projR.value.data    : null;
+    const tasks = taskR.status==='fulfilled'  ? taskR.value.data||[] : [];
+    const learns= learnR.status==='fulfilled' ? learnR.value.data||[] : [];
+    if (!proj) return ok(res, { error: 'Project not found' });
+    const prompt = `${voice}\n\nProject: ${proj.name}\nGoals: ${proj.goals||'not set'}\nRecent tasks: ${tasks.map((t:any)=>t.task_type).join(', ')||'none'}\nProven learnings: ${learns.map((l:any)=>l.card_title).join('; ')||'accumulating'}\n${ctx2||''}`;
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,messages:[{role:'user',content:prompt}]}),
+    });
+    const aiJson=await aiRes.json() as any;
+    return ok(res,{success:true,brief:aiJson?.content?.[0]?.text||'Failed',role,projectName:proj.name});
   }
 
   /* ── WEEKLY BRAIN BRIEF — Module 04 The Automation Layer ── */
