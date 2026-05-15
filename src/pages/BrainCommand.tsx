@@ -646,7 +646,19 @@ export default function BrainCommand() {
           },
         }),
       });
-      if (!res.body) throw new Error("No stream");
+      /* ── If the Lambda crashed (HTTP not OK or non-stream), auto-diagnose via Runtime Compiler ── */
+      if (!res.ok || !res.body) {
+        const errText = await res.text().catch(() => "");
+        const rc = getRuntimeCompiler(supabase as any);
+        const auto = rc.autoFix(`${errText} status:${res.status}`);
+        const msg = auto
+          ? `⚡ AUTO-DIAGNOSED\n\n**Root Cause:** ${auto.diagnosis}\n\n**Fix:** ${auto.action}\n\n*Raw error: ${errText.slice(0, 200)}*`
+          : `⚡ Brain API error (HTTP ${res.status}). Raw: ${errText.slice(0, 200)}`;
+        setChatMsgs(m => [...m, { role: "brain", text: msg }]);
+        void rc.recordFailure("/api/intelligence", "brain_assistant", errText.slice(0, 200), {});
+        setChatLoading(false);
+        return;
+      }
       const reader = res.body.getReader(); const dec = new TextDecoder(); let full = "";
       setChatMsgs(m => [...m, { role: "brain", text: "" }]);
       while (true) {
@@ -654,6 +666,14 @@ export default function BrainCommand() {
         if (done) break;
         full += dec.decode(value);
         setChatMsgs(m => { const c = [...m]; c[c.length - 1] = { role: "brain", text: full }; return c; });
+      }
+      /* If the streamed body itself contains the Vercel crash signature (the function failed mid-stream), auto-diagnose */
+      if (full.includes("FUNCTION_INVOCATION_FAILED") || full.includes("A server error has occurred")) {
+        const rc = getRuntimeCompiler(supabase as any);
+        const auto = rc.autoFix(full);
+        if (auto) {
+          setChatMsgs(m => { const c = [...m]; c[c.length - 1] = { role: "brain", text: `⚡ AUTO-DIAGNOSED\n\n**Root Cause:** ${auto.diagnosis}\n\n**Fix:** ${auto.action}\n\n*Raw: ${full.slice(0, 200)}*` }; return c; });
+        }
       }
     } catch (e: any) {
       setChatMsgs(m => [...m, { role: "brain", text: "Error: " + e.message }]);
