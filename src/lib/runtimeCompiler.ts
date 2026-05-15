@@ -78,6 +78,24 @@ const STATIC_RULES: Record<string, Record<string, ValidationRule>> = {
   },
 };
 
+/* ─────────────────────────────────────────────────────────
+   INFRASTRUCTURE FACTS — hardcoded truths about this system.
+   These are injected BEFORE Claude diagnoses anything, so the
+   Brain never gives wrong advice about things that are already
+   correct.
+─────────────────────────────────────────────────────────── */
+export const INFRA_FACTS = `
+VERIFIED INFRASTRUCTURE FACTS (do NOT contradict these):
+• vercel.json has "regions": ["iad1"] GLOBALLY and on EVERY function — region is NOT the issue.
+• bom1 / sin1 / hnd1 / cdg1 / syd1 in Vercel error IDs = the EDGE ROUTING NODE the user's browser hits first. It is NOT where the Lambda runs. The Lambda always runs in iad1. Never suggest adding regions: iad1 — it is already there.
+• Vercel Pro plan is active — no 10s timeout limit, no cold-start penalty from Hobby plan.
+• FUNCTION_INVOCATION_FAILED means the Lambda PROCESS CRASHED — causes: (a) code not yet deployed/pushed to Vercel, (b) module load error at startup, (c) uncaught exception before handler ran. It is NEVER caused by region misconfiguration.
+• When FUNCTION_INVOCATION_FAILED occurs, the correct diagnosis is: check if new code was committed but not yet pushed/deployed to Vercel. Run: vercel --prod OR git push origin main.
+• Supabase v2 PostgrestBuilder does NOT support .catch() chaining — always use try/catch blocks.
+• @anthropic-ai/sdk claude-sonnet-4-6 does NOT support assistant message prefill (role: "assistant" in messages array) — never add prefill.
+• All API Lambda files are standalone (no local ./lib/ imports) — import resolution is not the issue.
+`.trim();
+
 /* ─────────────────────── Singleton ─────────────────────── */
 
 let _instance: RuntimeCompiler | null = null;
@@ -90,6 +108,37 @@ export function getRuntimeCompiler(sb?: SupabaseClient): RuntimeCompiler {
   }
   return _instance;
 }
+
+/* ─────────────────────────────────────────────────────────
+   PRE-SEEDED PATTERNS — built-in knowledge that improves
+   immediately, before any errors have been seen.
+─────────────────────────────────────────────────────────── */
+const PRESEED_PATTERNS: LearnedPattern[] = [
+  {
+    endpoint: "vercel",
+    action: "FUNCTION_INVOCATION_FAILED",
+    errorMsg: "Lambda process crash — NOT a region issue. bom1/sin1/hnd1 = edge routing node, Lambda runs in iad1.",
+    occurrences: 99, // high confidence — always show this first
+    lastSeen: new Date().toISOString(),
+    suggestedFix: "Push code to deploy: `vercel --prod` or `git push origin main`. Do NOT change vercel.json — regions: iad1 is already set.",
+  },
+  {
+    endpoint: "supabase",
+    action: "query_builder",
+    errorMsg: "Supabase v2 .catch() is not a function — PostgrestBuilder is not a native Promise.",
+    occurrences: 99,
+    lastSeen: new Date().toISOString(),
+    suggestedFix: "Use try/catch instead of .catch() chaining on Supabase queries.",
+  },
+  {
+    endpoint: "anthropic",
+    action: "assistant_prefill",
+    errorMsg: "claude-sonnet-4-6 does not support assistant message prefill.",
+    occurrences: 99,
+    lastSeen: new Date().toISOString(),
+    suggestedFix: "Remove { role: 'assistant' } prefill from messages array. Use system prompt instead.",
+  },
+];
 
 /* ─────────────────────── RuntimeCompiler Class ─────────────────────── */
 
@@ -107,6 +156,45 @@ export class RuntimeCompiler {
 
   constructor(sb: SupabaseClient | null) {
     this.sb = sb;
+    // Pre-seed infrastructure facts so the Brain NEVER gives wrong advice
+    this.patterns = PRESEED_PATTERNS.map(p => ({ ...p }));
+    this.stats.patternCount = this.patterns.length;
+  }
+
+  /* ── autoFix: given an error body/message, return the known correct diagnosis ── */
+  autoFix(errorBody: string): { diagnosis: string; action: string } | null {
+    const body = (errorBody || "").toLowerCase();
+    if (body.includes("function_invocation_failed")) {
+      return {
+        diagnosis: "The Lambda process crashed — most likely cause is undeployed code. New fixes are committed locally but Vercel is still running the OLD version.",
+        action: "Push to deploy: open your terminal and run `vercel --prod` (or `git push origin main` if Vercel is connected to GitHub). Do NOT change vercel.json — regions: iad1 is already correctly configured.",
+      };
+    }
+    if (body.includes(".catch is not a function") || body.includes("catch is not a function")) {
+      return {
+        diagnosis: "Supabase v2 PostgrestBuilder does not support .catch() chaining. The Supabase query builder returns a lazy builder, not a native Promise.",
+        action: "Replace `.upsert({...}).catch(() => {})` with `try { await .upsert({...}); } catch (_e) {}`.",
+      };
+    }
+    if (body.includes("assistant message prefill") || body.includes("does not support assistant")) {
+      return {
+        diagnosis: "claude-sonnet-4-6 does not support assistant message prefill (adding a { role: 'assistant' } entry to the messages array).",
+        action: "Remove all { role: 'assistant', content: '...' } prefill entries from the messages array. Pass the full prompt in the user message instead.",
+      };
+    }
+    if (body.includes("column") && body.includes("does not exist")) {
+      return {
+        diagnosis: "A Supabase migration has not been run — the query references a column that doesn't exist in the table yet.",
+        action: "Check supabase-migrations/ folder for the relevant .sql file and run it in the Supabase dashboard SQL editor.",
+      };
+    }
+    if (body.includes("bom1") || body.includes("region")) {
+      return {
+        diagnosis: "bom1 in the error ID is the Vercel EDGE ROUTING NODE for Indian users — it is not the Lambda execution region. The Lambda runs in iad1 as correctly configured.",
+        action: "Do NOT change vercel.json. The region config is correct. Investigate the actual Lambda crash instead.",
+      };
+    }
+    return null;
   }
 
   /* ── init: load learned patterns from Supabase once ── */

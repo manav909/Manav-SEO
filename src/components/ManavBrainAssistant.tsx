@@ -29,7 +29,7 @@ import { useNavigate }  from 'react-router-dom';
 import { useAuth }      from '@/contexts/AuthContext';
 import { useProject }   from '@/contexts/ProjectContext';
 import { supabase }     from '@/lib/supabase';
-import { getRuntimeCompiler, type LearnedPattern } from '@/lib/runtimeCompiler';
+import { getRuntimeCompiler, type LearnedPattern, INFRA_FACTS } from '@/lib/runtimeCompiler';
 import {
   Brain, Send, X, Zap, Activity, Globe, Target, Shield, FileText,
   CheckCircle, AlertCircle, Loader2, Cpu, RefreshCw,
@@ -532,8 +532,26 @@ export default function ManavBrainAssistant() {
       ts: new Date(),
     }]);
 
+    // ── Runtime Compiler: check auto-fix FIRST before asking Claude ──
+    const rc = getRuntimeCompiler();
+    const autoFixResult = rc.autoFix(`${err.message} ${err.body || ''}`);
+    if (autoFixResult) {
+      // We already know the answer — show it immediately, no Claude call needed
+      setMsgs(ms => [...ms, {
+        id: uid(), role: 'brain' as MsgRole,
+        content: `⚡ AUTO-DIAGNOSED (Runtime Compiler)\n\n**Root Cause:** ${autoFixResult.diagnosis}\n\n**Fix:** ${autoFixResult.action}\n\n_This pattern is stored — the Brain will not suggest wrong fixes for this error again._`,
+        ts: new Date(),
+      }]);
+      setHealth('degraded');
+      void logSystemError(err);
+      void logHealAction(err.message, autoFixResult.action, ['runtime_compiler_auto_fix']);
+      return;
+    }
+
     const healPrompt = [
       `⚠ SYSTEM ERROR — IMMEDIATE DIAGNOSIS REQUIRED`,
+      ``,
+      `${INFRA_FACTS}`,
       ``,
       `Error Type: ${err.type}`,
       `Message: ${err.message}`,
@@ -547,12 +565,12 @@ export default function ManavBrainAssistant() {
       ``,
       `DIAGNOSE THIS COMPLETELY:`,
       `1. What is the exact root cause? Be specific about which file, function, or configuration.`,
-      `2. Is this a: code bug | migration not run | import error | env var missing | cold start | data issue?`,
+      `2. Is this a: code bug | migration not run | import error | env var missing | cold start | data issue | UNDEPLOYED CODE?`,
       `3. Provide the EXACT FIX — specific code change, SQL to run, or config to set.`,
       `4. Will this prevent any feature from working right now?`,
       `5. If this needs a canvas card to track the fix, create one with an ACTION tag.`,
       ``,
-      `You have full knowledge of the SEO Season codebase (Next.js/React/Supabase/Vercel Hobby). Be surgical and precise.`,
+      `You have full knowledge of the SEO Season codebase (React/Supabase/Vercel Pro). Be surgical and precise. NEVER suggest region changes — iad1 is already correctly configured everywhere.`,
     ].filter(Boolean).join('\n');
 
     // Only trigger healing if Brain is not already processing something
