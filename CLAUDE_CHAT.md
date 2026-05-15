@@ -21,7 +21,7 @@
 **Command:** python3 ~/Downloads/empire_quality.py
 **PostAction:** bridge status with results
 
-### TASK-004 [PENDING]
+### TASK-004 [DONE 2026-05-16 04:56]
 **Action:** Run empire_migrate.py — apply all SQL migrations via Supabase
 **Command:** python3 ~/Downloads/empire_migrate.py
 **PostAction:** bridge status with table counts
