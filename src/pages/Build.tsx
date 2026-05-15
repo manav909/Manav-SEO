@@ -83,11 +83,6 @@ function useBridgeData(refreshMs: number) {
         .limit(60);
       if (!error && data && data.length > 0) {
         setRows(data as BridgeRow[]);
-        // eslint-disable-next-line no-console
-        console.log('[Bridge] rows loaded:', data.length, data[0]);
-      } else if (error) {
-        // eslint-disable-next-line no-console
-        console.log('[Bridge] error:', error);
       }
       setLastSync(new Date());
     } catch (_e) {}
