@@ -43,10 +43,107 @@ async function saveLearning(opts: {
   } catch (_e) { return { saved: false }; }
 }
 
-/* ── No-op stub for post-audit pipeline (the full version did learnings extraction +
-   metric scoring + staleness flagging — bypassing it here keeps the audit response
-   working; can be re-introduced later as a separate Lambda) ── */
-async function runPostAuditPipeline(_opts: any): Promise<void> { /* intentional no-op */ }
+/* ── Inline minimal logChange (audit trail) ── */
+async function logChange(opts: { projectId: string | null; changeType: string; description: string; metadata?: Record<string, any> }): Promise<void> {
+  try {
+    const sbc = db(); if (!sbc) return;
+    await sbc.from('system_change_log').insert({
+      project_id:  opts.projectId,
+      change_type: opts.changeType,
+      description: opts.description.slice(0, 500),
+      metadata:    opts.metadata || null,
+      created_at:  new Date().toISOString(),
+    });
+  } catch (_e) {}
+}
+
+/* ── Post-audit pipeline (full version, inlined from api/lib/pipeline.ts) ──
+   Triggers AFTER every audit:
+   1. Extracts learnings from each audit section → brain_learnings (auto-active for audit content)
+   2. Auto-syncs the overall audit score to metrics table IF no metric in last 7 days
+   3. Marks strategy/pipeline/launchpad as stale so they regenerate on next view
+   4. Logs the whole pipeline run to system_change_log
+   Every step is independently try/wrapped — one failure never blocks the others. */
+const AUDIT_SECTION_TYPES: Record<string, string> = {
+  technical:  'technical',
+  on_page:    'content',
+  off_page:   'competitive',
+  geo:        'geo',
+};
+async function runPostAuditPipeline(opts: {
+  projectId: string; auditId: string; url: string;
+  sections: Record<string, string>; score: number | null;
+}): Promise<{ learningSaved: number; learningSkipped: number; metricsAutoSynced: boolean; launchpadMarkedStale: boolean; errors: string[] }> {
+  const { projectId, auditId, url, sections, score } = opts;
+  const errors: string[] = [];
+  let learningSaved = 0, learningSkipped = 0;
+  let metricsAutoSynced = false, launchpadMarkedStale = false;
+
+  /* 1. Per-section learning capture */
+  for (const [sectionKey, text] of Object.entries(sections || {})) {
+    if (!text || text.length < 100) { learningSkipped++; continue; }
+    const cardType = AUDIT_SECTION_TYPES[sectionKey] || 'insight';
+    const r = await saveLearning({
+      source:      'audit_streaming',
+      projectId,
+      content:     text,
+      title:       `Audit ${sectionKey.replace(/_/g, ' ')} — ${url.replace(/https?:\/\//, '').slice(0, 30)}`,
+      cardType,
+      contextSummary: `Audit run on ${url} — ${sectionKey} section`,
+    });
+    if (r.saved) learningSaved++; else learningSkipped++;
+  }
+
+  /* 2. Auto-sync overall score → metrics (only if no metric in last 7 days) */
+  if (score != null) {
+    try {
+      const sbc = db();
+      if (sbc) {
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: recent } = await sbc.from('metrics')
+          .select('id').eq('project_id', projectId).gte('recorded_at', sevenDaysAgo).limit(1);
+        if (!recent?.length) {
+          await sbc.from('metrics').insert({
+            project_id:           projectId,
+            overall_growth_score: score,
+            recorded_at:          new Date().toISOString(),
+            source:               'audit_auto_sync',
+            audit_report_id:      auditId,
+          });
+          metricsAutoSynced = true;
+        }
+      }
+    } catch (e: any) { errors.push(`metrics_sync: ${e?.message}`); }
+  }
+
+  /* 3. Mark strategy/pipeline/launchpad as stale — they need regeneration with fresh audit data */
+  try {
+    const sbc = db();
+    if (sbc) {
+      for (const section of ['strategy', 'pipeline', 'launchpad']) {
+        await sbc.from('staleness_registry').upsert({
+          project_id:   projectId,
+          section,
+          stale:        true,
+          stale_reason: `New audit completed for ${url}`,
+          stale_since:  new Date().toISOString(),
+          updated_at:   new Date().toISOString(),
+        }, { onConflict: 'project_id,section' });
+      }
+      launchpadMarkedStale = true;
+    }
+  } catch (e: any) { errors.push(`staleness: ${e?.message}`); }
+
+  /* 4. Audit trail */
+  await logChange({
+    projectId,
+    changeType:  'audit_pipeline',
+    description: `Audit pipeline: ${learningSaved} learnings saved, ${learningSkipped} skipped. Score: ${score ?? 'n/a'}. Auto-synced metrics: ${metricsAutoSynced}.`,
+    metadata:    { auditId, url, learningSaved, learningSkipped, metricsAutoSynced, launchpadMarkedStale, errors },
+  });
+
+  return { learningSaved, learningSkipped, metricsAutoSynced, launchpadMarkedStale, errors };
+}
 
 function getAI(): Anthropic { return new Anthropic(); }
 
