@@ -691,7 +691,8 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
 
 /* ══════════════════════════════════════════════════════════
    KINGDOM 4: VISION (Glass)
-══════════════════════════════════════════════════════════ */const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
+══════════════════════════════════════════════════════════ */
+const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"empire"|"modules"|"vision"|"creator">("empire");
   const GC = ({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) => (
     <div style={{ background: "rgba(255,255,255,.055)", border: ".5px solid rgba(255,255,255,.1)", borderRadius: 18, padding: 14, position: "relative", overflow: "hidden", ...style }}>
@@ -864,4 +865,269 @@ const Sidebar = ({ modules, kingdom, daily, health }: { modules: ModuleState[]; 
                 <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#4b4b6a", textTransform: "uppercase", marginBottom: 2, fontFamily: S.font }}>
                   {kingdom === "war" ? `SECTOR ${String(m.num).padStart(2, "0")}` : kingdom === "neural" ? `mod_${String(m.num).padStart(2, "0")}` : `Module ${String(m.num).padStart(2, "0")}`}
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "#f0f0ff", whiteSpace: "nowrap", overf
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#f0f0ff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+              </div>
+              <span style={{ fontSize: 9, fontWeight: 500, padding: "2px 6px", borderRadius: 20, background: iDone ? "#0a2010" : iBuilding ? "#030d20" : "#0d0d1a", color: iDone ? "#10b981" : iBuilding ? "#3b82f6" : "#4b4b6a", border: `.5px solid ${iDone ? "rgba(16,185,129,.3)" : iBuilding ? "rgba(59,130,246,.3)" : "#1e1e3a"}`, flexShrink: 0 }}>
+                {iDone ? "DONE" : iBuilding ? "BUILD" : "PEND"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div style={{ padding: "8px 10px", borderTop: `.5px solid ${S.border}`, display: "flex", gap: 5, flexWrap: "wrap" }}>
+        {[["TS", health.ts === "clean"], ["Git", health.git !== "stale"], ["DB", health.db === "ok"], ["Build", true]].map(([l, ok]) => (
+          <span key={String(l)} style={{ fontSize: 9, padding: "2px 6px", borderRadius: 5, fontWeight: 500, background: (ok as boolean) ? "#051008" : "#150303", color: (ok as boolean) ? "#10b981" : "#ef4444", border: `.5px solid ${(ok as boolean) ? "rgba(16,185,129,.3)" : "rgba(239,68,68,.3)"}` }}>
+            {l} {(ok as boolean) ? "✓" : "✗"}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/* ══════════════════════════════════════════════════════════
+   MAIN BUILD COMPONENT
+══════════════════════════════════════════════════════════ */
+export default function Build() {
+  const screen    = useScreen();
+  const elapsed   = useElapsed();
+  const dots      = useDots();
+  const { rows, loading, lastSync, refetch } = useBridgeData(REFRESH_MS);
+  const [kingdom, setKingdom]         = useState<Kingdom>("war");
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [pullVisible, setPullVisible] = useState(false);
+  const pullRef   = useRef({ startY: 0, pulling: false });
+
+  const state = useMemo(() => deriveState(rows), [rows]);
+
+  /* Inject CSS */
+  useEffect(() => {
+    const s = document.createElement("style");
+    s.id = "empire-css";
+    s.textContent = EMPIRE_CSS;
+    document.head.appendChild(s);
+    return () => { document.getElementById("empire-css")?.remove(); };
+  }, []);
+
+  /* Pull-to-refresh handlers */
+  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop === 0) {
+      pullRef.current = { startY: e.touches[0].clientY, pulling: true };
+    }
+  };
+  const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!pullRef.current.pulling) return;
+    if (e.touches[0].clientY - pullRef.current.startY > 55) setPullVisible(true);
+  };
+  const onTouchEnd = () => {
+    if (pullRef.current.pulling && pullVisible) {
+      refetch();
+      setTimeout(() => setPullVisible(false), 900);
+    }
+    pullRef.current.pulling = false;
+  };
+
+  /* Per-kingdom theme tokens */
+  const theme = {
+    war: {
+      hBg: "rgba(3,11,3,.97)", hBorder: "#1a2e1a", title: "#39d353",
+      tickBg: "rgba(57,211,83,.04)", tickBorder: "#1a2e1a",
+      tickText: "#2a7a2a", tickFade: "#030b03", ldColor: "#39d353", sbBg: "#020a02",
+    },
+    royal: {
+      hBg: "rgba(8,4,15,.97)", hBorder: "rgba(245,158,11,.12)", title: "#f0e0c0",
+      tickBg: "rgba(245,158,11,.04)", tickBorder: "rgba(245,158,11,.1)",
+      tickText: "#8b6914", tickFade: "#08040f", ldColor: "#c9a227", sbBg: "#060310",
+    },
+    neural: {
+      hBg: "rgba(2,8,15,.97)", hBorder: "rgba(6,182,212,.1)", title: "#e0f7ff",
+      tickBg: "rgba(6,182,212,.04)", tickBorder: "rgba(6,182,212,.1)",
+      tickText: "#0e7490", tickFade: "#02080f", ldColor: "#06b6d4", sbBg: "#01060c",
+    },
+    glass: {
+      hBg: "rgba(8,0,26,.85)", hBorder: "rgba(255,255,255,.07)", title: "#fff",
+      tickBg: "rgba(255,255,255,.03)", tickBorder: "rgba(255,255,255,.05)",
+      tickText: "rgba(167,139,250,.75)", tickFade: "rgba(8,0,26,.95)",
+      ldColor: "#34d399", sbBg: "#06001a",
+    },
+  }[kingdom];
+
+  const ksConfig = {
+    war:    { sheetBg: "#020a02",  titleColor: "rgba(57,211,83,.4)"     },
+    royal:  { sheetBg: "#06030d",  titleColor: "rgba(245,158,11,.4)"    },
+    neural: { sheetBg: "#010608",  titleColor: "rgba(6,182,212,.3)"     },
+    glass:  { sheetBg: "#06001a",  titleColor: "rgba(167,139,250,.4)"   },
+  }[kingdom];
+
+  const commonProps = {
+    modules:   state.modules,
+    activeRow: state.activeRow,
+    feed:      state.feed,
+    health:    state.health,
+    daily:     state.daily,
+    elapsed,
+    dots,
+    mobile:    screen.mobile,
+  };
+
+  return (
+    <div id="empire-root">
+
+      {/* ── Sidebar (desktop only) ── */}
+      <div id="empire-sidebar">
+        <Sidebar
+          modules={state.modules}
+          kingdom={kingdom}
+          daily={state.daily}
+          health={state.health}
+        />
+      </div>
+
+      {/* ── Header ── */}
+      <div id="empire-header" style={{ background: theme.hBg, borderBottom: `.5px solid ${theme.hBorder}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 16, color: "#f59e0b" }}>👑</span>
+          <span style={{
+            fontSize: screen.mobile ? 12 : 13,
+            fontWeight: 700,
+            color: theme.title,
+            letterSpacing: (kingdom === "war" || kingdom === "neural") ? 2 : 0.2,
+            fontFamily: (kingdom === "war" || kingdom === "neural") ? "monospace" : "inherit",
+          }}>
+            {screen.mobile
+              ? "EMPIRE"
+              : kingdom === "war"    ? "WAR ROOM — EMPIRE COMMAND"
+              : kingdom === "royal"  ? "SEO Season — Royal Court"
+              : kingdom === "neural" ? "NEURAL.CMD — EMPIRE"
+              :                        "SEO Season — Vision"}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {/* Screen info (desktop) */}
+          {!screen.mobile && (
+            <span style={{ fontSize: 10, color: "#4b4b6a", marginRight: 4 }}>
+              {screen.w}×{screen.h} · {screen.wide ? "wide" : "desktop"}
+            </span>
+          )}
+
+          {/* Live pill */}
+          <span style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(16,185,129,.1)", border: ".5px solid rgba(16,185,129,.25)", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#10b981", fontWeight: 600 }}>
+            <span className="ld" style={{ width: 5, height: 5, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
+            {loading ? "SYNC" : "LIVE"}
+          </span>
+
+          {/* Manual refresh — always visible */}
+          <button
+            onClick={refetch}
+            title={`Refresh · Last sync: ${lastSync ? lastSync.toLocaleTimeString() : "never"}`}
+            style={{ width: 30, height: 30, borderRadius: 8, border: ".5px solid #1e1e3a", background: "transparent", color: "#6b6b80", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, transition: "color .15s" }}
+          >
+            ↻
+          </button>
+
+          {/* Desktop kingdom tabs */}
+          {!screen.mobile && (
+            <div style={{ display: "flex", gap: 3, background: "#0d0d1a", border: ".5px solid #1e1e3a", borderRadius: 10, padding: "3px 4px" }}>
+              {KS_CARDS.map(k => (
+                <button
+                  key={k.id}
+                  onClick={() => setKingdom(k.id)}
+                  style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: kingdom === k.id ? k.c1 : "transparent", color: kingdom === k.id ? k.nc : "#4b4b6a", fontSize: 10, fontWeight: 600, cursor: "pointer", transition: "all .2s", letterSpacing: .3 }}
+                >
+                  {k.name.split(" ")[0]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Crown — kingdom switcher FAB (always visible) */}
+          <button
+            onClick={() => setSwitcherOpen(o => !o)}
+            style={{ width: 30, height: 30, borderRadius: 8, border: ".5px solid rgba(245,158,11,.3)", background: "rgba(245,158,11,.06)", color: "#f59e0b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
+            title="Switch Kingdom"
+          >
+            👑
+          </button>
+        </div>
+      </div>
+
+      {/* ── Ticker ── */}
+      <div id="empire-ticker">
+        <Ticker
+          news={state.news}
+          bg={theme.tickBg}
+          textColor={theme.tickText}
+          borderColor={theme.tickBorder}
+          fadeColor={theme.tickFade}
+        />
+      </div>
+
+      {/* ── Content area ── */}
+      <div id="empire-content">
+        <div
+          style={{ position: "absolute", inset: 0, overflow: "hidden" }}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          {/* Pull-to-refresh indicator */}
+          {pullVisible && (
+            <div style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", fontSize: 22, zIndex: 10, animation: "ldpulse 600ms linear infinite" }}>
+              👑
+            </div>
+          )}
+
+          {/* Active Kingdom */}
+          {kingdom === "war"    && <WarRoom       {...commonProps} />}
+          {kingdom === "royal"  && <RoyalCourt    {...commonProps} />}
+          {kingdom === "neural" && <NeuralCommand {...commonProps} />}
+          {kingdom === "glass"  && <VisionKingdom {...commonProps} />}
+        </div>
+
+        {/* Dim overlay when switcher is open */}
+        {switcherOpen && (
+          <div
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 49 }}
+            onClick={() => setSwitcherOpen(false)}
+          />
+        )}
+
+        {/* Kingdom Switcher Sheet */}
+        <KingdomSwitcher
+          open={switcherOpen}
+          current={kingdom}
+          onSelect={setKingdom}
+          onClose={() => setSwitcherOpen(false)}
+          bg={ksConfig.sheetBg}
+          titleColor={ksConfig.titleColor}
+        />
+      </div>
+
+      {/* ── Bottom Nav (mobile only) ── */}
+      <div
+        id="empire-bottom-nav"
+        style={{ background: theme.hBg, borderTop: `.5px solid ${theme.hBorder}` }}
+      >
+        {([
+          ["⊕", "Modules"],
+          ["⚡", "Active"],
+          ["≡",  "Log"],
+          ["♥",  "Health"],
+        ] as [string, string][]).map(([icon, label]) => (
+          <div
+            key={label}
+            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "2px 0", cursor: "pointer" }}
+          >
+            <span style={{ fontSize: 19, color: theme.ldColor, opacity: .35 }}>{icon}</span>
+            <span style={{ fontSize: 8, color: theme.ldColor, fontWeight: 500, opacity: .35, letterSpacing: .3 }}>{label}</span>
+          </div>
+        ))}
+      </div>
+
+    </div>
+  );
+}
