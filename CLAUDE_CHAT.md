@@ -18,7 +18,7 @@
 **Command:** python3 ~/Downloads/empire_quality.py
 **PostAction:** bridge results
 
-### TASK-004 [PENDING]
+### TASK-004 [DONE 2026-05-16 05:05]
 **Action:** Apply SQL migrations via psycopg2 or pgmeta
 **Command:** python3 ~/Downloads/empire_migrate.py
 **PostAction:** bridge table counts
