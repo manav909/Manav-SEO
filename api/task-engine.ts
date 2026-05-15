@@ -829,7 +829,37 @@ Respond with JSON only:
   /* ── REQUIREMENTS ── */
   if (action === "requirements") {
     const { card, context = {}, userInputs = {} } = body;
-    if (!card) return ok(res, { error: "Missing card" });
+  
+  if (action === 'client_brief') {
+    const { projectId, briefType = 'progress' } = body;
+    if (!projectId) return ok(res, { error: 'projectId required' });
+    const [projR,metricsR,taskR,learnR] = await Promise.allSettled([
+      db().from('projects').select('name,url,goals,industry').eq('id',projectId).single(),
+      db().from('metrics').select('llm_visibility_score,algorithm_health_score').eq('project_id',projectId).order('recorded_at',{ascending:false}).limit(1),
+      db().from('task_executions').select('task_type,status').eq('project_id',projectId).eq('status','done').order('created_at',{ascending:false}).limit(10),
+      db().from('brain_learnings').select('card_title').eq('project_id',projectId).eq('status','active').order('applied_count',{ascending:false}).limit(5),
+    ]);
+    const proj    = projR.status==='fulfilled'    ? projR.value.data         : null;
+    const metrics = metricsR.status==='fulfilled' ? metricsR.value.data?.[0] : null;
+    const tasks   = taskR.status==='fulfilled'    ? taskR.value.data   || [] : [];
+    const learns  = learnR.status==='fulfilled'   ? learnR.value.data  || [] : [];
+    if (!proj) return ok(res, { error: 'Project not found' });
+    const templates: Record<string,string> = {
+      progress: `Write a professional 3-paragraph client progress update for ${proj.name}. Goals: ${proj.goals||'being established'}. Tasks done: ${tasks.length}. Key learnings: ${learns.map((l:any)=>l.card_title).join('; ')||'accumulating'}. Scores: ${metrics?`LLM ${metrics.llm_visibility_score}/100`:'first audit pending'}. Plain business language, no jargon. End with what happens next week.`,
+      renewal:  `Write a compelling renewal brief for ${proj.name}. ${tasks.length} tasks completed. ${learns.length} proven strategies captured. ${metrics?`Current LLM score: ${metrics.llm_visibility_score}/100.`:''} Make the ROI case clearly in plain language.`,
+      objection:`Client questioning the strategy for ${proj.name}. Write a confident, data-grounded response. ${tasks.length} tasks done, ${learns.length} learnings proven. Address concerns with facts, propose clear next steps.`,
+      upsell:   `Identify 3 expansion opportunities for ${proj.name} in ${proj.industry||'their industry'}. Format: Opportunity → Why now → Expected impact. Be specific and compelling.`,
+    };
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:900,messages:[{role:'user',content:templates[briefType]||templates.progress}]}),
+    });
+    const aiJson = await aiRes.json() as any;
+    return ok(res, { success:true, brief:aiJson?.content?.[0]?.text||'Failed', briefType, projectName:proj.name });
+  }
+
+  if (!card) return ok(res, { error: "Missing card" });
 
     const BLUEPRINTS: Record<string, any> = {
       technical: {
