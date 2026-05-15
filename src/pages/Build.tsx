@@ -155,7 +155,14 @@ function deriveState(rows: BridgeRow[]) {
     "🏰 Module 01 complete — foundation of the most intelligent SEO empire",
   ];
 
-  return { modules, activeRow, feed, health, daily, news };
+  return {
+    modules:   modules   ?? [],
+    activeRow: activeRow ?? null,
+    feed:      feed      ?? [],
+    health:    health    ?? { ts: "unknown" as const, git: "unknown" as const, db: "unknown" as const, build: "unknown" as const },
+    daily:     daily     ?? { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 },
+    news:      news      ?? [],
+  };
 }
 
 /* ── CSS ───────────────────────────────────────────────── */
@@ -307,7 +314,7 @@ const Pill = ({ children, bg, color, border }: { children: React.ReactNode; bg: 
 /* ══════════════════════════════════════════════════════════
    KINGDOM 1: WAR ROOM
 ══════════════════════════════════════════════════════════ */
-const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
+const WarRoom = ({ modules = [], activeRow = null, feed = [], health = { ts: "unknown", git: "unknown", db: "unknown", build: "unknown" }, daily = { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 }, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"ops"|"map"|"comms"|"sys">("ops");
   const S = { bg: "#030b03", text: "#39d353", dim: "#1a5c1a", faint: "#0a1a0a", border: "#1a2e1a", font: "monospace" };
 
@@ -443,7 +450,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
 /* ══════════════════════════════════════════════════════════
    KINGDOM 2: ROYAL COURT
 ══════════════════════════════════════════════════════════ */
-const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
+const RoyalCourt = ({ modules = [], activeRow = null, feed = [], health = { ts: "unknown", git: "unknown", db: "unknown", build: "unknown" }, daily = { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 }, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"court"|"scroll"|"treasury"|"realm">("court");
   const S = { bg: "#08040f", text: "#f0e0c0", gold: "#f59e0b", goldDim: "#c9a227", goldFaint: "#3a2510", border: "rgba(245,158,11,.12)", accent: "rgba(245,158,11,.08)" };
 
@@ -572,7 +579,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
 /* ══════════════════════════════════════════════════════════
    KINGDOM 3: NEURAL COMMAND
 ══════════════════════════════════════════════════════════ */
-const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
+const NeuralCommand = ({ modules = [], activeRow = null, feed = [], health = { ts: "unknown", git: "unknown", db: "unknown", build: "unknown" }, daily = { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 }, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"neural"|"nodes"|"signal"|"synapse">("neural");
   const S = { bg: "#02080f", text: "#e0f7ff", cyan: "#06b6d4", cyanDim: "#0e7490", cyanFaint: "#051520", border: "rgba(6,182,212,.1)", accent: "rgba(6,182,212,.05)" };
 
@@ -691,7 +698,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
 /* ══════════════════════════════════════════════════════════
    KINGDOM 4: VISION (Glass)
 ══════════════════════════════════════════════════════════ */
-const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
+const VisionKingdom = ({ modules = [], activeRow = null, feed = [], health = { ts: "unknown", git: "unknown", db: "unknown", build: "unknown" }, daily = { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 }, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"empire"|"modules"|"vision"|"creator">("empire");
   const GC = ({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) => (
     <div style={{ background: "rgba(255,255,255,.055)", border: ".5px solid rgba(255,255,255,.1)", borderRadius: 18, padding: 14, position: "relative", overflow: "hidden", ...style }}>
@@ -826,7 +833,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
 /* ══════════════════════════════════════════════════════════
    SIDEBAR (desktop)
 ══════════════════════════════════════════════════════════ */
-const Sidebar = ({ modules, kingdom, daily, health }: { modules: ModuleState[]; kingdom: Kingdom; daily: DailyStats; health: HealthState }) => {
+const Sidebar = ({ modules = [], kingdom, daily, health }: { modules?: ModuleState[]; kingdom: Kingdom; daily: DailyStats; health: HealthState }) => {
   const S = kingdom === "war" ? { bg: "#020a02", head: "#030b03", border: "#1a2e1a", title: "#39d353", dim: "#1a5c1a", font: "monospace" } :
             kingdom === "royal" ? { bg: "#060310", head: "#08040f", border: "rgba(245,158,11,.15)", title: "#f0e0c0", dim: "#8b6914", font: "inherit" } :
             kingdom === "neural" ? { bg: "#01060c", head: "#020810", border: "rgba(6,182,212,.1)", title: "#e0f7ff", dim: "#0e7490", font: "monospace" } :
@@ -962,11 +969,11 @@ function BuildInner() {
   }[kingdom];
 
   const commonProps = {
-    modules:   state.modules,
-    activeRow: state.activeRow,
-    feed:      state.feed,
-    health:    state.health,
-    daily:     state.daily,
+    modules:   state?.modules   ?? [],
+    activeRow: state?.activeRow ?? null,
+    feed:      state?.feed      ?? [],
+    health:    state?.health    ?? { ts: "unknown" as const, git: "unknown" as const, db: "unknown" as const, build: "unknown" as const },
+    daily:     state?.daily     ?? { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 },
     elapsed,
     dots,
     mobile:    screen.mobile,
@@ -1057,7 +1064,7 @@ function BuildInner() {
       {/* ── Ticker ── */}
       <div id="empire-ticker">
         <Ticker
-          news={state.news}
+          news={state?.news ?? []}
           bg={theme.tickBg}
           textColor={theme.tickText}
           borderColor={theme.tickBorder}
