@@ -73,6 +73,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function _handler(req: VercelRequest, res: VercelResponse) {
+  /* ── CORS ── */
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "x-read-token,x-bridge-secret,Authorization,Content-Type");
+  if (req.method === "OPTIONS") return res.status(200).end();
+
   /* ── GET — markdown feed reader (token via x-read-token header or ?token= query param) ── */
   if (req.method === "GET") {
     const token = (req.headers["x-read-token"] as string) || (req.query?.token as string) || "";
