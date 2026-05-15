@@ -889,7 +889,7 @@ const Sidebar = ({ modules, kingdom, daily, health }: { modules: ModuleState[]; 
 /* ══════════════════════════════════════════════════════════
    MAIN BUILD COMPONENT
 ══════════════════════════════════════════════════════════ */
-export default function Build() {
+function BuildInner() {
   const screen    = useScreen();
   const elapsed   = useElapsed();
   const dots      = useDots();
@@ -1128,5 +1128,61 @@ export default function Build() {
       </div>
 
     </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   ERROR BOUNDARY — diagnoses render crashes
+══════════════════════════════════════════════════════════ */
+class BuildErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: string | null; stack: string | null }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { error: null, stack: null };
+  }
+  static getDerivedStateFromError(e: any) {
+    return { error: e?.message || String(e), stack: e?.stack || null };
+  }
+  componentDidCatch(error: any, info: any) {
+    // Log to console so it shows up in DevTools
+    // eslint-disable-next-line no-console
+    console.error("👑 BuildErrorBoundary caught:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{
+          background: "#070710", color: "#ef4444",
+          padding: 24, fontFamily: "monospace",
+          fontSize: 13, lineHeight: 1.6, minHeight: "100vh",
+        }}>
+          <div style={{ color: "#f59e0b", fontSize: 16, marginBottom: 12 }}>
+            👑 Render Error
+          </div>
+          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
+            {this.state.error}
+          </pre>
+          {this.state.stack && (
+            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", marginTop: 12, color: "#6b6b80", fontSize: 11 }}>
+              {this.state.stack}
+            </pre>
+          )}
+          <div style={{ marginTop: 16, color: "#4b4b6a" }}>
+            Check browser console for full stack trace.
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function Build() {
+  return (
+    <BuildErrorBoundary>
+      <BuildInner />
+    </BuildErrorBoundary>
   );
 }
