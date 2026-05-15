@@ -678,16 +678,30 @@ function BottomStrip({
   messages:   BridgeMsg[];
   breakpoint: Breakpoint;
 }) {
-  const convWords = (() => {
+  // Prefer explicit bridge context post (bridge context <pct> <status> <detail>),
+  // fall back to conversation_length metadata from claude_chat messages.
+  const ctxFromBridge = (() => {
     const sorted = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    const cc = sorted.find(m => m.created_by === "claude_chat" && m.metadata?.conversation_length);
-    return cc ? Number(cc.metadata.conversation_length) : null;
+    const m = sorted.find(m => m.metadata?.task === "chat_context" && m.metadata?.percent != null);
+    if (!m) return null;
+    return {
+      pct:    Math.min(100, Math.max(0, Number(m.metadata.percent))),
+      detail: (m.metadata.detail as string) || "",
+      label:  (m.metadata.label  as string) || "",
+    };
   })();
 
-  const CONTEXT_MAX = 100_000;
-  const ctxPct   = convWords !== null ? Math.min(100, Math.round((convWords / CONTEXT_MAX) * 100)) : null;
-  const ctxColor  = ctxPct === null ? C.muted : ctxPct >= 90 ? C.red : ctxPct >= 70 ? C.yellow : C.green;
-  const ctxLabel  = ctxPct === null ? "unknown" : ctxPct >= 90 ? "⚠ START FRESH" : ctxPct >= 70 ? "Consider fresh chat" : "OK";
+  const ctxFromWords = (() => {
+    const sorted = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const cc = sorted.find(m => m.created_by === "claude_chat" && m.metadata?.conversation_length);
+    return cc ? Math.min(100, Math.round((Number(cc.metadata.conversation_length) / 100_000) * 100)) : null;
+  })();
+
+  const ctxPct    = ctxFromBridge?.pct ?? ctxFromWords;
+  const ctxDetail = ctxFromBridge?.detail ?? null;
+  const ctxColor  = ctxPct == null ? C.muted : ctxPct >= 90 ? C.red : ctxPct >= 70 ? C.yellow : C.green;
+  const ctxLabel  = ctxFromBridge?.label
+    || (ctxPct == null ? "unknown" : ctxPct >= 90 ? "⚠ START FRESH" : ctxPct >= 70 ? "Consider fresh chat" : "OK");
 
   const tokenPct   = usage ? Math.min(100, Math.round((usage.tokens_today / SESSION_TOKEN_BUDGET) * 100)) : 0;
   const tokenColor = tokenPct >= 90 ? C.red : tokenPct >= 70 ? C.yellow : C.green;
@@ -716,16 +730,27 @@ function BottomStrip({
           <MessageSquare size={11} style={{ color: C.purple }} />
           <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Chat Context</span>
         </div>
-        {ctxPct !== null ? (
+        {ctxPct != null ? (
           <>
             <Progress value={ctxPct} className="h-1.5" style={{ background: "rgba(255,255,255,0.06)" }} />
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono" style={{ color: ctxColor }}>{ctxPct}% used</span>
               <span className="text-[10px] font-mono" style={{ color: ctxColor }}>{ctxLabel}</span>
             </div>
+            {ctxDetail && (
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>{ctxDetail}</span>
+            )}
+            {ctxPct >= 90 && (
+              <div className="text-[9px] font-mono px-2 py-1 rounded"
+                style={{ color: C.red, background: `${C.red}15`, border: `1px solid ${C.red}30` }}>
+                Start fresh chat — paste handoff
+              </div>
+            )}
           </>
         ) : (
-          <span className="text-[10px] font-mono" style={{ color: C.muted }}>No data yet</span>
+          <span className="text-[10px] font-mono" style={{ color: C.muted }}>
+            Run: bridge context &lt;pct&gt; OK "detail"
+          </span>
         )}
       </div>
 
@@ -1052,11 +1077,13 @@ export default function Build() {
   const activeTask  = findActiveTask(messages);
   const progressPct = Math.round((doneCount / 12) * 100);
 
-  const ctxWords = (() => {
+  // Bridge-first context pct (for Fresh Chat button threshold)
+  const ctxPct = (() => {
+    const bridgeCtx = sorted.find(m => m.metadata?.task === "chat_context" && m.metadata?.percent != null);
+    if (bridgeCtx) return Math.min(100, Math.max(0, Number(bridgeCtx.metadata.percent)));
     const cc = sorted.find(m => m.created_by === "claude_chat" && m.metadata?.conversation_length);
-    return cc ? Number(cc.metadata.conversation_length) : null;
+    return cc ? Math.min(100, Math.round((Number(cc.metadata.conversation_length) / 100_000) * 100)) : 0;
   })();
-  const ctxPct = ctxWords !== null ? Math.min(100, Math.round((ctxWords / 100_000) * 100)) : 0;
 
   /* ── Keyboard shortcuts (stable ref pattern) ── */
   kbHandlerRef.current = (e: KeyboardEvent) => {

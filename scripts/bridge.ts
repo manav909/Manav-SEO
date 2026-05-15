@@ -169,6 +169,31 @@ async function main() {
       console.log(JSON.stringify(r, null, 2));
       break;
     }
+    case "context": {
+      const [, pctArg, statusArg, ...detailParts] = args;
+      const pct    = parseInt(pctArg, 10);
+      const st     = statusArg || "OK";
+      const detail = detailParts.join(" ");
+      if (isNaN(pct) || pct < 0 || pct > 100) die("Usage: bridge context <0-100> <status> [detail]");
+      const label  = pct >= 90 ? "⚠ START FRESH CHAT" : pct >= 70 ? "Consider fresh chat" : st;
+      const r = await call("post", {
+        kind:       "status",
+        title:      `Chat context: ${pct}% — ${label}`,
+        body:       JSON.stringify({ percent: pct, status: st, detail, label }),
+        created_by: "claude_code",
+        metadata:   {
+          status:   "info",
+          module:   "system",
+          task:     "chat_context",
+          percent:  pct,
+          ctx_status: st,
+          detail,
+        },
+      }, true);
+      console.log(`✓ Context posted: ${pct}% (${label})`);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    }
     case "list": {
       const [, kind, limit] = args;
       const r = await call("list", { kind: kind || undefined, limit: limit ? Number(limit) : 25 });
@@ -205,7 +230,8 @@ Commands:
   post <kind> <title> <file>        post a file's contents
   note <title> <text>               quick one-line note
   respond <title> <text>            post kind:'response' with token estimate in metadata
-  status <message>                  post kind:'status' update
+  status "msg" [--module N] [--task A] [--type response]   post status with metadata
+  context <0-100> <status> [detail] post chat context %% for dashboard gauge
   list [kind] [limit]               list recent messages
   get <id>                          fetch one (full body)
   read <id>                         mark as read
