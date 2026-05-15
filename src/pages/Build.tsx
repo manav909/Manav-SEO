@@ -160,63 +160,7 @@ function deriveState(rows: BridgeRow[]) {
 }
 
 /* ── CSS ───────────────────────────────────────────────── */
-const EMPIRE_CSS = `
-  :root {
-    --hh: 50px; --th: 30px; --nh: 62px;
-    --ch: 80px; --sw: 260px;
-    --safe-t: env(safe-area-inset-top,0px);
-    --safe-b: env(safe-area-inset-bottom,0px);
-    --safe-l: env(safe-area-inset-left,0px);
-    --safe-r: env(safe-area-inset-right,0px);
-  }
-  #empire-root { font-family: -apple-system,'SF Pro Display',system-ui,sans-serif; }
-  #empire-header {
-    position:fixed; top:0; right:0; left:var(--sw);
-    height:calc(var(--hh) + var(--safe-t)); padding-top:var(--safe-t);
-    z-index:100; display:flex; align-items:center;
-    justify-content:space-between; padding-left:20px; padding-right:16px;
-    backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
-    border-bottom:0.5px solid #1e1e3a;
-  }
-  #empire-ticker {
-    position:fixed; top:calc(var(--hh) + var(--safe-t)); right:0; left:var(--sw);
-    height:var(--th); z-index:99; overflow:hidden; display:flex; align-items:center;
-  }
-  #empire-sidebar {
-    position:fixed; top:0; left:var(--safe-l); bottom:0;
-    width:var(--sw); z-index:50; display:flex; flex-direction:column;
-    overflow:hidden; border-right:0.5px solid #1e1e3a;
-  }
-  #empire-content {
-    position:fixed; top:var(--ch); left:var(--sw);
-    right:var(--safe-r); bottom:0; overflow:hidden;
-  }
-  .empire-panel {
-    position:absolute; inset:0;
-    overflow-y:auto; overflow-x:hidden;
-    -webkit-overflow-scrolling:touch;
-    scrollbar-width:thin; scrollbar-color:#1e1e3a transparent;
-  }
-  .empire-panel::-webkit-scrollbar { width:3px; }
-  .empire-panel::-webkit-scrollbar-thumb { background:#1e1e3a; border-radius:2px; }
-  #empire-bottom-nav { display:none; }
-  @media(max-width:1023px){
-    #empire-header { left:0; }
-    #empire-ticker { left:0; }
-    #empire-sidebar { display:none; }
-    #empire-content { left:0; bottom:calc(var(--nh) + var(--safe-b)); }
-    #empire-bottom-nav {
-      display:flex; position:fixed; bottom:0; left:0; right:0;
-      height:calc(var(--nh) + var(--safe-b));
-      padding-bottom:var(--safe-b); align-items:flex-start;
-      padding-top:10px; z-index:100; border-top:0.5px solid #1e1e3a;
-      backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
-    }
-  }
-  .empire-panel.hidden { visibility:hidden; pointer-events:none; }
-  .ticker-track { display:flex; white-space:nowrap; animation:tkscroll 70s linear infinite; width:max-content; }
-  .ticker-track:hover { animation-play-state:paused; }
-  @keyframes tkscroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+const KEYFRAMES_CSS = `
   .ld { animation:ldpulse 2s infinite; }
   @keyframes ldpulse { 0%,100%{opacity:1} 50%{opacity:.3} }
   .blink-build { animation:blink 1.5s infinite; }
@@ -226,12 +170,9 @@ const EMPIRE_CSS = `
   .card-glow { animation:cglow 4s ease infinite; }
   @keyframes cglow { 0%,100%{border-color:rgba(30,30,58,1)} 50%{border-color:rgba(99,102,241,.35)} }
   .syn-bar { transition:height .7s ease; }
-  .pull-indicator { opacity:0; transition:opacity .2s; }
-  .pull-indicator.visible { opacity:1; }
-  .ks-sheet { transition:transform .4s cubic-bezier(.2,.8,.4,1); }
-  .ks-sheet.hidden { transform:translateY(100%); }
-  
-  @media(min-width:1920px){ #empire-header,#empire-ticker,#empire-sidebar,#empire-content { max-width:1800px; } }
+  .ticker-track { display:flex; white-space:nowrap; animation:tkscroll 70s linear infinite; width:max-content; }
+  .ticker-track:hover { animation-play-state:paused; }
+  @keyframes tkscroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
 `;
 
 /* ── Sub-components ────────────────────────────────────── */
@@ -240,7 +181,7 @@ const Ticker = ({ news, bg, textColor, borderColor, fadeColor }: {
 }) => {
   const items = [...news, ...news];
   return (
-    <div style={{ height: "var(--th)", background: bg, borderBottom: `0.5px solid ${borderColor}`, overflow: "hidden", display: "flex", alignItems: "center", position: "relative" }}>
+    <div style={{ height: "100%", background: bg, borderBottom: `0.5px solid ${borderColor}`, overflow: "hidden", display: "flex", alignItems: "center", position: "relative" }}>
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 28, background: `linear-gradient(to right,${fadeColor},transparent)`, zIndex: 2, pointerEvents: "none" }} />
       <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 28, background: `linear-gradient(to left,${fadeColor},transparent)`, zIndex: 2, pointerEvents: "none" }} />
       <div className="ticker-track">
@@ -334,7 +275,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
 
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {/* OPS — Active Mission + Feed */}
-        <div className={`empire-panel${activeTab !== "ops" ? " hidden" : ""}`} style={{ padding: "10px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "ops" ? "block" : "none", padding: "10px" }}>
           {/* Active mission */}
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 5, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// CURRENT MISSION</div>
           <div style={{ background: "#040e04", border: `1px dashed ${S.text}`, borderRadius: 6, padding: "9px 10px", marginBottom: 10 }}>
@@ -379,7 +320,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
         </div>
 
         {/* MAP — Sector Map */}
-        <div className={`empire-panel${activeTab !== "map" ? " hidden" : ""}`} style={{ padding: "10px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "map" ? "block" : "none", padding: "10px" }}>
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// SECTOR MAP — 12 MODULES</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginBottom: 12 }}>
             {modules.map((m: ModuleState) => (
@@ -406,7 +347,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
         </div>
 
         {/* COMMS — Log */}
-        <div className={`empire-panel${activeTab !== "comms" ? " hidden" : ""}`} style={{ padding: "10px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "comms" ? "block" : "none", padding: "10px" }}>
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// COMMS LOG</div>
           {feed.map((f: ActivityLine) => (
             <div key={f.id} style={{ background: "#040e04", border: `1px dashed ${S.border}`, borderRadius: 5, padding: "7px 9px", marginBottom: 5 }}>
@@ -420,7 +361,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
         </div>
 
         {/* SYS — Health */}
-        <div className={`empire-panel${activeTab !== "sys" ? " hidden" : ""}`} style={{ padding: "10px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "sys" ? "block" : "none", padding: "10px" }}>
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// SYSTEM STATUS</div>
           {[["TYPESCRIPT", health.ts === "clean" ? "CLEAN" : "ERROR", health.ts === "clean" ? S.text : "#ef4444"], ["GIT.STATUS", "SYNCED", S.text], ["DATABASE", "OK", S.text], ["VERCEL.BUILD", "LIVE", S.text]].map(([l, v, c]) => (
             <div key={String(l)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "#040e04", border: `1px dashed ${S.border}`, borderRadius: 5, marginBottom: 5 }}>
@@ -465,7 +406,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
 
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {/* COURT — Main dashboard */}
-        <div className={`empire-panel${activeTab !== "court" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "court" ? "block" : "none", padding: "14px" }}>
           {/* Crown ring + Progress */}
           <div style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 16, marginBottom: 12, position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: -20, right: -20, width: 80, height: 80, borderRadius: "50%", background: "radial-gradient(circle,rgba(245,158,11,.08),transparent 70%)" }} />
@@ -527,7 +468,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
         </div>
 
         {/* SCROLL — Royal Decrees */}
-        <div className={`empire-panel${activeTab !== "scroll" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "scroll" ? "block" : "none", padding: "14px" }}>
           <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Today's Royal Decrees</div>
           {feed.slice(0, 8).map((f: ActivityLine) => (
             <div key={f.id} style={{ display: "flex", gap: 10, padding: "9px 12px", background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 12, marginBottom: 6 }}>
@@ -538,7 +479,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
         </div>
 
         {/* TREASURY */}
-        <div className={`empire-panel${activeTab !== "treasury" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "treasury" ? "block" : "none", padding: "14px" }}>
           <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Royal Treasury</div>
           {[["Today's Expenditure", `$${daily.costToday.toFixed(2)}`, 0.75], ["This Moon's Total", `$${daily.costMonth.toFixed(2)}`, 0.85], ["Tasks Completed", `${daily.monthTasks}`, 0.6]].map(([l, v, fill]) => (
             <div key={String(l)} style={{ background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 14, padding: "12px 14px", marginBottom: 8 }}>
@@ -556,7 +497,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
         </div>
 
         {/* REALM — Health */}
-        <div className={`empire-panel${activeTab !== "realm" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "realm" ? "block" : "none", padding: "14px" }}>
           <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Kingdom Health</div>
           {[["TypeScript", health.ts === "clean" ? "✦ Clean" : "✗ Errors", health.ts === "clean"], ["Git Repository", "✦ Synced", true], ["Database", "✦ Connected", true], ["Vercel Build", "✦ Live", true]].map(([l, v, ok]) => (
             <div key={String(l)} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 12, marginBottom: 6 }}>
@@ -602,7 +543,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
 
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {/* NEURAL — Active output */}
-        <div className={`empire-panel${activeTab !== "neural" ? " hidden" : ""}`} style={{ padding: "12px 12px 10px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "neural" ? "block" : "none", padding: "12px 12px 10px" }}>
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: S.cyan, display: "inline-block" }} className="blink-build" />
             neural output
@@ -630,7 +571,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* NODES — Module registry */}
-        <div className={`empire-panel${activeTab !== "nodes" ? " hidden" : ""}`} style={{ padding: "12px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "nodes" ? "block" : "none", padding: "12px" }}>
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 10 }}>module registry</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
             {modules.map((m: ModuleState) => (
@@ -652,7 +593,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* SIGNAL — Bars */}
-        <div className={`empire-panel${activeTab !== "signal" ? " hidden" : ""}`} style={{ padding: "12px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "signal" ? "block" : "none", padding: "12px" }}>
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 10 }}>system signals</div>
           {[["ts.check", 100, "#10b981"], ["git.sync", 100, "#10b981"], ["db.conn", 100, "#10b981"], ["velocity", 80, S.cyan], ["quality", 100, S.cyan], ["blockers", 5, "#10b981"], ["month.cost", 35, "#818cf8"], ["days.streak", 60, "#818cf8"]].map(([l, v, c]) => (
             <div key={String(l)} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -666,7 +607,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* SYNAPSE */}
-        <div className={`empire-panel${activeTab !== "synapse" ? " hidden" : ""}`} style={{ padding: "12px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "synapse" ? "block" : "none", padding: "12px" }}>
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 10 }}>synaptic activity</div>
           <div style={{ background: S.accent, border: `.5px solid ${S.border}`, borderRadius: 12, padding: "16px 12px", marginBottom: 12 }}>
             <SynBars color1={S.cyan} color2="#818cf8" />
@@ -706,7 +647,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
       {/* Atmosphere orbs */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(ellipse 150px 150px at 20% 20%,rgba(139,92,246,.12),transparent),radial-gradient(ellipse 120px 120px at 80% 50%,rgba(6,182,212,.08),transparent)" }} />
 
-      {mobile && (
+      {true && (
         <div style={{ display: "flex", padding: "6px 14px 0", gap: 0, borderBottom: ".5px solid rgba(255,255,255,.06)", flexShrink: 0, position: "relative", zIndex: 5 }}>
           {[["empire","Empire"],["modules","Modules"],["vision","Vision"],["creator","Creator"]].map(([id, lb]) => (
             <div key={id} onClick={() => setActiveTab(id as any)}
@@ -720,7 +661,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
       <div style={{ flex: 1, overflow: "hidden", position: "relative", zIndex: 5 }}>
 
         {/* EMPIRE */}
-        <div className={`empire-panel${activeTab !== "empire" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "empire" ? "block" : "none", padding: "14px" }}>
           <GC style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.6)", textTransform: "uppercase", marginBottom: 6 }}>The mission</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", lineHeight: 1.25, marginBottom: 6, letterSpacing: "-.3px" }}>The SEO system that gets smarter every day</div>
@@ -747,7 +688,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* MODULES */}
-        <div className={`empire-panel${activeTab !== "modules" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "modules" ? "block" : "none", padding: "14px" }}>
           {modules.map((m: ModuleState) => (
             <div key={m.num} style={{ background: m.status === "done" ? "rgba(16,185,129,.05)" : m.status === "building" ? "rgba(99,102,241,.06)" : "rgba(255,255,255,.03)", border: `.5px solid ${m.status === "done" ? "rgba(16,185,129,.2)" : m.status === "building" ? "rgba(99,102,241,.25)" : "rgba(255,255,255,.07)"}`, borderRadius: 14, padding: 13, marginBottom: 8, position: "relative", overflow: "hidden" }} className={m.status === "building" ? "card-glow" : ""}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent)" }} />
@@ -766,7 +707,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* VISION */}
-        <div className={`empire-panel${activeTab !== "vision" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "vision" ? "block" : "none", padding: "14px" }}>
           <GC style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.6)", textTransform: "uppercase", marginBottom: 6 }}>The compounding curve</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -793,7 +734,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         </div>
 
         {/* CREATOR */}
-        <div className={`empire-panel${activeTab !== "creator" ? " hidden" : ""}`} style={{ padding: "14px" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "creator" ? "block" : "none", padding: "14px" }}>
           <div style={{ background: "rgba(255,255,255,.04)", border: ".5px solid rgba(255,255,255,.1)", borderRadius: 20, padding: 16, textAlign: "center", marginBottom: 12, position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: -30, left: "50%", transform: "translateX(-50%)", width: 100, height: 100, borderRadius: "50%", background: "radial-gradient(circle,rgba(139,92,246,.12),transparent 70%)" }} />
             <div style={{ width: 60, height: 60, borderRadius: "50%", background: "linear-gradient(135deg,rgba(139,92,246,.3),rgba(6,182,212,.2))", border: ".5px solid rgba(255,255,255,.15)", margin: "0 auto 10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, position: "relative", zIndex: 1 }}>👑</div>
@@ -902,15 +843,6 @@ export default function Build() {
 
   const state = useMemo(() => deriveState(rows), [rows]);
 
-  /* Inject CSS */
-  useEffect(() => {
-    const s = document.createElement("style");
-    s.id = "empire-css";
-    s.textContent = EMPIRE_CSS;
-    document.head.appendChild(s);
-    return () => { document.getElementById("empire-css")?.remove(); };
-  }, []);
-
   /* Pull-to-refresh handlers */
   const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -973,161 +905,167 @@ export default function Build() {
     mobile:    screen.mobile,
   };
 
+  const isMobile = screen.mobile; /* w < 1024 */
+
   return (
-    <div id="empire-root">
+    <div style={{
+      display: "flex",
+      height: "100vh",
+      background: theme.sbBg,
+      color: "#f0f0ff",
+      fontFamily: "-apple-system, 'SF Pro Display', system-ui, sans-serif",
+      overflow: "hidden",
+    }}>
+      {/* Keyframes (rendered once, no useEffect injection) */}
+      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES_CSS }} />
 
-      {/* ── Sidebar (desktop only) ── */}
-      <div id="empire-sidebar">
-        <Sidebar
-          modules={state.modules}
-          kingdom={kingdom}
-          daily={state.daily}
-          health={state.health}
-        />
-      </div>
-
-      {/* ── Header ── */}
-      <div id="empire-header" style={{ background: theme.hBg, borderBottom: `.5px solid ${theme.hBorder}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 16, color: "#f59e0b" }}>👑</span>
-          <span style={{
-            fontSize: screen.mobile ? 12 : 13,
-            fontWeight: 700,
-            color: theme.title,
-            letterSpacing: (kingdom === "war" || kingdom === "neural") ? 2 : 0.2,
-            fontFamily: (kingdom === "war" || kingdom === "neural") ? "monospace" : "inherit",
-          }}>
-            {screen.mobile
-              ? "EMPIRE"
-              : kingdom === "war"    ? "WAR ROOM — EMPIRE COMMAND"
-              : kingdom === "royal"  ? "SEO Season — Royal Court"
-              : kingdom === "neural" ? "NEURAL.CMD — EMPIRE"
-              :                        "SEO Season — Vision"}
-          </span>
+      {/* Left: sidebar (desktop only) */}
+      {!isMobile && (
+        <div style={{ width: 260, flexShrink: 0, height: "100%" }}>
+          <Sidebar
+            modules={state.modules}
+            kingdom={kingdom}
+            daily={state.daily}
+            health={state.health}
+          />
         </div>
+      )}
 
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {/* Screen info (desktop) */}
-          {!screen.mobile && (
-            <span style={{ fontSize: 10, color: "#4b4b6a", marginRight: 4 }}>
-              {screen.w}×{screen.h} · {screen.wide ? "wide" : "desktop"}
+      {/* Right column */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{
+          height: 50, flexShrink: 0,
+          background: theme.hBg, borderBottom: `.5px solid ${theme.hBorder}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 16px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span style={{ fontSize: 16, color: "#f59e0b", flexShrink: 0 }}>👑</span>
+            <span style={{
+              fontSize: isMobile ? 12 : 13,
+              fontWeight: 700,
+              color: theme.title,
+              letterSpacing: (kingdom === "war" || kingdom === "neural") ? 2 : 0.2,
+              fontFamily: (kingdom === "war" || kingdom === "neural") ? "monospace" : "inherit",
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>
+              {isMobile
+                ? "EMPIRE"
+                : kingdom === "war"    ? "WAR ROOM — EMPIRE COMMAND"
+                : kingdom === "royal"  ? "SEO Season — Royal Court"
+                : kingdom === "neural" ? "NEURAL.CMD — EMPIRE"
+                :                        "SEO Season — Vision"}
             </span>
-          )}
+          </div>
 
-          {/* Live pill */}
-          <span style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(16,185,129,.1)", border: ".5px solid rgba(16,185,129,.25)", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#10b981", fontWeight: 600 }}>
-            <span className="ld" style={{ width: 5, height: 5, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
-            {loading ? "SYNC" : "LIVE"}
-          </span>
-
-          {/* Manual refresh — always visible */}
-          <button
-            onClick={refetch}
-            title={`Refresh · Last sync: ${lastSync ? lastSync.toLocaleTimeString() : "never"}`}
-            style={{ width: 30, height: 30, borderRadius: 8, border: ".5px solid #1e1e3a", background: "transparent", color: "#6b6b80", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, transition: "color .15s" }}
-          >
-            ↻
-          </button>
-
-          {/* Desktop kingdom tabs */}
-          {!screen.mobile && (
-            <div style={{ display: "flex", gap: 3, background: "#0d0d1a", border: ".5px solid #1e1e3a", borderRadius: 10, padding: "3px 4px" }}>
-              {KS_CARDS.map(k => (
-                <button
-                  key={k.id}
-                  onClick={() => setKingdom(k.id)}
-                  style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: kingdom === k.id ? k.c1 : "transparent", color: kingdom === k.id ? k.nc : "#4b4b6a", fontSize: 10, fontWeight: 600, cursor: "pointer", transition: "all .2s", letterSpacing: .3 }}
-                >
-                  {k.name.split(" ")[0]}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Crown — kingdom switcher FAB (always visible) */}
-          <button
-            onClick={() => setSwitcherOpen(o => !o)}
-            style={{ width: 30, height: 30, borderRadius: 8, border: ".5px solid rgba(245,158,11,.3)", background: "rgba(245,158,11,.06)", color: "#f59e0b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
-            title="Switch Kingdom"
-          >
-            👑
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            {!isMobile && (
+              <span style={{ fontSize: 10, color: "#4b4b6a", marginRight: 4 }}>
+                {screen.w}×{screen.h} · {screen.wide ? "wide" : "desktop"}
+              </span>
+            )}
+            <span style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(16,185,129,.1)", border: ".5px solid rgba(16,185,129,.25)", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#10b981", fontWeight: 600 }}>
+              <span className="ld" style={{ width: 5, height: 5, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
+              {loading ? "SYNC" : "LIVE"}
+            </span>
+            <button
+              onClick={refetch}
+              title={`Refresh · Last sync: ${lastSync ? lastSync.toLocaleTimeString() : "never"}`}
+              style={{ width: 30, height: 30, borderRadius: 8, border: ".5px solid #1e1e3a", background: "transparent", color: "#6b6b80", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
+            >↻</button>
+            {!isMobile && (
+              <div style={{ display: "flex", gap: 3, background: "#0d0d1a", border: ".5px solid #1e1e3a", borderRadius: 10, padding: "3px 4px" }}>
+                {KS_CARDS.map(k => (
+                  <button
+                    key={k.id}
+                    onClick={() => setKingdom(k.id)}
+                    style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: kingdom === k.id ? k.c1 : "transparent", color: kingdom === k.id ? k.nc : "#4b4b6a", fontSize: 10, fontWeight: 600, cursor: "pointer", letterSpacing: .3 }}
+                  >
+                    {k.name.split(" ")[0]}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setSwitcherOpen(o => !o)}
+              style={{ width: 30, height: 30, borderRadius: 8, border: ".5px solid rgba(245,158,11,.3)", background: "rgba(245,158,11,.06)", color: "#f59e0b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
+              title="Switch Kingdom"
+            >👑</button>
+          </div>
         </div>
-      </div>
 
-      {/* ── Ticker ── */}
-      <div id="empire-ticker">
-        <Ticker
-          news={state.news}
-          bg={theme.tickBg}
-          textColor={theme.tickText}
-          borderColor={theme.tickBorder}
-          fadeColor={theme.tickFade}
-        />
-      </div>
+        {/* Ticker */}
+        <div style={{ height: 30, flexShrink: 0 }}>
+          <Ticker
+            news={state.news}
+            bg={theme.tickBg}
+            textColor={theme.tickText}
+            borderColor={theme.tickBorder}
+            fadeColor={theme.tickFade}
+          />
+        </div>
 
-      {/* ── Content area ── */}
-      <div id="empire-content">
+        {/* Content area */}
         <div
-          style={{ position: "absolute", inset: 0, overflow: "hidden" }}
+          style={{ flex: 1, overflow: "hidden", position: "relative" }}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
         >
-          {/* Pull-to-refresh indicator */}
           {pullVisible && (
-            <div style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", fontSize: 22, zIndex: 10, animation: "ldpulse 600ms linear infinite" }}>
-              👑
-            </div>
+            <div style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", fontSize: 22, zIndex: 10, animation: "ldpulse 600ms linear infinite" }}>👑</div>
           )}
 
-          {/* Active Kingdom */}
-          {kingdom === "war"    && <WarRoom       {...commonProps} />}
-          {kingdom === "royal"  && <RoyalCourt    {...commonProps} />}
-          {kingdom === "neural" && <NeuralCommand {...commonProps} />}
-          {kingdom === "glass"  && <VisionKingdom {...commonProps} />}
+          <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
+            {kingdom === "war"    && <WarRoom       {...commonProps} />}
+            {kingdom === "royal"  && <RoyalCourt    {...commonProps} />}
+            {kingdom === "neural" && <NeuralCommand {...commonProps} />}
+            {kingdom === "glass"  && <VisionKingdom {...commonProps} />}
+          </div>
+
+          {switcherOpen && (
+            <div
+              style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 49 }}
+              onClick={() => setSwitcherOpen(false)}
+            />
+          )}
+
+          <KingdomSwitcher
+            open={switcherOpen}
+            current={kingdom}
+            onSelect={setKingdom}
+            onClose={() => setSwitcherOpen(false)}
+            bg={ksConfig.sheetBg}
+            titleColor={ksConfig.titleColor}
+          />
         </div>
 
-        {/* Dim overlay when switcher is open */}
-        {switcherOpen && (
-          <div
-            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 49 }}
-            onClick={() => setSwitcherOpen(false)}
-          />
-        )}
-
-        {/* Kingdom Switcher Sheet */}
-        <KingdomSwitcher
-          open={switcherOpen}
-          current={kingdom}
-          onSelect={setKingdom}
-          onClose={() => setSwitcherOpen(false)}
-          bg={ksConfig.sheetBg}
-          titleColor={ksConfig.titleColor}
-        />
-      </div>
-
-      {/* ── Bottom Nav (mobile only) ── */}
-      <div
-        id="empire-bottom-nav"
-        style={{ background: theme.hBg, borderTop: `.5px solid ${theme.hBorder}` }}
-      >
-        {([
-          ["⊕", "Modules"],
-          ["⚡", "Active"],
-          ["≡",  "Log"],
-          ["♥",  "Health"],
-        ] as [string, string][]).map(([icon, label]) => (
-          <div
-            key={label}
-            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "2px 0", cursor: "pointer" }}
-          >
-            <span style={{ fontSize: 19, color: theme.ldColor, opacity: .35 }}>{icon}</span>
-            <span style={{ fontSize: 8, color: theme.ldColor, fontWeight: 500, opacity: .35, letterSpacing: .3 }}>{label}</span>
+        {/* Bottom nav (mobile only) */}
+        {isMobile && (
+          <div style={{
+            flexShrink: 0, height: 62,
+            background: theme.hBg, borderTop: `.5px solid ${theme.hBorder}`,
+            display: "flex", alignItems: "center",
+          }}>
+            {([
+              ["⊕", "Modules"],
+              ["⚡", "Active"],
+              ["≡",  "Log"],
+              ["♥",  "Health"],
+            ] as [string, string][]).map(([icon, label]) => (
+              <div
+                key={label}
+                style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 0", cursor: "pointer" }}
+              >
+                <span style={{ fontSize: 19, color: theme.ldColor, opacity: .35 }}>{icon}</span>
+                <span style={{ fontSize: 8, color: theme.ldColor, fontWeight: 500, opacity: .35, letterSpacing: .3 }}>{label}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
-
     </div>
   );
 }
