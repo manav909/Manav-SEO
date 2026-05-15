@@ -24,13 +24,21 @@ export const config = { maxDuration: 300 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try { return await _handler(req, res); }
-  catch (e: any) { try { res.status(200).json({ error: e?.message || "unknown" }); } catch (_) {} }
+  catch (e: any) {
+    console.error("[market-researcher] unhandled:", e?.message, e?.stack?.slice(0, 800));
+    try {
+      if (!res.headersSent) res.status(200).json({ error: e?.message || "unknown crash" });
+    } catch (_) {}
+  }
 }
 
 async function _handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(200).json({ error: "Method not allowed" });
 
-  const { action, projectId } = req.body;
+  const body = req.body || {};
+  const { action, projectId } = body;
+  if (!action) return res.status(200).json({ error: "Missing action" });
+
   const client = new Anthropic();
 
   /* ── Load project context ── */
@@ -42,12 +50,12 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     project = data;
   }
 
-  const industry: string    = req.body.industry || project?.industry || "digital services";
-  const keywords: string[]  = req.body.keywords  || project?.keywords  || [];
-  const competitors: string[] = req.body.competitors || project?.competitors || [];
-  const company: string     = req.body.company || project?.name || "";
-  const url: string         = req.body.url || project?.url || "";
-  const goals: string       = req.body.goals || (project?.goals ? String(project.goals) : "");
+  const industry: string    = body.industry || project?.industry || "digital services";
+  const keywords: string[]  = body.keywords  || project?.keywords  || [];
+  const competitors: string[] = body.competitors || project?.competitors || [];
+  const company: string     = body.company || project?.name || "";
+  const url: string         = body.url || project?.url || "";
+  const goals: string       = body.goals || (project?.goals ? String(project.goals) : "");
   const region: string      = [project?.city, project?.country].filter(Boolean).join(", ");
 
   /* ═══════════════════════════════════════════
@@ -223,7 +231,7 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
      Aligned to 5-phase framework with KPIs.
   ═══════════════════════════════════════════ */
   if (action === "suggest_goals") {
-    const existingPersona = req.body.existingPersona || null;
+    const existingPersona = body.existingPersona || null;
 
     /* Pull existing persona from DB if not provided */
     let personaContext = "";
