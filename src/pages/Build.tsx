@@ -66,25 +66,84 @@ function useDots() {
   return [".","..","..."][d];
 }
 
-function useBridgeData(refresh: number) {
-  const [rows, setRows] = useState<BridgeRow[]>([]);
+function useBridgeData(refreshMs: number) {
+  const [rows, setRows]       = useState<BridgeRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [paused, setPaused]   = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const fetch = useCallback(async () => {
+    if (!BRIDGE_TOKEN) return;
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from("claude_bridge").select("*")
-        .order("created_at", { ascending: false }).limit(60);
-      if (data) setRows(data as BridgeRow[]);
+      const res = await window.fetch(`/api/bridge?token=${BRIDGE_TOKEN}`);
+      if (!res.ok) { setLoading(false); return; }
+      const text = await res.text();
+
+      // Parse markdown into rows
+      const parsed: BridgeRow[] = [];
+      const blocks = text.split('\n---\n');
+      for (const block of blocks) {
+        const idMatch     = block.match(/\*\*ID:\*\*\s*([a-f0-9-]+)/);
+        const roleMatch   = block.match(/\*\*\[(\w+)\]\*\*/);
+        const typeMatch   = block.match(/\|\s*(\w+)\s*\|/);
+        const modMatch    = block.match(/\*\*Module:\*\*\s*(\S+)/);
+        const taskMatch   = block.match(/\*\*Task:\*\*\s*(\S+)/);
+        const timeMatch   = block.match(/\*\*Time:\*\*\s*([^\n]+)/);
+        const statusMatch = block.match(/\|\s*(\w+)\s*$/m);
+
+        // Content is everything after the metadata header lines
+        const lines = block.split('\n');
+        const contentStart = lines.findIndex(
+          l => l.trim() && !l.startsWith('##') &&
+               !l.startsWith('**') && !l.startsWith('*')
+        );
+        const content = contentStart > 0
+          ? lines.slice(contentStart).join('\n').trim()
+          : block.replace(/\*\*[^*]+\*\*/g, '').trim();
+
+        if (idMatch || content) {
+          parsed.push({
+            id:         idMatch?.[1]    ?? crypto.randomUUID(),
+            role:       (roleMatch?.[1] ?? 'claude_code').toLowerCase(),
+            type:       typeMatch?.[1]  ?? 'status',
+            module:     modMatch?.[1]   ?? null,
+            task:       taskMatch?.[1]  ?? null,
+            content:    content || block.slice(0, 200),
+            status:     statusMatch?.[1]?? 'done',
+            metadata:   {},
+            created_at: timeMatch?.[1]  ?? new Date().toISOString(),
+          });
+        }
+      }
+
+      if (parsed.length > 0) setRows(parsed);
       setLastSync(new Date());
-    } catch (_) {}
+    } catch (_e) {}
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetch(); const id = setInterval(fetch, refresh); return () => clearInterval(id); }, [fetch, refresh]);
-  return { rows, loading, lastSync, refetch: fetch };
+  useEffect(() => {
+    fetch();
+    if (!paused) {
+      intervalRef.current = setInterval(fetch, refreshMs);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [fetch, paused, refreshMs]);
+
+  const togglePause = useCallback(() => {
+    setPaused(p => {
+      if (!p) {
+        clearInterval(intervalRef.current);
+      } else {
+        fetch();
+      }
+      return !p;
+    });
+  }, [fetch]);
+
+  return { rows, loading, lastSync, refetch: fetch, paused, togglePause };
 }
 
 /* ── Data Derivation ───────────────────────────────────── */
@@ -186,7 +245,7 @@ const Ticker = ({ news, bg, textColor, borderColor, fadeColor }: {
       <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 28, background: `linear-gradient(to left,${fadeColor},transparent)`, zIndex: 2, pointerEvents: "none" }} />
       <div className="ticker-track">
         {items.map((h, i) => (
-          <span key={i} style={{ fontSize: 10, color: textColor, padding: "0 14px", fontWeight: 500 }}>{h}</span>
+          <span key={i} style={{ fontSize: 12, color: textColor, padding: "0 14px", fontWeight: 500 }}>{h}</span>
         ))}
       </div>
     </div>
@@ -226,15 +285,15 @@ const KingdomSwitcher = ({ open, current, onSelect, onClose, bg, titleColor }: {
     onClick={e => e.stopPropagation()}
   >
     <div style={{ width: 32, height: 4, borderRadius: 2, background: "rgba(255,255,255,.15)", margin: "0 auto 10px" }} />
-    <div style={{ fontSize: 10, fontWeight: 600, textAlign: "center", marginBottom: 10, letterSpacing: ".3px", color: titleColor }}>Choose Your Kingdom</div>
+    <div style={{ fontSize: 12, fontWeight: 600, textAlign: "center", marginBottom: 10, letterSpacing: ".3px", color: titleColor }}>Choose Your Kingdom</div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
       {KS_CARDS.map(k => (
         <div key={k.id} onClick={() => { onSelect(k.id); onClose(); }}
-          style={{ borderRadius: 14, padding: "10px 12px", cursor: "pointer", background: current === k.id ? k.c1.replace(".08", ".12") : k.c1, border: `${current === k.id ? "1.5px" : ".5px"} solid ${current === k.id ? k.c2 : "rgba(255,255,255,.08)"}`, position: "relative", transition: "all .2s" }}>
-          <div style={{ fontSize: 20, marginBottom: 5, color: k.nc }}>{k.icon}</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: k.nc, marginBottom: 2 }}>{k.name}</div>
-          <div style={{ fontSize: 9, color: k.nc, opacity: .5 }}>{k.desc}</div>
-          {current === k.id && <div style={{ position: "absolute", top: 8, right: 8, width: 14, height: 14, borderRadius: "50%", background: `${k.c1}`, border: `.5px solid ${k.nc}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: k.nc }}>✓</div>}
+          style={{ minHeight: 80, borderRadius: 14, padding: "12px 14px", cursor: "pointer", background: current === k.id ? k.c1.replace(".08", ".12") : k.c1, border: `${current === k.id ? "1.5px" : ".5px"} solid ${current === k.id ? k.c2 : "rgba(255,255,255,.08)"}`, position: "relative", transition: "all .2s", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ fontSize: 24, marginBottom: 6, color: k.nc }}>{k.icon}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: k.nc, marginBottom: 2 }}>{k.name}</div>
+          <div style={{ fontSize: 13, color: k.nc, opacity: .5 }}>{k.desc}</div>
+          {current === k.id && <div style={{ position: "absolute", top: 8, right: 8, width: 14, height: 14, borderRadius: "50%", background: `${k.c1}`, border: `.5px solid ${k.nc}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: k.nc }}>✓</div>}
         </div>
       ))}
     </div>
@@ -243,14 +302,14 @@ const KingdomSwitcher = ({ open, current, onSelect, onClose, bg, titleColor }: {
 
 /* ── Pill ───────────────────────────────────────────────── */
 const Pill = ({ children, bg, color, border }: { children: React.ReactNode; bg: string; color: string; border: string }) => (
-  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: bg, color, border: `.5px solid ${border}`, letterSpacing: ".3px" }}>{children}</span>
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: bg, color, border: `.5px solid ${border}`, letterSpacing: ".3px" }}>{children}</span>
 );
 
 /* ══════════════════════════════════════════════════════════
    KINGDOM 1: WAR ROOM
 ══════════════════════════════════════════════════════════ */
-const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
-  const [activeTab, setActiveTab] = useState<"ops"|"map"|"comms"|"sys">("ops");
+const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile, activeTab, setActiveTab, loading, lastSync }: any) => {
+  /* activeTab/setActiveTab come from props (lifted to Build) */
   const S = { bg: "#030b03", text: "#39d353", dim: "#1a5c1a", faint: "#0a1a0a", border: "#1a2e1a", font: "monospace" };
 
   const tabs = [
@@ -266,7 +325,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
         <div style={{ display: "flex", borderBottom: `1px solid ${S.border}`, background: S.bg, flexShrink: 0 }}>
           {tabs.map(t => (
             <div key={t.id} onClick={() => setActiveTab(t.id)}
-              style={{ flex: 1, padding: "8px 4px", textAlign: "center", fontFamily: S.font, fontSize: 9, letterSpacing: 1, color: activeTab === t.id ? S.text : S.dim, borderBottom: `2px solid ${activeTab === t.id ? S.text : "transparent"}`, cursor: "pointer", textTransform: "uppercase" }}>
+              style={{ flex: 1, padding: "8px 4px", textAlign: "center", fontFamily: S.font, fontSize: 11, letterSpacing: 1, color: activeTab === t.id ? S.text : S.dim, borderBottom: `2px solid ${activeTab === t.id ? S.text : "transparent"}`, cursor: "pointer", textTransform: "uppercase" }}>
               {t.label}
             </div>
           ))}
@@ -281,15 +340,15 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
           <div style={{ background: "#040e04", border: `1px dashed ${S.text}`, borderRadius: 6, padding: "9px 10px", marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
               <span style={{ fontFamily: S.font, fontSize: 8, color: S.dim }}>EXEC://MOD.02/TASK.A</span>
-              <span style={{ fontFamily: S.font, fontSize: 9, color: S.text, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontFamily: S.font, fontSize: 11, color: S.text, display: "flex", alignItems: "center", gap: 4 }}>
                 <span className="ld" style={{ width: 5, height: 5, borderRadius: "50%", background: S.text, display: "inline-block" }} />
                 MANAV.CODING{dots}
               </span>
             </div>
-            <div style={{ fontFamily: S.font, fontSize: 11, color: S.text, lineHeight: 1.5, marginBottom: 6 }}>
-              {activeRow ? activeRow.content.slice(0, 100) : "verification_queue — autonomous loop closure. tasks self-verify. zero human triggers."}
+            <div style={{ fontFamily: S.font, fontSize: 13, color: S.text, lineHeight: 1.5, marginBottom: 6 }}>
+              {activeRow ? activeRow.content.slice(0, 100) : (loading ? "Connecting to empire intelligence..." : "AWAITING ORDERS — no active task. Claude Chat will post the next instruction.")}
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: S.font, fontSize: 9, color: S.dim }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: S.font, fontSize: 11, color: S.dim }}>
               <span>MOD:02 TASK:A</span>
               <span style={{ color: S.text }}>{elapsed}</span>
             </div>
@@ -311,9 +370,9 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
           <div style={{ background: "#040e04", border: `1px dashed ${S.border}`, borderRadius: 6, padding: "8px 10px" }}>
             {feed.slice(0, 6).map((f: ActivityLine) => (
               <div key={f.id} style={{ display: "grid", gridTemplateColumns: "40px 14px 1fr", gap: 5, padding: "4px 0", borderBottom: `1px dashed #0a1a0a` }}>
-                <span style={{ fontFamily: S.font, fontSize: 9, color: S.dim }}>{f.time}</span>
-                <span style={{ fontSize: 11, color: f.color }}>{f.icon}</span>
-                <span style={{ fontFamily: S.font, fontSize: 9, color: "#2a7a2a", lineHeight: 1.3 }}>{f.text.slice(0, 55)}</span>
+                <span style={{ fontFamily: S.font, fontSize: 11, color: S.dim }}>{f.time}</span>
+                <span style={{ fontSize: 13, color: f.color }}>{f.icon}</span>
+                <span style={{ fontFamily: S.font, fontSize: 11, color: "#2a7a2a", lineHeight: 1.3 }}>{f.text.slice(0, 55)}</span>
               </div>
             ))}
           </div>
@@ -326,7 +385,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
             {modules.map((m: ModuleState) => (
               <div key={m.num} className={m.status === "building" ? "blink-build" : ""}
                 style={{ height: 36, borderRadius: 5, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, border: `1px solid`, borderColor: m.status === "done" ? "#1a5c1a" : m.status === "building" ? S.text : "#0f1f0f", background: m.status === "done" ? "rgba(57,211,83,.1)" : m.status === "building" ? "rgba(57,211,83,.18)" : "rgba(0,0,0,.2)" }}>
-                <span style={{ fontFamily: S.font, fontSize: 10, fontWeight: 700, color: m.status === "pending" ? "#1a3a1a" : S.text }}>{String(m.num).padStart(2, "0")}</span>
+                <span style={{ fontFamily: S.font, fontSize: 12, fontWeight: 700, color: m.status === "pending" ? "#1a3a1a" : S.text }}>{String(m.num).padStart(2, "0")}</span>
                 <span style={{ fontFamily: S.font, fontSize: 7, color: m.status === "done" ? S.text : m.status === "building" ? S.text : "#1a3a1a" }}>{m.status === "done" ? "DONE" : m.status === "building" ? "LIVE" : "—"}</span>
               </div>
             ))}
@@ -340,7 +399,7 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
                 <div style={{ flex: 1, height: 3, background: "#0f1f0f", borderRadius: 2, overflow: "hidden" }}>
                   <div style={{ width: `${v}%`, height: "100%", background: c as string, borderRadius: 2 }} />
                 </div>
-                <span style={{ fontFamily: S.font, fontSize: 9, color: c as string, minWidth: 36, textAlign: "right" }}>{String(lbl)}</span>
+                <span style={{ fontFamily: S.font, fontSize: 11, color: c as string, minWidth: 36, textAlign: "right" }}>{String(lbl)}</span>
               </div>
             ))}
           </div>
@@ -352,8 +411,8 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
           {feed.map((f: ActivityLine) => (
             <div key={f.id} style={{ background: "#040e04", border: `1px dashed ${S.border}`, borderRadius: 5, padding: "7px 9px", marginBottom: 5 }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 3 }}>
-                <span style={{ fontSize: 11, color: f.color }}>{f.icon}</span>
-                <span style={{ fontFamily: S.font, fontSize: 9, color: S.text, flex: 1 }}>{f.text.slice(0, 50)}</span>
+                <span style={{ fontSize: 13, color: f.color }}>{f.icon}</span>
+                <span style={{ fontFamily: S.font, fontSize: 11, color: S.text, flex: 1 }}>{f.text.slice(0, 50)}</span>
                 <span style={{ fontFamily: S.font, fontSize: 8, color: S.dim }}>{f.time}</span>
               </div>
             </div>
@@ -365,15 +424,15 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
           <div style={{ fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// SYSTEM STATUS</div>
           {[["TYPESCRIPT", health.ts === "clean" ? "CLEAN" : "ERROR", health.ts === "clean" ? S.text : "#ef4444"], ["GIT.STATUS", "SYNCED", S.text], ["DATABASE", "OK", S.text], ["VERCEL.BUILD", "LIVE", S.text]].map(([l, v, c]) => (
             <div key={String(l)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "#040e04", border: `1px dashed ${S.border}`, borderRadius: 5, marginBottom: 5 }}>
-              <span style={{ fontFamily: S.font, fontSize: 10, color: S.dim }}>{String(l)}</span>
-              <span style={{ fontFamily: S.font, fontSize: 10, fontWeight: 700, color: c as string }}>{String(v)}</span>
+              <span style={{ fontFamily: S.font, fontSize: 12, color: S.dim }}>{String(l)}</span>
+              <span style={{ fontFamily: S.font, fontSize: 12, fontWeight: 700, color: c as string }}>{String(v)}</span>
             </div>
           ))}
           <div style={{ marginTop: 10, fontFamily: S.font, fontSize: 8, color: S.dim, letterSpacing: 2, textTransform: "uppercase", marginBottom: 6, borderBottom: `1px dashed ${S.border}`, paddingBottom: 3 }}>// TREASURY</div>
           {[["TODAY", `$${daily.costToday.toFixed(2)}`], ["THIS MONTH", `$${daily.costMonth.toFixed(2)}`], ["TASKS", `${daily.monthTasks}`]].map(([l, v]) => (
             <div key={String(l)} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px dashed ${S.faint}` }}>
-              <span style={{ fontFamily: S.font, fontSize: 9, color: S.dim }}>{String(l)}</span>
-              <span style={{ fontFamily: S.font, fontSize: 10, color: S.text }}>{String(v)}</span>
+              <span style={{ fontFamily: S.font, fontSize: 11, color: S.dim }}>{String(l)}</span>
+              <span style={{ fontFamily: S.font, fontSize: 12, color: S.text }}>{String(v)}</span>
             </div>
           ))}
         </div>
@@ -385,8 +444,8 @@ const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobil
 /* ══════════════════════════════════════════════════════════
    KINGDOM 2: ROYAL COURT
 ══════════════════════════════════════════════════════════ */
-const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
-  const [activeTab, setActiveTab] = useState<"court"|"scroll"|"treasury"|"realm">("court");
+const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile, activeTab, setActiveTab, loading, lastSync }: any) => {
+  /* activeTab/setActiveTab come from props (lifted to Build) */
   const S = { bg: "#08040f", text: "#f0e0c0", gold: "#f59e0b", goldDim: "#c9a227", goldFaint: "#3a2510", border: "rgba(245,158,11,.12)", accent: "rgba(245,158,11,.08)" };
 
   const completedModules = modules.filter((m: ModuleState) => m.status === "done").length;
@@ -397,7 +456,7 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
         <div style={{ display: "flex", borderBottom: `0.5px solid ${S.border}`, background: "rgba(12,6,24,.95)", flexShrink: 0 }}>
           {[["court","♛","Court"],["scroll","◈","Scroll"],["treasury","◆","Treasury"],["realm","⊞","Realm"]].map(([id,ic,lb]) => (
             <div key={id} onClick={() => setActiveTab(id as any)}
-              style={{ flex: 1, padding: "8px 4px", textAlign: "center", fontSize: 9, color: activeTab === id ? S.gold : S.goldFaint, borderBottom: `2px solid ${activeTab === id ? S.gold : "transparent"}`, cursor: "pointer", fontStyle: "italic" }}>
+              style={{ flex: 1, padding: "8px 4px", textAlign: "center", fontSize: 11, color: activeTab === id ? S.gold : S.goldFaint, borderBottom: `2px solid ${activeTab === id ? S.gold : "transparent"}`, cursor: "pointer", fontStyle: "italic" }}>
               {lb}
             </div>
           ))}
@@ -423,12 +482,12 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: S.text, marginBottom: 3 }}>SEO Season Empire</div>
-              <div style={{ fontSize: 10, color: S.goldDim, marginBottom: 8, fontStyle: "italic" }}>Module 02 — The Closed Loop building</div>
+              <div style={{ fontSize: 12, color: S.goldDim, marginBottom: 8, fontStyle: "italic" }}>Module 02 — The Closed Loop building</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ flex: 1, background: "rgba(245,158,11,.08)", borderRadius: 3, height: 4, overflow: "hidden" }}>
                   <div style={{ width: `${completedModules / 12 * 100}%`, height: "100%", background: `linear-gradient(90deg,${S.gold},${S.goldDim})`, borderRadius: 3 }} />
                 </div>
-                <span style={{ fontSize: 9, color: S.goldDim, fontStyle: "italic" }}>{completedModules}/12</span>
+                <span style={{ fontSize: 11, color: S.goldDim, fontStyle: "italic" }}>{completedModules}/12</span>
               </div>
             </div>
           </div>
@@ -436,10 +495,10 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
           {/* Active task badge */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "10px 14px", background: "rgba(245,158,11,.04)", border: `0.5px solid ${S.border}`, borderRadius: 14 }}>
             <span className="ld" style={{ width: 6, height: 6, borderRadius: "50%", background: S.goldDim, display: "inline-block", flexShrink: 0 }} />
-            <span style={{ fontSize: 11, color: S.text, fontStyle: "italic", flex: 1 }}>
-              {activeRow ? activeRow.content.slice(0, 90) : "Building the verification queue — the loop that closes the empire."}
+            <span style={{ fontSize: 13, color: S.text, fontStyle: "italic", flex: 1 }}>
+              {activeRow ? activeRow.content.slice(0, 90) : (loading ? "Connecting to empire intelligence..." : "Standing By — awaiting the next royal decree.")}
             </span>
-            <span style={{ fontSize: 10, fontFamily: "monospace", color: S.goldDim }}>{elapsed}</span>
+            <span style={{ fontSize: 12, fontFamily: "monospace", color: S.goldDim }}>{elapsed}</span>
           </div>
 
           {/* Stats */}
@@ -453,13 +512,13 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
           </div>
 
           {/* Conquest map */}
-          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 7, fontStyle: "italic" }}>Conquest Map</div>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 7, fontStyle: "italic" }}>Conquest Map</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 4 }}>
             {modules.map((m: ModuleState) => {
               const roman = ["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII"][m.num - 1];
               return (
                 <div key={m.num} className={m.status === "building" ? "blink-build" : ""}
-                  style={{ height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, border: `0.5px solid`, borderColor: m.status === "done" ? "rgba(245,158,11,.35)" : m.status === "building" ? S.gold : "rgba(255,255,255,.04)", background: m.status === "done" ? "rgba(245,158,11,.1)" : m.status === "building" ? "rgba(245,158,11,.18)" : "rgba(255,255,255,.02)", color: m.status === "pending" ? "rgba(255,255,255,.12)" : S.goldDim }}>
+                  style={{ height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, border: `0.5px solid`, borderColor: m.status === "done" ? "rgba(245,158,11,.35)" : m.status === "building" ? S.gold : "rgba(255,255,255,.04)", background: m.status === "done" ? "rgba(245,158,11,.1)" : m.status === "building" ? "rgba(245,158,11,.18)" : "rgba(255,255,255,.02)", color: m.status === "pending" ? "rgba(255,255,255,.12)" : S.goldDim }}>
                   {roman}
                 </div>
               );
@@ -469,22 +528,22 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
 
         {/* SCROLL — Royal Decrees */}
         <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "scroll" ? "block" : "none", padding: "14px" }}>
-          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Today's Royal Decrees</div>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Today's Royal Decrees</div>
           {feed.slice(0, 8).map((f: ActivityLine) => (
             <div key={f.id} style={{ display: "flex", gap: 10, padding: "9px 12px", background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 12, marginBottom: 6 }}>
-              <span style={{ fontSize: 11, color: S.goldDim, flexShrink: 0, marginTop: 1 }}>♦</span>
-              <span style={{ fontSize: 11, color: S.text, fontStyle: "italic", lineHeight: 1.5, opacity: .7 }}>{f.text.slice(0, 80)}</span>
+              <span style={{ fontSize: 13, color: S.goldDim, flexShrink: 0, marginTop: 1 }}>♦</span>
+              <span style={{ fontSize: 13, color: S.text, fontStyle: "italic", lineHeight: 1.5, opacity: .7 }}>{f.text.slice(0, 80)}</span>
             </div>
           ))}
         </div>
 
         {/* TREASURY */}
         <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "treasury" ? "block" : "none", padding: "14px" }}>
-          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Royal Treasury</div>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Royal Treasury</div>
           {[["Today's Expenditure", `$${daily.costToday.toFixed(2)}`, 0.75], ["This Moon's Total", `$${daily.costMonth.toFixed(2)}`, 0.85], ["Tasks Completed", `${daily.monthTasks}`, 0.6]].map(([l, v, fill]) => (
             <div key={String(l)} style={{ background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 14, padding: "12px 14px", marginBottom: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 10, color: S.goldDim, fontStyle: "italic" }}>{String(l)}</span>
+                <span style={{ fontSize: 12, color: S.goldDim, fontStyle: "italic" }}>{String(l)}</span>
                 <span style={{ fontSize: 14, fontWeight: 700, color: S.goldDim, fontFamily: "monospace" }}>{String(v)}</span>
               </div>
               <div style={{ display: "flex", gap: 2 }}>
@@ -498,11 +557,11 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
 
         {/* REALM — Health */}
         <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "realm" ? "block" : "none", padding: "14px" }}>
-          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Kingdom Health</div>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.5, color: "rgba(245,158,11,.45)", textTransform: "uppercase", marginBottom: 10, fontStyle: "italic" }}>Kingdom Health</div>
           {[["TypeScript", health.ts === "clean" ? "✦ Clean" : "✗ Errors", health.ts === "clean"], ["Git Repository", "✦ Synced", true], ["Database", "✦ Connected", true], ["Vercel Build", "✦ Live", true]].map(([l, v, ok]) => (
             <div key={String(l)} style={{ display: "flex", justifyContent: "space-between", padding: "11px 14px", background: S.accent, border: `0.5px solid ${S.border}`, borderRadius: 12, marginBottom: 6 }}>
-              <span style={{ fontSize: 11, color: S.text, fontStyle: "italic" }}>{String(l)}</span>
-              <span style={{ fontSize: 11, color: ok ? S.goldDim : "#ef4444", fontStyle: "italic" }}>{String(v)}</span>
+              <span style={{ fontSize: 13, color: S.text, fontStyle: "italic" }}>{String(l)}</span>
+              <span style={{ fontSize: 13, color: ok ? S.goldDim : "#ef4444", fontStyle: "italic" }}>{String(v)}</span>
             </div>
           ))}
         </div>
@@ -514,8 +573,8 @@ const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mo
 /* ══════════════════════════════════════════════════════════
    KINGDOM 3: NEURAL COMMAND
 ══════════════════════════════════════════════════════════ */
-const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
-  const [activeTab, setActiveTab] = useState<"neural"|"nodes"|"signal"|"synapse">("neural");
+const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile, activeTab, setActiveTab, loading, lastSync }: any) => {
+  /* activeTab/setActiveTab come from props (lifted to Build) */
   const S = { bg: "#02080f", text: "#e0f7ff", cyan: "#06b6d4", cyanDim: "#0e7490", cyanFaint: "#051520", border: "rgba(6,182,212,.1)", accent: "rgba(6,182,212,.05)" };
 
   return (
@@ -548,14 +607,14 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: S.cyan, display: "inline-block" }} className="blink-build" />
             neural output
           </div>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, background: S.accent, border: `.5px solid rgba(6,182,212,.2)`, borderRadius: 6, padding: "3px 10px", fontSize: 10, color: S.cyan, fontFamily: "monospace", marginBottom: 8 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, background: S.accent, border: `.5px solid rgba(6,182,212,.2)`, borderRadius: 6, padding: "3px 10px", fontSize: 12, color: S.cyan, fontFamily: "monospace", marginBottom: 8 }}>
             <span className="ld" style={{ width: 4, height: 4, borderRadius: "50%", background: S.cyan, display: "inline-block" }} />
             manav.coding{dots}
           </div>
-          <div style={{ fontSize: 12, color: "#b0e8f0", lineHeight: 1.55, marginBottom: 8, fontFamily: "monospace" }}>
-            {activeRow ? activeRow.content.slice(0, 110) : "verification_queue — loop closure protocol. tasks self-verify. zero human triggers."}
+          <div style={{ fontSize: 14, color: "#b0e8f0", lineHeight: 1.55, marginBottom: 8, fontFamily: "monospace" }}>
+            {activeRow ? activeRow.content.slice(0, 110) : (loading ? "connecting..." : "signal.awaiting — no active task. claude_chat will post next instruction.")}
           </div>
-          <div style={{ fontFamily: "monospace", fontSize: 9, color: S.cyanDim, display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: S.cyanDim, display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
             <span>mod_02.task_a</span>
             <span style={{ color: S.cyan }}>{elapsed}</span>
           </div>
@@ -563,9 +622,9 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 6 }}>signal feed</div>
           {feed.slice(0, 5).map((f: ActivityLine) => (
             <div key={f.id} style={{ display: "grid", gridTemplateColumns: "40px 16px 1fr", gap: 5, padding: "6px 0", borderBottom: `.5px solid rgba(6,182,212,.05)` }}>
-              <span style={{ fontSize: 9, fontFamily: "monospace", color: S.cyanDim }}>{f.time}</span>
-              <span style={{ fontSize: 12, color: f.color }}>{f.icon}</span>
-              <span style={{ fontSize: 10, color: "#8ba8b0", lineHeight: 1.4 }}>{f.text.slice(0, 55)}</span>
+              <span style={{ fontSize: 11, fontFamily: "monospace", color: S.cyanDim }}>{f.time}</span>
+              <span style={{ fontSize: 14, color: f.color }}>{f.icon}</span>
+              <span style={{ fontSize: 12, color: "#8ba8b0", lineHeight: 1.4 }}>{f.text.slice(0, 55)}</span>
             </div>
           ))}
         </div>
@@ -576,7 +635,7 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 }}>
             {modules.map((m: ModuleState) => (
               <div key={m.num} className={m.status === "building" ? "glow-build" : ""}
-                style={{ aspectRatio: "1", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", fontSize: 10, fontWeight: 600, border: `${m.status === "building" ? "1.5" : "1"}px solid`, borderColor: m.status === "done" ? "rgba(6,182,212,.45)" : m.status === "building" ? S.cyan : "rgba(6,182,212,.08)", background: m.status === "done" ? "rgba(6,182,212,.12)" : m.status === "building" ? "rgba(6,182,212,.2)" : "rgba(6,182,212,.03)", color: m.status === "pending" ? "rgba(6,182,212,.2)" : S.cyan }}>
+                style={{ aspectRatio: "1", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", fontSize: 12, fontWeight: 600, border: `${m.status === "building" ? "1.5" : "1"}px solid`, borderColor: m.status === "done" ? "rgba(6,182,212,.45)" : m.status === "building" ? S.cyan : "rgba(6,182,212,.08)", background: m.status === "done" ? "rgba(6,182,212,.12)" : m.status === "building" ? "rgba(6,182,212,.2)" : "rgba(6,182,212,.03)", color: m.status === "pending" ? "rgba(6,182,212,.2)" : S.cyan }}>
                 {String(m.num).padStart(2, "0")}
               </div>
             ))}
@@ -585,9 +644,9 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
           {modules.slice(0, 6).map((m: ModuleState) => (
             <div key={m.num} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `.5px solid rgba(6,182,212,.05)` }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: m.status === "done" ? S.cyan : m.status === "building" ? S.cyan : "#0e3042", flexShrink: 0 }} className={m.status === "building" ? "blink-build" : ""} />
-              <span style={{ fontFamily: "monospace", fontSize: 9, color: S.cyanDim, width: 18, flexShrink: 0 }}>{String(m.num).padStart(2, "0")}</span>
-              <span style={{ fontSize: 11, color: m.status === "pending" ? "rgba(6,182,212,.25)" : "#b0e8f0", flex: 1 }}>{m.name}</span>
-              <span style={{ fontFamily: "monospace", fontSize: 9, color: m.status === "done" ? S.cyan : m.status === "building" ? S.cyan : "#0e3042" }}>{m.status === "done" ? "done" : m.status === "building" ? "live" : "—"}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 11, color: S.cyanDim, width: 18, flexShrink: 0 }}>{String(m.num).padStart(2, "0")}</span>
+              <span style={{ fontSize: 13, color: m.status === "pending" ? "rgba(6,182,212,.25)" : "#b0e8f0", flex: 1 }}>{m.name}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 11, color: m.status === "done" ? S.cyan : m.status === "building" ? S.cyan : "#0e3042" }}>{m.status === "done" ? "done" : m.status === "building" ? "live" : "—"}</span>
             </div>
           ))}
         </div>
@@ -597,11 +656,11 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
           <div style={{ fontSize: 8, letterSpacing: 2, color: S.cyanDim, textTransform: "uppercase", marginBottom: 10 }}>system signals</div>
           {[["ts.check", 100, "#10b981"], ["git.sync", 100, "#10b981"], ["db.conn", 100, "#10b981"], ["velocity", 80, S.cyan], ["quality", 100, S.cyan], ["blockers", 5, "#10b981"], ["month.cost", 35, "#818cf8"], ["days.streak", 60, "#818cf8"]].map(([l, v, c]) => (
             <div key={String(l)} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{ fontFamily: "monospace", fontSize: 9, color: S.cyanDim, width: 68, flexShrink: 0 }}>{String(l)}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 11, color: S.cyanDim, width: 68, flexShrink: 0 }}>{String(l)}</span>
               <div style={{ flex: 1, height: 3, background: "rgba(6,182,212,.08)", borderRadius: 2, overflow: "hidden" }}>
                 <div style={{ width: `${v}%`, height: "100%", background: c as string, borderRadius: 2 }} />
               </div>
-              <span style={{ fontFamily: "monospace", fontSize: 9, color: c as string, minWidth: 28, textAlign: "right" }}>{v}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 11, color: c as string, minWidth: 28, textAlign: "right" }}>{v}</span>
             </div>
           ))}
         </div>
@@ -616,8 +675,8 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
           {[["velocity", 80, S.cyan], ["quality", 100, "#10b981"], ["consistency", 75, S.cyan], ["blockers", 0, "#10b981"]].map(([l, v, c]) => (
             <div key={String(l)} style={{ marginBottom: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <span style={{ fontSize: 10, color: S.cyanDim, fontFamily: "monospace" }}>{String(l)}</span>
-                <span style={{ fontSize: 10, fontFamily: "monospace", color: c as string }}>{v}</span>
+                <span style={{ fontSize: 12, color: S.cyanDim, fontFamily: "monospace" }}>{String(l)}</span>
+                <span style={{ fontSize: 12, fontFamily: "monospace", color: c as string }}>{v}</span>
               </div>
               <div style={{ height: 4, background: "rgba(6,182,212,.06)", borderRadius: 2, overflow: "hidden" }}>
                 <div style={{ width: `${v}%`, height: "100%", background: c as string, borderRadius: 2 }} />
@@ -633,8 +692,8 @@ const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots,
 /* ══════════════════════════════════════════════════════════
    KINGDOM 4: VISION (Glass)
 ══════════════════════════════════════════════════════════ */
-const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
-  const [activeTab, setActiveTab] = useState<"empire"|"modules"|"vision"|"creator">("empire");
+const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile, activeTab, setActiveTab, loading, lastSync }: any) => {
+  /* activeTab/setActiveTab come from props (lifted to Build) */
   const GC = ({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) => (
     <div style={{ background: "rgba(255,255,255,.055)", border: ".5px solid rgba(255,255,255,.1)", borderRadius: 18, padding: 14, position: "relative", overflow: "hidden", ...style }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent)" }} />
@@ -651,7 +710,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         <div style={{ display: "flex", padding: "6px 14px 0", gap: 0, borderBottom: ".5px solid rgba(255,255,255,.06)", flexShrink: 0, position: "relative", zIndex: 5 }}>
           {[["empire","Empire"],["modules","Modules"],["vision","Vision"],["creator","Creator"]].map(([id, lb]) => (
             <div key={id} onClick={() => setActiveTab(id as any)}
-              style={{ flex: 1, padding: "7px 4px", textAlign: "center", fontSize: 10, fontWeight: 600, color: activeTab === id ? "#fff" : "rgba(255,255,255,.28)", borderBottom: `2px solid ${activeTab === id ? "rgba(167,139,250,.7)" : "transparent"}`, cursor: "pointer", borderRadius: "9px 9px 0 0", background: activeTab === id ? "rgba(255,255,255,.05)" : "transparent", transition: "all .2s" }}>
+              style={{ flex: 1, padding: "7px 4px", textAlign: "center", fontSize: 12, fontWeight: 600, color: activeTab === id ? "#fff" : "rgba(255,255,255,.28)", borderBottom: `2px solid ${activeTab === id ? "rgba(167,139,250,.7)" : "transparent"}`, cursor: "pointer", borderRadius: "9px 9px 0 0", background: activeTab === id ? "rgba(255,255,255,.05)" : "transparent", transition: "all .2s" }}>
               {lb}
             </div>
           ))}
@@ -663,16 +722,16 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         {/* EMPIRE */}
         <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "empire" ? "block" : "none", padding: "14px" }}>
           <GC style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.6)", textTransform: "uppercase", marginBottom: 6 }}>The mission</div>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.6)", textTransform: "uppercase", marginBottom: 6 }}>The mission</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", lineHeight: 1.25, marginBottom: 6, letterSpacing: "-.3px" }}>The SEO system that gets smarter every day</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,.42)", lineHeight: 1.55 }}>Not a tool you use. A system that learns, remembers, and compounds — for every client, every market, forever.</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,.42)", lineHeight: 1.55 }}>Not a tool you use. A system that learns, remembers, and compounds — for every client, every market, forever.</div>
           </GC>
           <div style={{ fontSize: 8, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.5)", textTransform: "uppercase", marginBottom: 8, padding: "0 2px" }}>Right now</div>
           <div style={{ background: "rgba(255,255,255,.04)", border: ".5px solid rgba(255,255,255,.08)", borderRadius: 14, overflow: "hidden", marginBottom: 10 }}>
             {[["Done","9 auto-learning capture points active","rgba(16,185,129,.12)","#34d399","rgba(16,185,129,.2)"],["Done","Universal learning quality gate live","rgba(16,185,129,.12)","#34d399","rgba(16,185,129,.2)"],["Building","Auto-verification loop — closes itself","rgba(99,102,241,.12)","#a78bfa","rgba(99,102,241,.2)"],["Next","Visual empire · Automation · Language","rgba(255,255,255,.04)","rgba(255,255,255,.25)","rgba(255,255,255,.07)"]].map(([s,t,bg,c,bo]) => (
               <div key={t} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: ".5px solid rgba(255,255,255,.05)" }}>
-                <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: bg, color: c, border: `.5px solid ${bo}`, flexShrink: 0 }}>{s}</span>
-                <span style={{ fontSize: 11, color: s === "Next" ? "rgba(255,255,255,.3)" : "rgba(255,255,255,.6)" }}>{t}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: bg, color: c, border: `.5px solid ${bo}`, flexShrink: 0 }}>{s}</span>
+                <span style={{ fontSize: 13, color: s === "Next" ? "rgba(255,255,255,.3)" : "rgba(255,255,255,.6)" }}>{t}</span>
               </div>
             ))}
           </div>
@@ -680,7 +739,7 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
           <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 5, background: "rgba(255,255,255,.03)", border: ".5px solid rgba(255,255,255,.06)", borderRadius: 14, padding: 10 }}>
             {modules.map((m: ModuleState) => (
               <div key={m.num} className={m.status === "building" ? "blink-build" : ""}
-                style={{ height: 30, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, border: ".5px solid", borderColor: m.status === "done" ? "rgba(16,185,129,.3)" : m.status === "building" ? "rgba(99,102,241,.35)" : "rgba(255,255,255,.06)", background: m.status === "done" ? "rgba(16,185,129,.08)" : m.status === "building" ? "rgba(99,102,241,.1)" : "rgba(255,255,255,.02)", color: m.status === "done" ? "#34d399" : m.status === "building" ? "#a78bfa" : "rgba(255,255,255,.18)" }}>
+                style={{ height: 30, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, border: ".5px solid", borderColor: m.status === "done" ? "rgba(16,185,129,.3)" : m.status === "building" ? "rgba(99,102,241,.35)" : "rgba(255,255,255,.06)", background: m.status === "done" ? "rgba(16,185,129,.08)" : m.status === "building" ? "rgba(99,102,241,.1)" : "rgba(255,255,255,.02)", color: m.status === "done" ? "#34d399" : m.status === "building" ? "#a78bfa" : "rgba(255,255,255,.18)" }}>
                 {String(m.num).padStart(2, "0")}
               </div>
             ))}
@@ -693,12 +752,12 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
             <div key={m.num} style={{ background: m.status === "done" ? "rgba(16,185,129,.05)" : m.status === "building" ? "rgba(99,102,241,.06)" : "rgba(255,255,255,.03)", border: `.5px solid ${m.status === "done" ? "rgba(16,185,129,.2)" : m.status === "building" ? "rgba(99,102,241,.25)" : "rgba(255,255,255,.07)"}`, borderRadius: 14, padding: 13, marginBottom: 8, position: "relative", overflow: "hidden" }} className={m.status === "building" ? "card-glow" : ""}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent)" }} />
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,.25)", fontFamily: "monospace" }}>MODULE {String(m.num).padStart(2, "0")}</div>
-                <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: m.status === "done" ? "rgba(16,185,129,.12)" : m.status === "building" ? "rgba(99,102,241,.12)" : "rgba(255,255,255,.04)", color: m.status === "done" ? "#34d399" : m.status === "building" ? "#a78bfa" : "rgba(255,255,255,.25)", border: `.5px solid ${m.status === "done" ? "rgba(16,185,129,.2)" : m.status === "building" ? "rgba(99,102,241,.2)" : "rgba(255,255,255,.06)"}` }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,.25)", fontFamily: "monospace" }}>MODULE {String(m.num).padStart(2, "0")}</div>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: m.status === "done" ? "rgba(16,185,129,.12)" : m.status === "building" ? "rgba(99,102,241,.12)" : "rgba(255,255,255,.04)", color: m.status === "done" ? "#34d399" : m.status === "building" ? "#a78bfa" : "rgba(255,255,255,.25)", border: `.5px solid ${m.status === "done" ? "rgba(16,185,129,.2)" : m.status === "building" ? "rgba(99,102,241,.2)" : "rgba(255,255,255,.06)"}` }}>
                   {m.status === "done" ? "DONE" : m.status === "building" ? "BUILDING" : "PENDING"}
                 </span>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: m.status === "pending" ? "rgba(255,255,255,.45)" : "#fff", marginBottom: 5, letterSpacing: "-.2px" }}>{m.name}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: m.status === "pending" ? "rgba(255,255,255,.45)" : "#fff", marginBottom: 5, letterSpacing: "-.2px" }}>{m.name}</div>
               <div style={{ height: 3, background: "rgba(255,255,255,.05)", borderRadius: 2, overflow: "hidden" }}>
                 <div style={{ width: m.status === "done" ? "100%" : m.status === "building" ? "50%" : "0%", height: "100%", background: m.status === "done" ? "rgba(16,185,129,.5)" : "rgba(139,92,246,.5)", borderRadius: 2 }} />
               </div>
@@ -709,11 +768,11 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
         {/* VISION */}
         <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden", display: activeTab === "vision" ? "block" : "none", padding: "14px" }}>
           <GC style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.6)", textTransform: "uppercase", marginBottom: 6 }}>The compounding curve</div>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.6)", textTransform: "uppercase", marginBottom: 6 }}>The compounding curve</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {[["Month 1","Starting up","8%","rgba(139,92,246,.35)"],["Month 3","50+ outcomes","25%","rgba(99,102,241,.45)"],["Month 6","Cross-project patterns","55%","rgba(99,102,241,.6)"],["Month 12","Industry models live","85%","linear-gradient(90deg,#6366f1,#10b981)"],["Month 24","The moat is real","100%","linear-gradient(90deg,#a78bfa,#34d399)"]].map(([m,l,w,bg]) => (
                 <div key={m}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, marginBottom: 3 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
                     <span style={{ color: m === "Month 24" ? "#c4b5fd" : "rgba(255,255,255,.4)", fontWeight: m === "Month 24" ? 600 : 400 }}>{m}</span>
                     <span style={{ color: m === "Month 24" ? "#34d399" : "rgba(255,255,255,.4)", fontWeight: m === "Month 24" ? 600 : 400 }}>{l}</span>
                   </div>
@@ -727,8 +786,8 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
           <div style={{ fontSize: 8, fontWeight: 600, letterSpacing: 1.5, color: "rgba(167,139,250,.5)", textTransform: "uppercase", marginBottom: 8, padding: "0 2px" }}>vs every other tool</div>
           {[["Semrush / Ahrefs","Shows · forgets","rgba(239,68,68,.5)"],["ChatGPT / Claude","Writes · forgets","rgba(239,68,68,.5)"],["Notion / Linear","Tracks · forgets","rgba(239,68,68,.5)"],["SEO Season","Executes · verifies · compounds","#34d399"]].map(([n, d, c]) => (
             <div key={n} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: n === "SEO Season" ? "rgba(99,102,241,.08)" : "rgba(255,255,255,.03)", border: `.5px solid ${n === "SEO Season" ? "rgba(99,102,241,.25)" : "rgba(255,255,255,.06)"}`, borderRadius: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 11, color: n === "SEO Season" ? "#c4b5fd" : "rgba(255,255,255,.4)", fontWeight: n === "SEO Season" ? 600 : 400 }}>{n}</span>
-              <span style={{ fontSize: 9, color: c }}>{d}</span>
+              <span style={{ fontSize: 13, color: n === "SEO Season" ? "#c4b5fd" : "rgba(255,255,255,.4)", fontWeight: n === "SEO Season" ? 600 : 400 }}>{n}</span>
+              <span style={{ fontSize: 11, color: c }}>{d}</span>
             </div>
           ))}
         </div>
@@ -739,14 +798,14 @@ const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots,
             <div style={{ position: "absolute", top: -30, left: "50%", transform: "translateX(-50%)", width: 100, height: 100, borderRadius: "50%", background: "radial-gradient(circle,rgba(139,92,246,.12),transparent 70%)" }} />
             <div style={{ width: 60, height: 60, borderRadius: "50%", background: "linear-gradient(135deg,rgba(139,92,246,.3),rgba(6,182,212,.2))", border: ".5px solid rgba(255,255,255,.15)", margin: "0 auto 10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, position: "relative", zIndex: 1 }}>👑</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 3, letterSpacing: "-.3px" }}>Manav</div>
-            <div style={{ fontSize: 9, color: "rgba(167,139,250,.6)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>Founder · Architect · King</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", lineHeight: 1.6, fontStyle: "italic" }}>"Building the empire every agency dreamt of — but never had the system to run."</div>
+            <div style={{ fontSize: 11, color: "rgba(167,139,250,.6)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>Founder · Architect · King</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,.4)", lineHeight: 1.6, fontStyle: "italic" }}>"Building the empire every agency dreamt of — but never had the system to run."</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
             {[["React + Vite","Frontend empire"],["Supabase","Brain memory"],["Claude API","Every AI call"],["Vercel Edge","12 serverless fns"],["TypeScript","End-to-end safety"],["Tailwind + shadcn","Every pixel"]].map(([n, d]) => (
               <div key={n} style={{ background: "rgba(255,255,255,.04)", border: ".5px solid rgba(255,255,255,.07)", borderRadius: 12, padding: "10px 12px" }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,.7)", marginBottom: 2 }}>{n}</div>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", lineHeight: 1.3 }}>{d}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,.7)", marginBottom: 2 }}>{n}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,.3)", lineHeight: 1.3 }}>{d}</div>
               </div>
             ))}
           </div>
@@ -780,13 +839,13 @@ const Sidebar = ({ modules, kingdom, daily, health }: { modules: ModuleState[]; 
     <div style={{ background: S.bg, borderRight: `.5px solid ${S.border}`, height: "100%", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ padding: "16px 14px 14px", borderBottom: `.5px solid ${S.border}` }}>
-        <div style={{ fontSize: 9, fontFamily: S.font, letterSpacing: 2, color: S.dim, textTransform: "uppercase", marginBottom: 6 }}>
+        <div style={{ fontSize: 11, fontFamily: S.font, letterSpacing: 2, color: S.dim, textTransform: "uppercase", marginBottom: 6 }}>
           {kingdom === "war" ? "EMPIRE.SECTORS" : kingdom === "royal" ? "Empire Modules" : kingdom === "neural" ? "MODULE.REGISTRY" : "Empire Modules"}
         </div>
         <div style={{ background: "rgba(255,255,255,.05)", borderRadius: 3, height: 5, overflow: "hidden", marginBottom: 5 }}>
           <div style={{ width: `${done / 12 * 100}%`, height: "100%", background: `linear-gradient(90deg,#6366f1,#10b981)`, borderRadius: 3 }} />
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: S.dim, fontFamily: S.font }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: S.dim, fontFamily: S.font }}>
           <span>{done} of 12 complete</span>
           <span>{Math.round(done / 12 * 100)}%</span>
         </div>
@@ -799,16 +858,16 @@ const Sidebar = ({ modules, kingdom, daily, health }: { modules: ModuleState[]; 
           return (
             <div key={m.num} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 8px", borderRadius: 9, border: ".5px solid", borderColor: iDone ? "rgba(16,185,129,.2)" : iBuilding ? "rgba(59,130,246,.2)" : "#1e1e3a", background: iDone ? "rgba(16,185,129,.04)" : iBuilding ? "rgba(59,130,246,.04)" : "#0d0d1a", marginBottom: 5, position: "relative", overflow: "hidden" }}>
               <div style={{ position: "absolute", left: 0, top: 3, bottom: 3, width: 2.5, borderRadius: 2, background: iDone ? "#10b981" : iBuilding ? "#3b82f6" : "transparent" }} />
-              <div className={iBuilding ? "glow-build" : ""} style={{ width: 28, height: 28, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0, border: `1.5px solid ${iDone ? "#10b981" : iBuilding ? "#3b82f6" : "#2a2a3a"}`, background: iDone ? "rgba(16,185,129,.1)" : iBuilding ? "rgba(59,130,246,.1)" : "#0d0d1a", color: iDone ? "#10b981" : iBuilding ? "#3b82f6" : "transparent" }}>
+              <div className={iBuilding ? "glow-build" : ""} style={{ width: 28, height: 28, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0, border: `1.5px solid ${iDone ? "#10b981" : iBuilding ? "#3b82f6" : "#2a2a3a"}`, background: iDone ? "rgba(16,185,129,.1)" : iBuilding ? "rgba(59,130,246,.1)" : "#0d0d1a", color: iDone ? "#10b981" : iBuilding ? "#3b82f6" : "transparent" }}>
                 {iDone ? "✓" : iBuilding ? "⚡" : ""}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 9, letterSpacing: 1.5, color: "#4b4b6a", textTransform: "uppercase", marginBottom: 2, fontFamily: S.font }}>
+                <div style={{ fontSize: 11, letterSpacing: 1.5, color: "#4b4b6a", textTransform: "uppercase", marginBottom: 2, fontFamily: S.font }}>
                   {kingdom === "war" ? `SECTOR ${String(m.num).padStart(2, "0")}` : kingdom === "neural" ? `mod_${String(m.num).padStart(2, "0")}` : `Module ${String(m.num).padStart(2, "0")}`}
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "#f0f0ff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#f0f0ff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
               </div>
-              <span style={{ fontSize: 9, fontWeight: 500, padding: "2px 6px", borderRadius: 20, background: iDone ? "#0a2010" : iBuilding ? "#030d20" : "#0d0d1a", color: iDone ? "#10b981" : iBuilding ? "#3b82f6" : "#4b4b6a", border: `.5px solid ${iDone ? "rgba(16,185,129,.3)" : iBuilding ? "rgba(59,130,246,.3)" : "#1e1e3a"}`, flexShrink: 0 }}>
+              <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 6px", borderRadius: 20, background: iDone ? "#0a2010" : iBuilding ? "#030d20" : "#0d0d1a", color: iDone ? "#10b981" : iBuilding ? "#3b82f6" : "#4b4b6a", border: `.5px solid ${iDone ? "rgba(16,185,129,.3)" : iBuilding ? "rgba(59,130,246,.3)" : "#1e1e3a"}`, flexShrink: 0 }}>
                 {iDone ? "DONE" : iBuilding ? "BUILD" : "PEND"}
               </span>
             </div>
@@ -819,7 +878,7 @@ const Sidebar = ({ modules, kingdom, daily, health }: { modules: ModuleState[]; 
       {/* Footer */}
       <div style={{ padding: "8px 10px", borderTop: `.5px solid ${S.border}`, display: "flex", gap: 5, flexWrap: "wrap" }}>
         {[["TS", health.ts === "clean"], ["Git", health.git !== "stale"], ["DB", health.db === "ok"], ["Build", true]].map(([l, ok]) => (
-          <span key={String(l)} style={{ fontSize: 9, padding: "2px 6px", borderRadius: 5, fontWeight: 500, background: (ok as boolean) ? "#051008" : "#150303", color: (ok as boolean) ? "#10b981" : "#ef4444", border: `.5px solid ${(ok as boolean) ? "rgba(16,185,129,.3)" : "rgba(239,68,68,.3)"}` }}>
+          <span key={String(l)} style={{ fontSize: 11, padding: "2px 6px", borderRadius: 5, fontWeight: 500, background: (ok as boolean) ? "#051008" : "#150303", color: (ok as boolean) ? "#10b981" : "#ef4444", border: `.5px solid ${(ok as boolean) ? "rgba(16,185,129,.3)" : "rgba(239,68,68,.3)"}` }}>
             {l} {(ok as boolean) ? "✓" : "✗"}
           </span>
         ))}
@@ -835,11 +894,17 @@ export default function Build() {
   const screen    = useScreen();
   const elapsed   = useElapsed();
   const dots      = useDots();
-  const { rows, loading, lastSync, refetch } = useBridgeData(REFRESH_MS);
+  const { rows, loading, lastSync, refetch, paused, togglePause } = useBridgeData(REFRESH_MS);
   const [kingdom, setKingdom]         = useState<Kingdom>("war");
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [pullVisible, setPullVisible] = useState(false);
   const pullRef   = useRef({ startY: 0, pulling: false });
+
+  /* Kingdom tab state — lifted from each kingdom so bottom nav can drive them */
+  const [warTab,    setWarTab]    = useState<"ops"|"map"|"comms"|"sys">("ops");
+  const [royalTab,  setRoyalTab]  = useState<"court"|"scroll"|"treasury"|"realm">("court");
+  const [neuralTab, setNeuralTab] = useState<"neural"|"nodes"|"signal"|"synapse">("neural");
+  const [glassTab,  setGlassTab]  = useState<"empire"|"modules"|"vision"|"creator">("empire");
 
   const state = useMemo(() => deriveState(rows), [rows]);
 
@@ -903,7 +968,32 @@ export default function Build() {
     elapsed,
     dots,
     mobile:    screen.mobile,
+    loading,
+    lastSync,
   };
+
+  /* Bottom-nav data per kingdom — drives tab switching from outside */
+  const NAV_CONFIG = {
+    war:    {
+      tabs: [["ops","⊕","OPS"],["map","⊞","MAP"],["comms","≡","LOG"],["sys","⊙","SYS"]],
+      activeColor: "#39d353", dimColor: "#1a5c1a",
+    },
+    royal:  {
+      tabs: [["court","♛","COURT"],["scroll","◈","SCROLL"],["treasury","◆","GOLD"],["realm","⊞","REALM"]],
+      activeColor: "#f59e0b", dimColor: "rgba(245,158,11,.25)",
+    },
+    neural: {
+      tabs: [["neural","◉","NEURAL"],["nodes","⊕","NODES"],["signal","≡","SIGNAL"],["synapse","⌇","PULSE"]],
+      activeColor: "#06b6d4", dimColor: "rgba(6,182,212,.2)",
+    },
+    glass:  {
+      tabs: [["empire","♛","EMPIRE"],["modules","⊞","MODS"],["vision","◎","VISION"],["creator","◉","YOU"]],
+      activeColor: "#a78bfa", dimColor: "rgba(167,139,250,.2)",
+    },
+  } as const;
+  const currentNav = NAV_CONFIG[kingdom];
+  const currentTab    = ({ war: warTab, royal: royalTab, neural: neuralTab, glass: glassTab } as Record<Kingdom, string>)[kingdom];
+  const setCurrentTab = ({ war: setWarTab, royal: setRoyalTab, neural: setNeuralTab, glass: setGlassTab } as Record<Kingdom, (t: any) => void>)[kingdom];
 
   const isMobile = screen.mobile; /* w < 1024 */
 
@@ -962,26 +1052,37 @@ export default function Build() {
 
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             {!isMobile && (
-              <span style={{ fontSize: 10, color: "#4b4b6a", marginRight: 4 }}>
+              <span style={{ fontSize: 12, color: "#4b4b6a", marginRight: 4 }}>
                 {screen.w}×{screen.h} · {screen.wide ? "wide" : "desktop"}
               </span>
             )}
-            <span style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(16,185,129,.1)", border: ".5px solid rgba(16,185,129,.25)", borderRadius: 20, padding: "3px 8px", fontSize: 10, color: "#10b981", fontWeight: 600 }}>
-              <span className="ld" style={{ width: 5, height: 5, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
-              {loading ? "SYNC" : "LIVE"}
-            </span>
+            {paused ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(239,68,68,.1)", border: ".5px solid rgba(239,68,68,.3)", borderRadius: 20, padding: "3px 8px", fontSize: 13, color: "#ef4444", fontWeight: 600 }}>
+                ⏸ PAUSED
+              </span>
+            ) : (
+              <span style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(16,185,129,.1)", border: ".5px solid rgba(16,185,129,.3)", borderRadius: 20, padding: "3px 8px", fontSize: 13, color: "#10b981", fontWeight: 600 }}>
+                <span className="ld" style={{ width: 5, height: 5, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
+                {loading ? "SYNCING" : "LIVE"}
+              </span>
+            )}
             <button
               onClick={refetch}
               title={`Refresh · Last sync: ${lastSync ? lastSync.toLocaleTimeString() : "never"}`}
-              style={{ width: 30, height: 30, borderRadius: 8, border: ".5px solid #1e1e3a", background: "transparent", color: "#6b6b80", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
+              style={{ width: 36, height: 36, borderRadius: 8, border: ".5px solid #1e1e3a", background: "transparent", color: "#6b6b80", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
             >↻</button>
+            <button
+              onClick={togglePause}
+              title={paused ? "Resume live updates" : "Pause live updates"}
+              style={{ width: 36, height: 36, borderRadius: 8, border: `.5px solid ${paused ? "#ef4444" : "#1e1e3a"}`, background: paused ? "rgba(239,68,68,.1)" : "transparent", color: paused ? "#ef4444" : "#6b6b80", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
+            >{paused ? "▶" : "⏸"}</button>
             {!isMobile && (
               <div style={{ display: "flex", gap: 3, background: "#0d0d1a", border: ".5px solid #1e1e3a", borderRadius: 10, padding: "3px 4px" }}>
                 {KS_CARDS.map(k => (
                   <button
                     key={k.id}
                     onClick={() => setKingdom(k.id)}
-                    style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: kingdom === k.id ? k.c1 : "transparent", color: kingdom === k.id ? k.nc : "#4b4b6a", fontSize: 10, fontWeight: 600, cursor: "pointer", letterSpacing: .3 }}
+                    style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: kingdom === k.id ? k.c1 : "transparent", color: kingdom === k.id ? k.nc : "#4b4b6a", fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: .3 }}
                   >
                     {k.name.split(" ")[0]}
                   </button>
@@ -990,7 +1091,7 @@ export default function Build() {
             )}
             <button
               onClick={() => setSwitcherOpen(o => !o)}
-              style={{ width: 30, height: 30, borderRadius: 8, border: ".5px solid rgba(245,158,11,.3)", background: "rgba(245,158,11,.06)", color: "#f59e0b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
+              style={{ width: 36, height: 36, borderRadius: 8, border: ".5px solid rgba(245,158,11,.3)", background: "rgba(245,158,11,.06)", color: "#f59e0b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
               title="Switch Kingdom"
             >👑</button>
           </div>
@@ -1019,10 +1120,10 @@ export default function Build() {
           )}
 
           <div style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
-            {kingdom === "war"    && <WarRoom       {...commonProps} />}
-            {kingdom === "royal"  && <RoyalCourt    {...commonProps} />}
-            {kingdom === "neural" && <NeuralCommand {...commonProps} />}
-            {kingdom === "glass"  && <VisionKingdom {...commonProps} />}
+            {kingdom === "war"    && <WarRoom       {...commonProps} activeTab={warTab}    setActiveTab={setWarTab}    />}
+            {kingdom === "royal"  && <RoyalCourt    {...commonProps} activeTab={royalTab}  setActiveTab={setRoyalTab}  />}
+            {kingdom === "neural" && <NeuralCommand {...commonProps} activeTab={neuralTab} setActiveTab={setNeuralTab} />}
+            {kingdom === "glass"  && <VisionKingdom {...commonProps} activeTab={glassTab}  setActiveTab={setGlassTab}  />}
           </div>
 
           {switcherOpen && (
@@ -1045,22 +1146,18 @@ export default function Build() {
         {/* Bottom nav (mobile only) */}
         {isMobile && (
           <div style={{
-            flexShrink: 0, height: 62,
+            flexShrink: 0,
             background: theme.hBg, borderTop: `.5px solid ${theme.hBorder}`,
             display: "flex", alignItems: "center",
           }}>
-            {([
-              ["⊕", "Modules"],
-              ["⚡", "Active"],
-              ["≡",  "Log"],
-              ["♥",  "Health"],
-            ] as [string, string][]).map(([icon, label]) => (
+            {currentNav.tabs.map(([id, icon, label]) => (
               <div
-                key={label}
-                style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 0", cursor: "pointer" }}
+                key={id}
+                onClick={() => setCurrentTab(id)}
+                style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "6px 0", cursor: "pointer", minHeight: 52 }}
               >
-                <span style={{ fontSize: 19, color: theme.ldColor, opacity: .35 }}>{icon}</span>
-                <span style={{ fontSize: 8, color: theme.ldColor, fontWeight: 500, opacity: .35, letterSpacing: .3 }}>{label}</span>
+                <span style={{ fontSize: 22, color: currentTab === id ? currentNav.activeColor : currentNav.dimColor, filter: currentTab === id ? "drop-shadow(0 0 4px currentColor)" : "none" }}>{icon}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: currentTab === id ? currentNav.activeColor : currentNav.dimColor, letterSpacing: .3 }}>{label}</span>
               </div>
             ))}
           </div>
