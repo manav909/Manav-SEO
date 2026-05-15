@@ -586,6 +586,14 @@ export default function BrainCommand() {
     return true;
   }, [selProj]);
 
+  /* ── crawlUrl: ad-hoc URL fetch from the persona briefing — grounds the next regenerate in real content ── */
+  const crawlUrl = useCallback(async (urlToCrawl: string) => {
+    if (!selProj) { setMiError("Select a project first."); return; }
+    const data = await miCall("crawl_url", { url: urlToCrawl });
+    if (!data || data.error) { setMiError(data?.error || "Crawl failed"); return; }
+    setMiError(`✓ Crawled ${data.url} (${data.contentLength} chars). Click "Regenerate persona" to use it.`);
+  }, [selProj]);  // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── addToCanvas: add a suggested card from the persona briefing onto the canvas ── */
   const addToCanvas = useCallback(async (card: {
     cardType?: string; title: string; content: string; priority?: string; week?: number;
@@ -864,6 +872,8 @@ export default function BrainCommand() {
                   onAskBrain={askBrain}
                   onSaveLearning={saveAsLearning}
                   onAddToCanvas={addToCanvas}
+                  onCrawlUrl={crawlUrl}
+                  onRegenerate={generatePersona}
                   crossProjectCount={miPatterns?.industryCount || 0}
                 />
                 {/* legacy hero hidden — briefing replaces it */}

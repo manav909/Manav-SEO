@@ -32,6 +32,8 @@ interface BriefingProps {
   onAskBrain: (prompt: string) => void;
   onSaveLearning?: (insight: any) => Promise<boolean>;   // persist an insight as a Brain Learning
   onAddToCanvas?: (card: any) => Promise<boolean>;        // add a suggested card to the canvas
+  onCrawlUrl?: (url: string) => Promise<void>;            // ad-hoc URL crawl to ground analysis
+  onRegenerate?: () => void;                              // re-run build_persona with fresh data
   crossProjectCount?: number;
 }
 
@@ -279,22 +281,39 @@ function PromptsPanel({ section, role, onAskBrain }: {
 /* ─────────────────────── Powered-By panel ───────────────────────
    Shows EXACTLY which Brain Command data sources fed this persona.
    Trust signal: the user can see this isn't generic — it used their real data. */
-function PoweredByPanel({ persona, learningsCount, algoCount, canvasCount, projectContext }: {
+function PoweredByPanel({ persona, learningsCount, algoCount, canvasCount, projectContext, onCrawlUrl, onRegenerate }: {
   persona: any; learningsCount: number; algoCount: number; canvasCount: number; projectContext?: any;
+  onCrawlUrl?: (url: string) => Promise<void>;
+  onRegenerate?: () => void;
 }) {
   const bm = persona?._provenance?.brainMemory || {};
-  const sources: { label: string; value: string; ok: boolean }[] = [
-    { label: "Project data",       value: projectContext?.project?.name || "—", ok: !!projectContext },
-    { label: "Brain Learnings",    value: `${bm.projectLearningsCount ?? learningsCount} active`,   ok: (bm.projectLearningsCount ?? learningsCount) > 0 },
-    { label: "Algorithm Intel",    value: `${bm.algoIntelCount ?? algoCount} items`,                ok: (bm.algoIntelCount ?? algoCount) > 0 },
-    { label: "Canvas state",       value: `${bm.canvasCardsCount ?? canvasCount} cards`,            ok: true },
-    { label: "Analytics / GSC",    value: bm.hasAnalytics ? "loaded" : "missing",                   ok: !!bm.hasAnalytics },
-    { label: "LLM/E-E-A-T metrics", value: bm.hasMetrics  ? "loaded" : "missing",                   ok: !!bm.hasMetrics },
-    { label: "Audit history",      value: bm.hasAudits   ? "loaded" : "none yet",                   ok: !!bm.hasAudits },
-    { label: "Live crawl data",    value: bm.hasCrawl    ? "loaded" : "not run",                    ok: !!bm.hasCrawl },
-    { label: "Live URL fetch",     value: bm.siteFetched ? `homepage + ${bm.competitorsFetched || 0} competitor(s)` : "skipped", ok: !!bm.siteFetched },
-    { label: "Cross-project wisdom", value: `${bm.industryWisdomCount || 0} industry learnings`,    ok: (bm.industryWisdomCount || 0) > 0 },
-    { label: "Prior persona",      value: bm.priorPersonaExists ? "evolved from previous" : "first generation", ok: true },
+  const missingCriticals = persona?._provenance?.missingCriticals || [];
+  const scoreBreakdown   = persona?._provenance?.scoreBreakdown   || {};
+
+  /* Real grounding flags from the actual confidence calculation */
+  const hasUrl     = !!projectContext?.project?.url;
+  const hasSiteLive= !!bm.siteFetched;
+  const hasAnalyt  = !!bm.hasAnalytics;
+  const hasMetrics = !!bm.hasMetrics;
+  const hasAudits  = !!bm.hasAudits;
+  const hasCrawl   = !!bm.hasCrawl;
+  const competitorsFetched = bm.competitorsFetched || 0;
+  const wisdomCount = bm.industryWisdomCount || 0;
+
+  /* Quality-weighted learning count (qualifying = the formula's gates) — fallback to total if not provided */
+  const sources: { label: string; value: string; ok: boolean; weight?: string }[] = [
+    { label: "Project URL",         value: hasUrl ? projectContext.project.url : "MISSING",              ok: hasUrl,     weight: "core" },
+    { label: "Industry set",        value: projectContext?.project?.industry || "MISSING",               ok: !!projectContext?.project?.industry, weight: "core" },
+    { label: "Target keywords",     value: persona?._provenance?.keywordCount ? `${persona._provenance.keywordCount} provided` : "MISSING", ok: (persona?._provenance?.keywordCount || 0) >= 3, weight: "core" },
+    { label: "Live URL fetched",    value: hasSiteLive ? "✓ grounded in real content" : (hasUrl ? "skipped — fix below" : "no URL to fetch"), ok: hasSiteLive, weight: "ground-truth" },
+    { label: "Live competitor pages", value: competitorsFetched > 0 ? `${competitorsFetched} fetched` : "none fetched", ok: competitorsFetched > 0, weight: "ground-truth" },
+    { label: "Analytics / GSC",     value: hasAnalyt ? "loaded" : "MISSING",                              ok: hasAnalyt,  weight: "measurement" },
+    { label: "LLM/E-E-A-T metrics", value: hasMetrics ? "loaded" : "MISSING",                              ok: hasMetrics, weight: "measurement" },
+    { label: "Prior audit",         value: hasAudits ? "loaded" : "none yet",                              ok: hasAudits,  weight: "measurement" },
+    { label: "Crawl data",          value: hasCrawl ? "loaded" : "not run",                                ok: hasCrawl,   weight: "measurement" },
+    { label: "Competitors listed",  value: (persona?._provenance?.competitorCount || 0) > 0 ? `${persona._provenance.competitorCount}` : "MISSING", ok: (persona?._provenance?.competitorCount || 0) > 0, weight: "context" },
+    { label: "Cross-project wisdom", value: wisdomCount > 0 ? `${wisdomCount} learnings` : "none yet",   ok: wisdomCount >= 5, weight: "context" },
+    { label: "Brain Learnings (qualifying)", value: `${scoreBreakdown.brain_learnings ?? 0} pts (capped, gated by applied≥2 & conf≥80 & <90d)`, ok: (scoreBreakdown.brain_learnings || 0) >= 3, weight: "weak-signal" },
   ];
   const weightedConf: number | null = persona?._provenance?.weightedConfidence ?? null;
   const confColor = weightedConf == null ? "#6366f1" : weightedConf >= 85 ? "#10b981" : weightedConf >= 70 ? "#06b6d4" : weightedConf >= 55 ? "#f59e0b" : weightedConf >= 40 ? "#fb923c" : "#ef4444";
@@ -326,11 +345,100 @@ function PoweredByPanel({ persona, learningsCount, algoCount, canvasCount, proje
         ))}
       </div>
       <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 8, fontStyle: "italic" }}>
-        Every insight below is grounded in these sources. Where a source is missing, you'll see a flag inline.
+        Sources with the "core" / "ground-truth" / "measurement" weight contribute most to confidence. Brain Learnings only count if applied ≥2× with confidence ≥80 and updated &lt;90 days ago.
       </div>
+
+      {/* ── Missing-critical breakdown with FIX-THIS action buttons ── */}
+      {missingCriticals.length > 0 && (
+        <MissingCriticalsFixer
+          missing={missingCriticals}
+          projectUrl={projectContext?.project?.url}
+          onCrawlUrl={onCrawlUrl}
+          onRegenerate={onRegenerate}
+        />
+      )}
     </div>
   );
 }
+
+/* ─────────────────────── Missing Criticals fixer block ─────────────────────── */
+function MissingCriticalsFixer({ missing, projectUrl, onCrawlUrl, onRegenerate }: {
+  missing: Array<{ field: string; label: string; penalty: number; action?: string; actionLabel?: string }>;
+  projectUrl?: string;
+  onCrawlUrl?: (url: string) => Promise<void>;
+  onRegenerate?: () => void;
+}) {
+  const [adhocUrl, setAdhocUrl] = useState<string>(projectUrl || "");
+  const [crawling, setCrawling] = useState(false);
+  const [crawled, setCrawled]   = useState(false);
+
+  const handleCrawl = async () => {
+    if (!onCrawlUrl || !adhocUrl) return;
+    setCrawling(true);
+    try { await onCrawlUrl(adhocUrl); setCrawled(true); }
+    finally { setCrawling(false); }
+  };
+
+  const navigate = (path: string) => { if (typeof window !== "undefined") window.location.assign(path); };
+  const totalPenalty = missing.reduce((s, m) => s + (m.penalty || 0), 0);
+
+  return (
+    <div style={{ marginTop: 12, padding: 12, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.28)", borderRadius: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontSize: 10, color: "#fbbf24", letterSpacing: "0.1em", fontFamily: "monospace", fontWeight: 700 }}>
+          ⚠ MISSING DATA — DRAGGING SCORE DOWN BY {totalPenalty} PTS
+        </div>
+        {onRegenerate && (
+          <button onClick={onRegenerate} style={{ padding: "4px 9px", borderRadius: 5, background: "rgba(16,185,129,0.18)", border: "1px solid rgba(16,185,129,0.4)", color: "#34d399", fontSize: 10, fontFamily: "monospace", cursor: "pointer" }}>
+            ↻ Regenerate persona
+          </button>
+        )}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {missing.map((m, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", background: "rgba(0,0,0,0.18)", borderRadius: 6 }}>
+            <span style={{ fontSize: 9, color: "#fbbf24", fontFamily: "monospace", flexShrink: 0, padding: "1px 5px", borderRadius: 3, background: "rgba(245,158,11,0.15)" }}>−{m.penalty}</span>
+            <span style={{ flex: 1, fontSize: 10, color: "rgba(255,255,255,0.7)" }}>{m.label}</span>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", fontFamily: "monospace" }}>{m.field}</span>
+            {m.action === "open_data_room"   && <button onClick={() => navigate("/data-room")}      style={fixBtn}>{m.actionLabel}</button>}
+            {m.action === "run_audit"        && <button onClick={() => navigate("/audit")}          style={fixBtn}>{m.actionLabel}</button>}
+            {m.action === "crawl_url"        && onCrawlUrl && <button onClick={handleCrawl} disabled={crawling || crawled} style={{...fixBtn, background: crawled ? "rgba(16,185,129,0.18)" : fixBtn.background, color: crawled ? "#34d399" : fixBtn.color}}>{crawled ? "✓ Crawled" : crawling ? "Crawling…" : "Crawl URL"}</button>}
+            {m.action === "prompt_keywords"  && <button onClick={() => navigate("/data-room")}      style={fixBtn}>{m.actionLabel}</button>}
+            {m.action === "prompt_competitors" && <button onClick={() => navigate("/data-room")}    style={fixBtn}>{m.actionLabel}</button>}
+          </div>
+        ))}
+      </div>
+
+      {/* Ad-hoc URL crawl — works even if no project URL set */}
+      {onCrawlUrl && (
+        <div style={{ marginTop: 10, padding: 10, background: "rgba(99,102,241,0.05)", borderRadius: 6, border: "1px solid rgba(99,102,241,0.18)" }}>
+          <div style={{ fontSize: 9, color: "rgba(165,180,252,0.9)", fontFamily: "monospace", marginBottom: 6, letterSpacing: "0.05em" }}>
+            ◈ DIRECT URL CRAWL — supply any landing page to ground this analysis in real content
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              type="text" value={adhocUrl} placeholder="https://example.com/landing-page"
+              onChange={e => setAdhocUrl(e.target.value)}
+              style={{ flex: 1, padding: "6px 10px", borderRadius: 5, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff", fontSize: 11, fontFamily: "monospace" }}
+            />
+            <button onClick={handleCrawl} disabled={!adhocUrl || crawling} style={{...fixBtn, padding: "6px 14px"}}>
+              {crawling ? "Crawling…" : crawled ? "✓ Done" : "Crawl + Use"}
+            </button>
+          </div>
+          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 4, fontStyle: "italic" }}>
+            After crawling, click "Regenerate persona" above so the analysis uses the new content.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const fixBtn: React.CSSProperties = {
+  padding: "3px 8px", borderRadius: 5, fontSize: 9, fontFamily: "monospace", fontWeight: 600,
+  background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.4)", color: "#a5b4fc",
+  cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+};
 
 /* ─────────────────────── Actionable Cards & Suggested Learnings ─────────────────────── */
 function ActionableSection({ persona, onSaveLearning, onAddToCanvas }: {
@@ -650,7 +758,7 @@ function DataTransparencyPanel({ persona, project }: { persona: any; project?: a
 }
 
 /* ─────────────────────── Main export ─────────────────────── */
-export function MarketPersonaBriefing({ persona, goals, project, projectContext, learnings = [], algoItems = [], canvasBlocks = [], onAskBrain, onSaveLearning, onAddToCanvas, crossProjectCount = 0 }: BriefingProps) {
+export function MarketPersonaBriefing({ persona, goals, project, projectContext, learnings = [], algoItems = [], canvasBlocks = [], onAskBrain, onSaveLearning, onAddToCanvas, onCrawlUrl, onRegenerate, crossProjectCount = 0 }: BriefingProps) {
   const [role, setRole] = useState<PersonaRole>("agency");
   if (!persona) return null;
 
@@ -718,6 +826,8 @@ export function MarketPersonaBriefing({ persona, goals, project, projectContext,
         algoCount={algoItems.length}
         canvasCount={canvasBlocks.length}
         projectContext={projectContext}
+        onCrawlUrl={onCrawlUrl}
+        onRegenerate={onRegenerate}
       />
 
       {/* ── ACTIONABLE: Canvas cards + Brain Learnings + Data Room gaps ── */}

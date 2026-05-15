@@ -519,35 +519,118 @@ Return ONLY valid JSON. Be SPECIFIC. Reference real numbers from project data wh
       } catch (_e) { /* non-fatal */ }
     }
 
-    /* ═══ INTELLIGENCE FABRIC: persist + score this output ═══ */
+    /* ═══ INTELLIGENCE FABRIC: HONEST confidence — every missing critical source DRAGS the score down ═══
+
+       Old formula was wrong: it averaged present sources only, so missing data didn't penalise.
+       New rule: start at 0, ADD points for real grounded data, SUBTRACT for missing criticals.
+       Brain Learnings & Canvas cards are NOT ground truth (capped contribution).
+       If no live grounding at all → "Pure inference" mode — score floor is 25. */
     let outputId: string | null = null;
     let weighted = 0;
     let fabricSources: SourceUsage[] = [];
-    if (projectId) {
-      fabricSources = [
-        company   ? source("manual_user",      { label: "Company / project name", weight: 2 }) : null,
-        industry  ? source("manual_user",      { label: "Industry",               weight: 2 }) : null,
-        url       ? source("manual_user",      { label: "Website URL",            weight: 1 }) : null,
-        keywords.length      ? source("manual_user", { label: `${keywords.length} target keywords`,    weight: 2, count: keywords.length })   : null,
-        competitors.length   ? source("manual_user", { label: `${competitors.length} competitors`,     weight: 1, count: competitors.length }): null,
-        pc?.analytics?.organicMonthly ? source("ga_live",   { label: "Organic traffic (GA/manual)",   weight: 3 }) : null,
-        pc?.analytics?.gscClicks      ? source("gsc_live",  { label: "GSC clicks/impressions",         weight: 3 }) : null,
-        pc?.metrics?.llmVisibility != null ? source("audit_run", { label: "LLM visibility metric",     weight: 2 }) : null,
-        pc?.audits?.length            ? source("audit_run", { label: `${pc.audits.length} prior audit(s)`, weight: 2, count: pc.audits.length }) : null,
-        pc?.crawl_data?.page_count    ? source("crawl_jina", { label: `Site crawl (${pc.crawl_data.page_count} pages)`, weight: 2, count: pc.crawl_data.page_count }) : null,
-        siteLive    ? source("crawl_jina", { label: "Live homepage fetched",            weight: 2 }) : null,
-        comp1Live   ? source("crawl_jina", { label: "Live competitor page fetched",     weight: 1 }) : null,
-        comp2Live   ? source("crawl_jina", { label: "Live competitor 2 fetched",        weight: 1 }) : null,
-        pLearn.length ? source("brain_learning", { label: `${pLearn.length} project Brain Learnings`, weight: 2, count: pLearn.length,
-                                                   overrideConfidence: Math.round(pLearn.reduce((s: number, l: any) => s + (l.confidence_score || 75), 0) / pLearn.length) }) : null,
-        algo.length   ? source("algorithm_intel", { label: `${algo.length} algorithm intel items`,    weight: 1, count: algo.length }) : null,
-        industryWisdom ? source("intelligence_output", { label: `${industryWisdom.split("\n").length} cross-project industry learnings`, weight: 1 }) : null,
-        prior         ? source("intelligence_output", { label: "Prior persona (evolution context)",   weight: 1 }) : null,
-        // Always present: Claude's own inference work
-        source("claude_inference", { label: "Claude buyer-psychology inference", weight: 2 }),
-      ].filter(Boolean) as SourceUsage[];
+    const missingCriticals: Array<{ field: string; label: string; penalty: number; action?: string; actionLabel?: string }> = [];
+    const scoreBreakdown: Record<string, number> = {};
 
-      weighted = computeWeightedConfidence(fabricSources);
+    if (projectId) {
+      let score = 0;
+
+      /* ── A. CORE IDENTITY (max 20 pts) — basic things even a placeholder analysis needs ── */
+      if (company)               { score += 5; scoreBreakdown.company = 5; }   else missingCriticals.push({ field: "project.name",     label: "Company / project name not set",                                            penalty: 6, action: "open_data_room",            actionLabel: "Set company name" });
+      if (industry)              { score += 7; scoreBreakdown.industry = 7; }  else missingCriticals.push({ field: "project.industry", label: "Industry NOT specified — analysis is generic",                              penalty: 10, action: "open_data_room",           actionLabel: "Set industry" });
+      if (url)                   { score += 8; scoreBreakdown.url = 8; }       else missingCriticals.push({ field: "project.url",      label: "No project URL — cannot ground analysis in actual website content",         penalty: 12, action: "open_data_room",           actionLabel: "Add project URL" });
+
+      /* ── B. KEYWORDS (max 12 pts) — defines the search ground truth ── */
+      if (keywords.length >= 3)  { score += 12; scoreBreakdown.keywords = 12; }
+      else if (keywords.length)  { score += 4;  scoreBreakdown.keywords_partial = 4; missingCriticals.push({ field: "goal.target_keywords", label: `Only ${keywords.length} keyword(s) provided — need 3+ for solid intent mapping`, penalty: 5,  action: "prompt_keywords",        actionLabel: "Add more keywords" }); }
+      else                       {                                              missingCriticals.push({ field: "goal.target_keywords", label: "No target keywords — search behavior analysis is industry-pattern only",   penalty: 12, action: "prompt_keywords",          actionLabel: "Add target keywords" }); }
+
+      /* ── C. LIVE GROUNDING (max 25 pts) — actual current content, the highest-trust input ── */
+      if (siteLive)              { score += 14; scoreBreakdown.live_site = 14; }
+      else if (url)              {                                              missingCriticals.push({ field: "live_url_fetch",        label: "Project URL exists but live fetch failed/skipped — losing ground truth",     penalty: 14, action: "crawl_url",                actionLabel: "Crawl URL now" }); }
+      if (comp1Live)             { score += 6;  scoreBreakdown.comp1_live = 6; }
+      if (comp2Live)             { score += 5;  scoreBreakdown.comp2_live = 5; }
+
+      /* ── D. REAL MEASUREMENTS (max 25 pts) — analytics, audit, metrics ── */
+      const hasAnalytics = !!(pc?.analytics?.organicMonthly || pc?.analytics?.gscClicks);
+      if (hasAnalytics)          { score += 10; scoreBreakdown.analytics = 10; } else missingCriticals.push({ field: "analytics.*",       label: "No analytics (GSC/GA) — buyer journey claims are inferred",                  penalty: 10, action: "open_data_room",           actionLabel: "Fill Analytics in Data Room" });
+      if (pc?.metrics?.llmVisibility != null) { score += 6;  scoreBreakdown.llm_metric = 6; }   else missingCriticals.push({ field: "metrics.llm_visibility_score", label: "No LLM visibility metric — cannot assess AI search readiness",                penalty: 6,  action: "run_audit",                actionLabel: "Run audit to score" });
+      if ((pc?.audits?.length || 0) > 0)      { score += 5;  scoreBreakdown.audits = 5; }       else missingCriticals.push({ field: "audit",                       label: "No prior audit — no validated technical baseline",                            penalty: 5,  action: "run_audit",                actionLabel: "Run audit now" });
+      if (pc?.crawl_data?.page_count)         { score += 4;  scoreBreakdown.crawl = 4; }
+
+      /* ── E. COMPETITIVE DATA (max 8 pts) ── */
+      if (competitors.length >= 2) { score += 6; scoreBreakdown.competitors = 6; }
+      else if (competitors.length) { score += 3; scoreBreakdown.competitors_partial = 3; }
+      else                         {                                            missingCriticals.push({ field: "competitor.competitor_1", label: "No competitors set — using generic industry alternatives",                  penalty: 4,  action: "prompt_competitors",       actionLabel: "Add competitors" }); }
+
+      /* ── F. GOALS (max 6 pts) ── */
+      if (pc?.goals?.primary)    { score += 4; scoreBreakdown.goal_primary = 4; } else missingCriticals.push({ field: "goal.primary_goal",   label: "No primary business goal — recommendations are generic",                    penalty: 4, action: "open_data_room",            actionLabel: "Set primary goal" });
+      if (pc?.goals?.timeline)   { score += 2; scoreBreakdown.goal_timeline = 2; }
+
+      /* ── G. BRAIN LEARNINGS (capped at 8 pts) — quality-weighted, NOT a flat boost ──
+         A learning only counts if:  applied_count >= 2 (validated)  AND  confidence_score >= 80  AND  not stale */
+      const now = Date.now();
+      const STALE_MS = 90 * 24 * 60 * 60 * 1000;   // 90 days
+      let qualifyingLearnings = 0;
+      let learningQualityScore = 0;
+      for (const l of pLearn) {
+        const conf = Math.max(0, Math.min(100, l.confidence_score || 0));
+        const applied = l.applied_count || 0;
+        const updatedAt = l.updated_at ? new Date(l.updated_at).getTime() : 0;
+        const fresh = updatedAt > 0 && (now - updatedAt) < STALE_MS;
+        if (conf >= 80 && applied >= 2 && fresh) {
+          qualifyingLearnings++;
+          learningQualityScore += (conf / 100) * Math.min(2, applied / 2);  // diminishing returns
+        }
+      }
+      const learningPts = Math.min(8, Math.round(learningQualityScore));
+      score += learningPts;
+      scoreBreakdown.brain_learnings = learningPts;
+
+      /* ── H. ALGORITHM INTEL (max 3 pts) — only counts if items are recent ── */
+      const recentAlgo = algo.filter((a: any) => (a.freshness_score || 0) >= 60).length;
+      if (recentAlgo > 0)        { score += Math.min(3, recentAlgo); scoreBreakdown.algo_intel = Math.min(3, recentAlgo); }
+
+      /* ── I. CROSS-PROJECT WISDOM (max 3 pts) ── */
+      const wisdomCount = industryWisdom ? industryWisdom.split("\n").length : 0;
+      if (wisdomCount >= 5)      { score += 3; scoreBreakdown.cross_project = 3; }
+      else if (wisdomCount > 0)  { score += 1; scoreBreakdown.cross_project_partial = 1; }
+
+      /* ── J. PRIOR PERSONA (max 2 pts) ── */
+      if (prior)                 { score += 2; scoreBreakdown.prior_persona = 2; }
+
+      /* ── PENALTY: pure inference mode — if NO real grounding at all, this is just Claude guessing ── */
+      const realGroundingCount = (siteLive ? 1 : 0) + (hasAnalytics ? 1 : 0) + ((pc?.audits?.length || 0) > 0 ? 1 : 0) + (pc?.crawl_data?.page_count ? 1 : 0);
+      if (realGroundingCount === 0) {
+        score = Math.min(score, 30);  // hard cap: pure inference can never exceed 30
+        missingCriticals.push({ field: "_pure_inference_mode", label: "No live grounding at all — this is pure industry-pattern inference. Add ANY of: URL crawl, analytics, audit, site crawl to lift the ceiling.", penalty: 0 });
+      }
+
+      /* Clamp 0–100 */
+      score = Math.max(0, Math.min(100, score));
+      weighted = score;
+
+      /* Build the "sources used" list — for the UI's PoweredByPanel display */
+      fabricSources = [
+        company   ? source("manual_user",      { label: "Company / project name", weight: 1 }) : null,
+        industry  ? source("manual_user",      { label: "Industry",               weight: 2 }) : null,
+        url       ? source("manual_user",      { label: "Website URL",            weight: 2 }) : null,
+        keywords.length     ? source("manual_user", { label: `${keywords.length} target keywords`, weight: 2, count: keywords.length }) : null,
+        competitors.length  ? source("manual_user", { label: `${competitors.length} competitor(s) listed`, weight: 1, count: competitors.length }) : null,
+        hasAnalytics                  ? source("ga_live",   { label: "Analytics / GSC data",          weight: 3 }) : null,
+        pc?.metrics?.llmVisibility != null ? source("audit_run", { label: "LLM visibility score",     weight: 2 }) : null,
+        (pc?.audits?.length || 0) > 0 ? source("audit_run", { label: `${pc.audits.length} prior audit(s)`, weight: 2, count: pc.audits.length }) : null,
+        pc?.crawl_data?.page_count    ? source("crawl_jina", { label: `Site crawl (${pc.crawl_data.page_count} pages)`, weight: 2, count: pc.crawl_data.page_count }) : null,
+        siteLive    ? source("crawl_jina", { label: "Live homepage fetched",            weight: 3 }) : null,
+        comp1Live   ? source("crawl_jina", { label: "Live competitor 1 fetched",         weight: 2 }) : null,
+        comp2Live   ? source("crawl_jina", { label: "Live competitor 2 fetched",         weight: 2 }) : null,
+        qualifyingLearnings ? source("brain_learning",  { label: `${qualifyingLearnings} qualifying learning(s) (of ${pLearn.length})`, weight: 1, count: qualifyingLearnings,
+                                                          overrideConfidence: qualifyingLearnings ? Math.round(learningQualityScore / qualifyingLearnings * 100 / 2) : 60 }) : null,
+        recentAlgo  ? source("algorithm_intel", { label: `${recentAlgo} recent algorithm intel`,        weight: 1, count: recentAlgo }) : null,
+        wisdomCount ? source("intelligence_output", { label: `${wisdomCount} cross-project learnings`, weight: 1 }) : null,
+        prior       ? source("intelligence_output", { label: "Prior persona (baseline)",                weight: 1 }) : null,
+        // Always present — Claude's inference is acknowledged but doesn't lift the score
+        source("claude_inference", { label: "Claude buyer-psychology inference", weight: 1 }),
+      ].filter(Boolean) as SourceUsage[];
 
       outputId = await saveIntelligenceOutput(sb(), {
         projectId,
@@ -584,6 +667,8 @@ Return ONLY valid JSON. Be SPECIFIC. Reference real numbers from project data wh
         outputId,
         weightedConfidence: weighted,
         sources: fabricSources,
+        missingCriticals,        // [{ field, label, penalty, action, actionLabel }] — UI shows fix-this buttons
+        scoreBreakdown,          // detailed per-category contribution
         brainMemory: {
           projectLearningsCount: pLearn.length,
           algoIntelCount: algo.length,
@@ -933,6 +1018,40 @@ Return ONLY valid JSON:
 
   if (action === "health_check") {
     return res.status(200).json({ status: "ok", service: "market-researcher" });
+  }
+
+  /* ═══════════════════════════════════════════
+     ACTION: crawl_url
+     User supplies a URL directly — fetch it and return the content
+     so the front-end can show it AND inject it into the next persona run.
+  ═══════════════════════════════════════════ */
+  if (action === "crawl_url") {
+    const targetUrl = body.url || url;
+    if (!targetUrl) return res.status(200).json({ error: "Missing url" });
+    const content = await fetchUrl(targetUrl);
+    if (!content) return res.status(200).json({ error: `Could not fetch ${targetUrl} — check the URL or try again` });
+    /* Persist the crawl as a low-weight intelligence_output so it can feed future runs */
+    if (projectId) {
+      try {
+        await saveIntelligenceOutput(sb(), {
+          projectId,
+          analysisType: "live_crawl",
+          title: `Live crawl: ${targetUrl}`,
+          summary: content.slice(0, 480),
+          output: { url: targetUrl, content_length: content.length, fetched_at: new Date().toISOString(), content: content.slice(0, 4000) },
+          sources: [source("crawl_jina", { label: `Live fetch of ${targetUrl}`, weight: 3 })],
+          modelUsed: "jina-reader",
+          createdBy: "user_crawl",
+        });
+      } catch (_e) {}
+    }
+    return res.status(200).json({
+      success: true,
+      url: targetUrl,
+      contentLength: content.length,
+      preview: content.slice(0, 800),
+      content,    // full content — UI can decide to keep or drop
+    });
   }
 
   /* ═══════════════════════════════════════════
