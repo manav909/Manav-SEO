@@ -230,12 +230,11 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
       system: "You are a market research expert. Return ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Start your response with { and end with }.",
       messages: [
         { role: "user",      content: prompt },
-        { role: "assistant", content: "{" },
       ],
     });
 
     const rawText = response.content[0].type === "text" ? response.content[0].text : "";
-    const raw = "{" + rawText; // prepend the assistant prefill brace
+    const raw = rawText;
     const persona = extractJson(raw);
     if (!persona?.persona_name) {
       return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
@@ -394,12 +393,11 @@ Return ONLY valid JSON:
       system: "You are an SEO growth strategist. Return ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Start your response with { and end with }.",
       messages: [
         { role: "user",      content: prompt },
-        { role: "assistant", content: "{" },
       ],
     });
 
     const rawText2 = response.content[0].type === "text" ? response.content[0].text : "";
-    const raw = "{" + rawText2;
+    const raw = rawText2;
     const goalPlan = extractJson(raw);
     if (!goalPlan?.phases) {
       return res.status(200).json({ success: false, error: "Claude returned invalid JSON — try again", raw: raw.slice(0, 300) });
@@ -582,12 +580,11 @@ Return ONLY valid JSON:
   "data_points_synthesized": ${(industryLearnings?.length || 0) + keywordLearnings.length}
 }`,
       },
-      { role: "assistant", content: "{" },
       ],
     });
 
     const rawSynth = synthResponse.content[0].type === "text" ? synthResponse.content[0].text : "";
-    const patterns = extractJson("{" + rawSynth);
+    const patterns = extractJson(rawSynth);
     if (!patterns?.pattern_summary) {
       return res.status(200).json({ success: false, error: "Synthesis parse error — try again" });
     }

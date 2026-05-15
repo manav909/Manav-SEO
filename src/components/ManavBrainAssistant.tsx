@@ -29,6 +29,7 @@ import { useNavigate }  from 'react-router-dom';
 import { useAuth }      from '@/contexts/AuthContext';
 import { useProject }   from '@/contexts/ProjectContext';
 import { supabase }     from '@/lib/supabase';
+import { getRuntimeCompiler, type LearnedPattern } from '@/lib/runtimeCompiler';
 import {
   Brain, Send, X, Zap, Activity, Globe, Target, Shield, FileText,
   CheckCircle, AlertCircle, Loader2, Cpu, RefreshCw,
@@ -257,6 +258,12 @@ export default function ManavBrainAssistant() {
   const [savingMsg,  setSavingMsg]  = useState<string|null>(null);
   const voiceRef = useRef<any>(null);
 
+  /* ── Runtime Compiler state ── */
+  const [rcChecks,      setRcChecks]      = useState(0);
+  const [rcIntercepted, setRcIntercepted] = useState(0);
+  const [rcPatterns,    setRcPatterns]    = useState<LearnedPattern[]>([]);
+  const [rcPatternCount,setRcPatternCount]= useState(0);
+
   const panelW = expanded ? 700 : 440;
   const panelH = expanded ? 740 : 620;
 
@@ -429,6 +436,22 @@ export default function ManavBrainAssistant() {
     const t1 = setTimeout(() => runHealthScan(), 2000);
     const t2 = setInterval(() => runHealthScan(), 3 * 60 * 1000);
     return () => { clearTimeout(t1); clearInterval(t2); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Runtime Compiler: init + subscribe for live stats ── */
+  useEffect(() => {
+    const rc = getRuntimeCompiler(supabase as any);
+    rc.init().then(() => {
+      setRcPatterns(rc.getTopPatterns(5));
+      setRcPatternCount(rc.getStats().patternCount);
+    }).catch(() => {});
+    const unsub = rc.subscribe((stats) => {
+      setRcChecks(stats.checksThisSession);
+      setRcIntercepted(stats.interceptionsThisSession);
+      setRcPatternCount(stats.patternCount);
+      setRcPatterns(rc.getTopPatterns(5));
+    });
+    return unsub;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Schema validator: check if migration was run ── */
@@ -1384,6 +1407,53 @@ export default function ManavBrainAssistant() {
                   </>
                 );
               })()}
+
+              {/* ── Runtime Compiler Panel ── */}
+              <div style={{background:'rgba(99,102,241,0.04)',border:'1px solid rgba(99,102,241,0.12)',borderRadius:10,padding:'10px 12px',marginTop:8}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+                  <Cpu size={9} style={{color:'#a5b4fc',flexShrink:0}}/>
+                  <span style={{fontSize:8,fontFamily:'monospace',color:'#a5b4fc',letterSpacing:'0.12em',fontWeight:700}}>RUNTIME COMPILER</span>
+                  <span style={{marginLeft:'auto',fontSize:7,fontFamily:'monospace',color:'rgba(99,102,241,0.45)'}}>PRE-FLIGHT VALIDATOR</span>
+                </div>
+
+                {/* Stats row */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:8}}>
+                  {[
+                    { label:'CHECKS', value: rcChecks, color:'#6366f1' },
+                    { label:'CAUGHT',  value: rcIntercepted, color: rcIntercepted > 0 ? '#f59e0b' : '#10b981' },
+                    { label:'LEARNED', value: rcPatternCount, color:'#06b6d4' },
+                  ].map(stat => (
+                    <div key={stat.label} style={{background:`${stat.color}09`,border:`1px solid ${stat.color}20`,borderRadius:7,padding:'5px 8px',textAlign:'center'}}>
+                      <div style={{fontSize:14,fontWeight:700,color:stat.color,fontFamily:'monospace'}}>{stat.value}</div>
+                      <div style={{fontSize:7,color:'rgba(255,255,255,0.25)',fontFamily:'monospace',letterSpacing:'0.08em'}}>{stat.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Learned patterns */}
+                {rcPatterns.length > 0 ? (
+                  <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                    <div style={{fontSize:7,fontFamily:'monospace',color:'rgba(255,255,255,0.2)',letterSpacing:'0.1em',marginBottom:2}}>LEARNED FAILURE PATTERNS</div>
+                    {rcPatterns.map((p, i) => (
+                      <div key={i} style={{background:'rgba(245,158,11,0.04)',border:'1px solid rgba(245,158,11,0.12)',borderRadius:6,padding:'5px 8px'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:2}}>
+                          <span style={{fontSize:7,fontFamily:'monospace',color:'#fbbf24',fontWeight:700}}>{p.occurrences}×</span>
+                          <span style={{fontSize:8,color:'rgba(255,255,255,0.45)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.action}</span>
+                          <span style={{fontSize:7,fontFamily:'monospace',color:'rgba(6,182,212,0.45)'}}>{p.endpoint.replace('/api/','')}</span>
+                        </div>
+                        <p style={{fontSize:9,color:'rgba(252,165,165,0.6)',margin:'0',lineHeight:1.4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{p.errorMsg.slice(0,90)}</p>
+                        {p.suggestedFix && <p style={{fontSize:8,color:'rgba(16,185,129,0.5)',margin:'2px 0 0',fontStyle:'italic'}}>Fix: {p.suggestedFix.slice(0,70)}</p>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{textAlign:'center',padding:'8px 0'}}>
+                    <CheckCircle size={14} style={{color:'rgba(16,185,129,0.4)',margin:'0 auto 4px'}}/>
+                    <div style={{fontSize:9,fontFamily:'monospace',color:'rgba(16,185,129,0.5)'}}>No failure patterns yet</div>
+                    <div style={{fontSize:8,color:'rgba(255,255,255,0.15)',marginTop:2}}>Compiler learns with each error</div>
+                  </div>
+                )}
+              </div>
 
               {/* Quick actions */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:'auto'}}>

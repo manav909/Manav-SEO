@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProjectSync } from "@/hooks/useProjectSync";
 import { supabase } from "@/lib/supabase";
+import { getRuntimeCompiler } from "@/lib/runtimeCompiler";
 import {
   Brain, Play, Pause, X, Zap, CheckCircle, AlertCircle, Clock,
   Loader2, ArrowLeft, Send, Mic, MicOff, ChevronRight,
@@ -265,6 +266,11 @@ export default function BrainCommand() {
     if (selProj) { localStorage.setItem("seo_season_proj", selProj); loadCanvas(); loadExistingPersona(selProj); }
   }, [selProj, loadCanvas]);
 
+  /* ── Runtime Compiler: init once on mount ── */
+  useEffect(() => {
+    getRuntimeCompiler(supabase as any).init().catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* Load existing persona + goals from DB when project changes */
   const loadExistingPersona = async (pid: string) => {
     if (!pid) return;
@@ -276,19 +282,45 @@ export default function BrainCommand() {
   };
 
   const miCall = async (action: string, extra: any = {}) => {
-    if (!selProj) { alert("Select a project first."); return null; }
+    if (!selProj) { setMiError("Select a project first."); return null; }
+    const rc = getRuntimeCompiler(supabase as any);
+    const payload = { action, projectId: selProj, ...extra };
+
+    // ── Pre-flight validation ──
+    const check = rc.validate("/api/market-researcher", action, payload);
+    if (check.blocked) {
+      const msg = check.warnings[0] || "Validation failed — missing required fields";
+      setMiError(`⛔ Pre-flight block: ${msg}`);
+      return null;
+    }
+    if (check.warnings.length > 0) {
+      // Show soft warning but still proceed
+      setMiError(`⚠ ${check.warnings[0]}`);
+    }
+
     setMiLoading(action);
     try {
       const res = await fetch("/api/market-researcher", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, projectId: selProj, ...extra }),
+        body: JSON.stringify(payload),
       });
       const text = await res.text();
-      try { return JSON.parse(text); }
-      catch (_) { return { error: `Server error (${res.status}): ${text.slice(0, 200)}` }; }
+      let parsed: any;
+      try { parsed = JSON.parse(text); }
+      catch (_) { parsed = { error: `Server error (${res.status}): ${text.slice(0, 200)}` }; }
+
+      if (parsed?.error) {
+        // Record failure so compiler learns
+        rc.recordFailure("/api/market-researcher", action, parsed.error, payload);
+      } else {
+        rc.recordSuccess("/api/market-researcher", action);
+      }
+      return parsed;
     } catch (e: any) {
-      return { error: e?.message || "Network error" };
+      const msg = e?.message || "Network error";
+      rc.recordFailure("/api/market-researcher", action, msg, payload);
+      return { error: msg };
     } finally {
       setMiLoading("");
     }
