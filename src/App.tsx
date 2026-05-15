@@ -26,6 +26,7 @@ import BrainLearning  from './pages/BrainLearning';
 import GuestTour      from './pages/GuestTour';
 import Desk           from './pages/Desk';
 import BrainCommand   from './pages/BrainCommand';
+import Build          from './pages/Build';
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -63,6 +64,7 @@ const AppRoutes = () => {
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
         <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />
         <Route path="/admin"          element={<B name="admin">         <Admin />                                          </B>} />
+        <Route path="/build"          element={<B name="build">         <Build />                                          </B>} />
 
         {/* Protected routes */}
         <Route path="/data-room"      element={<B name="data-room">     <ApprovedRequired><DataRoom /></ApprovedRequired>       </B>} />
