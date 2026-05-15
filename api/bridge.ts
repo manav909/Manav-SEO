@@ -56,8 +56,8 @@ function authRead(req: VercelRequest): { ok: boolean; reason?: string } {
   const expectedRead   = process.env.BRIDGE_READ_TOKEN || "";
   const expectedSecret = process.env.BRIDGE_SECRET     || "";
   if (!expectedRead && !expectedSecret) return { ok: false, reason: "Bridge tokens not configured on server" };
-  const token = getBearer(req);
-  if (!token) return { ok: false, reason: "Missing Authorization: Bearer <BRIDGE_READ_TOKEN>" };
+  const token = getBearer(req) || ((req.query?.token as string) || "");
+  if (!token) return { ok: false, reason: "Missing Authorization: Bearer <BRIDGE_READ_TOKEN> or ?token= query param" };
   if (token !== expectedRead && token !== expectedSecret) return { ok: false, reason: "Invalid bridge token" };
   return { ok: true };
 }
