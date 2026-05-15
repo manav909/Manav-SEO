@@ -90,6 +90,12 @@
       "regions": [
         "iad1"
       ]
+    },
+    "api/bridge.ts": {
+      "maxDuration": 30,
+      "regions": [
+        "iad1"
+      ]
     }
   },
   "rewrites": [
