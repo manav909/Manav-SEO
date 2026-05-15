@@ -16,27 +16,73 @@ function db(): any {
   return _supa;
 }
 
-/* ── Minimal local saveLearning replacement (no ./lib/save import) ── */
+/* ── saveLearningLocal: classification gate + dedup guard + smart auto-approval ──
+   Auto-approval policy (matches the source-confidence semantics across the system):
+     • strategy_generation / pipeline_intelligence / deep_dive_analysis → "active"
+       (structured analytical outputs, not chat hypotheses)
+     • brain_assistant_log / agenda_output → "pending_review"
+       (conversational answers — human should verify before they feed back into the system)
+   Classification rejects refusals, errors, and obvious boilerplate.
+   Dedup by ilike(title) within the same project. */
 async function saveLearningLocal(opts: {
   source: string; projectId: string | null; content: string; title?: string;
   cardType?: string; contextSummary?: string; whatWorked?: string[];
   whatMissed?: string[]; tags?: string[]; industry?: string; keywordCluster?: string[];
 }): Promise<void> {
   if (!opts.content || opts.content.length < 100) return;
+
+  /* Classification gate */
+  const c = opts.content.trim();
+  if (/^error:|^failed:|cannot find|module not found/i.test(c)) return;
+  if (/i (cannot|can'?t|don'?t have access|am unable)|as an ai/i.test(c.slice(0, 200))) return;
+  /* Boilerplate-only short content */
+  if (c.length < 250 && /^(here (is|are)|based on|i'll|let me|great question|of course|certainly|to answer)/i.test(c)) return;
+
+  const sbc = db(); if (!sbc) return;
+  const title = (opts.title || opts.content.slice(0, 80)).slice(0, 100);
+
+  /* Auto-approval logic — structured analytical modes auto-active; conversational modes pending_review */
+  const autoApproveSources = ["strategy_generation", "pipeline_intelligence", "deep_dive_analysis"];
+  const isAuto      = autoApproveSources.includes(opts.source);
+  const status      = isAuto ? "active" : "pending_review";
+  const confidence  = isAuto ? 80 : 70;
+
+  /* Dedup guard — only when we have a project_id */
+  if (opts.projectId) {
+    try {
+      const { data: existing } = await sbc
+        .from("brain_learnings")
+        .select("id, confidence_score")
+        .eq("project_id", opts.projectId)
+        .ilike("card_title", title.slice(0, 60))
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        if (confidence > ((existing as any).confidence_score ?? 0)) {
+          await sbc.from("brain_learnings")
+            .update({ confidence_score: confidence, updated_at: new Date().toISOString() })
+            .eq("id", (existing as any).id);
+        }
+        return;
+      }
+    } catch (_e) { /* no match — proceed to insert */ }
+  }
+
   try {
-    const sbc = db(); if (!sbc) return;
     await sbc.from("brain_learnings").insert({
       project_id:      opts.projectId,
       source:          opts.source,
       card_type:       opts.cardType || "strategy",
-      card_title:      (opts.title || opts.content.slice(0, 80)).slice(0, 100),
+      card_title:      title,
       improvement:     opts.content.slice(0, 800),
       context_summary: opts.contextSummary || opts.source,
       what_worked:     (opts.whatWorked || []).slice(0, 6),
       what_missed:     (opts.whatMissed || []).slice(0, 4),
       tags:            [...new Set([...(opts.tags || []), opts.source.split("_")[0]])].filter(Boolean),
-      applied_count:   0, status: "pending_review",
-      auto_captured:   true, confidence_score: 72,
+      applied_count:   0,
+      status,
+      auto_captured:   true,
+      confidence_score: confidence,
       updated_at:      new Date().toISOString(),
     });
   } catch (_e) { /* never crash callers */ }

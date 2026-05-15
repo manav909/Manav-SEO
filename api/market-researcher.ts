@@ -84,16 +84,52 @@ function sb() {
   );
 }
 
-/* Fire-and-forget save — never throws, never blocks response */
+/* ── Fire-and-forget save with classification gate + dedup guard ──
+   Market-researcher outputs (persona, market research, industry patterns,
+   goal plans) are FULL analytical artifacts grounded in real industry data
+   — they auto-approve as "active" with high confidence.
+   Reject refusals / boilerplate / too-short. Dedup by title within project. */
 async function quickSave(projectId: string, title: string, content: string, tags: string[]) {
+  if (!projectId || !content || content.length < 100) return;
+  /* Classification: reject AI refusals + obvious error text */
+  if (/^error:|cannot find|i (cannot|don'?t have access)|as an ai/i.test(content)) return;
+
+  const cardTitle = title.slice(0, 100);
+  const confidence = 82;     // market-researcher outputs are well-grounded — higher floor
+
   try {
-    await sb().from("brain_learnings").insert({
-      project_id: projectId, source: "market_researcher",
-      card_type: "market", card_title: title.slice(0, 100),
-      improvement: content.slice(0, 400), context_summary: "market_researcher",
-      what_worked: [], what_missed: [], tags: [...new Set(tags)],
-      applied_count: 0, status: "pending_review", auto_captured: true,
-      confidence_score: 78, updated_at: new Date().toISOString(),
+    const sbc = sb();
+    /* Dedup guard — bump confidence on existing match instead of inserting clone */
+    const { data: existing } = await sbc
+      .from("brain_learnings")
+      .select("id, confidence_score")
+      .eq("project_id", projectId)
+      .ilike("card_title", cardTitle.slice(0, 60))
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      if (confidence > ((existing as any).confidence_score ?? 0)) {
+        await sbc.from("brain_learnings")
+          .update({ confidence_score: confidence, updated_at: new Date().toISOString() })
+          .eq("id", (existing as any).id);
+      }
+      return;
+    }
+
+    await sbc.from("brain_learnings").insert({
+      project_id:      projectId,
+      source:          "market_researcher",
+      card_type:       "market",
+      card_title:      cardTitle,
+      improvement:     content.slice(0, 400),
+      context_summary: "market_researcher",
+      what_worked:     [], what_missed: [],
+      tags:            [...new Set(tags)],
+      applied_count:   0,
+      status:          "active",         // market outputs auto-approve — they're full analyses, not chat hypotheses
+      auto_captured:   true,
+      confidence_score: confidence,
+      updated_at:      new Date().toISOString(),
     });
   } catch (_) {}
 }
