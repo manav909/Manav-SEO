@@ -257,13 +257,15 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
       quickDesk(projectId, `Market Persona: ${persona.persona_name}`, JSON.stringify(persona, null, 2), "analysis", ["persona", "market", industryTag]);
 
       /* Persist to market_personas table (upsert by project) */
-      await sb().from("market_personas").upsert({
-        project_id:   projectId,
-        industry:     industry,
-        persona_name: persona.persona_name,
-        persona_data: persona,
-        updated_at:   new Date().toISOString(),
-      }, { onConflict: "project_id" }).catch(() => {});
+      try {
+        await sb().from("market_personas").upsert({
+          project_id:   projectId,
+          industry:     industry,
+          persona_name: persona.persona_name,
+          persona_data: persona,
+          updated_at:   new Date().toISOString(),
+        }, { onConflict: "project_id" });
+      } catch (_e) { /* non-fatal */ }
     }
 
     return res.status(200).json({ success: true, persona });
@@ -410,12 +412,14 @@ Return ONLY valid JSON:
         `${goalPlan.market_opportunity} ${goalPlan.competitive_gap} ${goalPlan.positioning_recommendation}`,
         ["goals", "market", "strategy", industryTag]);
 
-      await sb().from("market_personas").upsert({
-        project_id: projectId,
-        industry,
-        goals_data: goalPlan,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "project_id" }).catch(() => {});
+      try {
+        await sb().from("market_personas").upsert({
+          project_id: projectId,
+          industry,
+          goals_data: goalPlan,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "project_id" });
+      } catch (_e) { /* non-fatal */ }
     }
 
     return res.status(200).json({ success: true, goalPlan });
