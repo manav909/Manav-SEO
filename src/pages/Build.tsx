@@ -207,29 +207,50 @@ function resolveKind(k: string) {
   return KIND_CFG[k] ? k : "message";
 }
 
+/**
+ * Derive module status from its bridge messages (newest first).
+ *
+ * DONE requires an EXPLICIT signal — never inferred from fuzzy body text:
+ *   • meta.module_done === true
+ *   • body or title contains MODULE_NN_DONE (case-insensitive)
+ *
+ * Everything else uses the latest message's kind + metadata.status only.
+ */
 function deriveModuleStatus(msgs: BridgeMsg[]): ModStatus {
   if (!msgs.length) return "pending";
+
+  // ── Pass 1: scan ALL messages for an explicit done marker ──
+  for (const m of msgs) {
+    const meta  = m.metadata || {};
+    if (meta.module_done === true) return "done";
+    if (/MODULE_\d+_DONE/i.test(m.body  || "")) return "done";
+    if (/MODULE_\d+_DONE/i.test(m.title || "")) return "done";
+  }
+
+  // ── Pass 2: derive current phase from the LATEST message ──
   const latest = msgs[0];
   const meta   = latest.metadata || {};
   const status = (meta.status as string) || "";
   const kind   = latest.kind;
   const body   = (latest.body || "").toLowerCase();
 
+  // Explicit halt states take priority
   if (status === "blocked") return "blocked";
   if (status === "paused")  return "paused";
+
+  // Active instruction → building
   if (kind === "instruction" && (status === "pending" || status === "executing" || !status)) return "building";
-  if (kind === "response" && status === "done") {
-    if (meta.tsc_clean || meta.ts_status === "clean") return "testing";
-    if (body.includes("tested") || body.includes("verified") || body.includes("tsc: clean")) return "done";
-    return "testing";
-  }
+
+  // Response marked done → entered test phase (requires explicit DONE marker to advance to done)
+  if (kind === "response" && (status === "done" || meta.tsc_clean || meta.ts_status === "clean")) return "testing";
+
+  // Status messages: only derive halt states — never derive DONE from body text
   if (kind === "status") {
-    if (body.includes("tested") || body.includes("verified") || body.includes("complete")) return "done";
-    if (body.includes("paused"))  return "paused";
-    if (body.includes("blocked")) return "blocked";
+    if (body.includes("paused"))                              return "paused";
+    if (body.includes("blocked"))                             return "blocked";
     if (body.includes("resumed") || body.includes("building")) return "building";
-    if (status === "done") return "done";
   }
+
   return "pending";
 }
 
