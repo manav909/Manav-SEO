@@ -88,22 +88,7 @@ function useBridgeData(refresh: number) {
 }
 
 /* ── Data Derivation ───────────────────────────────────── */
-function deriveState(rawRows: BridgeRow[]) {
-  /* Schema normalization — claude_bridge uses body/kind/created_by + nested metadata.
-     Older interface expected content/type/role/module/task/status at top level.
-     This maps whichever shape the bridge returns into the expected fields. */
-  const rows: BridgeRow[] = (rawRows || []).map((r: any) => ({
-    id:         r.id,
-    role:       r.role        ?? r.created_by               ?? "",
-    type:       r.type        ?? r.kind                     ?? "",
-    module:     r.module      ?? (r.metadata?.module_num != null ? String(r.metadata.module_num) : null),
-    task:       r.task        ?? r.metadata?.task           ?? null,
-    content:    r.content     ?? r.body                     ?? "",
-    status:     r.status      ?? r.metadata?.status         ?? "",
-    metadata:   r.metadata    ?? {},
-    created_at: r.created_at,
-  }));
-
+function deriveState(rows: BridgeRow[]) {
   /* Modules */
   const modules: ModuleState[] = Array.from({ length: 12 }, (_, i) => ({
     num: i + 1, name: MODULE_NAMES[i], status: "pending" as ModStatus,
@@ -113,7 +98,7 @@ function deriveState(rawRows: BridgeRow[]) {
     const n = parseInt(r.module || "0");
     if (n < 1 || n > 12) return;
     const m = modules[n - 1];
-    if ((r.content ?? "").includes("MODULE_0" + n + "_DONE") || (r.content ?? "").includes(`MODULE_${String(n).padStart(2,"0")}_DONE`)) {
+    if (r.content.includes("MODULE_0" + n + "_DONE") || r.content.includes(`MODULE_${String(n).padStart(2,"0")}_DONE`)) {
       m.status = "done"; m.updatedAt = r.created_at;
     } else if ((r.status === "pending" || r.status === "executing") && r.role === "claude_chat" && r.type === "instruction") {
       if (m.status === "pending") { m.status = "building"; m.updatedAt = r.created_at; }
@@ -131,9 +116,9 @@ function deriveState(rawRows: BridgeRow[]) {
   /* Activity feed */
   const feed: ActivityLine[] = rows.slice(0, 12).map(r => {
     const time = new Date(r.created_at).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" });
-    const preview = (r.content ?? "").slice(0, 70);
+    const preview = r.content.slice(0, 70);
     if (r.type === "thinking") return { id: r.id, time, icon: "→", color: "#3b82f6", text: preview };
-    if ((r.content ?? "").includes("_DONE")) return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
+    if (r.content.includes("_DONE")) return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
     if (r.status === "blocked") return { id: r.id, time, icon: "✗", color: "#ef4444", text: preview };
     if (r.type === "brain_dump") return { id: r.id, time, icon: "⊙", color: "#6b6b80", text: "System snapshot posted" };
     if (r.role === "claude_code" && r.type === "response") return { id: r.id, time, icon: "✓", color: "#10b981", text: preview };
@@ -158,10 +143,9 @@ function deriveState(rawRows: BridgeRow[]) {
   /* News headlines */
   const news: string[] = [
     ...rows.slice(0, 5).map(r => {
-      const c = r.content ?? "";
-      if (c.includes("_DONE")) return `✓ ${c.slice(0, 60)}`;
-      if (r.type === "thinking") return `→ ${c.slice(0, 55)}`;
-      return `· ${c.slice(0, 55)}`;
+      if (r.content.includes("_DONE")) return `✓ ${r.content.slice(0, 60)}`;
+      if (r.type === "thinking") return `→ ${r.content.slice(0, 55)}`;
+      return `· ${r.content.slice(0, 55)}`;
     }),
     "👑 Foundation sealed — Brain quality gate universal across the empire",
     "⚡ Module 02 building — The Closed Loop activates next",
@@ -171,14 +155,7 @@ function deriveState(rawRows: BridgeRow[]) {
     "🏰 Module 01 complete — foundation of the most intelligent SEO empire",
   ];
 
-  return {
-    modules:   modules   ?? [],
-    activeRow: activeRow ?? null,
-    feed:      feed      ?? [],
-    health:    health    ?? { ts: "unknown" as const, git: "unknown" as const, db: "unknown" as const, build: "unknown" as const },
-    daily:     daily     ?? { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 },
-    news:      news      ?? [],
-  };
+  return { modules, activeRow, feed, health, daily, news };
 }
 
 /* ── CSS ───────────────────────────────────────────────── */
@@ -330,7 +307,7 @@ const Pill = ({ children, bg, color, border }: { children: React.ReactNode; bg: 
 /* ══════════════════════════════════════════════════════════
    KINGDOM 1: WAR ROOM
 ══════════════════════════════════════════════════════════ */
-const WarRoom = ({ modules = [], activeRow = null, feed = [], health = { ts: "unknown", git: "unknown", db: "unknown", build: "unknown" }, daily = { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 }, elapsed, dots, mobile }: any) => {
+const WarRoom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"ops"|"map"|"comms"|"sys">("ops");
   const S = { bg: "#030b03", text: "#39d353", dim: "#1a5c1a", faint: "#0a1a0a", border: "#1a2e1a", font: "monospace" };
 
@@ -466,7 +443,7 @@ const WarRoom = ({ modules = [], activeRow = null, feed = [], health = { ts: "un
 /* ══════════════════════════════════════════════════════════
    KINGDOM 2: ROYAL COURT
 ══════════════════════════════════════════════════════════ */
-const RoyalCourt = ({ modules = [], activeRow = null, feed = [], health = { ts: "unknown", git: "unknown", db: "unknown", build: "unknown" }, daily = { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 }, elapsed, dots, mobile }: any) => {
+const RoyalCourt = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"court"|"scroll"|"treasury"|"realm">("court");
   const S = { bg: "#08040f", text: "#f0e0c0", gold: "#f59e0b", goldDim: "#c9a227", goldFaint: "#3a2510", border: "rgba(245,158,11,.12)", accent: "rgba(245,158,11,.08)" };
 
@@ -595,7 +572,7 @@ const RoyalCourt = ({ modules = [], activeRow = null, feed = [], health = { ts: 
 /* ══════════════════════════════════════════════════════════
    KINGDOM 3: NEURAL COMMAND
 ══════════════════════════════════════════════════════════ */
-const NeuralCommand = ({ modules = [], activeRow = null, feed = [], health = { ts: "unknown", git: "unknown", db: "unknown", build: "unknown" }, daily = { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 }, elapsed, dots, mobile }: any) => {
+const NeuralCommand = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"neural"|"nodes"|"signal"|"synapse">("neural");
   const S = { bg: "#02080f", text: "#e0f7ff", cyan: "#06b6d4", cyanDim: "#0e7490", cyanFaint: "#051520", border: "rgba(6,182,212,.1)", accent: "rgba(6,182,212,.05)" };
 
@@ -714,7 +691,7 @@ const NeuralCommand = ({ modules = [], activeRow = null, feed = [], health = { t
 /* ══════════════════════════════════════════════════════════
    KINGDOM 4: VISION (Glass)
 ══════════════════════════════════════════════════════════ */
-const VisionKingdom = ({ modules = [], activeRow = null, feed = [], health = { ts: "unknown", git: "unknown", db: "unknown", build: "unknown" }, daily = { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 }, elapsed, dots, mobile }: any) => {
+const VisionKingdom = ({ modules, activeRow, feed, health, daily, elapsed, dots, mobile }: any) => {
   const [activeTab, setActiveTab] = useState<"empire"|"modules"|"vision"|"creator">("empire");
   const GC = ({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) => (
     <div style={{ background: "rgba(255,255,255,.055)", border: ".5px solid rgba(255,255,255,.1)", borderRadius: 18, padding: 14, position: "relative", overflow: "hidden", ...style }}>
@@ -849,7 +826,7 @@ const VisionKingdom = ({ modules = [], activeRow = null, feed = [], health = { t
 /* ══════════════════════════════════════════════════════════
    SIDEBAR (desktop)
 ══════════════════════════════════════════════════════════ */
-const Sidebar = ({ modules = [], kingdom, daily, health }: { modules?: ModuleState[]; kingdom: Kingdom; daily: DailyStats; health: HealthState }) => {
+const Sidebar = ({ modules, kingdom, daily, health }: { modules: ModuleState[]; kingdom: Kingdom; daily: DailyStats; health: HealthState }) => {
   const S = kingdom === "war" ? { bg: "#020a02", head: "#030b03", border: "#1a2e1a", title: "#39d353", dim: "#1a5c1a", font: "monospace" } :
             kingdom === "royal" ? { bg: "#060310", head: "#08040f", border: "rgba(245,158,11,.15)", title: "#f0e0c0", dim: "#8b6914", font: "inherit" } :
             kingdom === "neural" ? { bg: "#01060c", head: "#020810", border: "rgba(6,182,212,.1)", title: "#e0f7ff", dim: "#0e7490", font: "monospace" } :
@@ -912,7 +889,7 @@ const Sidebar = ({ modules = [], kingdom, daily, health }: { modules?: ModuleSta
 /* ══════════════════════════════════════════════════════════
    MAIN BUILD COMPONENT
 ══════════════════════════════════════════════════════════ */
-function BuildInner() {
+export default function Build() {
   const screen    = useScreen();
   const elapsed   = useElapsed();
   const dots      = useDots();
@@ -985,11 +962,11 @@ function BuildInner() {
   }[kingdom];
 
   const commonProps = {
-    modules:   state?.modules   ?? [],
-    activeRow: state?.activeRow ?? null,
-    feed:      state?.feed      ?? [],
-    health:    state?.health    ?? { ts: "unknown" as const, git: "unknown" as const, db: "unknown" as const, build: "unknown" as const },
-    daily:     state?.daily     ?? { tasksDone: 0, tasksLive: 0, buildDays: 0, costToday: 0, costMonth: 0, monthTasks: 0 },
+    modules:   state.modules,
+    activeRow: state.activeRow,
+    feed:      state.feed,
+    health:    state.health,
+    daily:     state.daily,
     elapsed,
     dots,
     mobile:    screen.mobile,
@@ -1080,7 +1057,7 @@ function BuildInner() {
       {/* ── Ticker ── */}
       <div id="empire-ticker">
         <Ticker
-          news={state?.news ?? []}
+          news={state.news}
           bg={theme.tickBg}
           textColor={theme.tickText}
           borderColor={theme.tickBorder}
@@ -1151,61 +1128,5 @@ function BuildInner() {
       </div>
 
     </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════
-   ERROR BOUNDARY — diagnoses render crashes
-══════════════════════════════════════════════════════════ */
-class BuildErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { error: string | null; stack: string | null }
-> {
-  constructor(props: any) {
-    super(props);
-    this.state = { error: null, stack: null };
-  }
-  static getDerivedStateFromError(e: any) {
-    return { error: e?.message || String(e), stack: e?.stack || null };
-  }
-  componentDidCatch(error: any, info: any) {
-    // Log to console so it shows up in DevTools
-    // eslint-disable-next-line no-console
-    console.error("👑 BuildErrorBoundary caught:", error, info);
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{
-          background: "#070710", color: "#ef4444",
-          padding: 24, fontFamily: "monospace",
-          fontSize: 13, lineHeight: 1.6, minHeight: "100vh",
-        }}>
-          <div style={{ color: "#f59e0b", fontSize: 16, marginBottom: 12 }}>
-            👑 Render Error
-          </div>
-          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
-            {this.state.error}
-          </pre>
-          {this.state.stack && (
-            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", marginTop: 12, color: "#6b6b80", fontSize: 11 }}>
-              {this.state.stack}
-            </pre>
-          )}
-          <div style={{ marginTop: 16, color: "#4b4b6a" }}>
-            Check browser console for full stack trace.
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-export default function Build() {
-  return (
-    <BuildErrorBoundary>
-      <BuildInner />
-    </BuildErrorBoundary>
   );
 }
