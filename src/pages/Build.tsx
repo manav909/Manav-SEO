@@ -784,18 +784,11 @@ function ActiveTaskCard({
         background:  C.card,
       }}
     >
-      {/* Header row */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <ManavBadge variant="coding" />
-          {(moduleNum || taskId) && (
-            <span className="text-[10px] font-mono font-semibold" style={{ color: C.muted }}>
-              {moduleNum && `MODULE ${moduleNum}`}{taskId && ` · TASK ${taskId}`}
-            </span>
-          )}
-        </div>
-        <span className="text-[9px] font-mono" style={{ color: C.muted }}>
-          {fmtRelative(primary.created_at)}
+      {/* Header row — badge alone, elapsed at right */}
+      <div className="flex items-center justify-between gap-2">
+        <ManavBadge variant="coding" />
+        <span className="text-[10px] font-mono tabular-nums" style={{ color: elapsed ? C.blue : C.muted }}>
+          {elapsed || "—"}
         </span>
       </div>
 
@@ -818,25 +811,20 @@ function ActiveTaskCard({
         </div>
       )}
 
-      {/* Footer — started + elapsed */}
-      <div className="flex items-center gap-6 pt-1">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: C.muted }}>STARTED</span>
-          <span className="text-[10px] font-mono" style={{ color: "#7070a0" }}>{fmtTime(primary.created_at)}</span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: C.muted }}>ELAPSED</span>
-          <span className="text-[10px] font-mono" style={{ color: elapsed ? C.blue : C.muted }}>
-            {elapsed || "—"}
+      {/* Footer — module · task · started */}
+      <div className="flex items-center gap-3 flex-wrap pt-1 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+        {(moduleNum || taskId) && (
+          <span className="text-[10px] font-mono" style={{ color: C.muted }}>
+            {moduleNum && `Module ${moduleNum}`}{taskId && ` · Task ${taskId}`}
           </span>
-        </div>
+        )}
+        <span className="text-[10px] font-mono" style={{ color: "#3c3c58" }}>
+          Started {fmtTime(primary.created_at)}
+        </span>
         {meta.sha && (
-          <div className="flex flex-col gap-0.5 ml-auto">
-            <span className="text-[9px] font-mono uppercase tracking-widest" style={{ color: C.muted }}>COMMIT</span>
-            <span className="flex items-center gap-1 text-[10px] font-mono" style={{ color: "#7070a0" }}>
-              <GitCommit size={8} /> {meta.sha}
-            </span>
-          </div>
+          <span className="flex items-center gap-1 text-[10px] font-mono ml-auto" style={{ color: "#3c3c58" }}>
+            <GitCommit size={8} /> {meta.sha}
+          </span>
         )}
       </div>
     </div>
@@ -891,6 +879,49 @@ function LiveActivity({ messages }: { messages: BridgeMsg[] }) {
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── King's News Ticker ── */
+function NewsTicker({ messages }: { messages: BridgeMsg[] }) {
+  const items = [...messages]
+    .filter(m => m.metadata?.status === "done" || m.metadata?.module_done || (m.kind === "status" && m.metadata?.status !== "blocked"))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5);
+
+  if (items.length === 0) return null;
+
+  const tickerText = items
+    .map(m => `✓ ${(m.title || m.body || "").slice(0, 70)}`)
+    .join("   ·   ") + "   ·   ";
+
+  return (
+    <div
+      className="flex-shrink-0 overflow-hidden"
+      style={{
+        height: 32,
+        background: "rgba(99,102,241,0.08)",
+        borderTop:  "0.5px solid #1e1e3a",
+        borderBottom: "0.5px solid #1e1e3a",
+        display:    "flex",
+        alignItems: "center",
+      }}
+    >
+      <div
+        style={{
+          display:         "inline-block",
+          whiteSpace:      "nowrap",
+          fontSize:        12,
+          color:           "#818cf8",
+          animation:       "ticker 40s linear infinite",
+          paddingLeft:     20,
+        }}
+        onMouseEnter={e => ((e.currentTarget as HTMLDivElement).style.animationPlayState = "paused")}
+        onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.animationPlayState = "running")}
+      >
+        {tickerText}{tickerText}
       </div>
     </div>
   );
@@ -1023,35 +1054,48 @@ function BottomStrip({
   // Tablet: 3 tiles (Context, Code Today, Health)
   // Desktop+: 4 tiles
 
+  // Latest instruction from Claude Chat
+  const chatInstruction = (() => {
+    const sorted = [...messages].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return sorted.find(m => m.created_by === "claude_chat" && m.kind === "instruction") || null;
+  })();
+
   return (
     <div className={`flex gap-3 ${isMobile ? "flex-col" : ""}`}>
-      {/* CHAT CONTEXT */}
+      {/* CLAUDE CHAT */}
       <div className={tile} style={{ ...tileStyle, flex: 1 }}>
         <div className="flex items-center gap-2">
           <MessageSquare size={11} style={{ color: C.purple }} />
-          <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Chat Context</span>
+          <span className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.muted }}>Claude Chat</span>
         </div>
-        {ctxPct != null ? (
+        {chatInstruction ? (
           <>
-            <Progress value={ctxPct} className="h-1.5" style={{ background: "rgba(255,255,255,0.06)" }} />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono" style={{ color: ctxColor }}>{ctxPct}% used</span>
-              <span className="text-[10px] font-mono" style={{ color: ctxColor }}>{ctxLabel}</span>
+            <p className="text-[9px] font-mono uppercase tracking-wider" style={{ color: C.purple }}>
+              💬 Currently thinking:
+            </p>
+            <p
+              className="text-[10px] font-mono leading-relaxed line-clamp-3"
+              style={{ color: "#9090b8" }}
+            >
+              &ldquo;{(chatInstruction.body || chatInstruction.title || "").slice(0, 120)}&rdquo;
+            </p>
+            <div className="border-t pt-1.5 flex flex-col gap-0.5" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+              <span className="text-[9px] font-mono" style={{ color: C.muted }}>
+                Last instruction: {fmtRelative(chatInstruction.created_at)}
+              </span>
+              {(chatInstruction.metadata?.module_num || chatInstruction.metadata?.task) && (
+                <span className="text-[9px] font-mono" style={{ color: "#4444aa" }}>
+                  Waiting for: Module {chatInstruction.metadata?.module_num
+                    ? String(chatInstruction.metadata.module_num).padStart(2, "0")
+                    : "?"}{chatInstruction.metadata?.task ? ` · Task ${chatInstruction.metadata.task}` : ""} completion
+                </span>
+              )}
             </div>
-            {ctxDetail && (
-              <span className="text-[9px] font-mono" style={{ color: C.muted }}>{ctxDetail}</span>
-            )}
-            {ctxPct >= 90 && (
-              <div className="text-[9px] font-mono px-2 py-1 rounded"
-                style={{ color: C.red, background: `${C.red}15`, border: `1px solid ${C.red}30` }}>
-                Start fresh chat — paste handoff
-              </div>
-            )}
           </>
         ) : (
-          <span className="text-[10px] font-mono" style={{ color: C.muted }}>
-            Run: bridge context &lt;pct&gt; OK "detail"
-          </span>
+          <p className="text-[10px] font-mono leading-relaxed" style={{ color: C.muted }}>
+            Claude Chat is connected. Instructions will appear here.
+          </p>
         )}
       </div>
 
@@ -1361,6 +1405,7 @@ export default function Build() {
   const [activeTab,      setActiveTab]      = useState<ActiveTab>("modules");
   const [logBadgeCount,  setLogBadgeCount]  = useState(0);
   const [newMsgIds,      setNewMsgIds]      = useState<Set<string>>(new Set());
+  const [refreshFlash,   setRefreshFlash]   = useState(false);
 
   const intervalRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const cdRef           = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1368,7 +1413,8 @@ export default function Build() {
   const moduleScrollRef = useRef<HTMLDivElement | null>(null);
   const savedFeedScroll = useRef(0);
   const savedModScroll  = useRef(0);
-  const prevMsgCountRef = useRef(0);
+  const prevMsgIdsRef   = useRef<Set<string>>(new Set());
+  const activeTabRef    = useRef<ActiveTab>("modules");
   const kbHandlerRef    = useRef<(e: KeyboardEvent) => void>(() => {});
 
   /* ── Derived ── */
@@ -1406,6 +1452,9 @@ export default function Build() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  /* ── Keep activeTabRef current so fetchBridge can read it without stale closure ── */
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+
   /* ── Auto-expand building module ── */
   useEffect(() => {
     const buildingMod = MODULES.find(m => deriveModuleStatus(moduleMap[m.num] || []) === "building");
@@ -1415,48 +1464,53 @@ export default function Build() {
   }, [messages]);
 
   /* ── Fetch ── */
-  const fetchBridge = useCallback(async () => {
-    if (!BRIDGE_TOKEN) { setError("VITE_BRIDGE_READ_TOKEN not set in .env"); return; }
+  // fetchBridge has no stale deps — uses refs for activeTab and previous msg IDs.
+  // Returns the freshly fetched messages so fetchAll can pass them to fetchHealth immediately.
+  const fetchBridge = useCallback(async (): Promise<BridgeMsg[]> => {
+    if (!BRIDGE_TOKEN) { setError("VITE_BRIDGE_READ_TOKEN not set in .env"); return []; }
     setLoading(true);
     setError(null);
-    try {
-      // Save scroll positions
-      if (feedScrollRef.current)   savedFeedScroll.current = feedScrollRef.current.scrollTop;
-      if (moduleScrollRef.current) savedModScroll.current  = moduleScrollRef.current.scrollTop;
 
+    // Save scroll positions before state update reflushes the DOM
+    if (feedScrollRef.current)   savedFeedScroll.current = feedScrollRef.current.scrollTop;
+    if (moduleScrollRef.current) savedModScroll.current  = moduleScrollRef.current.scrollTop;
+
+    try {
       const [listR, usageR] = await Promise.all([
         bridgeCall("list",  { limit: 200 }),
         bridgeCall("usage", {}),
       ]);
+      let freshMsgs: BridgeMsg[] = [];
       if (listR.ok) {
-        const newMsgs: BridgeMsg[] = listR.messages || [];
-        const prevIds = new Set(messages.map((m: BridgeMsg) => m.id));
-        const freshIds = new Set(newMsgs.filter(m => !prevIds.has(m.id)).map(m => m.id));
+        freshMsgs = listR.messages || [];
+        const freshIds = new Set(
+          freshMsgs.filter(m => !prevMsgIdsRef.current.has(m.id)).map(m => m.id)
+        );
         if (freshIds.size > 0) {
           setNewMsgIds(freshIds);
-          // Badge only if not viewing log
-          if (activeTab !== "log") setLogBadgeCount(c => c + freshIds.size);
+          if (activeTabRef.current !== "log") setLogBadgeCount(c => c + freshIds.size);
           setTimeout(() => setNewMsgIds(new Set()), 3000);
         }
-        setMessages(newMsgs);
-        prevMsgCountRef.current = newMsgs.length;
+        prevMsgIdsRef.current = new Set(freshMsgs.map(m => m.id));
+        setMessages(freshMsgs);
       } else {
         setError(listR.error || "Bridge list failed");
       }
       if (usageR.ok) setUsage(usageR.usage);
+      return freshMsgs;
     } catch (e: any) {
       setError(e?.message || "Bridge fetch failed");
+      return [];
     } finally {
       setLoading(false);
       setLastFetch(new Date());
       setCountdown(20);
-      // Restore scroll
       requestAnimationFrame(() => {
         if (feedScrollRef.current)   feedScrollRef.current.scrollTop   = savedFeedScroll.current;
         if (moduleScrollRef.current) moduleScrollRef.current.scrollTop = savedModScroll.current;
       });
     }
-  }, [messages, activeTab]);
+  }, []); // stable — no stale closure deps
 
   const fetchCosts = useCallback(async () => {
     try {
@@ -1495,14 +1549,17 @@ export default function Build() {
     setHealth({ ts: tsStatus, git: gitStatus, db: dbStatus, build: buildStatus, ts_sha: tsMsg?.metadata?.sha || "" });
   }, []);
 
+  // fetchAll is the single refresh entry point.
+  // All derived data (health, costs) is rebuilt from the fresh messages in one pass.
   const fetchAll = useCallback(async () => {
-    await fetchBridge();
-    await fetchCosts();
-  }, [fetchBridge, fetchCosts]);
-
-  useEffect(() => {
-    if (messages.length > 0) fetchHealth(messages);
-  }, [messages, fetchHealth]);
+    setRefreshFlash(true);
+    const freshMsgs = await fetchBridge();
+    await Promise.all([
+      fetchCosts(),
+      freshMsgs.length > 0 ? fetchHealth(freshMsgs) : Promise.resolve(),
+    ]);
+    setTimeout(() => setRefreshFlash(false), 200);
+  }, [fetchBridge, fetchCosts, fetchHealth]);
 
   useEffect(() => {
     fetchAll();
@@ -1729,8 +1786,9 @@ export default function Build() {
     return (
       <div className="h-screen flex flex-col font-sans select-none overflow-hidden" style={{ background: C.bg, color: C.text }}>
         {TopBar}
+        <NewsTicker messages={messages} />
         {Banners}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden" style={{ opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
           {activeTab === "modules" && ModulePanel}
           {activeTab === "active"  && ActivePanel}
           {activeTab === "log"     && FeedPanel}
@@ -1738,7 +1796,7 @@ export default function Build() {
         </div>
         <MobileTabBar active={activeTab} onChange={t => { setActiveTab(t); if (t === "log") setLogBadgeCount(0); }} logBadge={logBadgeCount} />
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
       </div>
     );
   }
@@ -1750,8 +1808,9 @@ export default function Build() {
     return (
       <div className="h-screen flex flex-col font-sans select-none overflow-hidden" style={{ background: C.bg, color: C.text }}>
         {TopBar}
+        <NewsTicker messages={messages} />
         {Banners}
-        <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+        <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
           {/* Left: modules */}
           <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: "40%", borderColor: C.border }}>
             {ModulePanel}
@@ -1770,7 +1829,7 @@ export default function Build() {
           <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
         </div>
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
       </div>
     );
   }
@@ -1782,8 +1841,9 @@ export default function Build() {
     return (
       <div className="h-screen flex flex-col font-sans select-none overflow-hidden" style={{ background: C.bg, color: C.text }}>
         {TopBar}
+        <NewsTicker messages={messages} />
         {Banners}
-        <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+        <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
           {/* Col 1: modules */}
           <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: "25%", borderColor: C.border }}>
             {ModulePanel}
@@ -1801,7 +1861,7 @@ export default function Build() {
           <BottomStrip usage={usage} cost={cost} health={health} messages={messages} breakpoint={bp} />
         </div>
         {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
       </div>
     );
   }
@@ -1812,8 +1872,9 @@ export default function Build() {
   return (
     <div className="h-screen flex flex-col font-sans select-none overflow-hidden" style={{ background: C.bg, color: C.text }}>
       {TopBar}
+      <NewsTicker messages={messages} />
       {Banners}
-      <div className="flex-1 overflow-hidden flex justify-center" style={{ minHeight: 0 }}>
+      <div className="flex-1 overflow-hidden flex justify-center" style={{ minHeight: 0, opacity: refreshFlash ? 0.8 : 1, transition: "opacity 200ms ease" }}>
         <div className="w-full flex overflow-hidden" style={{ maxWidth: 1800 }}>
           {/* Col 1: modules (22%) */}
           <div className="flex-shrink-0 border-r overflow-hidden" style={{ width: "22%", borderColor: C.border }}>
@@ -1841,7 +1902,7 @@ export default function Build() {
         </div>
       </div>
       {showFreshChat && <FreshChatModal content={handoffContent} onClose={() => setShowFreshChat(false)} />}
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } } @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } } @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
     </div>
   );
 }
