@@ -40,6 +40,9 @@ async function saveIntelligenceOutput(sbc: any, p: {
 
 export const config = { maxDuration: 300 };
 
+/* Log module-load to Vercel — if THIS doesn't appear in logs, module init crashed */
+console.log("[intelligence] module loaded at", new Date().toISOString());
+
 /* ─── Role voices ─── */
 const ROLE_VOICE: Record<string, string> = {
   content_writer:  "You are talking directly to a Content Writer. Tell them exactly what to write, which keywords to target, and what great looks like.",
@@ -181,6 +184,17 @@ Fetch and analyse a URL:
 
 /* ─── Handler ─── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try { return await _handler(req, res); }
+  catch (e: any) {
+    console.error("[intelligence] unhandled:", e?.message, e?.stack?.slice(0, 800));
+    try {
+      if (!res.headersSent) res.status(200).json({ error: e?.message || "unknown crash", trace: (e?.stack || "").slice(0, 400) });
+      else { res.write(`\nError: ${e?.message || "unknown crash"}`); res.end(); }
+    } catch (_e) {}
+  }
+}
+
+async function _handler(req: VercelRequest, res: VercelResponse) {
   /* Top-level guard: if anything throws before res.end(), return clean error */
   if (req.method !== "POST") {
     return res.status(200).json({ error: "POST only" });
