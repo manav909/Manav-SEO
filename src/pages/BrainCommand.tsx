@@ -236,6 +236,7 @@ export default function BrainCommand() {
   const [miReport,   setMiReport]  = useState<string>("");
   const [miLoading,  setMiLoading] = useState<string>("");   // which action is loading
   const [miSection,  setMiSection] = useState<string>("persona"); // active section
+  const [miError,    setMiError]   = useState<string>("");   // last MI error
 
   const voiceRef    = useRef<any>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -294,29 +295,33 @@ export default function BrainCommand() {
   };
 
   const generatePersona = async () => {
+    setMiError("");
     const data = await miCall("build_persona");
-    if (data?.error) { alert(`Persona error: ${data.error}`); return; }
+    if (data?.error) { setMiError(data.error); return; }
     if (data?.persona) { setMiPersona(data.persona); setMiSection("persona"); }
   };
 
   const suggestGoals = async () => {
+    setMiError("");
     const data = await miCall("suggest_goals", { existingPersona: miPersona });
-    if (data?.error) { alert(`Goals error: ${data.error}`); return; }
+    if (data?.error) { setMiError(data.error); return; }
     if (data?.goalPlan) { setMiGoals(data.goalPlan); setMiSection("goals"); }
   };
 
   const extractPatterns = async () => {
+    setMiError("");
     const selProject = projects.find(p => p.id === selProj);
     const data = await miCall("cross_project_patterns", {
       industry: selProject?.industry || "",
       keywords: selProject?.keywords || [],
     });
-    if (data?.error) { alert(`Patterns error: ${data.error}`); return; }
+    if (data?.error) { setMiError(data.error); return; }
     if (data?.patterns || data?.message) { setMiPatterns(data); setMiSection("patterns"); }
   };
 
   const researchMarket = async () => {
-    if (!selProj) { alert("Select a project first."); return; }
+    if (!selProj) return;
+    setMiError("");
     const selProject = projects.find(p => p.id === selProj);
     setMiLoading("research_market");
     setMiReport("");
@@ -660,6 +665,19 @@ export default function BrainCommand() {
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", fontFamily: "monospace" }}>
                   Start with "Build Market Persona" — the brain's understanding of who the buyer is.
                 </div>
+              </div>
+            )}
+
+            {miError && (
+              <div style={{ margin: "12px 0", padding: "10px 14px", borderRadius: 8,
+                background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
+                display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ color: "#ef4444", fontSize: 14, flexShrink: 0 }}>❌</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: "#ef4444", marginBottom: 3, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>Market Intelligence Error</div>
+                  <div style={{ fontSize: 11, color: "rgba(252,165,165,0.85)", fontFamily: "monospace", lineHeight: 1.5 }}>{miError}</div>
+                </div>
+                <button onClick={() => setMiError("")} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(239,68,68,0.4)", padding: 2, fontSize: 14 }}>×</button>
               </div>
             )}
 

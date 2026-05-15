@@ -17,8 +17,41 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db } from "./lib/db";
-import { saveLearning, saveToDesk } from "./lib/save";
+import { createClient } from "@supabase/supabase-js";
+
+/* Inline Supabase client — avoids local lib/ import resolution issues in Lambda */
+function sb() {
+  return createClient(
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
+    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ""
+  );
+}
+
+/* Fire-and-forget save — never throws, never blocks response */
+async function quickSave(projectId: string, title: string, content: string, tags: string[]) {
+  try {
+    await sb().from("brain_learnings").insert({
+      project_id: projectId, source: "market_researcher",
+      card_type: "market", card_title: title.slice(0, 100),
+      improvement: content.slice(0, 400), context_summary: "market_researcher",
+      what_worked: [], what_missed: [], tags: [...new Set(tags)],
+      applied_count: 0, status: "pending_review", auto_captured: true,
+      confidence_score: 78, updated_at: new Date().toISOString(),
+    });
+  } catch (_) {}
+}
+
+async function quickDesk(projectId: string, title: string, content: string, contentType: string, tags: string[]) {
+  if (!projectId || content.length < 50) return;
+  try {
+    await sb().from("brain_desk").insert({
+      project_id: projectId, title: title.slice(0, 200),
+      content_type: contentType, content, source: "market_researcher",
+      tags: [...new Set(tags)], pinned: false,
+      metadata: { auto_saved: true }, updated_at: new Date().toISOString(),
+    });
+  } catch (_) {}
+}
 
 export const config = { maxDuration: 300 };
 
@@ -44,7 +77,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   /* ── Load project context ── */
   let project: any = null;
   if (projectId) {
-    const { data } = await db().from("projects")
+    const { data } = await sb().from("projects")
       .select("id,name,url,industry,keywords,competitors,goals,cms,country,city")
       .eq("id", projectId).single();
     project = data;
@@ -67,7 +100,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     /* Pull cross-project industry learnings to inform persona */
     let industryWisdom = "";
     if (industry) {
-      const { data: crossLearnings } = await db()
+      const { data: crossLearnings } = await sb()
         .from("brain_learnings")
         .select("card_title,improvement,card_type,confidence_score")
         .contains("tags", [industry.toLowerCase().replace(/\s+/g, "-")])
@@ -190,30 +223,12 @@ Return ONLY valid JSON, no markdown, no text outside JSON:
       ].filter(Boolean).join("\n");
 
       const industryTag = industry.toLowerCase().replace(/\s+/g, "-");
-      saveLearning({
-        source: "market_researcher",
-        projectId,
-        content: learningContent,
-        title: `Market Persona: ${persona.persona_name} — ${industry}`,
-        cardType: "market",
-        tags: ["market", "persona", industryTag, ...(keywords.slice(0, 3).map((k: string) => k.toLowerCase().replace(/\s+/g, "-")))],
-        confidenceOverride: 82,
-        whatWorked: persona.trust_signals?.what_builds_immediate_trust || [],
-        whatMissed: persona.psychology?.objections_they_raise || [],
-      }).catch(() => {});
-
-      /* Also save to brain_desk for full access */
-      saveToDesk({
-        projectId,
-        title: `Market Persona: ${persona.persona_name}`,
-        content: JSON.stringify(persona, null, 2),
-        contentType: "analysis",
-        source: "market_researcher",
-        tags: ["persona", "market", industryTag],
-      }).catch(() => {});
+      quickSave(projectId, `Market Persona: ${persona.persona_name} — ${industry}`, learningContent,
+        ["market", "persona", industryTag, ...(keywords.slice(0, 3).map((k: string) => k.toLowerCase().replace(/\s+/g, "-")))]);
+      quickDesk(projectId, `Market Persona: ${persona.persona_name}`, JSON.stringify(persona, null, 2), "analysis", ["persona", "market", industryTag]);
 
       /* Persist to market_personas table (upsert by project) */
-      await db().from("market_personas").upsert({
+      await sb().from("market_personas").upsert({
         project_id:   projectId,
         industry:     industry,
         persona_name: persona.persona_name,
@@ -247,7 +262,7 @@ Trust signals: ${(p.trust_signals?.what_builds_immediate_trust || []).join(", ")
 Content gaps: ${(p.seo_content_implications?.content_gaps_this_persona_needs_filled || []).join(", ")}
 `;
     } else if (projectId) {
-      const { data: p } = await db().from("market_personas").select("persona_data").eq("project_id", projectId).single();
+      const { data: p } = await sb().from("market_personas").select("persona_data").eq("project_id", projectId).single();
       if (p?.persona_data) {
         const pd = p.persona_data;
         personaContext = `BUYER PERSONA: ${pd.persona_name}\nMarket context: ${pd.market_context}\nContent gaps: ${(pd.seo_content_implications?.content_gaps_this_persona_needs_filled || []).join(", ")}`;
@@ -360,17 +375,12 @@ Return ONLY valid JSON:
 
     if (projectId) {
       const industryTag = industry.toLowerCase().replace(/\s+/g, "-");
-      saveLearning({
-        source: "market_researcher",
-        projectId,
-        content: `${goalPlan.market_opportunity} ${goalPlan.competitive_gap} ${goalPlan.positioning_recommendation}`,
-        title: `Goal Plan: ${company || industry} — ${goalPlan.recommended_6month_outcome?.slice(0, 60)}`,
-        cardType: "strategy",
-        tags: ["goals", "market", "strategy", industryTag],
-        confidenceOverride: 80,
-      }).catch(() => {});
+      quickSave(projectId,
+        `Goal Plan: ${company || industry} — ${goalPlan.recommended_6month_outcome?.slice(0, 60)}`,
+        `${goalPlan.market_opportunity} ${goalPlan.competitive_gap} ${goalPlan.positioning_recommendation}`,
+        ["goals", "market", "strategy", industryTag]);
 
-      await db().from("market_personas").upsert({
+      await sb().from("market_personas").upsert({
         project_id: projectId,
         industry,
         goals_data: goalPlan,
@@ -454,23 +464,9 @@ Be direct, specific, and confident. Cite real search patterns and market dynamic
 
     if (projectId && fullOutput.length > 500) {
       const industryTag = industry.toLowerCase().replace(/\s+/g, "-");
-      saveLearning({
-        source: "market_researcher",
-        projectId,
-        content: fullOutput.slice(0, 3000),
-        title: `Market Intelligence: ${industry}${region ? ` — ${region}` : ""}`,
-        cardType: "market",
-        tags: ["market", "intelligence", "industry", industryTag],
-        confidenceOverride: 78,
-      }).catch(() => {});
-      saveToDesk({
-        projectId,
-        title: `Market Intelligence: ${industry}`,
-        content: fullOutput,
-        contentType: "report",
-        source: "market_researcher",
-        tags: ["market", "intelligence", industryTag],
-      }).catch(() => {});
+      quickSave(projectId, `Market Intelligence: ${industry}${region ? ` — ${region}` : ""}`,
+        fullOutput.slice(0, 3000), ["market", "intelligence", "industry", industryTag]);
+      quickDesk(projectId, `Market Intelligence: ${industry}`, fullOutput, "report", ["market", "intelligence", industryTag]);
     }
     return;
   }
@@ -486,7 +482,7 @@ Be direct, specific, and confident. Cite real search patterns and market dynamic
     const keywordTags = keywords.slice(0, 5).map((k: string) => k.toLowerCase().replace(/\s+/g, "-"));
 
     /* Query by industry tag */
-    const { data: industryLearnings } = await db()
+    const { data: industryLearnings } = await sb()
       .from("brain_learnings")
       .select("card_title,improvement,card_type,confidence_score,tags,project_id,what_worked,what_missed")
       .contains("tags", [industryTag])
@@ -498,7 +494,7 @@ Be direct, specific, and confident. Cite real search patterns and market dynamic
     /* Query by keyword clusters (union of all keyword tags) */
     let keywordLearnings: any[] = [];
     if (keywordTags.length) {
-      const { data: kl } = await db()
+      const { data: kl } = await sb()
         .from("brain_learnings")
         .select("card_title,improvement,card_type,confidence_score,tags,what_worked")
         .overlaps("tags", keywordTags)
