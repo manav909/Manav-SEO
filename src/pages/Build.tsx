@@ -74,51 +74,21 @@ function useBridgeData(refreshMs: number) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const fetch = useCallback(async () => {
-    if (!BRIDGE_TOKEN) return;
     setLoading(true);
     try {
-      const res = await window.fetch(`/api/bridge?token=${BRIDGE_TOKEN}`);
-      if (!res.ok) { setLoading(false); return; }
-      const text = await res.text();
-
-      // Parse markdown into rows
-      const parsed: BridgeRow[] = [];
-      const blocks = text.split('\n---\n');
-      for (const block of blocks) {
-        const idMatch     = block.match(/\*\*ID:\*\*\s*([a-f0-9-]+)/);
-        const roleMatch   = block.match(/\*\*\[(\w+)\]\*\*/);
-        const typeMatch   = block.match(/\|\s*(\w+)\s*\|/);
-        const modMatch    = block.match(/\*\*Module:\*\*\s*(\S+)/);
-        const taskMatch   = block.match(/\*\*Task:\*\*\s*(\S+)/);
-        const timeMatch   = block.match(/\*\*Time:\*\*\s*([^\n]+)/);
-        const statusMatch = block.match(/\|\s*(\w+)\s*$/m);
-
-        // Content is everything after the metadata header lines
-        const lines = block.split('\n');
-        const contentStart = lines.findIndex(
-          l => l.trim() && !l.startsWith('##') &&
-               !l.startsWith('**') && !l.startsWith('*')
-        );
-        const content = contentStart > 0
-          ? lines.slice(contentStart).join('\n').trim()
-          : block.replace(/\*\*[^*]+\*\*/g, '').trim();
-
-        if (idMatch || content) {
-          parsed.push({
-            id:         idMatch?.[1]    ?? crypto.randomUUID(),
-            role:       (roleMatch?.[1] ?? 'claude_code').toLowerCase(),
-            type:       typeMatch?.[1]  ?? 'status',
-            module:     modMatch?.[1]   ?? null,
-            task:       taskMatch?.[1]  ?? null,
-            content:    content || block.slice(0, 200),
-            status:     statusMatch?.[1]?? 'done',
-            metadata:   {},
-            created_at: timeMatch?.[1]  ?? new Date().toISOString(),
-          });
-        }
+      const { data, error } = await supabase
+        .from("claude_bridge")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(60);
+      if (!error && data && data.length > 0) {
+        setRows(data as BridgeRow[]);
+        // eslint-disable-next-line no-console
+        console.log('[Bridge] rows loaded:', data.length, data[0]);
+      } else if (error) {
+        // eslint-disable-next-line no-console
+        console.log('[Bridge] error:', error);
       }
-
-      if (parsed.length > 0) setRows(parsed);
       setLastSync(new Date());
     } catch (_e) {}
     setLoading(false);
@@ -187,10 +157,18 @@ function deriveState(rows: BridgeRow[]) {
   /* Health */
   const latest = rows.find(r => r.type === "response" || r.type === "brain_dump");
   const health: HealthState = {
-    ts: latest?.metadata?.tsc_clean === true ? "clean" : latest?.metadata?.tsc_clean === false ? "errors" : "unknown",
-    git: latest?.metadata?.git_sha ? "synced" : "unknown",
-    db: rows.length > 0 ? "ok" : "unknown",
-    build: "ok",
+    ts: (latest?.metadata?.tsc_clean === true
+      ? "clean"
+      : latest?.metadata?.tsc_clean === false
+      ? "errors"
+      : "unknown") as "clean"|"errors"|"unknown",
+    git: (latest?.metadata?.git_sha
+      ? "synced"
+      : "unknown") as "synced"|"stale"|"unknown",
+    db: (rows.length > 0
+      ? "ok"
+      : "unknown") as "ok"|"error"|"unknown",
+    build: "ok" as "ok"|"stale"|"unknown",
   };
 
   /* Daily stats */
