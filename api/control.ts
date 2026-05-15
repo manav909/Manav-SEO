@@ -2,11 +2,27 @@
  * control.ts — merged: project-context + system-control
  * Routes by: action
  * Actions: get_context | get_state | log_change | check_fingerprint | save_with_fingerprint
+ *
+ * BUNDLE-VERSION: 2026-05-15-standalone
+ * Inlined db() — previous ./lib/db import was crashing Vercel Lambda at cold start
+ * (same pattern as intelligence.ts and market-researcher.ts had).
  */
-import { db } from "./lib/db";
+import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { maxDuration: 60 };
+
+let _supa: any = null;
+function db(): any {
+  if (_supa) return _supa;
+  try {
+    _supa = createClient(
+      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
+      process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
+    );
+  } catch (e) { console.error("[control] db init failed:", (e as any)?.message); _supa = null; }
+  return _supa;
+}
 
 const COST = { input: 0.003, output: 0.015 };
 const STALE_MAP: Record<string, string[]> = {

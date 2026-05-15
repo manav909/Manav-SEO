@@ -14,13 +14,115 @@
  * CONTRADICTION CHECK: before insert, scan existing active learnings
  *   with same card_type for semantic overlap; flag or merge
  */
+// BUNDLE-VERSION: 2026-05-15-standalone
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db } from "./lib/db";
-import { classifyLearning as classifyAndFilterLearning, checkForConflicts } from "./lib/classify";
-import { saveLearning, saveToDesk } from "./lib/save";
+import { createClient } from "@supabase/supabase-js";
 
 export const config = { maxDuration: 300, regions: ["iad1"] };
+
+/* ── Inline Supabase client (avoid ./lib/db Lambda cold-start crash) ── */
+let _supa: any = null;
+function db(): any {
+  if (_supa) return _supa;
+  try {
+    _supa = createClient(
+      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
+      process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
+    );
+  } catch (e) { console.error("[task-engine] db init failed:", (e as any)?.message); }
+  return _supa;
+}
+
+/* ── Inline minimal classifyAndFilterLearning (rule-based, lossy but safe) ── */
+function classifyAndFilterLearning(opts: { content: string; source: string; title?: string; requestedType?: string; projectId?: string | null }): {
+  shouldSave: boolean; rejectionReason?: string; category: string; confidence: number; autoApprove: boolean; isSystemLevel: boolean;
+} {
+  const c = (opts.content || "").trim();
+  if (c.length < 80)                      return { shouldSave: false, rejectionReason: "too_short",       category: "insight",   confidence: 50, autoApprove: false, isSystemLevel: false };
+  if (/^error:|^failed:|cannot find/i.test(c)) return { shouldSave: false, rejectionReason: "error_text", category: "insight",  confidence: 30, autoApprove: false, isSystemLevel: false };
+  const lower = c.toLowerCase();
+  const category =
+    /robots|sitemap|canonical|schema|crawl|index|404|redirect|broken|status code/.test(lower) ? "technical" :
+    /algorithm|ranking|core update|signal|e-?e-?a-?t|geo|llm|perplexity/.test(lower)         ? "algorithm" :
+    /quick win|low.{0,5}effort|fast/.test(lower)                                              ? "quick-win" :
+    /competitor|rival|gap|outrank/.test(lower)                                                ? "competitive" :
+    /content|article|landing|copy|page|blog/.test(lower)                                      ? "content" :
+    /strategy|roadmap|plan|phase/.test(lower)                                                 ? "strategy" :
+    (opts.requestedType || "insight");
+  const sourceBoost = /audit/i.test(opts.source) ? 10 : 0;
+  const lengthBoost = c.length > 400 ? 5 : 0;
+  const confidence  = Math.min(95, 65 + sourceBoost + lengthBoost);
+  const autoApprove = ["technical","algorithm","quick-win"].includes(category) || confidence >= 85 || /audit/i.test(opts.source);
+  return { shouldSave: true, category, confidence, autoApprove, isSystemLevel: false };
+}
+
+/* ── Inline lightweight checkForConflicts (title-similarity only — safe pass-through) ── */
+async function checkForConflicts(
+  _projectId: string | null, _category: string, title: string, _content: string
+): Promise<{ isDuplicate: boolean; isContradiction: boolean; existingId?: string }> {
+  try {
+    const sbc = db(); if (!sbc) return { isDuplicate: false, isContradiction: false };
+    const { data } = await sbc.from("brain_learnings")
+      .select("id,card_title")
+      .ilike("card_title", title.slice(0, 60))
+      .limit(1);
+    if ((data as any)?.[0]?.id) return { isDuplicate: true, isContradiction: false, existingId: (data as any)[0].id };
+  } catch (_e) {}
+  return { isDuplicate: false, isContradiction: false };
+}
+
+/* ── Inline minimal saveLearning ── */
+async function saveLearning(opts: {
+  source: string; projectId: string | null; content: string; title?: string;
+  cardType?: string; contextSummary?: string; whatWorked?: string[]; whatMissed?: string[];
+  tags?: string[]; industry?: string; keywordCluster?: string[]; confidenceOverride?: number;
+}): Promise<{ saved: boolean; id?: string; reason?: string }> {
+  const cls = classifyAndFilterLearning({ content: opts.content, source: opts.source, title: opts.title, requestedType: opts.cardType, projectId: opts.projectId });
+  if (!cls.shouldSave) return { saved: false, reason: cls.rejectionReason };
+  try {
+    const sbc = db(); if (!sbc) return { saved: false, reason: "no_db" };
+    const tags = [...new Set([cls.category, opts.source.split("_")[0], ...(opts.tags || []),
+      ...(opts.industry ? [opts.industry.toLowerCase().replace(/\s+/g, "-")] : []),
+      ...((opts.keywordCluster || []).map(k => k.toLowerCase().replace(/\s+/g, "-")))])].filter(Boolean);
+    const { data } = await sbc.from("brain_learnings").insert({
+      project_id:      opts.projectId,
+      source:          opts.source,
+      card_type:       cls.category,
+      card_title:      (opts.title || opts.content.slice(0, 80)).slice(0, 100),
+      improvement:     opts.content.slice(0, 800),
+      context_summary: opts.contextSummary || opts.source,
+      what_worked:     (opts.whatWorked || []).slice(0, 6),
+      what_missed:     (opts.whatMissed || []).slice(0, 4),
+      tags,
+      applied_count:   0,
+      status:          cls.autoApprove ? "active" : "pending_review",
+      auto_captured:   opts.source !== "manual" && opts.source !== "brain_chat",
+      confidence_score: opts.confidenceOverride ?? cls.confidence,
+      updated_at:      new Date().toISOString(),
+    }).select("id").single();
+    return { saved: true, id: (data as any)?.id };
+  } catch (_e) { return { saved: false, reason: "db_failed" }; }
+}
+
+/* ── Inline minimal saveToDesk ── */
+async function saveToDesk(opts: { projectId: string | null; title: string; content: string; contentType: string; source: string; tags?: string[] }): Promise<void> {
+  if (!opts.projectId || !opts.content || opts.content.length < 50) return;
+  try {
+    const sbc = db(); if (!sbc) return;
+    await sbc.from("brain_desk").insert({
+      project_id:   opts.projectId,
+      title:        opts.title.slice(0, 200),
+      content_type: opts.contentType,
+      content:      opts.content,
+      source:       opts.source,
+      tags:         [...new Set([...(opts.tags || []), opts.source])].filter(Boolean),
+      pinned:       false,
+      metadata:     { auto_saved: true },
+      updated_at:   new Date().toISOString(),
+    });
+  } catch (_e) {}
+}
 
 const SYSTEM = "You are Manav Brain — senior SEO strategist. Be direct, specific, honest. Never invent data.";
 
