@@ -27,6 +27,7 @@ import GuestTour      from './pages/GuestTour';
 import Desk           from './pages/Desk';
 import BrainCommand   from './pages/BrainCommand';
 import Build          from './pages/Build';
+import ClientPortal from "@/pages/ClientPortal";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -79,7 +80,8 @@ const AppRoutes = () => {
         <Route path="/brain-command"  element={<B name="brain-command"><ApprovedRequired><BrainCommand /></ApprovedRequired></B>} />
         <Route path="/mission-control" element={<B name="mission-control"><ApprovedRequired><MissionControl /></ApprovedRequired></B>} />
         <Route path="/oval"           element={<B name="oval"><ApprovedRequired><Oval /></ApprovedRequired></B>} />
-        <Route path="*"               element={<NotFound />} />
+        <Route path="/client-portal" element={<ClientPortal />} />
+          <Route path="*"               element={<NotFound />} />
       </Routes>
 
       {/* Manav Brain — only for approved/signed-in users. Guests have ManavBrainGuest on Index. */}
