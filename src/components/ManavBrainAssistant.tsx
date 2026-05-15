@@ -1023,9 +1023,13 @@ export default function ManavBrainAssistant() {
           void sendMsgInternal(text, isAuto, sourceErr, true); // retry flag = true
           return;
         }
-        const friendlyMsg = isVercelCrash
-          ? '⚡ I hit a server error both times I tried. This is likely a region deployment issue that your developer needs to fix (deploy with regions: iad1 in vercel.json).\n\n*Technical: ' + errText.replace(/<[^>]+>/g, ' ').trim().slice(0, 120) + '*'
-          : '⚡ Could not reach the intelligence API (HTTP ' + res.status + '). Please try again in a moment.';
+        // ── Runtime Compiler: auto-diagnose before showing anything to user ──
+        const rcDiag = getRuntimeCompiler().autoFix(errText + ' ' + res.status);
+        const friendlyMsg = rcDiag
+          ? `⚡ AUTO-DIAGNOSED\n\n**Root Cause:** ${rcDiag.diagnosis}\n\n**Fix:** ${rcDiag.action}\n\n*Technical: ${errText.replace(/<[^>]+>/g, ' ').trim().slice(0, 120)}*`
+          : isVercelCrash
+            ? `⚡ Intelligence API crashed (Lambda process error — NOT a region issue).\n\nVercel Lambda crashed during execution. This is caused by undeployed code changes or a runtime exception — not a configuration problem.\n\n**Fix:** Run \`vercel --prod\` in your terminal to deploy the latest code.\n\n*Technical: ${errText.replace(/<[^>]+>/g, ' ').trim().slice(0, 120)}*`
+            : `⚡ Could not reach the intelligence API (HTTP ${res.status}). Please try again in a moment.`;
         setMsgs(ms => ms.map(m => m.id===brainId
           ? { ...m, content: friendlyMsg, actions: [{type:'retry_last', label:'↺ Retry', icon:'refresh'}] }
           : m
