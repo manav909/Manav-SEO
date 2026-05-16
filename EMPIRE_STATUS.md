@@ -64,6 +64,7 @@ Branch: main
   - record_attribution
 
 ## Recent Commits
+fd9cca2 status: 12:11 — 30p 19a 0 tables missing
 c59bbcf status: 12:11 — 30p 19a 0 tables missing
 a423dca status: 12:11 — 30p 19a 0 tables missing
 357985c status: 12:11 — 30p 19a 0 tables missing
@@ -71,9 +72,8 @@ a423dca status: 12:11 — 30p 19a 0 tables missing
 77d24e7 status: 12:11 — 30p 19a 0 tables missing
 59bf817 status: 12:11 — 30p 19a 0 tables missing
 edfb901 status: 12:11 — 30p 19a 0 tables missing
-340944d status: 12:11 — 30p 19a 0 tables missing
 
 ## Watcher Status
 - Running: YES
 - Files watched: []
-- Last update: 2026-05-16T12:11:39.577222
+- Last update: 2026-05-16T12:11:39.843713
