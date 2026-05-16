@@ -23,27 +23,27 @@
 **Command:** python3 ~/Downloads/empire_migrate.py
 **PostAction:** bridge table counts
 
-### TASK-005 [PENDING]
+### TASK-005 [DONE 2026-05-16 11:56]
 **Action:** TypeScript check — fix any errors
 **Command:** npx tsc --noEmit 2>&1 | head -20
 **PostAction:** bridge tsc output, fix if errors
 
-### TASK-006 [PENDING]
+### TASK-006 [DONE 2026-05-16 11:56]
 **Action:** Full status report to bridge
 **Command:** python3 ~/Downloads/empire_reporter.py
 **PostAction:** bridge full report
 
-### TASK-007 [PENDING]
+### TASK-007 [DONE 2026-05-16 11:56]
 **Action:** Generate morning brief
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H "Content-Type: application/json" -d "{"action":"generate_morning_brief","scope":"empire"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('headline','done'))"
 **PostAction:** bridge result
 
-### TASK-008 [PENDING]
+### TASK-008 [DONE 2026-05-16 11:56]
 **Action:** Calculate all client health scores
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H "Content-Type: application/json" -d "{"action":"calculate_all_health"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print('done:',d.get('processed',0),'projects')"
 **PostAction:** bridge result
 
-### TASK-009 [PENDING]
+### TASK-009 [DONE 2026-05-16 11:56]
 **Action:** Write comprehensive EMPIRE_STATUS.md
 **Command:** python3 -c "
 import os,re,subprocess,datetime
@@ -65,7 +65,7 @@ print(f'Status: {pages} pages, {libs} libs, {actions} actions')
 "
 **PostAction:** git commit and bridge summary
 
-### TASK-010 [PENDING]
+### TASK-010 [DONE 2026-05-16 11:56]
 **Action:** Final check — all empire files present
 **Command:** python3 -c "
 import os

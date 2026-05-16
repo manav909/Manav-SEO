@@ -30,6 +30,14 @@ import Build          from './pages/Build';
 import ClientPortal from "@/pages/ClientPortal";
 import RevenueProof from "@/pages/RevenueProof";
 import ScaleControl from "@/pages/ScaleControl";
+import EmpireCommand from "@/pages/EmpireCommand";
+import MorningBrief from "@/pages/MorningBrief";
+import LLMVisibility from "@/pages/LLMVisibility";
+import AlertCenter from "@/pages/AlertCenter";
+import HealthDashboard from "@/pages/HealthDashboard";
+import Reports from "@/pages/Reports";
+import ContentHub from "@/pages/ContentHub";
+import Intake from "@/pages/Intake";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -85,6 +93,14 @@ const AppRoutes = () => {
         <Route path="/client-portal" element={<ClientPortal />} />
           <Route path="/revenue-proof" element={<RevenueProof />} />
           <Route path="/scale-control" element={<ScaleControl />} />
+          <Route path="/empire" element={<EmpireCommand />} />
+          <Route path="/morning-brief" element={<MorningBrief />} />
+          <Route path="/llm-visibility" element={<LLMVisibility />} />
+          <Route path="/alerts" element={<AlertCenter />} />
+          <Route path="/health" element={<HealthDashboard />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/content-hub" element={<ContentHub />} />
+          <Route path="/intake" element={<Intake />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 
