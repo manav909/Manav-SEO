@@ -39,6 +39,7 @@ import Reports from "@/pages/Reports";
 import ContentHub from "@/pages/ContentHub";
 import Intake from "@/pages/Intake";
 import PresentationView from "@/pages/PresentationView";
+import ClientComms from "@/pages/ClientComms";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -103,6 +104,7 @@ const AppRoutes = () => {
           <Route path="/content-hub" element={<ContentHub />} />
           <Route path="/intake" element={<Intake />} />
           <Route path="/presentation/:token" element={<PresentationView />} />
+          <Route path="/client-comms" element={<ClientComms />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 
