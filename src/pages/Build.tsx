@@ -115,7 +115,8 @@ export default function Build() {
     ["/scale-control","🏰 Scale"],["/playground","🎮 Playground"],
   ];
 
-  return(
+  return (
+    <>
     <div style={C.root}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
         ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:#1a1a3a;border-radius:2px}`}
@@ -454,5 +455,6 @@ export default function Build() {
       </div>
     </div>
     {showSearch && <GlobalSearch onClose={()=>setShowSearch(false)} />}
+  </>
   );
 }
