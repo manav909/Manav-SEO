@@ -301,4 +301,58 @@ export const HELP: Record<string, HelpConfig> = {
     ],
   },
 
+
+  "client-dashboard": {
+    title: "Client Dashboard — Your Campaign View",
+    what: "Your personal window into your SEO campaign. Real metrics, real progress, no agency jargon.",
+    why: "Everything you need to understand what's happening with your SEO, presented clearly. Traffic growth, rankings, AI visibility, verified wins — all in one place, updated daily.",
+    howTo: [
+      { step: "Check your headline metric", detail: "The traffic number at the top is your most important weekly number — organic visits from search engines." },
+      { step: "Read this week's focus", detail: "The priority actions tell you what your team is working on and why it matters for your goals." },
+      { step: "Review wins", detail: "Verified wins are tactics we've confirmed are working. These compound — each win makes the next one more powerful." },
+      { step: "Check notifications", detail: "Alerts tell you about important changes — ranking improvements, issues found, opportunities spotted." },
+      { step: "View reports", detail: "Monthly reports give you the full picture with all data and explanations." },
+    ],
+    actions: [
+      { label: "Traffic Metrics", desc: "Monthly organic visits — the core measure of SEO success." },
+      { label: "AI Visibility Score", desc: "How often AI models like ChatGPT and Claude mention and recommend you." },
+      { label: "Verified Wins", desc: "Tactics we tested and confirmed are working on your specific site." },
+    ],
+    tips: [
+      "LLM visibility is the new frontier — if AI doesn't mention you, you're invisible to 40% of searches.",
+      "Organic traffic compounds — early months are slower, months 4-6 accelerate.",
+      "Each win builds on the last. The Brain system learns what works for your industry.",
+    ],
+    faq: [
+      { q: "Why does traffic look low in month 1?", a: "SEO takes 2-4 months to build momentum. Think of it as building a foundation — slow start, then compound growth." },
+      { q: "What is AI visibility?", a: "When someone asks ChatGPT or Claude for recommendations in your industry, are you mentioned? This tracks that." },
+    ],
+  },
+
+  "content-writer": {
+    title: "Content Intelligence — Writer Dashboard",
+    what: "Your command centre for creating content that ranks on Google AND gets cited by AI models.",
+    why: "Modern SEO content must satisfy both search engines and AI systems. This dashboard gives you structured briefs, LLM optimisation tips, entity lists, and a content calendar — everything you need to write content that actually performs.",
+    howTo: [
+      { step: "Check your brief queue", detail: "High priority briefs need content first. Look for red and amber priority indicators." },
+      { step: "Read the full brief", detail: "Click any brief to expand it. The brief content tells you everything to cover." },
+      { step: "Copy the LLM direct answer", detail: "The green LLM box is the most important. Put this exact answer at the TOP of your article." },
+      { step: "Cover all entities", detail: "The entity list shows what people, companies, and concepts to mention in your article." },
+      { step: "Check the calendar", detail: "Publishing schedule shows what to write and when." },
+    ],
+    actions: [
+      { label: "Generate Brief", desc: "Enter any keyword to get a complete writing brief in 15 seconds." },
+      { label: "LLM Direct Answer", desc: "The specific answer to put at the top of your article to trigger AI citations." },
+      { label: "Content Calendar", desc: "4-week publishing schedule generated from keyword priorities." },
+    ],
+    tips: [
+      "The LLM Direct Answer is worth more than any other part of the brief. Always use it verbatim at the top.",
+      "Entity coverage is what builds topical authority — mention all listed entities naturally in the article.",
+      "High priority briefs target keywords with the fastest path to ranking. Do those first.",
+    ],
+    faq: [
+      { q: "How long should articles be?", a: "Follow the word count in each brief — it's calculated from what the top-ranking competitors are doing for that specific keyword." },
+      { q: "Should I write for AI or for humans?", a: "Write for humans first — clear, direct, genuinely helpful. AI citation follows automatically when you put the direct answer first and cover entities properly." },
+    ],
+  },
 };

@@ -43,6 +43,9 @@ import ClientComms from "@/pages/ClientComms";
 import StaffCommand from "@/pages/StaffCommand";
 import BdePanel from "@/pages/BdePanel";
 import StaffProfile from "@/pages/StaffProfile";
+import ClientDashboard from "@/pages/ClientDashboard";
+import ContentWriter from "@/pages/ContentWriter";
+import ThemePreview from "@/pages/ThemePreview";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -112,6 +115,9 @@ const AppRoutes = () => {
           <Route path="/bde-panel" element={<BdePanel />} />
           <Route path="/profile/:id" element={<StaffProfile />} />
           <Route path="/profile" element={<StaffProfile />} />
+          <Route path="/client-dashboard" element={<ClientDashboard />} />
+          <Route path="/content-writer" element={<ContentWriter />} />
+          <Route path="/themes" element={<ThemePreview />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 
