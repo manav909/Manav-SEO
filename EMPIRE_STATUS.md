@@ -1,5 +1,5 @@
 # SEO Season Empire Status
-Updated: 2026-05-17 01:03:12 UTC
+Updated: 2026-05-17 01:13:28 UTC
 Branch: main
 
 ## Build Status
@@ -114,16 +114,16 @@ Branch: main
   - upsert_lead_assignment
 
 ## Recent Commits
+9efe55f fix(build): ClientDashboard.tsx — fix corrupted .then(({data=>{ and Promise.resolve wrapping
+e19275a fix(build): BrainCommand.tsx — remove orphaned HelpPanel outside return div — BUILD FIX
+2699a62 fix(complete): vercel 15→12 functions + move extra API files + missing actions + watcher npm path + TSC fixes
+485ded2 status: 01:03 — 38p 61a 0 tables missing
 c64f579 question: build still failing after fix attempt
 0c4c6e4 status: 00:52 — 38p 60a 0 tables missing
 8418bfb fix(critical): restore main.tsx + fix all TS errors + install pre-commit TSC guard — BUILD CLEAN
 3591397 status: 00:42 — 38p 60a 0 tables missing
-3f615a7 feat(themes-B): ClientDashboard + ContentWriter + ThemePreview — ultra-HD animated role dashboards
-5deb466 feat(themes-A): smart theme engine (12 themes) + CSS variables + animated backgrounds + metric cards + dark/light mode
-0f8df4f status: 00:32 — 35p 60a 0 tables missing
-896e622 feat(profiles): StaffProfile page + internal dept chat + build error reporter + TSC fixes
 
 ## Watcher Status
 - Running: YES
-- Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py', '/Users/manav909/Downloads/empire_comms_a.py', '/Users/manav909/Downloads/empire_comms_b.py', '/Users/manav909/Downloads/empire_roles_a.py', '/Users/manav909/Downloads/empire_roles_b.py', '/Users/manav909/Downloads/empire_monitor_demo.py', '/Users/manav909/Downloads/empire_fix_build.py', '/Users/manav909/Downloads/empire_themes_a.py', '/Users/manav909/Downloads/empire_themes_b.py', '/Users/manav909/Downloads/empire_fix_critical.py', '/Users/manav909/Downloads/empire_fix_build_001.py']
-- Last update: 2026-05-17T01:03:12.801754
+- Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py', '/Users/manav909/Downloads/empire_comms_a.py', '/Users/manav909/Downloads/empire_comms_b.py', '/Users/manav909/Downloads/empire_roles_a.py', '/Users/manav909/Downloads/empire_roles_b.py', '/Users/manav909/Downloads/empire_monitor_demo.py', '/Users/manav909/Downloads/empire_fix_build.py', '/Users/manav909/Downloads/empire_themes_a.py', '/Users/manav909/Downloads/empire_themes_b.py', '/Users/manav909/Downloads/empire_fix_critical.py', '/Users/manav909/Downloads/empire_fix_build_001.py', '/Users/manav909/Downloads/empire_complete_001.py', '/Users/manav909/Downloads/empire_fix_braincommand.py', '/Users/manav909/Downloads/empire_fix_clientdash.py']
+- Last update: 2026-05-17T01:13:28.431774
