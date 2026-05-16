@@ -134,7 +134,7 @@ print(f'Created/verified: {created}')
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H "Content-Type: application/json" -d "{"action":"generate_morning_brief","scope":"empire"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print('Brief:',d.get('brief',{}).get('headline',d.get('headline','generated'))[:80])"
 **PostAction:** bridge morning brief headline
 
-### TASK-013 [PENDING]
+### TASK-013 [DONE 2026-05-16 12:10]
 **Action:** Calculate health scores for all projects
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H "Content-Type: application/json" -d "{"action":"calculate_all_health"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print('Health calculated:',d.get('processed',0),'projects')"
 **PostAction:** bridge health scores result
