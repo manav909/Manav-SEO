@@ -1,9 +1,9 @@
 # SEO Season Empire Status
-Updated: 2026-05-16 23:41:39 UTC
+Updated: 2026-05-16 23:51:46 UTC
 Branch: main
 
 ## Build Status
-- Pages: 30 | Libs: 19 | Actions: 32
+- Pages: 30 | Libs: 19 | Actions: 34
 - Tasks done: 13 | Tasks pending: 3 ['TASK-011', 'TASK-015', 'TASK-016']
 
 ## DB Tables
@@ -44,6 +44,7 @@ Branch: main
 
 ## API Actions
   - accept_proposal
+  - analyze_competitor
   - calculate_all_health
   - calculate_client_health
   - capture_lead
@@ -59,6 +60,7 @@ Branch: main
   - generate_role_brief
   - get_alerts
   - get_algorithm_watchlist
+  - get_competitor_snapshots
   - get_content_briefs
   - get_content_calendar
   - get_empire_stats
@@ -77,16 +79,16 @@ Branch: main
   - start_onboarding
 
 ## Recent Commits
+d01d81d feat(help): intelligent contextual help on all pages + competitor actions + full empire audit
+6fb7434 status: 23:41 — 30p 32a 0 tables missing
 ab3775b feat(empire-finish): +11 actions + 3 lib modules + 5 DB tables — empire complete
 b97c4d8 status: 23:31 — 30p 19a 0 tables missing
 ccf0b4e status: 15:23 — 30p 19a 0 tables missing
 0a9fb28 status: 15:07 — 30p 19a 0 tables missing
 0150358 status: 14:23 — 30p 19a 0 tables missing
 672aac9 status: 14:13 — 30p 19a 0 tables missing
-87a5968 status: 14:03 — 30p 19a 0 tables missing
-2c4cff2 status: 13:53 — 30p 19a 0 tables missing
 
 ## Watcher Status
 - Running: YES
-- Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py']
-- Last update: 2026-05-16T23:41:39.439941
+- Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py']
+- Last update: 2026-05-16T23:51:46.816947
