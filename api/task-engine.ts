@@ -1013,6 +1013,109 @@ HTML: ${html.slice(0,2000)}`}]})});
     return ok(res,{competitors:data||[]});
   }
 
+  // ── CLIENT COMMUNICATIONS POWERHOUSE ────────────────────
+  if (action === 'analyse_conversation') {
+    const{text,projectId,channel='email'}=body;
+    if(!text)return ok(res,{error:'text required'});
+    try{
+      const{analyseConversation}=await import('./lib/comms-engine');
+      const result=await analyseConversation(text,projectId,channel);
+      return ok(res,{success:true,...result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'generate_responses') {
+    const{text,analysis,projectId}=body;
+    if(!text||!analysis)return ok(res,{error:'text and analysis required'});
+    try{
+      const{generateResponses}=await import('./lib/comms-engine');
+      let ctx=null;
+      if(projectId){const{data}=await db().from('projects').select('name,url,goals,industry').eq('id',projectId).single();ctx=data;}
+      const result=await generateResponses(text,analysis,projectId,ctx);
+      return ok(res,{success:true,...result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'handle_objection') {
+    const{objectionType,objectionText,language='en',projectId}=body;
+    if(!objectionType||!objectionText)return ok(res,{error:'objectionType and objectionText required'});
+    try{
+      const{handleObjection}=await import('./lib/comms-engine');
+      let ctx=null;
+      if(projectId){const{data}=await db().from('projects').select('name,url,goals').eq('id',projectId).single();ctx=data;}
+      const result=await handleObjection(objectionType,objectionText,language,ctx);
+      return ok(res,{success:true,...result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'generate_client_update') {
+    const{projectId,updateType='email',language='en'}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    try{
+      const{generateClientUpdate}=await import('./lib/comms-engine');
+      const result=await generateClientUpdate(projectId,updateType,language);
+      return ok(res,{success:true,...result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'generate_presentation') {
+    const{type='progress_update',projectId,prospectId,language='en'}=body;
+    try{
+      const{generatePresentation}=await import('./lib/comms-engine');
+      const result=await generatePresentation(type,projectId,prospectId,language);
+      return ok(res,{success:true,...result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'get_presentations') {
+    const{projectId,prospectId}=body;
+    let q=db().from('client_presentations').select('id,title,presentation_type,status,token,viewed_count,created_at');
+    if(projectId)q=q.eq('project_id',projectId);
+    if(prospectId)q=q.eq('prospect_id',prospectId);
+    const{data}=await q.order('created_at',{ascending:false}).limit(20);
+    return ok(res,{presentations:data||[]});
+  }
+
+  if (action === 'get_conversation_history') {
+    const{projectId,limit:cL=20}=body;
+    let q=db().from('client_conversations').select('*').order('created_at',{ascending:false}).limit(cL);
+    if(projectId)q=q.eq('project_id',projectId);
+    const{data}=await q;
+    return ok(res,{conversations:data||[]});
+  }
+
+  if (action === 'get_timezones') {
+    const{getClientTimezones}=await import('./lib/comms-engine');
+    return ok(res,{timezones:getClientTimezones()});
+  }
+
+  if (action === 'get_objection_library') {
+    const{language='en',type}=body;
+    let q=db().from('objection_library').select('*');
+    if(language)q=q.eq('language',language);
+    if(type)q=q.eq('objection_type',type);
+    const{data}=await q.order('success_rate',{ascending:false}).limit(30);
+    return ok(res,{objections:data||[]});
+  }
+
+  if (action === 'get_communication_templates') {
+    const{category,language='en'}=body;
+    let q=db().from('communication_templates').select('*').eq('language',language);
+    if(category)q=q.eq('category',category);
+    const{data}=await q.order('effectiveness_score',{ascending:false}).limit(20);
+    return ok(res,{templates:data||[]});
+  }
+
+  if (action === 'get_proposal_by_token') {
+    const{token}=body;
+    if(!token)return ok(res,{error:'token required'});
+    const{data}=await db().from('proposals').select('*').eq('token',token).single();
+    if(data)await db().from('proposals').update({viewed_at:new Date().toISOString(),status:'viewed'}).eq('id',data.id).is('viewed_at',null);
+    const{data:pres}=await db().from('client_presentations').select('*').eq('token',token).single();
+    if(pres){await db().from('client_presentations').update({viewed_count:pres.viewed_count+1}).eq('id',pres.id);}
+    return ok(res,{proposal:data||null,presentation:pres||null});
+  }
+
 
   if (!card) return ok(res, { error: "Missing card" });
 

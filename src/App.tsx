@@ -38,6 +38,7 @@ import HealthDashboard from "@/pages/HealthDashboard";
 import Reports from "@/pages/Reports";
 import ContentHub from "@/pages/ContentHub";
 import Intake from "@/pages/Intake";
+import PresentationView from "@/pages/PresentationView";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -101,6 +102,7 @@ const AppRoutes = () => {
           <Route path="/reports" element={<Reports />} />
           <Route path="/content-hub" element={<ContentHub />} />
           <Route path="/intake" element={<Intake />} />
+          <Route path="/presentation/:token" element={<PresentationView />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 
