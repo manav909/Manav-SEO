@@ -79,7 +79,7 @@ else: print('ALL FILES PRESENT — EMPIRE READY')
 **PostAction:** bridge final status
 
 
-### TASK-011 [PENDING]
+### TASK-011 [DONE 2026-05-17 00:21 - fixed by monitor]
 **Action:** Apply Supabase migrations for 7 new vision tables
 **Command:** python3 -c "
 import os,ssl,json,re,urllib.request
@@ -144,7 +144,7 @@ print(f'Created/verified: {created}')
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H "Content-Type: application/json" -d "{"action":"get_empire_stats"}" | python3 -c "import sys,json;d=json.load(sys.stdin);s=d.get('stats',{});print('Empire stats — projects:',s.get('projects',0),'learnings:',s.get('learnings',0),'verified:',s.get('verifications',0),'alerts:',s.get('alertsUnread',0))"
 **PostAction:** bridge empire stats
 
-### TASK-015 [PENDING]
+### TASK-015 [DONE 2026-05-17 00:21 - fixed by monitor]
 **Action:** Write EMPIRE_STATUS.md with full current state
 **Command:** python3 -c "
 import os,re,subprocess,datetime
@@ -174,7 +174,7 @@ print(f'Status written: {pages} pages, {libs} libs, {len(actions)} actions')
 
 
 
-### TASK-016 [PENDING]
+### TASK-016 [DONE 2026-05-17 00:21 - fixed by monitor]
 **Action:** Update watcher to watch empire_answer_*.py files and check QUESTIONS.md
 **Command:** python3 -c "
 import re,os
@@ -221,7 +221,7 @@ print('Watcher updated with question system')
 
 
 
-### TASK-ROLES-001 [PENDING]
+### TASK-ROLES-001 [DONE 2026-05-17 00:21 - fixed by monitor]
 **Action:** Seed quick responses library for BDE Fiverr use
 **Command:** python3 -c "
 import os,ssl,json,urllib.request
