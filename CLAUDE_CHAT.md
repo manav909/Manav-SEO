@@ -173,5 +173,52 @@ print(f'Status written: {pages} pages, {libs} libs, {len(actions)} actions')
 **PostAction:** git commit EMPIRE_STATUS.md and bridge summary
 
 
+
+### TASK-016 [PENDING]
+**Action:** Update watcher to watch empire_answer_*.py files and check QUESTIONS.md
+**Command:** python3 -c "
+import re,os
+
+watcher = open('scripts/empire_watcher.py').read()
+
+# Update the file pattern to include empire_answer_
+old = 'if f.startswith(("empire_","build_","add_")) and f.endswith(".py")'
+new = 'if f.startswith(("empire_","build_","add_","empire_answer_")) and f.endswith(".py")'
+watcher = watcher.replace(old, new)
+
+# Add QUESTIONS.md check function after the check_downloads function
+questions_fn = '''
+def post_question(question, context=''):
+    \'\'\'Post a question to QUESTIONS.md for Claude Chat to answer\'\'\'
+    try:
+        qfile = open('QUESTIONS.md').read()
+        nums = [int(m) for m in re.findall(r'### Q-(\d+)', qfile)]
+        next_num = max(nums)+1 if nums else 1
+        qid = f'Q-{next_num:03d}'
+        ts = datetime.now().strftime('%Y-%m-%d %H:%M')
+        entry = f\'\'\'\n### {qid} [OPEN]\n**Asked:** {ts}\n**Question:** {question}\n**Context:** {context[:300]}\n\'\'\'
+        qfile = qfile.replace('## OPEN QUESTIONS\n(none currently)', '## OPEN QUESTIONS\n' + entry)
+        qfile = qfile.replace('## OPEN QUESTIONS\n', '## OPEN QUESTIONS\n' + entry)
+        open('QUESTIONS.md','w').write(qfile)
+        import subprocess
+        subprocess.run('git add QUESTIONS.md', shell=True)
+        subprocess.run(f\'git commit -m "question: {qid} — {question[:40]}"\'  , shell=True)
+        subprocess.run('git push', shell=True)
+        print(f\'Posted {qid} to QUESTIONS.md\')
+        return qid
+    except Exception as e:
+        print(f\'Could not post question: {e}\')
+        return None
+'''
+
+if 'def post_question' not in watcher:
+    watcher = watcher.replace('def check_downloads():', questions_fn + 'def check_downloads():')
+
+open('scripts/empire_watcher.py','w').write(watcher)
+print('Watcher updated with question system')
+"
+**PostAction:** bridge confirmation, git commit
+
+
 ## COMPLETED
 ## NOTES: All scripts in ~/Downloads/ | Bridge via BRIDGE_SECRET | Supabase via SUPABASE_SERVICE_KEY
