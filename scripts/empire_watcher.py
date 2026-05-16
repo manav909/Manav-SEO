@@ -168,7 +168,18 @@ def post_question(question, context=""):
 
 def check_build_health():
     """Run TSC and post any errors as questions for Claude Chat."""
-    ok, tsc_out = sh("npx tsc --noEmit 2>&1 | head -20", timeout=90)
+    # Find npm/node first
+    npm_cmd = "npm"
+    for npm_p in ["/usr/local/bin/npm","/usr/bin/npm"]:
+        if os.path.exists(npm_p):
+            npm_cmd = npm_p
+            break
+    try:
+        import glob
+        nvm_bins = glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin/npm"))
+        if nvm_bins: npm_cmd = sorted(nvm_bins)[-1]
+    except: pass
+    ok, tsc_out = sh(f"cd {REPO_DIR} && {npm_cmd.replace('npm','npx')} tsc --noEmit 2>&1 | head -20", timeout=90)
     if not ok and "error TS" in tsc_out:
         errors = re.findall(r"(src/[^\(]+\.tsx?)\(\d+", tsc_out)[:3]
         post_question(

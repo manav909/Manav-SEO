@@ -191,6 +191,22 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   const { action } = body;
 
   /* ── HEALTH CHECK ── */
+
+  // ── BRIDGE endpoint (merged from bridge.ts) ──────────────
+  if (req.method === 'POST' && req.url?.includes('/api/bridge') || action === '__bridge') {
+    const secret = req.headers['x-bridge-secret'] as string;
+    const expectedSecret = process.env.BRIDGE_SECRET || '';
+    if (expectedSecret && secret !== expectedSecret) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const { kind='status', title='Bridge', body: msgBody='', created_by='system', metadata={} } = req.body;
+    const { data } = await db().from('claude_bridge').insert({
+      kind, title, body: msgBody, created_by, metadata
+    }).select().single();
+    return ok(res, { success: true, id: data?.id });
+  }
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);

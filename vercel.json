@@ -78,24 +78,6 @@
       "regions": [
         "iad1"
       ]
-    },
-    "api/market-researcher.ts": {
-      "maxDuration": 300,
-      "regions": [
-        "iad1"
-      ]
-    },
-    "api/audit-orchestrator.ts": {
-      "maxDuration": 300,
-      "regions": [
-        "iad1"
-      ]
-    },
-    "api/bridge.ts": {
-      "maxDuration": 30,
-      "regions": [
-        "iad1"
-      ]
     }
   },
   "rewrites": [
