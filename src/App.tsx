@@ -3,6 +3,9 @@ import { Toaster }           from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider }   from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import FloatingDock from "@/components/FloatingDock";
+import HUDStatsBar from "@/components/HUDStatsBar";
+import "@/styles/hollywood.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth }     from "@/contexts/AuthContext";
 import { ProjectProvider }             from "@/contexts/ProjectContext";
@@ -81,7 +84,8 @@ const AppRoutes = () => {
   if (!authChecked && loading) return <Spinner label="Loading SEO Season..." />;
   return (
     <>
-      <Routes>
+      <HUDStatsBar />
+        <div style={{paddingTop:40,paddingBottom:80}}><Routes>
         {/* Public routes */}
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
         <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />
@@ -125,7 +129,8 @@ const AppRoutes = () => {
           <Route path="/revenue" element={<RevenueBI />} />
           <Route path="/kanban" element={<KanbanBoard />} />
           <Route path="*"               element={<NotFound />} />
-      </Routes>
+      </Routes></div>
+        <FloatingDock />
 
       {/* Manav Brain — only for approved/signed-in users. Guests have ManavBrainGuest on Index. */}
       {isApproved && <ManavBrainAssistant />}
