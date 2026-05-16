@@ -40,6 +40,8 @@ import ContentHub from "@/pages/ContentHub";
 import Intake from "@/pages/Intake";
 import PresentationView from "@/pages/PresentationView";
 import ClientComms from "@/pages/ClientComms";
+import StaffCommand from "@/pages/StaffCommand";
+import BdePanel from "@/pages/BdePanel";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -105,6 +107,8 @@ const AppRoutes = () => {
           <Route path="/intake" element={<Intake />} />
           <Route path="/presentation/:token" element={<PresentationView />} />
           <Route path="/client-comms" element={<ClientComms />} />
+          <Route path="/staff-command" element={<StaffCommand />} />
+          <Route path="/bde-panel" element={<BdePanel />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 
