@@ -36,19 +36,17 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    
-      supabase.from("projects").select("*").limit(10).then(({data=>{
-        setProjects(data||[]);
-        if(data?.length){setSel(data[0]);setProject(data[0]);}
-        setLoading(false);
-      });
+    supabase.from("projects").select("*").limit(10).then(({data}) => {
+      setProjects(data || []);
+      if (data?.length) { setSel(data[0]); setProject(data[0]); }
+      setLoading(false);
     });
-  },[]);
+  }, []);
 
   const loadProject = useCallback(async (p: any) => {
     setSel(p); setProject(p);
     const [m,b,r,a,l] = await Promise.allSettled([
-      Promise.resolve(supabase.from("metrics").select("*").eq("project_id",p.id).order("recorded_at",{ascending:false}).limit(8)),
+      supabase.from("metrics").select("*").eq("project_id",p.id).order("recorded_at",{ascending:false}).limit(8),
       post("get_morning_brief",{scope:"project",projectId:p.id}),
       post("get_reports",{projectId:p.id,limit:5}),
       post("get_alerts",{projectId:p.id,limit:5}),
