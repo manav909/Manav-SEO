@@ -3,6 +3,7 @@ import { Toaster }           from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider }   from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import GlobalEffects from "@/components/GlobalEffects";
 import { TourProvider } from "@/contexts/TourContext";
 import TourOverlay from "@/components/TourOverlay";
 import AIConcierge from "@/components/AIConcierge";
@@ -88,6 +89,7 @@ const AppRoutes = () => {
   return (
     <>
       <TourProvider>
+        <GlobalEffects />
         <HUDStatsBar />
         <div style={{paddingTop:40,paddingBottom:80}}><Routes>
         {/* Public routes */}
