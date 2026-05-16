@@ -839,6 +839,128 @@ Respond with JSON only:
   /* ── REQUIREMENTS ── */
   if (action === "requirements") {
     const { card, context = {}, userInputs = {} } = body;
+  if (action === 'get_empire_stats') {
+    const [pR,lR,vR,cR,aR,prR] = await Promise.allSettled([
+      db().from('projects').select('id',{count:'exact',head:true}),
+      db().from('brain_learnings').select('id',{count:'exact',head:true}),
+      db().from('verification_queue').select('id',{count:'exact',head:true}).eq('status','done'),
+      db().from('llm_citations').select('id',{count:'exact',head:true}).eq('cited',true),
+      db().from('alerts').select('id',{count:'exact',head:true}).is('read_at',null),
+      db().from('prospects').select('id',{count:'exact',head:true}),
+    ]);
+    return ok(res,{stats:{
+      projects: pR.status==='fulfilled'?pR.value.count||0:0,
+      learnings:lR.status==='fulfilled'?lR.value.count||0:0,
+      verifications:vR.status==='fulfilled'?vR.value.count||0:0,
+      llmCitations:cR.status==='fulfilled'?cR.value.count||0:0,
+      alertsUnread:aR.status==='fulfilled'?aR.value.count||0:0,
+      prospects:prR.status==='fulfilled'?prR.value.count||0:0,
+    }});
+  }
+
+  if (action === 'get_morning_brief') {
+    const{scope='empire',projectId}=body;
+    const today=new Date().toISOString().split('T')[0];
+    let q=db().from('morning_briefs').select('*').eq('brief_date',today).eq('scope',scope);
+    if(projectId)q=q.eq('project_id',projectId);
+    const{data}=await q.order('created_at',{ascending:false}).limit(1).maybeSingle();
+    if(!data){try{const{generateMorningBrief}=await import('./lib/brief-engine');return ok(res,await generateMorningBrief(scope,projectId));}catch(e:any){return ok(res,{brief:null,error:e.message});}}
+    return ok(res,{brief:data});
+  }
+
+  if (action === 'generate_morning_brief') {
+    const{scope='empire',projectId}=body;
+    try{const{generateMorningBrief}=await import('./lib/brief-engine');return ok(res,{success:true,...await generateMorningBrief(scope,projectId)});}
+    catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'get_health_dashboard') {
+    const{data}=await db().from('client_health').select('*,projects(name,url)').order('overall_score',{ascending:true}).limit(20);
+    return ok(res,{health:data||[]});
+  }
+
+  if (action === 'calculate_all_health') {
+    const{data:projects}=await db().from('projects').select('id').limit(50);
+    if(!projects?.length)return ok(res,{success:true,processed:0});
+    let count=0;
+    try{const{calculateClientHealth}=await import('./lib/health-engine');for(const p of projects){try{await calculateClientHealth(p.id);count++;}catch{}}}
+    catch(e:any){return ok(res,{error:e.message});}
+    return ok(res,{success:true,processed:count});
+  }
+
+  if (action === 'get_reports') {
+    const{projectId,limit:rL=10}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    const{data}=await db().from('reports').select('id,report_type,title,status,token,created_at').eq('project_id',projectId).order('created_at',{ascending:false}).limit(rL);
+    return ok(res,{reports:data||[]});
+  }
+
+  if (action === 'generate_report') {
+    const{projectId,reportType='weekly'}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    try{const{generateReport}=await import('./lib/report-engine');const r=await generateReport(projectId,reportType);return ok(res,{success:true,report:r,shareUrl:`/reports/${r?.token}`});}
+    catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'check_llm_visibility') {
+    const{projectId}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    try{const{checkLLMVisibility}=await import('./lib/llm-probe');return ok(res,{success:true,...await checkLLMVisibility(projectId)});}
+    catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'get_llm_visibility_history') {
+    const{projectId,limit:lL=20}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    const{data}=await db().from('llm_citations').select('*').eq('project_id',projectId).order('checked_at',{ascending:false}).limit(lL);
+    const cited=data?.filter((r:any)=>r.cited).length||0;
+    return ok(res,{citations:data||[],citedRate:data?.length?Math.round(cited/data.length*100):0});
+  }
+
+  if (action === 'get_alerts') {
+    const{projectId,unreadOnly=false,limit:aL=30}=body;
+    let q=db().from('alerts').select('*').order('created_at',{ascending:false}).limit(aL);
+    if(projectId)q=q.eq('project_id',projectId);
+    if(unreadOnly)q=q.is('read_at',null);
+    const{data}=await q;
+    return ok(res,{alerts:data||[],unreadCount:data?.filter((a:any)=>!a.read_at).length||0});
+  }
+
+  if (action === 'mark_alert_read') {
+    const{alertId}=body;if(!alertId)return ok(res,{error:'alertId required'});
+    await db().from('alerts').update({read_at:new Date().toISOString()}).eq('id',alertId);
+    return ok(res,{success:true});
+  }
+
+  if (action === 'dismiss_all_alerts') {
+    const{projectId}=body;
+    let q=db().from('alerts').update({read_at:new Date().toISOString()}).is('read_at',null);
+    if(projectId)q=q.eq('project_id',projectId);
+    await q;return ok(res,{success:true});
+  }
+
+  if (action === 'capture_lead') {
+    const{url,email,name,company,source,market}=body;
+    if(!url)return ok(res,{error:'url required'});
+    try{const{captureAndScoreLead}=await import('./lib/lead-engine');return ok(res,{success:true,...await captureAndScoreLead({url,email,name,company,source,market})});}
+    catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'get_content_briefs') {
+    const{projectId,status:bS}=body;if(!projectId)return ok(res,{error:'projectId required'});
+    let q=db().from('content_briefs').select('*').eq('project_id',projectId);
+    if(bS)q=q.eq('status',bS);
+    const{data}=await q.order('created_at',{ascending:false}).limit(20);
+    return ok(res,{briefs:data||[]});
+  }
+
+  if (action === 'generate_content_brief') {
+    const{projectId,keyword,priority='medium'}=body;
+    if(!projectId||!keyword)return ok(res,{error:'projectId and keyword required'});
+    try{const{generateContentBrief}=await import('./lib/content-engine');return ok(res,{success:true,...await generateContentBrief(projectId,keyword,priority)});}
+    catch(e:any){return ok(res,{error:e.message});}
+  }
+
 
   if (!card) return ok(res, { error: "Missing card" });
 
