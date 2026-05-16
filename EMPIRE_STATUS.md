@@ -1,9 +1,9 @@
 # SEO Season Empire Status
-Updated: 2026-05-17 00:22:19 UTC
+Updated: 2026-05-17 00:32:29 UTC
 Branch: main
 
 ## Build Status
-- Pages: 34 | Libs: 21 | Actions: 58
+- Pages: 35 | Libs: 21 | Actions: 60
 - Tasks done: 16 | Tasks pending: 0 []
 
 ## DB Tables
@@ -44,6 +44,7 @@ Branch: main
   - RevenueProof.tsx
   - ScaleControl.tsx
   - StaffCommand.tsx
+  - StaffProfile.tsx
   - SystemControl.tsx
 
 ## API Actions
@@ -77,6 +78,7 @@ Branch: main
   - get_conversation_history
   - get_empire_stats
   - get_health_dashboard
+  - get_internal_messages
   - get_llm_visibility_history
   - get_morning_brief
   - get_objection_library
@@ -102,21 +104,22 @@ Branch: main
   - record_ranking_change
   - run_daily_automation
   - save_quick_response
+  - send_internal_message
   - start_onboarding
   - update_staff_permissions
   - upsert_lead_assignment
 
 ## Recent Commits
+896e622 feat(profiles): StaffProfile page + internal dept chat + build error reporter + TSC fixes
+79f637d status: 00:22 — 34p 58a 0 tables missing
 2e2018a chore: mark stuck tasks done
 557cd0f chore: commit empire_watcher.py to repo
 4730a42 feat(roles-B): HOD Command Center + BDE Panel — role-based dashboards, Fiverr analyser, line-by-line, instant audit, pipeline, team performance, staff management
 37ce461 feat(roles-A): 7 DB tables + roles-engine lib + 14 API actions + quick responses seeding
 763483c status: 00:12 — 32p 45a 0 tables missing
 0933c9b status: 00:01 — 32p 45a 0 tables missing
-51232fe feat(comms-B): ClientComms.tsx — conversation analyser with mood meter, objection handler, client updates, presentations, world clock
-49c8720 feat(comms-A): client comms powerhouse — 5 DB tables + comms-engine lib + 12 API actions + presentation view
 
 ## Watcher Status
 - Running: YES
-- Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py', '/Users/manav909/Downloads/empire_comms_a.py', '/Users/manav909/Downloads/empire_comms_b.py', '/Users/manav909/Downloads/empire_roles_a.py', '/Users/manav909/Downloads/empire_roles_b.py', '/Users/manav909/Downloads/empire_monitor_demo.py']
-- Last update: 2026-05-17T00:22:19.933349
+- Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py', '/Users/manav909/Downloads/empire_comms_a.py', '/Users/manav909/Downloads/empire_comms_b.py', '/Users/manav909/Downloads/empire_roles_a.py', '/Users/manav909/Downloads/empire_roles_b.py', '/Users/manav909/Downloads/empire_monitor_demo.py', '/Users/manav909/Downloads/empire_fix_build.py']
+- Last update: 2026-05-17T00:32:29.552131
