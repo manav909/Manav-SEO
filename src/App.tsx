@@ -3,6 +3,9 @@ import { Toaster }           from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider }   from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TourProvider } from "@/contexts/TourContext";
+import TourOverlay from "@/components/TourOverlay";
+import AIConcierge from "@/components/AIConcierge";
 import FloatingDock from "@/components/FloatingDock";
 import HUDStatsBar from "@/components/HUDStatsBar";
 import "@/styles/hollywood.css";
@@ -84,7 +87,8 @@ const AppRoutes = () => {
   if (!authChecked && loading) return <Spinner label="Loading SEO Season..." />;
   return (
     <>
-      <HUDStatsBar />
+      <TourProvider>
+        <HUDStatsBar />
         <div style={{paddingTop:40,paddingBottom:80}}><Routes>
         {/* Public routes */}
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
@@ -131,6 +135,9 @@ const AppRoutes = () => {
           <Route path="*"               element={<NotFound />} />
       </Routes></div>
         <FloatingDock />
+        <TourOverlay />
+        <AIConcierge />
+      </TourProvider>
 
       {/* Manav Brain — only for approved/signed-in users. Guests have ManavBrainGuest on Index. */}
       {isApproved && <ManavBrainAssistant />}
