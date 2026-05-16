@@ -1287,6 +1287,201 @@ HTML: ${html.slice(0,2000)}`}]})});
     return ok(res,{messages:(data||[]).reverse()});
   }
 
+  // ── AI ASK ANYTHING ──────────────────────────────────────
+  if (action === 'ask_empire') {
+    const{question,sessionId='default',projectId}=body;
+    if(!question)return ok(res,{error:'question required'});
+    try{
+      // Gather empire context
+      const[pR,lR,hR,aR,sR,brR]=await Promise.allSettled([
+        db().from('projects').select('id,name,url,goals,industry,market').limit(20),
+        db().from('brain_learnings').select('card_title,what_worked,confidence_score,card_type')
+          .order('confidence_score',{ascending:false}).limit(15),
+        db().from('client_health').select('*,projects(name)').order('overall_score',{ascending:true}).limit(10),
+        db().from('alerts').select('title,severity,alert_type').is('read_at',null).limit(5),
+        db().from('staff_members').select('name,role,stats_cache').eq('is_active',true).limit(10),
+        db().from('brain_learnings').select('card_title').gte('created_at',
+          new Date(Date.now()-7*864e5).toISOString()).limit(5),
+      ]);
+      const projects=pR.status==='fulfilled'?pR.value.data||[]:[];
+      const learnings=lR.status==='fulfilled'?lR.value.data||[]:[];
+      const health=hR.status==='fulfilled'?hR.value.data||[]:[];
+      const alerts_data=aR.status==='fulfilled'?aR.value.data||[]:[];
+      const staff=sR.status==='fulfilled'?sR.value.data||[]:[];
+
+      // Get conversation history
+      const{data:history}=await db().from('ai_conversations')
+        .select('role,content').eq('session_id',sessionId)
+        .order('created_at',{ascending:true}).limit(10);
+
+      const systemPrompt=`You are the SEO Season Empire AI — an intelligent assistant with full access to this SEO agency's data.
+You know everything about the business: clients, projects, SEO performance, staff, learnings, health scores.
+Answer questions about any aspect of the empire. Be specific, cite real data, be actionable.
+
+EMPIRE DATA SNAPSHOT:
+Projects (${projects.length}): ${projects.map((p:any)=>p.name).join(', ')}
+Active alerts: ${alerts_data.map((a:any)=>a.title).join('; ')||'none'}
+Health concerns: ${health.filter((h:any)=>h.churn_risk==='high').map((h:any)=>(h as any).projects?.name).filter(Boolean).join(', ')||'all healthy'}
+Top learnings: ${learnings.slice(0,5).map((l:any)=>l.card_title).join('; ')}
+Staff: ${staff.map((s:any)=>`${s.name}(${s.role})`).join(', ')}
+${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.name||''}`:''}`
+
+      const messages=[
+        ...(history||[]).map((h:any)=>({role:h.role,content:h.content})),
+        {role:'user' as const,content:question}
+      ];
+
+      const ai=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
+        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:systemPrompt,messages})
+      });
+      const aj=await ai.json() as any;
+      const answer=aj?.content?.[0]?.text||'Could not generate answer.';
+
+      // Save to history
+      await db().from('ai_conversations').insert([
+        {session_id:sessionId,role:'user',content:question,context_snapshot:{projectId}},
+        {session_id:sessionId,role:'assistant',content:answer,tokens_used:aj?.usage?.output_tokens||0}
+      ]);
+
+      return ok(res,{answer,sessionId,tokens:aj?.usage?.output_tokens||0});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'get_conversation_history_ai') {
+    const{sessionId='default',limit:cL=20}=body;
+    const{data}=await db().from('ai_conversations').select('*')
+      .eq('session_id',sessionId).order('created_at',{ascending:true}).limit(cL);
+    return ok(res,{history:data||[]});
+  }
+
+  // ── REVENUE & BI ─────────────────────────────────────────
+  if (action === 'get_revenue_overview') {
+    const now=new Date();
+    const thisMonth=now.getMonth()+1;
+    const thisYear=now.getFullYear();
+    const[mR,allR,pR]=await Promise.allSettled([
+      db().from('revenue_records').select('amount,record_type,status')
+        .eq('period_month',thisMonth).eq('period_year',thisYear),
+      db().from('revenue_records').select('amount,period_month,period_year,record_type,status,projects(name)'),
+      db().from('prospects').select('deal_value:lead_score,status').not('deal_value','is',null),
+    ]);
+    const monthly=mR.status==='fulfilled'?mR.value.data||[]:[];
+    const all=allR.status==='fulfilled'?allR.value.data||[]:[];
+    const prospects=pR.status==='fulfilled'?pR.value.data||[]:[];
+
+    const mrr=monthly.filter((r:any)=>r.status==='paid'&&r.record_type==='monthly_retainer')
+      .reduce((s:number,r:any)=>s+(r.amount||0),0);
+    const arr=mrr*12;
+    const totalPaid=all.filter((r:any)=>r.status==='paid').reduce((s:number,r:any)=>s+(r.amount||0),0);
+    const pending=all.filter((r:any)=>r.status==='pending').reduce((s:number,r:any)=>s+(r.amount||0),0);
+    const overdue=all.filter((r:any)=>r.status==='overdue').reduce((s:number,r:any)=>s+(r.amount||0),0);
+
+    // Monthly trend
+    const byMonth:Record<string,number>={};
+    all.filter((r:any)=>r.status==='paid').forEach((r:any)=>{
+      const key=`${r.period_year}-${String(r.period_month).padStart(2,'0')}`;
+      byMonth[key]=(byMonth[key]||0)+(r.amount||0);
+    });
+
+    return ok(res,{mrr,arr,totalPaid,pending,overdue,
+      monthlyTrend:Object.entries(byMonth).sort(([a],[b])=>a.localeCompare(b)).slice(-12),
+      pipelineValue:0,recordCount:all.length});
+  }
+
+  if (action === 'add_revenue_record') {
+    const{projectId,amount,recordType='monthly_retainer',currency='GBP',notes,invoiceNumber}=body;
+    if(!projectId||!amount)return ok(res,{error:'projectId and amount required'});
+    const now=new Date();
+    const{data}=await db().from('revenue_records').insert({
+      project_id:projectId,amount,record_type:recordType,currency,notes,
+      invoice_number:invoiceNumber,period_month:now.getMonth()+1,period_year:now.getFullYear(),
+      status:'paid'
+    }).select().single();
+    return ok(res,{success:true,record:data});
+  }
+
+  // ── KANBAN ────────────────────────────────────────────────
+  if (action === 'get_kanban') {
+    const{projectId,assignedTo}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    let q=db().from('kanban_tasks').select('*,staff_members(name,role,avatar_initials)')
+      .eq('project_id',projectId).order('position').order('created_at');
+    if(assignedTo)q=q.eq('assigned_to',assignedTo);
+    const{data}=await q.limit(100);
+    const cols:Record<string,any[]>={todo:[],in_progress:[],review:[],done:[],verified:[]};
+    (data||[]).forEach((t:any)=>{ if(cols[t.status])cols[t.status].push(t); });
+    return ok(res,{tasks:data||[],columns:cols});
+  }
+
+  if (action === 'upsert_kanban_task') {
+    const{id,projectId,title,description,status,priority,category,assignedTo,dueDate,estimatedHours,tags}=body;
+    if(!projectId||!title)return ok(res,{error:'projectId and title required'});
+    const payload:any={project_id:projectId,title,description:description||'',
+      status:status||'todo',priority:priority||'medium',category:category||'seo',
+      assigned_to:assignedTo||null,due_date:dueDate||null,
+      estimated_hours:estimatedHours||null,tags:tags||[],
+      updated_at:new Date().toISOString()};
+    let result;
+    if(id){
+      const{data}=await db().from('kanban_tasks').update(payload).eq('id',id).select().single();
+      result=data;
+    }else{
+      const{data:count}=await db().from('kanban_tasks').select('id',{count:'exact',head:true})
+        .eq('project_id',projectId).eq('status',status||'todo');
+      payload.position=(count||0);
+      const{data}=await db().from('kanban_tasks').insert(payload).select().single();
+      result=data;
+    }
+    return ok(res,{success:true,task:result});
+  }
+
+  if (action === 'move_kanban_task') {
+    const{taskId,newStatus,newPosition}=body;
+    if(!taskId||!newStatus)return ok(res,{error:'taskId and newStatus required'});
+    await db().from('kanban_tasks').update({status:newStatus,position:newPosition||0,
+      updated_at:new Date().toISOString()}).eq('id',taskId);
+    // Auto-create verification when moved to done
+    if(newStatus==='done'){
+      const{data:task}=await db().from('kanban_tasks').select('*').eq('id',taskId).single();
+      if(task){
+        await db().from('verification_queue').insert({
+          project_id:task.project_id,card_title:task.title,
+          card_type:task.category,status:'pending',
+          scheduled_for:new Date(Date.now()+3*864e5).toISOString()
+        }).then(()=>{}).catch(()=>{});
+      }
+    }
+    return ok(res,{success:true});
+  }
+
+  if (action === 'delete_kanban_task') {
+    const{taskId}=body;
+    if(!taskId)return ok(res,{error:'taskId required'});
+    await db().from('kanban_tasks').delete().eq('id',taskId);
+    return ok(res,{success:true});
+  }
+
+  // ── GLOBAL SEARCH ────────────────────────────────────────
+  if (action === 'global_search') {
+    const{query,limit:sL=5}=body;
+    if(!query||query.length<2)return ok(res,{results:[]});
+    const q=query.toLowerCase();
+    const[pR,lR,prR,sR]=await Promise.allSettled([
+      db().from('projects').select('id,name,url,industry').ilike('name',`%${query}%`).limit(sL),
+      db().from('brain_learnings').select('id,card_title,card_type,project_id').ilike('card_title',`%${query}%`).limit(sL),
+      db().from('prospects').select('id,name,company,url,lead_score').or(`name.ilike.%${query}%,company.ilike.%${query}%,url.ilike.%${query}%`).limit(sL),
+      db().from('staff_members').select('id,name,role').ilike('name',`%${query}%`).limit(sL),
+    ]);
+    return ok(res,{results:{
+      projects:pR.status==='fulfilled'?pR.value.data||[]:[], 
+      learnings:lR.status==='fulfilled'?lR.value.data||[]:[], 
+      prospects:prR.status==='fulfilled'?prR.value.data||[]:[], 
+      staff:sR.status==='fulfilled'?sR.value.data||[]:[], 
+    },query});
+  }
+
 
   if (!card) return ok(res, { error: "Missing card" });
 
