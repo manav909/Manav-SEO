@@ -139,7 +139,7 @@ print(f'Created/verified: {created}')
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H "Content-Type: application/json" -d "{"action":"calculate_all_health"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print('Health calculated:',d.get('processed',0),'projects')"
 **PostAction:** bridge health scores result
 
-### TASK-014 [PENDING]
+### TASK-014 [DONE 2026-05-16 12:10]
 **Action:** Get empire stats and report to bridge
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H "Content-Type: application/json" -d "{"action":"get_empire_stats"}" | python3 -c "import sys,json;d=json.load(sys.stdin);s=d.get('stats',{});print('Empire stats — projects:',s.get('projects',0),'learnings:',s.get('learnings',0),'verified:',s.get('verifications',0),'alerts:',s.get('alertsUnread',0))"
 **PostAction:** bridge empire stats
