@@ -129,7 +129,7 @@ print(f'Created/verified: {created}')
 "
 **PostAction:** bridge table creation results
 
-### TASK-012 [PENDING]
+### TASK-012 [DONE 2026-05-16 12:10]
 **Action:** Generate first morning brief for empire
 **Command:** curl -s -X POST https://seoseason.com/api/task-engine -H "Content-Type: application/json" -d "{"action":"generate_morning_brief","scope":"empire"}" | python3 -c "import sys,json;d=json.load(sys.stdin);print('Brief:',d.get('brief',{}).get('headline',d.get('headline','generated'))[:80])"
 **PostAction:** bridge morning brief headline
