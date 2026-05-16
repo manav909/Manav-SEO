@@ -46,6 +46,9 @@ import StaffProfile from "@/pages/StaffProfile";
 import ClientDashboard from "@/pages/ClientDashboard";
 import ContentWriter from "@/pages/ContentWriter";
 import ThemePreview from "@/pages/ThemePreview";
+import AskEmpire from "@/pages/AskEmpire";
+import RevenueBI from "@/pages/RevenueBI";
+import KanbanBoard from "@/pages/KanbanBoard";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -118,6 +121,9 @@ const AppRoutes = () => {
           <Route path="/client-dashboard" element={<ClientDashboard />} />
           <Route path="/content-writer" element={<ContentWriter />} />
           <Route path="/themes" element={<ThemePreview />} />
+          <Route path="/ask" element={<AskEmpire />} />
+          <Route path="/revenue" element={<RevenueBI />} />
+          <Route path="/kanban" element={<KanbanBoard />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 

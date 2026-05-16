@@ -1,3 +1,4 @@
+import GlobalSearch from "@/components/GlobalSearch";
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -60,6 +61,13 @@ export default function Build() {
     setLastSync(new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"}));
   }, []);
 
+  useEffect(()=>{
+    const handler=(e:KeyboardEvent)=>{
+      if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();setShowSearch(true);}
+    };
+    window.addEventListener('keydown',handler);
+    return()=>window.removeEventListener('keydown',handler);
+  },[]);
   useEffect(()=>{loadAll();const id=setInterval(loadAll,REFRESH);return()=>clearInterval(id);},[loadAll]);
   useEffect(()=>{const id=setInterval(()=>setTick(t=>t+1),1000);return()=>clearInterval(id);},[]);
 
@@ -122,7 +130,12 @@ export default function Build() {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:11,color:"#3b3b5a",fontFamily:"monospace"}}>{lastSync}</span>
-          <button onClick={loadAll} style={C.btn}>↻</button>
+          <button onClick={()=>setShowSearch(true)} style={{background:"var(--accent-glow)",
+          border:"0.5px solid var(--border-glow)",borderRadius:7,color:"var(--accent-soft)",
+          padding:"5px 12px",fontSize:11,cursor:"pointer",display:"flex",gap:6,alignItems:"center"}}>
+          🔍 <span>Search</span> <span style={{fontSize:9,opacity:.6}}>⌘K</span>
+        </button>
+        <button onClick={loadAll} style={C.btn}>↻</button>
           <div style={{display:"flex",gap:5}}>
             {pages.slice(0,5).map(([h,l])=>(
               <a key={h} href={h} style={{fontSize:10,color:"#4b4b6a",textDecoration:"none",
@@ -440,5 +453,6 @@ export default function Build() {
 
       </div>
     </div>
+    {showSearch && <GlobalSearch onClose={()=>setShowSearch(false)} />}
   );
 }
