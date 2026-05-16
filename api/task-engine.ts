@@ -840,6 +840,144 @@ Respond with JSON only:
   if (action === "requirements") {
     const { card, context = {}, userInputs = {} } = body;
 
+  if (action === 'get_prospects') {
+    const{status:pSt='new',limit:pL=20}=body;
+    let q=db().from('prospects').select('*');
+    if(pSt!=='all')q=q.eq('status',pSt);
+    const{data}=await q.order('lead_score',{ascending:false}).limit(pL);
+    return ok(res,{prospects:data||[]});
+  }
+
+  if (action === 'generate_proposal') {
+    const{prospectId}=body;
+    if(!prospectId)return ok(res,{error:'prospectId required'});
+    try{
+      const{generateProposalHTML}=await import('./lib/lead-engine');
+      const html=await generateProposalHTML(prospectId);
+      const{data:pr}=await db().from('prospects').select('url,company').eq('id',prospectId).single();
+      const{data:proposal}=await db().from('proposals').insert({
+        prospect_id:prospectId,title:`SEO Proposal — ${pr?.company||pr?.url||'Your Business'}`,
+        html_content:html,status:'ready'}).select().single();
+      await db().from('prospects').update({status:'proposal_sent'}).eq('id',prospectId);
+      return ok(res,{success:true,proposal,shareUrl:`/proposal/${proposal?.token}`});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'accept_proposal') {
+    const{token}=body;
+    if(!token)return ok(res,{error:'token required'});
+    const{data:proposal}=await db().from('proposals').select('*').eq('token',token).single();
+    if(!proposal)return ok(res,{error:'Proposal not found'});
+    await db().from('proposals').update({status:'accepted',accepted_at:new Date().toISOString()}).eq('id',proposal.id);
+    if(proposal.prospect_id)await db().from('prospects').update({status:'won'}).eq('id',proposal.prospect_id);
+    return ok(res,{success:true,message:'Welcome to the empire.'});
+  }
+
+  if (action === 'start_onboarding') {
+    const{projectId}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    try{
+      const{startOnboarding}=await import('./lib/onboarding-engine');
+      const result=await startOnboarding(projectId);
+      return ok(res,{success:true,...result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'get_onboarding_status') {
+    const{projectId}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    const{data}=await db().from('onboarding_sessions').select('*').eq('project_id',projectId)
+      .order('created_at',{ascending:false}).limit(1).maybeSingle();
+    return ok(res,{session:data});
+  }
+
+  if (action === 'calculate_client_health') {
+    const{projectId}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    try{
+      const{calculateClientHealth}=await import('./lib/health-engine');
+      const result=await calculateClientHealth(projectId);
+      return ok(res,{success:true,health:result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'check_algorithm_updates') {
+    try{
+      const{checkAlgorithmUpdates}=await import('./lib/algorithm-monitor');
+      return ok(res,{success:true,...await checkAlgorithmUpdates()});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+  if (action === 'get_algorithm_watchlist') {
+    try{
+      const{getAlgorithmWatchlist}=await import('./lib/algorithm-monitor');
+      return ok(res,{events:await getAlgorithmWatchlist()});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'generate_content_calendar') {
+    const{projectId,weeksAhead=4}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    try{
+      const{generateContentCalendar}=await import('./lib/calendar-engine');
+      return ok(res,{success:true,...await generateContentCalendar(projectId,weeksAhead)});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+  if (action === 'get_content_calendar') {
+    const{projectId}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    try{
+      const{getContentCalendar}=await import('./lib/calendar-engine');
+      return ok(res,{calendar:await getContentCalendar(projectId)});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'record_ranking_change') {
+    const{projectId,keyword,positionBefore,positionAfter,taskId}=body;
+    if(!projectId||!keyword)return ok(res,{error:'projectId and keyword required'});
+    const delta=(positionBefore||0)-(positionAfter||0);
+    const{data}=await db().from('ranking_velocity').insert({
+      project_id:projectId,keyword,position_before:positionBefore||0,
+      position_after:positionAfter||0,task_id:taskId}).select().single();
+    if(delta<-5)await db().from('alerts').insert({project_id:projectId,
+      alert_type:'ranking_drop',severity:'warning',
+      title:`Ranking drop: "${keyword}" fell ${Math.abs(delta)} positions`,
+      body:`From ${positionBefore} to ${positionAfter}`,data:{keyword,delta}
+    }).then(()=>{}).catch(()=>{});
+    else if(delta>5)await db().from('alerts').insert({project_id:projectId,
+      alert_type:'ranking_rise',severity:'info',
+      title:`Ranking win: "${keyword}" rose ${delta} positions`,
+      body:`From ${positionBefore} to ${positionAfter}`,data:{keyword,delta}
+    }).then(()=>{}).catch(()=>{});
+    return ok(res,{success:true,delta});
+  }
+  if (action === 'get_ranking_velocity') {
+    const{projectId}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    const{data}=await db().from('ranking_velocity').select('*')
+      .eq('project_id',projectId).order('measured_at',{ascending:false}).limit(50);
+    const avg=data?.length?data.reduce((s:number,r:any)=>s+(r.delta||0),0)/data.length:0;
+    return ok(res,{velocity:data||[],avgDelta:Math.round(avg*10)/10});
+  }
+
+  if (action === 'run_daily_automation') {
+    const results:Record<string,any>={};
+    const{data:projects}=await db().from('projects').select('id,name').limit(50);
+    if(!projects?.length)return ok(res,{success:true,message:'No projects'});
+    try{const{generateMorningBrief}=await import('./lib/brief-engine');results.brief=await generateMorningBrief('empire');}
+    catch(e:any){results.brief={error:(e as any).message};}
+    try{const{calculateClientHealth}=await import('./lib/health-engine');let h=0;
+      for(const p of projects.slice(0,10)){try{await calculateClientHealth(p.id);h++;}catch{}}
+      results.health={updated:h};}
+    catch(e:any){results.health={error:(e as any).message};}
+    if(new Date().getDay()===1){
+      try{const{generateReport}=await import('./lib/report-engine');let r=0;
+        for(const p of projects.slice(0,5)){try{await generateReport(p.id,'weekly');r++;}catch{}}
+        results.reports={generated:r};}
+      catch(e:any){results.reports={error:(e as any).message};}
+    }
+    return ok(res,{success:true,automated:true,timestamp:new Date().toISOString(),results});
+  }
+
 
   if (!card) return ok(res, { error: "Missing card" });
 
