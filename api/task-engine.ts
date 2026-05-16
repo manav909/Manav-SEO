@@ -978,6 +978,41 @@ Respond with JSON only:
     return ok(res,{success:true,automated:true,timestamp:new Date().toISOString(),results});
   }
 
+  if (action === 'analyze_competitor') {
+    const{projectId,competitorUrl}=body;
+    if(!projectId||!competitorUrl)return ok(res,{error:'projectId and competitorUrl required'});
+    try{
+      const domain=competitorUrl.replace(/^https?:\/\//,"").split("/")[0];
+      let html="";
+      try{const r=await fetch(`https://${domain}`,{headers:{"User-Agent":"Mozilla/5.0"},signal:AbortSignal.timeout(8000)});html=(await r.text()).slice(0,5000);}catch{}
+      const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,
+          messages:[{role:"user",content:`Analyse competitor ${domain} based on this HTML snapshot. Return JSON only: {"competitor_name":"...","top_topics":["..."],"content_gaps":["what they do well that client might lack"],"threat_level":"low|medium|high|critical","opportunity":"specific weakness to exploit"}
+
+HTML: ${html.slice(0,2000)}`}]})});
+      const aj=await ai.json() as any;
+      let analysis:any={competitor_name:domain,threat_level:"medium"};
+      try{analysis=JSON.parse((aj?.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());}catch{}
+      await db().from("competitor_snapshots").insert({
+        project_id:projectId,competitor_url:competitorUrl,
+        competitor_name:analysis.competitor_name||domain,
+        top_keywords:analysis.top_topics||[],
+        content_gaps:analysis.content_gaps||[],
+        threat_level:analysis.threat_level||"medium",
+        authority_signals:{opportunity:analysis.opportunity}
+      }).then(()=>{}).catch(()=>{});
+      return ok(res,{success:true,analysis});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+  if (action === 'get_competitor_snapshots') {
+    const{projectId}=body;
+    if(!projectId)return ok(res,{error:'projectId required'});
+    const{data}=await db().from('competitor_snapshots').select('*')
+      .eq('project_id',projectId).order('checked_at',{ascending:false}).limit(20);
+    return ok(res,{competitors:data||[]});
+  }
+
 
   if (!card) return ok(res, { error: "Missing card" });
 

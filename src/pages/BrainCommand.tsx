@@ -1,3 +1,5 @@
+import { HelpPanel } from "@/components/HelpPanel";
+import { HELP } from "@/lib/helpConfigs";
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
@@ -182,5 +184,6 @@ export default function BrainCommand() {
         </div>
       )}
     </div>
+      <HelpPanel config={HELP["brain-command"]} />
   );
 }
