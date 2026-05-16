@@ -18,3 +18,9 @@
 
 ## ANSWERED
 (none yet)
+
+### Q-002-B [OPEN]
+**After fixes, still failing:**
+```
+/bin/sh: npm: command not found
+```
