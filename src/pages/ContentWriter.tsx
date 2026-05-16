@@ -1,3 +1,4 @@
+import { supabase } from "@/lib/supabase";
 import React,{useState,useEffect} from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 import AnimatedBg from "@/components/AnimatedBg";
@@ -17,7 +18,7 @@ export default function ContentWriter(){
   const[copied,setCopied]=useState<string|null>(null);
 
   useEffect(()=>{
-    import("@/lib/supabase").then(({supabase})=>{
+    Promise.resolve().then(()=>{
       supabase.from("projects").select("*").limit(20).then(({data})=>{
         setProjects(data||[]); if(data?.length)setSel(data[0]);
       });

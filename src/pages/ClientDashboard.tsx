@@ -1,3 +1,4 @@
+import { supabase } from "@/lib/supabase";
 import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 import AnimatedBg from "@/components/AnimatedBg";
@@ -35,8 +36,8 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    import("@/lib/supabase").then(({supabase})=>{
-      supabase.from("projects").select("*").limit(10).then(({data})=>{
+    
+      supabase.from("projects").select("*").limit(10).then(({data=>{
         setProjects(data||[]);
         if(data?.length){setSel(data[0]);setProject(data[0]);}
         setLoading(false);
@@ -47,11 +48,11 @@ export default function ClientDashboard() {
   const loadProject = useCallback(async (p: any) => {
     setSel(p); setProject(p);
     const [m,b,r,a,l] = await Promise.allSettled([
-      import("@/lib/supabase").then(({supabase})=>supabase.from("metrics").select("*").eq("project_id",p.id).order("recorded_at",{ascending:false}).limit(8)),
+      Promise.resolve(supabase.from("metrics").select("*").eq("project_id",p.id).order("recorded_at",{ascending:false}).limit(8)),
       post("get_morning_brief",{scope:"project",projectId:p.id}),
       post("get_reports",{projectId:p.id,limit:5}),
       post("get_alerts",{projectId:p.id,limit:5}),
-      import("@/lib/supabase").then(({supabase})=>supabase.from("brain_learnings").select("card_title,what_worked,confidence_score").eq("project_id",p.id).order("confidence_score",{ascending:false}).limit(6)),
+      Promise.resolve().then(()=>supabase.from("brain_learnings").select("card_title,what_worked,confidence_score").eq("project_id",p.id).order("confidence_score",{ascending:false}).limit(6)),
     ]);
     if(m.status==="fulfilled") setMetrics(m.value.data||[]);
     if(b.status==="fulfilled") setBrief((b.value as any).brief||(b.value as any));

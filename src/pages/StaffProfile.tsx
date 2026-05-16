@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 import { useParams, useNavigate } from "react-router-dom";
 
 const post = (a: string, b: any = {}) =>
@@ -50,14 +51,12 @@ export default function StaffProfile() {
 
   async function loadMessages() {
     try {
-      const { createClient } = await import("@supabase/supabase-js");
-      const sb = createClient(
-        import.meta.env.VITE_SUPABASE_URL || "",
-        import.meta.env.VITE_SUPABASE_ANON_KEY || ""
-      );
-      const { data } = await sb.from("internal_messages")
-        .select("*").eq("dept", dept)
-        .order("created_at", { ascending: false }).limit(50);
+      const { data } = await supabase
+        .from("internal_messages")
+        .select("*")
+        .eq("dept", dept)
+        .order("created_at", { ascending: false })
+        .limit(50);
       setMsgs((data || []).reverse() as any[]);
     } catch {}
   }
@@ -66,12 +65,7 @@ export default function StaffProfile() {
     if (!newMsg.trim() || !staff) return;
     setSending(true);
     try {
-      const { createClient } = await import("@supabase/supabase-js");
-      const sb = createClient(
-        import.meta.env.VITE_SUPABASE_URL || "",
-        import.meta.env.VITE_SUPABASE_ANON_KEY || ""
-      );
-      await sb.from("internal_messages").insert({
+      await supabase.from("internal_messages").insert({
         dept, sender_id: staff.id, sender_name: staff.name,
         sender_role: staff.role, body: newMsg.trim(), msg_type: "text",
       });
