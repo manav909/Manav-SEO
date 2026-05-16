@@ -1255,6 +1255,22 @@ HTML: ${html.slice(0,2000)}`}]})});
     return ok(res,{success:true});
   }
 
+  if (action === 'send_internal_message') {
+    const{dept='general',senderId,senderName,senderRole,body:msgBody,msgType='text'}=body;
+    if(!msgBody||!senderName)return ok(res,{error:'body and senderName required'});
+    const{data}=await db().from('internal_messages').insert({
+      dept,sender_id:senderId||null,sender_name:senderName,
+      sender_role:senderRole||'bde',body:msgBody,msg_type:msgType,
+    }).select().single();
+    return ok(res,{success:true,message:data});
+  }
+  if (action === 'get_internal_messages') {
+    const{dept='general',limit:mL=50}=body;
+    const{data}=await db().from('internal_messages').select('*')
+      .eq('dept',dept).order('created_at',{ascending:false}).limit(mL);
+    return ok(res,{messages:(data||[]).reverse()});
+  }
+
 
   if (!card) return ok(res, { error: "Missing card" });
 

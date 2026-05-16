@@ -42,6 +42,7 @@ import PresentationView from "@/pages/PresentationView";
 import ClientComms from "@/pages/ClientComms";
 import StaffCommand from "@/pages/StaffCommand";
 import BdePanel from "@/pages/BdePanel";
+import StaffProfile from "@/pages/StaffProfile";
 import NotFound       from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -109,6 +110,8 @@ const AppRoutes = () => {
           <Route path="/client-comms" element={<ClientComms />} />
           <Route path="/staff-command" element={<StaffCommand />} />
           <Route path="/bde-panel" element={<BdePanel />} />
+          <Route path="/profile/:id" element={<StaffProfile />} />
+          <Route path="/profile" element={<StaffProfile />} />
           <Route path="*"               element={<NotFound />} />
       </Routes>
 

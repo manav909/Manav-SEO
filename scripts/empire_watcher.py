@@ -144,6 +144,41 @@ def auto_check():
             if suggestion: bridge(f"Auto-supervision:\n{suggestion}","auto_check")
     except Exception as e: print(f"  auto_check: {e}")
 
+
+def post_question(question, context=""):
+    """Post a question to QUESTIONS.md for Claude Chat to see and answer."""
+    try:
+        qfile = open("QUESTIONS.md").read() if os.path.exists("QUESTIONS.md") else "# Questions\n## OPEN\n## ANSWERED\n"
+        nums = [int(m) for m in re.findall(r"Q-(\d+)", qfile)]
+        qid = f"Q-{max(nums)+1:03d}" if nums else "Q-001"
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        entry = f"\n### {qid} [OPEN]\n**Asked:** {ts}\n**Question:** {question}\n**Context:** {context[:400]}\n"
+        if "## OPEN" in qfile:
+            qfile = qfile.replace("## OPEN\n", f"## OPEN\n{entry}")
+        else:
+            qfile += entry
+        open("QUESTIONS.md","w").write(qfile)
+        sh("git add QUESTIONS.md")
+        sh(f'git commit -m "question: {qid}"')
+        sh("git push")
+        bridge(f"Posted question to QUESTIONS.md: {question[:60]}", "question_posted")
+        print(f"  Question posted: {qid}")
+    except Exception as e:
+        print(f"  post_question error: {e}")
+
+def check_build_health():
+    """Run TSC and post any errors as questions for Claude Chat."""
+    ok, tsc_out = sh("npx tsc --noEmit 2>&1 | head -20", timeout=90)
+    if not ok and "error TS" in tsc_out:
+        errors = re.findall(r"(src/[^\(]+\.tsx?)\(\d+", tsc_out)[:3]
+        post_question(
+            f"TypeScript build errors found — {len(errors)} files affected",
+            f"TSC output:\n{tsc_out[:600]}\nFiles: {errors}"
+        )
+        bridge(f"Build errors detected and posted to QUESTIONS.md:\n{tsc_out[:400]}", "build_error", "error")
+    return ok
+
+
 if __name__=="__main__":
     print("="*50)
     print("Empire Watcher ACTIVE")
@@ -163,6 +198,8 @@ if __name__=="__main__":
                 write_status(); last_status=time.time()
             if time.time()-last_auto>1800:
                 auto_check(); last_auto=time.time()
+            if cycle%20==0:
+                check_build_health()
             if cycle%4==0:
                 print(f"  [{datetime.now().strftime('%H:%M:%S')}] Watching... cycle {cycle}")
             time.sleep(30)
