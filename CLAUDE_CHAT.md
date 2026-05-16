@@ -220,5 +220,44 @@ print('Watcher updated with question system')
 **PostAction:** bridge confirmation, git commit
 
 
+
+### TASK-ROLES-001 [PENDING]
+**Action:** Seed quick responses library for BDE Fiverr use
+**Command:** python3 -c "
+import os,ssl,json,urllib.request
+def load_env():
+    for f in ['.env','../.env']:
+        try:
+            for line in open(f).read().splitlines():
+                if '=' in line and not line.startswith('#'):
+                    k,v=line.split('=',1); os.environ.setdefault(k.strip(),v.strip())
+            break
+        except: pass
+load_env()
+url='https://seoseason.com/api/task-engine'
+CTX=ssl.create_default_context(); CTX.check_hostname=False; CTX.verify_mode=ssl.CERT_NONE
+responses=[
+  {'category':'intro','title':'First response to enquiry','body':'Hi! Thanks for reaching out. I\'ve looked at your profile and I\'d love to help you with SEO. Could you share your website URL? I\'ll do a quick audit and tell you exactly what we can improve and the impact it will have. 🔍','channel':'fiverr'},
+  {'category':'intro','title':'Response when they share URL','body':'Just had a look at your site — interesting space! I can already see a few quick wins. Give me 2 minutes and I\'ll put together a proper breakdown for you.','channel':'fiverr'},
+  {'category':'trust','title':'Showing technical credibility','body':'Quick technical note on what I found: your title tags are missing keyword intent alignment, and your Core Web Vitals are affecting crawl budget. These are fixable in week 1. My approach is data-driven — I track every change and verify the result before moving on.','channel':'fiverr'},
+  {'category':'pricing','title':'When they ask price','body':'Investment depends on the scope — basic on-page optimisation starts from $X, but let me first understand your goals. Are you targeting local, national, or international? That changes everything.','channel':'fiverr'},
+  {'category':'results','title':'When they ask for proof','body':'Happy to share results. Here\'s what\'s relevant to your situation: [result 1]. The key metric I track for sites like yours is [metric]. What\'s your current monthly organic traffic?','channel':'fiverr'},
+  {'category':'update','title':'Weekly progress update','body':'Here\'s your week [X] update 📊\n\n✅ Completed: [tasks]\n📈 Progress: [metrics]\n🎯 Next week: [plan]\n\nAny questions? Happy to jump on a quick call.','channel':'fiverr'},
+  {'category':'objection','title':'They say they tried SEO before','body':'Totally understand the hesitation — bad SEO experiences are unfortunately common. The difference with my approach: I show you exactly what I\'m doing and why, and verify every result before claiming it as a win. No black box.','channel':'fiverr'},
+  {'category':'closing','title':'Moving toward order','body':'Based on what I\'ve seen, I\'m confident we can [specific outcome] within [timeline]. I\'d suggest starting with the [package] — it covers the highest-impact items first. Want me to put together a specific scope?','channel':'fiverr'},
+  {'category':'technical','title':'Explaining technical SEO simply','body':'Think of it this way: Google is trying to understand your site and answer user queries. Technical SEO removes the obstacles that make that harder — slow load times, confusing structure, missing signals. We fix the foundation first, then build rankings on it.','channel':'fiverr'},
+  {'category':'competitor','title':'When they mention a competitor','body':'I\'ve checked [competitor] — they\'re doing well on [X] but there are gaps in [Y]. For your specific niche, there\'s actually a strong opportunity in [area] that they\'re missing. That\'s where we\'d focus.','channel':'fiverr'},
+]
+for r in responses:
+    req=urllib.request.Request(url,method='POST',data=json.dumps({'action':'save_quick_response',**r,'language':'en'}).encode(),headers={'Content-Type':'application/json'})
+    try:
+        with urllib.request.urlopen(req,context=CTX,timeout=15) as res: pass
+        print(f'Seeded: {r["title"]}')
+    except Exception as e: print(f'Error: {e}')
+print('Quick responses seeded.')
+"
+**PostAction:** bridge confirmation
+
+
 ## COMPLETED
 ## NOTES: All scripts in ~/Downloads/ | Bridge via BRIDGE_SECRET | Supabase via SUPABASE_SERVICE_KEY

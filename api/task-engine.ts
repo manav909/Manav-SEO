@@ -1116,6 +1116,145 @@ HTML: ${html.slice(0,2000)}`}]})});
     return ok(res,{proposal:data||null,presentation:pres||null});
   }
 
+  // ── ROLE-BASED STAFF & BDE SYSTEM ───────────────────────
+  if (action === 'get_staff') {
+    try{
+      const{getStaffWithStats}=await import('./lib/roles-engine');
+      return ok(res,{staff:await getStaffWithStats()});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'create_staff') {
+    const{name,email,role='bde',timezone='Europe/London',permissions={},targets={},managedBy}=body;
+    if(!name||!role)return ok(res,{error:'name and role required'});
+    const{data}=await db().from('staff_members').insert({
+      name,email,role,timezone,permissions,targets,
+      managed_by:managedBy||null,
+      avatar_initials:name.split(' ').map((n:string)=>n[0]).join('').toUpperCase().slice(0,2),
+    }).select().single();
+    return ok(res,{success:true,staff:data});
+  }
+
+  if (action === 'update_staff_permissions') {
+    const{staffId,permissions}=body;
+    if(!staffId)return ok(res,{error:'staffId required'});
+    await db().from('staff_members').update({permissions}).eq('id',staffId);
+    return ok(res,{success:true});
+  }
+
+  if (action === 'analyse_fiverr_conversation') {
+    const{text,staffId,assignmentId}=body;
+    if(!text)return ok(res,{error:'text required'});
+    try{
+      const{analyseFiverrConversation}=await import('./lib/roles-engine');
+      const result=await analyseFiverrConversation(text,staffId);
+      if(assignmentId&&result.id){
+        await db().from('lead_assignments').update({last_contact:new Date().toISOString()}).eq('id',assignmentId);
+      }
+      return ok(res,{success:true,...result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'instant_audit_showcase') {
+    const{url,forLead,assignmentId}=body;
+    if(!url)return ok(res,{error:'url required'});
+    try{
+      const{generateInstantAuditShowcase}=await import('./lib/roles-engine');
+      const result=await generateInstantAuditShowcase(url,forLead);
+      return ok(res,{success:true,...result});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'get_pipeline') {
+    const{staffId,role}=body;
+    try{
+      const{getPipelineOverview}=await import('./lib/roles-engine');
+      return ok(res,{success:true,...await getPipelineOverview(staffId,role)});
+    }catch(e:any){return ok(res,{error:e.message});}
+  }
+
+  if (action === 'upsert_lead_assignment') {
+    const{prospectId,projectId,assignedTo,stage,priority,source='fiverr',notes,dealValue,conversionProbability}=body;
+    const payload:any={stage:stage||'new',priority:priority||'medium',source,notes,updated_at:new Date().toISOString()};
+    if(prospectId)payload.prospect_id=prospectId;
+    if(projectId)payload.project_id=projectId;
+    if(assignedTo)payload.assigned_to=assignedTo;
+    if(dealValue)payload.deal_value=dealValue;
+    if(conversionProbability)payload.conversion_probability=conversionProbability;
+    const{data}=await db().from('lead_assignments').upsert(payload,{onConflict:'prospect_id'}).select().single();
+    return ok(res,{success:true,assignment:data});
+  }
+
+  if (action === 'get_quick_responses') {
+    const{category,channel='all',language='en',role}=body;
+    let q=db().from('quick_responses').select('*');
+    if(category)q=q.eq('category',category);
+    if(language&&language!=='all')q=q.eq('language',language);
+    if(role)q=q.contains('role_access',[role]);
+    const{data}=await q.order('usage_count',{ascending:false}).limit(50);
+    return ok(res,{responses:data||[]});
+  }
+
+  if (action === 'save_quick_response') {
+    const{category,subcategory,title,body:rBody,channel='all',language='en',roleAccess,createdBy}=body;
+    if(!category||!title||!rBody)return ok(res,{error:'category, title and body required'});
+    const{data}=await db().from('quick_responses').insert({
+      category,subcategory,title,body:rBody,channel,language,
+      role_access:roleAccess||['hod','sales_manager','bdm','bde'],
+      created_by:createdBy||null,
+    }).select().single();
+    return ok(res,{success:true,response:data});
+  }
+
+  if (action === 'increment_response_usage') {
+    const{responseId}=body;
+    if(!responseId)return ok(res,{error:'responseId required'});
+    await db().from('quick_responses').update({usage_count:db().rpc('increment',{row_id:responseId})}).eq('id',responseId).then(()=>{}).catch(()=>{});
+    return ok(res,{success:true});
+  }
+
+  if (action === 'get_showcase_items') {
+    const{industry,itemType,featured}=body;
+    let q=db().from('showcase_items').select('*');
+    if(industry)q=q.eq('industry',industry);
+    if(itemType)q=q.eq('item_type',itemType);
+    if(featured)q=q.eq('is_featured',true);
+    const{data}=await q.order('view_count',{ascending:false}).limit(20);
+    return ok(res,{items:data||[]});
+  }
+
+  if (action === 'get_team_performance') {
+    const{period='week'}=body;
+    const since=period==='week'?new Date(Date.now()-7*864e5):period==='month'?new Date(Date.now()-30*864e5):new Date(Date.now()-864e5);
+    const{data:staff}=await db().from('staff_members').select('id,name,role').eq('is_active',true);
+    if(!staff?.length)return ok(res,{performance:[]});
+    const perf=await Promise.all(staff.map(async(s:any)=>{
+      const[aR,actR]=await Promise.allSettled([
+        db().from('lead_assignments').select('stage,deal_value,updated_at').eq('assigned_to',s.id),
+        db().from('staff_activity').select('activity_type').eq('staff_id',s.id).gte('created_at',since.toISOString()),
+      ]);
+      const assigns=aR.status==='fulfilled'?aR.value.data||[]:[];
+      const acts=actR.status==='fulfilled'?actR.value.data||[]:[];
+      const won=assigns.filter((a:any)=>a.stage==='won').length;
+      return{
+        staff_id:s.id,name:s.name,role:s.role,
+        leads_handled:assigns.length,leads_won:won,
+        conversion_rate:assigns.length?Math.round(won/assigns.length*100):0,
+        pipeline_value:assigns.reduce((sum:number,a:any)=>sum+(a.deal_value||0),0),
+        activity_count:acts.length,
+        activities_by_type:acts.reduce((acc:any,a:any)=>{acc[a.activity_type]=(acc[a.activity_type]||0)+1;return acc;},{}),
+      };
+    }));
+    return ok(res,{performance:perf});
+  }
+
+  if (action === 'log_staff_activity') {
+    const{staffId,activityType,description,metadata}=body;
+    if(!staffId||!activityType)return ok(res,{error:'staffId and activityType required'});
+    await db().from('staff_activity').insert({staff_id:staffId,activity_type:activityType,description,metadata:metadata||{}});
+    return ok(res,{success:true});
+  }
+
 
   if (!card) return ok(res, { error: "Missing card" });
 
