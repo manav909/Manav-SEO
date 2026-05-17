@@ -1,5 +1,6 @@
 import React,{useState,useEffect} from "react";
 import {useParams} from "react-router-dom";
+import AnimatedBg from "@/components/AnimatedBg";
 export default function PresentationView(){
   const{token}=useParams<{token:string}>();
   const[data,setData]=useState<any>(null);
@@ -10,8 +11,32 @@ export default function PresentationView(){
       body:JSON.stringify({action:"get_proposal_by_token",token})})
       .then(r=>r.json()).then(d=>{setData(d);setLoading(false);}).catch(()=>setLoading(false));
   },[token]);
-  if(loading)return<div style={{minHeight:"100vh",background:"#070710",display:"flex",alignItems:"center",justifyContent:"center",color:"#4b4b6a",fontFamily:"system-ui"}}>Loading...</div>;
+  if(loading)return(
+    <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",display:"flex",
+      alignItems:"center",justifyContent:"center" as const,color:"var(--text-muted)",fontFamily:"var(--font-display)"}}>
+      <AnimatedBg/>
+      <div style={{position:"relative",zIndex:1,textAlign:"center" as const}}>
+        <div style={{width:36,height:36,border:"2.5px solid var(--accent)",borderTopColor:"transparent",
+          borderRadius:"50%",animation:"spin 1s linear infinite",margin:"0 auto 16px"}}/>
+        <div style={{fontSize:13}}>Loading presentation...</div>
+      </div>
+    </div>
+  );
   const html=data?.presentation?.html_content||data?.proposal?.html_content;
-  if(!html)return<div style={{minHeight:"100vh",background:"#070710",display:"flex",alignItems:"center",justifyContent:"center",color:"#4b4b6a",fontFamily:"system-ui"}}>Not found.</div>;
-  return<div style={{minHeight:"100vh",background:"#070710",fontFamily:"-apple-system,system-ui,sans-serif"}}><div style={{maxWidth:960,margin:"0 auto",padding:"32px 20px"}} dangerouslySetInnerHTML={{__html:html}}/></div>;
+  if(!html)return(
+    <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",display:"flex",
+      alignItems:"center",justifyContent:"center" as const,color:"var(--text-muted)",fontFamily:"var(--font-display)"}}>
+      <AnimatedBg/>
+      <div style={{position:"relative",zIndex:1,textAlign:"center" as const}}>
+        <div style={{fontSize:32,marginBottom:12}}>🔗</div>
+        <div style={{fontSize:15,fontWeight:600,color:"var(--text)",marginBottom:6}}>Presentation not found</div>
+        <div style={{fontSize:13}}>This link may have expired or is invalid.</div>
+      </div>
+    </div>
+  );
+  return(
+    <div style={{minHeight:"100vh",background:"var(--bg)",fontFamily:"var(--font-display)",color:"var(--text)"}}>
+      <div style={{maxWidth:960,margin:"0 auto",padding:"32px 20px"}} dangerouslySetInnerHTML={{__html:html}}/>
+    </div>
+  );
 }

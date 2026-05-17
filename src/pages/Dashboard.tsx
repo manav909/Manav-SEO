@@ -640,6 +640,7 @@ export default function Dashboard() {
   /* Loading */
   if (authLoading || loading) return (
     <div className="min-h-screen bg-background flex items-center justify-center">
+      <AnimatedBg/>
       <div className="flex flex-col items-center gap-3">
         <div className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
         <p className="text-sm text-muted-foreground font-mono">Loading your growth portal...</p>

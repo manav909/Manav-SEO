@@ -1,6 +1,8 @@
+import AnimatedBg from "@/components/AnimatedBg";
+import ThemeToggle from "@/components/ThemeToggle";
 import React,{useState,useEffect,useRef} from "react";
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
-const STAGE_C:any={new:"#4b4b6a",contacted:"#6366f1",demo_sent:"#8b5cf6",proposal_sent:"#a78bfa",negotiating:"#f59e0b",won:"#10b981",lost:"#ef4444",nurture:"#06b6d4"};
+const STAGE_C:any={new:"var(--text-muted)",contacted:"#6366f1",demo_sent:"#8b5cf6",proposal_sent:"#a78bfa",negotiating:"#f59e0b",won:"#10b981",lost:"#ef4444",nurture:"#06b6d4"};
 const MOOD_C=(s:number)=>s>=70?"#10b981":s>=50?"#6366f1":s>=30?"#f59e0b":"#ef4444";
 export default function BdePanel(){
   const[tab,setTab]=useState<"fiverr"|"leads"|"tools"|"responses"|"showcase">("fiverr");
@@ -51,30 +53,31 @@ export default function BdePanel(){
   const cats=["all",...new Set(quickResps.map((r:any)=>r.category))];
   const filteredResps=respCat==="all"?quickResps:quickResps.filter((r:any)=>r.category===respCat);
   const S:any={
-    root:{minHeight:"100vh",background:"#06060e",color:"#e8e8f8",fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif"},
-    hdr:{background:"#09091a",borderBottom:"0.5px solid #1a1a3a",height:52,padding:"0 20px",
+    root:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"-apple-system,var(--font-display)"},
+    hdr:{background:"var(--bg-deep)",borderBottom:"0.5px solid #1a1a3a",height:52,padding:"0 20px",
       position:"sticky" as const,top:0,zIndex:100,display:"flex",alignItems:"center",gap:14},
-    tabs:{display:"flex",background:"#09091a",borderBottom:"0.5px solid #1a1a3a",padding:"0 20px",overflowX:"auto" as const},
+    tabs:{display:"flex",background:"var(--bg-deep)",borderBottom:"0.5px solid #1a1a3a",padding:"0 20px",overflowX:"auto" as const},
     tab:{padding:"9px 13px",fontSize:12,fontWeight:500,cursor:"pointer",border:"none",
-      background:"transparent",color:"#8b8ba8",borderBottom:"2px solid transparent",whiteSpace:"nowrap" as const},
+      background:"transparent",color:"var(--text-sub)",borderBottom:"2px solid transparent",whiteSpace:"nowrap" as const},
     tabA:{color:"#10b981",borderBottom:"2px solid #10b981"},
     body:{padding:"14px 18px"},
-    card:{background:"#0d0d1e",border:"0.5px solid #1a1a3a",borderRadius:11,padding:14,marginBottom:10},
-    textarea:{width:"100%",background:"#070710",border:"0.5px solid #1a1a3a",borderRadius:9,
-      color:"#e8e8f8",padding:"11px 13px",fontSize:13,lineHeight:1.6,
+    card:{background:"var(--bg-card)",border:"0.5px solid #1a1a3a",borderRadius:11,padding:14,marginBottom:10},
+    textarea:{width:"100%",background:"var(--bg)",border:"0.5px solid #1a1a3a",borderRadius:9,
+      color:"var(--text)",padding:"11px 13px",fontSize:13,lineHeight:1.6,
       resize:"vertical" as const,outline:"none",minHeight:120,boxSizing:"border-box" as const},
-    inp:{background:"#070710",border:"0.5px solid #1a1a3a",borderRadius:8,color:"#e8e8f8",padding:"8px 12px",fontSize:12,outline:"none"},
+    inp:{background:"var(--bg)",border:"0.5px solid #1a1a3a",borderRadius:8,color:"var(--text)",padding:"8px 12px",fontSize:12,outline:"none"},
     btn:(c:string="#10b981")=>({background:`${c}18`,border:`0.5px solid ${c}40`,borderRadius:8,color:c,padding:"7px 14px",fontSize:11,fontWeight:600,cursor:"pointer"}),
     badge:(c:string)=>({fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20,background:`${c}18`,color:c}),
-    sec:{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"#4b4b6a",marginBottom:8,marginTop:10},
+    sec:{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"var(--text-muted)",marginBottom:8,marginTop:10},
   };
   return(
-    <div style={S.root}>
+    <div style={S.root}
+      <AnimatedBg/>>
       <div style={S.hdr}>
         <div style={{width:8,height:8,borderRadius:"50%",background:"#10b981",boxShadow:"0 0 8px #10b981"}}/>
         <span style={{fontSize:14,fontWeight:700}}>💼 BDE Panel</span>
         <span style={S.badge("#10b981")}>BUSINESS DEVELOPMENT</span>
-        <span style={{fontSize:10,color:"#4b4b6a",marginLeft:"auto"}}>{assignments.length} assigned leads</span>
+        <span style={{fontSize:10,color:"var(--text-muted)",marginLeft:"auto"}}>{assignments.length} assigned leads</span>
       </div>
       <div style={S.tabs}>
         {([["fiverr","🟢 Fiverr Analyser"],["tools","⚡ Instant Tools"],["responses","💬 Quick Responses"],["leads","📋 My Leads"],["showcase","🏆 Showcase"]] as [typeof tab,string][]).map(([id,l])=>(
@@ -85,7 +88,7 @@ export default function BdePanel(){
 
         {tab==="fiverr"&&(
           <div>
-            <div style={{marginBottom:10,color:"#8b8ba8",fontSize:12}}>
+            <div style={{marginBottom:10,color:"var(--text-sub)",fontSize:12}}>
               Paste any Fiverr conversation — line by line analysis, mood detection, instant response generation. Any language.
             </div>
             <div style={S.card}>
@@ -98,7 +101,7 @@ export default function BdePanel(){
                 {analysis&&<button style={S.btn("#a78bfa")} onClick={genResponses} disabled={genResp}>
                   {genResp?"Generating...":"✍️ Generate Responses"}
                 </button>}
-                {convText&&<button style={S.btn("#4b4b6a")} onClick={()=>{setConv("");setAnalysis(null);setParsed([]);setResponses(null);}}>Clear</button>}
+                {convText&&<button style={S.btn("var(--text-muted)")} onClick={()=>{setConv("");setAnalysis(null);setParsed([]);setResponses(null);}}>Clear</button>}
               </div>
             </div>
 
@@ -107,13 +110,13 @@ export default function BdePanel(){
                 <div style={S.card}>
                   <div style={S.sec}>Conversation Intelligence</div>
                   <div style={{display:"flex",gap:10,marginBottom:10}}>
-                    <div style={{background:"#070710",borderRadius:8,padding:"8px 12px",textAlign:"center" as const,flex:1}}>
+                    <div style={{background:"var(--bg)",borderRadius:8,padding:"8px 12px",textAlign:"center" as const,flex:1}}>
                       <div style={{fontSize:20,fontWeight:700,color:MOOD_C(analysis.fiverr_specific?.order_probability||50),fontFamily:"monospace"}}>{analysis.fiverr_specific?.order_probability||0}%</div>
-                      <div style={{fontSize:9,color:"#4b4b6a"}}>ORDER PROBABILITY</div>
+                      <div style={{fontSize:9,color:"var(--text-muted)"}}>ORDER PROBABILITY</div>
                     </div>
-                    <div style={{background:"#070710",borderRadius:8,padding:"8px 12px",flex:2}}>
-                      <div style={{fontSize:11,fontWeight:600,color:"#f0f0ff",marginBottom:3}}>{analysis.conversation_type?.replace(/_/g," ").toUpperCase()}</div>
-                      <div style={{fontSize:10,color:"#8b8ba8"}}>{analysis.urgency} urgency · {analysis.client_level} buyer</div>
+                    <div style={{background:"var(--bg)",borderRadius:8,padding:"8px 12px",flex:2}}>
+                      <div style={{fontSize:11,fontWeight:600,color:"var(--text)",marginBottom:3}}>{analysis.conversation_type?.replace(/_/g," ").toUpperCase()}</div>
+                      <div style={{fontSize:10,color:"var(--text-sub)"}}>{analysis.urgency} urgency · {analysis.client_level} buyer</div>
                     </div>
                   </div>
                   <div style={{padding:"8px 10px",background:"rgba(16,185,129,.05)",borderRadius:8,border:"0.5px solid rgba(16,185,129,.2)",marginBottom:8}}>
@@ -181,7 +184,7 @@ export default function BdePanel(){
                             {(selLine===i||line.intent)&&isClient&&(
                               <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap" as const}}>
                                 {line.intent&&<span style={{fontSize:9,color:"#f59e0b"}}>Intent: {line.intent}</span>}
-                                {line.emotion&&<span style={{fontSize:9,color:line.emotion==="frustrated"?"#f87171":line.emotion==="excited"?"#10b981":"#8b8ba8"}}>
+                                {line.emotion&&<span style={{fontSize:9,color:line.emotion==="frustrated"?"#f87171":line.emotion==="excited"?"#10b981":"var(--text-sub)"}}>
                                   Emotion: {line.emotion}
                                 </span>}
                                 {line.suggested_reply&&selLine===i&&(
@@ -206,12 +209,12 @@ export default function BdePanel(){
 
             {responses?.responses?.length>0&&(
               <div>
-                <div style={{fontSize:12,fontWeight:600,color:"#f0f0ff",marginBottom:10}}>✍️ Response Strategies</div>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--text)",marginBottom:10}}>✍️ Response Strategies</div>
                 {responses.responses.map((r:any,idx:number)=>(
-                  <div key={idx} style={{...S.card,borderColor:idx===0?"rgba(16,185,129,.3)":"#1a1a3a"}}>
+                  <div key={idx} style={{...S.card,borderColor:idx===0?"rgba(16,185,129,.3)":"var(--border)"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                       <div>
-                        <div style={{fontSize:12,fontWeight:700,color:"#f0f0ff"}}>{r.strategy}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:"var(--text)"}}>{r.strategy}</div>
                         <div style={{display:"flex",gap:6,marginTop:3}}>
                           <span style={S.badge("#6366f1")}>{r.tone}</span>
                           {r.conversion_probability&&<span style={S.badge(r.conversion_probability>=60?"#10b981":"#f59e0b")}>{r.conversion_probability}% conv.</span>}
@@ -233,7 +236,7 @@ export default function BdePanel(){
           <div>
             <div style={S.card}>
               <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>⚡ Instant Site Audit for Leads</div>
-              <div style={{color:"#8b8ba8",fontSize:12,marginBottom:12}}>
+              <div style={{color:"var(--text-sub)",fontSize:12,marginBottom:12}}>
                 Enter a lead's website URL. Get a technical audit message ready to paste into Fiverr or any chat — shows technical expertise instantly.
               </div>
               <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -263,7 +266,7 @@ export default function BdePanel(){
                   </button>
                 </div>
                 <div style={{fontSize:12,color:"#d0d0e8",lineHeight:1.7,marginBottom:12,whiteSpace:"pre-wrap" as const,
-                  padding:"12px",background:"#070710",borderRadius:8,border:"0.5px solid rgba(16,185,129,.2)"}}>
+                  padding:"12px",background:"var(--bg)",borderRadius:8,border:"0.5px solid rgba(16,185,129,.2)"}}>
                   {auditResult.showcase_message}
                 </div>
                 {auditResult.issues?.length>0&&(
@@ -273,8 +276,8 @@ export default function BdePanel(){
                       <div key={i} style={{display:"flex",gap:8,padding:"6px 0",borderBottom:"0.5px solid #111128"}}>
                         <span style={S.badge(issue.impact==="HIGH"?"#ef4444":"#f59e0b")}>{issue.impact}</span>
                         <div>
-                          <div style={{fontSize:11,fontWeight:600,color:"#f0f0ff"}}>{issue.issue}</div>
-                          <div style={{fontSize:10,color:"#8b8ba8"}}>{issue.fix}</div>
+                          <div style={{fontSize:11,fontWeight:600,color:"var(--text)"}}>{issue.issue}</div>
+                          <div style={{fontSize:10,color:"var(--text-sub)"}}>{issue.fix}</div>
                         </div>
                       </div>
                     ))}
@@ -291,11 +294,11 @@ export default function BdePanel(){
                   {label:"Content Brief",icon:"📝",action:"generate_content_brief",desc:"Keyword-targeted content plan"},
                   {label:"Morning Brief",icon:"🌅",action:"get_morning_brief",desc:"Empire status & priorities"},
                 ].map(tool=>(
-                  <div key={tool.action} style={{background:"#070710",border:"0.5px solid #1a1a3a",borderRadius:9,
+                  <div key={tool.action} style={{background:"var(--bg)",border:"0.5px solid #1a1a3a",borderRadius:9,
                     padding:"12px",textAlign:"center" as const}}>
                     <div style={{fontSize:20,marginBottom:6}}>{tool.icon}</div>
-                    <div style={{fontSize:11,fontWeight:600,color:"#f0f0ff",marginBottom:3}}>{tool.label}</div>
-                    <div style={{fontSize:10,color:"#4b4b6a",marginBottom:8}}>{tool.desc}</div>
+                    <div style={{fontSize:11,fontWeight:600,color:"var(--text)",marginBottom:3}}>{tool.label}</div>
+                    <div style={{fontSize:10,color:"var(--text-muted)",marginBottom:8}}>{tool.desc}</div>
                     <a href={`/${tool.action.replace(/_/g,"-")}`} style={{...S.btn(),fontSize:9,padding:"4px 8px",textDecoration:"none",display:"inline-block"}}>Open</a>
                   </div>
                 ))}
@@ -306,25 +309,25 @@ export default function BdePanel(){
 
         {tab==="responses"&&(
           <div>
-            <div style={{marginBottom:10,color:"#8b8ba8",fontSize:12}}>
+            <div style={{marginBottom:10,color:"var(--text-sub)",fontSize:12}}>
               Pre-built responses for every Fiverr scenario. Click to copy instantly.
             </div>
             <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap" as const}}>
               {cats.map(c=>(
-                <button key={c} style={S.btn(respCat===c?"#10b981":"#4b4b6a")} onClick={()=>setRespCat(c)}>
+                <button key={c} style={S.btn(respCat===c?"#10b981":"var(--text-muted)")} onClick={()=>setRespCat(c)}>
                   {c.charAt(0).toUpperCase()+c.slice(1)}
                 </button>
               ))}
             </div>
             {filteredResps.map((r:any)=>(
-              <div key={r.id} style={{...S.card,borderColor:copied===r.id?"rgba(16,185,129,.3)":"#1a1a3a"}}>
+              <div key={r.id} style={{...S.card,borderColor:copied===r.id?"rgba(16,185,129,.3)":"var(--border)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                   <div>
-                    <div style={{fontSize:12,fontWeight:700,color:"#f0f0ff"}}>{r.title}</div>
+                    <div style={{fontSize:12,fontWeight:700,color:"var(--text)"}}>{r.title}</div>
                     <div style={{display:"flex",gap:6,marginTop:3}}>
                       <span style={S.badge("#6366f1")}>{r.category}</span>
-                      <span style={{fontSize:9,color:"#4b4b6a"}}>{r.usage_count} uses</span>
-                      <span style={{fontSize:9,color:"#4b4b6a"}}>{r.effectiveness}% effective</span>
+                      <span style={{fontSize:9,color:"var(--text-muted)"}}>{r.usage_count} uses</span>
+                      <span style={{fontSize:9,color:"var(--text-muted)"}}>{r.effectiveness}% effective</span>
                     </div>
                   </div>
                   <button style={S.btn(copied===r.id?"#10b981":"#a78bfa")}
@@ -335,25 +338,25 @@ export default function BdePanel(){
                 <div style={{fontSize:12,color:"#d0d0e8",lineHeight:1.6,whiteSpace:"pre-wrap" as const}}>{r.body}</div>
               </div>
             ))}
-            {!filteredResps.length&&<div style={{color:"#4b4b6a",textAlign:"center",padding:30}}>No responses in this category yet.</div>}
+            {!filteredResps.length&&<div style={{color:"var(--text-muted)",textAlign:"center",padding:30}}>No responses in this category yet.</div>}
           </div>
         )}
 
         {tab==="leads"&&(
           <div>
             <div style={{marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div style={{fontSize:12,color:"#8b8ba8"}}>{assignments.length} leads assigned to you</div>
+              <div style={{fontSize:12,color:"var(--text-sub)"}}>{assignments.length} leads assigned to you</div>
             </div>
             {assignments.map((a:any)=>(
-              <div key={a.id} style={{...S.card,borderLeft:`3px solid ${STAGE_C[a.stage]||"#1a1a3a"}`}}>
+              <div key={a.id} style={{...S.card,borderLeft:`3px solid ${STAGE_C[a.stage]||"var(--border)"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                   <div>
-                    <div style={{fontSize:13,fontWeight:700,color:"#f0f0ff"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>
                       {a.prospects?.company||a.prospects?.name||a.prospects?.url||"Lead"}
                     </div>
                     <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap" as const}}>
-                      <span style={S.badge(STAGE_C[a.stage]||"#4b4b6a")}>{a.stage?.replace(/_/g," ").toUpperCase()}</span>
-                      <span style={S.badge(a.priority==="hot"?"#ef4444":a.priority==="high"?"#f59e0b":"#4b4b6a")}>{a.priority?.toUpperCase()}</span>
+                      <span style={S.badge(STAGE_C[a.stage]||"var(--text-muted)")}>{a.stage?.replace(/_/g," ").toUpperCase()}</span>
+                      <span style={S.badge(a.priority==="hot"?"#ef4444":a.priority==="high"?"#f59e0b":"var(--text-muted)")}>{a.priority?.toUpperCase()}</span>
                       {a.prospects?.url&&<span style={{fontSize:10,color:"#6366f1"}}>{a.prospects.url}</span>}
                     </div>
                   </div>
@@ -365,26 +368,26 @@ export default function BdePanel(){
                     )}
                   </div>
                 </div>
-                {a.notes&&<div style={{fontSize:11,color:"#8b8ba8",marginBottom:8}}>{a.notes}</div>}
+                {a.notes&&<div style={{fontSize:11,color:"var(--text-sub)",marginBottom:8}}>{a.notes}</div>}
                 {a.conversion_probability&&(
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                    <div style={{height:4,flex:1,background:"#1a1a3a",borderRadius:2,overflow:"hidden"}}>
+                    <div style={{height:4,flex:1,background:"var(--border)",borderRadius:2,overflow:"hidden"}}>
                       <div style={{height:"100%",width:`${a.conversion_probability}%`,
                         background:a.conversion_probability>=60?"#10b981":a.conversion_probability>=40?"#f59e0b":"#ef4444",
                         borderRadius:2,transition:"width .3s"}}/>
                     </div>
-                    <span style={{fontSize:10,color:"#4b4b6a",flexShrink:0}}>{a.conversion_probability}% likely</span>
+                    <span style={{fontSize:10,color:"var(--text-muted)",flexShrink:0}}>{a.conversion_probability}% likely</span>
                   </div>
                 )}
               </div>
             ))}
-            {!assignments.length&&<div style={{color:"#4b4b6a",textAlign:"center",padding:40}}>No leads assigned yet. Contact your manager.</div>}
+            {!assignments.length&&<div style={{color:"var(--text-muted)",textAlign:"center",padding:40}}>No leads assigned yet. Contact your manager.</div>}
           </div>
         )}
 
         {tab==="showcase"&&(
           <div>
-            <div style={{marginBottom:10,color:"#8b8ba8",fontSize:12}}>
+            <div style={{marginBottom:10,color:"var(--text-sub)",fontSize:12}}>
               Ready-to-share showcase materials. One click to copy for any Fiverr conversation.
             </div>
             <div style={{...S.card,borderColor:"rgba(99,102,241,.2)"}}>
@@ -397,18 +400,18 @@ export default function BdePanel(){
                   {type:"walkthrough",label:"🗺 Process Walkthrough",desc:"How you work, step by step"},
                 ].map(item=>(
                   <button key={item.type} onClick={()=>window.location.href="/client-comms"}
-                    style={{background:"#070710",border:"0.5px solid #1a1a3a",borderRadius:9,padding:"12px",
+                    style={{background:"var(--bg)",border:"0.5px solid #1a1a3a",borderRadius:9,padding:"12px",
                       textAlign:"left" as const,cursor:"pointer"}}>
-                    <div style={{fontSize:13,color:"#f0f0ff",fontWeight:600,marginBottom:3}}>{item.label}</div>
-                    <div style={{fontSize:11,color:"#4b4b6a"}}>{item.desc}</div>
+                    <div style={{fontSize:13,color:"var(--text)",fontWeight:600,marginBottom:3}}>{item.label}</div>
+                    <div style={{fontSize:11,color:"var(--text-muted)"}}>{item.desc}</div>
                     <div style={{fontSize:10,color:"#6366f1",marginTop:6}}>→ Open in Comms →</div>
                   </button>
                 ))}
               </div>
             </div>
             <div style={S.card}>
-              <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:"#f0f0ff"}}>📊 Technical Proof Points</div>
-              <div style={{color:"#8b8ba8",fontSize:11,marginBottom:10}}>Copy these technical credibility statements for Fiverr conversations</div>
+              <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:"var(--text)"}}>📊 Technical Proof Points</div>
+              <div style={{color:"var(--text-sub)",fontSize:11,marginBottom:10}}>Copy these technical credibility statements for Fiverr conversations</div>
               {[
                 {text:"✅ We use a proprietary AI Brain system that learns from every client — tactics proven to work for one client are applied intelligently to your site.",cat:"credibility"},
                 {text:"✅ Every change we make is verified with data before we move on. We don't assume — we measure.",cat:"process"},
@@ -417,7 +420,7 @@ export default function BdePanel(){
                 {text:"✅ Full transparent reporting — you see exactly what tasks were done, what results were measured, what was learned.",cat:"transparency"},
               ].map((item,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
-                  padding:"8px 10px",marginBottom:6,background:"#070710",borderRadius:8,border:"0.5px solid rgba(99,102,241,.12)"}}>
+                  padding:"8px 10px",marginBottom:6,background:"var(--bg)",borderRadius:8,border:"0.5px solid rgba(99,102,241,.12)"}}>
                   <div style={{fontSize:12,color:"#d0d0e8",flex:1,lineHeight:1.5,marginRight:10}}>{item.text}</div>
                   <button style={S.btn(copied===`proof_${i}`?"#10b981":"#6366f1")}
                     onClick={()=>copyText(item.text,`proof_${i}`)}>

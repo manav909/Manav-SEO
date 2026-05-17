@@ -312,6 +312,7 @@ export default function Audit() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <AnimatedBg/>
       <PortalNav
         companyName={client?.company ? `${client.company} — SEO Audit` : 'SEO Audit Tool'}
         projects={projects}

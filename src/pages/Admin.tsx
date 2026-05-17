@@ -519,6 +519,7 @@ export default function Admin() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <AnimatedBg/>
 
       {/* Header */}
       <div className="border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">

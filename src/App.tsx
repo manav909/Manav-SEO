@@ -3,6 +3,7 @@ import { Toaster }           from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider }   from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import {NavProvider} from "@/contexts/NavContext";
 import SmartTopBar from "@/components/SmartTopBar";
 import SmartSidebar from "@/components/SmartSidebar";
@@ -90,7 +91,7 @@ const AppRoutes = () => {
   if (!authChecked && loading) return <Spinner label="Loading SEO Season..." />;
   return (
     <>
-      <TourProvider><NavProvider>
+      <ThemeProvider><TourProvider><NavProvider>
         <GlobalEffects />
         <SmartTopBar />
         <SmartSidebar />
@@ -142,7 +143,7 @@ const AppRoutes = () => {
         <FloatingDock />
         <TourOverlay />
         <AIConcierge />
-      </NavProvider></TourProvider>
+      </NavProvider></TourProvider></ThemeProvider>
 
       {/* Manav Brain — only for approved/signed-in users. Guests have ManavBrainGuest on Index. */}
       {isApproved && <ManavBrainAssistant />}

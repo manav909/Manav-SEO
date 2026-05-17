@@ -1,8 +1,10 @@
+import AnimatedBg from "@/components/AnimatedBg";
+import ThemeToggle from "@/components/ThemeToggle";
 import React,{useState,useEffect,useCallback} from "react";
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
 const ROLES:any={hod:{c:"#dc2626",l:"HOD"},sales_manager:{c:"#f59e0b",l:"Sales Mgr"},bdm:{c:"#6366f1",l:"BDM"},bde:{c:"#10b981",l:"BDE"},pm:{c:"#06b6d4",l:"PM"}};
 const STAGES=["new","contacted","demo_sent","proposal_sent","negotiating","won","lost","nurture"];
-const STAGE_C:any={new:"#4b4b6a",contacted:"#6366f1",demo_sent:"#8b5cf6",proposal_sent:"#a78bfa",negotiating:"#f59e0b",won:"#10b981",lost:"#ef4444",nurture:"#06b6d4"};
+const STAGE_C:any={new:"var(--text-muted)",contacted:"#6366f1",demo_sent:"#8b5cf6",proposal_sent:"#a78bfa",negotiating:"#f59e0b",won:"#10b981",lost:"#ef4444",nurture:"#06b6d4"};
 export default function StaffCommand(){
   const[tab,setTab]=useState<"overview"|"pipeline"|"team"|"staff">("overview");
   const[staff,setStaff]=useState<any[]>([]);
@@ -40,22 +42,22 @@ export default function StaffCommand(){
     setEditPerms(null); loadAll();
   }
   const S:any={
-    root:{minHeight:"100vh",background:"#06060e",color:"#e8e8f8",fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif"},
-    hdr:{background:"#09091a",borderBottom:"0.5px solid #1a1a3a",height:52,padding:"0 20px",
+    root:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"-apple-system,var(--font-display)"},
+    hdr:{background:"var(--bg-deep)",borderBottom:"0.5px solid #1a1a3a",height:52,padding:"0 20px",
       position:"sticky" as const,top:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"space-between"},
-    tabs:{display:"flex",background:"#09091a",borderBottom:"0.5px solid #1a1a3a",padding:"0 20px"},
+    tabs:{display:"flex",background:"var(--bg-deep)",borderBottom:"0.5px solid #1a1a3a",padding:"0 20px"},
     tab:{padding:"9px 14px",fontSize:12,fontWeight:500,cursor:"pointer",border:"none",
-      background:"transparent",color:"#8b8ba8",borderBottom:"2px solid transparent"},
+      background:"transparent",color:"var(--text-sub)",borderBottom:"2px solid transparent"},
     tabA:{color:"#a78bfa",borderBottom:"2px solid #a78bfa"},
     body:{padding:"16px 20px"},
-    card:{background:"#0d0d1e",border:"0.5px solid #1a1a3a",borderRadius:12,padding:16,marginBottom:10},
+    card:{background:"var(--bg-card)",border:"0.5px solid #1a1a3a",borderRadius:12,padding:16,marginBottom:10},
     badge:(c:string)=>({fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:20,background:`${c}18`,color:c,border:`0.5px solid ${c}30`}),
-    inp:{background:"#070710",border:"0.5px solid #1a1a3a",borderRadius:8,color:"#e8e8f8",padding:"8px 12px",fontSize:12,outline:"none"},
-    sel:{background:"#0d0d1e",border:"0.5px solid #1a1a3a",borderRadius:8,color:"#e8e8f8",padding:"8px 12px",fontSize:12},
+    inp:{background:"var(--bg)",border:"0.5px solid #1a1a3a",borderRadius:8,color:"var(--text)",padding:"8px 12px",fontSize:12,outline:"none"},
+    sel:{background:"var(--bg-card)",border:"0.5px solid #1a1a3a",borderRadius:8,color:"var(--text)",padding:"8px 12px",fontSize:12},
     btn:(c:string="#6366f1")=>({background:`${c}18`,border:`0.5px solid ${c}40`,borderRadius:8,color:c,padding:"7px 14px",fontSize:11,fontWeight:600,cursor:"pointer"}),
-    sec:{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"#4b4b6a",marginBottom:8,marginTop:12},
+    sec:{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"var(--text-muted)",marginBottom:8,marginTop:12},
   };
-  if(loading)return<div style={{...S.root,display:"flex",alignItems:"center",justifyContent:"center",color:"#4b4b6a"}}>Loading command center...</div>;
+  if(loading)return<div style={{...S.root,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading command center...</div>;
   const totalPipelineValue=assignments.reduce((s:number,a:any)=>s+(a.deal_value||0),0);
   const hotLeads=assignments.filter((a:any)=>a.priority==="hot");
   const stalling=assignments.filter((a:any)=>{
@@ -63,7 +65,8 @@ export default function StaffCommand(){
     return lc&&Date.now()-lc.getTime()>3*864e5&&!["won","lost"].includes(a.stage);
   });
   return(
-    <div style={S.root}>
+    <div style={S.root}
+      <AnimatedBg/>>
       <div style={S.hdr}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:8,height:8,borderRadius:"50%",background:"#dc2626",boxShadow:"0 0 8px #dc2626"}}/>
@@ -92,7 +95,7 @@ export default function StaffCommand(){
               ].map(t=>(
                 <div key={t.l} style={S.card}>
                   <div style={{fontSize:22,fontWeight:700,color:t.c,fontFamily:"monospace",lineHeight:1,marginBottom:3}}>{t.v}</div>
-                  <div style={{fontSize:9,color:"#4b4b6a",textTransform:"uppercase",letterSpacing:.8}}>{t.l}</div>
+                  <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:.8}}>{t.l}</div>
                 </div>
               ))}
             </div>
@@ -103,12 +106,12 @@ export default function StaffCommand(){
                   <div key={a.id} style={{display:"flex",gap:8,padding:"7px 0",borderBottom:"0.5px solid #111128",alignItems:"center"}}>
                     <div style={{flex:1}}>
                       <div style={{fontSize:12,fontWeight:600}}>{a.prospects?.company||a.prospects?.name||a.prospects?.url||"Lead"}</div>
-                      <div style={{fontSize:10,color:"#4b4b6a"}}>{a.staff_members?.name||"Unassigned"} · {a.source}</div>
+                      <div style={{fontSize:10,color:"var(--text-muted)"}}>{a.staff_members?.name||"Unassigned"} · {a.source}</div>
                     </div>
-                    <span style={S.badge(STAGE_C[a.stage]||"#4b4b6a")}>{a.stage}</span>
+                    <span style={S.badge(STAGE_C[a.stage]||"var(--text-muted)")}>{a.stage}</span>
                   </div>
                 ))}
-                {!hotLeads.length&&<div style={{color:"#4b4b6a",fontSize:12}}>No hot leads currently.</div>}
+                {!hotLeads.length&&<div style={{color:"var(--text-muted)",fontSize:12}}>No hot leads currently.</div>}
               </div>
               <div style={S.card}>
                 <div style={S.sec}>⚠️ Stalling (no contact 3+ days)</div>
@@ -121,16 +124,16 @@ export default function StaffCommand(){
                     <span style={S.badge("#f59e0b")}>{a.stage}</span>
                   </div>
                 ))}
-                {!stalling.length&&<div style={{color:"#4b4b6a",fontSize:12}}>No stalling leads. ✓</div>}
+                {!stalling.length&&<div style={{color:"var(--text-muted)",fontSize:12}}>No stalling leads. ✓</div>}
               </div>
             </div>
             <div style={S.card}>
               <div style={S.sec}>Pipeline by Stage</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
                 {STAGES.map(s=>(
-                  <div key={s} style={{background:"#070710",borderRadius:8,padding:"8px 12px",minWidth:80,textAlign:"center" as const}}>
+                  <div key={s} style={{background:"var(--bg)",borderRadius:8,padding:"8px 12px",minWidth:80,textAlign:"center" as const}}>
                     <div style={{fontSize:16,fontWeight:700,color:STAGE_C[s],fontFamily:"monospace"}}>{pipeline.by_stage?.[s]||0}</div>
-                    <div style={{fontSize:9,color:"#4b4b6a",textTransform:"capitalize"}}>{s.replace(/_/g," ")}</div>
+                    <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"capitalize"}}>{s.replace(/_/g," ")}</div>
                   </div>
                 ))}
               </div>
@@ -140,31 +143,31 @@ export default function StaffCommand(){
 
         {tab==="pipeline"&&(
           <div>
-            <div style={{fontSize:12,color:"#8b8ba8",marginBottom:12}}>{assignments.length} total leads across all BDEs</div>
+            <div style={{fontSize:12,color:"var(--text-sub)",marginBottom:12}}>{assignments.length} total leads across all BDEs</div>
             {assignments.map((a:any)=>(
-              <div key={a.id} style={{...S.card,borderLeft:`3px solid ${STAGE_C[a.stage]||"#1a1a3a"}`}}>
+              <div key={a.id} style={{...S.card,borderLeft:`3px solid ${STAGE_C[a.stage]||"var(--border)"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div>
-                    <div style={{fontSize:13,fontWeight:700,color:"#f0f0ff"}}>{a.prospects?.company||a.prospects?.name||a.prospects?.url||"Lead"}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{a.prospects?.company||a.prospects?.name||a.prospects?.url||"Lead"}</div>
                     <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap" as const}}>
-                      <span style={S.badge(STAGE_C[a.stage]||"#4b4b6a")}>{a.stage?.replace(/_/g," ").toUpperCase()}</span>
-                      <span style={S.badge(a.priority==="hot"?"#ef4444":a.priority==="high"?"#f59e0b":"#4b4b6a")}>{a.priority?.toUpperCase()}</span>
+                      <span style={S.badge(STAGE_C[a.stage]||"var(--text-muted)")}>{a.stage?.replace(/_/g," ").toUpperCase()}</span>
+                      <span style={S.badge(a.priority==="hot"?"#ef4444":a.priority==="high"?"#f59e0b":"var(--text-muted)")}>{a.priority?.toUpperCase()}</span>
                       <span style={S.badge("#6366f1")}>{a.source}</span>
-                      {a.staff_members&&<span style={{fontSize:10,color:"#8b8ba8"}}>→ {a.staff_members.name}</span>}
+                      {a.staff_members&&<span style={{fontSize:10,color:"var(--text-sub)"}}>→ {a.staff_members.name}</span>}
                     </div>
-                    {a.notes&&<div style={{fontSize:11,color:"#8b8ba8",marginTop:4}}>{a.notes.slice(0,80)}</div>}
+                    {a.notes&&<div style={{fontSize:11,color:"var(--text-sub)",marginTop:4}}>{a.notes.slice(0,80)}</div>}
                   </div>
                   <div style={{textAlign:"right" as const}}>
                     {a.deal_value&&<div style={{fontSize:13,fontWeight:700,color:"#10b981",fontFamily:"monospace"}}>${a.deal_value}</div>}
-                    {a.conversion_probability&&<div style={{fontSize:10,color:"#4b4b6a"}}>{a.conversion_probability}% likely</div>}
-                    {a.last_contact&&<div style={{fontSize:9,color:"#4b4b6a",marginTop:2}}>
+                    {a.conversion_probability&&<div style={{fontSize:10,color:"var(--text-muted)"}}>{a.conversion_probability}% likely</div>}
+                    {a.last_contact&&<div style={{fontSize:9,color:"var(--text-muted)",marginTop:2}}>
                       Last: {new Date(a.last_contact).toLocaleDateString("en-GB")}
                     </div>}
                   </div>
                 </div>
               </div>
             ))}
-            {!assignments.length&&<div style={{color:"#4b4b6a",textAlign:"center",padding:40}}>No assignments yet. BDEs need to be assigned leads.</div>}
+            {!assignments.length&&<div style={{color:"var(--text-muted)",textAlign:"center",padding:40}}>No assignments yet. BDEs need to be assigned leads.</div>}
           </div>
         )}
 
@@ -172,13 +175,13 @@ export default function StaffCommand(){
           <div>
             <div style={{display:"flex",gap:8,marginBottom:14}}>
               {["week","month","day"].map(p=>(
-                <button key={p} style={S.btn(perfPeriod===p?"#a78bfa":"#4b4b6a")} onClick={()=>setPerfPeriod(p)}>
+                <button key={p} style={S.btn(perfPeriod===p?"#a78bfa":"var(--text-muted)")} onClick={()=>setPerfPeriod(p)}>
                   {p.charAt(0).toUpperCase()+p.slice(1)}
                 </button>
               ))}
             </div>
             {performance.sort((a:any,b:any)=>b.conversion_rate-a.conversion_rate).map((p:any,idx:number)=>(
-              <div key={p.staff_id} style={{...S.card,borderLeft:`3px solid ${ROLES[p.role]?.c||"#1a1a3a"}`}}>
+              <div key={p.staff_id} style={{...S.card,borderLeft:`3px solid ${ROLES[p.role]?.c||"var(--border)"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
                     <div style={{width:32,height:32,borderRadius:"50%",background:`${ROLES[p.role]?.c||"#6366f1"}20`,
@@ -187,8 +190,8 @@ export default function StaffCommand(){
                       #{idx+1}
                     </div>
                     <div>
-                      <div style={{fontSize:13,fontWeight:700,color:"#f0f0ff"}}>{p.name}</div>
-                      <span style={S.badge(ROLES[p.role]?.c||"#4b4b6a")}>{ROLES[p.role]?.l||p.role}</span>
+                      <div style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{p.name}</div>
+                      <span style={S.badge(ROLES[p.role]?.c||"var(--text-muted)")}>{ROLES[p.role]?.l||p.role}</span>
                     </div>
                   </div>
                   <div style={{fontSize:20,fontWeight:700,color:p.conversion_rate>=50?"#10b981":p.conversion_rate>=25?"#f59e0b":"#ef4444",fontFamily:"monospace"}}>
@@ -197,9 +200,9 @@ export default function StaffCommand(){
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
                   {[["Leads",p.leads_handled,"#6366f1"],["Won",p.leads_won,"#10b981"],["Pipeline",`$${((p.pipeline_value||0)/1000).toFixed(1)}k`,"#06b6d4"],["Activity",p.activity_count,"#a78bfa"]].map(([l,v,c])=>(
-                    <div key={l} style={{background:"#070710",borderRadius:6,padding:"6px 10px",textAlign:"center" as const}}>
+                    <div key={l} style={{background:"var(--bg)",borderRadius:6,padding:"6px 10px",textAlign:"center" as const}}>
                       <div style={{fontSize:13,fontWeight:700,color:c,fontFamily:"monospace"}}>{v}</div>
-                      <div style={{fontSize:9,color:"#4b4b6a",textTransform:"uppercase"}}>{l}</div>
+                      <div style={{fontSize:9,color:"var(--text-muted)",textTransform:"uppercase"}}>{l}</div>
                     </div>
                   ))}
                 </div>
@@ -211,7 +214,7 @@ export default function StaffCommand(){
         {tab==="staff"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-              <div style={{fontSize:13,color:"#8b8ba8"}}>{staff.length} active staff members</div>
+              <div style={{fontSize:13,color:"var(--text-sub)"}}>{staff.length} active staff members</div>
               <button style={S.btn("#10b981")} onClick={()=>setAdding(!addingStaff)}>+ Add Staff Member</button>
             </div>
             {addingStaff&&(
@@ -229,7 +232,7 @@ export default function StaffCommand(){
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button style={S.btn("#10b981")} onClick={createStaff}>Create</button>
-                  <button style={S.btn("#4b4b6a")} onClick={()=>setAdding(false)}>Cancel</button>
+                  <button style={S.btn("var(--text-muted)")} onClick={()=>setAdding(false)}>Cancel</button>
                 </div>
               </div>
             )}
@@ -243,11 +246,11 @@ export default function StaffCommand(){
                       {s.avatar_initials||s.name.slice(0,2).toUpperCase()}
                     </div>
                     <div>
-                      <div style={{fontSize:13,fontWeight:700,color:"#f0f0ff"}}>{s.name}</div>
+                      <div style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{s.name}</div>
                       <div style={{display:"flex",gap:6,marginTop:3}}>
-                        <span style={S.badge(ROLES[s.role]?.c||"#4b4b6a")}>{ROLES[s.role]?.l||s.role}</span>
-                        {s.email&&<span style={{fontSize:10,color:"#4b4b6a"}}>{s.email}</span>}
-                        <span style={{fontSize:10,color:"#4b4b6a"}}>{s.timezone?.split("/")[1]||s.timezone}</span>
+                        <span style={S.badge(ROLES[s.role]?.c||"var(--text-muted)")}>{ROLES[s.role]?.l||s.role}</span>
+                        {s.email&&<span style={{fontSize:10,color:"var(--text-muted)"}}>{s.email}</span>}
+                        <span style={{fontSize:10,color:"var(--text-muted)"}}>{s.timezone?.split("/")[1]||s.timezone}</span>
                       </div>
                     </div>
                   </div>
@@ -255,9 +258,9 @@ export default function StaffCommand(){
                     {s.live_stats&&(
                       <div style={{display:"flex",gap:8,marginRight:8}}>
                         {[["Leads",s.live_stats.total_leads],["Won",s.live_stats.won_leads],["Rate",`${s.live_stats.conversion_rate}%`]].map(([l,v])=>(
-                          <div key={l} style={{background:"#070710",borderRadius:6,padding:"4px 8px",textAlign:"center" as const}}>
-                            <div style={{fontSize:11,fontWeight:700,fontFamily:"monospace",color:"#f0f0ff"}}>{v}</div>
-                            <div style={{fontSize:8,color:"#4b4b6a",textTransform:"uppercase"}}>{l}</div>
+                          <div key={l} style={{background:"var(--bg)",borderRadius:6,padding:"4px 8px",textAlign:"center" as const}}>
+                            <div style={{fontSize:11,fontWeight:700,fontFamily:"monospace",color:"var(--text)"}}>{v}</div>
+                            <div style={{fontSize:8,color:"var(--text-muted)",textTransform:"uppercase"}}>{l}</div>
                           </div>
                         ))}
                       </div>
@@ -268,7 +271,7 @@ export default function StaffCommand(){
                   </div>
                 </div>
                 {editPerms===s.id&&(
-                  <div style={{marginTop:12,padding:"12px",background:"#070710",borderRadius:8,border:"0.5px solid rgba(167,139,250,.2)"}}>
+                  <div style={{marginTop:12,padding:"12px",background:"var(--bg)",borderRadius:8,border:"0.5px solid rgba(167,139,250,.2)"}}>
                     <div style={S.sec}>Toggle Permissions</div>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8,marginBottom:10}}>
                       {["can_see_all_leads","can_access_brain","can_generate_reports","can_manage_templates",
@@ -285,7 +288,7 @@ export default function StaffCommand(){
                     </div>
                     <div style={{display:"flex",gap:8}}>
                       <button style={S.btn("#10b981")} onClick={savePerms}>Save</button>
-                      <button style={S.btn("#4b4b6a")} onClick={()=>setEditPerms(null)}>Cancel</button>
+                      <button style={S.btn("var(--text-muted)")} onClick={()=>setEditPerms(null)}>Cancel</button>
                     </div>
                   </div>
                 )}

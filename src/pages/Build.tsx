@@ -1,4 +1,5 @@
 import GlobalSearch from "@/components/GlobalSearch";
+import AnimatedBg from "@/components/AnimatedBg";
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -237,6 +238,7 @@ export default function Build() {
                   <div key={r.id} style={{...C.row,
                     background:r.kind==="error"?"rgba(239,68,68,.03)":
                       r.kind==="thinking"?"rgba(59,130,246,.02)":"transparent"}}>
+      <AnimatedBg/>
                     <span style={{color:col,fontSize:13,flexShrink:0,width:14,textAlign:"center"as const}}>{icon}</span>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2,flexWrap:"wrap" as const}}>

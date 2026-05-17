@@ -100,6 +100,7 @@ export default function SystemControl() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <AnimatedBg/>
       <PortalNav
         companyName={client?.company ? `${client.company} — System Control` : 'System Control'}
         projects={projects} selectedProjectId={selProjId} onProjectChange={handleProjectChange}

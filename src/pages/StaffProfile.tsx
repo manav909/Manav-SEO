@@ -1,3 +1,4 @@
+import AnimatedBg from "@/components/AnimatedBg";
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useParams, useNavigate } from "react-router-dom";
@@ -79,7 +80,8 @@ export default function StaffProfile() {
   if (!staff) return (
     <div style={{ minHeight:"100vh", background:"#06060e", color:"#e8e8f8",
       fontFamily:"system-ui", display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ color:"#4b4b6a" }}>Loading profile...</div>
+      <AnimatedBg/>
+      <div style={{ color:"var(--text-muted)" }}>Loading profile...</div>
     </div>
   );
 
@@ -95,16 +97,16 @@ export default function StaffProfile() {
       height:52, display:"flex", alignItems:"center", justifyContent:"space-between",
       position:"sticky" as const, top:0, zIndex:100 },
     body: { maxWidth:1000, margin:"0 auto", padding:"20px" },
-    card: { background:"#0d0d1e", border:"0.5px solid #1a1a3a", borderRadius:12, padding:16, marginBottom:12 },
+    card: { background:"var(--bg-card)", border:"0.5px solid #1a1a3a", borderRadius:12, padding:16, marginBottom:12 },
     tab_: { padding:"9px 14px", fontSize:12, fontWeight:500, cursor:"pointer", border:"none",
-      background:"transparent", color:"#8b8ba8", borderBottom:"2px solid transparent" },
+      background:"transparent", color:"var(--text-sub)", borderBottom:"2px solid transparent" },
     tabA: { color:"#a78bfa", borderBottom:"2px solid #a78bfa" },
     inp: { background:"#070710", border:"0.5px solid #1a1a3a", borderRadius:8, color:"#e8e8f8",
       padding:"9px 12px", fontSize:12, outline:"none" },
     btn: (c:string="#6366f1") => ({ background:`${c}18`, border:`0.5px solid ${c}40`,
       borderRadius:8, color:c, padding:"7px 14px", fontSize:11, fontWeight:600, cursor:"pointer" }),
     sec: { fontSize:10, fontWeight:600, letterSpacing:1.2, textTransform:"uppercase" as const,
-      color:"#4b4b6a", marginBottom:8, marginTop:12 },
+      color:"var(--text-muted)", marginBottom:8, marginTop:12 },
     badge: (c:string) => ({ fontSize:9, fontWeight:700, padding:"2px 7px", borderRadius:20,
       background:`${c}18`, color:c }),
   };
@@ -125,17 +127,17 @@ export default function StaffProfile() {
       {/* Header */}
       <div style={S.hdr}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <button onClick={()=>navigate(-1)} style={{ background:"none", border:"none", color:"#4b4b6a", cursor:"pointer", fontSize:18 }}>←</button>
+          <button onClick={()=>navigate(-1)} style={{ background:"none", border:"none", color:"var(--text-muted)", cursor:"pointer", fontSize:18 }}>←</button>
           <span style={{ fontSize:14, fontWeight:600 }}>Staff Profile</span>
         </div>
         {/* Staff switcher */}
         <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-          <span style={{ fontSize:11, color:"#4b4b6a" }}>View:</span>
+          <span style={{ fontSize:11, color:"var(--text-muted)" }}>View:</span>
           {allStaff.slice(0,6).map((s:any) => (
             <button key={s.id} onClick={() => navigate(`/profile/${s.id}`)}
               title={s.name}
-              style={{ width:28, height:28, borderRadius:"50%", border:`1px solid ${s.id===staff.id?ROLE_META[s.role]?.color||"#6366f1":"#1a1a3a"}`,
-                background: s.id===staff.id ? `${ROLE_META[s.role]?.color||"#6366f1"}20` : "#0d0d1e",
+              style={{ width:28, height:28, borderRadius:"50%", border:`1px solid ${s.id===staff.id?ROLE_META[s.role]?.color||"#6366f1":"var(--border)"}`,
+                background: s.id===staff.id ? `${ROLE_META[s.role]?.color||"#6366f1"}20` : "var(--bg-card)",
                 color: ROLE_META[s.role]?.color||"#6366f1", fontSize:10, fontWeight:700, cursor:"pointer" }}>
               {s.avatar_initials||s.name[0]}
             </button>
@@ -157,13 +159,13 @@ export default function StaffProfile() {
             </div>
             {/* Info */}
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:20, fontWeight:700, color:"#f0f0ff", marginBottom:4 }}>{staff.name}</div>
+              <div style={{ fontSize:20, fontWeight:700, color:"var(--text)", marginBottom:4 }}>{staff.name}</div>
               <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" as const, marginBottom:8 }}>
                 <span style={{ ...S.badge(meta.color), fontSize:11, padding:"3px 10px" }}>
                   {meta.icon} {meta.label}
                 </span>
-                {staff.email && <span style={{ fontSize:12, color:"#4b4b6a" }}>{staff.email}</span>}
-                <span style={{ fontSize:12, color:"#4b4b6a" }}>
+                {staff.email && <span style={{ fontSize:12, color:"var(--text-muted)" }}>{staff.email}</span>}
+                <span style={{ fontSize:12, color:"var(--text-muted)" }}>
                   🌍 {staff.timezone?.split("/")[1]?.replace("_"," ")||staff.timezone}
                 </span>
                 <span style={{ fontSize:11, color:staff.is_active?"#10b981":"#ef4444" }}>
@@ -181,7 +183,7 @@ export default function StaffProfile() {
                 ].map(t=>(
                   <div key={t.l} style={{ background:"rgba(0,0,0,.2)", borderRadius:8, padding:"8px 14px", minWidth:70 }}>
                     <div style={{ fontSize:18, fontWeight:700, color:t.c, fontFamily:"monospace", lineHeight:1 }}>{t.v}</div>
-                    <div style={{ fontSize:9, color:"#4b4b6a", textTransform:"uppercase", marginTop:2 }}>{t.l}</div>
+                    <div style={{ fontSize:9, color:"var(--text-muted)", textTransform:"uppercase", marginTop:2 }}>{t.l}</div>
                   </div>
                 ))}
               </div>
@@ -214,24 +216,24 @@ export default function StaffProfile() {
                       ].map(([l,v,c])=>(
                         <div key={l} style={{ background:"#070710", borderRadius:8, padding:"10px 12px" }}>
                           <div style={{ fontSize:18, fontWeight:700, color:c as string, fontFamily:"monospace" }}>{v}</div>
-                          <div style={{ fontSize:9, color:"#4b4b6a", textTransform:"uppercase" }}>{l}</div>
+                          <div style={{ fontSize:9, color:"var(--text-muted)", textTransform:"uppercase" }}>{l}</div>
                         </div>
                       ))}
                     </div>
                     {/* Conversion bar */}
                     <div style={S.sec}>Conversion Rate</div>
-                    <div style={{ height:8, background:"#1a1a3a", borderRadius:4, overflow:"hidden", marginBottom:4 }}>
+                    <div style={{ height:8, background:"var(--border)", borderRadius:4, overflow:"hidden", marginBottom:4 }}>
                       <div style={{ height:"100%",
                         width:`${Math.min(perf.conversion_rate||0,100)}%`,
                         background:`linear-gradient(90deg,#6366f1,${(perf.conversion_rate||0)>=25?"#10b981":"#f59e0b"})`,
                         borderRadius:4, transition:"width .5s" }}/>
                     </div>
-                    <div style={{ fontSize:11, color:"#4b4b6a" }}>
+                    <div style={{ fontSize:11, color:"var(--text-muted)" }}>
                       Target: {staff.targets?.conversion_rate||25}% · Current: {perf.conversion_rate||0}%
                     </div>
                   </div>
                 ) : (
-                  <div style={{ color:"#4b4b6a", fontSize:12 }}>No performance data yet this month.</div>
+                  <div style={{ color:"var(--text-muted)", fontSize:12 }}>No performance data yet this month.</div>
                 )}
               </div>
 
@@ -247,7 +249,7 @@ export default function StaffProfile() {
                     </div>
                   ))
                 ) : (
-                  <div style={{ color:"#4b4b6a", fontSize:12 }}>No targets set. Edit in Settings.</div>
+                  <div style={{ color:"var(--text-muted)", fontSize:12 }}>No targets set. Edit in Settings.</div>
                 )}
 
                 <div style={{ ...S.sec, marginTop:16 }}>⚡ Permissions</div>
@@ -257,7 +259,7 @@ export default function StaffProfile() {
                   </div>
                 ))}
                 {(!staff.permissions || Object.values(staff.permissions).filter(Boolean).length === 0) &&
-                  <div style={{ color:"#4b4b6a", fontSize:12 }}>Default role permissions active.</div>}
+                  <div style={{ color:"var(--text-muted)", fontSize:12 }}>Default role permissions active.</div>}
               </div>
             </div>
 
@@ -269,13 +271,13 @@ export default function StaffProfile() {
                   <div style={{ width:8, height:8, borderRadius:"50%", flexShrink:0,
                     background: a.stage==="won"?"#10b981":a.stage==="lost"?"#ef4444":a.priority==="hot"?"#f59e0b":"#6366f1" }}/>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:12, color:"#f0f0ff" }}>{a.prospects?.company||a.prospects?.url||"Lead"}</div>
-                    <div style={{ fontSize:10, color:"#4b4b6a" }}>{a.stage} · {a.source}</div>
+                    <div style={{ fontSize:12, color:"var(--text)" }}>{a.prospects?.company||a.prospects?.url||"Lead"}</div>
+                    <div style={{ fontSize:10, color:"var(--text-muted)" }}>{a.stage} · {a.source}</div>
                   </div>
                   {a.deal_value&&<div style={{ fontSize:11, color:"#10b981", fontFamily:"monospace" }}>${a.deal_value}</div>}
                 </div>
               ))}
-              {!assignments.length && <div style={{ color:"#4b4b6a", fontSize:12 }}>No leads assigned yet.</div>}
+              {!assignments.length && <div style={{ color:"var(--text-muted)", fontSize:12 }}>No leads assigned yet.</div>}
             </div>
           </div>
         )}
@@ -283,7 +285,7 @@ export default function StaffProfile() {
         {/* PIPELINE TAB */}
         {tab==="pipeline" && (
           <div>
-            <div style={{ fontSize:12, color:"#8b8ba8", marginBottom:10 }}>
+            <div style={{ fontSize:12, color:"var(--text-sub)", marginBottom:10 }}>
               {assignments.length} total · {active} active · {won} won · ${(pipelineValue/1000).toFixed(1)}k value
             </div>
             {assignments.map((a:any) => (
@@ -296,20 +298,20 @@ export default function StaffProfile() {
                       <span style={S.badge(a.stage==="won"?"#10b981":a.stage==="lost"?"#ef4444":"#6366f1")}>
                         {a.stage?.toUpperCase()}
                       </span>
-                      <span style={S.badge(a.priority==="hot"?"#ef4444":a.priority==="high"?"#f59e0b":"#4b4b6a")}>
+                      <span style={S.badge(a.priority==="hot"?"#ef4444":a.priority==="high"?"#f59e0b":"var(--text-muted)")}>
                         {a.priority?.toUpperCase()}
                       </span>
-                      <span style={{ fontSize:10, color:"#4b4b6a" }}>{a.source}</span>
+                      <span style={{ fontSize:10, color:"var(--text-muted)" }}>{a.source}</span>
                     </div>
-                    {a.notes&&<div style={{ fontSize:11, color:"#8b8ba8", marginTop:4 }}>{a.notes.slice(0,80)}</div>}
+                    {a.notes&&<div style={{ fontSize:11, color:"var(--text-sub)", marginTop:4 }}>{a.notes.slice(0,80)}</div>}
                   </div>
                   <div style={{ textAlign:"right" as const }}>
                     {a.deal_value&&<div style={{ fontSize:14, fontWeight:700, color:"#10b981", fontFamily:"monospace" }}>${a.deal_value}</div>}
-                    {a.conversion_probability&&<div style={{ fontSize:10, color:"#4b4b6a" }}>{a.conversion_probability}% likely</div>}
+                    {a.conversion_probability&&<div style={{ fontSize:10, color:"var(--text-muted)" }}>{a.conversion_probability}% likely</div>}
                   </div>
                 </div>
                 {a.conversion_probability && (
-                  <div style={{ height:3, background:"#1a1a3a", borderRadius:2, marginTop:8, overflow:"hidden" }}>
+                  <div style={{ height:3, background:"var(--border)", borderRadius:2, marginTop:8, overflow:"hidden" }}>
                     <div style={{ height:"100%", width:`${a.conversion_probability}%`,
                       background:a.conversion_probability>=60?"#10b981":a.conversion_probability>=40?"#f59e0b":"#ef4444",
                       transition:"width .3s" }}/>
@@ -326,8 +328,8 @@ export default function StaffProfile() {
             {/* Dept selector */}
             <div style={{ display:"flex", gap:6, marginBottom:12, overflowX:"auto" as const }}>
               {DEPTS.map(d => (
-                <button key={d.key} style={{ ...S.btn(dept===d.key?"#a78bfa":"#4b4b6a"),
-                  borderColor:dept===d.key?"rgba(167,139,250,.4)":"#1a1a3a",
+                <button key={d.key} style={{ ...S.btn(dept===d.key?"#a78bfa":"var(--text-muted)"),
+                  borderColor:dept===d.key?"rgba(167,139,250,.4)":"var(--border)",
                   whiteSpace:"nowrap" as const }}
                   onClick={()=>setDept(d.key)}>
                   {d.label}
@@ -339,10 +341,10 @@ export default function StaffProfile() {
             <div style={{ ...S.card, padding:0, overflow:"hidden" }}>
               <div style={{ padding:"12px 14px", borderBottom:"0.5px solid #1a1a3a",
                 display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <div style={{ fontSize:12, fontWeight:600, color:"#f0f0ff" }}>
+                <div style={{ fontSize:12, fontWeight:600, color:"var(--text)" }}>
                   {DEPTS.find(d=>d.key===dept)?.label} Channel
                 </div>
-                <div style={{ fontSize:10, color:"#4b4b6a" }}>{messages.length} messages</div>
+                <div style={{ fontSize:10, color:"var(--text-muted)" }}>{messages.length} messages</div>
               </div>
               <div style={{ height:360, overflowY:"auto" as const, padding:"12px 14px", display:"flex",
                 flexDirection:"column" as const, gap:8 }}>
@@ -359,7 +361,7 @@ export default function StaffProfile() {
                         {(m.sender_name||"?").slice(0,2).toUpperCase()}
                       </div>
                       <div style={{ maxWidth:"70%" }}>
-                        <div style={{ fontSize:10, color:"#4b4b6a", marginBottom:3,
+                        <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:3,
                           textAlign: isMe ? "right" as const : "left" as const }}>
                           {isMe ? "You" : m.sender_name}
                           <span style={{ color:mColor, marginLeft:4 }}>
@@ -369,8 +371,8 @@ export default function StaffProfile() {
                             {new Date(m.created_at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
                           </span>
                         </div>
-                        <div style={{ background: isMe ? "rgba(99,102,241,.15)" : "#0d0d1e",
-                          border: `0.5px solid ${isMe?"rgba(99,102,241,.3)":"#1a1a3a"}`,
+                        <div style={{ background: isMe ? "rgba(99,102,241,.15)" : "var(--bg-card)",
+                          border: `0.5px solid ${isMe?"rgba(99,102,241,.3)":"var(--border)"}`,
                           borderRadius: isMe ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
                           padding:"8px 12px", fontSize:13, color:"#e8e8f8", lineHeight:1.5 }}>
                           {m.body}
@@ -380,7 +382,7 @@ export default function StaffProfile() {
                   );
                 })}
                 {!messages.length && (
-                  <div style={{ color:"#4b4b6a", textAlign:"center" as const, padding:40, fontSize:13 }}>
+                  <div style={{ color:"var(--text-muted)", textAlign:"center" as const, padding:40, fontSize:13 }}>
                     No messages in {dept} channel yet. Start the conversation.
                   </div>
                 )}
@@ -407,13 +409,13 @@ export default function StaffProfile() {
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
               {[["Name",staff.name],["Email",staff.email||"—"],["Role",ROLE_META[staff.role]?.label],["Timezone",staff.timezone]].map(([l,v])=>(
                 <div key={l}>
-                  <div style={{ fontSize:10, color:"#4b4b6a", marginBottom:3 }}>{l}</div>
-                  <div style={{ fontSize:13, color:"#f0f0ff", padding:"8px 12px", background:"#070710",
+                  <div style={{ fontSize:10, color:"var(--text-muted)", marginBottom:3 }}>{l}</div>
+                  <div style={{ fontSize:13, color:"var(--text)", padding:"8px 12px", background:"#070710",
                     borderRadius:8, border:"0.5px solid #1a1a3a" }}>{v}</div>
                 </div>
               ))}
             </div>
-            <div style={{ fontSize:12, color:"#4b4b6a", marginTop:8 }}>
+            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:8 }}>
               To update profile details, contact your HOD or use the Staff Management panel at{" "}
               <a href="/staff-command" style={{ color:"#6366f1" }}>/staff-command</a>.
             </div>

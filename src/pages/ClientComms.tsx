@@ -1,3 +1,4 @@
+import AnimatedBg from "@/components/AnimatedBg";
 import React, { useState, useEffect, useRef } from "react";
 
 const post = (action: string, body: any = {}) =>
@@ -25,7 +26,7 @@ function MoodMeter({ score }: { score: number }) {
           </linearGradient>
         </defs>
         {/* Track */}
-        <path d="M 15 80 A 65 65 0 0 1 145 80" fill="none" stroke="#1a1a3a" strokeWidth={10} strokeLinecap="round"/>
+        <path d="M 15 80 A 65 65 0 0 1 145 80" fill="none" stroke="var(--border)" strokeWidth={10} strokeLinecap="round"/>
         {/* Fill */}
         <path d="M 15 80 A 65 65 0 0 1 145 80" fill="none" stroke="url(#mg)" strokeWidth={10} strokeLinecap="round"
           strokeDasharray={`${(clamp/100)*204} 204`}/>
@@ -56,13 +57,13 @@ function TZClock({ tz }: { tz: any }) {
     const id = setInterval(update, 10000);
     return () => clearInterval(id);
   }, [tz.tz]);
-  const c = tz.business_status === "business" ? "#10b981" : tz.business_status === "early" || tz.business_status === "evening" ? "#f59e0b" : "#4b4b6a";
+  const c = tz.business_status === "business" ? "#10b981" : tz.business_status === "early" || tz.business_status === "evening" ? "#f59e0b" : "var(--text-muted)";
   return (
-    <div style={{ background: "#0d0d1e", border: `0.5px solid ${c}30`, borderRadius: 9, padding: "8px 12px",
+    <div style={{ background: "var(--bg-card)", border: `0.5px solid ${c}30`, borderRadius: 9, padding: "8px 12px",
       display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <div>
-        <div style={{ fontSize: 11, color: "#f0f0ff" }}>{tz.flag} {tz.region}</div>
-        <div style={{ fontSize: 9, color: "#4b4b6a" }}>{tz.day}</div>
+        <div style={{ fontSize: 11, color: "var(--text)" }}>{tz.flag} {tz.region}</div>
+        <div style={{ fontSize: 9, color: "var(--text-muted)" }}>{tz.day}</div>
       </div>
       <div>
         <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "monospace", color: c }}>{time}</div>
@@ -220,17 +221,17 @@ export default function ClientComms() {
       position: "sticky" as const, top: 0, zIndex: 100 },
     tabs: { display: "flex", background: "#09091a", borderBottom: "0.5px solid #1a1a3a", padding: "0 20px", overflowX: "auto" as const },
     tab: { padding: "9px 14px", fontSize: 12, fontWeight: 500, cursor: "pointer",
-      border: "none", background: "transparent", color: "#8b8ba8",
+      border: "none", background: "transparent", color: "var(--text-sub)",
       borderBottom: "2px solid transparent", whiteSpace: "nowrap" as const },
     tabA: { color: "#a78bfa", borderBottom: "2px solid #a78bfa" },
     body: { padding: "16px 20px", maxWidth: 1100, margin: "0 auto" },
-    card: { background: "#0d0d1e", border: "0.5px solid #1a1a3a", borderRadius: 12, padding: 16, marginBottom: 12 },
+    card: { background: "var(--bg-card)", border: "0.5px solid #1a1a3a", borderRadius: 12, padding: 16, marginBottom: 12 },
     textarea: { width: "100%", background: "#070710", border: "0.5px solid #1a1a3a", borderRadius: 10,
       color: "#e8e8f8", padding: "12px 14px", fontSize: 13, lineHeight: 1.6,
       resize: "vertical" as const, outline: "none", minHeight: 140, boxSizing: "border-box" as const },
     inp: { background: "#070710", border: "0.5px solid #1a1a3a", borderRadius: 8,
       color: "#e8e8f8", padding: "8px 12px", fontSize: 12, outline: "none" },
-    sel: { background: "#0d0d1e", border: "0.5px solid #1a1a3a", borderRadius: 8,
+    sel: { background: "var(--bg-card)", border: "0.5px solid #1a1a3a", borderRadius: 8,
       color: "#e8e8f8", padding: "8px 12px", fontSize: 12 },
     btn: (c: string = "#6366f1") => ({
       background: `${c}18`, border: `0.5px solid ${c}40`, borderRadius: 8,
@@ -241,7 +242,7 @@ export default function ClientComms() {
       background: `${c}18`, color: c, border: `0.5px solid ${c}30`,
     }),
     sec: { fontSize: 10, fontWeight: 600, letterSpacing: 1.2, textTransform: "uppercase" as const,
-      color: "#4b4b6a", marginBottom: 8, marginTop: 14 },
+      color: "var(--text-muted)", marginBottom: 8, marginTop: 14 },
     riskColor: (r: string) => r === "critical" ? "#dc2626" : r === "high" ? "#ef4444" : r === "medium" ? "#f59e0b" : "#10b981",
     intentColor: (i: string) => i === "churning" || i === "escalating" ? "#ef4444" :
       i === "upgrading" || i === "praising" ? "#10b981" : i === "negotiating" ? "#f59e0b" : "#6366f1",
@@ -255,6 +256,7 @@ export default function ClientComms() {
 
   return (
     <div style={S.root}>
+      <AnimatedBg/>
       {/* Header */}
       <div style={S.hdr}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -289,7 +291,7 @@ export default function ClientComms() {
         {/* ── ANALYSER TAB ──────────────────────────────────── */}
         {tab === "analyser" && (
           <div>
-            <div style={{ marginBottom: 12, color: "#8b8ba8", fontSize: 13 }}>
+            <div style={{ marginBottom: 12, color: "var(--text-sub)", fontSize: 13 }}>
               Paste any client or lead message — any language, any channel. Get instant mood score, objection detection, cultural context, and 3 ready-to-send responses.
             </div>
             <div style={S.card}>
@@ -299,7 +301,7 @@ export default function ClientComms() {
                     <option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>
                   ))}
                 </select>
-                <div style={{ fontSize: 11, color: "#4b4b6a", flex: 1 }}>Paste conversation below — any language</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", flex: 1 }}>Paste conversation below — any language</div>
                 {analysis && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={S.badge(S.riskColor(analysis.risk_level))}>{analysis.risk_level?.toUpperCase()} RISK</span>
@@ -321,7 +323,7 @@ export default function ClientComms() {
                     {generatingResp ? "Generating..." : "✍️ Generate 3 Responses"}
                   </button>
                 )}
-                {convText && <button style={S.btn("#4b4b6a")} onClick={() => { setConvText(""); setAnalysis(null); setResponses(null); }}>Clear</button>}
+                {convText && <button style={S.btn("var(--text-muted)")} onClick={() => { setConvText(""); setAnalysis(null); setResponses(null); }}>Clear</button>}
               </div>
             </div>
 
@@ -337,7 +339,7 @@ export default function ClientComms() {
                     {analysis.emotional_subtext && (
                       <>
                         <div style={{ ...S.sec, marginTop: 10 }}>What They Really Feel</div>
-                        <div style={{ fontSize: 11, color: "#8b8ba8", lineHeight: 1.5, fontStyle: "italic" }}>
+                        <div style={{ fontSize: 11, color: "var(--text-sub)", lineHeight: 1.5, fontStyle: "italic" }}>
                           "{analysis.emotional_subtext}"
                         </div>
                       </>
@@ -360,7 +362,7 @@ export default function ClientComms() {
                     <div style={{ ...S.card, borderColor: "rgba(6,182,212,.2)" }}>
                       <div style={S.sec}>🌍 Cultural & Geopolitical Context</div>
                       {analysis.cultural_context && <div style={{ fontSize: 12, color: "#d0d0e8", lineHeight: 1.6, marginBottom: 6 }}>{analysis.cultural_context}</div>}
-                      {analysis.geopolitical_notes && <div style={{ fontSize: 11, color: "#8b8ba8", lineHeight: 1.5, fontStyle: "italic" }}>{analysis.geopolitical_notes}</div>}
+                      {analysis.geopolitical_notes && <div style={{ fontSize: 11, color: "var(--text-sub)", lineHeight: 1.5, fontStyle: "italic" }}>{analysis.geopolitical_notes}</div>}
                     </div>
                   )}
 
@@ -370,13 +372,13 @@ export default function ClientComms() {
                       <div style={S.sec}>🚧 Objections Detected ({analysis.objections.length})</div>
                       {analysis.objections.map((obj: any, i: number) => (
                         <div key={i} style={{ display: "flex", gap: 10, padding: "7px 0", borderBottom: "0.5px solid #111128" }}>
-                          <span style={{ ...S.badge(obj.severity === "dealbreaker" ? "#dc2626" : obj.severity === "strong" ? "#ef4444" : obj.severity === "moderate" ? "#f59e0b" : "#8b8ba8") }}>
+                          <span style={{ ...S.badge(obj.severity === "dealbreaker" ? "#dc2626" : obj.severity === "strong" ? "#ef4444" : obj.severity === "moderate" ? "#f59e0b" : "var(--text-sub)") }}>
                             {obj.severity?.toUpperCase()}
                           </span>
                           <div>
                             <div style={{ fontSize: 11, color: "#a78bfa", fontWeight: 600, marginBottom: 2 }}>
                               {obj.type?.replace(/_/g, " ").toUpperCase()}
-                              {obj.hidden && <span style={{ marginLeft: 6, fontSize: 9, color: "#4b4b6a" }}>(implied)</span>}
+                              {obj.hidden && <span style={{ marginLeft: 6, fontSize: 9, color: "var(--text-muted)" }}>(implied)</span>}
                             </div>
                             <div style={{ fontSize: 12, color: "#d0d0e8" }}>{obj.text}</div>
                           </div>
@@ -436,17 +438,17 @@ export default function ClientComms() {
             {/* Generated responses */}
             {responses?.responses?.length > 0 && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#f0f0ff", marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 10 }}>
                   ✍️ {responses.responses.length} Response Strategies
                   {analysis?.language_name && analysis.language_name !== "English" && (
                     <span style={{ marginLeft: 8, fontSize: 11, color: "#06b6d4" }}>in {analysis.language_name}</span>
                   )}
                 </div>
                 {responses.responses.map((resp: any, idx: number) => (
-                  <div key={idx} style={{ ...S.card, borderColor: idx === 0 ? "rgba(99,102,241,.3)" : "#1a1a3a" }}>
+                  <div key={idx} style={{ ...S.card, borderColor: idx === 0 ? "rgba(99,102,241,.3)" : "var(--border)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#f0f0ff" }}>{resp.strategy}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{resp.strategy}</div>
                         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                           <span style={S.badge("#6366f1")}>{resp.tone?.toUpperCase()}</span>
                           {resp.conversion_probability && (
@@ -456,7 +458,7 @@ export default function ClientComms() {
                           )}
                           {resp.risk && <span style={S.badge(S.riskColor(resp.risk))}>RISK: {resp.risk?.toUpperCase()}</span>}
                         </div>
-                        {resp.when_to_use && <div style={{ fontSize: 11, color: "#4b4b6a", marginTop: 4 }}>{resp.when_to_use}</div>}
+                        {resp.when_to_use && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{resp.when_to_use}</div>}
                       </div>
                       <button style={S.btn(copiedIdx === idx ? "#10b981" : "#a78bfa")}
                         onClick={() => copyText(resp.body, idx)}>
@@ -464,7 +466,7 @@ export default function ClientComms() {
                       </button>
                     </div>
                     {resp.subject_line && (
-                      <div style={{ fontSize: 11, color: "#8b8ba8", marginBottom: 8, padding: "4px 8px",
+                      <div style={{ fontSize: 11, color: "var(--text-sub)", marginBottom: 8, padding: "4px 8px",
                         background: "rgba(255,255,255,.03)", borderRadius: 6 }}>
                         Subject: {resp.subject_line}
                       </div>
@@ -492,7 +494,7 @@ export default function ClientComms() {
         {/* ── OBJECTION HANDLER TAB ─────────────────────────── */}
         {tab === "objections" && (
           <div>
-            <div style={{ marginBottom: 12, color: "#8b8ba8", fontSize: 13 }}>
+            <div style={{ marginBottom: 12, color: "var(--text-sub)", fontSize: 13 }}>
               Select an objection type, paste the exact words if you have them, choose language. Get a structured response framework, power phrases, and a ready-to-use response.
             </div>
             <div style={S.card}>
@@ -501,8 +503,8 @@ export default function ClientComms() {
                   <button key={obj.key}
                     onClick={() => setSelObjType(obj.key)}
                     style={{ background: selObjType === obj.key ? "rgba(99,102,241,.2)" : "rgba(255,255,255,.03)",
-                      border: `0.5px solid ${selObjType === obj.key ? "#6366f1" : "#1a1a3a"}`,
-                      borderRadius: 9, padding: "10px 12px", fontSize: 12, color: selObjType === obj.key ? "#a78bfa" : "#8b8ba8",
+                      border: `0.5px solid ${selObjType === obj.key ? "#6366f1" : "var(--border)"}`,
+                      borderRadius: 9, padding: "10px 12px", fontSize: 12, color: selObjType === obj.key ? "#a78bfa" : "var(--text-sub)",
                       cursor: "pointer", textAlign: "left" as const }}>
                     <div style={{ fontSize: 16, marginBottom: 4 }}>{obj.icon}</div>
                     {obj.label}
@@ -512,7 +514,7 @@ export default function ClientComms() {
               {selObjType && (
                 <>
                   <div style={{ display: "flex", gap: 10, marginBottom: 10, alignItems: "center" }}>
-                    <div style={{ flex: 1, fontSize: 12, color: "#4b4b6a" }}>
+                    <div style={{ flex: 1, fontSize: 12, color: "var(--text-muted)" }}>
                       Optional: paste their exact words (works better with specific text)
                     </div>
                     <select style={S.sel} value={objLang} onChange={e => setObjLang(e.target.value)}>
@@ -543,7 +545,7 @@ export default function ClientComms() {
                     <div style={{ padding: "10px 14px", background: "rgba(99,102,241,.08)", borderRadius: 9,
                       border: "0.5px solid rgba(99,102,241,.25)", marginBottom: 12 }}>
                       <div style={{ fontSize: 9, color: "#6366f1", fontWeight: 600, marginBottom: 6 }}>⚡ POWER PHRASE</div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: "#f0f0ff", lineHeight: 1.5 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", lineHeight: 1.5 }}>
                         "{objResult.generated.power_phrase}"
                       </div>
                     </div>
@@ -585,7 +587,7 @@ export default function ClientComms() {
         {/* ── CLIENT UPDATES TAB ────────────────────────────── */}
         {tab === "updates" && (
           <div>
-            <div style={{ marginBottom: 12, color: "#8b8ba8", fontSize: 13 }}>
+            <div style={{ marginBottom: 12, color: "var(--text-sub)", fontSize: 13 }}>
               Generate professional client updates in any format and any language. Uses real project data — tasks completed, wins, learnings.
             </div>
             <div style={S.card}>
@@ -594,15 +596,15 @@ export default function ClientComms() {
                 {UPDATE_TYPES.map(u => (
                   <button key={u.key} onClick={() => setUpdateType(u.key)}
                     style={{ background: updateType === u.key ? "rgba(99,102,241,.2)" : "rgba(255,255,255,.03)",
-                      border: `0.5px solid ${updateType === u.key ? "#6366f1" : "#1a1a3a"}`,
+                      border: `0.5px solid ${updateType === u.key ? "#6366f1" : "var(--border)"}`,
                       borderRadius: 9, padding: "10px 14px", cursor: "pointer", textAlign: "left" as const }}>
                     <div style={{ fontSize: 13, color: updateType === u.key ? "#a78bfa" : "#e8e8f8" }}>{u.label}</div>
-                    <div style={{ fontSize: 10, color: "#4b4b6a", marginTop: 2 }}>{u.desc}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{u.desc}</div>
                   </button>
                 ))}
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: "#4b4b6a" }}>Language:</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Language:</div>
                 <select style={S.sel} value={updateLang} onChange={e => setUpdateLang(e.target.value)}>
                   {[["en","English"],["ar","Arabic"],["hi","Hindi"],["fr","French"],["de","German"],
                     ["es","Spanish"],["pt","Portuguese"],["zh","Chinese"],["tr","Turkish"],
@@ -638,7 +640,7 @@ export default function ClientComms() {
         {/* ── PRESENTATIONS TAB ─────────────────────────────── */}
         {tab === "presentations" && (
           <div>
-            <div style={{ marginBottom: 12, color: "#8b8ba8", fontSize: 13 }}>
+            <div style={{ marginBottom: 12, color: "var(--text-sub)", fontSize: 13 }}>
               Generate beautiful client presentations, proposals, demos, and walkthroughs. Each gets a unique shareable link.
             </div>
             <div style={S.card}>
@@ -647,15 +649,15 @@ export default function ClientComms() {
                 {PRES_TYPES.map(p => (
                   <button key={p.key} onClick={() => setPresType(p.key)}
                     style={{ background: presType === p.key ? "rgba(99,102,241,.2)" : "rgba(255,255,255,.03)",
-                      border: `0.5px solid ${presType === p.key ? "#6366f1" : "#1a1a3a"}`,
+                      border: `0.5px solid ${presType === p.key ? "#6366f1" : "var(--border)"}`,
                       borderRadius: 9, padding: "9px 14px", fontSize: 12,
-                      color: presType === p.key ? "#a78bfa" : "#8b8ba8", cursor: "pointer" }}>
+                      color: presType === p.key ? "#a78bfa" : "var(--text-sub)", cursor: "pointer" }}>
                     {p.label}
                   </button>
                 ))}
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: "#4b4b6a" }}>Language:</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Language:</div>
                 <select style={S.sel} value={presLang} onChange={e => setPresLang(e.target.value)}>
                   {[["en","English"],["ar","Arabic"],["hi","Hindi"],["fr","French"],["de","German"],["es","Spanish"],["pt","Portuguese"]].map(([k,v]) => (
                     <option key={k} value={k}>{v}</option>
@@ -692,18 +694,18 @@ export default function ClientComms() {
             )}
             {presentations.length > 0 && (
               <div>
-                <div style={{ fontSize: 12, color: "#4b4b6a", margin: "12px 0 8px" }}>Previous presentations</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "12px 0 8px" }}>Previous presentations</div>
                 {presentations.map((p: any) => (
                   <div key={p.id} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{p.title}</div>
                       <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                         <span style={S.badge("#6366f1")}>{p.presentation_type?.replace(/_/g," ")}</span>
-                        <span style={{ fontSize: 10, color: "#4b4b6a" }}>{p.viewed_count} views</span>
-                        <span style={{ fontSize: 10, color: "#4b4b6a" }}>{new Date(p.created_at).toLocaleDateString("en-GB")}</span>
+                        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.viewed_count} views</span>
+                        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{new Date(p.created_at).toLocaleDateString("en-GB")}</span>
                       </div>
                     </div>
-                    <a href={`/presentation/${p.token}`} target="_blank" style={{ ...S.btn("#8b8ba8"), textDecoration: "none" }}>Open ↗</a>
+                    <a href={`/presentation/${p.token}`} target="_blank" style={{ ...S.btn("var(--text-sub)"), textDecoration: "none" }}>Open ↗</a>
                   </div>
                 ))}
               </div>
@@ -714,18 +716,18 @@ export default function ClientComms() {
         {/* ── TIMEZONES TAB ─────────────────────────────────── */}
         {tab === "timezones" && (
           <div>
-            <div style={{ marginBottom: 12, color: "#8b8ba8", fontSize: 13 }}>
+            <div style={{ marginBottom: 12, color: "var(--text-sub)", fontSize: 13 }}>
               Live clocks for all your key client markets. Green = business hours. Orange = early morning or evening. Grey = offline.
             </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               {(["all","open","soon"] as const).map(f => (
-                <button key={f} style={{ ...S.btn(f === tzFilter ? "#a78bfa" : "#4b4b6a"),
-                  borderColor: f === tzFilter ? "rgba(167,139,250,.4)" : "#1a1a3a" }}
+                <button key={f} style={{ ...S.btn(f === tzFilter ? "#a78bfa" : "var(--text-muted)"),
+                  borderColor: f === tzFilter ? "rgba(167,139,250,.4)" : "var(--border)" }}
                   onClick={() => setTzFilter(f)}>
                   {f === "all" ? "🌍 All" : f === "open" ? "🟢 Open Now" : "🟡 Soon Open"}
                 </button>
               ))}
-              <div style={{ marginLeft: "auto", fontSize: 12, color: "#4b4b6a", alignSelf: "center" }}>
+              <div style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)", alignSelf: "center" }}>
                 {filteredTZ.filter(z => z.business_status === "business").length} markets open now
               </div>
             </div>
@@ -733,7 +735,7 @@ export default function ClientComms() {
               {filteredTZ.map((tz, i) => <TZClock key={i} tz={tz} />)}
             </div>
             {filteredTZ.length === 0 && (
-              <div style={{ color: "#4b4b6a", textAlign: "center", padding: 40 }}>
+              <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 40 }}>
                 No markets match this filter right now.
               </div>
             )}
