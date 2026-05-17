@@ -17,7 +17,7 @@ const CAT_I:any={seo:"🔍",content:"📝",technical:"⚙️",links:"🔗",repor
 export default function KanbanBoard(){
   const[projects,setProjects]=useState<any[]>([]);
   const[staff,setStaff]=useState<any[]>([]);
-  const[sel,setSel]=useState("");
+  const[sel,setSel]=useState(""); // auto-populated from projects
   const[columns,setColumns]=useState<Record<string,any[]>>({});
   const[adding,setAdding]=useState<string|null>(null);
   const[newTask,setNew]=useState({title:"",description:"",priority:"medium",category:"seo",assignedTo:"",dueDate:""});

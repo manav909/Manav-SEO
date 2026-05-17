@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+const PORTAL_NAV_PAGES = new Set(["/","/oval","/dashboard","/playground","/audit","/launchpad","/mission-control","/brain-command","/brain-learning","/algorithm-intel","/desk","/system-control","/data-room"]);
 
 const DOCK_ITEMS = [
   { href: "/build",          icon: "📡", label: "Command" },
@@ -20,6 +21,7 @@ const DOCK_ITEMS = [
 
 export default function FloatingDock() {
   const location = useLocation();
+  if (PORTAL_NAV_PAGES.has(location.pathname)) return null;
   const navigate = useNavigate();
   const [hovered, setHovered] = useState<number | null>(null);
 

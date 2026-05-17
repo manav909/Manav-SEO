@@ -22,6 +22,8 @@ export default function AskEmpire(){
   const[input,setInput]=useState("");
   const[loading,setLoading]=useState(false);
   const[sessionId]=useState(()=>`session_${Date.now()}`);
+  const[aiStatus,setAiStatus]=useState<'checking'|'ok'|'error'>('checking');
+  useEffect(()=>{post('check_system_health').then(r=>{const h=(r as any).health;setAiStatus(h?.can_reach_anthropic&&h?.env_vars_ok?'ok':'error');});},[]);
   const[projects,setProjects]=useState<any[]>([]);
   const[selProject,setSel]=useState("");
   const bottomRef=useRef<HTMLDivElement>(null);

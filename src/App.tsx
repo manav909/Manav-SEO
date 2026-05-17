@@ -95,7 +95,7 @@ const AppRoutes = () => {
         <GlobalEffects />
         <SmartTopBar />
         <SmartSidebar />
-        <div style={{paddingTop:40,paddingBottom:80}}><Routes>
+        <div style={{paddingTop:0,paddingBottom:0}}><Routes>
         {/* Public routes */}
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
         <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />

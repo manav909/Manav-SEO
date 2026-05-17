@@ -1,6 +1,7 @@
 
 import React,{useState,useEffect} from "react";
 import {useNav} from "@/contexts/NavContext";
+const PORTAL_NAV_PAGES = new Set(["/","/oval","/dashboard","/playground","/audit","/launchpad","/mission-control","/brain-command","/brain-learning","/algorithm-intel","/desk","/system-control","/data-room"]);
 
 const ALL_SECTIONS = [
   {
@@ -112,6 +113,9 @@ export default function SmartSidebar(){
     }
   },[currentPath]);
 
+  // Don't show on pages with PortalNav
+  const{currentPath}=useNav();
+  if (PORTAL_NAV_PAGES.has(currentPath)) return null;
   const show = sidebarOpen || sidebarPinned;
   if(!show) return null;
 

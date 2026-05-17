@@ -2,6 +2,13 @@
 import React,{useState,useEffect,useCallback} from "react";
 import {useNav} from "@/contexts/NavContext";
 import {useLocation} from "react-router-dom";
+
+// Pages that use the original PortalNav — SmartTopBar hides on these
+const PORTAL_NAV_PAGES = new Set([
+  "/", "/oval", "/dashboard", "/playground", "/audit", "/launchpad",
+  "/mission-control", "/brain-command", "/brain-learning", "/algorithm-intel",
+  "/desk", "/system-control", "/data-room",
+]);
 import GlobalSearch from "@/components/GlobalSearch";
 
 const BREADCRUMBS:Record<string,{label:string;parent?:string}> = {
@@ -47,6 +54,8 @@ function AnimNum({v,prefix="",suffix=""}:{v:number,prefix?:string,suffix?:string
 }
 
 export default function SmartTopBar(){
+  // Hide on original PortalNav pages to avoid double navigation
+  if (PORTAL_NAV_PAGES.has(location.pathname)) return null;
   const{setSidebarOpen,sidebarOpen,sidebarPinned,
         role,setRole,empireStats,suggestion,navigate}=useNav();
   const location=useLocation();
