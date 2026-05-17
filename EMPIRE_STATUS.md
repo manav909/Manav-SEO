@@ -1,5 +1,5 @@
 # SEO Season Empire Status
-Updated: 2026-05-17 10:45:45 UTC
+Updated: 2026-05-17 10:55:50 UTC
 Branch: main
 
 ## Build Status
@@ -126,16 +126,16 @@ Branch: main
   - upsert_lead_assignment
 
 ## Recent Commits
+6db1d30 fix(build): Launchpad + legacy pages — remove broken fragment wrapping from regex
+4a53341 status: 10:45 — 41p 70a 0 tables missing
 0ed6621 feat(legacy-ui): all legacy pages Hollywood treatment — CSS vars, AnimatedBg, glass-card, warp-in animations
 4ea230f feat(jarvis-nav): JARVIS adaptive navigation — SmartTopBar + SmartSidebar + NavBrain + usage learning + role-aware suggestions
 fcffaad status: 10:35 — 41p 70a 0 tables missing
 2f99185 status: 10:25 — 41p 70a 0 tables missing
 10bb833 status: 10:14 — 41p 70a 0 tables missing
 2a1f887 status: 09:59 — 41p 70a 0 tables missing
-89fcdda status: 09:47 — 41p 70a 0 tables missing
-c0010d0 status: 09:37 — 41p 70a 0 tables missing
 
 ## Watcher Status
 - Running: YES
-- Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py', '/Users/manav909/Downloads/empire_comms_a.py', '/Users/manav909/Downloads/empire_comms_b.py', '/Users/manav909/Downloads/empire_roles_a.py', '/Users/manav909/Downloads/empire_roles_b.py', '/Users/manav909/Downloads/empire_monitor_demo.py', '/Users/manav909/Downloads/empire_fix_build.py', '/Users/manav909/Downloads/empire_themes_a.py', '/Users/manav909/Downloads/empire_themes_b.py', '/Users/manav909/Downloads/empire_fix_critical.py', '/Users/manav909/Downloads/empire_fix_build_001.py', '/Users/manav909/Downloads/empire_complete_001.py', '/Users/manav909/Downloads/empire_fix_braincommand.py', '/Users/manav909/Downloads/empire_fix_clientdash.py', '/Users/manav909/Downloads/empire_enhance_a.py', '/Users/manav909/Downloads/empire_enhance_b.py', '/Users/manav909/Downloads/empire_ui_system.py', '/Users/manav909/Downloads/empire_fix_build_002.py', '/Users/manav909/Downloads/empire_tour.py', '/Users/manav909/Downloads/empire_ui_global.py', '/Users/manav909/Downloads/empire_jarvis_nav.py', '/Users/manav909/Downloads/empire_legacy_ui.py']
-- Last update: 2026-05-17T10:45:45.174072
+- Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py', '/Users/manav909/Downloads/empire_comms_a.py', '/Users/manav909/Downloads/empire_comms_b.py', '/Users/manav909/Downloads/empire_roles_a.py', '/Users/manav909/Downloads/empire_roles_b.py', '/Users/manav909/Downloads/empire_monitor_demo.py', '/Users/manav909/Downloads/empire_fix_build.py', '/Users/manav909/Downloads/empire_themes_a.py', '/Users/manav909/Downloads/empire_themes_b.py', '/Users/manav909/Downloads/empire_fix_critical.py', '/Users/manav909/Downloads/empire_fix_build_001.py', '/Users/manav909/Downloads/empire_complete_001.py', '/Users/manav909/Downloads/empire_fix_braincommand.py', '/Users/manav909/Downloads/empire_fix_clientdash.py', '/Users/manav909/Downloads/empire_enhance_a.py', '/Users/manav909/Downloads/empire_enhance_b.py', '/Users/manav909/Downloads/empire_ui_system.py', '/Users/manav909/Downloads/empire_fix_build_002.py', '/Users/manav909/Downloads/empire_tour.py', '/Users/manav909/Downloads/empire_ui_global.py', '/Users/manav909/Downloads/empire_jarvis_nav.py', '/Users/manav909/Downloads/empire_legacy_ui.py', '/Users/manav909/Downloads/empire_fix_build_003.py']
+- Last update: 2026-05-17T10:55:50.891049
