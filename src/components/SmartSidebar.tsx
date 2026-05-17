@@ -114,7 +114,6 @@ export default function SmartSidebar(){
   },[currentPath]);
 
   // Don't show on pages with PortalNav
-  const{currentPath}=useNav();
   if (PORTAL_NAV_PAGES.has(currentPath)) return null;
   const show = sidebarOpen || sidebarPinned;
   if(!show) return null;
