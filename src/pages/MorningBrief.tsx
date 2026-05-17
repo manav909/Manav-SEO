@@ -12,7 +12,6 @@ export default function MorningBrief(){
   if(loading)return<div style={{...S.p,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading brief...</div>;
   return(<div style={S.p}>
       <AnimatedBg/>
-      <div style={{position:"relative",zIndex:1}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
       <div><div style={{fontSize:11,color:"var(--text-muted)",letterSpacing:1,textTransform:"uppercase",marginBottom:4}}>{new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}</div><div style={{fontSize:22,fontWeight:700}}>🌅 Morning Brief</div>{brief?.headline&&<div style={{fontSize:14,color:"var(--text-sub)",marginTop:6,maxWidth:600,lineHeight:1.6}}>{brief.headline}</div>}</div>
       <button style={S.btn} onClick={regen} disabled={gen}>{gen?"Generating...":"↻ Regenerate"}</button>

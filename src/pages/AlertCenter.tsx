@@ -15,7 +15,6 @@ export default function AlertCenter(){
   if(loading)return<div style={{...S.p,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading alerts...</div>;
   return(<div style={S.p}>
       <AnimatedBg/>
-      <div style={{position:"relative",zIndex:1}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <div><div style={{fontSize:22,fontWeight:700}}>🚨 Alert Center</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>{unread} unread</div></div>
       <button style={{...S.fb,color:"#f87171",border:"0.5px solid rgba(239,68,68,.2)"}} onClick={dismissAll}>Dismiss All</button>

@@ -10,7 +10,6 @@ export default function Reports(){
   const S:any={p:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",padding:28,fontFamily:"var(--font-display,-apple-system,system-ui,sans-serif)"},c:{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:12,padding:18,marginBottom:10},sel:{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:8,color:"var(--text)",padding:"8px 14px",fontSize:13}};
   return(<div style={S.p}>
       <AnimatedBg/>
-      <div style={{position:"relative",zIndex:1}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <div><div style={{fontSize:22,fontWeight:700}}>📊 Reports</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>Auto-generated client-ready reports</div></div>
       <select style={S.sel} value={sel} onChange={e=>setSel(e.target.value)}>{projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select>

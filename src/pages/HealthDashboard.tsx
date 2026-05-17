@@ -13,7 +13,6 @@ export default function HealthDashboard(){
   if(loading)return<div style={{...S.p,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading health data...</div>;
   return(<div style={S.p}>
       <AnimatedBg/>
-      <div style={{position:"relative",zIndex:1}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <div><div style={{fontSize:22,fontWeight:700}}>❤️ Client Health</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>Avg: {avg}/100 · {health.filter(h=>h.churn_risk==="high"||h.churn_risk==="critical").length} at risk</div></div>
       <button style={S.btn} onClick={calcAll} disabled={calc}>{calc?"Calculating...":"↻ Recalculate All"}</button>

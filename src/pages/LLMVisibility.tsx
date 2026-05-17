@@ -12,7 +12,6 @@ export default function LLMVisibility(){
   if(loading)return<div style={{...S.p,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading...</div>;
   return(<div style={S.p}>
       <AnimatedBg/>
-      <div style={{position:"relative",zIndex:1}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <div><div style={{fontSize:22,fontWeight:700}}>🤖 LLM Visibility</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>How AI models see your clients</div></div>
       <div style={{display:"flex",gap:8}}><select style={S.sel} value={sel} onChange={e=>setSel(e.target.value)}>{projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select><button style={S.btn} onClick={check} disabled={checking}>{checking?"Checking...":"▶ Run Check"}</button></div>
