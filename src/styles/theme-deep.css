@@ -1,0 +1,210 @@
+
+/* ════════════════════════════════════════════════════════════
+   DEEP THEME CSS — Every element responds to theme variables
+   Applied on top of index.css for theme-specific refinement
+════════════════════════════════════════════════════════════ */
+
+/* ── BODY ──────────────────────────────────────────────────── */
+body {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  font-family: var(--font-display, -apple-system,'SF Pro Display',system-ui,sans-serif) !important;
+  letter-spacing: var(--letter-spacing, -.015em) !important;
+  transition: background .35s ease, color .25s ease !important;
+}
+
+/* ── CARDS ──────────────────────────────────────────────────── */
+.empire-card, .eg-card, .glass-card {
+  background: var(--bg-card) !important;
+  border: .5px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow-card) !important;
+  transition: transform .18s cubic-bezier(.2,0,.2,1),
+              box-shadow .18s ease,
+              border-color .18s ease !important;
+}
+.empire-card:hover, .eg-card:hover, .glass-card:hover {
+  border-color: var(--border-glow) !important;
+  box-shadow: var(--shadow-card), var(--shadow-glow) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* ── HEADERS / STICKY BARS ──────────────────────────────────── */
+.glass-strong, .eg-header, [style*="sticky"] {
+  background: color-mix(in srgb, var(--bg) 92%, transparent) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border-bottom: .5px solid var(--border) !important;
+}
+
+/* ── INPUTS ─────────────────────────────────────────────────── */
+input:not([type="checkbox"]):not([type="radio"]),
+textarea, select {
+  background: var(--bg-deep) !important;
+  border: .5px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text) !important;
+  font-family: var(--font-display) !important;
+}
+input:focus, textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-glow) !important;
+  outline: none !important;
+}
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* ── BUTTONS ─────────────────────────────────────────────────── */
+button:not(.dock-item):not(.no-theme) {
+  transition: all .15s cubic-bezier(.2,0,.2,1) !important;
+  font-family: var(--font-display) !important;
+}
+.empire-btn {
+  background: var(--accent-glow) !important;
+  border: .5px solid var(--border-glow) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--accent-soft) !important;
+}
+.empire-btn:hover {
+  background: var(--accent) !important;
+  color: #fff !important;
+  box-shadow: var(--shadow-glow) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ── BADGES ─────────────────────────────────────────────────── */
+.empire-badge {
+  border-radius: var(--radius-sm) !important;
+  font-family: var(--font-mono) !important;
+}
+/* Pill variant */
+[data-theme*="rose"] .empire-badge,
+[data-theme*="vapor"] .empire-badge,
+[data-theme*="emerald"] .empire-badge { border-radius: 20px !important; }
+/* Sharp variant */
+[data-theme*="arctic"] .empire-badge,
+[data-theme*="matrix"] .empire-badge { border-radius: 3px !important; }
+
+/* ── STATUS LABELS (monospace) ──────────────────────────────── */
+.status-label {
+  font-family: var(--font-mono) !important;
+  font-size: 9px !important;
+  letter-spacing: .12em !important;
+  text-transform: uppercase !important;
+  color: var(--text-muted) !important;
+}
+.status-dot {
+  width: 6px !important; height: 6px !important;
+  border-radius: 50% !important;
+  background: var(--status-dot) !important;
+  box-shadow: 0 0 6px var(--status-dot) !important;
+  display: inline-block !important;
+}
+
+/* ── PROGRESS ────────────────────────────────────────────────── */
+.empire-progress-track { background: var(--progress-track) !important; }
+.empire-progress-fill  { background: var(--progress-color) !important; }
+
+/* ── THEME-SPECIFIC CARD EFFECTS ────────────────────────────── */
+
+/* Void — solid, subtle border */
+[data-theme*="void"] .empire-card {
+  background: var(--bg-card) !important;
+}
+/* Obsidian — deep with glow hint */
+[data-theme*="obsidian"] .empire-card {
+  box-shadow: var(--shadow-card), 0 0 0 .5px rgba(168,85,247,.08) !important;
+}
+/* Arctic — frosted, sharp */
+[data-theme*="arctic"] .empire-card {
+  backdrop-filter: blur(16px) !important;
+  background: rgba(7,24,40,.8) !important;
+}
+[data-theme*="arctic_light"] .empire-card {
+  background: rgba(255,255,255,.9) !important;
+  backdrop-filter: blur(16px) !important;
+}
+/* Matrix — bordered only, no background blur */
+[data-theme*="matrix"] .empire-card {
+  background: var(--bg-card) !important;
+  border: .5px solid var(--accent-glow) !important;
+  box-shadow: 0 0 0 .5px var(--border-glow), inset 0 0 30px rgba(0,255,65,.015) !important;
+}
+/* Vapor — glass gradient */
+[data-theme*="vapor"] .empire-card {
+  background: linear-gradient(135deg, rgba(18,0,30,.9), rgba(10,0,20,.95)) !important;
+  backdrop-filter: blur(20px) !important;
+}
+/* Rose — soft glass */
+[data-theme*="rose"] .empire-card {
+  background: rgba(17,8,16,.85) !important;
+  backdrop-filter: blur(16px) !important;
+}
+/* Carbon — solid black */
+[data-theme*="carbon"] .empire-card {
+  background: #111 !important;
+  border-color: rgba(255,255,255,.06) !important;
+}
+/* Solar — warm deep */
+[data-theme*="solar"] .empire-card {
+  background: linear-gradient(135deg,rgba(14,12,0,.95),rgba(8,6,0,.98)) !important;
+}
+/* Emerald — lush dark */
+[data-theme*="emerald"] .empire-card {
+  background: rgba(7,26,15,.9) !important;
+  backdrop-filter: blur(12px) !important;
+}
+/* Cobalt — enterprise frosted */
+[data-theme*="cobalt"] .empire-card {
+  background: rgba(7,16,34,.85) !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+/* ── LIGHT MODE CARD OVERRIDES ──────────────────────────────── */
+[data-mode="light"] .empire-card,
+[data-mode="light"] .eg-card {
+  background: var(--bg-card) !important;
+  box-shadow: var(--shadow-card) !important;
+  backdrop-filter: none !important;
+}
+[data-mode="light"] .empire-card:hover {
+  box-shadow: var(--shadow-card), var(--shadow-glow) !important;
+}
+
+/* ── SCROLLBAR ───────────────────────────────────────────────── */
+::-webkit-scrollbar-thumb { background: var(--border-glow) !important; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent) !important; }
+
+/* ── SELECTION ───────────────────────────────────────────────── */
+::selection { background: var(--accent-glow) !important; color: var(--text) !important; }
+
+/* ── TRANSITION SPEED VARIANTS ──────────────────────────────── */
+[data-transition="fast"] * {
+  transition-duration: .1s !important;
+}
+[data-transition="slow"] .empire-card,
+[data-transition="slow"] .glass-card {
+  transition-duration: .4s !important;
+}
+
+/* ── MATRIX: SPECIAL SCAN LINE ──────────────────────────────── */
+[data-theme*="matrix"] body::after {
+  content: '' !important;
+  position: fixed !important;
+  top: 0; left: 0; right: 0; bottom: 0 !important;
+  background: repeating-linear-gradient(0deg,
+    transparent, transparent 2px,
+    rgba(0,255,65,.008) 2px, rgba(0,255,65,.008) 4px) !important;
+  pointer-events: none !important;
+  z-index: 9999 !important;
+}
+
+/* ── VAPOR: GRADIENT BORDER ON ACTIVE ──────────────────────── */
+[data-theme*="vapor"] .empire-card:hover {
+  border: .5px solid transparent !important;
+  background-clip: padding-box !important;
+  box-shadow: 0 0 0 .5px rgba(255,0,110,.4),
+              0 0 0 .5px rgba(131,56,236,.4),
+              var(--shadow-deep) !important;
+}

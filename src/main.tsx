@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import App from "./App.tsx";
 import "./index.css";
+import "./styles/theme-deep.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
