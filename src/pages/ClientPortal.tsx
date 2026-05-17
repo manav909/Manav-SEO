@@ -1,55 +1,65 @@
-import PortalNav from '@/components/PortalNav';
-import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect} from "react";
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
-
-const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
+import PortalNav from "@/components/PortalNav";
+import { useProject } from "@/contexts/ProjectContext";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 
 export default function ClientPortal(){
-  const { selectedProjectId: projectId } = useProject();
   const[projects,setProjects]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
+  const{setSelectedProjectId}=useProject();
+  const navigate=useNavigate();
+
   useEffect(()=>{
-    import("@/lib/supabase").then(({supabase})=>{
-      supabase.from("projects").select("*").limit(20).then(({data})=>{setProjects(data||[]);setLoading(false);});
+    supabase.from("projects").select("*").limit(20).then(({data})=>{
+      setProjects(data||[]); setLoading(false);
     });
   },[]);
+
+  const openProject=(p:any)=>{ setSelectedProjectId(p.id); navigate("/client-dashboard"); };
+
   return(
-    <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif"}}>
-      <PortalNav />
-      
-      <div style={{position:"relative",zIndex:1}}>
-        
-              <div style={{fontSize:10,color:"var(--text-muted)",letterSpacing:"1px",textTransform:"uppercase" as const}}>All Active Projects</div>
-            </div>
-          </div>
-                  </div>
-        <div style={{maxWidth:1000,margin:"0 auto",padding:"24px 24px 100px"}}>
-          {loading?<div style={{color:"var(--text-muted)",textAlign:"center" as const,padding:60}}>Loading projects...</div>:(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-              {projects.map((p:any,i:number)=>(
-                <a key={p.id} href="/client-dashboard" className="glass-card"
-                  style={{textDecoration:"none",padding:"20px",animation:`warp-in .4s ease ${i*0.06}s both`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                    <div style={{width:40,height:40,borderRadius:12,background:"var(--accent-glow)",
-                      border:"0.5px solid var(--border-glow)",display:"flex",alignItems:"center",
-                      justifyContent:"center",fontSize:16,fontWeight:700,color:"var(--accent-soft)"}}>
-                      {(p.name||"P").slice(0,2).toUpperCase()}
-                    </div>
-                    <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,
-                      background:"rgba(16,185,129,.12)",color:"#10b981"}}>ACTIVE</span>
-                  </div>
-                  <div style={{fontSize:14,fontWeight:700,color:"var(--text)",marginBottom:4}}>{p.name}</div>
-                  <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:8}}>{p.url}</div>
-                  <div style={{fontSize:11,color:"var(--text-sub)",lineHeight:1.5}}>{(p.goals||"Improving organic visibility").slice(0,80)}</div>
-                  <div style={{marginTop:12,fontSize:11,color:"var(--accent-soft)",fontWeight:600}}>View Campaign →</div>
-                </a>
-              ))}
-              {!projects.length&&<div style={{gridColumn:"1/-1",textAlign:"center" as const,padding:60,color:"var(--text-muted)"}}>No projects yet.</div>}
-            </div>
-          )}
+    <div className="min-h-screen bg-background text-foreground">
+      <PortalNav/>
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold tracking-tight">Client Portal</h1>
+          <p className="text-sm text-muted-foreground mt-1">All active projects — click to open campaign view</p>
         </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
+            Loading projects...
+          </div>
+        ) : (
+          <div className="grid gap-4" style={{gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))"}}>
+            {projects.map((p:any)=>(
+              <button key={p.id} onClick={()=>openProject(p)}
+                className="text-left p-5 rounded-2xl border border-border bg-card hover:border-primary/40 hover:bg-primary/5 transition-all duration-200 group">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-sm font-bold text-primary">
+                    {(p.name||"P").slice(0,2).toUpperCase()}
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                    ACTIVE
+                  </span>
+                </div>
+                <div className="font-semibold text-sm mb-1">{p.name}</div>
+                <div className="text-xs text-muted-foreground mb-2 truncate">{p.url}</div>
+                <div className="text-xs text-muted-foreground/60 line-clamp-2">
+                  {(p.goals||"Improving organic search visibility").slice(0,80)}
+                </div>
+                <div className="mt-4 text-xs font-medium text-primary group-hover:translate-x-0.5 transition-transform">
+                  View Campaign →
+                </div>
+              </button>
+            ))}
+            {!projects.length && (
+              <div className="col-span-full text-center py-16 text-sm text-muted-foreground">
+                No projects yet.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
