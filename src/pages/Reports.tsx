@@ -1,30 +1,84 @@
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
-import PortalNav from '@/components/PortalNav';
-import { useProject } from '@/contexts/ProjectContext';
-import React,{useState,useEffect} from "react";
-const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
-export default function Reports(){
+import React, { useState, useEffect } from "react";
+import PortalNav from "@/components/PortalNav";
+import { useProject } from "@/contexts/ProjectContext";
+
+const post = (a: string, b: any = {}) =>
+  fetch("/api/task-engine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: a, ...b }),
+  }).then(r => r.json()).catch(() => ({}));
+
+export default function Reports() {
   const { selectedProjectId: projectId } = useProject();
-  const[projects,setProjects]=useState<any[]>([]);const[sel,setSel]=useState("");const[reports,setReports]=useState<any[]>([]);const[gen,setGen]=useState<string|null>(null);const[preview,setPreview]=useState<string|null>(null);
-  useEffect(()=>{import("@/lib/supabase").then(({supabase})=>{supabase.from("projects").select("id,name").limit(20).then(({data})=>{setProjects(data||[]);if(data?.length)setSel(data[0].id);});});},[]);
-  useEffect(()=>{if(sel)post("get_reports",{projectId:sel,limit:10}).then(r=>setReports((r as any).reports||[]));},[sel]);
-  const generate=async(type:string)=>{setGen(type);const r=await post("generate_report",{projectId:sel,reportType:type});if((r as any).report?.html_content)setPreview((r as any).report.html_content);post("get_reports",{projectId:sel,limit:10}).then(r=>setReports((r as any).reports||[]));setGen(null);};
-  const S:any={p:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",padding:28,fontFamily:"var(--font-display,-apple-system,system-ui,sans-serif)"},c:{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:12,padding:18,marginBottom:10},sel:{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:8,color:"var(--text)",padding:"8px 14px",fontSize:13}};
-  return(<div style={S.p}>
+  const [reports,   setReports]   = useState<any[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [generating,setGenerating]= useState(false);
+
+  useEffect(() => {
+    post("get_reports", { projectId }).then(r => {
+      setReports((r as any).reports || []);
+      setLoading(false);
+    });
+  }, [projectId]);
+
+  const generate = () => {
+    setGenerating(true);
+    post("generate_report", { projectId, reportType: "monthly" }).then(r => {
+      if ((r as any).report) setReports(p => [(r as any).report, ...p]);
+      setGenerating(false);
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
       <PortalNav />
-      
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <div><div style={{fontSize:22,fontWeight:700}}>📊 Reports</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>Auto-generated client-ready reports</div></div>
-      <select style={S.sel} value={sel} onChange={e=>setSel(e.target.value)}>{projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Reports</h1>
+            <p className="text-sm text-muted-foreground mt-1">Auto-generated client reports</p>
+          </div>
+          <button
+            onClick={generate}
+            disabled={generating}
+            className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+          >
+            {generating ? "Generating..." : "+ Generate Report"}
+          </button>
+        </div>
+        {loading ? (
+          <div className="text-center py-16 text-sm text-muted-foreground">
+            Loading reports...
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {reports.map((r: any, i: number) => (
+              <div key={r.id || i} className="rounded-2xl border border-border bg-card p-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-sm">{r.title || `Report ${i + 1}`}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {r.created_at?.slice(0, 10) || "Recent"}
+                    </div>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                    Ready
+                  </span>
+                </div>
+                {r.summary && (
+                  <p className="text-xs text-muted-foreground mt-3 line-clamp-2">{r.summary}</p>
+                )}
+              </div>
+            ))}
+            {!reports.length && (
+              <div className="text-center py-16 text-sm text-muted-foreground">
+                No reports yet. Click Generate Report to create your first one.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
-    <div style={{display:"flex",gap:10,marginBottom:20}}>
-      {[["weekly","Weekly","#6366f1"],["monthly","Monthly","#8b5cf6"],["quarterly","Quarterly","#a78bfa"]].map(([type,label,color])=><button key={type} onClick={()=>generate(type)} disabled={!!gen} style={{background:`${color}20`,border:`0.5px solid ${color}50`,borderRadius:8,color,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>{gen===type?`Generating...`:`+ ${label} Report`}</button>)}
-    </div>
-    {preview&&<div style={{...S.c,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}><div style={{fontSize:14,fontWeight:600}}>Preview</div><button style={{background:"transparent",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:16}} onClick={()=>setPreview(null)}>✕</button></div><div style={{background:"var(--bg)",borderRadius:8,padding:16,maxHeight:400,overflowY:"auto"}} dangerouslySetInnerHTML={{__html:preview}}/></div>}
-    {reports.map((r:any)=><div key={r.id} style={{...S.c,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:14,fontWeight:600,marginBottom:3}}>{r.title}</div><div style={{fontSize:12,color:"var(--text-sub)"}}>{new Date(r.created_at).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div></div><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,padding:"3px 10px",borderRadius:20,background:"rgba(99,102,241,.1)",color:"#818cf8",border:"0.5px solid rgba(99,102,241,.2)"}}>{r.report_type}</span><a href={`/reports/${r.token}`} target="_blank" style={{background:"rgba(255,255,255,.05)",border:"0.5px solid #1e1e3a",borderRadius:6,color:"var(--text-sub)",padding:"5px 12px",fontSize:11,textDecoration:"none"}}>View ↗</a></div></div>)}
-    {!reports.length&&<div style={{color:"var(--text-muted)",textAlign:"center",padding:40,fontSize:14}}>No reports yet. Generate your first above.</div>}
-  </div>
-  </div>
   );
 }

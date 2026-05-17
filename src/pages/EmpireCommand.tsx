@@ -11,13 +11,13 @@ const post = (a: string, b: any = {}) =>
 
 function Ring({ v, size = 48, stroke = 4, color }: { v: number; size?: number; stroke?: number; color: string }) {
   const r = (size - stroke * 2) / 2;
-  const c = 2 * Math.PI * r;
-  const off = c - (v / 100) * c;
+  const circ = 2 * Math.PI * r;
+  const off  = circ - (v / 100) * circ;
   return (
     <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={stroke} />
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-        strokeDasharray={`${c} ${c}`} strokeDashoffset={off} strokeLinecap="round"
+        strokeDasharray={`${circ} ${circ}`} strokeDashoffset={off} strokeLinecap="round"
         style={{ transition: "stroke-dashoffset .8s cubic-bezier(.4,0,.2,1)" }} />
     </svg>
   );
@@ -25,12 +25,11 @@ function Ring({ v, size = 48, stroke = 4, color }: { v: number; size?: number; s
 
 export default function EmpireCommand() {
   const { selectedProjectId } = useProject();
-  const [stats,  setStats]  = useState<any>({});
-  const [health, setHealth] = useState<any[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [brief,  setBrief]  = useState<any>(null);
-  const [loading,setLoading]= useState(true);
-
+  const [stats,   setStats]   = useState<any>({});
+  const [health,  setHealth]  = useState<any[]>([]);
+  const [alerts,  setAlerts]  = useState<any[]>([]);
+  const [brief,   setBrief]   = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const rc: any = { low:"#10b981", medium:"#f59e0b", high:"#ef4444", critical:"#dc2626" };
 
   const load = () => {
@@ -44,7 +43,7 @@ export default function EmpireCommand() {
       if (s.status === "fulfilled") setStats((s.value as any).stats || {});
       if (h.status === "fulfilled") setHealth((h.value as any).health || []);
       if (a.status === "fulfilled") setAlerts((a.value as any).alerts || []);
-      if (b.status === "fulfilled") setBrief((b.value as any).brief || (b.value as any));
+      if (b.status === "fulfilled") setBrief((b.value as any).brief || b.value);
       setLoading(false);
     });
   };
@@ -52,12 +51,12 @@ export default function EmpireCommand() {
   useEffect(() => { load(); }, []);
 
   const metrics = [
-    { v: stats.projects     || 0, l: "Projects",   c: "#6366f1", i: "🏗" },
-    { v: stats.learnings    || 0, l: "Learnings",  c: "#a78bfa", i: "🧠" },
-    { v: stats.verifications|| 0, l: "Verified",   c: "#10b981", i: "✅" },
-    { v: stats.llmCitations || 0, l: "AI Citations",c:"#06b6d4", i: "🤖" },
-    { v: stats.prospects    || 0, l: "Leads",      c: "#f59e0b", i: "🎯" },
-    { v: stats.alertsUnread || 0, l: "Alerts",     c: stats.alertsUnread > 0 ? "#ef4444" : "#4b4b6a", i: "🚨" },
+    { v: stats.projects      || 0, l: "Projects",    c: "#6366f1", i: "🏗" },
+    { v: stats.learnings     || 0, l: "Learnings",   c: "#a78bfa", i: "🧠" },
+    { v: stats.verifications || 0, l: "Verified",    c: "#10b981", i: "✅" },
+    { v: stats.llmCitations  || 0, l: "AI Citations",c: "#06b6d4", i: "🤖" },
+    { v: stats.prospects     || 0, l: "Leads",       c: "#f59e0b", i: "🎯" },
+    { v: stats.alertsUnread  || 0, l: "Alerts",      c: stats.alertsUnread > 0 ? "#ef4444" : "#4b4b6a", i: "🚨" },
   ];
 
   return (
@@ -86,9 +85,7 @@ export default function EmpireCommand() {
             <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">
               Client Health
             </div>
-            {loading && (
-              <div className="text-sm text-muted-foreground py-4">Loading...</div>
-            )}
+            {loading && <div className="text-sm text-muted-foreground py-4">Loading...</div>}
             {health.map((h: any) => (
               <div key={h.project_id} className="flex items-center gap-3 py-2 border-b border-border/50 last:border-0">
                 <div className="relative flex-shrink-0">
@@ -129,7 +126,7 @@ export default function EmpireCommand() {
                   <span className="text-xs px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5"
                     style={{
                       background: a.severity === "warning" ? "rgba(245,158,11,.1)" : "rgba(239,68,68,.1)",
-                      color:      a.severity === "warning" ? "#f59e0b"            : "#ef4444",
+                      color:      a.severity === "warning" ? "#f59e0b" : "#ef4444",
                     }}>
                     {a.severity?.toUpperCase()}
                   </span>
