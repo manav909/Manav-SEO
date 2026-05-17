@@ -1,11 +1,14 @@
 import AnimatedBg from "@/components/AnimatedBg";
 import ThemeToggle from "@/components/ThemeToggle";
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect,useCallback} from "react";
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
 const ROLES:any={hod:{c:"#dc2626",l:"HOD"},sales_manager:{c:"#f59e0b",l:"Sales Mgr"},bdm:{c:"#6366f1",l:"BDM"},bde:{c:"#10b981",l:"BDE"},pm:{c:"#06b6d4",l:"PM"}};
 const STAGES=["new","contacted","demo_sent","proposal_sent","negotiating","won","lost","nurture"];
 const STAGE_C:any={new:"var(--text-muted)",contacted:"#6366f1",demo_sent:"#8b5cf6",proposal_sent:"#a78bfa",negotiating:"#f59e0b",won:"#10b981",lost:"#ef4444",nurture:"#06b6d4"};
 export default function StaffCommand(){
+  const { selectedProjectId: projectId } = useProject();
   const[tab,setTab]=useState<"overview"|"pipeline"|"team"|"staff">("overview");
   const[staff,setStaff]=useState<any[]>([]);
   const[pipeline,setPipeline]=useState<any>({});
@@ -66,7 +69,8 @@ export default function StaffCommand(){
   });
   return(
     <div style={S.root}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={S.hdr}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:8,height:8,borderRadius:"50%",background:"#dc2626",boxShadow:"0 0 8px #dc2626"}}/>

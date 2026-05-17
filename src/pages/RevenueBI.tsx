@@ -1,3 +1,5 @@
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect,useCallback} from "react";
 import AnimatedBg from "@/components/AnimatedBg";
 import MetricCard from "@/components/MetricCard";
@@ -8,6 +10,7 @@ const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",
   headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
 
 export default function RevenueBI(){
+  const { selectedProjectId: projectId } = useProject();
   const[overview,setOverview]=useState<any>({});
   const[projects,setProjects]=useState<any[]>([]);
   const[pipeline,setPipeline]=useState<any>({});
@@ -66,14 +69,15 @@ export default function RevenueBI(){
 
   if(loading) return(
     <div style={{...S.root,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{zIndex:1,color:"var(--text-muted)"}}>Loading revenue data...</div>
     </div>
   );
 
   return(
     <div style={S.root} className="empire-page">
-      <AnimatedBg/>
+      
       <div style={{position:"relative",zIndex:1}}>
         <div style={S.hdr}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -86,8 +90,7 @@ export default function RevenueBI(){
           <div style={{display:"flex",gap:10}}>
             <button style={{...S.btn("var(--accent)"),fontSize:11,padding:"6px 12px"}}
               onClick={()=>setAddRev(!addingRev)}>+ Add Revenue</button>
-            <ThemeToggle compact/>
-          </div>
+                      </div>
         </div>
 
         <div style={S.body}>

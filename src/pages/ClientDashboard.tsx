@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabase";
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 import AnimatedBg from "@/components/AnimatedBg";
@@ -23,6 +25,7 @@ function ProgressRing({ value, size=60, stroke=4, color }: any) {
 }
 
 export default function ClientDashboard() {
+  const { selectedProjectId: projectId } = useProject();
   const { theme, toggle, mode, setProject } = useTheme();
   const [projects, setProjects] = useState<any[]>([]);
   const [selProject, setSel] = useState<any>(null);
@@ -72,7 +75,8 @@ export default function ClientDashboard() {
 
   if(loading) return (
     <div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{zIndex:1,textAlign:"center"}}>
         <div style={{width:40,height:40,border:`3px solid var(--accent)`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin 1s linear infinite",margin:"0 auto 16px"}}/>
         <div style={{color:"var(--text-muted)",fontSize:14}}>Loading your dashboard...</div>
@@ -82,7 +86,7 @@ export default function ClientDashboard() {
 
   return (
     <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)"}}>
-      <AnimatedBg/>
+      
       <div style={{position:"relative",zIndex:1}}>
 
         {/* Sticky header */}
@@ -112,8 +116,7 @@ export default function ClientDashboard() {
                 {projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             )}
-            <ThemeToggle compact/>
-          </div>
+                      </div>
         </div>
 
         {/* Hero banner */}

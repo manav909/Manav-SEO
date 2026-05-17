@@ -1,4 +1,6 @@
 import AnimatedBg from "@/components/AnimatedBg";
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useParams, useNavigate } from "react-router-dom";
@@ -17,6 +19,7 @@ const ROLE_META: any = {
 };
 
 export default function StaffProfile() {
+  const { selectedProjectId: projectId } = useProject();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [staff, setStaff]     = useState<any>(null);
@@ -80,7 +83,8 @@ export default function StaffProfile() {
   if (!staff) return (
     <div style={{ minHeight:"100vh", background:"#06060e", color:"#e8e8f8",
       fontFamily:"system-ui", display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{ color:"var(--text-muted)" }}>Loading profile...</div>
     </div>
   );

@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabase";
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect} from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 import AnimatedBg from "@/components/AnimatedBg";
@@ -6,6 +8,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
 
 export default function ContentWriter(){
+  const { selectedProjectId: projectId } = useProject();
   const{theme}=useTheme();
   const[projects,setProjects]=useState<any[]>([]);
   const[sel,setSel]=useState<any>(null);
@@ -44,7 +47,8 @@ export default function ContentWriter(){
 
   return(
     <div className="empire-page">
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{position:"relative",zIndex:1}}>
         <div style={{background:"rgba(13,13,30,.9)",backdropFilter:"blur(20px)",
           borderBottom:"0.5px solid var(--border)",height:56,padding:"0 24px",
@@ -61,8 +65,7 @@ export default function ContentWriter(){
               value={sel?.id||""} onChange={e=>{const p=projects.find((x:any)=>x.id===e.target.value);if(p)setSel(p);}}>
               {projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <ThemeToggle compact/>
-          </div>
+                      </div>
         </div>
 
         <div style={{padding:"20px 24px",maxWidth:960,margin:"0 auto"}}>

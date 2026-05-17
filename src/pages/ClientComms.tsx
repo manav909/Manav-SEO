@@ -1,4 +1,6 @@
 import AnimatedBg from "@/components/AnimatedBg";
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React, { useState, useEffect, useRef } from "react";
 
 const post = (action: string, body: any = {}) =>
@@ -109,6 +111,7 @@ const PRES_TYPES = [
 ];
 
 export default function ClientComms() {
+  const { selectedProjectId: projectId } = useProject();
   const [tab, setTab] = useState<"analyser"|"objections"|"updates"|"presentations"|"timezones">("analyser");
   const [projects, setProjects] = useState<any[]>([]);
   const [selProject, setSelProject] = useState("");
@@ -256,7 +259,8 @@ export default function ClientComms() {
 
   return (
     <div style={S.root}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       {/* Header */}
       <div style={S.hdr}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

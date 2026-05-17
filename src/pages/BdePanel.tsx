@@ -1,10 +1,13 @@
 import AnimatedBg from "@/components/AnimatedBg";
 import ThemeToggle from "@/components/ThemeToggle";
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect,useRef} from "react";
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
 const STAGE_C:any={new:"var(--text-muted)",contacted:"#6366f1",demo_sent:"#8b5cf6",proposal_sent:"#a78bfa",negotiating:"#f59e0b",won:"#10b981",lost:"#ef4444",nurture:"#06b6d4"};
 const MOOD_C=(s:number)=>s>=70?"#10b981":s>=50?"#6366f1":s>=30?"#f59e0b":"#ef4444";
 export default function BdePanel(){
+  const { selectedProjectId: projectId } = useProject();
   const[tab,setTab]=useState<"fiverr"|"leads"|"tools"|"responses"|"showcase">("fiverr");
   const[convText,setConv]=useState("");
   const[analysing,setAnalysing]=useState(false);
@@ -72,7 +75,8 @@ export default function BdePanel(){
   };
   return(
     <div style={S.root}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={S.hdr}>
         <div style={{width:8,height:8,borderRadius:"50%",background:"#10b981",boxShadow:"0 0 8px #10b981"}}/>
         <span style={{fontSize:14,fontWeight:700}}>💼 BDE Panel</span>

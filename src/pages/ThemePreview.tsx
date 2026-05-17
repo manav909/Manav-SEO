@@ -1,4 +1,6 @@
 
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState} from "react";
 import {useTheme} from "@/contexts/ThemeContext";
 import {THEMES,type ThemeId} from "@/lib/theme-engine";
@@ -18,13 +20,15 @@ const THEME_LIST = [
 ];
 
 export default function ThemePreview(){
+  const { selectedProjectId: projectId } = useProject();
   const{themeId,mode,setThemeId,toggle,theme}=useTheme();
   const[hoverId,setHover]=useState<string|null>(null);
 
   return(
     <div style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",
       fontFamily:"var(--font-display)",position:"relative"}}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{position:"relative",zIndex:1,maxWidth:1000,margin:"0 auto",
         padding:"60px 24px 120px"}}>
 

@@ -1,3 +1,5 @@
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect,useCallback} from "react";
 import AnimatedBg from "@/components/AnimatedBg";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -15,6 +17,7 @@ const PRIORITY_C:any={critical:"#ef4444",high:"#f59e0b",medium:"var(--accent)",l
 const CAT_I:any={seo:"🔍",content:"📝",technical:"⚙️",links:"🔗",reporting:"📊",comms:"💬",other:"📌"};
 
 export default function KanbanBoard(){
+  const { selectedProjectId: projectId } = useProject();
   const[projects,setProjects]=useState<any[]>([]);
   const[staff,setStaff]=useState<any[]>([]);
   const[sel,setSel]=useState(""); // auto-populated from projects
@@ -100,7 +103,8 @@ export default function KanbanBoard(){
 
   return(
     <div style={S.root} className="empire-page">
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{position:"relative",zIndex:1}}>
         <div style={S.hdr}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -118,8 +122,7 @@ export default function KanbanBoard(){
               value={sel} onChange={e=>setSel(e.target.value)}>
               {projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <ThemeToggle compact/>
-          </div>
+                      </div>
         </div>
 
         {loading?(

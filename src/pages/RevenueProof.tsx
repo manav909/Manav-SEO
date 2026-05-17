@@ -1,9 +1,12 @@
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect} from "react";
 import AnimatedBg from "@/components/AnimatedBg";
 import ThemeToggle from "@/components/ThemeToggle";
 import MetricCard from "@/components/MetricCard";
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
 export default function RevenueProof(){
+  const { selectedProjectId: projectId } = useProject();
   const[overview,setOverview]=useState<any>({});
   const[health,setHealth]=useState<any[]>([]);
   useEffect(()=>{
@@ -12,15 +15,12 @@ export default function RevenueProof(){
   },[]);
   return(
     <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif"}}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{position:"relative",zIndex:1}}>
-        <div className="glass-strong" style={{position:"sticky" as const,top:40,zIndex:100,height:52,padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"0.5px solid var(--border)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <span style={{fontSize:20}}>💰</span>
-            <div style={{fontSize:15,fontWeight:700}}><span className="holo-text-subtle">Revenue Proof</span></div>
+        
           </div>
-          <ThemeToggle compact/>
-        </div>
+                  </div>
         <div style={{maxWidth:900,margin:"0 auto",padding:"24px 24px 100px"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:24}}>
             <MetricCard value={overview.mrr||0} label="MRR" prefix="£" icon="📅" animate/>

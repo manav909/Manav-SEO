@@ -1,9 +1,12 @@
 import AnimatedBg from "@/components/AnimatedBg";
 import ThemeToggle from "@/components/ThemeToggle";
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect} from "react";
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
 const sc:any={urgent:"#ef4444",critical:"#f97316",warning:"#f59e0b",info:"var(--bg)"};
 export default function AlertCenter(){
+  const { selectedProjectId: projectId } = useProject();
   const[alerts,setAlerts]=useState<any[]>([]);const[loading,setLoading]=useState(true);const[filter,setFilter]=useState("all");
   const load=async()=>{setLoading(true);const r=await post("get_alerts",{unreadOnly:false,limit:50});setAlerts((r as any).alerts||[]);setLoading(false);};
   useEffect(()=>{load();},[]);
@@ -14,7 +17,8 @@ export default function AlertCenter(){
   const S:any={p:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",padding:28,fontFamily:"var(--font-display,-apple-system,system-ui,sans-serif)"},fb:{background:"rgba(255,255,255,.05)",border:"0.5px solid #1e1e3a",borderRadius:8,color:"var(--text-sub)",padding:"7px 12px",fontSize:11,cursor:"pointer",marginRight:6},act:{background:"rgba(99,102,241,.15)",border:"0.5px solid rgba(99,102,241,.3)",color:"#a78bfa"}};
   if(loading)return<div style={{...S.p,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading alerts...</div>;
   return(<div style={S.p}>
-      <AnimatedBg/>
+      <PortalNav />
+      
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <div><div style={{fontSize:22,fontWeight:700}}>🚨 Alert Center</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>{unread} unread</div></div>
       <button style={{...S.fb,color:"#f87171",border:"0.5px solid rgba(239,68,68,.2)"}} onClick={dismissAll}>Dismiss All</button>

@@ -5,14 +5,9 @@ import { TooltipProvider }   from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import {NavProvider} from "@/contexts/NavContext";
-import SmartTopBar from "@/components/SmartTopBar";
-import SmartSidebar from "@/components/SmartSidebar";
-import GlobalEffects from "@/components/GlobalEffects";
 import { TourProvider } from "@/contexts/TourContext";
 import TourOverlay from "@/components/TourOverlay";
 import AIConcierge from "@/components/AIConcierge";
-import FloatingDock from "@/components/FloatingDock";
-import "@/styles/hollywood.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth }     from "@/contexts/AuthContext";
 import { ProjectProvider }             from "@/contexts/ProjectContext";
@@ -92,10 +87,7 @@ const AppRoutes = () => {
   return (
     <>
       <ThemeProvider><TourProvider><NavProvider>
-        <GlobalEffects />
-        <SmartTopBar />
-        <SmartSidebar />
-        <div style={{paddingTop:0,paddingBottom:0}}><Routes>
+        <div><Routes>
         {/* Public routes */}
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
         <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />
@@ -140,7 +132,6 @@ const AppRoutes = () => {
           <Route path="/kanban" element={<KanbanBoard />} />
           <Route path="*"               element={<NotFound />} />
       </Routes></div>
-        <FloatingDock />
         <TourOverlay />
         <AIConcierge />
       </NavProvider></TourProvider></ThemeProvider>

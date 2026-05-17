@@ -1,8 +1,11 @@
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React from "react";
 import AnimatedBg from "@/components/AnimatedBg";
 import ThemeToggle from "@/components/ThemeToggle";
 
 export default function ScaleControl() {
+  const { selectedProjectId: projectId } = useProject();
   const items = [
     {icon:"🏗",title:"Build Dashboard",href:"/build",desc:"Live surveillance — every system in real time"},
     {icon:"👑",title:"Empire Command",href:"/empire",desc:"God view — clients, health, priorities"},
@@ -19,7 +22,8 @@ export default function ScaleControl() {
   ];
   return (
     <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif"}}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{position:"relative",zIndex:1,maxWidth:1000,margin:"0 auto",padding:"60px 24px 100px"}}>
         <div style={{textAlign:"center" as const,marginBottom:48,animation:"warp-in .5s ease both"}}>
           <div style={{fontSize:13,color:"var(--text-muted)",letterSpacing:"3px",textTransform:"uppercase" as const,marginBottom:12}}>

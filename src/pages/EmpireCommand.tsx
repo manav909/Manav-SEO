@@ -1,3 +1,5 @@
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect} from "react";
 import AnimatedBg from "@/components/AnimatedBg";
 import MetricCard from "@/components/MetricCard";
@@ -15,6 +17,7 @@ function ProgressRing({value,size=52,stroke=4,color}:{value:number,size?:number,
 }
 
 export default function EmpireCommand(){
+  const { selectedProjectId: projectId } = useProject();
   const[stats,setStats]=useState<any>({});
   const[health,setHealth]=useState<any[]>([]);
   const[alerts,setAlerts]=useState<any[]>([]);
@@ -35,24 +38,14 @@ export default function EmpireCommand(){
 
   return(
     <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"var(--font-display)"}}>
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{position:"relative",zIndex:1}}>
         {/* Header */}
-        <div className="glass-strong" style={{position:"sticky" as const,top:40,zIndex:100,height:52,
-          padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",
-          borderBottom:"0.5px solid var(--border)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div className="empire-live-dot"/>
-            <span style={{fontSize:15,fontWeight:700,
-              background:"var(--grad-accent)",WebkitBackgroundClip:"text",
-              WebkitTextFillColor:"transparent",backgroundClip:"text"}}>Empire Command</span>
-            <span style={{fontFamily:"var(--font-mono)",fontSize:9,color:"var(--text-muted)",
-              letterSpacing:"1.5px",textTransform:"uppercase" as const}}>GOD VIEW</span>
-          </div>
+        
           <div style={{display:"flex",gap:8}}>
             <button className="empire-btn" onClick={load} disabled={loading}>{loading?"↻ Loading":"↻ Refresh"}</button>
-            <ThemeToggle compact/>
-          </div>
+                      </div>
         </div>
 
         <div style={{maxWidth:1100,margin:"0 auto",padding:"20px 24px 100px"}}>

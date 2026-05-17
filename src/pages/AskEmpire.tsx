@@ -1,3 +1,5 @@
+import PortalNav from '@/components/PortalNav';
+import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect,useRef} from "react";
 import AnimatedBg from "@/components/AnimatedBg";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -18,6 +20,7 @@ const SUGGESTIONS=[
 ];
 
 export default function AskEmpire(){
+  const { selectedProjectId: projectId } = useProject();
   const[messages,setMessages]=useState<{role:string;content:string;ts:Date}[]>([]);
   const[input,setInput]=useState("");
   const[loading,setLoading]=useState(false);
@@ -80,7 +83,8 @@ export default function AskEmpire(){
 
   return(
     <div style={S.root} className="empire-page">
-      <AnimatedBg/>
+      <PortalNav />
+      
       <div style={{position:"relative",zIndex:1,height:"100vh",display:"flex",flexDirection:"column" as const}}>
         <div style={S.hdr}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -103,8 +107,7 @@ export default function AskEmpire(){
                 {projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             )}
-            <ThemeToggle compact/>
-          </div>
+                      </div>
         </div>
 
         <div style={{flex:1,overflowY:"auto" as const,padding:"20px 24px"}}>

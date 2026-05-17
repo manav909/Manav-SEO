@@ -1,12 +1,7 @@
 /**
- * PortalNav — App navigation bar
- *
- * Project selection is now global via ProjectContext.
- * All pages share the same selected project — navigating between pages
- * never resets project selection.
- *
- * Legacy props (selectedProjectId, onProjectChange, projects) are accepted
- * for backwards compatibility but ProjectContext takes precedence.
+ * PortalNav — Unified navigation for the entire SEO Season Empire
+ * Single nav bar for ALL pages — original + new empire pages
+ * Uses AuthContext + ProjectContext for consistent state everywhere
  */
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -15,67 +10,113 @@ import { useProject } from '@/contexts/ProjectContext';
 import {
   BarChart3, Crown, Sparkles, LogOut, Settings, Zap, Layers,
   Database, Activity, Brain, ChevronDown, Menu, X,
-  BookOpenCheck, Rocket,
+  BookOpenCheck, Rocket, MessageSquare, Users, Target,
+  TrendingUp, FileText, Search, Heart, Eye, Kanban,
+  DollarSign, Bot, Palette, Map,
 } from 'lucide-react';
 
-/* Legacy prop interface — accepted but ProjectContext overrides */
 interface Props {
   clientName?:        string;
   companyName?:       string;
-  projects?:          any[];          /* ignored — ProjectContext provides this */
-  selectedProjectId?: string;         /* ignored — ProjectContext provides this */
-  onProjectChange?:   (id: string) => void; /* called for backwards compat only */
+  projects?:          any[];
+  selectedProjectId?: string;
+  onProjectChange?:   (id: string) => void;
 }
 
+// Primary tabs — always visible
 const PRIMARY = [
-  { href: '/oval',       label: 'The Oval',   icon: Crown,    desc: 'Presidential suite'    },
-  { href: '/dashboard',  label: 'Dashboard',  icon: BarChart3,desc: 'Overview & metrics'    },
-  { href: '/playground', label: 'Canvas',     icon: Layers,   desc: 'Strategy & execution'  },
-  { href: '/audit',      label: 'Audit',      icon: Zap,      desc: 'SEO audit tool'        },
+  { href: '/oval',       label: 'The Oval',  icon: Crown,    desc: 'Presidential suite' },
+  { href: '/dashboard',  label: 'Dashboard', icon: BarChart3, desc: 'Overview & metrics' },
+  { href: '/playground', label: 'Canvas',    icon: Layers,   desc: 'Strategy & execution' },
+  { href: '/audit',      label: 'Audit',     icon: Zap,      desc: 'SEO audit tool' },
 ];
 
-const SECONDARY = [
-  { href: '/mission-control', label: 'Mission Control', icon: Rocket,        desc: 'Project intelligence cockpit'  },
-  { href: '/launchpad',       label: 'Launchpad',       icon: Sparkles,      desc: 'Project setup wizard'         },
-  { href: '/algorithm-intel', label: 'Algorithms',      icon: Brain,         desc: 'Algorithm intelligence'       },
-  { href: '/brain-learning',  label: 'Brain Learning',  icon: BookOpenCheck, desc: 'Manav Brain skill & memory'   },
-  { href: '/desk',            label: 'Brain Desk',      icon: BookOpenCheck, desc: 'Saved by Manav Brain'         },
-  { href: '/brain-command',   label: 'Brain Command',   icon: BookOpenCheck, desc: 'Automation mission control'   },
-  { href: '/system-control',  label: 'Control',         icon: Activity,      desc: 'System control & tasks'      },
+// All empire sections in "More" dropdown
+const EMPIRE_SECTIONS = [
+  {
+    label: 'Intelligence',
+    items: [
+      { href: '/empire',          label: 'Empire Command',   icon: Crown,        desc: 'God view — all clients' },
+      { href: '/morning-brief',   label: 'Morning Brief',    icon: Sparkles,     desc: 'Daily AI briefing' },
+      { href: '/mission-control', label: 'Mission Control',  icon: Rocket,       desc: 'Pipeline overview' },
+      { href: '/health',          label: 'Client Health',    icon: Heart,        desc: 'Churn risk & upsell' },
+      { href: '/alerts',          label: 'Alert Center',     icon: Activity,     desc: 'Live monitoring' },
+      { href: '/ask',             label: 'Ask the Empire',   icon: Bot,          desc: 'AI intelligence chat' },
+    ]
+  },
+  {
+    label: 'Brain & Learning',
+    items: [
+      { href: '/brain-command',   label: 'Brain Command',    icon: Brain,        desc: 'Learning velocity' },
+      { href: '/brain-learning',  label: 'Brain Learning',   icon: BookOpenCheck,desc: 'Manage learnings' },
+      { href: '/algorithm-intel', label: 'Algorithms',       icon: Search,       desc: 'Algorithm tracking' },
+      { href: '/llm-visibility',  label: 'LLM Visibility',   icon: Eye,          desc: 'AI citation tracking' },
+    ]
+  },
+  {
+    label: 'Clients & Leads',
+    items: [
+      { href: '/client-comms',    label: 'Client Comms',     icon: MessageSquare,desc: 'Conversation analyser' },
+      { href: '/intake',          label: 'Lead Intake',      icon: Target,       desc: 'Capture leads' },
+      { href: '/client-dashboard',label: 'Client Dashboard', icon: BarChart3,    desc: 'Client view' },
+      { href: '/reports',         label: 'Reports',          icon: FileText,     desc: 'Auto-generated reports' },
+    ]
+  },
+  {
+    label: 'Delivery',
+    items: [
+      { href: '/kanban',          label: 'Kanban Board',     icon: Kanban,       desc: 'Task delivery' },
+      { href: '/content-hub',     label: 'Content Hub',      icon: FileText,     desc: 'Content briefs' },
+      { href: '/content-writer',  label: 'Content Writer',   icon: FileText,     desc: 'Writer dashboard' },
+      { href: '/launchpad',       label: 'Launchpad',        icon: Sparkles,     desc: 'Project launchpad' },
+    ]
+  },
+  {
+    label: 'Team',
+    items: [
+      { href: '/staff-command',   label: 'Staff Command',    icon: Users,        desc: 'HOD control panel' },
+      { href: '/bde-panel',       label: 'BDE Panel',        icon: Target,       desc: 'Fiverr tools' },
+      { href: '/revenue',         label: 'Revenue BI',       icon: DollarSign,   desc: 'MRR, ARR, pipeline' },
+      { href: '/desk',            label: 'Brain Desk',       icon: Brain,        desc: 'Save learnings' },
+    ]
+  },
+  {
+    label: 'System',
+    items: [
+      { href: '/system-control',  label: 'System Control',   icon: Activity,     desc: 'System management' },
+      { href: '/data-room',       label: 'Data Room',        icon: Database,     desc: 'Raw data access' },
+      { href: '/themes',          label: 'Themes',           icon: Palette,      desc: '10 environments' },
+      { href: '/tour',            label: 'Guided Tour',      icon: Map,          desc: 'Software walkthrough' },
+    ]
+  },
 ];
 
-export default function PortalNav({
-  clientName, companyName, onProjectChange,
-}: Props) {
+export default function PortalNav({ clientName, companyName, onProjectChange }: Props) {
   const navigate  = useNavigate();
   const location  = useLocation();
   const { signOut } = useAuth();
-
-  /* ProjectContext is the global source of truth */
   const { selectedProjectId, setSelectedProjectId, selectedProject, selectedClient } = useProject();
   const { projects } = useAuth();
-  const safeProjects = (projects || []).filter((p: any) => p != null && p.id != null);
-
+  const safeProjects = (projects || []).filter((p: any) => p?.id);
   const path = location.pathname;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen,   setMoreOpen]   = useState(false);
+  const [activeSection, setActiveSection] = useState<string|null>(null);
 
-  const isActive = (href: string) => path === href;
-  const activeSecondary = SECONDARY.find(l => isActive(l.href));
+  const isActive = (href: string) => path === href || path.startsWith(href + '/');
+  const activeEmpire = EMPIRE_SECTIONS.flatMap(s => s.items).find(l => isActive(l.href));
 
-  /* Display name: prefer project → selectedClient → props */
-  const displayClient = selectedClient?.name || selectedClient?.company
-    || clientName || companyName || '';
+  const displayClient  = selectedClient?.name || selectedClient?.company || clientName || companyName || '';
   const displayProject = selectedProject?.name || '';
 
   const handleProjectChange = (id: string) => {
     setSelectedProjectId(id);
-    onProjectChange?.(id);   /* call legacy handler if provided */
+    onProjectChange?.(id);
   };
 
   return (
     <>
-      <div className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-30 shadow-sm">
+      <div className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14 gap-4">
 
@@ -83,7 +124,7 @@ export default function PortalNav({
             <button onClick={() => navigate('/oval')}
               className="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
               <div className="relative">
-                <img src="/manav.jpg" alt="Manav"
+                <img src="/manav.jpg" alt="SEO Season"
                   className="h-8 w-8 rounded-full object-cover ring-2 ring-primary/60 shrink-0"
                   style={{ objectPosition: 'center 20%' }}
                   onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -100,7 +141,7 @@ export default function PortalNav({
               </div>
             </button>
 
-            {/* Primary nav — desktop */}
+            {/* Primary nav */}
             <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
               {PRIMARY.map(({ href, label, icon: Icon, desc }) => {
                 const active = isActive(href);
@@ -119,52 +160,54 @@ export default function PortalNav({
 
               <div className="w-px h-5 bg-border mx-2 shrink-0"/>
 
-              {/* More dropdown */}
+              {/* Empire dropdown */}
               <div className="relative">
                 <button onClick={() => setMoreOpen(o => !o)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                    activeSecondary || moreOpen
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150 ${
+                    activeEmpire || moreOpen
                       ? 'text-primary bg-primary/10 border border-primary/20'
                       : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60 border border-transparent'
                   }`}>
-                  {activeSecondary ? (
+                  {activeEmpire ? (
                     <>
-                      <activeSecondary.icon className="h-3.5 w-3.5"/>
-                      <span>{activeSecondary.label}</span>
+                      <activeEmpire.icon className="h-3.5 w-3.5"/>
+                      <span>{activeEmpire.label}</span>
                     </>
                   ) : (
-                    <span>More</span>
+                    <>
+                      <Crown className="h-3.5 w-3.5"/>
+                      <span>Empire</span>
+                    </>
                   )}
                   <ChevronDown className={`h-3 w-3 transition-transform duration-150 ${moreOpen ? 'rotate-180' : ''}`}/>
                 </button>
 
                 {moreOpen && (
                   <>
-                    <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)}/>
-                    <div className="absolute top-full left-0 mt-2 w-60 rounded-2xl border border-border bg-card shadow-xl shadow-black/10 overflow-hidden z-20 py-1.5">
-                      <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Tools</div>
-                      {SECONDARY.map(({ href, label, icon: Icon, desc }) => {
-                        const active = isActive(href);
-                        const isMC = href === '/mission-control';
-                        return (
-                          <button key={href}
-                            onClick={() => { navigate(href); setMoreOpen(false); }}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
-                              active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
-                            }`}>
-                            <div className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                              active ? 'bg-primary/20' : isMC ? 'bg-amber-500/10' : 'bg-secondary/60'
-                            }`}>
-                              <Icon className={`h-3.5 w-3.5 ${isMC && !active ? 'text-amber-500/70' : ''}`}/>
+                    <div className="fixed inset-0 z-10" onClick={() => { setMoreOpen(false); setActiveSection(null); }}/>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[600px] max-h-[80vh] overflow-y-auto rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-2xl z-20 p-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        {EMPIRE_SECTIONS.map(section => (
+                          <div key={section.label}>
+                            <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest mb-1">
+                              {section.label}
                             </div>
-                            <div className="min-w-0">
-                              <div className={`text-xs font-medium leading-tight ${isMC && !active ? 'text-amber-500/80' : ''}`}>{label}</div>
-                              <div className="text-xs text-muted-foreground/50 leading-tight truncate">{desc}</div>
-                            </div>
-                            {active && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary shrink-0"/>}
-                          </button>
-                        );
-                      })}
+                            {section.items.map(({ href, label, icon: Icon, desc }) => {
+                              const active = isActive(href);
+                              return (
+                                <button key={href}
+                                  onClick={() => { navigate(href); setMoreOpen(false); }}
+                                  className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left transition-colors text-xs ${
+                                    active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                                  }`}>
+                                  <Icon className="h-3.5 w-3.5 shrink-0"/>
+                                  <span className="font-medium">{label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </>
                 )}
@@ -173,50 +216,35 @@ export default function PortalNav({
 
             {/* Right side */}
             <div className="flex items-center gap-1 shrink-0">
-              {/* Global project selector — always visible if multiple projects */}
               {safeProjects.length > 0 && (
                 <div className="hidden lg:flex flex-col items-end">
                   <select
                     value={selectedProjectId}
                     onChange={e => handleProjectChange(e.target.value)}
-                    className="h-8 rounded-lg border border-border bg-background/60 text-xs px-2.5 max-w-[160px] outline-none focus:border-primary/50 cursor-pointer"
+                    className="h-8 rounded-lg border border-border bg-background/60 text-xs px-2.5 max-w-[160px] outline-none focus:ring-1 focus:ring-primary/50 cursor-pointer"
                   >
                     {safeProjects.map((p: any) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
                   {displayProject && (
-                    <div className="text-[9px] text-muted-foreground/40 leading-tight px-1 mt-0.5 truncate max-w-[160px]">
+                    <div className="text-[9px] text-muted-foreground/40 leading-tight px-1 mt-0.5">
                       active project
                     </div>
                   )}
                 </div>
               )}
-
-              {/* Mission Control shortcut */}
-              <button onClick={() => navigate('/mission-control')} title="Mission Control"
-                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors ${
-                  isActive('/mission-control')
-                    ? 'text-amber-500 bg-amber-500/10'
-                    : 'text-muted-foreground hover:text-amber-500/70 hover:bg-amber-500/10'
-                }`}>
-                <Rocket className="h-3.5 w-3.5" />
-              </button>
-
               <button onClick={() => navigate('/admin')} title="Admin"
                 className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
                 <Settings className="h-3.5 w-3.5" />
               </button>
-
               <button onClick={async () => { await signOut(); navigate('/'); }} title="Sign Out"
-                className="h-8 rounded-lg px-2.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-red-400 hover:bg-red-400/10 border border-transparent hover:border-red-400/20 transition-all">
+                className="h-8 rounded-lg px-2.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
                 <LogOut className="h-3.5 w-3.5 shrink-0" />
                 <span className="hidden sm:inline">Sign out</span>
               </button>
-
-              {/* Mobile toggle */}
               <button onClick={() => setMobileOpen(o => !o)}
-                className="md:hidden h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+                className="md:hidden h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
                 {mobileOpen ? <X className="h-4 w-4"/> : <Menu className="h-4 w-4"/>}
               </button>
             </div>
@@ -225,45 +253,39 @@ export default function PortalNav({
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden border-t border-border bg-card/95 backdrop-blur-md">
+          <div className="md:hidden border-t border-border bg-card/95 backdrop-blur-md max-h-[85vh] overflow-y-auto">
             <div className="px-4 py-3 space-y-1">
-              {/* Mobile project selector */}
               {safeProjects.length > 0 && (
-                <select
-                  value={selectedProjectId}
-                  onChange={e => handleProjectChange(e.target.value)}
-                  className="w-full h-9 rounded-xl border border-border bg-background/60 text-sm px-3 mb-2 outline-none"
-                >
-                  {safeProjects.map((p: any) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                <select value={selectedProjectId} onChange={e => handleProjectChange(e.target.value)}
+                  className="w-full h-9 rounded-xl border border-border bg-background/60 text-sm px-3 mb-3 outline-none">
+                  {safeProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               )}
-              <div className="text-xs font-semibold text-muted-foreground/40 uppercase tracking-wider px-2 pb-1">Core</div>
+              <div className="text-xs font-bold text-muted-foreground/40 uppercase tracking-widest px-2 pb-1">Core</div>
               {PRIMARY.map(({ href, label, icon: Icon }) => (
                 <button key={href} onClick={() => { navigate(href); setMobileOpen(false); }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                    isActive(href) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                    isActive(href) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
                   }`}>
                   <Icon className="h-4 w-4 shrink-0"/>{label}
                 </button>
               ))}
-              <div className="text-xs font-semibold text-muted-foreground/40 uppercase tracking-wider px-2 pt-3 pb-1">Tools</div>
-              {SECONDARY.map(({ href, label, icon: Icon }) => (
-                <button key={href} onClick={() => { navigate(href); setMobileOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                    isActive(href) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-                  }`}>
-                  <Icon className="h-4 w-4 shrink-0"/>{label}
-                </button>
+              {EMPIRE_SECTIONS.map(section => (
+                <div key={section.label}>
+                  <div className="text-xs font-bold text-muted-foreground/40 uppercase tracking-widest px-2 pt-3 pb-1">{section.label}</div>
+                  {section.items.map(({ href, label, icon: Icon }) => (
+                    <button key={href} onClick={() => { navigate(href); setMobileOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors ${
+                        isActive(href) ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                      }`}>
+                      <Icon className="h-4 w-4 shrink-0"/>{label}
+                    </button>
+                  ))}
+                </div>
               ))}
-              <div className="border-t border-border/50 mt-2 pt-2 space-y-1">
-                <button onClick={() => { navigate('/admin'); setMobileOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50">
-                  <Settings className="h-4 w-4"/>Admin
-                </button>
+              <div className="border-t border-border/50 mt-3 pt-3">
                 <button onClick={async () => { await signOut(); navigate('/'); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-400 hover:bg-red-400/10">
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-400 hover:bg-red-500/10 transition-colors">
                   <LogOut className="h-4 w-4"/>Sign out
                 </button>
               </div>
