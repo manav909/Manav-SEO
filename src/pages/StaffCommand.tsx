@@ -65,7 +65,7 @@ export default function StaffCommand(){
     return lc&&Date.now()-lc.getTime()>3*864e5&&!["won","lost"].includes(a.stage);
   });
   return(
-    <div style={S.root}
+    <div style={S.root}>
       <AnimatedBg/>>
       <div style={S.hdr}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>

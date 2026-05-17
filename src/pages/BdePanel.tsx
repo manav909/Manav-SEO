@@ -71,7 +71,7 @@ export default function BdePanel(){
     sec:{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"var(--text-muted)",marginBottom:8,marginTop:10},
   };
   return(
-    <div style={S.root}
+    <div style={S.root}>
       <AnimatedBg/>>
       <div style={S.hdr}>
         <div style={{width:8,height:8,borderRadius:"50%",background:"#10b981",boxShadow:"0 0 8px #10b981"}}/>

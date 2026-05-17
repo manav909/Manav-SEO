@@ -96,7 +96,7 @@ export default function BrainCommand() {
   const scoreColor = (n:number) => n>=75?"#10b981":n>=50?"#3b82f6":n>=25?"#eab308":"#ef4444";
 
   return (
-    <div style={S.page}
+    <div style={S.page}>
       <AnimatedBg/>>
       <div style={S.header}>
         <div style={S.title}>
