@@ -62,8 +62,6 @@ const DataRow = ({ label, value, confidence, limitations }: {
   const [showLimits, setShowLimits] = useState(false);
   const display = value === null || value === undefined ? '—' : String(value);
   return (
-    <>
-    <AnimatedBg/>
     <div className="py-2.5 border-b border-border/40 last:border-0">
       <div className="flex items-center justify-between gap-3 mb-1">
         <span className="text-xs text-muted-foreground">{label}</span>
@@ -1128,6 +1126,5 @@ export default function Audit() {
 
       </div>
     </div>
-    </>
   );
 }

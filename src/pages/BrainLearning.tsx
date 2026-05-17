@@ -104,8 +104,6 @@ function calcDimScores(learnings: Learning[]): Record<string, number> {
 /* ─── Animated background grid ─── */
 function NeuralBackground() {
   return (
-    <>
-    <AnimatedBg/>
     <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{zIndex:0}}>
       {/* Dark base */}
       <div style={{position:'absolute',inset:0,background:'#030712'}}/>
@@ -935,6 +933,5 @@ export default function BrainLearning() {
         );
       })()}
     </div>
-    </>
   );
 }

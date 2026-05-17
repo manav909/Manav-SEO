@@ -819,8 +819,6 @@ ${sect('Priority Actions',result.priority_actions||[],(a)=>`<div class="c ${a.im
   });
 
   return (
-    <>
-    <AnimatedBg/>
     <div className="min-h-screen bg-background text-foreground">
       <PortalNav companyName={client?.company ? `${client.company} — Algorithms` : 'Algorithm Intelligence'}
         projects={projects} selectedProjectId={selProjId} onProjectChange={handleProjectChange}/>
@@ -1787,6 +1785,5 @@ function AuditPanel({ result }: { result: any }) {
       {result.checks?.length > 0 && (<div className="rounded-2xl border border-border bg-card/60 overflow-hidden"><div className="px-4 py-3 border-b border-border bg-card/80 font-semibold text-sm">All Checks ({result.checks.length})</div><div className="divide-y divide-border/40">{result.checks.map((c: any, i: number) => (<div key={i} className="flex items-start gap-3 px-4 py-3"><span className={`shrink-0 mt-0.5 ${c.status === 'pass' ? 'text-green-400' : c.status === 'fail' ? 'text-red-400' : 'text-yellow-400'}`}>{c.status === 'pass' ? <CheckCircle size={13}/> : c.status === 'fail' ? <XCircle size={13}/> : <AlertTriangle size={13}/>}</span><div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="text-xs font-medium">{c.check}</span><span className="text-xs text-muted-foreground/50">{c.algorithm}</span></div>{c.evidence && <p className="text-xs text-muted-foreground mt-0.5">{c.evidence}</p>}{c.fix && c.status !== 'pass' && <p className="text-xs text-primary/80 mt-0.5 flex items-center gap-1"><ArrowRight size={9}/>{c.fix}</p>}</div><span className={`text-xs px-1.5 py-0.5 rounded-full border shrink-0 ${IMPACT_STYLE[c.impact] || IMPACT_STYLE.low}`}>{c.impact}</span></div>))}</div></div>)}
       {result.priority_actions?.length > 0 && (<div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-2"><div className="font-semibold text-sm flex items-center gap-2"><Star size={13} className="text-primary"/>Priority Actions</div>{result.priority_actions.map((a: any, i: number) => (<div key={i} className={`flex items-start gap-3 rounded-xl border p-3 bg-background/40 ${IMPACT_STYLE[a.impact] || IMPACT_STYLE.low}`}><span className="text-sm font-black shrink-0">#{a.rank}</span><div className="flex-1"><div className="font-semibold text-xs">{a.action}</div><div className="text-xs opacity-70 mt-0.5">{a.why} · {a.effort} effort</div></div></div>))}</div>)}
     </div>
-    </>
   );
 }

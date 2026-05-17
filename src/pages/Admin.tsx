@@ -518,8 +518,6 @@ export default function Admin() {
   ];
 
   return (
-    <>
-    <AnimatedBg/>
     <div className="min-h-screen bg-background text-foreground">
 
       {/* Header */}
@@ -1444,6 +1442,5 @@ export default function Admin() {
 
       </div>
     </div>
-    </>
   );
 }
