@@ -62,6 +62,8 @@ const DataRow = ({ label, value, confidence, limitations }: {
   const [showLimits, setShowLimits] = useState(false);
   const display = value === null || value === undefined ? '—' : String(value);
   return (
+    <>
+    <AnimatedBg/>
     <div className="py-2.5 border-b border-border/40 last:border-0">
       <div className="flex items-center justify-between gap-3 mb-1">
         <span className="text-xs text-muted-foreground">{label}</span>
@@ -661,7 +663,7 @@ export default function Audit() {
                 {/* Agent 3: AI Visibility */}
                 {s?.visibility && (
                   <SectionCard title="AI Visibility Tester" agent="Agent 3 — Live Perplexity test, brand mention count, LLM readiness estimate"
-                    ceiling={s.visibility.ceiling} icon={Sparkles} color="#6366f1" data={s.visibility.data}>
+                    ceiling={s.visibility.ceiling} icon={Sparkles} color="var(--accent)" data={s.visibility.data}>
                     <DataRow label="Perplexity AI Mentions"  value={s.visibility.data.perplexity_citations?.value}  confidence={s.visibility.data.perplexity_citations?.confidence}  limitations={s.visibility.data.perplexity_citations?.limitations} />
                     <DataRow label="Google AI Overview"      value={null} confidence={0} limitations={['Requires authenticated Google session — not verifiable in automated analysis']} />
                     <DataRow label="ChatGPT Citations"       value={s.visibility.data.chatgpt_citations?.value}     confidence={s.visibility.data.chatgpt_citations?.confidence}     limitations={s.visibility.data.chatgpt_citations?.limitations} />
@@ -1126,5 +1128,6 @@ export default function Audit() {
 
       </div>
     </div>
+    </>
   );
 }

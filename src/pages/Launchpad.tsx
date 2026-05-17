@@ -27,6 +27,8 @@ const PhaseRing = ({ pct, phase }: { pct:number; phase:number }) => {
   const r=54, circ=2*Math.PI*r;
   const cfg = phaseColors[phase]||phaseColors[1];
   return (
+    <>
+    <AnimatedBg/>
     <div className="relative flex items-center justify-center">
       <svg className="h-40 w-40 -rotate-90" viewBox="0 0 128 128">
         <circle cx="64" cy="64" r={r} fill="none" stroke="hsl(var(--border))" strokeWidth="6"/>
@@ -538,5 +540,6 @@ export default function Launchpad() {
         </div>
       )}
     </div>
+    </>
   );
 }

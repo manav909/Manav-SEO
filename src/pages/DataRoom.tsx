@@ -1,3 +1,5 @@
+import AnimatedBg from "@/components/AnimatedBg";
+import ThemeToggle from "@/components/ThemeToggle";
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -265,6 +267,8 @@ function PageResultCard({ r, isOwn, isComp, onSelectOwn, onSelectComp, selectedO
   const labelColor  = isOwn ? 'text-blue-400 bg-blue-400/10 border-blue-400/20' : isComp ? 'text-orange-400 bg-orange-400/10 border-orange-400/20' : '';
 
   return (
+    <>
+    <AnimatedBg/>
     <div className={`rounded-xl border ${borderColor} ${bgColor} overflow-hidden transition-all`}>
       {/* Header row */}
       <div className="flex items-start gap-3 px-4 py-3 cursor-pointer" onClick={()=>setExpanded(e=>!e)}>
@@ -2500,5 +2504,6 @@ Evidence: ${c.data_basis}` : ''}`,
         </div>
       )}
     </div>
+    </>
   );
 }

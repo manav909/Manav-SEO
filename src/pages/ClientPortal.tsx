@@ -1,54 +1,57 @@
 import React,{useState,useEffect} from "react";
-import {supabase} from "@/lib/supabase";
-interface P{id:string;name:string;url:string;tasks:number;score:number|null}
+import AnimatedBg from "@/components/AnimatedBg";
+import ThemeToggle from "@/components/ThemeToggle";
+
+const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
+
 export default function ClientPortal(){
-  const [projects,setProjects]=useState<P[]>([]);
-  const [loading,setLoading]=useState(true);
-  const [sel,setSel]=useState<string|null>(null);
-  const [brief,setBrief]=useState("");
-  const [busy,setBusy]=useState(false);
-  useEffect(()=>{load();},[]);
-  async function load(){
-    const {data}=await supabase.from("projects").select("id,name,url").limit(12);
-    if(!data){setLoading(false);return;}
-    const ps:P[]=await Promise.all(data.map(async(p:any)=>{
-      const [t,m]=await Promise.allSettled([
-        supabase.from("task_executions").select("id").eq("project_id",p.id).eq("status","done"),
-        supabase.from("metrics").select("llm_visibility_score").eq("project_id",p.id).order("recorded_at",{ascending:false}).limit(1),
-      ]);
-      return{id:p.id,name:p.name,url:p.url||"",
-        tasks:t.status==="fulfilled"?t.value.data?.length||0:0,
-        score:m.status==="fulfilled"?m.value.data?.[0]?.llm_visibility_score??null:null};
-    }));
-    setProjects(ps);setLoading(false);
-  }
-  async function gen(id:string){
-    setBusy(true);setBrief("");
-    const r=await fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"client_brief",projectId:id,briefType:"progress"})});
-    const d=await r.json();setBrief(d.brief||"Error");setBusy(false);
-  }
-  const c=(s:number|null)=>s==null?"#4b4b6a":s>=75?"#10b981":s>=50?"#3b82f6":s>=25?"#eab308":"#ef4444";
-  const S:any={page:{minHeight:"100vh",background:"#070710",color:"#f0f0ff",padding:24,fontFamily:"system-ui"},
-    card:{background:"#0d0d1a",border:"0.5px solid #1e1e3a",borderRadius:12,padding:20,cursor:"pointer",marginBottom:12},
-    btn:{background:"#6366f1",border:"none",borderRadius:8,color:"#fff",padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer",marginTop:16},
-    brief:{background:"#0d0d1a",border:"0.5px solid #1e1e3a",borderRadius:12,padding:20,whiteSpace:"pre-wrap",lineHeight:1.7,fontSize:14,marginTop:16}};
-  if(loading)return<div style={{...S.page,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"#4b4b6a"}}>Loading…</span></div>;
+  const[projects,setProjects]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  useEffect(()=>{
+    import("@/lib/supabase").then(({supabase})=>{
+      supabase.from("projects").select("*").limit(20).then(({data})=>{setProjects(data||[]);setLoading(false);});
+    });
+  },[]);
   return(
-    <div style={S.page}>
-      <div style={{fontSize:22,fontWeight:700,marginBottom:6}}>👑 Client Portal</div>
-      <div style={{fontSize:14,color:"#8b8ba8",marginBottom:24}}>Project performance — plain and clear.</div>
-      {projects.map(p=>(
-        <div key={p.id} style={{...S.card,borderColor:sel===p.id?"#6366f1":"#1e1e3a"}} onClick={()=>setSel(sel===p.id?null:p.id)}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{fontSize:15,fontWeight:600}}>{p.name}</div>
-            <div style={{display:"flex",gap:20}}>
-              <div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:700,color:"#10b981",fontFamily:"monospace"}}>{p.tasks}</div><div style={{fontSize:10,color:"#4b4b6a",textTransform:"uppercase"}}>Tasks done</div></div>
-              {p.score!=null&&<div style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:700,color:c(p.score),fontFamily:"monospace"}}>{p.score}</div><div style={{fontSize:10,color:"#4b4b6a",textTransform:"uppercase"}}>LLM score</div></div>}
+    <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif"}}>
+      <AnimatedBg/>
+      <div style={{position:"relative",zIndex:1}}>
+        <div className="glass-strong" style={{position:"sticky" as const,top:40,zIndex:100,height:52,padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"0.5px solid var(--border)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontSize:20}}>👥</span>
+            <div>
+              <div style={{fontSize:15,fontWeight:700}}><span className="holo-text-subtle">Client Portal</span></div>
+              <div style={{fontSize:10,color:"var(--text-muted)",letterSpacing:"1px",textTransform:"uppercase" as const}}>All Active Projects</div>
             </div>
           </div>
-          {sel===p.id&&<div><button style={S.btn} onClick={e=>{e.stopPropagation();gen(p.id);}} disabled={busy}>{busy?"Generating…":"📋 Generate Progress Brief"}</button>{brief&&<div style={S.brief}>{brief}</div>}</div>}
+          <ThemeToggle compact/>
         </div>
-      ))}
+        <div style={{maxWidth:1000,margin:"0 auto",padding:"24px 24px 100px"}}>
+          {loading?<div style={{color:"var(--text-muted)",textAlign:"center" as const,padding:60}}>Loading projects...</div>:(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+              {projects.map((p:any,i:number)=>(
+                <a key={p.id} href="/client-dashboard" className="glass-card"
+                  style={{textDecoration:"none",padding:"20px",animation:`warp-in .4s ease ${i*0.06}s both`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div style={{width:40,height:40,borderRadius:12,background:"var(--accent-glow)",
+                      border:"0.5px solid var(--border-glow)",display:"flex",alignItems:"center",
+                      justifyContent:"center",fontSize:16,fontWeight:700,color:"var(--accent-soft)"}}>
+                      {(p.name||"P").slice(0,2).toUpperCase()}
+                    </div>
+                    <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,
+                      background:"rgba(16,185,129,.12)",color:"#10b981"}}>ACTIVE</span>
+                  </div>
+                  <div style={{fontSize:14,fontWeight:700,color:"var(--text)",marginBottom:4}}>{p.name}</div>
+                  <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:8}}>{p.url}</div>
+                  <div style={{fontSize:11,color:"var(--text-sub)",lineHeight:1.5}}>{(p.goals||"Improving organic visibility").slice(0,80)}</div>
+                  <div style={{marginTop:12,fontSize:11,color:"var(--accent-soft)",fontWeight:600}}>View Campaign →</div>
+                </a>
+              ))}
+              {!projects.length&&<div style={{gridColumn:"1/-1",textAlign:"center" as const,padding:60,color:"var(--text-muted)"}}>No projects yet.</div>}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -794,7 +794,7 @@ export default function Dashboard() {
                 explanation={exp.brand_mentions} estimated={false} />
               <StatCard icon={Brain} label="Verified AI Citations" color="text-primary"
                 value={hasAnyCitations ? (perplexity || 0) + (googleAI || 0) : '—'}
-                score={(perplexity || 0) + (googleAI || 0)} ringColor="#6366f1"
+                score={(perplexity || 0) + (googleAI || 0)} ringColor="var(--accent)"
                 baselineValue={null}
                 metricKey="perplexity_citations" title="Verified AI Citations"
                 explanation={exp.perplexity_citations} estimated={false} />
@@ -1080,8 +1080,8 @@ export default function Dashboard() {
                         <XAxis dataKey="date" tick={{ fontSize:11, fill:'hsl(var(--muted-foreground))' }} />
                         <YAxis domain={[0,100]} tick={{ fontSize:11, fill:'hsl(var(--muted-foreground))' }} />
                         <Tooltip contentStyle={{ background:'hsl(var(--card))', border:'1px solid hsl(var(--border))', borderRadius:'12px', fontSize:'12px' }} />
-                        {baselineDate && <ReferenceLine x={fmtShort(baselineDate)} stroke="#6366f1" strokeDasharray="4 4" label={{ value:'Baseline', position:'top', fontSize:10, fill:'#6366f1' }} />}
-                        <Line type="monotone" dataKey="llm"       name="LLM"       stroke="#6366f1" strokeWidth={2} dot={{ r:3, fill:'#6366f1' }} />
+                        {baselineDate && <ReferenceLine x={fmtShort(baselineDate)} stroke="var(--accent)" strokeDasharray="4 4" label={{ value:'Baseline', position:'top', fontSize:10, fill:'#6366f1' }} />}
+                        <Line type="monotone" dataKey="llm"       name="LLM"       stroke="var(--accent)" strokeWidth={2} dot={{ r:3, fill:'#6366f1' }} />
                         <Line type="monotone" dataKey="health"    name="Health"    stroke="#06b6d4" strokeWidth={2} dot={{ r:3, fill:'#06b6d4' }} />
                         <Line type="monotone" dataKey="authority" name="Authority" stroke="#f59e0b" strokeWidth={2} dot={{ r:3, fill:'#f59e0b' }} />
                         <Line type="monotone" dataKey="growth"    name="Growth"    stroke="#4ade80" strokeWidth={2} dot={{ r:3, fill:'#4ade80' }} />

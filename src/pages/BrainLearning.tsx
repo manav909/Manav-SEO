@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import AnimatedBg from "@/components/AnimatedBg";
+import ThemeToggle from "@/components/ThemeToggle";
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DeepEnrichModal from '@/components/DeepEnrichModal';
 import { useAuth } from '@/contexts/AuthContext';
@@ -102,6 +104,8 @@ function calcDimScores(learnings: Learning[]): Record<string, number> {
 /* ─── Animated background grid ─── */
 function NeuralBackground() {
   return (
+    <>
+    <AnimatedBg/>
     <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{zIndex:0}}>
       {/* Dark base */}
       <div style={{position:'absolute',inset:0,background:'#030712'}}/>
@@ -650,7 +654,7 @@ export default function BrainLearning() {
           <div style={{display:'grid',gridTemplateColumns:'auto 1fr auto',gap:24,alignItems:'center',background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:20,padding:24}}>
 
             {/* Brain level */}
-            <CircleGauge value={level} color="#6366f1" size={100} label="INTELLIGENCE" sublabel={`LEVEL ${level}`}/>
+            <CircleGauge value={level} color="var(--accent)" size={100} label="INTELLIGENCE" sublabel={`LEVEL ${level}`}/>
 
             {/* Stats row */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
@@ -689,7 +693,7 @@ export default function BrainLearning() {
                     <RadarChart data={radarData}>
                       <PolarGrid stroke="rgba(255,255,255,0.07)" />
                       <PolarAngleAxis dataKey="dimension" tick={{fontSize:9,fill:'rgba(255,255,255,0.4)',fontFamily:'monospace'}} />
-                      <Radar name="Intelligence" dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} />
+                      <Radar name="Intelligence" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.15} strokeWidth={2} />
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
@@ -931,5 +935,6 @@ export default function BrainLearning() {
         );
       })()}
     </div>
+    </>
   );
 }

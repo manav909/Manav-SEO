@@ -1,53 +1,50 @@
-import React,{useState,useEffect} from "react";
-import {supabase} from "@/lib/supabase";
+import React from "react";
+import AnimatedBg from "@/components/AnimatedBg";
+import ThemeToggle from "@/components/ThemeToggle";
 
-interface Tenant {
-  id: string;
-  name: string;
-  slug: string;
-  plan: 'agency' | 'enterprise' | 'partner';
-  config: Record<string, any>;
-  api_quota: number;
-  created_at: string;
-}
-export default function ScaleControl(){
-  const [tenants,setTenants]=useState<Tenant[]>([]);
-  const [loading,setLoading]=useState(true);
-  const [form,setForm]=useState({name:"",slug:"",plan:"agency"});
-  const [adding,setAdding]=useState(false);
-  useEffect(()=>{load();},[]);
-  async function load(){const{data}=await supabase.from("tenants").select("*").order("created_at",{ascending:false});setTenants(data||[]);setLoading(false);}
-  async function addTenant(){
-    if(!form.name||!form.slug)return;
-    setAdding(true);
-    await supabase.from("tenants").insert({name:form.name,slug:form.slug,plan:form.plan});
-    setForm({name:"",slug:"",plan:"agency"});await load();setAdding(false);
-  }
-  const S:any={page:{minHeight:"100vh",background:"#070710",color:"#f0f0ff",padding:24,fontFamily:"system-ui"},
-    card:{background:"#0d0d1a",border:"0.5px solid #1e1e3a",borderRadius:12,padding:20,marginBottom:10},
-    inp:{background:"#0d0d1a",border:"0.5px solid #1e1e3a",borderRadius:8,color:"#f0f0ff",padding:"8px 12px",fontSize:13,width:"100%"},
-    btn:{background:"#6366f1",border:"none",borderRadius:8,color:"#fff",padding:"10px 20px",fontSize:13,fontWeight:600,cursor:"pointer"}};
-  if(loading)return<div style={{...S.page,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"#4b4b6a"}}>Loading…</span></div>;
-  return(
-    <div style={S.page}>
-      <div style={{fontSize:22,fontWeight:700,marginBottom:6}}>🏰 Scale Control</div>
-      <div style={{fontSize:14,color:"#8b8ba8",marginBottom:24}}>Multi-tenant management. One empire, many kingdoms.</div>
-      <div style={S.card}>
-        <div style={{fontSize:15,fontWeight:600,marginBottom:12}}>Add Tenant</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:10,alignItems:"end"}}>
-          <div><div style={{fontSize:11,color:"#4b4b6a",marginBottom:4}}>NAME</div><input style={S.inp} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Agency name"/></div>
-          <div><div style={{fontSize:11,color:"#4b4b6a",marginBottom:4}}>SLUG</div><input style={S.inp} value={form.slug} onChange={e=>setForm({...form,slug:e.target.value.toLowerCase().replace(/\s+/g,'-')})} placeholder="agency-slug"/></div>
-          <button style={S.btn} onClick={addTenant} disabled={adding}>{adding?"Adding…":"Add"}</button>
-        </div>
-      </div>
-      {tenants.map((t:any)=>(
-        <div key={t.id} style={S.card}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div><div style={{fontSize:14,fontWeight:600}}>{t.name}</div><div style={{fontSize:12,color:"#4b4b6a",fontFamily:"monospace"}}>/{t.slug}</div></div>
-            <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,background:"rgba(99,102,241,.15)",color:"#818cf8",border:"0.5px solid rgba(99,102,241,.3)"}}>{t.plan}</span>
+export default function ScaleControl() {
+  const items = [
+    {icon:"🏗",title:"Build Dashboard",href:"/build",desc:"Live surveillance — every system in real time"},
+    {icon:"👑",title:"Empire Command",href:"/empire",desc:"God view — clients, health, priorities"},
+    {icon:"💰",title:"Revenue BI",href:"/revenue",desc:"MRR, ARR, pipeline forecasting"},
+    {icon:"📋",title:"Kanban Board",href:"/kanban",desc:"Delivery task management"},
+    {icon:"🧠",title:"Brain Command",href:"/brain-command",desc:"Learning velocity and compound intelligence"},
+    {icon:"💬",title:"Client Comms",href:"/client-comms",desc:"Conversation analyser, objection handler"},
+    {icon:"🏛",title:"Staff Command",href:"/staff-command",desc:"Team performance and pipeline management"},
+    {icon:"🤖",title:"Ask the Empire",href:"/ask",desc:"Natural language AI across all data"},
+    {icon:"🌅",title:"Morning Brief",href:"/morning-brief",desc:"Daily AI intelligence briefing"},
+    {icon:"📊",title:"Reports",href:"/reports",desc:"Automated client-ready reports"},
+    {icon:"🎯",title:"Lead Intake",href:"/intake",desc:"Lead capture with instant site audit"},
+    {icon:"🎨",title:"Themes",href:"/themes",desc:"12 smart themes — auto-detect by industry"},
+  ];
+  return (
+    <div className="empire-page" style={{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif"}}>
+      <AnimatedBg/>
+      <div style={{position:"relative",zIndex:1,maxWidth:1000,margin:"0 auto",padding:"60px 24px 100px"}}>
+        <div style={{textAlign:"center" as const,marginBottom:48,animation:"warp-in .5s ease both"}}>
+          <div style={{fontSize:13,color:"var(--text-muted)",letterSpacing:"3px",textTransform:"uppercase" as const,marginBottom:12}}>
+            EMPIRE CONTROL
+          </div>
+          <div className="holo-text" style={{fontSize:36,fontWeight:800,letterSpacing:"-0.03em",marginBottom:12}}>
+            Scale Control
+          </div>
+          <div style={{fontSize:15,color:"var(--text-sub)",maxWidth:480,margin:"0 auto",lineHeight:1.7}}>
+            Every module, every capability. Navigate the full empire from here.
           </div>
         </div>
-      ))}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}}>
+          {items.map((item,i)=>(
+            <a key={item.href} href={item.href} className="glass-card"
+              style={{textDecoration:"none",padding:"20px",
+                animation:`warp-in .4s ease ${i*0.04}s both`,cursor:"pointer"}}>
+              <div style={{fontSize:28,marginBottom:12}}>{item.icon}</div>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--text)",marginBottom:5,letterSpacing:"-0.01em"}}>{item.title}</div>
+              <div style={{fontSize:12,color:"var(--text-muted)",lineHeight:1.55}}>{item.desc}</div>
+              <div style={{marginTop:14,fontSize:11,color:"var(--accent-soft)",fontWeight:600}}>Open →</div>
+            </a>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
