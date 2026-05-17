@@ -21,7 +21,7 @@ export async function captureAndScoreLead(input:LeadInput){
 export async function generateProposalHTML(prospectId:string){
   const{data:p}=await db().from("prospects").select("*").eq("id",prospectId).single();
   if(!p)return"<p>Prospect not found.</p>";
-  const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:`Write a compelling SEO proposal HTML body for ${p.company||p.url}. Issues: ${JSON.stringify(p.instant_audit?.missingBasics||[])}. Market: ${p.market||"global"}. Style: dark #070710, #6366f1 accent. Include: situation analysis, approach, timeline, expected results, CTA. Leave price as [INVESTMENT].`}]})});
+  const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:2000,messages:[{role:"user",content:`Write a compelling SEO proposal HTML body for ${p.company||p.url}. Issues: ${JSON.stringify(p.instant_audit?.missingBasics||[])}. Market: ${p.market||"global"}. Style: dark #070710, #6366f1 accent. Include: situation analysis, approach, timeline, expected results, CTA. Leave price as [INVESTMENT].`}]})});
   const j=await ai.json() as any;
   return j?.content?.[0]?.text||"<p>Proposal generation failed.</p>";
 }
