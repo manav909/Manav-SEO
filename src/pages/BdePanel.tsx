@@ -72,7 +72,7 @@ export default function BdePanel(){
   };
   return(
     <div style={S.root}>
-      <AnimatedBg/>>
+      <AnimatedBg/>
       <div style={S.hdr}>
         <div style={{width:8,height:8,borderRadius:"50%",background:"#10b981",boxShadow:"0 0 8px #10b981"}}/>
         <span style={{fontSize:14,fontWeight:700}}>💼 BDE Panel</span>

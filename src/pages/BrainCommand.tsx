@@ -97,7 +97,7 @@ export default function BrainCommand() {
 
   return (
     <div style={S.page}>
-      <AnimatedBg/>>
+      <AnimatedBg/>
       <div style={S.header}>
         <div style={S.title}>
           <Brain size={22} color="#6366f1"/>

@@ -66,7 +66,7 @@ export default function StaffCommand(){
   });
   return(
     <div style={S.root}>
-      <AnimatedBg/>>
+      <AnimatedBg/>
       <div style={S.hdr}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:8,height:8,borderRadius:"50%",background:"#dc2626",boxShadow:"0 0 8px #dc2626"}}/>
