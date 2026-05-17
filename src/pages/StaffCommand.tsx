@@ -302,5 +302,6 @@ export default function StaffCommand(){
         )}
       </div>
     </div>
+  </div>
   );
 }

@@ -24,5 +24,7 @@ export default function Reports(){
     {preview&&<div style={{...S.c,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}><div style={{fontSize:14,fontWeight:600}}>Preview</div><button style={{background:"transparent",border:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:16}} onClick={()=>setPreview(null)}>✕</button></div><div style={{background:"var(--bg)",borderRadius:8,padding:16,maxHeight:400,overflowY:"auto"}} dangerouslySetInnerHTML={{__html:preview}}/></div>}
     {reports.map((r:any)=><div key={r.id} style={{...S.c,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:14,fontWeight:600,marginBottom:3}}>{r.title}</div><div style={{fontSize:12,color:"var(--text-sub)"}}>{new Date(r.created_at).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div></div><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,padding:"3px 10px",borderRadius:20,background:"rgba(99,102,241,.1)",color:"#818cf8",border:"0.5px solid rgba(99,102,241,.2)"}}>{r.report_type}</span><a href={`/reports/${r.token}`} target="_blank" style={{background:"rgba(255,255,255,.05)",border:"0.5px solid #1e1e3a",borderRadius:6,color:"var(--text-sub)",padding:"5px 12px",fontSize:11,textDecoration:"none"}}>View ↗</a></div></div>)}
     {!reports.length&&<div style={{color:"var(--text-muted)",textAlign:"center",padding:40,fontSize:14}}>No reports yet. Generate your first above.</div>}
-  </div>);
+  </div>
+  </div>
+  );
 }

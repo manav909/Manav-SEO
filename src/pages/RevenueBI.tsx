@@ -77,8 +77,6 @@ export default function RevenueBI(){
 
   return(
     <div style={S.root} className="empire-page">
-      
-      <div style={{position:"relative",zIndex:1}}>
         <div style={S.hdr}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <span style={{fontSize:18}}>💰</span>
