@@ -642,10 +642,7 @@ export default function ManavBrainAssistant() {
       next['intelligence'] = (r.ok || text.length > 0) ? 'ok' : 'error';
     } catch (_e) { next['intelligence'] = 'error'; }
 
-    // Market researcher health check
-    try body: JSON.stringify({ action: 'health_check' }),
-        signal: AbortSignal.timeout(10000),
-      });
+    
       const text = await r.text().catch(() => '');
       next[] = (r.ok || text.length > 0) ? 'ok' : 'error';
     } catch (_e) // Supabase direct check (uses supabase client, not fetch override)
