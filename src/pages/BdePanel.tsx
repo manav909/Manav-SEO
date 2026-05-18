@@ -705,8 +705,7 @@ export default function BdePanel() {
       if (d.analysis) { setAnalysis(d.analysis); setParsed(d.parsed||[]); }
       if (d.deepAnalysis) setDeepAnalysis(d.deepAnalysis);
       if (d.auditResult) { setAuditResult(d.auditResult); setAuditUrl(d.auditUrl||''); }
-      if (d.leadNameInput) setLeadNameInput(d.leadNameInput);
-      if (d.savedProspect) { setSavedProspect(d.savedProspect); setLeadSaved(true); }
+      // savedProspect intentionally not restored — only set by explicit load/save action
     } catch {}
     post('get_quick_responses',{role:'bde'}).then(r=>setQuickResps((r as any).responses||[]));
     post('get_call_transcripts',{}).then(r=>setTranscripts((r as any).transcripts||[]));
@@ -775,6 +774,10 @@ export default function BdePanel() {
     setParsedMsgs(msgs);
     setConv(msgs.map((m:any)=>(m.speaker==='me'?'Me':'Client')+': '+m.text).join('\n'));
     setAnalysis(null); setDeepAnalysis(null); setDeepError(''); setParsed([]); setResponses(null);
+    setNewMsgsDelta([]); setLastAnalysedMsgCount(0);
+    // Always break lead link on new paste — only loadLeadIntoAnalyser or saveLead should set it
+    setSavedProspect(null); setLeadSaved(false); setLeadNameInput('');
+    setSavedAttachments([]);
   };
 
   const loadProspects=async()=>{
@@ -1075,7 +1078,8 @@ export default function BdePanel() {
   async function saveLead(){
     if(!analysis)return;
     setSavingLead(true); setSaveError('');
-    const name=leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||analysis?.main_need?.split(' ').slice(0,4).join(' ')||'New Prospect';
+    const detectedName=parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'';
+    const name=(leadNameInput||detectedName||analysis?.main_need?.split(' ').slice(0,4).join(' ')||'New Prospect').trim();
     const np={name,url:auditResult?.url||auditUrl||'',industry:'',latestAnalysis:{...analysis,savedAt:new Date().toISOString()},lastSeen:new Date().toISOString(),conversationCount:1,status:'active'};
     // Optimistic update
     setProspects(prev=>{const ex=prev.find((p:any)=>p.name===name);if(ex)return prev.map((p:any)=>p.name===name?{...p,conversationCount:p.conversationCount+1,latestAnalysis:np.latestAnalysis,lastSeen:np.lastSeen}:p);return [np,...prev];});
