@@ -301,13 +301,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [completed, setDone]   = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("seosZ_tour_done");
-    if (!saved) {
-      // Auto-start tour after 2s for new users
-      const t = setTimeout(() => setActive(true), 2000);
-      return () => clearTimeout(t);
-    }
-    setDone(true);
+    // Tour disabled — re-enable by restoring auto-start logic
+    setDone(true); // always mark as done so overlay never shows
   }, []);
 
   const steps = ALL_STEPS[role] || ALL_STEPS.hod;
