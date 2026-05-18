@@ -492,11 +492,36 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const userPrompt = "CONTEXT:\n" + ctx.join("\n") + "\n\nTASK: " + (DOC_PROMPTS[docType] || DOC_PROMPTS.proposal) + "\n\nReturn a JSON object with this EXACT structure (raw JSON only, no markdown):\n{\"title\":\"document title\",\"subtitle\":\"compelling one-line subtitle\",\"recipientName\":\"client name\",\"preparedFor\":\"company name if known\",\"sections\":[{\"heading\":\"SECTION HEADING\",\"body\":\"full section text — use \\\\n for line breaks, use \\\\n\\\\n for paragraph breaks\",\"type\":\"intro|findings|plan|pricing|proof|cta|body\"}],\"footerNote\":\"personalised note\"}";
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 3000, system: sysPrompt, messages: [{ role: "user", content: userPrompt }] });
-      const raw = (_r.content[0] as any).text || "{}";
-      let doc: any;
-      try { doc = JSON.parse(raw.replace(/^```json\s*/,"").replace(/```\s*$/,"").trim()); }
-      catch { doc = { title: bName + " — SEO Proposal", subtitle: "", recipientName: leadInfo.name || "", preparedFor: "", sections: [{ heading: "", body: raw, type: "body" }], footerNote: "" }; }
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 3000, system: sysPrompt,
+        messages: [
+          { role: "user", content: userPrompt },
+          { role: "assistant", content: "{" }
+        ]
+      });
+      // Prepend the { we used as prefill
+      const raw = "{" + ((_r.content[0] as any).text || "");
+      let doc: any = null;
+      // Strategy 1: direct parse after stripping any accidental fences
+      const cleaned = raw.replace(/^```json\s*/i,"").replace(/```\s*$/,"").trim();
+      try { doc = JSON.parse(cleaned); } catch {}
+      // Strategy 2: extract first {...} block
+      if (!doc) {
+        const m = cleaned.match(/\{[\s\S]+\}/);
+        if (m) try { doc = JSON.parse(m[0]); } catch {}
+      }
+      // Strategy 3: fallback — wrap raw text as a single section
+      if (!doc || !doc.sections) {
+        const fallbackBody = cleaned.replace(/^[`\s]*json\s*/i,"").replace(/[`\s]*$/,"").trim();
+        doc = {
+          title: bName + " — " + (typeLabel[docType] || "SEO Proposal"),
+          subtitle: "",
+          recipientName: leadInfo.name || "",
+          preparedFor: leadInfo.name || "",
+          sections: [{ heading: "", body: fallbackBody, type: "body" }],
+          footerNote: ""
+        };
+      }
       const clientName: string = doc.recipientName || leadInfo.name || "Valued Prospect";
       const companyName: string = doc.preparedFor || leadInfo.name || "";
       const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
