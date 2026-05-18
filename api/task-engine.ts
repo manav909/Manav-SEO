@@ -1012,6 +1012,49 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
 
+  if (action === "analyse_delta") {
+    // Analyse only new messages, using previous analysis as context
+    const { newMessages = [], previousAnalysis = null, extraContext = "" } = body;
+    if (!newMessages.length) return ok(res, { error: "newMessages required" });
+    try {
+      const prevCtx = previousAnalysis ? [
+        previousAnalysis.main_need ? "Previous need: " + previousAnalysis.main_need : "",
+        previousAnalysis.urgency ? "Urgency level: " + previousAnalysis.urgency : "",
+        previousAnalysis.hidden_concern ? "Hidden concern: " + previousAnalysis.hidden_concern : "",
+        previousAnalysis.fiverr_specific?.conversion_blocker ? "Conversion blocker: " + previousAnalysis.fiverr_specific.conversion_blocker : "",
+        previousAnalysis.fiverr_specific?.order_probability !== undefined ? "Order probability was: " + previousAnalysis.fiverr_specific.order_probability + "%" : "",
+      ].filter(Boolean).join(" | ") : "";
+      const msgText = newMessages.map((m: any) => (m.speaker === "me" ? "Me" : m.speakerName || "Client") + ": " + m.text).join("
+");
+      const prompt = "Analyse these NEW messages in a Fiverr conversation.
+"
+        + (prevCtx ? "PREVIOUS CONVERSATION CONTEXT: " + prevCtx + "
+
+" : "")
+        + (extraContext ? extraContext + "
+
+" : "")
+        + "NEW MESSAGES:
+" + msgText.slice(0, 4000);
+      const { analyseConversation } = await import("./lib/comms-engine");
+      // Reuse existing analyse_fiverr_conversation action logic inline
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 1500,
+        system: "You are an expert Fiverr BDE analyst. Analyse these new messages in context of the previous conversation. Update the analysis — what changed, new urgency signals, new objections, revised close probability. Return the same JSON schema as a full analysis.",
+        messages: [{ role: "user", content: prompt }]
+      });
+      const raw = (_r.content[0] as any).text || "{}";
+      let analysis = null;
+      try { analysis = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {
+        const m = raw.match(/\{[\s\S]+\}/);
+        try { analysis = m ? JSON.parse(m[0]) : null; } catch {}
+      }
+      return ok(res, { success: true, analysis, newMessageCount: newMessages.length });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);

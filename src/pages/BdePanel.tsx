@@ -584,6 +584,8 @@ export default function BdePanel() {
   // Conversation state
   const [rawPaste,setRawPaste]=useState('');
   const [parsedMsgs,setParsedMsgs]=useState<any[]>([]);
+  const [newMsgsDelta,setNewMsgsDelta]=useState<any[]>([]);
+  const [lastAnalysedMsgCount,setLastAnalysedMsgCount]=useState(0);
   const [convText,setConv]=useState('');
   const [analysing,setAnalysing]=useState(false);
   const [analysis,setAnalysis]=useState<any>(null);
@@ -700,7 +702,7 @@ export default function BdePanel() {
   const clearAll=()=>{
     if (!window.confirm('Clear all context?')) return;
     setRawPaste('');setParsedMsgs([]);setConv('');setAnalysis(null);setDeepAnalysis(null);setParsed([]);setAttachments([]);setCallPaste('');setParsedCallMsgs([]);setCallDeepAnalysis(null);setCallDeepError('');
-    setAuditResult(null);setAuditUrl('');setLeadNameInput('');setLeadSaved(false);setSavedProspect(null);setResponses(null);setNextMsg('');
+    setAuditResult(null);setAuditUrl('');setLeadNameInput('');setLeadSaved(false);setSavedProspect(null);setResponses(null);setNextMsg('');setNewMsgsDelta([]);setLastAnalysedMsgCount(0);
     try { localStorage.removeItem(CTX_KEY); } catch {}
     setShowLeadPicker(false);
   };
@@ -720,6 +722,23 @@ export default function BdePanel() {
     setLoadingPros(false);
   };
 
+  async function analyseNew(){
+    // Analyse only new messages with previous context
+    if(!newMsgsDelta.length||!analysis)return;
+    setAnalysing(true);
+    const attCtx=attachments.filter((a:any)=>a.status==='done').map((a:any)=>'[ATTACHMENT: '+a.name+']\n'+a.description).join('\n\n');
+    const savedAttCtx=savedAttachments.length?'--- SAVED FILES ---\n'+savedAttachments.map((a:any)=>'[FILE: '+a.fileName+']\n'+(a.summary||a.description||'').slice(0,200)).join('\n\n'):'';
+    const extraCtx=[callPasteCtx,attCtx?'--- ATTACHED FILES ---\n'+attCtx:'',savedAttCtx,transcriptCtx].filter(Boolean).join('\n\n');
+    const r=await post('analyse_delta',{newMessages:newMsgsDelta,previousAnalysis:analysis,extraContext:extraCtx});
+    if((r as any).analysis){
+      setAnalysis((r as any).analysis);
+      setLastAnalysedMsgCount(parsedMsgs.length);
+      setNewMsgsDelta([]);
+      autoSave('chat_analysis',{analysis:(r as any).analysis,newMessageCount:(r as any).newMessageCount,mode:'delta',summary:'Delta analysis: '+(r as any).newMessageCount+' new messages'});
+    }
+    setAnalysing(false);
+  }
+
   async function analyse(){
     if(!convText.trim())return;
     setAnalysing(true);setAnalysis(null);setParsed([]);setResponses(null);
@@ -732,7 +751,11 @@ export default function BdePanel() {
     setParsed((r as any).parsed_lines||[]);
     setAnalysing(false);
     // Auto-save chat analysis
-    if(an) autoSave('chat_analysis',{analysis:an,conversationText:(rawPaste||convText).slice(0,3000),messageCount:parsedMsgs.length,summary:an.main_need||'Chat analysis'});
+    if(an){
+      setLastAnalysedMsgCount(parsedMsgs.length);
+      setNewMsgsDelta([]);
+      autoSave('chat_analysis',{analysis:an,conversationText:(rawPaste||convText).slice(0,3000),messageCount:parsedMsgs.length,summary:an.main_need||'Chat analysis'});
+    }
   }
 
   async function runDeepAnalysis(){
@@ -1209,6 +1232,43 @@ export default function BdePanel() {
                 </div>
               )}
             </div>
+
+            {/* Delta — new messages detected */}
+            {newMsgsDelta.length>0&&analysis&&(
+              <div style={{...S.card,marginBottom:10,borderColor:'rgba(245,158,11,.4)',background:'rgba(245,158,11,.05)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:700,color:'#f59e0b',marginBottom:3}}>
+                      ✨ {newMsgsDelta.length} new message{newMsgsDelta.length!==1?'s':''} since last analysis
+                    </div>
+                    <div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>
+                      {newMsgsDelta.slice(0,2).map((m:any,i:number)=>(
+                        <span key={i} style={{marginRight:8}}>{m.speaker==='me'?'You':'Client'}: {m.text.slice(0,60)}{m.text.length>60?'…':''}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:6,flexShrink:0}}>
+                    <button style={{...S.btn('#f59e0b'),fontSize:11}} onClick={analyseNew} disabled={analysing}>
+                      {analysing?'Analysing...':'⚡ Analyse New Only'}
+                    </button>
+                    <button style={{...S.btn('hsl(var(--muted-foreground))'),fontSize:11}} onClick={()=>{setNewMsgsDelta([]);setLastAnalysedMsgCount(0);}}>
+                      Full Re-analyse
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Context indicator — what's included in analysis */}
+            {analysis&&(parsedCallMsgs.length>0||transcripts.length>0||savedAttachments.length>0||attachments.filter((a:any)=>a.status==='done').length>0)&&(
+              <div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginBottom:8,padding:'4px 10px',background:'rgba(16,185,129,.04)',borderRadius:6,border:'0.5px solid rgba(16,185,129,.15)',display:'flex',gap:8,flexWrap:'wrap' as const}}>
+                <span style={{color:'#10b981',fontWeight:600}}>Included in analysis:</span>
+                <span>💬 {parsedMsgs.length} messages</span>
+                {parsedCallMsgs.length>0&&<span>📞 {parsedCallMsgs.length} call exchanges</span>}
+                {transcripts.length>0&&<span>📁 {transcripts.length} saved transcript{transcripts.length!==1?'s':''}</span>}
+                {(savedAttachments.length+(attachments.filter((a:any)=>a.status==='done').length))>0&&<span>📎 {savedAttachments.length+attachments.filter((a:any)=>a.status==='done').length} file{savedAttachments.length+attachments.filter((a:any)=>a.status==='done').length!==1?'s':''}</span>}
+              </div>
+            )}
 
             {/* Attachment uploader */}
             <div style={{...S.card,marginBottom:10}}>
