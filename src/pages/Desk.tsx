@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectSync } from '@/hooks/useProjectSync';
 import { supabase } from '@/lib/supabase';
+import PortalNav from '@/components/PortalNav';
 import {
   FileText, Download, Trash2, Pin, Search, Filter,
   BarChart2, Code2, Brain, AlertCircle, ChevronDown,
@@ -305,6 +306,7 @@ export default function Desk() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#030712', color: 'white', fontFamily: 'system-ui, sans-serif' }}>
+      <PortalNav />
       {/* Background grid */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', opacity: 0.03 }}>
         <svg width="100%" height="100%"><defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">

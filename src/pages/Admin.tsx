@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import AnimatedBg from '@/components/AnimatedBg';
+import PortalNav from '@/components/PortalNav';
 import {
   Users, Plus, Globe, CheckCircle,
   ChevronDown, ChevronUp, Zap, DollarSign,
@@ -497,6 +498,7 @@ export default function Admin() {
           if (!cp.length) return null;
           return (
             <optgroup key={c.id} label={`${c.name} — ${c.company}`}>
+      <PortalNav />
               {cp.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name} ({p.url}){p.last_analysis_at ? ' ✓' : ''}

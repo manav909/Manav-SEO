@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { Brain, TrendingUp, RefreshCw, Shield } from "lucide-react";
+import PortalNav from '@/components/PortalNav';
 
 interface Stats { avgBrainScore: number; learningsThisWeek: number; loopClosureRate: number; pendingVerifications: number; }
 interface VelocityPoint { date: string; count: number; }
@@ -95,6 +96,7 @@ export default function BrainCommand() {
 
   return (
     <div style={S.page}>
+      <PortalNav />
       
       <div style={S.header}>
         <div style={S.title}>

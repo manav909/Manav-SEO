@@ -15,6 +15,7 @@ import { useProject }  from '@/contexts/ProjectContext';
 import { ProjectDataBanner } from '@/components/ProjectDataBanner';
 import { supabase }    from '@/lib/supabase';
 import PresidentialAdvisor from '@/components/PresidentialAdvisor';
+import PortalNav from '@/components/PortalNav';
 import {
   Crown, Globe, Brain, Target, Zap, Activity,
   ChevronRight, RefreshCw, Rocket, TrendingUp,
@@ -287,6 +288,7 @@ export default function Oval() {
   return (
     <div className="fixed inset-0 bg-[#030810] text-foreground overflow-hidden flex flex-col"
          style={{ fontFamily: 'system-ui, sans-serif' }}>
+      <PortalNav />
       {toast && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-card border border-border shadow-xl text-sm max-w-md text-center">{toast}</div>
       )}

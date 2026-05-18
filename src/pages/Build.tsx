@@ -2,6 +2,7 @@ import GlobalSearch from "@/components/GlobalSearch";
 import AnimatedBg from "@/components/AnimatedBg";
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import PortalNav from '@/components/PortalNav';
 
 const REFRESH = 15000;
 
@@ -119,6 +120,7 @@ export default function Build() {
   return (
     <>
     <div style={C.root}>
+      <PortalNav />
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
         ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:#1a1a3a;border-radius:2px}`}
       </style>
