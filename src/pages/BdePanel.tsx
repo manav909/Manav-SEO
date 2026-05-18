@@ -861,7 +861,7 @@ export default function BdePanel() {
                     {analysis&&<button style={S.btn('#a78bfa')} onClick={()=>setTab('docs')}>Generate Doc →</button>}
                   </div>
                 </div>
-                <ConversationView msgs={parsedMsgs} deepAnalysis={deepAnalysis} onAction={handleConvAction}/>
+                <div style={{maxHeight:620,overflowY:'auto' as const,paddingRight:4}}><ConversationView msgs={parsedMsgs} deepAnalysis={deepAnalysis} onAction={handleConvAction}/></div>
               </div>
             )}
 

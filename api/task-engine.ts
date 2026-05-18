@@ -294,8 +294,22 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const _iss: string[] = [];
       let _sc = 50;
       try {
-        const _fr = await fetch("https://" + _u, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) });
-        const _h = (await _fr.text()).slice(0, 8000);
+        // Try Jina Reader first (bypasses Cloudflare / bot protection)
+        let _h = "";
+        let _fetchedViaJina = false;
+        try {
+          const jinaKey = process.env.JINA_API_KEY || "";
+          const jinaHeaders: any = { "Accept": "text/plain", "X-Return-Format": "html" };
+          if (jinaKey) jinaHeaders["Authorization"] = "Bearer " + jinaKey;
+          const _jr = await fetch("https://r.jina.ai/https://" + _u, { headers: jinaHeaders, signal: AbortSignal.timeout(12000) });
+          if (_jr.ok) { _h = (await _jr.text()).slice(0, 10000); _fetchedViaJina = true; }
+        } catch {}
+        // Fall back to direct fetch if Jina failed
+        if (!_h) {
+          const _fr = await fetch("https://" + _u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOBot/1.0)" }, signal: AbortSignal.timeout(10000) });
+          _h = (await _fr.text()).slice(0, 10000);
+        }
+        const _fakeVar = _h; // suppress unused warningal.timeout(8000) });
         if (!/<title>[^<]{10,}/i.test(_h)) _iss.push("Missing title tag");
         if (!/meta[^>]+name=.description./i.test(_h)) _iss.push("Missing meta description");
         if (!/<h1[^>]*>[^<]{5,}/i.test(_h)) _iss.push("No H1 tag found");
@@ -539,16 +553,24 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       if (auditData?.score !== undefined) ctx.push("SEO score: " + auditData.score + "/100");
       if (auditData?.issues?.length) ctx.push("Issues: " + (auditData.issues as string[]).join("; "));
       if (conversationCount > 1) ctx.push("Past conversations: " + conversationCount);
+      // Guarantee minimum context so Claude always has something to work with
+      if (!ctx.length) ctx.push("Prospect needs SEO help — no specific details yet, generate general high-value closing suggestions");
       if (algo.length) ctx.push("Latest algo updates: " + algo.map((a: any) => a.topic + ": " + a.summary).join(" | "));
       if (brain.length) ctx.push("Proven results: " + brain.map((b: any) => b.card_title + ": " + b.improvement).join(" | "));
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1200,
-        system: "You are a senior BDE coach at SEO Season. Generate highly specific, immediately actionable suggestions to close, upsell or retain this lead. Every suggestion must name a specific action, include an exact opening line or message, and explain why it will work for THIS specific lead based on their context. Use algorithm knowledge to create urgency where relevant.",
+        system: "You are a senior BDE coach at SEO Season. You MUST respond with a raw JSON array only — no wrapper object, no markdown, no code fences. The array contains exactly 5 suggestion objects, each with fields: type (close/followup/upsell/audit/content), priority (high/medium/low), action (string, the exact action to take), script (string, word-for-word message to send), reason (string, why this works), timing (string, when to do this)."ggestions to close, upsell or retain this lead. Every suggestion must name a specific action, include an exact opening line or message, and explain why it will work for THIS specific lead based on their context. Use algorithm knowledge to create urgency where relevant.",
         messages: [{ role: "user", content: "LEAD CONTEXT: " + ctx.join(" | ") + " Generate 5 actionable suggestions. Return JSON array only, no markdown. Each item has fields: type (close/upsell/followup/audit/content), priority (high/medium), action (specific task), script (exact copy-paste message), reason (why for this lead), timing (when)." }]
       });
       const raw = (_r.content[0] as any).text || "[]";
-      let suggestions: any[] = [];
-      try { suggestions = JSON.parse(raw.replace(/```json/g, "").replace(/```/g, "").trim()); } catch { suggestions = []; }
+            let suggestions: any[] = [];
+      try {
+        const cleaned2 = raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim();
+        const parsed2 = JSON.parse(cleaned2);
+        // Normalise: Claude may return {suggestions:[...]} or [...]
+        suggestions = Array.isArray(parsed2) ? parsed2 : (Array.isArray(parsed2.suggestions) ? parsed2.suggestions : []);
+      } catch { suggestions = []; }
+      if (!suggestions.length) return ok(res, { success: false, error: "No suggestions generated — add more lead context", suggestions: [] });
       return ok(res, { success: true, suggestions });
     } catch (e: any) { return ok(res, { error: e.message, suggestions: [] }); }
   }
