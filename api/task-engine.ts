@@ -446,7 +446,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   // === GENERATE CLIENT DOCUMENT (inline) ===
   if (action === "generate_client_doc") {
-    const { docType = "proposal", conversationAnalysis, auditResult, leadInfo = {}, brandName: bName = "Manav S", brainLearnings: passedLearnings = [] } = body;
+    const { docType = "proposal", conversationAnalysis, auditResult, leadInfo = {}, brandName: bName = "Manav S", brainLearnings: passedLearnings = [], language = "US English", currency = "USD" } = body;
     // Fetch live DB context
     const supaClient = db();
     const [algoR, brainR] = await Promise.allSettled([
@@ -457,6 +457,8 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const brainData: any[] = brainR.status === "fulfilled" ? (brainR.value.data || []) : (passedLearnings as any[]);
     // Build full context string
     const ctx: string[] = [];
+    ctx.push("LANGUAGE: Write the entire document in " + language + ". Use natural, fluent " + language + " — not translated English.");
+    ctx.push("CURRENCY: Use " + currency + " for all pricing, investment figures, and ROI calculations.");
     if (leadInfo.url) ctx.push("CLIENT WEBSITE: " + leadInfo.url);
     if (leadInfo.name) ctx.push("CLIENT NAME: " + leadInfo.name);
     if (leadInfo.industry) ctx.push("INDUSTRY: " + leadInfo.industry);

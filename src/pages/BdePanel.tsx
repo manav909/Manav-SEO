@@ -30,6 +30,8 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   const [leadName,setLeadName]=React.useState("");
   const [leadIndustry,setLeadIndustry]=React.useState("");
   const [brandName,setBrandName]=React.useState("Manav S");
+  const [docLang,setDocLang]=React.useState("US English");
+  const [docCurrency,setDocCurrency]=React.useState("USD");
   const [suggCtx,setSuggCtx]=React.useState("");
   const [autoGenTrigger,setAutoGenTrigger]=React.useState(0);
   const iframeRef=React.useRef<HTMLIFrameElement>(null);
@@ -68,7 +70,7 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   };
   const generate=async()=>{
     setGenerating(true);setHtml("");setTitle("");setClientName("");
-    const r=await post("generate_client_doc",{docType,conversationAnalysis:analysis,auditResult,brandName:brandName||'Manav S',leadInfo:{url:leadUrl,name:leadName,industry:leadIndustry},suggestionContext:suggCtx||undefined});
+    const r=await post("generate_client_doc",{docType,conversationAnalysis:analysis,auditResult,brandName:brandName||'Manav S',leadInfo:{url:leadUrl,name:leadName,industry:leadIndustry},suggestionContext:suggCtx||undefined,language:docLang,currency:docCurrency});
     if((r as any).html){
       setHtml((r as any).html);
       setTitle((r as any).title||"SEO Season Document");
