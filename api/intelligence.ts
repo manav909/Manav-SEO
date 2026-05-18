@@ -255,7 +255,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.warn("[intelligence] ai-cache import failed (non-fatal):", (importErr as any)?.message);
   }
   
-  try {
   try { return await _handler(req, res); }
   catch (e: any) {
     console.error("[intelligence] unhandled:", e?.message, e?.stack?.slice(0, 800));
@@ -264,7 +263,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       else { res.write(`\nError: ${e?.message || "unknown crash"}`); res.end(); }
     } catch (_e) {}
   }
-}
 
 async function _handler(req: VercelRequest, res: VercelResponse) {
   /* Top-level guard: if anything throws before res.end(), return clean error */
