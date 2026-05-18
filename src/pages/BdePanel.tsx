@@ -472,7 +472,7 @@ function ConversationView({
                       {expandedMsgs.has(i)?'▲ Show less':'▼ Show full message ('+msg.text.length+' chars)'}
                     </button>
                   )}
-                  {/* Probability bar */}}
+                  {/* Probability bar */}
                   {prob !== undefined && (
                     <div style={{display:'flex',alignItems:'center',gap:5,marginTop:4,flexDirection:isMe?'row-reverse':'row' as const}}>
                       <div style={{width:72,height:3,background:'rgba(255,255,255,.1)',borderRadius:2,overflow:'hidden'}}>
