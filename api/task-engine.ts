@@ -85,6 +85,21 @@ function db(): any {
   return _supa;
 }
 
+// Admin client — always uses service_role key, required for auth.admin methods
+let _admin: any = null;
+function adminDb(): any {
+  if (_admin) return _admin;
+  const url     = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const svcKey  = process.env.SUPABASE_SERVICE_KEY || "";
+  if (!url || !svcKey) return null;
+  try {
+    _admin = createClient(url, svcKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+  } catch (e) { console.error("[task-engine] adminDb init failed:", (e as any)?.message); }
+  return _admin;
+}
+
 /* ── Inline minimal classifyAndFilterLearning (rule-based, lossy but safe) ── */
 function classifyAndFilterLearning(opts: { content: string; source: string; title?: string; requestedType?: string; projectId?: string | null }): {
   shouldSave: boolean; rejectionReason?: string; category: string; confidence: number; autoApprove: boolean; isSystemLevel: boolean;
@@ -2332,14 +2347,16 @@ HTML: ${html.slice(0,2000)}`}]})});
     const { email, staffId, name } = body;
     if (!email) return ok(res, { success: false, error: 'Email is required' });
     try {
-      const { data, error } = await (db() as any).auth.admin.generateLink({
+      const admin = adminDb();
+      if (!admin) return ok(res, { success: false, error: 'SUPABASE_SERVICE_KEY not set in environment variables' });
+      const { data, error } = await admin.auth.admin.generateLink({
         type: 'invite',
         email,
         options: { redirectTo: 'https://seoseason.com', data: { name, staffId } }
       });
       if (error) return ok(res, { success: false, error: error.message });
       const link = data?.properties?.action_link || data?.action_link || '';
-      if (!link) return ok(res, { success: false, error: 'Link not returned — ensure SUPABASE_SERVICE_KEY is set (not anon key)' });
+      if (!link) return ok(res, { success: false, error: 'Link not returned by Supabase' });
       return ok(res, { success: true, link });
     } catch(e: any) { return ok(res, { success: false, error: e.message }); }
   }
@@ -2348,7 +2365,9 @@ HTML: ${html.slice(0,2000)}`}]})});
     const { staffId, email, name, redirectTo = 'https://seoseason.com' } = body;
     if (!email) return ok(res, { success: false, error: 'Email is required to send an invite' });
     try {
-      const { data, error } = await (db() as any).auth.admin.inviteUserByEmail(email, {
+      const admin = adminDb();
+      if (!admin) return ok(res, { success: false, error: 'SUPABASE_SERVICE_KEY not set in environment variables' });
+      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
         redirectTo, data: { name, staffId }
       });
       if (error) return ok(res, { success: false, error: error.message });
