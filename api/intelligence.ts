@@ -1,4 +1,3 @@
-import { extractAndSaveLearning } from './lib/ai-cache';
 // BUNDLE-VERSION: 2026-05-15-v3 — force Vercel Lambda rebuild
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
@@ -240,6 +239,23 @@ Fetch and analyse a URL:
 
 /* ─── Handler ─── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  /* ── Safety guard: ANTHROPIC_API_KEY + try-catch wrapper ── */
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error("[intelligence] ANTHROPIC_API_KEY not set — cannot process request");
+    res.status(503).json({ error: "AI service not configured", details: "ANTHROPIC_API_KEY missing" });
+    return;
+  }
+  
+  /* ── Dynamic import ai-cache (prevents module-load crash) ── */
+  let extractAndSaveLearning: any = null;
+  try {
+    const aiCache = await import('./lib/ai-cache');
+    extractAndSaveLearning = aiCache.extractAndSaveLearning;
+  } catch (importErr) {
+    console.warn("[intelligence] ai-cache import failed (non-fatal):", (importErr as any)?.message);
+  }
+  
+  try {
   try { return await _handler(req, res); }
   catch (e: any) {
     console.error("[intelligence] unhandled:", e?.message, e?.stack?.slice(0, 800));
