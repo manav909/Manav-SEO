@@ -685,48 +685,90 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
 
   if (action === "generate_lead_suggestions") {
-    const { prospectName = "", prospectUrl = "", latestAnalysis, auditData, conversationCount = 0 } = body;
+    const { prospectName = "", prospectUrl = "", latestAnalysis, auditData,
+            conversationCount = 0, callContext = "", attachContext = "" } = body;
     try {
       const [algoR, brainR] = await Promise.allSettled([
-        db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(5),
+        db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(6),
         db().from("brain_learnings").select("card_title,improvement,what_worked").order("applied_count", { ascending: false }).limit(5),
       ]);
-      const algo: any[] = algoR.status === "fulfilled" ? (algoR.value.data || []) : [];
-      const brain: any[] = brainR.status === "fulfilled" ? (brainR.value.data || []) : [];
+      const algo: any[] = algoR.status === "fulfilled" ? (algoRes?.value?.data || algoR.value?.data || []) : [];
+      const brain: any[] = brainR.status === "fulfilled" ? (brainRes?.value?.data || brainR.value?.data || []) : [];
+
       const ctx: string[] = [];
       if (prospectName) ctx.push("Prospect: " + prospectName);
       if (prospectUrl) ctx.push("Website: " + prospectUrl);
-      if (latestAnalysis?.main_need) ctx.push("Need: " + latestAnalysis.main_need);
+      if (latestAnalysis?.main_need) ctx.push("Main need: " + latestAnalysis.main_need);
       if (latestAnalysis?.urgency) ctx.push("Urgency: " + latestAnalysis.urgency);
       if (latestAnalysis?.hidden_concern) ctx.push("Hidden concern: " + latestAnalysis.hidden_concern);
       if (latestAnalysis?.fiverr_specific?.conversion_blocker) ctx.push("Conversion blocker: " + latestAnalysis.fiverr_specific.conversion_blocker);
-      if (latestAnalysis?.fiverr_specific?.order_probability) ctx.push("Order probability: " + latestAnalysis.fiverr_specific.order_probability + "%");
+      if (latestAnalysis?.fiverr_specific?.order_probability !== undefined) ctx.push("Order probability: " + latestAnalysis.fiverr_specific.order_probability + "%");
       if (auditData?.score !== undefined) ctx.push("SEO score: " + auditData.score + "/100");
-      if (auditData?.issues?.length) ctx.push("Audit issues: " + (auditData.issues as string[]).join("; "));
-      if (conversationCount > 1) ctx.push("Past conversations saved: " + conversationCount);
-      if (algo.length) ctx.push("Latest algorithm knowledge: " + algo.map((a: any) => a.topic + ": " + a.summary).join(" | "));
-      if (brain.length) ctx.push("Proven results from SEO Season: " + brain.map((b: any) => b.card_title + ": " + b.improvement).join(" | "));
-      if (!ctx.length) ctx.push("Prospect needs SEO help. Generate high-value general closing suggestions.");
+      if (auditData?.issues?.length) {
+        const issueText = (auditData.issues as any[]).map((i: any) =>
+          typeof i === "string" ? i : (i.severity ? "[" + i.severity.toUpperCase() + "] " : "") + (i.issue || "")
+        ).filter(Boolean).slice(0, 5).join("; ");
+        if (issueText) ctx.push("Audit issues: " + issueText);
+      }
+      if (auditData?.quickWins?.length) ctx.push("Quick wins: " + (auditData.quickWins as string[]).slice(0, 3).join("; "));
+      if (conversationCount > 0) ctx.push("Saved conversations: " + conversationCount);
+      if (callContext) ctx.push("Call context: " + String(callContext).slice(0, 400));
+      if (attachContext) ctx.push("File attachments context: " + String(attachContext).slice(0, 300));
+      if (algo.length) ctx.push("Latest algorithm updates: " + algo.map((a: any) => a.topic + ": " + a.summary + (a.recommendations ? " → " + a.recommendations : "")).join(" | "));
+      if (brain.length) ctx.push("Proven SEO Season results: " + brain.map((b: any) => b.card_title + ": " + b.improvement).join(" | "));
+      if (!ctx.length) ctx.push("Prospect: " + (prospectName || "unknown") + ". No prior analysis. Generate helpful general SEO closing suggestions.");
+
       const _ac2 = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const _r2 = await _ac2.messages.create({
-        model: "claude-sonnet-4-6", max_tokens: 1500,
-        system: "You are a senior BDE coach at SEO Season. You MUST respond with a raw JSON array only — absolutely no wrapper object, no markdown, no code fences. The array contains exactly 5 objects with fields: type (close/followup/upsell/audit/content), priority (high/medium/low), action (exact action to take), script (word-for-word message to send), reason (why this works for this lead), timing (when to send).",
-        messages: [{ role: "user", content: "LEAD CONTEXT: " + ctx.join(" | ") }]
+        model: "claude-sonnet-4-6", max_tokens: 1800,
+        system: "You are a senior Fiverr BDE coach. Generate 5 specific, actionable suggestions to close this lead. IMPORTANT: Return ONLY a valid JSON array. No text before or after. No markdown. No wrapper object. Just the array starting with [ and ending with ].",
+        messages: [{ role: "user", content:
+          "LEAD CONTEXT:
+" + ctx.join("
+") +
+          "
+
+Generate exactly 5 suggestions as a JSON array. Each object must have:
+" +
+          "- type: "close" | "followup" | "upsell" | "audit" | "content"
+" +
+          "- priority: "high" | "medium" | "low"
+" +
+          "- action: string (exact action to take right now)
+" +
+          "- script: string (word-for-word Fiverr message to send — reference their specific situation)
+" +
+          "- reason: string (why this works for THIS lead specifically)
+" +
+          "- timing: string (e.g. "Send now", "After 2 days", "This week")
+
+" +
+          "Return ONLY the JSON array. Start your response with [ and end with ]."
+        }]
       });
       const raw2 = (_r2.content[0] as any).text || "[]";
-      const cleaned2 = raw2.replace(/^```[a-z]*/i, "").replace(/```/g, "").trim();
+      // Try multiple parse strategies
       let suggestions: any[] = [];
-      try {
-        const parsed2 = JSON.parse(cleaned2);
-        suggestions = Array.isArray(parsed2) ? parsed2
-          : Array.isArray((parsed2 as any).suggestions) ? (parsed2 as any).suggestions
-          : [];
-      } catch { suggestions = []; }
+      const cleaned2 = raw2.replace(/^```[a-z]*/i, "").replace(/```/g, "").trim();
+      // Strategy 1: direct parse
+      try { const p = JSON.parse(cleaned2); suggestions = Array.isArray(p) ? p : Array.isArray((p as any).suggestions) ? (p as any).suggestions : []; } catch {}
+      // Strategy 2: extract array from response
       if (!suggestions.length) {
-        return ok(res, { success: false, error: "No suggestions generated — provide more lead context", suggestions: [] });
+        const arrMatch = cleaned2.match(/\[[\s\S]+\]/);
+        if (arrMatch) try { suggestions = JSON.parse(arrMatch[0]); } catch {}
       }
-      return ok(res, { success: true, suggestions });
-    } catch (e: any) { return ok(res, { error: e.message, suggestions: [] }); }
+      // Strategy 3: extract individual objects
+      if (!suggestions.length) {
+        const objMatches = [...cleaned2.matchAll(/\{[\s\S]+?\}/g)];
+        for (const m of objMatches) {
+          try { const obj = JSON.parse(m[0]); if (obj.action || obj.script) suggestions.push(obj); } catch {}
+        }
+      }
+      if (!suggestions.length) {
+        return ok(res, { success: false, error: "Claude could not generate suggestions — try saving more conversation context for this lead", suggestions: [] });
+      }
+      return ok(res, { success: true, suggestions: suggestions.slice(0, 5) });
+    } catch (e: any) { return ok(res, { success: false, error: e.message, suggestions: [] }); }
   }
 
   // ═══ END LEAD INTELLIGENCE ACTIONS ═══

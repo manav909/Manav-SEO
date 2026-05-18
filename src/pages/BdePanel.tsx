@@ -634,6 +634,7 @@ export default function BdePanel() {
   const [expandedConv,setExpandedConv]=useState<Set<number>>(new Set());
   const [suggestions,setSuggestions]=useState<any[]>([]);
   const [genSugg,setGenSugg]=useState(false);
+  const [suggError,setSuggError]=useState('');
   const [prospectTab,setProspectTab]=useState<'suggestions'|'history'|'docs'>('suggestions');
   const textRef=useRef<HTMLTextAreaElement>(null);
 
@@ -984,7 +985,6 @@ export default function BdePanel() {
     setProspectConvs((r as any).conversations||[]);
   }
 
-  const [suggError,setSuggError]=React.useState('');
   async function generateSuggestions(){
     if(!selProspect)return;
     setGenSugg(true);setSuggestions([]);setSuggError('');
