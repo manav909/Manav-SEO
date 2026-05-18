@@ -1,36 +1,120 @@
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
-import PortalNav from '@/components/PortalNav';
-import { useProject } from '@/contexts/ProjectContext';
-import React,{useState,useEffect} from "react";
-const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
-const rc:any={low:"#10b981",medium:"#f59e0b",high:"#ef4444",critical:"#dc2626"};
-export default function HealthDashboard(){
-  const { selectedProjectId: projectId } = useProject();
-  const[health,setHealth]=useState<any[]>([]);const[loading,setLoading]=useState(true);const[calc,setCalc]=useState(false);
-  const load=async()=>{setLoading(true);const r=await post("get_health_dashboard");setHealth((r as any).health||[]);setLoading(false);};
-  const calcAll=async()=>{setCalc(true);await post("calculate_all_health");await load();setCalc(false);};
-  useEffect(()=>{load();},[]);
-  const avg=health.length?Math.round(health.reduce((s:number,h:any)=>s+h.overall_score,0)/health.length):0;
-  const S:any={p:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",padding:28,fontFamily:"var(--font-display,-apple-system,system-ui,sans-serif)"},c:{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:12,padding:18,marginBottom:10},btn:{background:"rgba(16,185,129,.12)",border:"0.5px solid rgba(16,185,129,.25)",borderRadius:8,color:"#10b981",padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}};
-  if(loading)return<div style={{...S.p,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading health data...</div>;
-  return(<div style={S.p}>
-      <PortalNav />
-      
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <div><div style={{fontSize:22,fontWeight:700}}>❤️ Client Health</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>Avg: {avg}/100 · {health.filter(h=>h.churn_risk==="high"||h.churn_risk==="critical").length} at risk</div></div>
-      <button style={S.btn} onClick={calcAll} disabled={calc}>{calc?"Calculating...":"↻ Recalculate All"}</button>
+import React, { useState, useEffect } from "react";
+import PortalNav from "@/components/PortalNav";
+import { useProject } from "@/contexts/ProjectContext";
+
+const post = (a: string, b: any = {}) =>
+  fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: a, ...b }) })
+    .then(r => r.json()).catch(() => ({}));
+
+const RISK_COLOR: any = { low: "#10b981", medium: "#f59e0b", high: "#ef4444", critical: "#dc2626" };
+
+function Ring({ score, color }: { score: number; color: string }) {
+  const r = 22, circ = 2 * Math.PI * r, off = circ - (score / 100) * circ;
+  return (
+    <div className="relative h-14 w-14 flex-shrink-0">
+      <svg width="56" height="56" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="4" />
+        <circle cx="28" cy="28" r={r} fill="none" stroke={color} strokeWidth="4"
+          strokeDasharray={`${circ} ${circ}`} strokeDashoffset={off} strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset .8s cubic-bezier(.4,0,.2,1)" }} />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color }}>{score}</div>
     </div>
-    {health.map((h:any)=><div key={h.project_id} style={{...S.c,borderColor:h.churn_risk==="high"||h.churn_risk==="critical"?`${rc[h.churn_risk]}40`:"var(--border)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-        <div><div style={{fontSize:15,fontWeight:700}}>{(h as any).projects?.name}</div><div style={{fontSize:12,color:"var(--text-sub)",marginTop:2}}>{h.recommended_action}</div></div>
-        <div style={{textAlign:"right"}}><div style={{fontSize:28,fontWeight:700,fontFamily:"monospace",lineHeight:1,color:h.overall_score>=70?"#10b981":h.overall_score>=50?"#f59e0b":"#ef4444"}}>{h.overall_score}</div><div style={{fontSize:10,color:"var(--text-muted)",textTransform:"uppercase"}}>Health</div></div>
+  );
+}
+
+export default function HealthDashboard() {
+  const { selectedProjectId: projectId } = useProject();
+  const [health, setHealth] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [calc, setCalc] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const r = await post("get_health_dashboard");
+    setHealth((r as any).health || []);
+    setLoading(false);
+  };
+  const calcAll = async () => {
+    setCalc(true);
+    await post("calculate_all_health");
+    await load();
+    setCalc(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const avg = health.length ? Math.round(health.reduce((s, h) => s + h.overall_score, 0) / health.length) : 0;
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <PortalNav />
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Client Health</h1>
+            <p className="text-sm text-muted-foreground mt-1">Churn risk · upsell signals · avg score: {avg}</p>
+          </div>
+          <button onClick={calcAll} disabled={calc}
+            className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90">
+            {calc ? "Calculating..." : "↻ Recalculate All"}
+          </button>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {health.map((h: any) => {
+              const color = RISK_COLOR[h.churn_risk] || "#6366f1";
+              return (
+                <div key={h.project_id} className="rounded-2xl border border-border bg-card p-5"
+                  style={{ borderColor: h.churn_risk === "high" || h.churn_risk === "critical" ? `${color}40` : undefined }}>
+                  <div className="flex items-start gap-4 mb-4">
+                    <Ring score={h.overall_score} color={color} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold">{(h as any).projects?.name || "Project"}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: `${color}15`, color }}>
+                          {(h.churn_risk || "ok").toUpperCase()}
+                        </span>
+                        {h.upsell_signals?.length > 0 && (
+                          <span className="text-xs text-green-400">💡 Upsell opportunity</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{h.recommended_action}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    {[
+                      { l: "Traffic", v: h.traffic_score },
+                      { l: "Rankings", v: h.ranking_score },
+                      { l: "Technical", v: h.technical_score },
+                      { l: "Content", v: h.content_score },
+                    ].map(s => (
+                      <div key={s.l} className="text-center">
+                        <div className="text-sm font-bold font-mono" style={{ color }}>{s.v || 0}</div>
+                        <div className="text-xs text-muted-foreground">{s.l}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {!health.length && (
+              <div className="rounded-2xl border border-border bg-card p-12 text-center">
+                <div className="text-3xl mb-3">❤️</div>
+                <div className="text-base font-semibold mb-2">No health data yet</div>
+                <p className="text-sm text-muted-foreground mb-4">Click Recalculate to compute health scores for all clients</p>
+                <button onClick={calcAll} disabled={calc}
+                  className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+                  {calc ? "Calculating..." : "Calculate Health Scores"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
-        <span style={{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:20,background:`${rc[h.churn_risk]||"var(--text-muted)"}15`,color:rc[h.churn_risk]||"var(--text-muted)"}}>{h.churn_risk?.toUpperCase()} RISK</span>
-        {h.upsell_signals?.length>0&&<span style={{fontSize:10,color:"#10b981"}}>💡 Upsell opportunity</span>}
-      </div>
-    </div>)}
-    {!health.length&&<div style={{color:"var(--text-muted)",textAlign:"center",padding:40,fontSize:14}}>No health data. Click Recalculate All to start.</div>}
-  </div>);
+    </div>
+  );
 }

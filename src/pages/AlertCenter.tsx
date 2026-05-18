@@ -1,34 +1,95 @@
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
-import PortalNav from '@/components/PortalNav';
-import { useProject } from '@/contexts/ProjectContext';
-import React,{useState,useEffect} from "react";
-const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
-const sc:any={urgent:"#ef4444",critical:"#f97316",warning:"#f59e0b",info:"var(--bg)"};
-export default function AlertCenter(){
+import React, { useState, useEffect } from "react";
+import PortalNav from "@/components/PortalNav";
+import { useProject } from "@/contexts/ProjectContext";
+
+const post = (a: string, b: any = {}) =>
+  fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: a, ...b }) })
+    .then(r => r.json()).catch(() => ({}));
+
+const SEV: any = {
+  critical: "bg-red-600/15 border-red-600/30 text-red-300",
+  urgent:   "bg-red-500/10 border-red-500/20 text-red-400",
+  warning:  "bg-yellow-500/10 border-yellow-500/20 text-yellow-400",
+  info:     "bg-blue-500/10 border-blue-500/20 text-blue-400",
+};
+
+export default function AlertCenter() {
   const { selectedProjectId: projectId } = useProject();
-  const[alerts,setAlerts]=useState<any[]>([]);const[loading,setLoading]=useState(true);const[filter,setFilter]=useState("all");
-  const load=async()=>{setLoading(true);const r=await post("get_alerts",{unreadOnly:false,limit:50});setAlerts((r as any).alerts||[]);setLoading(false);};
-  useEffect(()=>{load();},[]);
-  const markRead=async(id:string)=>{await post("mark_alert_read",{alertId:id});setAlerts(a=>a.map((x:any)=>x.id===id?{...x,read_at:new Date().toISOString()}:x));};
-  const dismissAll=async()=>{await post("dismiss_all_alerts");load();};
-  const filtered=filter==="all"?alerts:filter==="unread"?alerts.filter((a:any)=>!a.read_at):alerts.filter((a:any)=>a.severity===filter);
-  const unread=alerts.filter((a:any)=>!a.read_at).length;
-  const S:any={p:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",padding:28,fontFamily:"var(--font-display,-apple-system,system-ui,sans-serif)"},fb:{background:"rgba(255,255,255,.05)",border:"0.5px solid #1e1e3a",borderRadius:8,color:"var(--text-sub)",padding:"7px 12px",fontSize:11,cursor:"pointer",marginRight:6},act:{background:"rgba(99,102,241,.15)",border:"0.5px solid rgba(99,102,241,.3)",color:"#a78bfa"}};
-  if(loading)return<div style={{...S.p,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading alerts...</div>;
-  return(<div style={S.p}>
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+
+  const load = async () => {
+    setLoading(true);
+    const r = await post("get_alerts", { unreadOnly: false, limit: 50 });
+    setAlerts((r as any).alerts || []);
+    setLoading(false);
+  };
+  const markRead = async (id: string) => {
+    await post("mark_alert_read", { alertId: id });
+    setAlerts(a => a.map((x: any) => x.id === id ? { ...x, read_at: new Date().toISOString() } : x));
+  };
+  useEffect(() => { load(); }, []);
+
+  const filtered = filter === "all" ? alerts
+    : filter === "unread" ? alerts.filter((a: any) => !a.read_at)
+    : alerts.filter((a: any) => a.severity === filter);
+  const unread = alerts.filter((a: any) => !a.read_at).length;
+  const filters = ["all", "unread", "critical", "urgent", "warning", "info"];
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
       <PortalNav />
-      
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <div><div style={{fontSize:22,fontWeight:700}}>🚨 Alert Center</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>{unread} unread</div></div>
-      <button style={{...S.fb,color:"#f87171",border:"0.5px solid rgba(239,68,68,.2)"}} onClick={dismissAll}>Dismiss All</button>
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Alert Center</h1>
+            <p className="text-sm text-muted-foreground mt-1">{unread} unread · {alerts.length} total</p>
+          </div>
+          <button onClick={load} className="px-4 py-2 rounded-xl bg-secondary text-sm font-medium hover:bg-secondary/80">
+            ↻ Refresh
+          </button>
+        </div>
+        <div className="flex gap-2 mb-6 flex-wrap">
+          {filters.map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
+                filter === f ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+              }`}>
+              {f}{f === "unread" && unread > 0 ? ` (${unread})` : ""}
+            </button>
+          ))}
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((a: any) => (
+              <div key={a.id} onClick={() => !a.read_at && markRead(a.id)}
+                className={`rounded-2xl border p-4 transition-all ${a.read_at ? "opacity-50" : "cursor-pointer hover:border-primary/40"} ${SEV[a.severity] || "bg-card border-border"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-bold uppercase tracking-wider">{a.severity}</span>
+                      {!a.read_at && <span className="h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />}
+                    </div>
+                    <div className="text-sm font-semibold mb-1">{a.title}</div>
+                    {a.body && <div className="text-xs text-muted-foreground leading-relaxed">{a.body}</div>}
+                  </div>
+                  <div className="text-xs text-muted-foreground flex-shrink-0">{a.created_at?.slice(0, 10)}</div>
+                </div>
+              </div>
+            ))}
+            {!filtered.length && (
+              <div className="text-center py-16 text-sm text-muted-foreground">
+                {filter === "unread" ? "No unread alerts ✓" : "No alerts found"}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
-    <div style={{marginBottom:16}}>{["all","unread","urgent","critical","warning","info"].map(f=><button key={f} style={{...S.fb,...(filter===f?S.act:{})}} onClick={()=>setFilter(f)}>{f.charAt(0).toUpperCase()+f.slice(1)}{f==="unread"&&unread>0?` (${unread})`:""}</button>)}</div>
-    {filtered.map((a:any)=><div key={a.id} onClick={()=>!a.read_at&&markRead(a.id)} style={{background:a.read_at?"rgba(255,255,255,.02)":"rgba(255,255,255,.04)",border:`0.5px solid ${sc[a.severity]||"var(--border)"}35`,borderRadius:12,padding:"14px 18px",marginBottom:8,cursor:!a.read_at?"pointer":"default",opacity:a.read_at?0.6:1}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:`${sc[a.severity]||"var(--text-muted)"}20`,color:sc[a.severity]||"var(--text-sub)"}}>{a.severity?.toUpperCase()}</span><span style={{fontSize:10,color:"var(--text-muted)"}}>{a.alert_type?.replace(/_/g," ")}</span></div><span style={{fontSize:11,color:"var(--text-muted)"}}>{new Date(a.created_at).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span></div>
-      <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{a.title}</div>
-      <div style={{fontSize:13,color:"var(--text-sub)",lineHeight:1.4}}>{a.body}</div>
-    </div>)}
-    {!filtered.length&&<div style={{color:"var(--text-muted)",textAlign:"center",padding:40,fontSize:14}}>No alerts. Empire is calm.</div>}
-  </div>);
+  );
 }

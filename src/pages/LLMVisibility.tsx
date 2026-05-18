@@ -1,29 +1,112 @@
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
-import PortalNav from '@/components/PortalNav';
-import { useProject } from '@/contexts/ProjectContext';
-import React,{useState,useEffect} from "react";
-const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
-export default function LLMVisibility(){
-  const { selectedProjectId: projectId } = useProject();
-  const[projects,setProjects]=useState<any[]>([]);const[sel,setSel]=useState("");const[cits,setCits]=useState<any[]>([]);const[checking,setChecking]=useState(false);const[loading,setLoading]=useState(true);
-  useEffect(()=>{import("@/lib/supabase").then(({supabase})=>{supabase.from("projects").select("id,name").limit(20).then(({data})=>{setProjects(data||[]);if(data?.length)setSel(data[0].id);setLoading(false);});});},[]);
-  useEffect(()=>{if(sel)post("get_llm_visibility_history",{projectId:sel,limit:20}).then(r=>setCits((r as any).citations||[]));},[sel]);
-  const check=async()=>{setChecking(true);await post("check_llm_visibility",{projectId:sel});const r=await post("get_llm_visibility_history",{projectId:sel,limit:20});setCits((r as any).citations||[]);setChecking(false);};
-  const cited=cits.filter((c:any)=>c.cited).length;const rate=cits.length?Math.round(cited/cits.length*100):0;
-  const S:any={p:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",padding:28,fontFamily:"var(--font-display,-apple-system,system-ui,sans-serif)"},c:{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:12,padding:18,marginBottom:10},sel:{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:8,color:"var(--text)",padding:"8px 14px",fontSize:13},btn:{background:"rgba(6,182,212,.12)",border:"0.5px solid rgba(6,182,212,.3)",borderRadius:8,color:"var(--bg)",padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}};
-  if(loading)return<div style={{...S.p,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)"}}>Loading...</div>;
-  return(<div style={S.p}>
+import React, { useState, useEffect } from "react";
+import PortalNav from "@/components/PortalNav";
+import { useProject } from "@/contexts/ProjectContext";
+import { supabase } from "@/lib/supabase";
+
+const post = (a: string, b: any = {}) =>
+  fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: a, ...b }) })
+    .then(r => r.json()).catch(() => ({}));
+
+export default function LLMVisibility() {
+  const { selectedProjectId } = useProject();
+  const [projects, setProjects] = useState<any[]>([]);
+  const [sel, setSel] = useState(selectedProjectId || "");
+  const [cits, setCits] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    supabase.from("projects").select("id,name").limit(20).then(({ data }) => {
+      setProjects(data || []);
+      if (!sel && data?.length) setSel(data[0].id);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!sel) return;
+    setLoading(true);
+    post("get_llm_visibility_history", { projectId: sel, limit: 20 }).then(r => {
+      setCits((r as any).citations || []);
+      setLoading(false);
+    });
+  }, [sel]);
+
+  const check = async () => {
+    if (!sel) return;
+    setChecking(true);
+    await post("check_llm_visibility", { projectId: sel });
+    const r = await post("get_llm_visibility_history", { projectId: sel, limit: 20 });
+    setCits((r as any).citations || []);
+    setChecking(false);
+  };
+
+  const cited = cits.filter((c: any) => c.cited).length;
+  const rate = cits.length ? Math.round(cited / cits.length * 100) : 0;
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
       <PortalNav />
-      
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <div><div style={{fontSize:22,fontWeight:700}}>🤖 LLM Visibility</div><div style={{fontSize:13,color:"var(--text-sub)",marginTop:4}}>How AI models see your clients</div></div>
-      <div style={{display:"flex",gap:8}}><select style={S.sel} value={sel} onChange={e=>setSel(e.target.value)}>{projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}</select><button style={S.btn} onClick={check} disabled={checking}>{checking?"Checking...":"▶ Run Check"}</button></div>
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">LLM Visibility</h1>
+            <p className="text-sm text-muted-foreground mt-1">AI citation tracking across ChatGPT, Perplexity, Claude</p>
+          </div>
+          <div className="flex gap-2">
+            {projects.length > 1 && (
+              <select value={sel} onChange={e => setSel(e.target.value)}
+                className="h-9 rounded-xl border border-border bg-card text-sm px-3 outline-none">
+                {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            )}
+            <button onClick={check} disabled={checking || !sel}
+              className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90">
+              {checking ? "Checking..." : "Run Check"}
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {[
+            { v: `${rate}%`, l: "Citation Rate", c: rate > 60 ? "#10b981" : rate > 30 ? "#f59e0b" : "#ef4444" },
+            { v: `${cited}/${cits.length}`, l: "Checks Cited", c: "#6366f1" },
+            { v: String(cits.length), l: "Total Checks", c: "#06b6d4" },
+          ].map(s => (
+            <div key={s.l} className="rounded-2xl border border-border bg-card p-4 text-center">
+              <div className="text-2xl font-bold font-mono mb-1" style={{ color: s.c }}>{s.v}</div>
+              <div className="text-xs text-muted-foreground">{s.l}</div>
+            </div>
+          ))}
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {cits.map((c: any, i: number) => (
+              <div key={i} className={`rounded-xl border p-4 ${c.cited ? "border-green-500/20 bg-green-500/5" : "border-border bg-card"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.cited ? "bg-green-500/15 text-green-400" : "bg-muted text-muted-foreground"}`}>
+                        {c.cited ? "CITED" : "NOT CITED"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{c.ai_model}</span>
+                    </div>
+                    <div className="text-sm truncate">{c.query}</div>
+                  </div>
+                  <div className="text-xs text-muted-foreground flex-shrink-0">{c.checked_at?.slice(0, 10)}</div>
+                </div>
+              </div>
+            ))}
+            {!cits.length && (
+              <div className="text-center py-16 text-sm text-muted-foreground">
+                No visibility checks yet. Click Run Check to test AI citations.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:20}}>
-      {[{v:`${rate}%`,l:"Citation Rate",c:rate>60?"#10b981":rate>30?"#f59e0b":"#ef4444"},{v:`${cited}/${cits.length}`,l:"Cited",c:"var(--bg)"},{v:cits.filter((c:any)=>c.sentiment==="positive").length,l:"Positive",c:"#10b981"},{v:cits.filter((c:any)=>!c.cited).length,l:"Gaps",c:"#f87171"}].map((t:any)=><div key={t.l} style={{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:12,padding:"16px 20px"}}><div style={{fontSize:26,fontWeight:700,color:t.c,fontFamily:"monospace",lineHeight:1,marginBottom:4}}>{t.v}</div><div style={{fontSize:11,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:.8}}>{t.l}</div></div>)}
-    </div>
-    {cits.map((c:any,i:number)=><div key={i} style={{...S.c,background:c.cited?"rgba(16,185,129,.04)":"rgba(239,68,68,.03)",borderColor:c.cited?"rgba(16,185,129,.2)":"rgba(239,68,68,.15)"}}><div style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{fontSize:16,flexShrink:0}}>{c.cited?"✅":"❌"}</span><div><div style={{fontSize:13,fontWeight:600,marginBottom:3}}>{c.query?.slice(0,70)}</div><div style={{fontSize:12,color:"var(--text-sub)",lineHeight:1.4}}>{c.improvement_hint?.slice(0,120)}</div></div></div></div>)}
-    {!cits.length&&<div style={{color:"var(--text-muted)",textAlign:"center",padding:40,fontSize:14}}>No checks yet. Run a visibility check above.</div>}
-  </div>);
+  );
 }
