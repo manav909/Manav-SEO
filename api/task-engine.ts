@@ -1730,16 +1730,33 @@ HTML: ${html.slice(0,2000)}`}]})});
     }catch(e:any){return ok(res,{error:e.message});}
   }
 
-  if (action === 'generate_responses') {
-    const{text,analysis,projectId}=body;
-    if(!text||!analysis)return ok(res,{error:'text and analysis required'});
-    try{
-      const{generateResponses}=await import('./lib/comms-engine');
-      let ctx=null;
-      if(projectId){const{data}=await db().from('projects').select('name,url,goals,industry').eq('id',projectId).single();ctx=data;}
-      const result=await generateResponses(text,analysis,projectId,ctx);
-      return ok(res,{success:true,...result});
-    }catch(e:any){return ok(res,{error:e.message});}
+  if (action === "generate_responses") {
+    const { text = "", analysis = {} } = body;
+    if (!text || !analysis) return ok(res, { error: "text and analysis required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const a: any = analysis;
+      const ctx = [
+        a.main_need ? "Client need: " + a.main_need : "",
+        a.urgency ? "Urgency: " + a.urgency : "",
+        a.hidden_concern ? "Hidden concern: " + a.hidden_concern : "",
+        a.fiverr_specific?.conversion_blocker ? "Conversion blocker: " + a.fiverr_specific.conversion_blocker : "",
+        a.fiverr_specific?.order_probability ? "Order probability: " + a.fiverr_specific.order_probability + "%" : "",
+      ].filter(Boolean).join(" | ");
+      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 2200,
+        system: "You are an elite Fiverr BDE. Write conversion-focused response strategies. Return raw JSON only.",
+        messages: [{ role: "user", content:
+          "Conversation:\n" + String(text).slice(0, 1500) +
+          "\n\nIntelligence: " + ctx +
+          "\n\nWrite 3 response strategies. Return JSON only:\n" +
+          '{ "responses": [ { "title": "Strategy name", "tone": "empathetic|confident|direct|consultative", "when_to_use": "one sentence", "response": "full Fiverr message — ready to send, no placeholders", "conversion_probability": 0-100 } ], "follow_up_sequence": ["follow up after 2 days", "follow up after 5 days"] }'
+        }]
+      });
+      const raw = (_r.content[0] as any).text || "{}";
+      let result: any = { responses: [], follow_up_sequence: [] };
+      try { result = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {}
+      return ok(res, { success: true, ...result });
+    } catch(e:any){return ok(res,{error:e.message});}
   }
 
   if (action === 'handle_objection') {

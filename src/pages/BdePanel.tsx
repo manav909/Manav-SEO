@@ -1020,6 +1020,7 @@ export default function BdePanel() {
                 <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center',flexWrap:'wrap' as const}}>
                   <span style={{fontSize:11,color:'#10b981'}}>✓ {parsedMsgs.length} messages parsed ({parsedMsgs.filter((m:any)=>m.speaker==='client').length} client, {parsedMsgs.filter((m:any)=>m.speaker==='me').length} me)</span>
                   <button style={S.btn()} onClick={()=>{analyse();runDeepAnalysis();}} disabled={analysing||deepLoading}>{analysing||deepLoading?'Analysing...':'🧠 Analyse All'}</button>
+                  {analysis&&<button style={S.btn('#f59e0b')} onClick={genResponses} disabled={genResp||!analysis}>{genResp?'⏳ Generating...':'✍️ Generate Responses'}</button>}
                   <button style={S.btn('hsl(var(--muted-foreground))')} onClick={clearAll}>✕ Clear</button>
                 </div>
               )}
@@ -1261,6 +1262,35 @@ export default function BdePanel() {
                       <div><div style={{fontSize:12,fontWeight:700,color:'#10b981'}}>Saved — {savedProspect?.name}</div><div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Full context stored. AI is tracking this lead.</div></div>
                       <button style={{...S.btn('#a78bfa'),marginLeft:'auto'}} onClick={()=>{if(savedProspect){setSelProspect(savedProspect);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');}setTab('intel');}}>View Intel →</button>
                     </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Generated AI Responses */}
+            {responses?.responses?.length>0&&(
+              <div style={{...S.card}}>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:10}}>✍️ AI Response Strategies</div>
+                {responses.responses.map((r:any,idx:number)=>(
+                  <div key={idx} style={{...S.card,borderColor:idx===0?'rgba(245,158,11,.3)':'#1a1a3a',marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700}}>{r.title}</div>
+                        <div style={{display:'flex',gap:6,marginTop:3,flexWrap:'wrap' as const}}>
+                          <span style={S.badge('#6366f1')}>{r.tone}</span>
+                          {r.conversion_probability!==undefined&&<span style={S.badge(r.conversion_probability>=70?'#10b981':'#f59e0b')}>{r.conversion_probability}%</span>}
+                          {r.when_to_use&&<span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{r.when_to_use}</span>}
+                        </div>
+                      </div>
+                      <button style={S.btn(copied==='resp_'+idx?'#10b981':'#a78bfa')} onClick={()=>{copyText(r.response||'','resp_'+idx);setNextMsg(r.response||'');}}>{copied==='resp_'+idx?'✓ Copied!':'Use'}</button>
+                    </div>
+                    <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.7,whiteSpace:'pre-wrap' as const,background:'rgba(0,0,0,.1)',padding:'8px 10px',borderRadius:7}}>{r.response}</div>
+                  </div>
+                ))}
+                {responses.follow_up_sequence?.length>0&&(
+                  <div style={{padding:'8px 10px',background:'rgba(99,102,241,.05)',borderRadius:8,border:'0.5px solid rgba(99,102,241,.15)'}}>
+                    <div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:4}}>FOLLOW-UP SEQUENCE</div>
+                    {responses.follow_up_sequence.map((f:string,fi:number)=><div key={fi} style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginBottom:2}}>→ {f}</div>)}
                   </div>
                 )}
               </div>
@@ -1525,6 +1555,10 @@ export default function BdePanel() {
         {/* ═══ RESPONSES ═══ */}
         {tab==='responses'&&(
           <div>
+            <div style={{marginBottom:12,padding:'8px 12px',background:'rgba(99,102,241,.06)',borderRadius:8,border:'0.5px solid rgba(99,102,241,.2)'}}>
+              <div style={{fontSize:11,fontWeight:700,marginBottom:3}}>💬 Pre-saved Response Templates</div>
+              <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Quick-copy templates for common Fiverr scenarios. Add templates in Supabase → <code>quick_responses</code> table. For AI-generated responses based on a specific conversation, use the <b>✍️ Generate Responses</b> button in the Fiverr Analyser tab.</div>
+            </div>
             <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap' as const}}>
               {cats.map(c=><button key={c} style={S.btn(respCat===c?'#10b981':'hsl(var(--muted-foreground))')} onClick={()=>setRespCat(c)}>{c.charAt(0).toUpperCase()+c.slice(1)}</button>)}
             </div>
@@ -1552,7 +1586,13 @@ export default function BdePanel() {
                 </div>
               </div>
             ))}
-            {!assignments.length&&<div style={{color:'hsl(var(--muted-foreground))',textAlign:'center' as const,padding:32}}>No leads assigned</div>}
+            {!assignments.length&&(
+              <div style={{...S.card,textAlign:'center' as const,padding:32}}>
+                <div style={{fontSize:24,marginBottom:10}}>📋</div>
+                <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>No leads assigned via pipeline</div>
+                <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>This tab shows leads assigned to you through the SEO Season pipeline system (lead_assignments table). Your saved Fiverr leads are in the 🧠 Lead Intel tab.</div>
+              </div>
+            )}
           </div>
         )}
 
