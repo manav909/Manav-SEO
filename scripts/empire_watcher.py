@@ -19,6 +19,7 @@ ANTHROPIC_KEY=os.environ.get("ANTHROPIC_API_KEY","")
 SUPABASE_URL=(os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_URL","")).rstrip("/")
 SERVICE_KEY=os.environ.get("SUPABASE_SERVICE_KEY","")
 DOWNLOADS=os.path.expanduser("~/Downloads")
+REPO_DIR=os.getcwd()
 CTX=ssl.create_default_context(); CTX.check_hostname=False; CTX.verify_mode=ssl.CERT_NONE
 ran_files:dict={}
 
@@ -57,9 +58,7 @@ def check_downloads():
             fpath=os.path.join(DOWNLOADS,fname)
             h=file_hash(fpath)
             if ran_files.get(fpath)!=h:
-                mtime=os.path.getmtime(fpath)
-                if(time.time()-mtime)/60<45:
-                    run_script(fpath)
+                run_script(fpath)
     except Exception as e: print(f"  download check: {e}")
 
 def run_chat_tasks():
@@ -123,6 +122,7 @@ Branch: {branch}
         sh(f'git commit -m "status: {datetime.now().strftime('%H:%M')} — {pages}p {len(actions)}a {len(pending)} pending"')
         sh("git push")
         bridge(f"Status: {pages}p {len(actions)}a {len(pending)} pending tasks","status_update")
+        save_ran()
         print(f"  [{datetime.now().strftime('%H:%M')}] Status written")
     except Exception as e: print(f"  status: {e}")
 
@@ -190,11 +190,21 @@ def check_build_health():
     return ok
 
 
+RAN_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","empire_ran.json")
+def load_ran():
+    try: return json.load(open(RAN_FILE))
+    except: return {}
+def save_ran():
+    try: json.dump(ran_files,open(RAN_FILE,"w"))
+    except: pass
+
 if __name__=="__main__":
+    ran_files.update(load_ran())
     print("="*50)
     print("Empire Watcher ACTIVE")
     print(f"Downloads: {DOWNLOADS}")
     print(f"Interval: 30s checks | 10min status | 30min auto-check")
+    print(f"Previously ran: {len(ran_files)} scripts")
     print("="*50)
     bridge("Watcher started. Watching Downloads + CLAUDE_CHAT.md","start","thinking")
     write_status()
