@@ -672,7 +672,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       // Number messages 0-based so index field is unambiguous
       const msgList = (messages as any[]).map((m: any, i: number) =>
-        i + "|" + m.speaker + "|" + String(m.text).replace(/\n/g, " ").slice(0, 280)
+        i + "|" + m.speaker + "|" + String(m.text).replace(/\n/g, " ").slice(0, 600)
       ).join("\n");
       const sys2 = "You are a brutally honest Fiverr BDE coach. Analyse every message. Identify ToS violations, missed closings, emotional shifts, and conversion impact.";
       const usr2 = "Conversation (INDEX|SPEAKER|TEXT):\n" + msgList

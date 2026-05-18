@@ -230,78 +230,86 @@ function BestMessagePanel({analysis,convText}:{analysis:any;convText:string}) {
 // ─── Fiverr conversation parser ───────────────────────────────
 
 // ─── Fiverr parser ─────────────────────────────────────────────────────────────
-// Fiverr copy-paste format (each on its own line):
-//   USERNAME          ← alphanumeric only, no spaces
-//   PROMOTED          ← optional badge, skip
-//   May 18, 3:47 PM  ← timestamp line
-//   message text      ← one or more lines
-//   This message relates to:   ← gig card header → skip ALL lines until next speaker
-//   Translate to English       ← UI chrome → skip
+// Fiverr copy format per line: USERNAME → (PROMOTED) → TIMESTAMP → message lines
+// Key insight: a real speaker line is ALWAYS followed within 3 lines by a timestamp.
+// Without lookahead, single words in long messages (Schema, Redirects, etc.) get
+// mistaken for usernames. Lookahead prevents every false positive.
 function parseFiverr(raw: string): any[] {
-  const TS_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2},?\s+\d{1,2}:\d{2}\s*(am|pm)$/i;
-  const UN_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.]{2,29}$/;
-  const SKIP_EXACT = new Set([
-    'promoted','we have your back','learn more',
-    'translate to english','\u{1F501} translate to english',
-  ]);
-  const SKIP_STARTS = ['for added safety','for your protection','this message relates to','learn more'];
-  const COMMON = new Set(['hi','hello','hey','yes','no','ok','sure','thanks','okay','bye','great']);
+  const TS_RE  = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2},?\s+\d{1,2}:\d{2}\s*(am|pm)$/i;
+  const UN_RE  = /^[a-zA-Z0-9][a-zA-Z0-9_.]{2,29}$/;
+  const SKIP_EXACT = new Set(['promoted','we have your back','learn more','translate to english']);
+  const SKIP_STARTS = ['for added safety','for your protection','this message relates to'];
 
-  const isTS   = (l: string) => TS_RE.test(l);
-  const isSkip = (l: string) => {
+  const allLines = raw.split('\n').map(l => l.trim());
+
+  const isTS    = (l: string) => TS_RE.test(l);
+  const isSkip  = (l: string) => {
     const ll = l.toLowerCase();
+    if (!l) return true;
     if (SKIP_EXACT.has(ll)) return true;
     if (ll.includes('translate to english')) return true;
     return SKIP_STARTS.some(p => ll.startsWith(p));
   };
-  const isUser = (l: string): boolean => {
-    if (l === 'Me') return true;
-    if (!UN_RE.test(l)) return false;
-    return !COMMON.has(l.toLowerCase());
+  const isUN    = (l: string) => l === 'Me' || UN_RE.test(l);
+
+  // A line is a real speaker header ONLY if a timestamp follows within 4 non-empty lines
+  // (handles: USERNAME, PROMOTED, blank, TIMESTAMP  — all valid gaps)
+  const isSpeakerLine = (idx: number): boolean => {
+    if (!isUN(allLines[idx])) return false;
+    for (let j = idx + 1; j < Math.min(idx + 5, allLines.length); j++) {
+      const next = allLines[j].trim();
+      if (!next) continue;               // blank line — keep looking
+      if (isTS(next)) return true;       // timestamp found — confirmed speaker
+      if (isSkip(next)) continue;        // PROMOTED etc — keep looking
+      return false;                      // real content before timestamp — not a speaker
+    }
+    return false;
   };
 
   const msgs: any[] = [];
   let cur: any = null;
   let clientName = '';
-  let skipGig = false; // skip ALL lines after "This message relates to:" until next speaker
+  let skipGig = false;
 
-  for (const rawLine of raw.split('\n')) {
-    const line = rawLine.trim();
+  for (let li = 0; li < allLines.length; li++) {
+    const line = allLines[li];
     if (!line) continue;
 
-    // ── Inside a gig card block: skip everything until the next speaker ──
     if (skipGig) {
-      if (isUser(line)) { skipGig = false; /* fall through */ }
+      if (isSpeakerLine(li)) { skipGig = false; }
       else { continue; }
     }
 
-    // ── Fiverr UI chrome ──
     if (isSkip(line)) {
       if (line.toLowerCase().startsWith('this message relates to')) skipGig = true;
       continue;
     }
 
-    // ── Timestamp → attach to current speaker ──
     if (isTS(line)) {
       if (cur && !cur.timestamp) cur.timestamp = line;
       continue;
     }
 
-    // ── Speaker header ──
-    if (isUser(line)) {
+    if (isSpeakerLine(li)) {
       if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
-      const isMe = (line === 'Me');
+      const isMe = line === 'Me';
       if (!isMe && !clientName) clientName = line;
       cur = { speaker: isMe ? 'me' : 'client', speakerName: line, text: '', timestamp: '' };
       continue;
     }
 
-    // ── Regular message text ──
+    // Regular message text
     if (cur) cur.text = cur.text ? cur.text + '\n' + line : line;
+    else {
+      // Text before any speaker detected — treat as client
+      if (!clientName) clientName = 'Client';
+      cur = { speaker: 'client', speakerName: clientName, text: line, timestamp: '' };
+    }
   }
   if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
   return msgs.filter(m => m.text.trim().length > 1);
 }
+
 
 // ─── Styles for flags / emotions ────────────────────────────────────────────────
 const RISK_C: any = {
@@ -330,6 +338,8 @@ function ConversationView({
   onAction: (type: string, value: string) => void;
 }) {
   const [showBetter, setShowBetter] = React.useState<Set<number>>(new Set());
+  const [expandedMsgs, setExpandedMsgs] = React.useState<Set<number>>(new Set());
+  const toggleMsg = (i: number) => setExpandedMsgs(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
   const [cpId, setCpId] = React.useState<string|null>(null);
 
   const toggleBetter = (i: number) =>
@@ -453,10 +463,16 @@ function ConversationView({
                     padding:'9px 13px',fontSize:13,color:'hsl(var(--foreground))',
                     lineHeight:1.65,whiteSpace:'pre-wrap' as const,
                   }}>
-                    {msg.text}
+                    {expandedMsgs.has(i)||msg.text.length<=400?msg.text:msg.text.slice(0,400)+'…'}
                   </div>
 
-                  {/* Probability bar */}
+                  {/* Show more/less for long messages */}
+                  {msg.text.length > 400 && (
+                    <button style={{fontSize:10,background:'none',border:'none',color:'#6366f1',cursor:'pointer',padding:'2px 0',alignSelf:isMe?'flex-end':'flex-start'}} onClick={()=>toggleMsg(i)}>
+                      {expandedMsgs.has(i)?'▲ Show less':'▼ Show full message ('+msg.text.length+' chars)'}
+                    </button>
+                  )}
+                  {/* Probability bar */}}
                   {prob !== undefined && (
                     <div style={{display:'flex',alignItems:'center',gap:5,marginTop:4,flexDirection:isMe?'row-reverse':'row' as const}}>
                       <div style={{width:72,height:3,background:'rgba(255,255,255,.1)',borderRadius:2,overflow:'hidden'}}>
