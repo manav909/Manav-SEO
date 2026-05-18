@@ -28,6 +28,7 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   const [leadUrl,setLeadUrl]=React.useState("");
   const [leadName,setLeadName]=React.useState("");
   const [leadIndustry,setLeadIndustry]=React.useState("");
+  const [brandName,setBrandName]=React.useState("Manav S");
   const iframeRef=React.useRef<HTMLIFrameElement>(null);
   // Auto-fill fields from context (only when field is still empty)
   React.useEffect(()=>{
