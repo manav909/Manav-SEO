@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ═══════════════════════════════════════════════════════════
    SEO SEASON — COMPLETE DESIGN SYSTEM
    Shadcn/ui HSL vars (for Tailwind classes) + Empire custom vars
