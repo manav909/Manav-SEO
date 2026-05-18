@@ -428,6 +428,94 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
   // === END GENERATE CLIENT DOCUMENT ===
 
+  // ═══ LEAD INTELLIGENCE ACTIONS ═══
+  if (action === "get_quick_responses") {
+    try {
+      const { data } = await db().from("quick_responses").select("*").eq("active", true).order("usage_count", { ascending: false }).limit(60);
+      return ok(res, { success: true, responses: data || [] });
+    } catch (e: any) { return ok(res, { success: true, responses: [] }); }
+  }
+
+  if (action === "save_lead_conversation") {
+    const { prospectName = "Prospect", prospectUrl = "", industry = "", analysis, conversationText, auditResult: aRes, staffId = "bde" } = body;
+    try {
+      let prospectId: string | null = null;
+      if (prospectUrl) {
+        const { data: ex } = await db().from("prospects").select("id").eq("url", prospectUrl).maybeSingle();
+        if (ex?.id) { prospectId = ex.id; }
+      }
+      if (!prospectId) {
+        const ins: any = { name: prospectName, status: "active" };
+        if (prospectUrl) ins.url = prospectUrl;
+        if (industry) ins.industry = industry;
+        const { data: np } = await db().from("prospects").insert(ins).select("id").single();
+        prospectId = np?.id || null;
+      }
+      const cacheKey = "lead_conv_" + staffId + "_" + Date.now();
+      await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: JSON.stringify({ prospectId, prospectName, prospectUrl, industry, analysis, conversationText, auditResult: aRes, savedAt: new Date().toISOString() }), project_id: null });
+      return ok(res, { success: true, prospectId, cacheKey });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+  if (action === "get_lead_prospects") {
+    try {
+      const { data: pros } = await db().from("prospects").select("id,name,url,industry,status,created_at").order("created_at", { ascending: false }).limit(60);
+      const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_conv_%").order("created_at", { ascending: false }).limit(300);
+      const latest: Record<string, any> = {};
+      (convs || []).forEach((c: any) => {
+        try { const d = JSON.parse(c.response); if (d.prospectId && !latest[d.prospectId]) latest[d.prospectId] = { ...d.analysis, savedAt: c.created_at, conversationText: d.conversationText?.slice(0, 200) }; } catch {}
+      });
+      const enriched = (pros || []).map((p: any) => ({ ...p, latestAnalysis: latest[p.id] || null }));
+      return ok(res, { success: true, prospects: enriched });
+    } catch (e: any) { return ok(res, { error: e.message, prospects: [] }); }
+  }
+
+  if (action === "get_lead_conversations") {
+    const { prospectId } = body;
+    if (!prospectId) return ok(res, { conversations: [] });
+    try {
+      const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_conv_%").order("created_at", { ascending: false }).limit(100);
+      const filtered = (convs || []).filter((c: any) => { try { return JSON.parse(c.response).prospectId === prospectId; } catch { return false; } });
+      return ok(res, { success: true, conversations: filtered });
+    } catch (e: any) { return ok(res, { error: e.message, conversations: [] }); }
+  }
+
+  if (action === "generate_lead_suggestions") {
+    const { prospectName = "", prospectUrl = "", latestAnalysis, auditData, conversationCount = 0 } = body;
+    try {
+      const [algoR, brainR] = await Promise.allSettled([
+        db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(6),
+        db().from("brain_learnings").select("card_title,improvement,what_worked").order("applied_count", { ascending: false }).limit(5),
+      ]);
+      const algo: any[] = algoR.status === "fulfilled" ? (algoR.value.data || []) : [];
+      const brain: any[] = brainR.status === "fulfilled" ? (brainR.value.data || []) : [];
+      const ctx: string[] = [];
+      if (prospectName) ctx.push("Prospect: " + prospectName);
+      if (prospectUrl) ctx.push("Website: " + prospectUrl);
+      if (latestAnalysis?.main_need) ctx.push("Need: " + latestAnalysis.main_need);
+      if (latestAnalysis?.urgency) ctx.push("Urgency: " + latestAnalysis.urgency);
+      if (latestAnalysis?.hidden_concern) ctx.push("Hidden concern: " + latestAnalysis.hidden_concern);
+      if (latestAnalysis?.fiverr_specific?.conversion_blocker) ctx.push("Blocker: " + latestAnalysis.fiverr_specific.conversion_blocker);
+      if (latestAnalysis?.fiverr_specific?.order_probability) ctx.push("Order probability: " + latestAnalysis.fiverr_specific.order_probability + "%");
+      if (latestAnalysis?.best_next_message) ctx.push("Suggested reply: " + latestAnalysis.best_next_message);
+      if (auditData?.score !== undefined) ctx.push("SEO score: " + auditData.score + "/100");
+      if (auditData?.issues?.length) ctx.push("Issues: " + (auditData.issues as string[]).join("; "));
+      if (conversationCount) ctx.push("Past conversations: " + conversationCount);
+      if (algo.length) ctx.push("Algo updates: " + algo.map((a: any) => a.topic + ": " + a.summary).join(" | "));
+      if (brain.length) ctx.push("Proven wins: " + brain.map((b: any) => b.card_title + ": " + b.improvement).join(" | "));
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1200,
+        system: "You are a BDE coach at SEO Season. Generate highly specific, immediately actionable suggestions to close, upsell or retain this lead. Use every piece of context. Be concrete — name specific actions, specific messages, specific offers.",
+        messages: [{ role: "user", content: "LEAD: " + ctx.join(" | ") + " Generate 5 suggestions. JSON array only: [{\"type\":\"close|upsell|followup|audit|content\",\"priority\":\"high|medium\",\"action\":\"specific thing to do RIGHT NOW\",\"script\":\"exact message or opening line to use\",\"reason\":\"why this works for this specific lead\",\"timing\":\"when\"}]" }]
+      });
+      const raw = (_r.content[0] as any).text || "[]";
+      let suggestions: any[] = [];
+      try { suggestions = JSON.parse(raw.replace(/```json/g,"").replace(/```/g,"").trim()); } catch { suggestions = []; }
+      return ok(res, { success: true, suggestions });
+    } catch (e: any) { return ok(res, { error: e.message, suggestions: [] }); }
+  }
+  // ═══ END LEAD INTELLIGENCE ACTIONS ═══
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);
