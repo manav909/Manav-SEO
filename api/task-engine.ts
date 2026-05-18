@@ -2356,13 +2356,29 @@ HTML: ${html.slice(0,2000)}`}]})});
     try {
       const admin = adminDb();
       if (!admin) return ok(res, { success: false, error: 'Service role key not found. Add SUPABASE_SERVICE_ROLE_KEY to Vercel environment variables (find it in Supabase → Settings → API → service_role)' });
-      const { data, error } = await admin.auth.admin.generateLink({
-        type: 'invite',
+      // Try magiclink first (works for existing + new users)
+      // Fall back to invite if user doesn't exist yet
+      let linkData: any = null;
+      let linkError: any = null;
+      const magicRes = await admin.auth.admin.generateLink({
+        type: 'magiclink',
         email,
-        options: { redirectTo: 'https://seoseason.com', data: { name, staffId } }
+        options: { redirectTo: 'https://seoseason.com' }
       });
-      if (error) return ok(res, { success: false, error: error.message });
-      const link = data?.properties?.action_link || data?.action_link || '';
+      if (magicRes.error) {
+        // User may not exist yet — try invite type
+        const inviteRes = await admin.auth.admin.generateLink({
+          type: 'invite',
+          email,
+          options: { redirectTo: 'https://seoseason.com', data: { name, staffId } }
+        });
+        linkData  = inviteRes.data;
+        linkError = inviteRes.error;
+      } else {
+        linkData = magicRes.data;
+      }
+      if (linkError) return ok(res, { success: false, error: linkError.message });
+      const link = linkData?.properties?.action_link || linkData?.action_link || '';
       if (!link) return ok(res, { success: false, error: 'Link not returned by Supabase' });
       return ok(res, { success: true, link });
     } catch(e: any) { return ok(res, { success: false, error: e.message }); }
