@@ -536,64 +536,84 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         if (!s.heading) return "<div class=\"sec body\">" + wrapped + "</div>";
         return "<div class=\"sec " + (s.type || "body") + "\"><h2>" + s.heading + "</h2>" + wrapped + "</div>";
       }).join("");
-      // ── Document renderer ────────────────────────────────────────
-      const escH = (s: string) => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      // ── Document renderer ─────────────────────────────────────
+      const escH = (s: string) =>
+        String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-      const renderBody = (body: string): string => {
-        const rawLines = String(body||"").split("\n");
-        let out = ""; let listType: string|null = null;
+      const fmt = (s: string, col: string) =>
+        escH(s)
+          .replace(/\*\*(.+?)\*\*/g, `<strong style="color:${col};font-weight:700;">$1</strong>`)
+          .replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+      const renderBody = (body: string, textColor: string): string => {
+        const lns = String(body||"").split("\n");
+        let out = ""; let listType: "ul"|"ol"|null = null;
         const closeList = () => {
-          if (listType) { out += listType==="ol" ? "</ol>" : "</ul>"; listType = null; }
+          if (listType === "ul") { out += "</ul>"; listType = null; }
+          if (listType === "ol") { out += "</ol>"; listType = null; }
         };
-        for (const raw of rawLines) {
+        for (const raw of lns) {
           const t = raw.trim();
-          if (!t) { closeList(); out += "<w:p/>"; continue; }
-          const fmt = (s: string) => escH(s)
-            .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
-            .replace(/\*(.+?)\*/g,"<em>$1</em>");
+          if (!t) { closeList(); continue; }
           if (t.startsWith("## ") || t.startsWith("### ")) {
             closeList();
-            out += `<p class="subhead">${fmt(t.replace(/^#+\s*/,""))}</p>`;
+            out += `<p style="margin:10pt 0 3pt 0;font-size:9.5pt;font-weight:bold;`
+                 + `letter-spacing:0.8pt;color:${textColor};opacity:0.75;">`
+                 + `${fmt(t.replace(/^#+\s*/,""), textColor)}</p>`;
           } else if (/^[-•*]\s/.test(t)) {
-            if (listType !== "ul") { closeList(); out += "<ul>"; listType = "ul"; }
-            out += `<li>${fmt(t.replace(/^[-•*]\s/,""))}</li>`;
+            if (listType !== "ul") {
+              closeList();
+              out += `<ul style="margin:4pt 0 8pt 18pt;padding:0;">`;
+              listType = "ul";
+            }
+            out += `<li style="font-size:11pt;line-height:1.7;margin-bottom:3pt;color:${textColor};">`
+                 + `${fmt(t.replace(/^[-•*]\s/,""), textColor)}</li>`;
           } else if (/^\d+\.\s/.test(t)) {
-            if (listType !== "ol") { closeList(); out += "<ol>"; listType = "ol"; }
-            out += `<li>${fmt(t.replace(/^\d+\.\s/,""))}</li>`;
+            if (listType !== "ol") {
+              closeList();
+              out += `<ol style="margin:4pt 0 8pt 18pt;padding:0;">`;
+              listType = "ol";
+            }
+            out += `<li style="font-size:11pt;line-height:1.7;margin-bottom:3pt;color:${textColor};">`
+                 + `${fmt(t.replace(/^\d+\.\s/,""), textColor)}</li>`;
           } else {
             closeList();
-            out += `<p class="body-p">${fmt(t)}</p>`;
+            out += `<p style="margin:0 0 8pt 0;font-size:11pt;line-height:1.8;color:${textColor};">`
+                 + `${fmt(t, textColor)}</p>`;
           }
         }
         closeList();
         return out;
       };
 
-      // Map section type → accent colour
-      const ACCENT: Record<string,string> = {
-        findings:"#1B4080", plan:"#C94F1A", pricing:"#1B4080",
-        proof:"#1A7A45", cta:"#C94F1A", intro:"#1B4080",
-        body:"#1B4080", default:"#1B4080"
+      // Section config
+      const SEC_CFG: Record<string,{bg:string;border:string;tc:string;hc:string}> = {
+        intro:    { bg:"#FFFFFF", border:"none",                tc:"#2A2A3E", hc:"#1B4080" },
+        findings: { bg:"#F3F7FF", border:"3pt solid #1B4080",  tc:"#2A2A3E", hc:"#1B4080" },
+        plan:     { bg:"#FFF7F3", border:"3pt solid #C94F1A",  tc:"#2A2A3E", hc:"#C94F1A" },
+        pricing:  { bg:"#EEF4FF", border:"3pt solid #1B4080",  tc:"#2A2A3E", hc:"#1B4080" },
+        proof:    { bg:"#F2FCF5", border:"3pt solid #1A7A45",  tc:"#2A2A3E", hc:"#1A7A45" },
+        cta:      { bg:"#1B4080", border:"none",                tc:"#FFFFFF", hc:"#E8652A" },
+        body:     { bg:"#FFFFFF", border:"none",                tc:"#2A2A3E", hc:"#1B4080" },
       };
+      const DEF = { bg:"#FFFFFF", border:"none", tc:"#2A2A3E", hc:"#1B4080" };
 
       const secRows = (doc.sections||[]).map((s: any) => {
-        const accent = ACCENT[s.type] || "#1B4080";
-        const isCta  = s.type === "cta";
-        const bg     = isCta ? "#1B4080" : s.type==="findings" ? "#F2F5FB"
-                     : s.type==="plan" ? "#FFF8F3" : s.type==="pricing" ? "#EEF4FF"
-                     : s.type==="proof" ? "#F3FBF6" : "#FFFFFF";
+        const c = SEC_CFG[s.type] || DEF;
+        const bl = c.border !== "none" ? `border-left:${c.border};` : "";
         const headHtml = s.heading
-          ? `<tr><td style="padding:14pt 22pt 0 22pt;">
-               <p style="margin:0 0 2pt 0;font-family:Calibri,Arial,sans-serif;font-size:7.5pt;font-weight:bold;letter-spacing:2pt;text-transform:uppercase;color:${isCta?"#E8652A":accent};">${escH(s.heading)}</p>
-               <div style="height:1.5pt;background:${isCta?"#E8652A":accent};margin-bottom:10pt;"></div>
-             </td></tr>`
+          ? `<p style="margin:0 0 0 0;font-family:Calibri,Arial,sans-serif;`
+          + `font-size:7.5pt;font-weight:bold;letter-spacing:2pt;`
+          + `text-transform:uppercase;color:${c.hc};">${escH(s.heading)}</p>`
+          + `<div style="height:1.5pt;background:${c.hc};margin:5pt 0 10pt 0;"></div>`
           : "";
-        const bodyHtml = renderBody(s.body);
-        return `<tr><td style="background:${bg};${isCta?"color:#fff;":""}padding:${s.heading?"4pt":"14pt"} 22pt 14pt 22pt;page-break-inside:avoid;">
-          ${headHtml ? headHtml.replace(/<tr><td[^>]*>/,"").replace(/<\/td><\/tr>/,"") : ""}
-          <div style="font-family:Calibri,Arial,sans-serif;${isCta?"color:#f0f0f0;":"color:#1E1E2E;"}">${bodyHtml}</div>
-        </td></tr>
-        <tr><td style="height:12pt;background:#fff;font-size:1pt;">&nbsp;</td></tr>`;
+        const bodyHtml = renderBody(s.body, c.tc);
+        return `<tr>
+          <td style="background:${c.bg};${bl}padding:16pt 22pt;page-break-inside:avoid;vertical-align:top;">
+            ${headHtml}${bodyHtml}
+          </td>
+        </tr>
+        <tr><td style="height:10pt;background:#FFFFFF;font-size:1pt;">&nbsp;</td></tr>`;
       }).join("\n");
 
       const html = `<!DOCTYPE html>
@@ -602,90 +622,90 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       xmlns="http://www.w3.org/TR/REC-html40">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width">
 <title>${escH(doc.title)}</title>
 <!--[if gte mso 9]><xml>
-<w:WordDocument>
-  <w:View>Print</w:View><w:Zoom>90</w:Zoom>
-  <w:DefaultTabStop>720</w:DefaultTabStop>
-  <w:DoNotOptimizeForBrowser/>
-</w:WordDocument></xml><![endif]-->
+<w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom>
+<w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
 <style>
-  /* ── Page ── */
   @page { size:A4; margin:0; }
-  @page { mso-header-margin:0cm; mso-footer-margin:0cm; }
-  * { box-sizing:border-box; }
-  body { margin:0; padding:0; font-family:Calibri,"Segoe UI",Arial,sans-serif;
-         font-size:11pt; color:#1E1E2E; background:#fff;
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:Calibri,"Segoe UI",Arial,sans-serif; font-size:11pt;
+         color:#2A2A3E; background:#fff;
          -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   table { border-collapse:collapse; }
-
-  /* ── Typography ── */
-  p       { margin:0 0 7pt 0; font-size:11pt; line-height:1.75; color:#1E1E2E; }
-  p.body-p{ margin:0 0 8pt 0; font-size:11pt; line-height:1.8;  color:#2A2A3E; }
-  p.subhead{margin:12pt 0 4pt 0;font-size:10pt;font-weight:bold;color:#1B4080;
-             text-transform:uppercase;letter-spacing:0.6pt;}
-  ul,ol   { margin:4pt 0 10pt 20pt; padding:0; }
-  li      { font-size:11pt; line-height:1.7; color:#2A2A3E; margin-bottom:4pt; }
-  strong  { font-weight:700; color:#1B4080; }
-
-  /* ── Print ── */
-  @media print {
-    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  }
+  p { margin:0; }
+  ul,ol { margin:0; padding:0 0 0 18pt; }
+  strong { font-weight:700; }
+  @media print { * { -webkit-print-color-adjust:exact; } }
 </style>
 </head>
-<body>
+<body style="margin:0;padding:0;">
 
-<!-- ══ COVER HEADER ══════════════════════════════════════════════ -->
-<table width="100%" cellpadding="0" cellspacing="0">
-  <!-- Brand bar -->
-  <tr>
-    <td width="6" style="background:#E8652A;">&nbsp;</td>
-    <td style="background:#1B4080;padding:32pt 32pt 28pt 26pt;">
-      <p style="margin:0 0 4pt 0;font-size:8pt;font-weight:bold;letter-spacing:3pt;color:rgba(255,255,255,0.6);text-transform:uppercase;">${escH(bName)}&nbsp;&nbsp;/&nbsp;&nbsp;SEO Season</p>
-      <p style="margin:0 0 12pt 0;font-size:8pt;font-weight:bold;letter-spacing:1.8pt;color:#E8652A;text-transform:uppercase;">${escH(typeLabel[docType]||"Strategic Document")}</p>
-      <p style="margin:0 0 ${doc.subtitle?"8":"0"}pt 0;font-size:22pt;font-weight:300;color:#FFFFFF;line-height:1.2;">${escH(doc.title)}</p>
-      ${doc.subtitle ? `<p style="margin:0;font-size:11pt;color:rgba(255,255,255,0.55);font-style:italic;">${escH(doc.subtitle)}</p>` : ""}
-    </td>
-  </tr>
-  <!-- Meta strip -->
-  <tr>
-    <td width="6" style="background:#C94F1A;">&nbsp;</td>
-    <td style="background:#E8652A;padding:8pt 32pt 8pt 26pt;">
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <tr>
-          <td style="font-size:8.5pt;color:#fff;font-weight:600;">Prepared for: <strong style="color:#fff;">${escH(clientName)}${companyName && companyName !== clientName ? " &mdash; " + escH(companyName) : ""}</strong></td>
-          <td align="center" style="font-size:8.5pt;color:rgba(255,255,255,0.85);">${today}</td>
-          <td align="right" style="font-size:8.5pt;color:rgba(255,255,255,0.85);font-style:italic;">Confidential</td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-  <!-- Spacer -->
-  <tr><td colspan="2" style="height:8pt;background:#fff;"></td></tr>
+<!-- HEADER -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+  <td width="5" style="background:#E8652A;">&nbsp;</td>
+  <td style="background:#1B4080; padding:30pt 30pt 26pt 26pt;">
+    <p style="font-size:7.5pt;font-weight:bold;letter-spacing:3pt;text-transform:uppercase;
+              color:rgba(255,255,255,0.55);margin:0 0 5pt 0;font-family:Calibri,Arial,sans-serif;">
+      ${escH(bName)}&nbsp;&nbsp;&bull;&nbsp;&nbsp;SEO Season
+    </p>
+    <p style="font-size:7.5pt;font-weight:bold;letter-spacing:2pt;text-transform:uppercase;
+              color:#E8652A;margin:0 0 12pt 0;font-family:Calibri,Arial,sans-serif;">
+      ${escH(typeLabel[docType]||"Strategic Document")}
+    </p>
+    <p style="font-size:21pt;font-weight:300;color:#FFFFFF;line-height:1.25;
+              margin:0 0 ${doc.subtitle?"7":"0"}pt 0;font-family:Calibri,Arial,sans-serif;">
+      ${escH(doc.title)}
+    </p>
+    ${doc.subtitle ? `<p style="font-size:11pt;color:rgba(255,255,255,0.5);font-style:italic;
+      margin:0;font-family:Calibri,Arial,sans-serif;">${escH(doc.subtitle)}</p>` : ""}
+  </td>
+</tr>
+<tr>
+  <td width="5" style="background:#BF4116;">&nbsp;</td>
+  <td style="background:#E8652A; padding:7pt 30pt 7pt 26pt;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="font-size:8.5pt;font-weight:600;color:#fff;font-family:Calibri,Arial,sans-serif;">
+        Prepared for:&nbsp;<strong style="color:#fff;">${escH(clientName)}${companyName && companyName !== clientName ? " &mdash; " + escH(companyName) : ""}</strong>
+      </td>
+      <td align="center" style="font-size:8.5pt;color:rgba(255,255,255,0.85);font-family:Calibri,Arial,sans-serif;">${today}</td>
+      <td align="right" style="font-size:8.5pt;color:rgba(255,255,255,0.75);font-style:italic;font-family:Calibri,Arial,sans-serif;">Confidential</td>
+    </tr></table>
+  </td>
+</tr>
+<tr><td colspan="2" style="height:6pt;background:#fff;">&nbsp;</td></tr>
 </table>
 
-<!-- ══ BODY SECTIONS ═════════════════════════════════════════════ -->
-<table width="100%" cellpadding="0" cellspacing="0" style="padding:0 32pt;">
-  <tr><td style="padding:0 32pt;">
-    <table width="100%" cellpadding="0" cellspacing="0">
+<!-- BODY -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+  <td width="5" style="background:#fff;">&nbsp;</td>
+  <td style="padding:4pt 26pt;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
       ${secRows}
     </table>
-  </td></tr>
+  </td>
+  <td width="5" style="background:#fff;">&nbsp;</td>
+</tr>
 </table>
 
-<!-- ══ FOOTER ════════════════════════════════════════════════════ -->
-<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16pt;">
-  <tr>
-    <td width="6" style="background:#E8652A;">&nbsp;</td>
-    <td style="border-top:1pt solid #DDE4F0;padding:10pt 32pt 10pt 26pt;">
-      <table width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td style="font-size:8pt;color:#888;"><strong style="color:#1B4080;font-weight:700;">${escH(bName)}</strong> &mdash; SEO Season</td>
-        <td align="right" style="font-size:8pt;color:#aaa;font-style:italic;">${doc.footerNote ? escH(doc.footerNote) : "Prepared exclusively for " + escH(clientName)}</td>
-      </tr></table>
-    </td>
-  </tr>
+<!-- FOOTER -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:10pt;">
+<tr>
+  <td width="5" style="background:#E8652A;">&nbsp;</td>
+  <td style="border-top:1pt solid #DDE4F0; padding:9pt 30pt 9pt 26pt;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="font-size:8pt;color:#999;font-family:Calibri,Arial,sans-serif;">
+        <strong style="color:#1B4080;font-weight:700;">${escH(bName)}</strong>
+        &nbsp;&bull;&nbsp;SEO Season
+      </td>
+      <td align="right" style="font-size:8pt;color:#bbb;font-style:italic;font-family:Calibri,Arial,sans-serif;">
+        ${doc.footerNote ? escH(doc.footerNote) : "Prepared exclusively for " + escH(clientName)}
+      </td>
+    </tr></table>
+  </td>
+</tr>
 </table>
 
 </body></html>`;
@@ -1198,6 +1218,86 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       }
       return ok(res, { success: true, analysis, newMessageCount: newMessages.length });
     } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+
+  if (action === "live_coach") {
+    const { thread = [], newClientMessage = "", bdeNotes = "", leadContext = {}, attachmentCtx = "" } = body;
+    if (!newClientMessage && !thread.length) return ok(res, { error: "message required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+      // Build conversation history
+      const history = (thread as any[]).map((m: any) =>
+        (m.role === "client" ? "CLIENT" : "BDE") + ": " + String(m.text || "").slice(0, 400)
+      ).join("\n");
+
+      // Lead context summary
+      const lc: string[] = [];
+      if (leadContext.name) lc.push("Lead: " + leadContext.name);
+      if (leadContext.url)  lc.push("Website: " + leadContext.url);
+      if (leadContext.main_need) lc.push("Need: " + leadContext.main_need);
+      if (leadContext.urgency)   lc.push("Urgency: " + leadContext.urgency);
+      if (leadContext.hidden_concern) lc.push("Hidden concern: " + leadContext.hidden_concern);
+      if (leadContext.order_probability !== undefined) lc.push("Close probability: " + leadContext.order_probability + "%");
+      if (bdeNotes) lc.push("BDE is thinking: " + String(bdeNotes).slice(0, 300));
+      if (attachmentCtx) lc.push("Client shared: " + String(attachmentCtx).slice(0, 400));
+
+      const sysPrompt = "You are an elite Fiverr BDE coach working live alongside a salesperson. Your job is to help them close deals. You know the full conversation history and the client context. When given the client's latest message, you provide the single best reply the BDE should send. Write in first person as the BDE. Be natural, warm, and persuasive — never robotic. Reference specifics from the conversation. Keep messages short enough to feel like real Fiverr messages (under 150 words unless the situation demands more). Never say things that would feel like a template.";
+
+      const userPrompt = (lc.length ? "LEAD CONTEXT:\n" + lc.join("\n") + "\n\n" : "")
+        + (history ? "CONVERSATION SO FAR:\n" + history + "\n\n" : "")
+        + "CLIENT'S LATEST MESSAGE:\n" + newClientMessage
+        + "\n\nProvide a JSON response:\n"
+        + '{"suggestedReply":"the exact message to send","messageAnalysis":{"emotion":"curious/excited/hesitant/frustrated/ready_to_buy","intent":"what they really want","signal":"what this message reveals about close probability","risk":"any red flag to be aware of"},"followUp":{"needed":true/false,"when":"e.g. if no reply in 24 hours","what":"what to say"},"coachNote":"one sentence of tactical advice for the BDE"}';
+
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 1000, system: sysPrompt,
+        messages: [{ role: "user", content: userPrompt }]
+      });
+      const raw = (_r.content[0] as any).text || "{}";
+      let result: any = {};
+      try { result = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {
+        const m = raw.match(/\{[\s\S]+\}/);
+        try { result = m ? JSON.parse(m[0]) : {}; } catch {}
+      }
+      if (!result.suggestedReply) result.suggestedReply = raw.slice(0, 300);
+
+      // Auto-save to brain_learnings fire-and-forget
+      if (thread.length > 1 && leadContext.name) {
+        const slug = String(leadContext.name).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,40);
+        db().from("brain_learnings").insert({
+          project_id: null, card_type: "bde_activity",
+          card_title: ("Live Coach: " + (leadContext.name || "Lead")).slice(0,100),
+          context_summary: JSON.stringify({ leadContext, newClientMessage, suggestedReply: result.suggestedReply, bdeNotes, savedAt: new Date().toISOString() }),
+          improvement: result.coachNote || "Live coaching session",
+          what_worked: [], what_missed: [],
+          tags: ["live_coach", slug], source: "live_coach",
+          applied_count: 0, updated_at: new Date().toISOString()
+        }).then(() => {}).catch(() => {});
+      }
+
+      return ok(res, { success: true, ...result });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+  if (action === "save_live_outcome") {
+    // BDE reports what they actually sent + how client responded
+    const { leadName = "", messageSent = "", clientResponse = "", outcome = "", bdeNotes = "" } = body;
+    const slug = String(leadName).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,40);
+    try {
+      await db().from("brain_learnings").insert({
+        project_id: null, card_type: "bde_activity",
+        card_title: ("Outcome: " + leadName + " — " + outcome).slice(0,100),
+        context_summary: JSON.stringify({ leadName, messageSent, clientResponse, outcome, bdeNotes, savedAt: new Date().toISOString() }),
+        improvement: outcome + (clientResponse ? ": " + String(clientResponse).slice(0,100) : ""),
+        what_worked: outcome === "positive" ? [messageSent.slice(0,100)] : [],
+        what_missed: outcome === "negative" ? [messageSent.slice(0,100)] : [],
+        tags: ["live_coach", "outcome", slug], source: "live_coach_outcome",
+        applied_count: 0, updated_at: new Date().toISOString()
+      });
+      return ok(res, { success: true });
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
   }
 
 
