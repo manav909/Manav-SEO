@@ -438,39 +438,56 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
   if (action === "save_lead_conversation") {
-    // Store entirely in ai_content_cache — no prospects table dependency
     const { prospectName = "Prospect", prospectUrl = "", industry = "", analysis, conversationText = "", auditResult: aRes, staffId = "bde" } = body;
     const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
     const cacheKey = "lead_intel_" + slug + "_" + Date.now();
     const payload = JSON.stringify({ prospectName, prospectUrl, industry, analysis, conversationText: String(conversationText).slice(0, 3000), auditResult: aRes, savedAt: new Date().toISOString(), staffId });
+    // Try ai_content_cache with null project_id
     try {
       await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: payload, project_id: null });
-      return ok(res, { success: true, cacheKey, prospectName });
-    } catch (e1: any) {
-      // project_id null not allowed — try without it or with placeholder
-      try {
-        const { data: firstProj } = await db().from("projects").select("id").limit(1).single();
-        await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: payload, project_id: (firstProj as any)?.id || null });
-        return ok(res, { success: true, cacheKey, prospectName });
-      } catch (e2: any) { return ok(res, { error: e2.message }); }
-    }
+      return ok(res, { success: true, cacheKey, prospectName, store: "cache_null" });
+    } catch (_e1) {}
+    // Try ai_content_cache with first project id
+    try {
+      const { data: fp } = await db().from("projects").select("id").limit(1).single();
+      const pid = (fp as any)?.id || null;
+      await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: payload, project_id: pid });
+      return ok(res, { success: true, cacheKey, prospectName, store: "cache_proj" });
+    } catch (_e2) {}
+    // Fallback: brain_desk
+    try {
+      const { data: fp2 } = await db().from("projects").select("id").limit(1).single();
+      const pid2 = (fp2 as any)?.id;
+      if (pid2) {
+        await db().from("brain_desk").insert({ project_id: pid2, title: ("LEAD_INTEL:" + prospectName).slice(0, 200), content_type: "json", content: payload, source: "lead_intel", tags: ["lead_intel", slug], pinned: false, updated_at: new Date().toISOString() });
+        return ok(res, { success: true, cacheKey, prospectName, store: "brain_desk" });
+      }
+    } catch (_e3) {}
+    // All failed — return error so UI can show it
+    return ok(res, { success: false, error: "Could not save to any table — check DB permissions" });
   }
 
   if (action === "get_lead_prospects") {
     try {
+      // Gather from ai_content_cache (all variants)
       const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_intel_%").order("created_at", { ascending: false }).limit(500);
-      // Group by prospectName
+      // Also check brain_desk
+      let deskEntries: any[] = [];
+      try {
+        const { data: dk } = await db().from("brain_desk").select("title,content,created_at").eq("source", "lead_intel").order("created_at", { ascending: false }).limit(200);
+        deskEntries = dk || [];
+      } catch {}
       const map: Record<string, any> = {};
-      (convs || []).forEach((c: any) => {
+      const processEntry = (raw: string, ts: string) => {
         try {
-          const d = JSON.parse(c.response);
+          const d = JSON.parse(raw);
           const key = String(d.prospectName || "Unknown");
-          if (!map[key]) {
-            map[key] = { name: key, url: d.prospectUrl || "", industry: d.industry || "", latestAnalysis: d.analysis, lastSeen: c.created_at, conversationCount: 0, status: "active" };
-          }
+          if (!map[key]) map[key] = { name: key, url: d.prospectUrl || "", industry: d.industry || "", latestAnalysis: d.analysis, lastSeen: ts, conversationCount: 0, status: "active" };
           map[key].conversationCount++;
         } catch {}
-      });
+      };
+      (convs || []).forEach((c: any) => processEntry(c.response, c.created_at));
+      deskEntries.forEach((d: any) => processEntry(d.content, d.created_at));
       const prospects = Object.values(map).sort((a: any, b: any) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
       return ok(res, { success: true, prospects });
     } catch (e: any) { return ok(res, { error: e.message, prospects: [] }); }

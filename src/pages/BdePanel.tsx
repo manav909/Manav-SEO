@@ -234,6 +234,7 @@ export default function BdePanel() {
   // ── LEAD INTELLIGENCE STATE ──
   const [savingLead,setSavingLead]=useState(false);
   const [leadSaved,setLeadSaved]=useState(false);
+  const [savedProspect,setSavedProspect]=useState<any>(null);
   const [leadNameInput,setLeadNameInput]=useState("");
   const [prospects,setProspects]=useState<any[]>([]);
   const [loadingPros,setLoadingPros]=useState(false);
@@ -270,9 +271,14 @@ export default function BdePanel() {
     if(!analysis)return;
     setSavingLead(true);
     const name=leadNameInput||analysis?.main_need?.split(" ").slice(0,4).join(" ")||"New Prospect";
-    await post("save_lead_conversation",{prospectName:name,prospectUrl:auditResult?.url||"",industry:"",analysis,conversationText:convText,auditResult,staffId:"bde"});
+    const newProspect={name,url:auditResult?.url||"",industry:"",latestAnalysis:{...analysis,savedAt:new Date().toISOString()},lastSeen:new Date().toISOString(),conversationCount:1,status:"active"};
+    // Optimistic update — show in Intel immediately
+    setProspects(prev=>{const exists=prev.find((p:any)=>p.name===name);if(exists)return prev.map((p:any)=>p.name===name?{...p,conversationCount:p.conversationCount+1,latestAnalysis:newProspect.latestAnalysis,lastSeen:newProspect.lastSeen}:p);return [newProspect,...prev];});
+    setSavedProspect(newProspect);
+    // Save to DB in background
+    const r=await post("save_lead_conversation",{prospectName:name,prospectUrl:auditResult?.url||"",industry:"",analysis,conversationText:convText,auditResult,staffId:"bde"});
+    if((r as any).success===false) console.warn("Lead DB save failed:",(r as any).error);
     setLeadSaved(true);setSavingLead(false);
-    loadProspects();
   }
 
   async function openProspect(p:any){
@@ -288,6 +294,7 @@ export default function BdePanel() {
     const latest=prospectConvs[0];
     let la:any=null;
     try{la=JSON.parse(latest?.response||"{}").analysis;}catch{}
+    if(!la)la=selProspect?.latestAnalysis||null;
     const r=await post("generate_lead_suggestions",{prospectName:selProspect.name,prospectUrl:selProspect.url||"",latestAnalysis:la,auditData:null,conversationCount:prospectConvs.length});
     setSuggestions((r as any).suggestions||[]);
     setGenSugg(false);
@@ -412,7 +419,7 @@ export default function BdePanel() {
                         <div style={{fontSize:12,fontWeight:700,color:"#10b981"}}>Saved to Lead Intelligence</div>
                         <div style={{fontSize:11,color:"hsl(var(--muted-foreground))"}}>AI will track this lead and generate follow-up suggestions.</div>
                       </div>
-                      <button style={{...S.btn("#a78bfa"),marginLeft:"auto"}} onClick={()=>setTab("intel")}>View in Intel →</button>
+                      <button style={{...S.btn("#a78bfa"),marginLeft:"auto"}} onClick={()=>{if(savedProspect){setSelProspect(savedProspect);setProspectConvs([]);setSuggestions([]);setProspectTab("suggestions");}setTab("intel");}}>View in Intel →</button>
                     </div>
                   </div>
                 )}
@@ -602,7 +609,7 @@ export default function BdePanel() {
                     const la=p.latestAnalysis;
                     const prob=la?.fiverr_specific?.order_probability;
                     return(
-                      <div key={p.id} style={{...S.card,cursor:"pointer",borderColor:la?"rgba(99,102,241,.2)":"#1a1a3a",transition:"border-color .15s"}} onClick={()=>openProspect(p)}>
+                      <div key={p.name} style={{...S.card,cursor:"pointer",borderColor:la?"rgba(99,102,241,.2)":"#1a1a3a",transition:"border-color .15s"}} onClick={()=>openProspect(p)}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                           <div>
                             <div style={{fontSize:13,fontWeight:700,color:"hsl(var(--foreground))"}}>{p.name}</div>
