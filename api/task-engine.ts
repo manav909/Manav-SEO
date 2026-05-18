@@ -2332,7 +2332,6 @@ HTML: ${html.slice(0,2000)}`}]})});
     const { email, staffId, name } = body;
     if (!email) return ok(res, { success: false, error: 'Email is required' });
     try {
-      const { createClient } = require('@supabase/supabase-js');
       const adminClient = createClient(
         process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
         process.env.SUPABASE_SERVICE_KEY || '',
@@ -2354,8 +2353,8 @@ HTML: ${html.slice(0,2000)}`}]})});
     const { staffId, email, name, redirectTo = 'https://seoseason.com' } = body;
     if (!email) return ok(res, { success: false, error: 'Email is required to send an invite' });
     try {
-      // Use admin client to send invite email
-      const adminClient = require('@supabase/supabase-js').createClient(
+      // Use admin client with service key
+      const adminClient = createClient(
         process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
         process.env.SUPABASE_SERVICE_KEY || '',
         { auth: { autoRefreshToken: false, persistSession: false } }
