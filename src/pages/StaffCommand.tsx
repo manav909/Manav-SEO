@@ -48,6 +48,9 @@ export default function StaffCommand() {
   const [openPerms,   setOpenPerms]   = useState<string|null>(null);
   const [savingPerms, setSavingPerms] = useState<string|null>(null);
   const [inviting,    setInviting]    = useState<string|null>(null);
+  const [genLinkId,   setGenLinkId]   = useState<string|null>(null);
+  const [genLinks,    setGenLinks]    = useState<Record<string,string>>({});
+  const [copied,      setCopied]      = useState<string|null>(null);
   const [inviteMsg,   setInviteMsg]   = useState<{id:string,msg:string,ok:boolean}|null>(null);
   const navigate = useNavigate();
 
@@ -87,6 +90,30 @@ export default function StaffCommand() {
     setInviting(null);
     setInviteMsg({ id:s.id, msg:(r as any).message||(r as any).error||"Unknown response", ok:!!(r as any).success });
     setTimeout(() => setInviteMsg(null), 5000);
+  };
+
+  const generateLoginLink = async (s: any) => {
+    if (!s.email) return;
+    setGenLinkId(s.id);
+    const r = await post("generate_staff_link", { staffId:s.id, email:s.email, name:s.name });
+    setGenLinkId(null);
+    if ((r as any).success) {
+      setGenLinks(prev => ({...prev, [s.id]: (r as any).link}));
+    } else {
+      setInviteMsg({id:s.id, msg:(r as any).error||"Failed to generate link", ok:false});
+    }
+  };
+
+  const copyLink = (id: string) => {
+    const link = genLinks[id];
+    if (!link) return;
+    navigator.clipboard.writeText(link).catch(() => {
+      const el = document.createElement('textarea');
+      el.value = link; document.body.appendChild(el); el.select();
+      document.execCommand('copy'); document.body.removeChild(el);
+    });
+    setCopied(id);
+    setTimeout(() => setCopied(null), 3000);
   };
 
   const togglePerm = async (s: any, key: string) => {
@@ -215,9 +242,10 @@ export default function StaffCommand() {
                       {inviteMsg?.id===s.id && (
                         <span className={`text-xs ${inviteMsg.ok?"text-green-400":"text-red-400"}`}>{inviteMsg.msg}</span>
                       )}
-                      <button onClick={() => sendInvite(s)} disabled={inviting===s.id}
+                      <button onClick={() => generateLoginLink(s)} disabled={genLinkId===s.id||!s.email}
+                        title={!s.email ? "Add email first" : "Generate a login link to share"}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:border-primary/40 transition-colors disabled:opacity-50">
-                        {inviting===s.id ? "Sending..." : "📧 Send Login"}
+                        {genLinkId===s.id ? "Generating..." : "🔗 Get Login Link"}
                       </button>
                       <button onClick={() => setOpenPerms(isOpen ? null : s.id)}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:border-primary/40 transition-colors">
@@ -226,6 +254,27 @@ export default function StaffCommand() {
                       <span className="text-xs text-muted-foreground">{enabled}/{PANELS.length}</span>
                     </div>
                   </div>
+
+                  {/* Generated login link */}
+                  {genLinks[s.id] && (
+                    <div className="mx-4 mb-3 p-3 rounded-xl border border-border bg-muted/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-green-400">✓ Login link ready — share this with {s.name}</span>
+                        <button onClick={() => setGenLinks(prev => { const n={...prev}; delete n[s.id]; return n; })}
+                          className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input readOnly value={genLinks[s.id]}
+                          className="flex-1 px-2 py-1.5 rounded-lg bg-background border border-border text-xs text-muted-foreground font-mono truncate"
+                          onClick={e => (e.target as HTMLInputElement).select()} />
+                        <button onClick={() => copyLink(s.id)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium border border-green-500/40 text-green-400 hover:bg-green-500/10 flex-shrink-0">
+                          {copied===s.id ? "✓ Copied!" : "Copy"}
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">⚠ Link expires after first use. Generate a new one if needed.</p>
+                    </div>
+                  )}
 
                   {isOpen && (
                     <div className="border-t border-border p-4 bg-muted/20">

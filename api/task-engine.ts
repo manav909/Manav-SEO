@@ -2327,6 +2327,29 @@ HTML: ${html.slice(0,2000)}`}]})});
 
   // ── ROLE-BASED STAFF & BDE SYSTEM ───────────────────────
 
+
+  if (action === 'generate_staff_link') {
+    const { email, staffId, name } = body;
+    if (!email) return ok(res, { success: false, error: 'Email is required' });
+    try {
+      const { createClient } = require('@supabase/supabase-js');
+      const adminClient = createClient(
+        process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || '',
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      );
+      const { data, error } = await adminClient.auth.admin.generateLink({
+        type: 'invite',
+        email,
+        options: { redirectTo: 'https://seoseason.com', data: { name, staffId } }
+      });
+      if (error) return ok(res, { success: false, error: error.message });
+      const link = data?.properties?.action_link || data?.action_link || '';
+      if (!link) return ok(res, { success: false, error: 'Link not returned by Supabase' });
+      return ok(res, { success: true, link });
+    } catch(e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
   if (action === 'invite_staff') {
     const { staffId, email, name, redirectTo = 'https://seoseason.com' } = body;
     if (!email) return ok(res, { success: false, error: 'Email is required to send an invite' });
