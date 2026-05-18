@@ -81,7 +81,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             await supabase.from('profiles').insert({
               id:       currentUser.id,
               email:    currentUser.email || '',
-              approved: false,
+              approved: true,
             });
           } catch { /* ignore insert error */ }
         }
@@ -91,12 +91,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      setProfile(prof);
-      if (!prof?.approved) {
-        setClients([]);
-        setProjects([]);
-        return;
+      // Auto-approve: Supabase Auth already controls access
+      // If profile exists but approved=false, fix it silently
+      if (prof && !prof.approved) {
+        await supabase.from('profiles').update({ approved: true }).eq('id', currentUser.id);
+        prof = { ...prof, approved: true };
       }
+      setProfile(prof);
 
       // Build the list of client IDs this user has access to
       const idList: string[] = [];
