@@ -15,7 +15,7 @@ export async function generateMorningBrief(scope:"empire"|"project",projectId?:s
   const urgent=aR.status==="fulfilled"?aR.value.data||[]:[];
   const wins=verifs.filter((v:any)=>v.verdict==="working").map((v:any)=>v.card_title);
   const prompt=`Morning brief JSON for SEO empire. Date: ${new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long"})}. Learnings: ${learns.length}. Verifications: ${verifs.length}. Urgent alerts: ${urgent.length}. Wins: ${wins.slice(0,3).join(", ")||"building"}. Return JSON only: {"headline":"punchy 1-line status","priority_actions":[{"action":"...","why":"...","impact":"high|medium|low"}],"wins":["..."],"risks":["..."],"opportunities":["..."],"algorithm_watch":["..."]}`;
-  const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:800,messages:[{role:"user",content:prompt}]})});
+  const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:800,messages:[{role:"user",content:prompt}]})});
   const j=await ai.json() as any;
   let parsed:any={headline:"Empire operational.",priority_actions:[],wins:[],risks:[],opportunities:[],algorithm_watch:[]};
   try{parsed=JSON.parse((j?.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());}catch{}

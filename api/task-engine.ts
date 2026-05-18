@@ -268,7 +268,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       try {
         const client = new Anthropic({ apiKey: anthropicKey });
         const msg = await client.messages.create({
-          model: "claude-sonnet-4-5", max_tokens: 1,
+          model: "claude-sonnet-4-6", max_tokens: 1,
           messages: [{ role: "user", content: "hi" }],
         });
         results.anthropic_live_test = { status: "OK", stop_reason: msg.stop_reason };
@@ -758,7 +758,7 @@ Respond with JSON only:
             "anthropic-version":"2023-06-01",
           },
           body: JSON.stringify({
-            model: "claude-sonnet-4-5",
+            model: "claude-sonnet-4-6",
             max_tokens: 500,
             messages: [{ role: "user", content: prompt }],
           }),
@@ -1003,7 +1003,7 @@ Respond with JSON only:
       try{const r=await fetch(`https://${domain}`,{headers:{"User-Agent":"Mozilla/5.0"},signal:AbortSignal.timeout(8000)});html=(await r.text()).slice(0,5000);}catch{}
       const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
         headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},
-        body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:800,
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:800,
           messages:[{role:"user",content:`Analyse competitor ${domain} based on this HTML snapshot. Return JSON only: {"competitor_name":"...","top_topics":["..."],"content_gaps":["what they do well that client might lack"],"threat_level":"low|medium|high|critical","opportunity":"specific weakness to exploit"}
 
 HTML: ${html.slice(0,2000)}`}]})});
@@ -1602,7 +1602,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
     try {
       const r = await new Anthropic().messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 2000, system: SYSTEM,
+        model: "claude-sonnet-4-6", max_tokens: 2000, system: SYSTEM,
         messages: [{ role: "user", content: prompt }],
       });
       const raw = r.content[0].type === "text" ? r.content[0].text : "{}";
@@ -1699,7 +1699,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     let execFull = "";
     try {
       const stream = await new Anthropic().messages.stream({
-        model: "claude-sonnet-4-5", max_tokens: 8192, system: SYSTEM,
+        model: "claude-sonnet-4-6", max_tokens: 8192, system: SYSTEM,
         messages: [{ role: "user", content: executePrompt }],
       });
       let stopReason = "";
@@ -2069,7 +2069,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
     try {
       const r = await new Anthropic().messages.create({
-        model: "claude-sonnet-4-5", max_tokens: 2000, system: SYSTEM,
+        model: "claude-sonnet-4-6", max_tokens: 2000, system: SYSTEM,
         messages: [{ role: "user", content: prompt }],
       });
       const raw = r.content[0].type === "text" ? r.content[0].text : "{}";

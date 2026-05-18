@@ -71,7 +71,7 @@ export default function PresidentialAdvisor({ mode, projectName, projectContext,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          mode: 'chat',
+          mode: 'brain_assistant',
           question: q,
           projectSummary: projectContext || `SEO Season Empire | ${projectName || 'All Projects'}`,
           brainAssistantContext: {

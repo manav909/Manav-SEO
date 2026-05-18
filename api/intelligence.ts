@@ -477,7 +477,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
     /* ── Stream the response ── */
     const stream = await new Anthropic().messages.stream({
-      model:      "claude-sonnet-4-5",
+      model:      "claude-sonnet-4-6",
       max_tokens: 16000,
       system:     systemPrompt,
       messages:   [{ role: "user", content: userPrompt }],
@@ -556,7 +556,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         summary:      fullOutput.slice(0, 480),
         output:       { question, response: fullOutput, role, mode, projectSummary },
         sources,
-        modelUsed:    "claude-sonnet-4-5",
+        modelUsed:    "claude-sonnet-4-6",
         createdBy:    "intelligence_api",
       });
     } catch (_e) { /* non-fatal */ }
