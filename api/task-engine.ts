@@ -583,6 +583,23 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     } catch (e: any) { return ok(res, { error: e.message }); }
   }
 
+  if (action === "analyse_conversation_deep") {
+    const { messages = [] } = body;
+    if (!messages.length) return ok(res, { error: "messages required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const convSummary = messages.map((m: any, i: number) => (i+1) + ". [" + m.speaker.toUpperCase() + "] " + String(m.text).slice(0,300)).join("\n");
+      const sysPrompt = "You are an elite BDE coach analysing a Fiverr sales conversation. You identify exact moments where conversion probability changed, what was missed, what was done well, and what to do differently. Be brutally honest about mistakes. Flag Fiverr ToS violations immediately.";
+      const userPrompt = "Analyse this Fiverr conversation message by message:\n\n" + convSummary + "\n\nReturn a raw JSON object (no markdown) with: messages (array of per-message analysis), overallConversion (0-100 final probability), topMiss (the single biggest mistake made), topWin (the single best thing done), nextAction (exact thing to do right now to move this forward), urgency (high/medium/low). Each message in the array must have: index (number matching input), speaker (client or me), emotion (for client: curious/interested/frustrated/happy/hesitant/price_sensitive), intent (for client: one sentence), conversionProbability (running 0-100 after this message), probDelta (integer change from previous), missed (for me messages: specific missed opportunity or null), betterReply (for me messages: exact improved message to send or null), riskFlag (TOS_VIOLATION or SPAM or WEAK_CLOSE or MULTIPLE_MESSAGES or null).";
+      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 2500, system: sysPrompt, messages: [{ role: "user", content: userPrompt }] });
+      const raw = (_r.content[0] as any).text || "{}";
+      let result: any = {};
+      try { result = JSON.parse(raw.replace(/^```json\s*/,"").replace(/```\s*$/,"").trim()); }
+      catch { result = { messages: [], overallConversion: 50, topMiss: "Analysis parse error", topWin: "", nextAction: "Review conversation manually", urgency: "medium" }; }
+      return ok(res, { success: true, ...result });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);

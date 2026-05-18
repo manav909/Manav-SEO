@@ -213,28 +213,180 @@ function BestMessagePanel({analysis,convText}:{analysis:any;convText:string}) {
   );
 }
 
+
+// ─── Fiverr conversation parser ───────────────────────────────
+function parseFiverr(raw: string): any[] {
+  const SKIP = /^(promoted|this message relates to:|translate to english|we have your back|for added safety|learn more|\s*$)/i;
+  const GIG_LINE = /^(i will |gig:|expert |fix |audit |seo |google )/i;
+  const TIMESTAMP = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d+,?\s+\d+:\d+\s*(am|pm)\b/i;
+  const SPEAKER_RE = /^(me|[a-zA-Z0-9_]{3,30})\s*(promoted\s+)?(\w+ \d+,?\s*\d+:\d+\s*[ap]m)?$/i;
+
+  const lines = raw.split('\n');
+  const msgs: any[] = [];
+  let cur: any = null;
+  let clientName = '';
+
+  for (const raw_line of lines) {
+    const line = raw_line.trim();
+    if (!line || SKIP.test(line) || GIG_LINE.test(line) || TIMESTAMP.test(line) && line.length < 30) continue;
+
+    const sm = line.match(SPEAKER_RE);
+    if (sm && !line.includes(' ') || (sm && (sm[3] || sm[2]))) {
+      if (cur && cur.text.trim()) msgs.push(cur);
+      const spk = sm[1].toLowerCase() === 'me' ? 'me' : 'client';
+      if (spk === 'client' && sm[1].toLowerCase() !== 'me') clientName = sm[1];
+      const ts = sm[3] || '';
+      cur = { speaker: spk, speakerName: spk === 'me' ? 'Me' : (clientName || sm[1]), text: '', timestamp: ts.replace(/,/g,'').trim() };
+      continue;
+    }
+
+    if (cur) {
+      if (cur.text) cur.text += '\n' + line;
+      else cur.text = line;
+    } else {
+      // First message before any speaker detected — treat as client
+      const spk = 'client';
+      if (!clientName) clientName = 'Client';
+      cur = { speaker: spk, speakerName: clientName, text: line, timestamp: '' };
+    }
+  }
+  if (cur && cur.text.trim()) msgs.push(cur);
+  return msgs.filter(m => m.text.trim().length > 2);
+}
+
+// ─── Risk flag styles ──────────────────────────────────────────
+const RISK_C: any = { TOS_VIOLATION:'#ef4444', SPAM:'#f59e0b', WEAK_CLOSE:'#6366f1', MULTIPLE_MESSAGES:'#f59e0b' };
+const RISK_LABEL: any = { TOS_VIOLATION:'⚠️ ToS Violation', SPAM:'⚠️ Spam risk', WEAK_CLOSE:'⚡ Weak close', MULTIPLE_MESSAGES:'📨 Multiple messages' };
+const EMO_C: any = { curious:'#6366f1', interested:'#10b981', frustrated:'#ef4444', happy:'#10b981', hesitant:'#f59e0b', price_sensitive:'#f59e0b' };
+const EMO_ICON: any = { curious:'🤔', interested:'😊', frustrated:'😤', happy:'😊', hesitant:'🤷', price_sensitive:'💰' };
+
+// ─── Conversation View Component ───────────────────────────────
+function ConversationView({msgs, deepAnalysis, onAction}: {msgs: any[]; deepAnalysis: any; onAction: (type:string, value:string) => void}) {
+  const [expanded, setExpanded] = React.useState<Set<number>>(new Set());
+  const toggle = (i: number) => setExpanded(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
+
+  const getMsgAnalysis = (idx: number) => deepAnalysis?.messages?.find((m: any) => m.index === idx);
+
+  return (
+    <div style={{display:'flex',flexDirection:'column' as const,gap:2}}>
+      {msgs.map((msg, i) => {
+        const ma = getMsgAnalysis(i);
+        const isMe = msg.speaker === 'me';
+        const isExp = expanded.has(i);
+        const prob = ma?.conversionProbability;
+        const delta = ma?.probDelta;
+        const hasIssue = ma && (ma.missed || ma.riskFlag);
+        const probColor = prob >= 70 ? '#10b981' : prob >= 50 ? '#f59e0b' : prob !== undefined ? '#ef4444' : '#6366f1';
+
+        return (
+          <div key={i} style={{marginBottom:12}}>
+            {/* Message bubble row */}
+            <div style={{display:'flex',flexDirection:isMe?'row-reverse':'row' as const,alignItems:'flex-end',gap:8}}>
+              {/* Avatar */}
+              <div style={{width:32,height:32,borderRadius:'50%',background:isMe?'#19345E':'rgba(99,102,241,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,color:isMe?'#fff':'#a78bfa',flexShrink:0}}>
+                {isMe?'ME':msg.speakerName?.charAt(0)?.toUpperCase()||'C'}
+              </div>
+
+              {/* Bubble */}
+              <div style={{maxWidth:'72%',display:'flex',flexDirection:'column' as const,alignItems:isMe?'flex-end':'flex-start'}}>
+                {/* Speaker + time */}
+                <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:4,flexDirection:isMe?'row-reverse':'row' as const}}>
+                  <span style={{fontSize:11,fontWeight:600,color:'hsl(var(--foreground))'}}>{isMe?'Me':msg.speakerName}</span>
+                  {msg.timestamp&&<span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{msg.timestamp}</span>}
+                  {ma?.emotion&&!isMe&&<span style={{fontSize:10,background:`${EMO_C[ma.emotion]||'#6366f1'}18`,color:EMO_C[ma.emotion]||'#6366f1',padding:'1px 7px',borderRadius:10,border:`0.5px solid ${EMO_C[ma.emotion]||'#6366f1'}40`}}>{EMO_ICON[ma.emotion]||'💬'} {ma.emotion}</span>}
+                  {ma?.riskFlag&&<span style={{fontSize:10,background:`${RISK_C[ma.riskFlag]}18`,color:RISK_C[ma.riskFlag],padding:'1px 7px',borderRadius:10,border:`0.5px solid ${RISK_C[ma.riskFlag]}40`}}>{RISK_LABEL[ma.riskFlag]}</span>}
+                </div>
+
+                {/* Message text */}
+                <div style={{background:isMe?'rgba(25,52,94,.6)':'rgba(99,102,241,.1)',border:`0.5px solid ${isMe?'rgba(25,52,94,.8)':'rgba(99,102,241,.25)'}`,borderRadius:isMe?'12px 12px 2px 12px':'12px 12px 12px 2px',padding:'10px 14px',fontSize:13,color:'hsl(var(--foreground))',lineHeight:1.6,whiteSpace:'pre-wrap' as const,cursor:hasIssue?'pointer':'default'}} onClick={()=>hasIssue&&toggle(i)}>
+                  {msg.text}
+                </div>
+
+                {/* Probability bar */}
+                {prob !== undefined && (
+                  <div style={{display:'flex',alignItems:'center',gap:6,marginTop:5,flexDirection:isMe?'row-reverse':'row' as const}}>
+                    <div style={{width:80,height:3,background:'rgba(255,255,255,.1)',borderRadius:2,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${prob}%`,background:probColor,borderRadius:2}}/>
+                    </div>
+                    <span style={{fontSize:10,color:probColor,fontWeight:600}}>{prob}%</span>
+                    {delta !== undefined && delta !== 0 && (
+                      <span style={{fontSize:10,color:delta > 0 ? '#10b981' : '#ef4444'}}>{delta > 0 ? '+' : ''}{delta}%</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Client intent */}
+                {ma?.intent&&!isMe&&(
+                  <div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:3,fontStyle:'italic'}}>{ma.intent}</div>
+                )}
+              </div>
+            </div>
+
+            {/* Expandable analysis for Me messages */}
+            {isMe && isExp && ma && (
+              <div style={{margin:'6px 40px 0',background:'rgba(0,0,0,.2)',borderRadius:10,padding:'10px 14px',border:`0.5px solid ${hasIssue?RISK_C[ma.riskFlag]||'#f59e0b':'rgba(99,102,241,.2)'}`}}>
+                {ma.missed && (
+                  <div style={{marginBottom:8}}>
+                    <div style={{fontSize:10,fontWeight:700,color:'#f59e0b',letterSpacing:1,marginBottom:4}}>⚠ WHAT YOU MISSED</div>
+                    <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.55}}>{ma.missed}</div>
+                  </div>
+                )}
+                {ma.betterReply && (
+                  <div style={{marginBottom:8}}>
+                    <div style={{fontSize:10,fontWeight:700,color:'#10b981',letterSpacing:1,marginBottom:4}}>💡 BETTER VERSION</div>
+                    <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.6,background:'rgba(16,185,129,.05)',padding:'8px 10px',borderRadius:8,border:'0.5px solid rgba(16,185,129,.2)',whiteSpace:'pre-wrap' as const,fontStyle:'italic'}}>{ma.betterReply}</div>
+                    <div style={{display:'flex',gap:6,marginTop:6}}>
+                      <button style={{fontSize:10,background:'rgba(16,185,129,.15)',border:'0.5px solid rgba(16,185,129,.3)',borderRadius:6,color:'#10b981',padding:'3px 10px',cursor:'pointer'}} onClick={()=>onAction('copy_reply',ma.betterReply)}>Copy Better Reply</button>
+                      <button style={{fontSize:10,background:'rgba(99,102,241,.15)',border:'0.5px solid rgba(99,102,241,.3)',borderRadius:6,color:'#a78bfa',padding:'3px 10px',cursor:'pointer'}} onClick={()=>onAction('use_as_next',ma.betterReply)}>Use as Next Message</button>
+                    </div>
+                  </div>
+                )}
+                {ma.riskFlag === 'TOS_VIOLATION' && (
+                  <div style={{padding:'6px 10px',background:'rgba(239,68,68,.08)',borderRadius:6,border:'0.5px solid rgba(239,68,68,.3)',fontSize:11,color:'#f87171'}}>⚠️ This message may violate Fiverr ToS. Sharing external contacts can get your account suspended.</div>
+                )}
+              </div>
+            )}
+
+            {/* Tap hint for me messages with issues */}
+            {isMe && hasIssue && !isExp && (
+              <div style={{margin:'3px 40px 0',fontSize:10,color:'#f59e0b',cursor:'pointer'}} onClick={()=>toggle(i)}>
+                {ma.riskFlag && RISK_LABEL[ma.riskFlag] ? RISK_LABEL[ma.riskFlag] + ' · ' : ''}{ma.missed ? '⚠ Missed opportunity' : ''} — tap to see analysis
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 export default function BdePanel() {
   const CTX_KEY = "bde_ctx_v3";
-  // ── STATE ──
-  const [tab,setTab]=useState<"fiverr"|"intel"|"tools"|"responses"|"leads"|"docs">("fiverr");
-  const [convText,setConv]=useState("");
+  const [tab,setTab]=useState<'fiverr'|'intel'|'tools'|'responses'|'leads'|'docs'>('fiverr');
+  // Conversation state
+  const [rawPaste,setRawPaste]=useState('');
+  const [parsedMsgs,setParsedMsgs]=useState<any[]>([]);
+  const [convText,setConv]=useState('');
   const [analysing,setAnalysing]=useState(false);
   const [analysis,setAnalysis]=useState<any>(null);
+  const [deepAnalysis,setDeepAnalysis]=useState<any>(null);
+  const [deepLoading,setDeepLoading]=useState(false);
   const [parsedLines,setParsed]=useState<any[]>([]);
-  const [auditUrl,setAuditUrl]=useState("");
-  const [auditFor,setAuditFor]=useState("");
+  const [responses,setResponses]=useState<any>(null);
+  const [genResp,setGenResp]=useState(false);
+  const [selLine,setSelLine]=useState<number|null>(null);
+  const [nextMsg,setNextMsg]=useState('');
+  // Audit state
+  const [auditUrl,setAuditUrl]=useState('');
+  const [auditFor,setAuditFor]=useState('');
   const [auditing,setAuditing]=useState(false);
   const [auditResult,setAuditResult]=useState<any>(null);
+  // UI state
   const [quickResps,setQuickResps]=useState<any[]>([]);
-  const [respCat,setRespCat]=useState("all");
+  const [respCat,setRespCat]=useState('all');
   const [copied,setCopied]=useState<string|null>(null);
   const [assignments,setAssignments]=useState<any[]>([]);
-  const [genResp,setGenResp]=useState(false);
-  const [responses,setResponses]=useState<any>(null);
-  const [selLine,setSelLine]=useState<number|null>(null);
-  const textRef=useRef<HTMLTextAreaElement>(null);
-  // Lead Intelligence
-  const [leadNameInput,setLeadNameInput]=useState("");
+  // Lead state
+  const [leadNameInput,setLeadNameInput]=useState('');
   const [leadSaved,setLeadSaved]=useState(false);
   const [savingLead,setSavingLead]=useState(false);
   const [savedProspect,setSavedProspect]=useState<any>(null);
@@ -245,82 +397,77 @@ export default function BdePanel() {
   const [expandedConv,setExpandedConv]=useState<Set<number>>(new Set());
   const [suggestions,setSuggestions]=useState<any[]>([]);
   const [genSugg,setGenSugg]=useState(false);
-  const [prospectTab,setProspectTab]=useState<"suggestions"|"history"|"docs">("suggestions");
+  const [prospectTab,setProspectTab]=useState<'suggestions'|'history'|'docs'>('suggestions');
+  const textRef=useRef<HTMLTextAreaElement>(null);
 
-  // ── RESTORE CONTEXT FROM LOCALSTORAGE ──
+  // ── RESTORE FROM LOCALSTORAGE ──
   useEffect(()=>{
     try {
-      const stored = localStorage.getItem(CTX_KEY);
-      if (stored) {
-        const d = JSON.parse(stored);
-        if (d.convText) setConv(d.convText);
-        if (d.analysis) { setAnalysis(d.analysis); setParsed(d.parsed||[]); }
-        if (d.auditResult) { setAuditResult(d.auditResult); setAuditUrl(d.auditUrl||''); }
-        if (d.leadNameInput) setLeadNameInput(d.leadNameInput);
-        if (d.savedProspect) { setSavedProspect(d.savedProspect); setLeadSaved(true); }
-      }
+      const d=JSON.parse(localStorage.getItem(CTX_KEY)||'{}');
+      if (d.rawPaste) { setRawPaste(d.rawPaste); const p=parseFiverr(d.rawPaste); setParsedMsgs(p); setConv(p.map((m:any)=>(m.speaker==='me'?'Me':'Client')+': '+m.text).join('\n')); }
+      if (d.analysis) { setAnalysis(d.analysis); setParsed(d.parsed||[]); }
+      if (d.deepAnalysis) setDeepAnalysis(d.deepAnalysis);
+      if (d.auditResult) { setAuditResult(d.auditResult); setAuditUrl(d.auditUrl||''); }
+      if (d.leadNameInput) setLeadNameInput(d.leadNameInput);
+      if (d.savedProspect) { setSavedProspect(d.savedProspect); setLeadSaved(true); }
     } catch {}
-    post("get_quick_responses",{role:"bde"}).then(r=>setQuickResps((r as any).responses||[]));
-    post("get_pipeline",{role:"bde"}).then(r=>setAssignments((r as any).assignments||[]));
+    post('get_quick_responses',{role:'bde'}).then(r=>setQuickResps((r as any).responses||[]));
+    post('get_pipeline',{role:'bde'}).then(r=>setAssignments((r as any).assignments||[]));
     loadProspects();
   },[]);
 
-  // ── PERSIST CONTEXT TO LOCALSTORAGE ──
+  // ── PERSIST TO LOCALSTORAGE ──
   useEffect(()=>{
-    if (!convText && !analysis && !auditResult) return;
-    try {
-      localStorage.setItem(CTX_KEY, JSON.stringify({
-        convText: convText?.slice(0,3000), analysis, parsed: parsedLines?.slice(0,50),
-        auditResult, auditUrl, leadNameInput, savedProspect, ts: Date.now()
-      }));
-    } catch {}
-  },[convText, analysis, auditResult, leadNameInput, savedProspect]);
+    if (!rawPaste && !analysis) return;
+    try { localStorage.setItem(CTX_KEY,JSON.stringify({rawPaste:rawPaste?.slice(0,4000),analysis,parsed:parsedLines?.slice(0,50),deepAnalysis,auditResult,auditUrl,leadNameInput,savedProspect,ts:Date.now()})); } catch {}
+  },[rawPaste,analysis,deepAnalysis,auditResult,leadNameInput,savedProspect]);
 
-  // ── AUTO-EXTRACT URL FROM CONVERSATION ──
+  // ── AUTO EXTRACT URL ──
   useEffect(()=>{
     if (analysis && !auditUrl) {
-      const m = convText.match(/(?:https?:\/\/)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/);
+      const m=rawPaste.match(/(?:https?:\/\/)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/);
       if (m) setAuditUrl((m[1]||m[0]).replace(/^https?:\/\//,'').split('/')[0]);
     }
   },[analysis]);
 
-  // ── SMART PULSE (contextual suggestions) ──
-  const pulse = React.useMemo(()=>{
+  // ── SMART PULSE ──
+  const pulse=React.useMemo(()=>{
     const items:any[]=[];
-    if (convText.trim() && !analysis && !analysing)
-      items.push({icon:'🧠',msg:'Conversation ready to analyse',cta:'Analyse Now',target:'analyse',urgent:true});
-    if (analysis && !auditResult && !auditing)
-      items.push({icon:'🔍',msg:'Run site audit'+(auditUrl?' for '+auditUrl:'')+' — adds proof to pitch',cta:'Open Tools',target:'tools',urgent:(analysis?.fiverr_specific?.order_probability||0)>55});
-    if (analysis && !leadSaved)
-      items.push({icon:'💾',msg:'Save lead now — all context will be lost on browser close',cta:'Save Lead',target:'save',urgent:true});
-    if (analysis && auditResult && !savedProspect)
-      items.push({icon:'📋',msg:'Full context loaded — generate a personalised proposal',cta:'Generate Doc',target:'docs',urgent:false});
-    if (savedProspect && !selProspect)
-      items.push({icon:'🎯',msg:'AI closing suggestions ready for '+savedProspect.name,cta:'View Intel',target:'intel',urgent:false});
+    if (parsedMsgs.length>0&&!analysis&&!analysing) items.push({icon:'🧠',msg:'Conversation parsed — analyse for intelligence',cta:'Analyse',target:'analyse',urgent:true});
+    if (analysis&&!auditResult&&!auditing) items.push({icon:'🔍',msg:'Run site audit'+(auditUrl?' for '+auditUrl:'')+' to add proof',cta:'Open Tools',target:'tools',urgent:(analysis?.fiverr_specific?.order_probability||0)>55});
+    if (analysis&&!leadSaved) items.push({icon:'💾',msg:'Save this lead — context lost on close',cta:'Save Lead',target:'save',urgent:true});
+    if (analysis&&auditResult&&!savedProspect) items.push({icon:'📋',msg:'Full context — generate a personalised proposal now',cta:'Generate Doc',target:'docs',urgent:false});
+    if (deepAnalysis?.topMiss) items.push({icon:'⚠',msg:deepAnalysis.topMiss,cta:'Fix It',target:'fix',urgent:true});
     return items;
-  },[convText,analysis,auditResult,leadSaved,savedProspect,selProspect,analysing,auditing,auditUrl]);
+  },[parsedMsgs,analysis,auditResult,leadSaved,savedProspect,analysing,auditing,deepAnalysis]);
 
   const handlePulse=(target:string)=>{
-    if (target==='analyse') analyse();
-    else if (target==='save') { if (leadNameInput||analysis) saveLead(); }
+    if (target==='analyse') { analyse(); if (parsedMsgs.length) runDeepAnalysis(); }
+    else if (target==='save') saveLead();
     else if (target==='tools') setTab('tools');
     else if (target==='docs') setTab('docs');
-    else if (target==='intel') {
-      if (savedProspect) { setSelProspect(savedProspect); setProspectConvs([]); setSuggestions([]); setProspectTab('suggestions'); }
-      setTab('intel');
-    }
+    else if (target==='fix') { const msg=deepAnalysis?.nextAction; if(msg) setNextMsg(msg); }
+    else if (target==='intel') { if(savedProspect){setSelProspect(savedProspect);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');} setTab('intel'); }
   };
 
   const clearAll=()=>{
-    if (!window.confirm('Clear all context? This will remove the current conversation, analysis and audit.')) return;
-    setConv(''); setAnalysis(null); setParsed([]); setAuditResult(null); setAuditUrl(''); setAuditFor('');
-    setLeadNameInput(''); setLeadSaved(false); setSavedProspect(null); setResponses(null); setSelLine(null);
+    if (!window.confirm('Clear all context?')) return;
+    setRawPaste('');setParsedMsgs([]);setConv('');setAnalysis(null);setDeepAnalysis(null);setParsed([]);
+    setAuditResult(null);setAuditUrl('');setLeadNameInput('');setLeadSaved(false);setSavedProspect(null);setResponses(null);setNextMsg('');
     try { localStorage.removeItem(CTX_KEY); } catch {}
+  };
+
+  const handlePaste=(raw:string)=>{
+    setRawPaste(raw);
+    const msgs=parseFiverr(raw);
+    setParsedMsgs(msgs);
+    setConv(msgs.map((m:any)=>(m.speaker==='me'?'Me':'Client')+': '+m.text).join('\n'));
+    setAnalysis(null); setDeepAnalysis(null); setParsed([]); setResponses(null);
   };
 
   const loadProspects=async()=>{
     setLoadingPros(true);
-    const r=await post("get_lead_prospects",{});
+    const r=await post('get_lead_prospects',{});
     setProspects((r as any).prospects||[]);
     setLoadingPros(false);
   };
@@ -328,29 +475,34 @@ export default function BdePanel() {
   async function analyse(){
     if(!convText.trim())return;
     setAnalysing(true);setAnalysis(null);setParsed([]);setResponses(null);
-    const r=await post("analyse_fiverr_conversation",{text:convText});
+    const r=await post('analyse_fiverr_conversation',{text:convText});
     setAnalysis((r as any).analysis);
     setParsed((r as any).parsed_lines||[]);
     setAnalysing(false);
   }
 
+  async function runDeepAnalysis(){
+    if (!parsedMsgs.length) return;
+    setDeepLoading(true); setDeepAnalysis(null);
+    const r=await post('analyse_conversation_deep',{messages:parsedMsgs.map((m:any,i:number)=>({index:i,speaker:m.speaker,text:m.text}))});
+    if ((r as any).success) setDeepAnalysis(r);
+    setDeepLoading(false);
+  }
+
   async function saveLead(){
     if(!analysis)return;
     setSavingLead(true);
-    const name=leadNameInput||analysis?.main_need?.split(' ').slice(0,4).join(' ')||'New Prospect';
+    const name=leadNameInput||parsedMsgs.find(m=>m.speaker==='client')?.speakerName||analysis?.main_need?.split(' ').slice(0,4).join(' ')||'New Prospect';
     const np={name,url:auditResult?.url||auditUrl||'',industry:'',latestAnalysis:{...analysis,savedAt:new Date().toISOString()},lastSeen:new Date().toISOString(),conversationCount:1,status:'active'};
     setProspects(prev=>{const ex=prev.find((p:any)=>p.name===name);if(ex)return prev.map((p:any)=>p.name===name?{...p,conversationCount:p.conversationCount+1,latestAnalysis:np.latestAnalysis,lastSeen:np.lastSeen}:p);return [np,...prev];});
-    setSavedProspect(np);
-    setLeadSaved(true);
-    setSavingLead(false);
-    // Save to DB in background — pass FULL conversation text
-    post("save_lead_conversation",{prospectName:name,prospectUrl:np.url,industry:"",analysis,conversationText:convText,auditResult,staffId:"bde"}).then((r:any)=>{if(r.error)console.warn("Lead DB save:",r.error);});
+    setSavedProspect(np); setLeadSaved(true); setSavingLead(false);
+    post('save_lead_conversation',{prospectName:name,prospectUrl:np.url,industry:'',analysis,conversationText:rawPaste||convText,deepAnalysis,auditResult,staffId:'bde'}).then((r:any)=>{if(r.error)console.warn('Lead DB save:',r.error);});
   }
 
   async function openProspect(p:any){
     setSelProspect(p);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');setExpandedConv(new Set());
     setTab('intel');
-    const r=await post("get_lead_conversations",{prospectName:p.name});
+    const r=await post('get_lead_conversations',{prospectName:p.name});
     setProspectConvs((r as any).conversations||[]);
   }
 
@@ -360,7 +512,7 @@ export default function BdePanel() {
     const latest=prospectConvs[0];
     let la:any=selProspect?.latestAnalysis||null;
     if (latest) { try{la=JSON.parse(latest?.response||'{}').analysis||la;}catch{} }
-    const r=await post("generate_lead_suggestions",{prospectName:selProspect.name,prospectUrl:selProspect.url||"",latestAnalysis:la,auditData:null,conversationCount:prospectConvs.length});
+    const r=await post('generate_lead_suggestions',{prospectName:selProspect.name,prospectUrl:selProspect.url||'',latestAnalysis:la,auditData:null,conversationCount:prospectConvs.length});
     setSuggestions((r as any).suggestions||[]);
     setGenSugg(false);
   }
@@ -368,14 +520,14 @@ export default function BdePanel() {
   async function doAudit(){
     if(!auditUrl.trim())return;
     setAuditing(true);setAuditResult(null);
-    const r=await post("instant_audit_showcase",{url:auditUrl,forLead:auditFor});
+    const r=await post('instant_audit_showcase',{url:auditUrl,forLead:auditFor});
     setAuditResult(r);setAuditing(false);
   }
 
   async function genResponses(){
     if(!analysis||!convText)return;
     setGenResp(true);
-    const r=await post("generate_responses",{text:convText,analysis});
+    const r=await post('generate_responses',{text:convText,analysis});
     setResponses(r);setGenResp(false);
   }
 
@@ -383,6 +535,11 @@ export default function BdePanel() {
     navigator.clipboard.writeText(text).catch(()=>{});
     setCopied(id);setTimeout(()=>setCopied(null),2000);
   }
+
+  const handleConvAction=(type:string,value:string)=>{
+    if (type==='copy_reply'||type==='use_as_next') { navigator.clipboard.writeText(value).catch(()=>{}); setNextMsg(value); }
+    if (type==='audit_url') { setAuditUrl(value); setTab('tools'); }
+  };
 
   const cats=['all',...new Set(quickResps.map((r:any)=>r.category))];
   const filteredResps=respCat==='all'?quickResps:quickResps.filter((r:any)=>r.category===respCat);
@@ -395,7 +552,6 @@ export default function BdePanel() {
     tabA:{color:'#10b981',borderBottom:'2px solid #10b981'},
     body:{padding:'14px 18px'},
     card:{background:'var(--bg-card,hsl(var(--background)))',border:'0.5px solid #1a1a3a',borderRadius:11,padding:14,marginBottom:10},
-    textarea:{width:'100%',background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:9,color:'hsl(var(--foreground))',padding:'11px 13px',fontSize:13,lineHeight:1.6,resize:'vertical' as const,outline:'none',minHeight:120,boxSizing:'border-box' as const},
     inp:{background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:8,color:'hsl(var(--foreground))',padding:'7px 11px',fontSize:13,outline:'none',boxSizing:'border-box' as const},
     btn:(c:string='#10b981')=>({background:`${c}18`,border:`0.5px solid ${c}40`,borderRadius:8,color:c,padding:'6px 12px',fontSize:12,cursor:'pointer',fontWeight:600}),
     badge:(c:string)=>({fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:20,background:`${c}20`,color:c}),
@@ -405,8 +561,6 @@ export default function BdePanel() {
   return (
     <div style={S.root}>
       <PortalNav/>
-
-      {/* Header */}
       <div style={S.hdr}>
         <div style={{width:8,height:8,borderRadius:'50%',background:'#10b981',boxShadow:'0 0 8px #10b981'}}/>
         <span style={{fontSize:14,fontWeight:700}}>💼 BDE Panel</span>
@@ -414,26 +568,27 @@ export default function BdePanel() {
         <span style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginLeft:'auto'}}>{assignments.length} leads · {prospects.length} in intel</span>
       </div>
 
-      {/* Context Bar */}
-      {(convText||analysis||auditResult)&&(
+      {/* Context bar */}
+      {(rawPaste||analysis||auditResult)&&(
         <div style={{background:'rgba(99,102,241,.05)',borderBottom:'0.5px solid rgba(99,102,241,.15)',padding:'5px 18px',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap' as const,fontSize:10}}>
           <span style={{color:'hsl(var(--muted-foreground))',fontWeight:700,fontSize:9,letterSpacing:1}}>CONTEXT:</span>
-          {convText&&<span style={{color:'#10b981'}}>✓ {convText.split('\n').filter(Boolean).length} conversation lines</span>}
-          {analysis&&<span style={{color:'#10b981'}}>✓ Analysed · {analysis.fiverr_specific?.order_probability||'?'}% close probability</span>}
+          {parsedMsgs.length>0&&<span style={{color:'#10b981'}}>✓ {parsedMsgs.length} messages parsed</span>}
+          {analysis&&<span style={{color:'#10b981'}}>✓ Analysed · {analysis.fiverr_specific?.order_probability||'?'}% close</span>}
+          {deepAnalysis&&<span style={{color:'#a78bfa'}}>✓ Deep analysis · {deepAnalysis.overallConversion}%</span>}
           {auditResult&&<span style={{color:'#a78bfa'}}>✓ Audit: {auditResult.score}/100</span>}
           {leadSaved&&savedProspect&&<span style={{color:'#10b981'}}>✓ Saved: {savedProspect.name}</span>}
-          {!leadSaved&&analysis&&<span style={{color:'#f59e0b'}}>⚠ Not saved yet</span>}
+          {!leadSaved&&analysis&&<span style={{color:'#f59e0b'}}>⚠ Not saved</span>}
           <button style={{marginLeft:'auto',fontSize:10,background:'none',border:'0.5px solid rgba(239,68,68,.3)',borderRadius:6,color:'#ef4444',padding:'2px 8px',cursor:'pointer'}} onClick={clearAll}>✕ Clear</button>
         </div>
       )}
 
-      {/* Smart Pulse */}
+      {/* Smart pulse */}
       {pulse.length>0&&(
         <div style={{borderBottom:'0.5px solid #1a1a3a',padding:'5px 18px',display:'flex',gap:6,overflowX:'auto' as const,background:'rgba(0,0,0,.08)'}}>
           {pulse.map((p:any,i:number)=>(
-            <button key={i} onClick={()=>handlePulse(p.target)} style={{flexShrink:0,display:'flex',alignItems:'center',gap:6,background:p.urgent?'rgba(239,68,68,.06)':'rgba(99,102,241,.06)',border:`0.5px solid ${p.urgent?'rgba(239,68,68,.2)':'rgba(99,102,241,.2)'}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',color:'hsl(var(--foreground))'}}>
+            <button key={i} onClick={()=>handlePulse(p.target)} style={{flexShrink:0,display:'flex',alignItems:'center',gap:5,background:p.urgent?'rgba(239,68,68,.06)':'rgba(99,102,241,.06)',border:`0.5px solid ${p.urgent?'rgba(239,68,68,.2)':'rgba(99,102,241,.2)'}`,borderRadius:8,padding:'4px 10px',cursor:'pointer',color:'hsl(var(--foreground))'}}>
               <span style={{fontSize:13}}>{p.icon}</span>
-              <span style={{fontSize:11,color:'hsl(var(--muted-foreground))',maxWidth:260,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{p.msg}</span>
+              <span style={{fontSize:11,color:'hsl(var(--muted-foreground))',maxWidth:240,whiteSpace:'nowrap' as const,overflow:'hidden',textOverflow:'ellipsis'}}>{p.msg}</span>
               <span style={{fontSize:10,fontWeight:700,color:p.urgent?'#ef4444':'#6366f1',marginLeft:4}}>→ {p.cta}</span>
             </button>
           ))}
@@ -442,7 +597,7 @@ export default function BdePanel() {
 
       {/* Tabs */}
       <div style={S.tabs}>
-        {([['fiverr','🟢 Fiverr'],['intel','🧠 Lead Intel'+(prospects.length?` (${prospects.length})`:'' )],['tools','⚡ Tools'],['responses','💬 Responses'],['leads','📋 Leads'],['docs','🏆 Documents']] as [string,string][]).map(([id,l])=>(
+        {([['fiverr','🟢 Fiverr Analyser'],['intel','🧠 Lead Intel'+(prospects.length?` (${prospects.length})`:'' )],['tools','⚡ Tools'],['responses','💬 Responses'],['leads','📋 Leads'],['docs','🏆 Documents']] as [string,string][]).map(([id,l])=>(
           <button key={id} style={{...S.tab,...(tab===id?S.tabA:{})}} onClick={()=>setTab(id as any)}>{l}</button>
         ))}
       </div>
@@ -451,33 +606,91 @@ export default function BdePanel() {
         {/* ═══ FIVERR ANALYSER ═══ */}
         {tab==='fiverr'&&(
           <div>
-            <div style={{marginBottom:10,color:'hsl(var(--muted-foreground))',fontSize:12}}>Paste any Fiverr conversation — context is shared with all tools automatically.</div>
+            {/* Smart paste area */}
             <div style={S.card}>
-              <textarea ref={textRef} style={S.textarea} value={convText} onChange={e=>setConv(e.target.value)}
-                placeholder={'Paste Fiverr conversation here...\n\nClient: Hi can you help with my SEO?\nMe: Of course! Tell me about your business...'}/>
-              <div style={{display:'flex',gap:8,marginTop:10}}>
-                <button style={S.btn()} onClick={analyse} disabled={analysing||!convText.trim()}>{analysing?'Analysing...':'🧠 Analyse Conversation'}</button>
-                {analysis&&<button style={S.btn('#a78bfa')} onClick={genResponses} disabled={genResp}>{genResp?'Generating...':'✍️ Generate Responses'}</button>}
-                {convText&&<button style={S.btn('hsl(var(--muted-foreground))')} onClick={clearAll}>✕ Clear All</button>}
-              </div>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>📋 Paste Fiverr Conversation</div>
+              <div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginBottom:10}}>Copy the full conversation from Fiverr and paste below. It auto-parses the format — usernames, timestamps, multi-line messages, UI noise is all filtered out.</div>
+              <textarea
+                style={{width:'100%',background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:9,color:'hsl(var(--foreground))',padding:'11px 13px',fontSize:12,lineHeight:1.6,resize:'vertical' as const,outline:'none',minHeight:100,boxSizing:'border-box' as const,fontFamily:'monospace'}}
+                value={rawPaste}
+                onChange={e=>handlePaste(e.target.value)}
+                placeholder={'Paste raw Fiverr conversation here...\n\nEverything is auto-parsed: usernames, timestamps, multi-line messages, "Translate to English" labels — all handled.'}
+              />
+              {parsedMsgs.length>0&&(
+                <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center',flexWrap:'wrap' as const}}>
+                  <span style={{fontSize:11,color:'#10b981'}}>✓ {parsedMsgs.length} messages parsed ({parsedMsgs.filter((m:any)=>m.speaker==='client').length} client, {parsedMsgs.filter((m:any)=>m.speaker==='me').length} me)</span>
+                  <button style={S.btn()} onClick={()=>{analyse();runDeepAnalysis();}} disabled={analysing||deepLoading}>{analysing||deepLoading?'Analysing...':'🧠 Analyse All'}</button>
+                  <button style={S.btn('hsl(var(--muted-foreground))')} onClick={clearAll}>✕ Clear</button>
+                </div>
+              )}
             </div>
 
+            {/* Summary bar when deep analysis done */}
+            {deepAnalysis&&(
+              <div style={{...S.card,background:'rgba(0,0,0,.2)',marginBottom:10}}>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:10}}>
+                  <div style={{textAlign:'center' as const}}>
+                    <div style={{fontSize:22,fontWeight:700,color:deepAnalysis.overallConversion>=70?'#10b981':deepAnalysis.overallConversion>=50?'#f59e0b':'#ef4444'}}>{deepAnalysis.overallConversion}%</div>
+                    <div style={{fontSize:9,color:'hsl(var(--muted-foreground))'}}>CLOSE PROBABILITY</div>
+                  </div>
+                  <div style={{textAlign:'center' as const}}>
+                    <div style={{fontSize:13,fontWeight:600,color:'#ef4444'}}>{deepAnalysis.urgency}</div>
+                    <div style={{fontSize:9,color:'hsl(var(--muted-foreground))'}}>URGENCY</div>
+                  </div>
+                  <div style={{gridColumn:'span 2'}}>
+                    <div style={{fontSize:9,color:'#f59e0b',fontWeight:700,marginBottom:3}}>TOP MISS</div>
+                    <div style={{fontSize:11,color:'#d0d0e8'}}>{deepAnalysis.topMiss}</div>
+                  </div>
+                </div>
+                {deepAnalysis.nextAction&&(
+                  <div style={{background:'rgba(16,185,129,.06)',border:'0.5px solid rgba(16,185,129,.2)',borderRadius:8,padding:'8px 12px'}}>
+                    <div style={{fontSize:9,color:'#10b981',fontWeight:700,marginBottom:3}}>NEXT ACTION RIGHT NOW</div>
+                    <div style={{fontSize:12,color:'#d0d0e8'}}>{deepAnalysis.nextAction}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Next message composer */}
+            {(analysis||deepAnalysis)&&(
+              <div style={S.card}>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:8}}>💬 Next Message to Send</div>
+                <textarea
+                  style={{width:'100%',background:'rgba(16,185,129,.04)',border:'0.5px solid rgba(16,185,129,.25)',borderRadius:8,color:'hsl(var(--foreground))',padding:'10px 12px',fontSize:13,lineHeight:1.6,resize:'vertical' as const,outline:'none',minHeight:80,boxSizing:'border-box' as const}}
+                  value={nextMsg}
+                  onChange={e=>setNextMsg(e.target.value)}
+                  placeholder='Your next message to the client — gets pre-filled from Best Next Message or from clicking Better Reply on any message...'
+                />
+                {nextMsg&&(
+                  <div style={{display:'flex',gap:6,marginTop:8}}>
+                    <button style={S.btn(copied==='nextmsg'?'#10b981':'#a78bfa')} onClick={()=>copyText(nextMsg,'nextmsg')}>{copied==='nextmsg'?'✓ Copied!':'Copy Message'}</button>
+                    <button style={S.btn('hsl(var(--muted-foreground))')} onClick={()=>setNextMsg('')}>Clear</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Visual conversation preview */}
+            {parsedMsgs.length>0&&(
+              <div style={S.card}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:700}}>💬 Conversation Preview</div>
+                  <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                    {deepLoading&&<span style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>⏳ Deep analysis running...</span>}
+                    {!deepAnalysis&&!deepLoading&&parsedMsgs.length>0&&<button style={S.btn('#6366f1')} onClick={runDeepAnalysis}>🔬 Deep Analysis</button>}
+                    {analysis&&<button style={S.btn('#a78bfa')} onClick={()=>setTab('docs')}>Generate Doc →</button>}
+                  </div>
+                </div>
+                <ConversationView msgs={parsedMsgs} deepAnalysis={deepAnalysis} onAction={handleConvAction}/>
+              </div>
+            )}
+
+            {/* Overall analysis + save */}
             {analysis&&(
               <div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-                  {/* Intelligence card */}
                   <div style={S.card}>
-                    <div style={S.sec}>Conversation Intelligence</div>
-                    <div style={{display:'flex',gap:10,marginBottom:10}}>
-                      <div style={{background:'hsl(var(--background))',borderRadius:8,padding:'8px 12px',textAlign:'center' as const,flex:1}}>
-                        <div style={{fontSize:20,fontWeight:700,color:MOOD_C(analysis.fiverr_specific?.order_probability||50)}}>{analysis.fiverr_specific?.order_probability||'?'}%</div>
-                        <div style={{fontSize:9,color:'hsl(var(--muted-foreground))'}}>ORDER PROBABILITY</div>
-                      </div>
-                      <div style={{background:'hsl(var(--background))',borderRadius:8,padding:'8px 12px',flex:2}}>
-                        <div style={{fontSize:10,fontWeight:600,marginBottom:2}}>Urgency</div>
-                        <div style={{fontSize:13,color:analysis.urgency==='high'?'#ef4444':analysis.urgency==='medium'?'#f59e0b':'#10b981'}}>{analysis.urgency||'unknown'}</div>
-                      </div>
-                    </div>
+                    <div style={S.sec}>Overall Intelligence</div>
                     <div style={{padding:'7px 10px',background:'rgba(16,185,129,.05)',borderRadius:7,border:'0.5px solid rgba(16,185,129,.15)',marginBottom:7}}>
                       <div style={{fontSize:9,color:'#10b981',fontWeight:600,marginBottom:2}}>MAIN NEED</div>
                       <div style={{fontSize:12,color:'#d0d0e8'}}>{analysis.main_need}</div>
@@ -493,88 +706,26 @@ export default function BdePanel() {
                       </div>
                     )}
                   </div>
-                  {/* Best message */}
                   <BestMessagePanel analysis={analysis} convText={convText}/>
                 </div>
-
                 {/* Save to Lead Intel */}
                 {!leadSaved?(
                   <div style={{...S.card,borderColor:'rgba(99,102,241,.3)',background:'rgba(99,102,241,.04)'}}>
                     <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:'#a78bfa'}}>💾 Save to Lead Intelligence</div>
                     <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                      <input style={{...S.inp,flex:1}} placeholder='Prospect name or company...' value={leadNameInput} onChange={(e:any)=>setLeadNameInput(e.target.value)} onKeyDown={(e:any)=>{if(e.key==='Enter')saveLead();}}/>
+                      <input style={{...S.inp,flex:1}} placeholder={parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'Prospect name...'} value={leadNameInput} onChange={(e:any)=>setLeadNameInput(e.target.value)} onKeyDown={(e:any)=>{if(e.key==='Enter')saveLead();}}/>
                       <button style={{...S.btn('#6366f1'),padding:'7px 16px'}} onClick={saveLead} disabled={savingLead}>{savingLead?'Saving...':'Save Lead'}</button>
                       <button style={{...S.btn('#a78bfa'),padding:'7px 14px'}} onClick={()=>setTab('docs')}>Generate Doc</button>
                     </div>
-                    <div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginTop:6}}>Saves full conversation text, analysis, audit and all context. AI will suggest follow-ups based on algorithm updates.</div>
+                    <div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginTop:6}}>Saves full conversation, analysis, per-message intelligence, and audit. AI generates follow-up suggestions.</div>
                   </div>
                 ):(
                   <div style={{...S.card,borderColor:'rgba(16,185,129,.3)'}}>
                     <div style={{display:'flex',alignItems:'center',gap:10}}>
                       <span style={{fontSize:16}}>✅</span>
-                      <div>
-                        <div style={{fontSize:12,fontWeight:700,color:'#10b981'}}>Saved — {savedProspect?.name}</div>
-                        <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Full conversation + analysis + audit stored. AI is tracking this lead.</div>
-                      </div>
+                      <div><div style={{fontSize:12,fontWeight:700,color:'#10b981'}}>Saved — {savedProspect?.name}</div><div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Full context stored. AI is tracking this lead.</div></div>
                       <button style={{...S.btn('#a78bfa'),marginLeft:'auto'}} onClick={()=>{if(savedProspect){setSelProspect(savedProspect);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');}setTab('intel');}}>View Intel →</button>
                     </div>
-                  </div>
-                )}
-
-                {/* Parsed lines */}
-                {parsedLines.length>0&&(
-                  <div style={S.card}>
-                    <div style={S.sec}>Line-by-Line Analysis ({parsedLines.length} lines)</div>
-                    <div style={{maxHeight:300,overflowY:'auto' as const}}>
-                      {(analysis?.line_by_line||parsedLines).map((line:any,i:number)=>{
-                        const isClient=line.speaker==='client'||line.intent;
-                        return(
-                          <div key={i} onClick={()=>setSelLine(selLine===i?null:i)} style={{padding:'7px 10px',marginBottom:4,borderRadius:8,cursor:'pointer',background:selLine===i?'rgba(99,102,241,.08)':isClient?'rgba(255,255,255,.03)':'transparent',border:`0.5px solid ${selLine===i?'rgba(99,102,241,.3)':isClient?'rgba(255,255,255,.06)':'transparent'}`}}>
-                            <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
-                              <span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:20,background:isClient?'rgba(99,102,241,.15)':'rgba(16,185,129,.15)',color:isClient?'#a78bfa':'#10b981',flexShrink:0}}>{isClient?'CLIENT':'YOU'}</span>
-                              <div style={{flex:1}}>
-                                <div style={{fontSize:12,color:'#d0d0e8'}}>{line.text||line.line}</div>
-                                {(selLine===i||line.intent)&&isClient&&(
-                                  <div style={{marginTop:5,display:'flex',gap:5,flexWrap:'wrap' as const}}>
-                                    {line.intent&&<span style={{fontSize:9,color:'#f59e0b'}}>Intent: {line.intent}</span>}
-                                    {line.emotion&&<span style={{fontSize:9,color:'#a78bfa'}}>Emotion: {line.emotion}</span>}
-                                    {line.suggested_reply&&selLine===i&&(
-                                      <div style={{width:'100%',marginTop:5,padding:'6px 10px',background:'rgba(16,185,129,.06)',borderRadius:6,border:'0.5px solid rgba(16,185,129,.2)'}}>
-                                        <div style={{fontSize:9,color:'#10b981',marginBottom:2}}>SUGGESTED REPLY</div>
-                                        <div style={{fontSize:11,color:'#d0d0e8'}}>{line.suggested_reply}</div>
-                                        <button style={{...S.btn(),marginTop:4,padding:'3px 8px',fontSize:10}} onClick={e=>{e.stopPropagation();copyText(line.suggested_reply,`line_${i}`)}}>{copied===`line_${i}`?'✓':'Copy'}</button>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Generated responses */}
-                {responses?.responses?.length>0&&(
-                  <div>
-                    <div style={{fontSize:12,fontWeight:600,marginBottom:10}}>Generated Response Options</div>
-                    {responses.responses.map((r:any,idx:number)=>(
-                      <div key={idx} style={{...S.card,borderColor:idx===0?'rgba(16,185,129,.3)':'hsl(var(--border))'}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                          <div>
-                            <div style={{fontSize:12,fontWeight:700}}>{r.title}</div>
-                            <div style={{display:'flex',gap:6,marginTop:3}}>
-                              <span style={S.badge('#6366f1')}>{r.tone}</span>
-                              {r.conversion_probability&&<span style={S.badge(r.conversion_probability>=70?'#10b981':'#f59e0b')}>{r.conversion_probability}% chance</span>}
-                            </div>
-                          </div>
-                          <button style={S.btn(copied===`resp_${idx}`?'#10b981':'#a78bfa')} onClick={()=>copyText(r.response||r.message||'',`resp_${idx}`)}>{copied===`resp_${idx}`?'✓ Copied!':'Copy'}</button>
-                        </div>
-                        <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.7,whiteSpace:'pre-wrap' as const}}>{r.response||r.message}</div>
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -589,45 +740,40 @@ export default function BdePanel() {
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
                   <button style={{...S.btn('hsl(var(--muted-foreground))'),fontSize:11}} onClick={()=>{setSelProspect(null);setSuggestions([]);setProspectConvs([]);}}>← All Leads</button>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:15,fontWeight:700}}>{selProspect.name}</div>
-                    {selProspect.url&&<div style={{fontSize:11,color:'#6366f1'}}>{selProspect.url}</div>}
-                  </div>
-                  <span style={S.badge(STAGE_C[selProspect.status]||'#6366f1')}>{selProspect.status||'active'}</span>
+                  <div style={{flex:1}}><div style={{fontSize:15,fontWeight:700}}>{selProspect.name}</div>{selProspect.url&&<div style={{fontSize:11,color:'#6366f1'}}>{selProspect.url}</div>}</div>
                   <button style={S.btn('#10b981')} onClick={()=>{setAuditUrl(selProspect.url||'');setTab('tools');}}>🔍 Audit</button>
                   <button style={S.btn('#a78bfa')} onClick={()=>setTab('docs')}>📋 Doc</button>
                 </div>
                 <div style={{display:'flex',gap:4,marginBottom:14,borderBottom:'0.5px solid #1a1a3a',paddingBottom:0}}>
                   {(['suggestions','history','docs'] as const).map(t=>(
                     <button key={t} style={{...S.tab,...(prospectTab===t?S.tabA:{})}} onClick={()=>setProspectTab(t)}>
-                      {t==='suggestions'?'🧠 AI Suggestions':t==='history'?'📅 Full History':'📎 Actions'}
+                      {t==='suggestions'?'🧠 AI Suggestions':t==='history'?'📅 Conversation History':'📎 Actions'}
                       {t==='suggestions'&&suggestions.length>0&&<span style={{...S.badge('#10b981'),marginLeft:4}}>{suggestions.length}</span>}
                     </button>
                   ))}
                 </div>
-
                 {prospectTab==='suggestions'&&(
                   <div>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                      <div style={{fontSize:12,color:'hsl(var(--muted-foreground))'}}>Based on conversation history, algorithm updates and proven closing tactics.</div>
+                      <div style={{fontSize:12,color:'hsl(var(--muted-foreground))'}}>Based on full conversation history, algorithm updates and proven closing tactics.</div>
                       <button style={S.btn('#6366f1')} onClick={generateSuggestions} disabled={genSugg}>{genSugg?'⏳ Generating...':'✨ Generate Suggestions'}</button>
                     </div>
                     {suggestions.length===0&&!genSugg&&(
                       <div style={{...S.card,textAlign:'center' as const,padding:32}}>
                         <div style={{fontSize:28,marginBottom:8}}>🧠</div>
                         <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Get AI Suggestions for {selProspect.name}</div>
-                        <div style={{fontSize:12,color:'hsl(var(--muted-foreground))',marginBottom:14}}>Claude analyses conversation history, current algorithm updates, and proven results to generate specific closing actions with scripts.</div>
+                        <div style={{fontSize:12,color:'hsl(var(--muted-foreground))',marginBottom:14}}>Claude analyses conversation history, algorithm updates, and proven closing tactics.</div>
                         <button style={{...S.btn('#6366f1'),padding:'10px 24px'}} onClick={generateSuggestions}>✨ Generate Suggestions</button>
                       </div>
                     )}
-                    {genSugg&&<div style={{...S.card,textAlign:'center' as const,padding:32,color:'hsl(var(--muted-foreground))',fontSize:12}}>Fetching algorithm updates, analysing {prospectConvs.length} conversation(s), generating suggestions...</div>}
+                    {genSugg&&<div style={{...S.card,textAlign:'center' as const,padding:32,color:'hsl(var(--muted-foreground))',fontSize:12}}>Generating suggestions...</div>}
                     {suggestions.map((s:any,i:number)=>(
                       <div key={i} style={{...S.card,borderLeft:`3px solid ${SUGG_C[s.priority]||'#6366f1'}`,borderRadius:'0 11px 11px 0'}}>
-                        <div style={{display:'flex',gap:10,alignItems:'flex-start',marginBottom:8}}>
+                        <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
                           <span style={{fontSize:18,flexShrink:0}}>{SUGG_ICON[s.type]||'💡'}</span>
                           <div style={{flex:1}}>
                             <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:4}}>
-                              <span style={S.badge(SUGG_C[s.priority]||'#6366f1')}>{s.priority?.toUpperCase()||'ACTION'}</span>
+                              <span style={S.badge(SUGG_C[s.priority]||'#6366f1')}>{s.priority?.toUpperCase()}</span>
                               <span style={S.badge('#6366f1')}>{s.type}</span>
                               {s.timing&&<span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>⏰ {s.timing}</span>}
                             </div>
@@ -635,7 +781,7 @@ export default function BdePanel() {
                             {s.reason&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginBottom:8,lineHeight:1.5}}>{s.reason}</div>}
                             {s.script&&(
                               <div style={{background:'rgba(99,102,241,.06)',border:'0.5px solid rgba(99,102,241,.2)',borderRadius:8,padding:'8px 12px'}}>
-                                <div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:3}}>SCRIPT — COPY AND SEND</div>
+                                <div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:3}}>SCRIPT</div>
                                 <div style={{fontSize:12,color:'#d0d0e8',fontStyle:'italic',lineHeight:1.6}}>{s.script}</div>
                                 <button style={{...S.btn('#a78bfa'),fontSize:10,marginTop:6,padding:'3px 10px'}} onClick={()=>copyText(s.script,`sugg_${i}`)}>{copied===`sugg_${i}`?'✓ Copied!':'Copy Script'}</button>
                               </div>
@@ -646,71 +792,53 @@ export default function BdePanel() {
                     ))}
                   </div>
                 )}
-
                 {prospectTab==='history'&&(
                   <div>
-                    {prospectConvs.length===0&&(
-                      <div>
-                        {selProspect.latestAnalysis&&(
-                          <div style={S.card}>
-                            <div style={{fontSize:11,fontWeight:600,color:'hsl(var(--foreground))',marginBottom:8}}>Latest Context (from memory)</div>
-                            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:10}}>
-                              {selProspect.latestAnalysis.main_need&&<div style={{background:'rgba(16,185,129,.05)',borderRadius:6,padding:'6px 8px'}}><div style={{fontSize:9,color:'#10b981',fontWeight:700}}>NEED</div><div style={{fontSize:11,color:'#d0d0e8'}}>{selProspect.latestAnalysis.main_need}</div></div>}
-                              {selProspect.latestAnalysis.urgency&&<div style={{background:'rgba(245,158,11,.05)',borderRadius:6,padding:'6px 8px'}}><div style={{fontSize:9,color:'#f59e0b',fontWeight:700}}>URGENCY</div><div style={{fontSize:11,color:'#d0d0e8'}}>{selProspect.latestAnalysis.urgency}</div></div>}
-                              {selProspect.latestAnalysis.fiverr_specific?.order_probability!==undefined&&<div style={{background:'rgba(99,102,241,.05)',borderRadius:6,padding:'6px 8px'}}><div style={{fontSize:9,color:'#a78bfa',fontWeight:700}}>PROBABILITY</div><div style={{fontSize:11,color:'#d0d0e8'}}>{selProspect.latestAnalysis.fiverr_specific.order_probability}%</div></div>}
-                            </div>
-                            <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Full history loading from database...</div>
-                          </div>
-                        )}
+                    {prospectConvs.length===0&&selProspect.latestAnalysis&&(
+                      <div style={S.card}>
+                        <div style={{fontSize:11,fontWeight:600,marginBottom:8}}>Latest Context</div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                          {selProspect.latestAnalysis.main_need&&<div style={{background:'rgba(16,185,129,.05)',borderRadius:6,padding:'6px 8px'}}><div style={{fontSize:9,color:'#10b981',fontWeight:700}}>NEED</div><div style={{fontSize:11,color:'#d0d0e8'}}>{selProspect.latestAnalysis.main_need}</div></div>}
+                          {selProspect.latestAnalysis.urgency&&<div style={{background:'rgba(245,158,11,.05)',borderRadius:6,padding:'6px 8px'}}><div style={{fontSize:9,color:'#f59e0b',fontWeight:700}}>URGENCY</div><div style={{fontSize:11,color:'#d0d0e8'}}>{selProspect.latestAnalysis.urgency}</div></div>}
+                        </div>
                       </div>
                     )}
                     {prospectConvs.map((c:any,i:number)=>{
-                      let d:any={};
-                      try{d=JSON.parse(c.response||'{}');}catch{}
-                      const isExpanded=expandedConv.has(i);
-                      const toggleExpand=(idx:number)=>setExpandedConv(prev=>{const n=new Set(prev);n.has(idx)?n.delete(idx):n.add(idx);return n;});
+                      let d:any={};try{d=JSON.parse(c.response||'{}');}catch{}
+                      const isExp=expandedConv.has(i);
+                      const tog=(idx:number)=>setExpandedConv(prev=>{const n=new Set(prev);n.has(idx)?n.delete(idx):n.add(idx);return n;});
                       return(
                         <div key={i} style={S.card}>
-                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
                             <div style={{fontSize:11,fontWeight:600}}>Conversation #{prospectConvs.length-i}</div>
                             <span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{AGO(c.created_at)}</span>
                           </div>
-                          {d.analysis&&(
-                            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,marginBottom:10}}>
-                              {d.analysis.main_need&&<div style={{background:'rgba(16,185,129,.05)',borderRadius:6,padding:'5px 8px'}}><div style={{fontSize:9,color:'#10b981',fontWeight:700}}>NEED</div><div style={{fontSize:11,color:'#d0d0e8'}}>{d.analysis.main_need}</div></div>}
-                              {d.analysis.urgency&&<div style={{background:'rgba(245,158,11,.05)',borderRadius:6,padding:'5px 8px'}}><div style={{fontSize:9,color:'#f59e0b',fontWeight:700}}>URGENCY</div><div style={{fontSize:12,color:d.analysis.urgency==='high'?'#ef4444':d.analysis.urgency==='medium'?'#f59e0b':'#10b981'}}>{d.analysis.urgency}</div></div>}
-                              {d.analysis.fiverr_specific?.order_probability!==undefined&&<div style={{background:'rgba(99,102,241,.05)',borderRadius:6,padding:'5px 8px'}}><div style={{fontSize:9,color:'#a78bfa',fontWeight:700}}>PROBABILITY</div><div style={{fontSize:12,color:'#d0d0e8'}}>{d.analysis.fiverr_specific.order_probability}%</div></div>}
-                            </div>
-                          )}
-                          {/* FULL CONVERSATION TEXT */}
+                          {d.analysis&&<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,marginBottom:8}}>
+                            {d.analysis.main_need&&<div style={{background:'rgba(16,185,129,.05)',borderRadius:6,padding:'5px 8px'}}><div style={{fontSize:9,color:'#10b981',fontWeight:700}}>NEED</div><div style={{fontSize:11,color:'#d0d0e8'}}>{d.analysis.main_need}</div></div>}
+                            {d.analysis.urgency&&<div style={{background:'rgba(245,158,11,.05)',borderRadius:6,padding:'5px 8px'}}><div style={{fontSize:9,color:'#f59e0b',fontWeight:700}}>URGENCY</div><div style={{fontSize:11,color:'#d0d0e8'}}>{d.analysis.urgency}</div></div>}
+                            {d.analysis.fiverr_specific?.order_probability!==undefined&&<div style={{background:'rgba(99,102,241,.05)',borderRadius:6,padding:'5px 8px'}}><div style={{fontSize:9,color:'#a78bfa',fontWeight:700}}>PROBABILITY</div><div style={{fontSize:11,color:'#d0d0e8'}}>{d.analysis.fiverr_specific.order_probability}%</div></div>}
+                          </div>}
                           {d.conversationText&&(
                             <div style={{marginBottom:8}}>
-                              <div style={{fontSize:9,color:'#6366f1',fontWeight:700,marginBottom:6,letterSpacing:1}}>FULL CONVERSATION</div>
-                              <div style={{background:'rgba(0,0,0,.15)',borderRadius:7,padding:'8px 10px',maxHeight:isExpanded?600:140,overflow:'hidden' as const,position:'relative' as const}}>
-                                {d.conversationText.split('\n').filter((l:string)=>l.trim()).map((line:string,li:number)=>{
-                                  const isC=/^(client:|buyer:)/i.test(line.trim());
-                                  return(
-                                    <div key={li} style={{display:'flex',gap:6,marginBottom:5}}>
-                                      <span style={{fontSize:9,fontWeight:700,color:isC?'#a78bfa':'#10b981',flexShrink:0,minWidth:20,paddingTop:1}}>{isC?'C:':'ME:'}</span>
-                                      <span style={{fontSize:11,color:'#d0d0e8',lineHeight:1.55}}>{line.replace(/^(client:|me:|you:|buyer:)/i,'').trim()}</span>
-                                    </div>
-                                  );
+                              <div style={{fontSize:9,color:'#6366f1',fontWeight:700,marginBottom:5,letterSpacing:1}}>CONVERSATION</div>
+                              <div style={{background:'rgba(0,0,0,.15)',borderRadius:7,padding:'8px 10px',maxHeight:isExp?600:130,overflow:'hidden' as const,position:'relative' as const}}>
+                                {String(d.conversationText||'').split('\n').filter((l:string)=>l.trim()).map((line:string,li:number)=>{
+                                  const isC=/^(client:|buyer:|c:)/i.test(line.trim());
+                                  return(<div key={li} style={{display:'flex',gap:6,marginBottom:4}}><span style={{fontSize:9,fontWeight:700,color:isC?'#a78bfa':'#10b981',flexShrink:0,minWidth:22,paddingTop:1}}>{isC?'C:':'ME:'}</span><span style={{fontSize:11,color:'#d0d0e8',lineHeight:1.55}}>{line.replace(/^(client:|me:|you:|buyer:|c:)/i,'').trim()}</span></div>);
                                 })}
-                                {!isExpanded&&<div style={{position:'absolute' as const,bottom:0,left:0,right:0,height:50,background:'linear-gradient(transparent,rgba(0,0,0,.6))'}}/>}
+                                {!isExp&&<div style={{position:'absolute' as const,bottom:0,left:0,right:0,height:50,background:'linear-gradient(transparent,rgba(0,0,0,.6))'}}/>}
                               </div>
-                              <button style={{fontSize:10,color:'#6366f1',background:'none',border:'none',cursor:'pointer',padding:'3px 0',marginTop:2}} onClick={()=>toggleExpand(i)}>{isExpanded?'▲ Collapse':'▼ Show full conversation'}</button>
+                              <button style={{fontSize:10,color:'#6366f1',background:'none',border:'none',cursor:'pointer',padding:'3px 0'}} onClick={()=>tog(i)}>{isExp?'▲ Collapse':'▼ Show full conversation'}</button>
                             </div>
                           )}
-                          {d.auditResult&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Audit: {d.auditResult.url} — {d.auditResult.score}/100</div>}
                         </div>
                       );
                     })}
                   </div>
                 )}
-
                 {prospectTab==='docs'&&(
                   <div style={{...S.card,textAlign:'center' as const,padding:24}}>
-                    <div style={{fontSize:12,color:'hsl(var(--muted-foreground))',marginBottom:12}}>Generate a document for {selProspect.name} with full context</div>
+                    <div style={{fontSize:12,color:'hsl(var(--muted-foreground))',marginBottom:12}}>Generate a document for {selProspect.name}</div>
                     <button style={{...S.btn('#6366f1'),padding:'10px 24px'}} onClick={()=>setTab('docs')}>📋 Open Document Generator</button>
                   </div>
                 )}
@@ -725,35 +853,23 @@ export default function BdePanel() {
                   <div style={{...S.card,textAlign:'center' as const,padding:40}}>
                     <div style={{fontSize:32,marginBottom:12}}>🧠</div>
                     <div style={{fontSize:14,fontWeight:600,marginBottom:8}}>No leads saved yet</div>
-                    <div style={{fontSize:12,color:'hsl(var(--muted-foreground))',marginBottom:16}}>Analyse a Fiverr conversation and save it. The AI will track every lead and generate follow-up suggestions.</div>
                     <button style={{...S.btn('#6366f1'),padding:'10px 24px'}} onClick={()=>setTab('fiverr')}>Start with Fiverr Analyser →</button>
                   </div>
                 )}
                 <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:10}}>
                   {prospects.map((p:any)=>{
-                    const la=p.latestAnalysis;
-                    const prob=la?.fiverr_specific?.order_probability;
+                    const la=p.latestAnalysis;const prob=la?.fiverr_specific?.order_probability;
                     return(
-                      <div key={p.name} style={{...S.card,cursor:'pointer',transition:'border-color .15s'}} onClick={()=>openProspect(p)}>
+                      <div key={p.name} style={{...S.card,cursor:'pointer'}} onClick={()=>openProspect(p)}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                          <div>
-                            <div style={{fontSize:13,fontWeight:700}}>{p.name}</div>
-                            {p.url&&<div style={{fontSize:10,color:'#6366f1'}}>{p.url}</div>}
-                          </div>
+                          <div><div style={{fontSize:13,fontWeight:700}}>{p.name}</div>{p.url&&<div style={{fontSize:10,color:'#6366f1'}}>{p.url}</div>}</div>
                           <div style={{display:'flex',flexDirection:'column' as const,alignItems:'flex-end',gap:3}}>
                             <span style={S.badge(STAGE_C[p.status]||'#6366f1')}>{p.status||'active'}</span>
                             {prob!==undefined&&<span style={S.badge(MOOD_C(prob))}>{prob}% close</span>}
                           </div>
                         </div>
-                        {la&&(
-                          <div style={{fontSize:11,color:'hsl(var(--muted-foreground))',lineHeight:1.5}}>
-                            {la.main_need&&<div>📌 {la.main_need}</div>}
-                            {la.urgency&&<div>⚡ <span style={{color:la.urgency==='high'?'#ef4444':la.urgency==='medium'?'#f59e0b':'#10b981'}}>{la.urgency} urgency</span></div>}
-                            {la.savedAt&&<div style={{fontSize:10,marginTop:4}}>Last: {AGO(la.savedAt)}</div>}
-                          </div>
-                        )}
-                        {p.conversationCount>1&&<div style={{fontSize:10,color:'#a78bfa',marginTop:6}}>{p.conversationCount} conversations</div>}
-                        <div style={{marginTop:8,fontSize:10,color:'#6366f1',fontWeight:600}}>View Intelligence & Suggestions →</div>
+                        {la&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',lineHeight:1.5}}>{la.main_need&&<div>📌 {la.main_need}</div>}{la.urgency&&<div>⚡ {la.urgency} urgency</div>}{la.savedAt&&<div style={{fontSize:10,marginTop:4}}>Last: {AGO(la.savedAt)}</div>}</div>}
+                        <div style={{marginTop:8,fontSize:10,color:'#6366f1',fontWeight:600}}>View Intelligence →</div>
                       </div>
                     );
                   })}
@@ -768,7 +884,6 @@ export default function BdePanel() {
           <div>
             <div style={S.card}>
               <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>⚡ Instant Site Audit</div>
-              {analysis&&!auditUrl&&<div style={{fontSize:11,color:'#f59e0b',marginBottom:8}}>💡 Tip: URL auto-detected from conversation — verify below</div>}
               <div style={{display:'flex',gap:8,marginBottom:8}}>
                 <input style={{...S.inp,flex:2}} value={auditUrl} onChange={e=>setAuditUrl(e.target.value)} placeholder='yourlead.com' onKeyDown={e=>e.key==='Enter'&&doAudit()}/>
                 <input style={{...S.inp,flex:3}} value={auditFor} onChange={e=>setAuditFor(e.target.value)} placeholder='Lead context: e-commerce looking for organic traffic'/>
@@ -778,25 +893,11 @@ export default function BdePanel() {
             {auditResult&&(
               <div style={S.card}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:700}}>{auditResult.url}</div>
-                    <div style={{display:'flex',gap:8,marginTop:4}}>
-                      <span style={S.badge(auditResult.score>=70?'#10b981':auditResult.score>=50?'#f59e0b':'#ef4444')}>Score: {auditResult.score}/100</span>
-                      <span style={S.badge('#ef4444')}>{auditResult.issues?.length} issues</span>
-                    </div>
-                  </div>
-                  <div style={{display:'flex',gap:6}}>
-                    <button style={S.btn(copied==='audit_msg'?'#10b981':'#a78bfa')} onClick={()=>copyText(auditResult.showcase_message,'audit_msg')}>{copied==='audit_msg'?'✓ Copied!':'Copy Message'}</button>
-                    <button style={S.btn('#6366f1')} onClick={()=>setTab('docs')}>Generate Proposal →</button>
-                  </div>
+                  <div><div style={{fontSize:13,fontWeight:700}}>{auditResult.url}</div><div style={{display:'flex',gap:8,marginTop:4}}><span style={S.badge(auditResult.score>=70?'#10b981':auditResult.score>=50?'#f59e0b':'#ef4444')}>Score: {auditResult.score}/100</span><span style={S.badge('#ef4444')}>{auditResult.issues?.length} issues</span></div></div>
+                  <div style={{display:'flex',gap:6}}><button style={S.btn(copied==='audit_msg'?'#10b981':'#a78bfa')} onClick={()=>copyText(auditResult.showcase_message,'audit_msg')}>{copied==='audit_msg'?'✓ Copied!':'Copy Message'}</button><button style={S.btn('#6366f1')} onClick={()=>setTab('docs')}>Proposal →</button></div>
                 </div>
                 <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.7,whiteSpace:'pre-wrap' as const,padding:'10px 12px',background:'hsl(var(--background))',borderRadius:8,border:'0.5px solid #1a1a3a',marginBottom:10}}>{auditResult.showcase_message}</div>
-                {auditResult.issues?.length>0&&(
-                  <><div style={S.sec}>Issues Found</div>
-                  {auditResult.issues.map((issue:any,i:number)=>(
-                    <div key={i} style={{fontSize:11,color:'hsl(var(--foreground))',padding:'5px 0',borderBottom:'0.5px solid #1a1a3a'}}>• {issue}</div>
-                  ))}</> 
-                )}
+                {auditResult.issues?.length>0&&<><div style={S.sec}>Issues Found</div>{auditResult.issues.map((iss:any,i:number)=><div key={i} style={{fontSize:11,color:'hsl(var(--foreground))',padding:'4px 0',borderBottom:'0.5px solid #1a1a3a'}}>• {iss}</div>)}</>}
               </div>
             )}
           </div>
@@ -805,20 +906,13 @@ export default function BdePanel() {
         {/* ═══ RESPONSES ═══ */}
         {tab==='responses'&&(
           <div>
-            <div style={{marginBottom:10,color:'hsl(var(--muted-foreground))',fontSize:12}}>Pre-built responses for every Fiverr scenario.</div>
             <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap' as const}}>
               {cats.map(c=><button key={c} style={S.btn(respCat===c?'#10b981':'hsl(var(--muted-foreground))')} onClick={()=>setRespCat(c)}>{c.charAt(0).toUpperCase()+c.slice(1)}</button>)}
             </div>
             {filteredResps.map((r:any)=>(
               <div key={r.id} style={{...S.card,borderColor:copied===r.id?'rgba(16,185,129,.3)':'#1a1a3a'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                  <div>
-                    <div style={{fontSize:12,fontWeight:700}}>{r.title}</div>
-                    <div style={{display:'flex',gap:6,marginTop:3}}>
-                      <span style={S.badge('#6366f1')}>{r.category}</span>
-                      {r.usage_count&&<span style={{fontSize:9,color:'hsl(var(--muted-foreground))'}}>{r.usage_count} uses</span>}
-                    </div>
-                  </div>
+                  <div><div style={{fontSize:12,fontWeight:700}}>{r.title}</div><div style={{display:'flex',gap:6,marginTop:3}}><span style={S.badge('#6366f1')}>{r.category}</span></div></div>
                   <button style={S.btn(copied===r.id?'#10b981':'#a78bfa')} onClick={()=>{copyText(r.body,r.id);post('increment_response_usage',{responseId:r.id});}}>{copied===r.id?'✓ Copied!':'Copy'}</button>
                 </div>
                 <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.6,whiteSpace:'pre-wrap' as const}}>{r.body}</div>
@@ -828,32 +922,15 @@ export default function BdePanel() {
           </div>
         )}
 
-        {/* ═══ LEADS (assignments) ═══ */}
+        {/* ═══ LEADS ═══ */}
         {tab==='leads'&&(
           <div>
-            <div style={{marginBottom:10,color:'hsl(var(--muted-foreground))',fontSize:12}}>{assignments.length} leads assigned via pipeline.</div>
             {assignments.map((a:any)=>(
               <div key={a.id} style={{...S.card,borderLeft:`3px solid ${STAGE_C[a.stage]||'hsl(var(--border))'}`,borderRadius:'0 11px 11px 0'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:700}}>{a.prospects?.company||a.prospects?.name||a.prospects?.url||'Lead'}</div>
-                    <div style={{display:'flex',gap:6,marginTop:4,flexWrap:'wrap' as const}}>
-                      <span style={S.badge(STAGE_C[a.stage]||'hsl(var(--muted-foreground))')}>{a.stage}</span>
-                      <span style={S.badge(a.priority==='hot'?'#ef4444':a.priority==='high'?'#f59e0b':'#6366f1')}>{a.priority}</span>
-                      {a.prospects?.url&&<span style={{fontSize:10,color:'#6366f1'}}>{a.prospects.url}</span>}
-                    </div>
-                  </div>
+                  <div><div style={{fontSize:13,fontWeight:700}}>{a.prospects?.company||a.prospects?.name||a.prospects?.url||'Lead'}</div><div style={{display:'flex',gap:6,marginTop:4,flexWrap:'wrap' as const}}><span style={S.badge(STAGE_C[a.stage]||'hsl(var(--muted-foreground))')}>{a.stage}</span><span style={S.badge(a.priority==='hot'?'#ef4444':'#f59e0b')}>{a.priority}</span></div></div>
                   {a.prospects?.url&&<button style={S.btn()} onClick={()=>{setAuditUrl(a.prospects.url);setTab('tools');}}>Quick Audit</button>}
                 </div>
-                {a.notes&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginBottom:8}}>{a.notes}</div>}
-                {a.conversion_probability&&(
-                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                    <div style={{height:4,flex:1,background:'hsl(var(--border))',borderRadius:2,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${a.conversion_probability}%`,background:a.conversion_probability>=60?'#10b981':a.conversion_probability>=40?'#f59e0b':'#ef4444',borderRadius:2}}/>
-                    </div>
-                    <span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{a.conversion_probability}%</span>
-                  </div>
-                )}
               </div>
             ))}
             {!assignments.length&&<div style={{color:'hsl(var(--muted-foreground))',textAlign:'center' as const,padding:32}}>No leads assigned</div>}
