@@ -1,5 +1,5 @@
 # SEO Season Empire Status
-Updated: 2026-05-18 10:16:39 UTC
+Updated: 2026-05-18 10:26:42 UTC
 Branch: main
 
 ## Build Status
@@ -127,6 +127,7 @@ Branch: main
   - upsert_lead_assignment
 
 ## Recent Commits
+35cd2c6 status: 10:16 — 42p 70a 0 tables missing
 e42b727 status: 10:06 — 42p 70a 0 tables missing
 0638810 fix(all): restore 1 stub pages + fix CSS vars — full functionality
 8181e79 restore(10 pages): restore full versions from git history + fix CSS vars
@@ -134,9 +135,8 @@ e42b727 status: 10:06 — 42p 70a 0 tables missing
 457ea39 fix(nav): add PortalNav to BrainCommand, Oval, Desk, Admin, Build — all pages now navigable
 aa66836 status: 09:46 — 42p 70a 0 tables missing
 18393ad fix(playground): use useProject() correctly — selectedProject not useProjectSync()
-1c63be0 fix(build): move AnimatedBg import to correct position in Dashboard/Audit/Launchpad/Admin
 
 ## Watcher Status
 - Running: YES
 - Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py', '/Users/manav909/Downloads/empire_comms_a.py', '/Users/manav909/Downloads/empire_comms_b.py', '/Users/manav909/Downloads/empire_roles_a.py', '/Users/manav909/Downloads/empire_roles_b.py', '/Users/manav909/Downloads/empire_monitor_demo.py', '/Users/manav909/Downloads/empire_fix_build.py', '/Users/manav909/Downloads/empire_themes_a.py', '/Users/manav909/Downloads/empire_themes_b.py', '/Users/manav909/Downloads/empire_fix_critical.py', '/Users/manav909/Downloads/empire_fix_build_001.py', '/Users/manav909/Downloads/empire_complete_001.py', '/Users/manav909/Downloads/empire_fix_braincommand.py', '/Users/manav909/Downloads/empire_fix_clientdash.py', '/Users/manav909/Downloads/empire_enhance_a.py', '/Users/manav909/Downloads/empire_enhance_b.py', '/Users/manav909/Downloads/empire_ui_system.py', '/Users/manav909/Downloads/empire_fix_build_002.py', '/Users/manav909/Downloads/empire_tour.py', '/Users/manav909/Downloads/empire_ui_global.py', '/Users/manav909/Downloads/empire_jarvis_nav.py', '/Users/manav909/Downloads/empire_legacy_ui.py', '/Users/manav909/Downloads/empire_fix_build_003.py', '/Users/manav909/Downloads/empire_patch_all_pages.py', '/Users/manav909/Downloads/empire_fix_build_004.py', '/Users/manav909/Downloads/empire_fix_build_005.py', '/Users/manav909/Downloads/empire_fix_build_006.py', '/Users/manav909/Downloads/empire_fix_system.py', '/Users/manav909/Downloads/empire_fix_build_007.py', '/Users/manav909/Downloads/empire_fix_ai.py', '/Users/manav909/Downloads/empire_unify.py', '/Users/manav909/Downloads/empire_fix_build_008.py', '/Users/manav909/Downloads/empire_fix_portal.py', '/Users/manav909/Downloads/empire_fix_divs.py', '/Users/manav909/Downloads/empire_fix_empirecommand.py', '/Users/manav909/Downloads/empire_fix_all.py', '/Users/manav909/Downloads/empire_patch_revenueproof.py', '/Users/manav909/Downloads/empire_fix_revenue_proof.py', '/Users/manav909/Downloads/empire_rewrite_broken.py', '/Users/manav909/Downloads/empire_rewrite_empirecommand.py', '/Users/manav909/Downloads/empire_rewrite_pages.py', '/Users/manav909/Downloads/empire_rewrite_all.py', '/Users/manav909/Downloads/empire_rewrite_final.py', '/Users/manav909/Downloads/empire_fix_now.py', '/Users/manav909/Downloads/empire_fix_staffcommand.py', '/Users/manav909/Downloads/empire_fix_css.py', '/Users/manav909/Downloads/empire_fix_pages2.py', '/Users/manav909/Downloads/empire_fix_sysctl.py', '/Users/manav909/Downloads/empire_fix_model.py', '/Users/manav909/Downloads/empire_ui_rebuild.py', '/Users/manav909/Downloads/empire_ui_rebuild2.py', '/Users/manav909/Downloads/empire_fix_tailwind.py', '/Users/manav909/Downloads/empire_fix_imports.py', '/Users/manav909/Downloads/empire_fix_dashboard_import.py', '/Users/manav909/Downloads/empire_fix_playground.py', '/Users/manav909/Downloads/empire_fix_nav.py', '/Users/manav909/Downloads/empire_diagnose.py', '/Users/manav909/Downloads/empire_restore_pages.py']
-- Last update: 2026-05-18T10:16:39.765243
+- Last update: 2026-05-18T10:26:42.568354
