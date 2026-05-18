@@ -928,7 +928,7 @@ export default function BdePanel() {
     setProspects(prev=>{const ex=prev.find((p:any)=>p.name===name);if(ex)return prev.map((p:any)=>p.name===name?{...p,conversationCount:p.conversationCount+1,latestAnalysis:np.latestAnalysis,lastSeen:np.lastSeen}:p);return [np,...prev];});
     setSavedProspect(np);
     // Wait for DB confirmation — brain_learnings is primary, doesn't need project_id
-    const r=await post('save_lead_conversation',{prospectName:name,prospectUrl:np.url,industry:'',analysis,conversationText:rawPaste||convText,deepAnalysis,auditResult,staffId:'bde',attachments:attachments.filter((a:any)=>a.status==='done').map((a:any)=>({name:a.name,description:a.description}))});
+    const r=await post('save_lead_conversation',{prospectName:name,prospectUrl:np.url,industry:'',analysis,conversationText:rawPaste||convText,deepAnalysis,auditResult,staffId:'bde',attachments:attachments.filter((a:any)=>a.status==='done').map((a:any)=>({name:a.name,description:a.description})),callTranscripts:transcripts.map((t:any)=>({fileName:t.fileName,callDate:t.callDate,summary:t.summary,commitments:t.commitments,clientConcerns:t.clientConcerns}))});
     if((r as any).success){
       setLeadSaved(true);
       loadProspects(); // Reload from DB to confirm it's there
@@ -945,14 +945,54 @@ export default function BdePanel() {
     setProspectConvs((r as any).conversations||[]);
   }
 
+  const [suggError,setSuggError]=React.useState('');
   async function generateSuggestions(){
     if(!selProspect)return;
-    setGenSugg(true);setSuggestions([]);
-    const latest=prospectConvs[0];
+    setGenSugg(true);setSuggestions([]);setSuggError('');
+    // Build richest possible context from all sources
     let la:any=selProspect?.latestAnalysis||null;
-    if (latest) { try{la=JSON.parse(latest?.response||'{}').analysis||la;}catch{} }
-    const r=await post('generate_lead_suggestions',{prospectName:selProspect.name,prospectUrl:selProspect.url||'',latestAnalysis:la,auditData:null,conversationCount:prospectConvs.length});
-    setSuggestions((r as any).suggestions||[]);
+    let auditData:any=null;
+    let callContext:string='';
+    let attachContext:string='';
+    // Pull from stored conversations
+    for(const conv of prospectConvs){
+      try{
+        const d=JSON.parse(conv.response||'{}');
+        if(!la&&d.analysis) la=d.analysis;
+        if(!auditData&&d.auditResult) auditData=d.auditResult;
+        if(!callContext&&d.callTranscripts?.length) callContext=d.callTranscripts.map((t:any)=>t.summary||'').join(' | ');
+        if(!attachContext&&d.attachments?.length) attachContext=d.attachments.map((a:any)=>a.description||a.name||'').join(' | ');
+      }catch{}
+    }
+    // Also pull from current session if viewing same lead
+    if(!la&&analysis) la=analysis;
+    if(!auditData&&auditResult) auditData=auditResult;
+    // Fetch saved call transcripts for this lead
+    if(!callContext){
+      const ct=await post('get_call_transcripts',{prospectName:selProspect.name});
+      const calls=(ct as any).transcripts||[];
+      if(calls.length) callContext=calls.map((t:any)=>(t.summary||'')+(t.keyPoints?.length?' Key: '+t.keyPoints.slice(0,2).join(', '):'')).join(' | ');
+    }
+    // Fetch saved attachments for this lead
+    if(!attachContext){
+      const af=await post('get_lead_attachments',{prospectName:selProspect.name});
+      const atts=(af as any).attachments||[];
+      if(atts.length) attachContext=atts.map((a:any)=>a.summary||a.description||'').join(' | ');
+    }
+    const r=await post('generate_lead_suggestions',{
+      prospectName:selProspect.name,
+      prospectUrl:selProspect.url||'',
+      latestAnalysis:la,
+      auditData,
+      conversationCount:prospectConvs.length,
+      callContext:callContext||undefined,
+      attachContext:attachContext||undefined
+    });
+    if((r as any).success&&(r as any).suggestions?.length){
+      setSuggestions((r as any).suggestions);
+    } else {
+      setSuggError((r as any).error||'No suggestions returned — try adding more context in Fiverr Analyser first');
+    }
     setGenSugg(false);
   }
 
@@ -1472,7 +1512,12 @@ export default function BdePanel() {
                         <button style={{...S.btn('#6366f1'),padding:'10px 24px'}} onClick={generateSuggestions}>✨ Generate Suggestions</button>
                       </div>
                     )}
-                    {genSugg&&<div style={{...S.card,textAlign:'center' as const,padding:32,color:'hsl(var(--muted-foreground))',fontSize:12}}>Generating suggestions...</div>}
+                    {genSugg&&<div style={{...S.card,textAlign:'center' as const,padding:32,color:'hsl(var(--muted-foreground))',fontSize:12}}>⏳ Fetching algorithm updates, analysing history, generating suggestions...</div>}
+                    {suggError&&!genSugg&&<div style={{...S.card,padding:16,borderColor:'rgba(239,68,68,.3)',background:'rgba(239,68,68,.05)'}}>
+                      <div style={{fontSize:12,color:'#ef4444',marginBottom:8}}>⚠ {suggError}</div>
+                      <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Tips: analyse the conversation in Fiverr tab first, save the lead, run an audit — the more context the better.</div>
+                      <button style={{...S.btn('#6366f1'),marginTop:8,fontSize:11}} onClick={generateSuggestions}>Try Again</button>
+                    </div>}
                     {suggestions.map((s:any,i:number)=>(
                       <div key={i} style={{...S.card,borderLeft:`3px solid ${SUGG_C[s.priority]||'#6366f1'}`,borderRadius:'0 11px 11px 0'}}>
                         <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
@@ -1526,7 +1571,7 @@ export default function BdePanel() {
                           </div>}
                           {d.conversationText&&(
                             <div style={{marginBottom:8}}>
-                              <div style={{fontSize:9,color:'#6366f1',fontWeight:700,marginBottom:5,letterSpacing:1}}>CONVERSATION</div>
+                              <div style={{fontSize:9,color:'#6366f1',fontWeight:700,marginBottom:5,letterSpacing:1}}>FIVERR CONVERSATION</div>
                               <div style={{background:'rgba(0,0,0,.15)',borderRadius:7,padding:'8px 10px',maxHeight:isExp?600:130,overflow:'hidden' as const,position:'relative' as const}}>
                                 {String(d.conversationText||'').split('\n').filter((l:string)=>l.trim()).map((line:string,li:number)=>{
                                   const isC=/^(client:|buyer:|c:)/i.test(line.trim());
@@ -1537,15 +1582,96 @@ export default function BdePanel() {
                               <button style={{fontSize:10,color:'#6366f1',background:'none',border:'none',cursor:'pointer',padding:'3px 0'}} onClick={()=>tog(i)}>{isExp?'▲ Collapse':'▼ Show full conversation'}</button>
                             </div>
                           )}
+                          {/* Attachments stored with this conversation */}
+                          {d.attachments?.length>0&&(
+                            <div style={{marginBottom:6}}>
+                              <div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:4,letterSpacing:1}}>📎 FILES ({d.attachments.length})</div>
+                              <div style={{display:'flex',flexDirection:'column' as const,gap:3}}>
+                                {d.attachments.map((a:any,ai:number)=>(
+                                  <div key={ai} style={{padding:'5px 8px',background:'rgba(99,102,241,.06)',borderRadius:6,border:'0.5px solid rgba(99,102,241,.15)'}}>
+                                    <div style={{fontSize:11,fontWeight:600,marginBottom:a.description?2:0}}>{a.name||a.fileName}</div>
+                                    {(a.description||a.summary)&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))',lineHeight:1.45}}>{(a.description||a.summary||'').slice(0,200)}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {/* Call transcripts stored with this conversation */}
+                          {d.callTranscripts?.length>0&&(
+                            <div style={{marginBottom:6}}>
+                              <div style={{fontSize:9,color:'#10b981',fontWeight:700,marginBottom:4,letterSpacing:1}}>📞 CALL TRANSCRIPTS ({d.callTranscripts.length})</div>
+                              {d.callTranscripts.map((t:any,ti:number)=>(
+                                <div key={ti} style={{padding:'5px 8px',background:'rgba(16,185,129,.06)',borderRadius:6,border:'0.5px solid rgba(16,185,129,.15)',marginBottom:3}}>
+                                  <div style={{fontSize:11,fontWeight:600,marginBottom:2}}>{t.fileName||t.callDate||'Call'}</div>
+                                  {t.summary&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))',lineHeight:1.45}}>{t.summary.slice(0,180)}</div>}
+                                  {t.commitments?.length>0&&<div style={{fontSize:9,color:'#10b981',marginTop:2}}>✅ {t.commitments.slice(0,2).join(', ')}</div>}
+                                  {t.clientConcerns?.length>0&&<div style={{fontSize:9,color:'#f59e0b',marginTop:1}}>⚠ {t.clientConcerns.slice(0,2).join(', ')}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 )}
                 {prospectTab==='docs'&&(
-                  <div style={{...S.card,textAlign:'center' as const,padding:24}}>
-                    <div style={{fontSize:12,color:'hsl(var(--muted-foreground))',marginBottom:12}}>Generate a document for {selProspect.name}</div>
-                    <button style={{...S.btn('#6366f1'),padding:'10px 24px'}} onClick={()=>setTab('docs')}>📋 Open Document Generator</button>
+                  <div>
+                    {/* Status tracker */}
+                    <div style={S.card}>
+                      <div style={{fontSize:11,fontWeight:700,marginBottom:8}}>📊 Lead Status</div>
+                      <div style={{display:'flex',gap:5,flexWrap:'wrap' as const}}>
+                        {['active','nurturing','proposal_sent','negotiating','won','lost'].map(st=>(
+                          <button key={st} style={{fontSize:10,padding:'4px 10px',borderRadius:6,cursor:'pointer',fontWeight:selProspect.status===st?700:400,background:selProspect.status===st?`${STAGE_C[st]||'#6366f1'}25`:'rgba(255,255,255,.04)',border:`0.5px solid ${selProspect.status===st?STAGE_C[st]||'#6366f1':'#1a1a3a'}`,color:selProspect.status===st?STAGE_C[st]||'#6366f1':'hsl(var(--muted-foreground))'}}
+                            onClick={()=>{
+                              setProspects((prev:any[])=>prev.map((p:any)=>p.name===selProspect.name?{...p,status:st}:p));
+                              setSelProspect((p:any)=>({...p,status:st}));
+                              post('archive_lead',{prospectName:selProspect.name,status:st});
+                            }}>
+                            {st.replace(/_/g,' ')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Quick actions */}
+                    <div style={S.card}>
+                      <div style={{fontSize:11,fontWeight:700,marginBottom:10}}>⚡ Quick Actions</div>
+                      <div style={{display:'flex',flexDirection:'column' as const,gap:7}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:'rgba(16,185,129,.05)',borderRadius:8,border:'0.5px solid rgba(16,185,129,.15)'}}>
+                          <div>
+                            <div style={{fontSize:12,fontWeight:600}}>🔍 Run Site Audit</div>
+                            <div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>Audit {selProspect.url||'their website'} and use as pitch proof</div>
+                          </div>
+                          <button style={S.btn('#10b981')} onClick={()=>{setAuditUrl(selProspect.url||'');setAuditFor(selProspect.name);setTab('tools');}}>Audit →</button>
+                        </div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:'rgba(99,102,241,.05)',borderRadius:8,border:'0.5px solid rgba(99,102,241,.15)'}}>
+                          <div>
+                            <div style={{fontSize:12,fontWeight:600}}>📋 Generate Proposal</div>
+                            <div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>Full personalised proposal with conversation + audit context</div>
+                          </div>
+                          <button style={S.btn('#6366f1')} onClick={()=>{setLeadNameInput(selProspect.name);setAuditUrl(selProspect.url||'');setTab('docs');}}>Generate →</button>
+                        </div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:'rgba(245,158,11,.05)',borderRadius:8,border:'0.5px solid rgba(245,158,11,.15)'}}>
+                          <div>
+                            <div style={{fontSize:12,fontWeight:600}}>✍️ Draft Follow-up</div>
+                            <div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>Load their conversation into Fiverr Analyser and generate a follow-up message</div>
+                          </div>
+                          <button style={S.btn('#f59e0b')} onClick={()=>loadLeadIntoAnalyser(selProspect)}>Load →</button>
+                        </div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:'rgba(239,68,68,.05)',borderRadius:8,border:'0.5px solid rgba(239,68,68,.15)'}}>
+                          <div>
+                            <div style={{fontSize:12,fontWeight:600}}>🗑 Delete Lead</div>
+                            <div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>Permanently remove this lead and all conversation history</div>
+                          </div>
+                          <button style={S.btn('#ef4444')} onClick={()=>{if(window.confirm('Delete '+selProspect.name+'? Cannot be undone.'))deleteLead(selProspect.name);}}>Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Notes */}
+                    <div style={S.card}>
+                      <div style={{fontSize:11,fontWeight:700,marginBottom:6}}>📝 Quick Note</div>
+                      <textarea style={{width:'100%',background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:8,color:'hsl(var(--foreground))',padding:'8px 10px',fontSize:12,lineHeight:1.5,resize:'vertical' as const,outline:'none',minHeight:70,boxSizing:'border-box' as const}} placeholder="Notes about this lead — next meeting date, what they said, what to avoid..."/>
+                    </div>
                   </div>
                 )}
               </div>
