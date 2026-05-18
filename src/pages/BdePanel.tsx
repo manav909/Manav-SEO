@@ -82,6 +82,10 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
     setGenerating(false);
   };
   const printDoc=()=>{const iw=iframeRef.current?.contentWindow;if(iw){iw.focus();iw.print();}};
+  // Auto-generate when triggered from Intel tab suggestions
+  React.useEffect(()=>{
+    if(autoGenTrigger>0) { generate(); if(onSuggDocUsed) onSuggDocUsed(); }
+  },[autoGenTrigger]);
   const downloadPdf=()=>{
     if(!iframeRef.current?.contentWindow) return;
     const w=iframeRef.current.contentWindow;
