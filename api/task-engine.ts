@@ -89,8 +89,15 @@ function db(): any {
 let _admin: any = null;
 function adminDb(): any {
   if (_admin) return _admin;
-  const url     = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-  const svcKey  = process.env.SUPABASE_SERVICE_KEY || "";
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const svcKey =
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.VITE_SUPABASE_SERVICE_KEY ||
+    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SERVICE_ROLE_KEY ||
+    "";
   if (!url || !svcKey) return null;
   try {
     _admin = createClient(url, svcKey, {
@@ -2348,7 +2355,7 @@ HTML: ${html.slice(0,2000)}`}]})});
     if (!email) return ok(res, { success: false, error: 'Email is required' });
     try {
       const admin = adminDb();
-      if (!admin) return ok(res, { success: false, error: 'SUPABASE_SERVICE_KEY not set in environment variables' });
+      if (!admin) return ok(res, { success: false, error: 'Service role key not found. Add SUPABASE_SERVICE_ROLE_KEY to Vercel environment variables (find it in Supabase → Settings → API → service_role)' });
       const { data, error } = await admin.auth.admin.generateLink({
         type: 'invite',
         email,
@@ -2366,7 +2373,7 @@ HTML: ${html.slice(0,2000)}`}]})});
     if (!email) return ok(res, { success: false, error: 'Email is required to send an invite' });
     try {
       const admin = adminDb();
-      if (!admin) return ok(res, { success: false, error: 'SUPABASE_SERVICE_KEY not set in environment variables' });
+      if (!admin) return ok(res, { success: false, error: 'Service role key not found. Add SUPABASE_SERVICE_ROLE_KEY to Vercel environment variables (find it in Supabase → Settings → API → service_role)' });
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
         redirectTo, data: { name, staffId }
       });
