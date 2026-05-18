@@ -642,10 +642,18 @@ export default function ManavBrainAssistant() {
       next['intelligence'] = (r.ok || text.length > 0) ? 'ok' : 'error';
     } catch (_e) { next['intelligence'] = 'error'; }
 
-    
+    // Market researcher health check
+    try {
+      const r = await brainFetch('/api/intelligence', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'health_check' }),
+        signal: AbortSignal.timeout(10000),
+      });
       const text = await r.text().catch(() => '');
-      next[] = (r.ok || text.length > 0) ? 'ok' : 'error';
-    } catch (_e) // Supabase direct check (uses supabase client, not fetch override)
+      next['intelligence'] = (r.ok || text.length > 0) ? 'ok' : 'error';
+    } catch (_e) { next['intelligence'] = 'error'; }
+
+    // Supabase direct check (uses supabase client, not fetch override)
     try {
       const { error } = await supabase.from('brain_learnings').select('id').limit(1);
       next['supabase'] = error ? 'error' : 'ok';
@@ -1361,6 +1369,7 @@ export default function ManavBrainAssistant() {
                   {name:'task-engine',      label:'Task Engine',     icon:Zap},
                   {name:'algorithm-intel',  label:'Algorithm Intel', icon:Cpu},
                   {name:'intelligence',     label:'Brain AI',        icon:Brain},
+                  {name:'intelligence',label:'Intelligence', icon:Radio},
                   {name:'supabase',         label:'Supabase DB',     icon:Database},
                 ].map(ep => {
                   const s = apiStatus[ep.name] || 'checking';
