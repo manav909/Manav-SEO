@@ -530,6 +530,42 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   // ═══ END LEAD INTELLIGENCE ACTIONS ═══
 
+  if (action === "generate_best_message") {
+    const { conversationText = "", analysis = {}, emotionLevel = 5, technicalLevel = 3 } = body;
+    try {
+      const emo = Number(emotionLevel);
+      const tec = Number(technicalLevel);
+      const emoDesc = emo <= 3 ? "professional and businesslike, keep it brief" : emo <= 6 ? "warm and friendly, show genuine interest" : "highly empathetic and personal, build emotional connection";
+      const tecDesc = tec <= 3 ? "plain English only, no SEO jargon at all" : tec <= 6 ? "light SEO terms explained in plain language" : "use SEO terminology confidently, show deep expertise";
+      const a: any = analysis;
+      const contextParts: string[] = [];
+      if (a.main_need) contextParts.push("Their main need: " + a.main_need);
+      if (a.urgency) contextParts.push("Urgency level: " + a.urgency);
+      if (a.hidden_concern) contextParts.push("Hidden concern: " + a.hidden_concern);
+      if (a.fiverr_specific?.conversion_blocker) contextParts.push("What is blocking them: " + a.fiverr_specific.conversion_blocker);
+      if (a.fiverr_specific?.order_probability) contextParts.push("Order probability: " + a.fiverr_specific.order_probability + "%");
+      if (a.demo_to_show?.length) contextParts.push("Things to show: " + a.demo_to_show.join(", "));
+      if (a.quick_wins_to_mention?.length) contextParts.push("Quick wins to mention: " + a.quick_wins_to_mention.join(", "));
+      const analysisCtx = contextParts.join(" | ");
+      const sysPrompt = "You are a BDE at SEO Season writing the actual Fiverr reply message. Write the message itself — not guidance about what to write. It must sound human and genuine, not AI-generated. Match the tone of the original conversation.";
+      const userPrompt = "CONVERSATION CONTEXT:\n" + String(conversationText).slice(0, 2000) + "\n\nANALYSIS:\n" + analysisCtx + "\n\nTONE SETTINGS:\n- Emotion: " + emo + "/10 (" + emoDesc + ")\n- Technical: " + tec + "/10 (" + tecDesc + ")\n\nWrite the actual reply to send to this client RIGHT NOW. Address their specific situation directly. Match the existing conversation tone. Keep under 130 words unless truly needed. Do NOT start with Hello/Hi unless it fits naturally.\n\nAfter the message add a line: CONSIDERED: then a JSON array of 3-5 short strings of specific things you factored in.\n\nExample format:\n[Your message here]\nCONSIDERED: [\"Their urgency\", \"Price concern\"]";
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 600, system: sysPrompt, messages: [{ role: "user", content: userPrompt }] });
+      const raw = (_r.content[0] as any).text || "";
+      const cidx = raw.lastIndexOf("CONSIDERED:");
+      let message = raw.trim();
+      let considerations: string[] = [];
+      if (cidx !== -1) {
+        message = raw.slice(0, cidx).trim();
+        try { considerations = JSON.parse(raw.slice(cidx + 11).trim()); } catch {
+          const m = raw.slice(cidx + 11).match(/"([^"]+)"/g);
+          if (m) considerations = m.map((s: string) => s.replace(/"/g, ""));
+        }
+      }
+      return ok(res, { success: true, message, considerations });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);

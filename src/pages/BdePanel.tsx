@@ -109,6 +109,110 @@ function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
   );
 }
 
+
+function BestMessagePanel({analysis,convText}:{analysis:any;convText:string}) {
+  const [msg,setMsg]=React.useState("");
+  const [edited,setEdited]=React.useState(false);
+  const [considered,setConsidered]=React.useState<string[]>([]);
+  const [loading,setLoading]=React.useState(false);
+  const [emotion,setEmotion]=React.useState(5);
+  const [tech,setTech]=React.useState(3);
+  const [cp,setCp]=React.useState(false);
+  const debRef=React.useRef<any>(null);
+
+  React.useEffect(()=>{
+    if(analysis?.main_need) gen(5,3);
+  },[analysis?.main_need]);
+
+  const gen=async(em:number,tc:number)=>{
+    setLoading(true);setEdited(false);
+    const r=await fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"generate_best_message",conversationText:convText,analysis,emotionLevel:em,technicalLevel:tc})}).then(r=>r.json()).catch(()=>({}));
+    if((r as any).message){setMsg((r as any).message);setConsidered((r as any).considerations||[]);}
+    setLoading(false);
+  };
+
+  const slide=(em:number,tc:number)=>{
+    if(debRef.current)clearTimeout(debRef.current);
+    debRef.current=setTimeout(()=>gen(em,tc),700);
+  };
+
+  const copy=()=>{navigator.clipboard.writeText(msg).catch(()=>{});setCp(true);setTimeout(()=>setCp(false),2000);};
+
+  const SL:any={
+    wrap:{background:"hsl(var(--background))",border:"0.5px solid #1a1a3a",borderRadius:11,padding:14,marginBottom:10},
+    lbl:{fontSize:10,fontWeight:600,letterSpacing:1,textTransform:"uppercase" as const,color:"hsl(var(--muted-foreground))"},
+    slRow:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4},
+    slEnd:{fontSize:10,color:"hsl(var(--muted-foreground))"},
+    slVal:{fontSize:11,fontWeight:700,color:"hsl(var(--foreground))",minWidth:50,textAlign:"center" as const},
+    ta:{width:"100%",background:"rgba(16,185,129,.04)",border:"0.5px solid rgba(16,185,129,.2)",borderRadius:8,color:"#d0d0e8",padding:"10px 12px",fontSize:12,lineHeight:1.75,resize:"vertical" as const,outline:"none",fontFamily:"inherit",boxSizing:"border-box" as const,minHeight:100},
+    btn:(c:string)=>({background:`${c}18`,border:`0.5px solid ${c}40`,borderRadius:8,color:c,padding:"6px 12px",fontSize:12,cursor:"pointer",fontWeight:600}),
+  };
+
+  return (
+    <div style={SL.wrap}>
+      <div style={{fontSize:12,fontWeight:700,marginBottom:12,color:"hsl(var(--foreground))"}}>📋 Best Next Message</div>
+
+      {/* Sliders */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
+        <div>
+          <div style={SL.slRow}>
+            <span style={SL.slEnd}>Professional</span>
+            <span style={SL.slVal}>Emotion {emotion}</span>
+            <span style={SL.slEnd}>Empathetic</span>
+          </div>
+          <input type="range" min={0} max={10} value={emotion} style={{width:"100%",accentColor:"#10b981"}}
+            onChange={(e:any)=>{const v=Number(e.target.value);setEmotion(v);slide(v,tech);}}/>
+        </div>
+        <div>
+          <div style={SL.slRow}>
+            <span style={SL.slEnd}>Plain English</span>
+            <span style={SL.slVal}>Technical {tech}</span>
+            <span style={SL.slEnd}>Expert</span>
+          </div>
+          <input type="range" min={0} max={10} value={tech} style={{width:"100%",accentColor:"#6366f1"}}
+            onChange={(e:any)=>{const v=Number(e.target.value);setTech(v);slide(emotion,v);}}/>
+        </div>
+      </div>
+
+      {/* Message */}
+      {loading?(
+        <div style={{padding:"16px 12px",background:"rgba(99,102,241,.04)",borderRadius:8,border:"0.5px solid rgba(99,102,241,.2)",fontSize:12,color:"hsl(var(--muted-foreground))",textAlign:"center" as const}}>
+          ✍️ Writing message at emotion {emotion} · technical {tech}...
+        </div>
+      ):(
+        <textarea style={SL.ta} value={msg} rows={5}
+          onChange={(e:any)=>{setMsg(e.target.value);setEdited(true);}}
+          placeholder="Click Analyse to generate the message..."/>
+      )}
+
+      {/* Actions */}
+      {msg&&!loading&&(
+        <div style={{display:"flex",gap:6,marginTop:8,alignItems:"center",flexWrap:"wrap" as const}}>
+          <button style={SL.btn(cp?"#10b981":"#a78bfa")} onClick={copy}>{cp?"✓ Copied!":"Copy Message"}</button>
+          <button style={SL.btn("#6366f1")} onClick={()=>gen(emotion,tech)} disabled={loading}>↺ Regenerate</button>
+          {edited&&<span style={{fontSize:10,color:"#f59e0b",padding:"2px 8px",background:"rgba(245,158,11,.1)",borderRadius:10}}>✏ Edited</span>}
+        </div>
+      )}
+
+      {/* What I considered */}
+      {considered.length>0&&!loading&&(
+        <div style={{marginTop:12,padding:"8px 10px",background:"rgba(99,102,241,.04)",borderRadius:8,border:"0.5px solid rgba(99,102,241,.15)"}}>
+          <div style={{fontSize:9,fontWeight:700,letterSpacing:1.2,color:"#a78bfa",textTransform:"uppercase" as const,marginBottom:6}}>What I considered</div>
+          <div style={{display:"flex",flexWrap:"wrap" as const,gap:5}}>
+            {considered.map((c:string,i:number)=>(
+              <span key={i} style={{fontSize:10,color:"#d0d0e8",background:"rgba(99,102,241,.08)",padding:"2px 8px",borderRadius:10,border:"0.5px solid rgba(99,102,241,.2)"}}>{c}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Show them / Quick wins */}
+      {analysis?.demo_to_show?.length>0&&<><div style={{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"hsl(var(--muted-foreground))",marginTop:12,marginBottom:4}}>Show Them</div>{analysis.demo_to_show.map((d:string,i:number)=><div key={i} style={{fontSize:11,color:"#a78bfa",padding:"2px 0"}}>→ {d}</div>)}</>}
+      {analysis?.quick_wins_to_mention?.length>0&&<><div style={{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"hsl(var(--muted-foreground))",marginTop:10,marginBottom:4}}>Quick Wins to Mention</div>{analysis.quick_wins_to_mention.map((w:string,i:number)=><div key={i} style={{fontSize:11,color:"#10b981",padding:"2px 0"}}>✓ {w}</div>)}</>}
+    </div>
+  );
+}
+
 export default function BdePanel() {
   // ── EXISTING STATE ──
   const [tab,setTab]=useState<"fiverr"|"intel"|"tools"|"responses"|"leads"|"docs">("fiverr");
@@ -286,13 +390,7 @@ export default function BdePanel() {
                       </div>
                     )}
                   </div>
-                  <div style={S.card}>
-                    <div style={S.sec}>📋 Best Next Message</div>
-                    <div style={{fontSize:12,color:"#d0d0e8",lineHeight:1.7,marginBottom:10,whiteSpace:"pre-wrap" as const}}>{analysis.best_next_message}</div>
-                    <button style={S.btn()} onClick={()=>copyText(analysis.best_next_message,"best")}>{copied==="best"?"✓ Copied!":"Copy Message"}</button>
-                    {analysis.demo_to_show?.length>0&&<><div style={{...S.sec,marginTop:12}}>Show Them</div>{analysis.demo_to_show.map((d:string,i:number)=><div key={i} style={{fontSize:11,color:"#a78bfa",padding:"3px 0"}}>→ {d}</div>)}</>}
-                    {analysis.quick_wins_to_mention?.length>0&&<><div style={{...S.sec,marginTop:12}}>Quick Wins</div>{analysis.quick_wins_to_mention.map((w:string,i:number)=><div key={i} style={{fontSize:11,color:"#10b981",padding:"3px 0"}}>✓ {w}</div>)}</>}
-                  </div>
+                  <BestMessagePanel analysis={analysis} convText={convText}/>
                 </div>
 
                 {/* Save to Lead Intel */}
