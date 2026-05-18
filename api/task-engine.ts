@@ -321,85 +321,109 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   // === GENERATE CLIENT DOCUMENT (inline) ===
   if (action === "generate_client_doc") {
-    const { docType = "proposal", conversationAnalysis, auditResult, leadInfo = {}, brainLearnings = [] } = body;
-    const PROMPTS: Record<string,string> = {
-      proposal: "Write a personalised SEO proposal for this prospect. Structure it with these exact sections — each as a separate JSON section: 1) Executive Summary (2-3 sentences about their specific situation and opportunity), 2) What We Found (3-4 specific issues from the audit data, or common issues if no audit), 3) Our 90-Day Plan (Month 1: technical foundation, Month 2: content and authority, Month 3: scale and optimise), 4) The Investment (leave [PRICE]/month placeholder, show ROI calculation using their industry average client value), 5) Why SEO Season (3 specific differentiators). Tone: confident, benefit-led, no jargon.",
-      pitch_email: "Write a cold pitch email. Structure: Subject line (punchy, specific to their site/industry), Opening hook (specific observation about their website or business — not generic), Problem statement (1-2 issues they likely have), Social proof (one-line result from similar business), Call to action (ask for 20-minute call). Professional but conversational. Under 200 words total.",
-      followup_email: "Write a follow-up email after a discovery call. Structure: Warm opening (reference something specific from the call), Key opportunities identified (3 bullet points), Our recommendation (brief), Next step (clear, easy), Sign-off. Under 250 words. Reference [PROSPECT_NAME] and [PROPOSAL_LINK] as placeholders.",
-      audit_summary: "Write a client-ready SEO audit summary. Structure: Headline score statement, Top 3 Issues (each with: issue name, plain-English explanation, business impact, quick fix), Quick Wins (2-3 things fixable in week 1), The Opportunity (what page 1 rankings would mean for their business in revenue terms). 300-400 words.",
-      whatsapp_msg: "Write a short WhatsApp/Fiverr message. One paragraph. Address their main need directly. Include one specific insight about their site or industry. End with a low-pressure call to action. Under 100 words. Conversational tone.",
-      case_study: "Write a mini case study for a business similar to this prospect. Use [CLIENT NAME] as placeholder. Structure: The Challenge (2-3 sentences about situation similar to prospect), What We Did (3 specific actions taken), The Results (specific numbers: traffic increase %, ranking improvements, leads generated), The Turning Point (key insight that made the difference), Relevance to You (1 sentence connecting to the prospect). 300 words.",
-      objection_response: "Write a professional response to the prospect's main objection. Structure: Acknowledgement (genuine, not dismissive), Reframe (new way to see the concern), Evidence (one concrete proof point), Low-risk next step (remove all commitment barriers). Under 150 words. Warm but confident.",
+    const { docType = "proposal", conversationAnalysis, auditResult, leadInfo = {}, brainLearnings: passedLearnings = [] } = body;
+    // Fetch live DB context
+    const supaClient = db();
+    const [algoR, brainR] = await Promise.allSettled([
+      supaClient.from("algorithm_knowledge").select("topic,summary,freshness_score,recommendations").order("freshness_score", { ascending: false }).limit(12),
+      supaClient.from("brain_learnings").select("card_title,improvement,what_worked,card_type,tags").order("applied_count", { ascending: false }).limit(10),
+    ]);
+    const algoData: any[] = algoR.status === "fulfilled" ? (algoR.value.data || []) : [];
+    const brainData: any[] = brainR.status === "fulfilled" ? (brainR.value.data || []) : (passedLearnings as any[]);
+    // Build full context string
+    const ctx: string[] = [];
+    if (leadInfo.url) ctx.push("CLIENT WEBSITE: " + leadInfo.url);
+    if (leadInfo.name) ctx.push("CLIENT NAME: " + leadInfo.name);
+    if (leadInfo.industry) ctx.push("INDUSTRY: " + leadInfo.industry);
+    if (conversationAnalysis?.main_need) ctx.push("MAIN NEED: " + conversationAnalysis.main_need);
+    if (conversationAnalysis?.urgency) ctx.push("URGENCY: " + conversationAnalysis.urgency);
+    if (conversationAnalysis?.hidden_concern) ctx.push("HIDDEN CONCERN: " + conversationAnalysis.hidden_concern);
+    if (conversationAnalysis?.best_next_message) ctx.push("THEIR CONTEXT: " + conversationAnalysis.best_next_message);
+    if (conversationAnalysis?.fiverr_specific?.conversion_blocker) ctx.push("CONVERSION BLOCKER: " + conversationAnalysis.fiverr_specific.conversion_blocker);
+    if (conversationAnalysis?.fiverr_specific?.order_probability) ctx.push("ORDER PROBABILITY: " + conversationAnalysis.fiverr_specific.order_probability + "%");
+    if (auditResult?.score !== undefined) ctx.push("SEO SCORE: " + auditResult.score + "/100");
+    if (auditResult?.url) ctx.push("AUDITED URL: " + auditResult.url);
+    if (auditResult?.issues?.length) ctx.push("AUDIT ISSUES FOUND: " + (auditResult.issues as string[]).join(" | "));
+    if (algoData.length) ctx.push("CURRENT ALGORITHM KNOWLEDGE:\n" + algoData.map((a: any) => a.topic + ": " + a.summary + (a.recommendations ? " Recommendations: " + a.recommendations : "")).join("\n"));
+    if (brainData.length) ctx.push("SEO SEASON PROVEN RESULTS:\n" + brainData.map((b: any) => b.card_title + ": " + b.improvement + (b.what_worked?.length ? " What worked: " + b.what_worked.join(", ") : "")).join("\n"));
+    const DOC_PROMPTS: Record<string, string> = {
+      proposal: "Write a DETAILED, PROFESSIONAL SEO PROPOSAL. This must be comprehensive and ready to send — no placeholders. Use every piece of context provided. Structure: (1) EXECUTIVE SUMMARY — 3 sentences addressing their specific situation, mention their website and what we found. (2) WHAT WE FOUND ON YOUR WEBSITE — list every audit issue found, explain each in plain English, explain the business impact. If no audit data, reference common issues for their industry. (3) THE OPPORTUNITY — specific numbers: how many people search for their services monthly in their area (estimate based on industry), what being on page 1 would mean in leads per month, revenue impact assuming industry average conversion rates. (4) OUR 90-DAY STRATEGY — Month 1: specific technical fixes we will make (reference actual issues found), Month 2: content and authority building (specific to their industry), Month 3: scaling and optimisation. Reference specific algorithm knowledge in explaining WHY each action works. (5) WHY WE WIN — 3 specific SEO Season differentiators with proof: AI Brain, real-time reporting, LLM visibility. Reference actual results from brain learnings if available. (6) INVESTMENT AND ROI — state a realistic monthly investment range for their business size (small business: £497-£997, medium: £997-£1997, enterprise: £2000+). Calculate ROI: if X new clients per month, at industry average client value, the campaign pays for itself in Y weeks. (7) NEXT STEPS — 3 clear actions. Minimum 700 words. No placeholders.",
+      pitch_email: "Write a COLD PITCH EMAIL that is specific, personalised and immediately valuable. Subject line must reference something specific about their website or industry. Opening paragraph: reference an exact finding from their audit or a specific trend in their industry. Second paragraph: show you understand their business and their customers' search behaviour. Third paragraph: one specific result from a similar business (use brain learnings if available, otherwise create a realistic case: 'a [industry] client went from position 18 to position 3 for [relevant keyword] in 11 weeks'). Close: low-pressure ask for a 20-minute call. Under 220 words. No placeholders — use their actual website, their actual industry, actual findings.",
+      followup_email: "Write a FOLLOW-UP EMAIL after a discovery call. Reference specific things from the conversation analysis. Paragraph 1: thank them and reference one specific thing they said (use main_need or hidden_concern). Paragraph 2: summarise the 3 biggest opportunities you identified, being specific to their industry and audit findings. Paragraph 3: proposed next step with a timeline. Include a realistic pricing indication based on their business size. Sign off with genuine enthusiasm. 200-280 words. No placeholders.",
+      audit_summary: "Write a CLIENT-READY SEO AUDIT SUMMARY. Use every audit issue found. For each issue: (1) issue name in plain English, (2) what it means for their customers finding them, (3) what we will do to fix it, (4) expected improvement timeline. Then: QUICK WINS section — 2-3 fixes achievable in the first week. THE BIG PICTURE section — if all issues are fixed, what does ranking on page 1 look like in 90 days for their main keywords. Reference algorithm knowledge to explain why these issues matter right now in terms of current Google/AI search behaviour. 400-500 words. No placeholders.",
+      whatsapp_msg: "Write a SHORT WHATSAPP/FIVERR MESSAGE. One paragraph, maximum 100 words. Reference something SPECIFIC about their website or their message (use actual audit finding or conversation insight). Show you have done your homework. End with one clear, easy call to action. Must feel personal, not templated. No placeholders.",
+      case_study: "Write a MINI CASE STUDY about a business in the same industry as this prospect. Make it realistic and specific. SITUATION: describe a business with the exact same problems this prospect has (reference their audit issues and conversation). WHAT WE DID: 4 specific actions taken, referencing actual SEO techniques and algorithm knowledge. RESULTS: specific numbers — traffic increase percentage, keyword rankings achieved (specific keywords in their niche), leads per month before and after, timeframe. THE TURNING POINT: the one insight that changed everything. HOW THIS APPLIES TO YOU: direct connection to the prospect's situation. 350-400 words. Use specific, believable numbers. No placeholders.",
+      objection_response: "Write a PROFESSIONAL OBJECTION RESPONSE. Use the conversion_blocker and hidden_concern from the conversation analysis to understand exactly what the objection is. ACKNOWLEDGE: genuinely validate their concern in one sentence. REFRAME: show a different way to see it, using specific data or logic. EVIDENCE: cite a specific result (from brain learnings or a realistic industry example). RISK REMOVAL: offer something that makes the first step feel safe (free audit, 30-day review, month-by-month contract). CLOSE: one clear, easy ask. 130-160 words. Address their ACTUAL objection, not a generic one.",
     };
-    const prompt = PROMPTS[docType] || PROMPTS.proposal;
-    const ctxParts: string[] = [];
-    if (leadInfo.url) ctxParts.push("Website: " + leadInfo.url);
-    if (leadInfo.name) ctxParts.push("Client: " + leadInfo.name);
-    if (leadInfo.industry) ctxParts.push("Industry: " + leadInfo.industry);
-    if (conversationAnalysis?.main_need) ctxParts.push("Their main need: " + conversationAnalysis.main_need);
-    if (conversationAnalysis?.urgency) ctxParts.push("Urgency: " + conversationAnalysis.urgency);
-    if (conversationAnalysis?.hidden_concern) ctxParts.push("Hidden concern: " + conversationAnalysis.hidden_concern);
-    if (conversationAnalysis?.fiverr_specific?.conversion_blocker) ctxParts.push("Conversion blocker: " + conversationAnalysis.fiverr_specific.conversion_blocker);
-    if (auditResult?.score !== undefined) ctxParts.push("SEO score: " + auditResult.score + "/100");
-    if (auditResult?.issues?.length) ctxParts.push("Audit issues: " + (auditResult.issues as string[]).slice(0,5).join("; "));
-    if (brainLearnings?.length) ctxParts.push("Key learnings: " + (brainLearnings as any[]).slice(0,3).map((l:any) => l.card_title + ": " + l.improvement).join("; "));
-    const sysPrompt = "You are a senior SEO strategist at SEO Season writing client-facing documents. SEO Season differentiators: AI Brain system that learns from every client result, data-verified tactics (nothing untested), real-time transparent reporting dashboard, LLM visibility tracking (get cited by ChatGPT/Claude/Perplexity), daily morning intelligence briefs. Always write in plain English, benefit-first, no technical jargon. Make the prospect feel understood and excited.";
-    const userPrompt = "CLIENT CONTEXT: " + ctxParts.join(" | ") + " TASK: " + prompt + " IMPORTANT: Return a JSON object with this exact structure (no markdown, just raw JSON): { \"title\": \"document title\", \"subtitle\": \"one-line subtitle\", \"recipientName\": \"client name or empty string\", \"sections\": [{\"heading\": \"section heading\", \"body\": \"section body text with newlines as \\\\n\", \"type\": \"intro|findings|plan|pricing|proof|cta|body\"}], \"footerNote\": \"optional footer note\" }";
+    const sysPrompt = "You are a senior SEO strategist at SEO Season writing client documents that win deals. SEO Season differentiators: (1) AI Brain system that captures and applies learnings from every client campaign, (2) data-verified tactics — nothing is done without testing, (3) real-time transparent dashboard — clients see every action and result, (4) LLM Visibility tracking — clients get cited by ChatGPT, Perplexity and Claude, (5) daily morning intelligence briefs on every client project. Write with authority, specificity and warmth. Never use filler phrases like 'we believe', 'we think', 'it is important to'. Use active voice. Every claim must be specific and credible. Do not leave anything for the BDE to fill in — write everything completely.";
+    const userPrompt = "CONTEXT:\n" + ctx.join("\n") + "\n\nTASK: " + (DOC_PROMPTS[docType] || DOC_PROMPTS.proposal) + "\n\nReturn a JSON object with this EXACT structure (raw JSON only, no markdown):\n{\"title\":\"document title\",\"subtitle\":\"compelling one-line subtitle\",\"recipientName\":\"client name\",\"preparedFor\":\"company name if known\",\"sections\":[{\"heading\":\"SECTION HEADING\",\"body\":\"full section text — use \\\\n for line breaks, use \\\\n\\\\n for paragraph breaks\",\"type\":\"intro|findings|plan|pricing|proof|cta|body\"}],\"footerNote\":\"personalised note\"}";
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 2000, system: sysPrompt, messages: [{ role: "user", content: userPrompt }] });
+      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 3000, system: sysPrompt, messages: [{ role: "user", content: userPrompt }] });
       const raw = (_r.content[0] as any).text || "{}";
-      let docData: any;
-      try { docData = JSON.parse(raw.replace(/^```json\s*/,"").replace(/```\s*$/,"").trim()); }
-      catch { docData = { title: "SEO Season Document", subtitle: "", recipientName: leadInfo.name||"", sections: [{ heading: "", body: raw, type: "body" }], footerNote: "" }; }
-      const clientName: string = docData.recipientName || leadInfo.name || "Valued Prospect";
-      const today = new Date().toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
-      const typeLabels: Record<string,string> = { proposal:"Proposal", pitch_email:"Pitch Email", followup_email:"Follow-up Email", audit_summary:"Audit Summary", whatsapp_msg:"Message", case_study:"Case Study", objection_response:"Response" };
-      const docLabel = typeLabels[docType] || "Document";
-      const sectionHtml = (docData.sections || []).map((s: any) => {
-        const bodyHtml = (s.body || "").split("\\n").map((line: string) => line.trim() ? "<p>" + line + "</p>" : "").join("");
-        if (!s.heading) return "<div class=\"section body\">" + bodyHtml + "</div>";
-        const cls = "section " + (s.type || "body");
-        return "<div class=\"" + cls + "\"><h2>" + s.heading + "</h2>" + bodyHtml + "</div>";
+      let doc: any;
+      try { doc = JSON.parse(raw.replace(/^```json\s*/,"").replace(/```\s*$/,"").trim()); }
+      catch { doc = { title: "SEO Season Proposal", subtitle: "", recipientName: leadInfo.name || "", preparedFor: "", sections: [{ heading: "", body: raw, type: "body" }], footerNote: "" }; }
+      const clientName: string = doc.recipientName || leadInfo.name || "Valued Prospect";
+      const companyName: string = doc.preparedFor || leadInfo.name || "";
+      const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      const typeLabel: Record<string,string> = { proposal:"Strategic SEO Proposal", pitch_email:"Pitch Email", followup_email:"Follow-up", audit_summary:"SEO Audit Summary", whatsapp_msg:"Message", case_study:"Case Study", objection_response:"Response" };
+      const secHtml = (doc.sections || []).map((s: any) => {
+        const rows = (s.body || "").split("\n").map((ln: string) => {
+          const t = ln.trim();
+          if (!t) return "";
+          if (t.startsWith("- ") || t.startsWith("* ")) return "<li>" + t.slice(2) + "</li>";
+          return "<p>" + t + "</p>";
+        }).join("");
+        const wrapped = rows.replace(/(<li>.*?<\/li>)+/g, (m: string) => "<ul>" + m + "</ul>");
+        if (!s.heading) return "<div class=\"sec body\">" + wrapped + "</div>";
+        return "<div class=\"sec " + (s.type || "body") + "\"><h2>" + s.heading + "</h2>" + wrapped + "</div>";
       }).join("");
-      const html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>" + docData.title + "</title><style>" +
-        "* { margin:0; padding:0; box-sizing:border-box; } " +
-        "body { font-family: Georgia, 'Times New Roman', serif; color: #1a1a2e; background: #fff; } " +
-        ".page { max-width: 800px; margin: 0 auto; padding: 0; } " +
-        ".header { background: #19345E; color: white; padding: 40px 48px 32px; } " +
-        ".header .logo { font-family: Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 2.5px; color: rgba(255,255,255,0.6); margin-bottom: 20px; text-transform: uppercase; } " +
-        ".header .doc-type { font-family: Arial, sans-serif; font-size: 11px; font-weight: 600; color: #E8652A; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 10px; } " +
-        ".header h1 { font-size: 28px; font-weight: 400; color: white; line-height: 1.3; margin-bottom: 8px; } " +
-        ".header .subtitle { font-size: 15px; color: rgba(255,255,255,0.7); font-style: italic; } " +
-        ".meta-bar { background: #E8652A; padding: 12px 48px; display: flex; justify-content: space-between; align-items: center; } " +
-        ".meta-bar span { font-family: Arial, sans-serif; font-size: 11px; color: white; font-weight: 500; } " +
-        ".body { padding: 40px 48px; } " +
-        ".section { margin-bottom: 32px; } " +
-        ".section h2 { font-family: Arial, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #E8652A; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 2px solid #E8652A; } " +
-        ".section p { font-size: 14px; line-height: 1.85; color: #2d2d4e; margin-bottom: 10px; } " +
-        ".section.findings { background: #f8fafd; border-left: 4px solid #19345E; padding: 20px 24px; border-radius: 0 6px 6px 0; } " +
-        ".section.findings h2 { color: #19345E; border-bottom-color: #19345E; } " +
-        ".section.plan { background: #fffbf8; border-left: 4px solid #E8652A; padding: 20px 24px; border-radius: 0 6px 6px 0; } " +
-        ".section.pricing { background: #f0f4f9; padding: 20px 24px; border-radius: 6px; border: 1px solid #d0dae8; } " +
-        ".section.pricing h2 { color: #19345E; border-bottom-color: #19345E; } " +
-        ".section.cta { background: #19345E; color: white; padding: 24px 28px; border-radius: 8px; } " +
-        ".section.cta h2 { color: #E8652A; border-bottom-color: #E8652A; } " +
-        ".section.cta p { color: rgba(255,255,255,0.9); } " +
-        ".footer { background: #f5f5f8; padding: 20px 48px; border-top: 1px solid #e0e0e8; display: flex; justify-content: space-between; align-items: center; } " +
-        ".footer p { font-family: Arial, sans-serif; font-size: 11px; color: #888; } " +
-        ".footer .brand { color: #19345E; font-weight: 700; } " +
-        "@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page { max-width: 100%; } } " +
-        "</style></head><body><div class=\"page\">" +
-        "<div class=\"header\"><div class=\"logo\">SEO Season</div><div class=\"doc-type\">" + docLabel + "</div>" +
-        "<h1>" + docData.title + "</h1>" +
-        (docData.subtitle ? "<p class=\"subtitle\">" + docData.subtitle + "</p>" : "") +
-        "</div>" +
-        "<div class=\"meta-bar\"><span>Prepared for: <strong>" + clientName + "</strong></span><span>" + today + "</span><span>Confidential</span></div>" +
-        "<div class=\"body\">" + sectionHtml + "</div>" +
-        "<div class=\"footer\"><p><span class=\"brand\">SEO Season</span> — Intelligence-Led SEO</p>" +
-        (docData.footerNote ? "<p>" + docData.footerNote + "</p>" : "<p>This document is confidential and prepared exclusively for " + clientName + ".</p>") +
-        "</div></div></body></html>";
-      return ok(res, { success: true, html, docType, title: docData.title });
+      const html = "<!DOCTYPE html>\n"
+        + "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>\n"
+        + "<head><meta charset='UTF-8'><title>" + doc.title + "</title>\n"
+        + "<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->\n"
+        + "<style>\n"
+        + "@page { size: A4; margin: 2cm 2.5cm; }\n"
+        + "* { margin:0; padding:0; box-sizing:border-box; }\n"
+        + "body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1a2e; background: #fff; line-height: 1.6; }\n"
+        + ".hdr { background: #19345E; color: #fff; padding: 32px 40px 28px; }\n"
+        + ".hdr .logo { font-size: 9pt; font-weight: 700; letter-spacing: 2.5px; color: rgba(255,255,255,0.55); text-transform: uppercase; margin-bottom: 16px; }\n"
+        + ".hdr .tag { font-size: 9pt; font-weight: 700; color: #E8652A; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px; }\n"
+        + ".hdr h1 { font-size: 22pt; font-weight: 300; color: #fff; line-height: 1.25; margin-bottom: 6px; }\n"
+        + ".hdr .sub { font-size: 11pt; color: rgba(255,255,255,0.65); font-style: italic; }\n"
+        + ".meta { background: #E8652A; padding: 9px 40px; display: flex; justify-content: space-between; }\n"
+        + ".meta span { font-size: 9pt; color: #fff; font-weight: 600; }\n"
+        + ".body { padding: 32px 40px; }\n"
+        + ".sec { margin-bottom: 28px; page-break-inside: avoid; }\n"
+        + ".sec h2 { font-size: 9pt; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: #E8652A; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #E8652A; }\n"
+        + ".sec p { font-size: 11pt; line-height: 1.75; color: #2a2a3e; margin-bottom: 8px; }\n"
+        + ".sec ul { margin: 6px 0 10px 20px; }\n"
+        + ".sec li { font-size: 11pt; line-height: 1.7; color: #2a2a3e; margin-bottom: 4px; }\n"
+        + ".sec.findings { background: #f4f7fc; border-left: 4px solid #19345E; padding: 18px 22px; border-radius: 0 6px 6px 0; }\n"
+        + ".sec.findings h2 { color: #19345E; border-bottom-color: #19345E; }\n"
+        + ".sec.plan { background: #fff9f5; border-left: 4px solid #E8652A; padding: 18px 22px; border-radius: 0 6px 6px 0; }\n"
+        + ".sec.pricing { background: #f0f4fa; padding: 20px 24px; border-radius: 6px; border: 1px solid #c8d8ef; }\n"
+        + ".sec.pricing h2 { color: #19345E; border-bottom-color: #19345E; }\n"
+        + ".sec.cta { background: #19345E; padding: 22px 28px; border-radius: 8px; }\n"
+        + ".sec.cta h2 { color: #E8652A; border-bottom-color: #E8652A; }\n"
+        + ".sec.cta p, .sec.cta li { color: rgba(255,255,255,0.9); }\n"
+        + ".sec.proof { background: #f9fdf6; border-left: 4px solid #27ae60; padding: 18px 22px; border-radius: 0 6px 6px 0; }\n"
+        + ".sec.proof h2 { color: #27ae60; border-bottom-color: #27ae60; }\n"
+        + ".foot { border-top: 1px solid #dde4f0; margin: 0 40px; padding: 16px 0; display: flex; justify-content: space-between; }\n"
+        + ".foot p { font-size: 9pt; color: #888; }\n"
+        + ".foot .brand { color: #19345E; font-weight: 700; }\n"
+        + "@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }\n"
+        + "</style></head><body>\n"
+        + "<div class='hdr'><div class='logo'>SEO Season</div><div class='tag'>" + (typeLabel[docType]||"Document") + "</div>"
+        + "<h1>" + doc.title + "</h1>"
+        + (doc.subtitle ? "<p class='sub'>" + doc.subtitle + "</p>" : "") + "</div>\n"
+        + "<div class='meta'><span>Prepared for: " + clientName + (companyName && companyName !== clientName ? " &mdash; " + companyName : "") + "</span><span>" + today + "</span><span>Confidential</span></div>\n"
+        + "<div class='body'>" + secHtml + "</div>\n"
+        + "<div class='foot'><p><span class='brand'>SEO Season</span> &mdash; Intelligence-Led SEO Empire</p>"
+        + (doc.footerNote ? "<p>" + doc.footerNote + "</p>" : "<p>This document is confidential and prepared exclusively for " + clientName + ".</p>")
+        + "</div></body></html>";
+      return ok(res, { success: true, html, docType, title: doc.title, clientName });
     } catch (e: any) { return ok(res, { error: e.message }); }
   }
   // === END GENERATE CLIENT DOCUMENT ===

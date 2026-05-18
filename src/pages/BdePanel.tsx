@@ -5,14 +5,15 @@ const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:
 const STAGE_C:any={new:"hsl(var(--muted-foreground))",contacted:"#6366f1",demo_sent:"#8b5cf6",proposal_sent:"#a78bfa",negotiating:"#f59e0b",won:"#10b981",lost:"#ef4444",nurture:"#06b6d4"};
 const MOOD_C=(s:number)=>s>=70?"#10b981":s>=50?"#6366f1":s>=30?"#f59e0b":"#ef4444";
 
+
 const DOC_TYPES=[
-  {id:"proposal",      label:"Custom Proposal",       icon:"📋"},
-  {id:"pitch_email",   label:"Cold Pitch Email",      icon:"📧"},
-  {id:"followup_email",label:"Follow-up Email",       icon:"✉️"},
-  {id:"audit_summary", label:"Audit Summary",         icon:"📊"},
-  {id:"whatsapp_msg",  label:"WhatsApp Message",      icon:"💬"},
-  {id:"case_study",    label:"Case Study",            icon:"🏆"},
-  {id:"objection_response",label:"Objection Response",icon:"🛡️"},
+  {id:"proposal",      label:"Custom Proposal",       icon:"📋", desc:"Full personalised proposal — ready to send"},
+  {id:"pitch_email",   label:"Cold Pitch Email",      icon:"📧", desc:"Specific first-contact email"},
+  {id:"followup_email",label:"Follow-up Email",       icon:"✉️", desc:"Post discovery-call follow-up"},
+  {id:"audit_summary", label:"Audit Summary",         icon:"📊", desc:"Plain-English site audit for client"},
+  {id:"whatsapp_msg",  label:"WhatsApp / Fiverr",     icon:"💬", desc:"Short personalised message"},
+  {id:"case_study",    label:"Case Study",            icon:"🏆", desc:"Results story for their industry"},
+  {id:"objection_response",label:"Objection Response",icon:"🛡️",desc:"Address their specific concern"},
 ];
 const post3=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then((r:any)=>r.json()).catch(()=>({}));
 
@@ -21,6 +22,7 @@ function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
   const [generating,setGenerating]=React.useState(false);
   const [html,setHtml]=React.useState("");
   const [title,setTitle]=React.useState("");
+  const [clientName,setClientName]=React.useState("");
   const [leadUrl,setLeadUrl]=React.useState("");
   const [leadName,setLeadName]=React.useState("");
   const [leadIndustry,setLeadIndustry]=React.useState("");
@@ -28,13 +30,13 @@ function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
 
   const S3:any={
     card:{background:"hsl(var(--background))",border:"0.5px solid #1a1a3a",borderRadius:11,padding:14,marginBottom:10},
-    btn:(c:string="#10b981")=>({background:`${c}18`,border:`0.5px solid ${c}40`,borderRadius:8,color:c,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:600}),
+    btn:(c:string="#10b981")=>({background:`${c}18`,border:`0.5px solid ${c}40`,borderRadius:8,color:c,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap" as const}),
     inp:{background:"hsl(var(--background))",border:"0.5px solid #1a1a3a",borderRadius:8,color:"hsl(var(--foreground))",padding:"7px 11px",fontSize:13,outline:"none",width:"100%",boxSizing:"border-box" as const},
     sec:{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"hsl(var(--muted-foreground))",marginBottom:8},
   };
 
   const generate=async()=>{
-    setGenerating(true); setHtml(""); setTitle("");
+    setGenerating(true); setHtml(""); setTitle(""); setClientName("");
     const r=await post3("generate_client_doc",{
       docType,conversationAnalysis:analysis,auditResult,
       leadInfo:{url:leadUrl,name:leadName,industry:leadIndustry},
@@ -42,29 +44,28 @@ function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
     if((r as any).html){
       setHtml((r as any).html);
       setTitle((r as any).title||"SEO Season Document");
+      setClientName((r as any).clientName||leadName||"");
     } else {
-      setHtml("<body style='font-family:sans-serif;padding:20px;color:#c00'><b>Error:</b> "+((r as any).error||"Generation failed")+"</body>");
+      setHtml("<body style='font-family:sans-serif;padding:20px;color:#c00'><b>Error:</b> "+((r as any).error||"Generation failed — check task-engine logs")+"</body>");
+      setTitle("Error");
     }
     setGenerating(false);
   };
 
-  const printDoc=()=>{
-    const iw=iframeRef.current?.contentWindow;
-    if(iw){ iw.focus(); iw.print(); }
-  };
+  const printDoc=()=>{ const iw=iframeRef.current?.contentWindow; if(iw){iw.focus();iw.print();} };
 
-  const downloadHtml=()=>{
-    const blob=new Blob([html],{type:"text/html"});
+  const downloadWord=()=>{
+    const blob=new Blob(["\ufeff"+html],{type:"application/msword;charset=utf-8"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
-    a.download=`seoseason_${docType}_${leadName||"client"}.html`;
+    a.download="SEOSeason_"+(docType==="proposal"?"Proposal":docType==="pitch_email"?"PitchEmail":docType==="followup_email"?"FollowUp":docType==="audit_summary"?"AuditSummary":docType==="case_study"?"CaseStudy":docType)+"_"+(clientName||leadName||"Prospect").replace(/\s+/g,"_")+".doc";
     a.click();
   };
 
   return (
     <div>
       <div style={{color:"hsl(var(--muted-foreground))",fontSize:12,marginBottom:14}}>
-        Generate branded, client-ready documents. Print to PDF or download as HTML.
+        AI generates fully detailed, client-ready documents — no placeholders. Uses conversation analysis, site audit, algorithm knowledge and proven results.
         {analysis?.main_need&&<span style={{color:"#10b981",marginLeft:6}}>✓ Conversation analysed</span>}
         {auditResult?.score!==undefined&&<span style={{color:"#10b981",marginLeft:6}}>✓ Audit ready</span>}
       </div>
@@ -81,8 +82,9 @@ function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
                   outline:docType===dt.id?"1.5px solid rgba(99,102,241,.5)":"0.5px solid #1a1a3a",
                   color:"hsl(var(--foreground))",
                 }}>
-                  <span style={{marginRight:8}}>{dt.icon}</span>
+                  <span style={{fontSize:14,marginRight:8}}>{dt.icon}</span>
                   <span style={{fontSize:12,fontWeight:600}}>{dt.label}</span>
+                  <div style={{fontSize:10,color:"hsl(var(--muted-foreground))",marginTop:2,marginLeft:22}}>{dt.desc}</div>
                 </button>
               ))}
             </div>
@@ -95,65 +97,55 @@ function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
               <input style={S3.inp} placeholder="Client name or company" value={leadName} onChange={(e:any)=>setLeadName(e.target.value)}/>
               <input style={S3.inp} placeholder="Industry (e.g. dental clinic, e-commerce)" value={leadIndustry} onChange={(e:any)=>setLeadIndustry(e.target.value)}/>
             </div>
-
             {analysis?.main_need&&(
-              <div style={{...S3.card,borderColor:"rgba(16,185,129,.25)",marginBottom:10,padding:12}}>
-                <div style={{fontSize:10,color:"#10b981",fontWeight:700,marginBottom:4}}>CONVERSATION CONTEXT</div>
+              <div style={{...S3.card,borderColor:"rgba(16,185,129,.25)",padding:12,marginBottom:10}}>
+                <div style={{fontSize:10,color:"#10b981",fontWeight:700,marginBottom:4}}>CONVERSATION CONTEXT LOADED</div>
                 <div style={{fontSize:11,color:"hsl(var(--muted-foreground))",lineHeight:1.6}}>
                   <div><b>Need:</b> {analysis.main_need}</div>
                   {analysis.hidden_concern&&<div><b>Concern:</b> {analysis.hidden_concern}</div>}
                   {analysis.urgency&&<div><b>Urgency:</b> {analysis.urgency}</div>}
+                  {analysis.fiverr_specific?.order_probability&&<div><b>Order probability:</b> {analysis.fiverr_specific.order_probability}%</div>}
                 </div>
               </div>
             )}
             {auditResult?.score!==undefined&&(
-              <div style={{...S3.card,borderColor:"rgba(99,102,241,.25)",marginBottom:12,padding:12}}>
-                <div style={{fontSize:10,color:"#a78bfa",fontWeight:700,marginBottom:4}}>AUDIT CONTEXT</div>
+              <div style={{...S3.card,borderColor:"rgba(99,102,241,.25)",padding:12,marginBottom:12}}>
+                <div style={{fontSize:10,color:"#a78bfa",fontWeight:700,marginBottom:4}}>AUDIT DATA LOADED</div>
                 <div style={{fontSize:11,color:"hsl(var(--muted-foreground))",lineHeight:1.6}}>
                   <div><b>Score:</b> {auditResult.score}/100</div>
-                  {(auditResult.issues||[]).slice(0,2).map((iss:string,i:number)=><div key={i}>• {iss}</div>)}
+                  {(auditResult.issues||[]).map((iss:string,i:number)=><div key={i}>• {iss}</div>)}
                 </div>
               </div>
             )}
-
-            <button
-              style={{...S3.btn("#6366f1"),width:"100%",padding:"12px 0",fontSize:13,borderRadius:10}}
-              onClick={generate} disabled={generating}>
-              {generating?"⏳ Generating...":"✨ Generate Document"}
+            <button style={{...S3.btn("#6366f1"),width:"100%",padding:"12px 0",fontSize:13,borderRadius:10}} onClick={generate} disabled={generating}>
+              {generating?"⏳ Generating detailed document...":"✨ Generate Document"}
             </button>
+            {generating&&<div style={{fontSize:11,color:"hsl(var(--muted-foreground))",textAlign:"center" as const,marginTop:8}}>Fetching algorithm knowledge, analysing context, writing document...</div>}
           </div>
         </div>
       )}
 
       {html&&(
         <div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{fontSize:13,fontWeight:700,color:"hsl(var(--foreground))",flex:1,marginRight:10}}>{title}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8}}>
+            <div style={{fontSize:13,fontWeight:700,color:"hsl(var(--foreground))",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{title}</div>
             <div style={{display:"flex",gap:6,flexShrink:0}}>
-              <button style={S3.btn("#10b981")} onClick={printDoc}>🖨️ Print / Save PDF</button>
-              <button style={S3.btn("#6366f1")} onClick={downloadHtml}>⬇ Download HTML</button>
-              <button style={S3.btn("hsl(var(--muted-foreground))")} onClick={()=>{setHtml("");setTitle("");}}>← New Document</button>
+              <button style={S3.btn("#10b981")} onClick={downloadWord}>⬇ Download .doc</button>
+              <button style={S3.btn("#6366f1")} onClick={printDoc}>🖨 Print / PDF</button>
+              <button style={S3.btn("hsl(var(--muted-foreground))")} onClick={()=>{setHtml("");setTitle("");}}>← New</button>
             </div>
           </div>
+          <div style={{fontSize:11,color:"hsl(var(--muted-foreground))",marginBottom:8,padding:"6px 10px",background:"rgba(16,185,129,.05)",borderRadius:6,border:"0.5px solid rgba(16,185,129,.2)"}}>
+            💡 <b>Download .doc</b> → opens in Word or Google Docs for editing. <b>Print / PDF</b> → save as PDF to send directly.
+          </div>
           <div style={{border:"0.5px solid #1a1a3a",borderRadius:10,overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,.3)"}}>
-            <iframe
-              ref={iframeRef}
-              srcDoc={html}
-              style={{width:"100%",height:600,border:"none",background:"#fff"}}
-              title="Document Preview"
-            />
+            <iframe ref={iframeRef} srcDoc={html} style={{width:"100%",height:680,border:"none",background:"#fff"}} title="Document Preview"/>
           </div>
-          <div style={{marginTop:8,fontSize:11,color:"hsl(var(--muted-foreground))"}}>
-            💡 Click <b>Print / Save PDF</b> → choose "Save as PDF" in the print dialog to get a PDF file.
-          </div>
-          <div style={{marginTop:8,display:"flex",gap:6}}>
-            <button style={{...S3.btn("#a78bfa"),fontSize:11}} onClick={generate} disabled={generating}>
-              {generating?"Regenerating...":"↺ Regenerate"}
-            </button>
-            {DOC_TYPES.filter(d=>d.id!==docType).slice(0,2).map(d=>(
-              <button key={d.id} style={{...S3.btn("hsl(var(--muted-foreground))"),fontSize:11}}
-                onClick={()=>{setDocType(d.id);setTimeout(generate,50);}}>
-                + {d.label}
+          <div style={{marginTop:10,display:"flex",gap:6,flexWrap:"wrap" as const}}>
+            <button style={{...S3.btn("#a78bfa"),fontSize:11}} onClick={generate} disabled={generating}>{generating?"Regenerating...":"↺ Regenerate"}</button>
+            {DOC_TYPES.filter(d=>d.id!==docType).slice(0,3).map(d=>(
+              <button key={d.id} style={{...S3.btn("hsl(var(--muted-foreground))"),fontSize:11}} onClick={()=>{setDocType(d.id);setTimeout(generate,50);}}>
+                {d.icon} {d.label}
               </button>
             ))}
           </div>
@@ -162,7 +154,6 @@ function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
     </div>
   );
 }
-
 export default function BdePanel(){
   const { selectedProjectId: projectId } = useProject();
   const[tab,setTab]=useState<"fiverr"|"leads"|"tools"|"responses"|"showcase">("fiverr");
