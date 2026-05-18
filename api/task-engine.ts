@@ -287,76 +287,150 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
   if (action === "instant_audit_showcase") {
-    const { url = "", forLead = "", assignmentId } = body;
+    const { url = "", forLead = "", conversationAnalysis, assignmentId } = body;
     if (!url) return ok(res, { error: "url required" });
     try {
-      const _u = String(url).replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const rawUrl = String(url).replace(/^https?:\/\//, "").replace(/\/$/, "");
+      // Build URL variants to try (handles missing www, http vs https)
+      const urlVariants = [
+        "https://" + rawUrl,
+        rawUrl.startsWith("www.") ? "https://" + rawUrl : "https://www." + rawUrl,
+        "http://" + rawUrl,
+      ];
+      // Browser-like headers to pass bot detection
+      const browserHeaders = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-GB,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+      };
 
-      // Fetch site HTML (Jina Reader first, direct fallback)
-      let _html = ""; let _fetched = false;
+      let _html = ""; let _fetched = false; let _finalUrl = rawUrl;
+
+      // Strategy 1: Jina Reader — bypasses Cloudflare, returns clean content
       try {
         const jKey = process.env.JINA_API_KEY || "";
-        const jHdr: any = { "Accept": "text/html", "X-Return-Format": "html" };
+        const jHdr: any = { "Accept": "text/html", "X-Return-Format": "html", "X-No-Cache": "true" };
         if (jKey) jHdr["Authorization"] = "Bearer " + jKey;
-        const jr = await fetch("https://r.jina.ai/https://" + _u, { headers: jHdr, signal: AbortSignal.timeout(12000) });
-        if (jr.ok) { _html = (await jr.text()).slice(0, 14000); _fetched = true; }
-      } catch {}
+        const jr = await fetch("https://r.jina.ai/https://" + rawUrl, {
+          headers: jHdr, signal: AbortSignal.timeout(14000), redirect: "follow"
+        });
+        if (jr.ok) {
+          const txt = await jr.text();
+          // Jina sometimes returns an error page — check for real content
+          if (txt.length > 500 && !txt.includes("Your request has been blocked") && !txt.includes("Access denied")) {
+            _html = txt.slice(0, 14000); _fetched = true;
+          }
+        }
+      } catch (_e1) {}
+
+      // Strategy 2: Direct fetch with multiple URL variants + browser headers
       if (!_fetched) {
-        try {
-          const dr = await fetch("https://" + _u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeason/1.0)" }, signal: AbortSignal.timeout(10000) });
-          if (dr.ok) { _html = (await dr.text()).slice(0, 14000); _fetched = true; }
-        } catch {}
-      }
-      if (!_fetched || !_html) {
-        return ok(res, { success: true, url: _u, reachable: false, score: null, unreachable: true,
-          issues: [{ issue: "Site could not be reached", severity: "critical", category: "Accessibility", fix: "Check URL is correct and site is live" }],
-          headline: _u + " could not be reached",
-          showcase_message: "I tried auditing " + _u + " but the site was unreachable. Please verify the URL is correct and the site is live, then I can run a full technical audit." });
+        for (const variant of urlVariants) {
+          try {
+            const dr = await fetch(variant, {
+              headers: browserHeaders, signal: AbortSignal.timeout(12000), redirect: "follow"
+            });
+            if (dr.ok) {
+              const txt = await dr.text();
+              if (txt.length > 200) { _html = txt.slice(0, 14000); _fetched = true; _finalUrl = rawUrl; break; }
+            }
+          } catch {}
+        }
       }
 
-      // Fetch algorithm knowledge + brain learnings in parallel
+      // Strategy 3: Jina with www. variant
+      if (!_fetched && !rawUrl.startsWith("www.")) {
+        try {
+          const jKey = process.env.JINA_API_KEY || "";
+          const jHdr: any = { "Accept": "text/html", "X-Return-Format": "html" };
+          if (jKey) jHdr["Authorization"] = "Bearer " + jKey;
+          const jr2 = await fetch("https://r.jina.ai/https://www." + rawUrl, {
+            headers: jHdr, signal: AbortSignal.timeout(10000), redirect: "follow"
+          });
+          if (jr2.ok) {
+            const txt = await jr2.text();
+            if (txt.length > 500) { _html = txt.slice(0, 14000); _fetched = true; }
+          }
+        } catch {}
+      }
+
+      if (!_fetched || !_html) {
+        return ok(res, {
+          success: true, url: rawUrl, reachable: false, score: null, unreachable: true,
+          issues: [{ issue: "Site could not be reached after 3 fetch strategies", severity: "critical", category: "Accessibility", fix: "Verify the URL is correct and the site is live. Try adding www. prefix." }],
+          headline: rawUrl + " — Could not be reached",
+          showcase_message: "I attempted to audit " + rawUrl + " using multiple methods but could not reach it. Please double-check the URL is live and accessible, then I can run the full technical audit."
+        });
+      }
+
+      // Fetch algorithm knowledge + brain learnings
       const [algoRes, brainRes] = await Promise.allSettled([
         db().from("algorithm_knowledge").select("topic,summary,recommendations,freshness_score").order("freshness_score", { ascending: false }).limit(6),
-        db().from("brain_learnings").select("card_title,improvement,what_worked,tags").order("applied_count", { ascending: false }).limit(5),
+        db().from("brain_learnings").select("card_title,improvement,what_worked,tags").order("applied_count", { ascending: false }).limit(4),
       ]);
       const algoData: any[] = algoRes.status === "fulfilled" ? (algoRes.value.data || []) : [];
       const brainData: any[] = brainRes.status === "fulfilled" ? (brainRes.value.data || []) : [];
+
+      // Build rich lead context from passed conversation analysis
+      const ca: any = conversationAnalysis || {};
+      const leadContextParts: string[] = [];
+      if (forLead) leadContextParts.push("Lead/client: " + forLead);
+      if (ca.main_need) leadContextParts.push("Their main need: " + ca.main_need);
+      if (ca.urgency) leadContextParts.push("Urgency: " + ca.urgency);
+      if (ca.hidden_concern) leadContextParts.push("Hidden concern: " + ca.hidden_concern);
+      if (ca.fiverr_specific?.conversion_blocker) leadContextParts.push("Conversion blocker: " + ca.fiverr_specific.conversion_blocker);
+      if (ca.fiverr_specific?.order_probability) leadContextParts.push("Order probability: " + ca.fiverr_specific.order_probability + "%");
+      const leadCtx = leadContextParts.length ? "LEAD INTELLIGENCE:\n" + leadContextParts.map(p => "- " + p).join("\n") : "";
 
       const algoCtx = algoData.length
         ? "LATEST ALGORITHM UPDATES:\n" + algoData.map((a: any) => "- " + a.topic + ": " + a.summary + (a.recommendations ? " | Action: " + a.recommendations : "")).join("\n")
         : "";
       const brainCtx = brainData.length
-        ? "PROVEN RESULTS FROM SEO SEASON:\n" + brainData.map((b: any) => "- " + b.card_title + ": " + b.improvement).join("\n")
+        ? "PROVEN SEO SEASON RESULTS:\n" + brainData.map((b: any) => "- " + b.card_title + ": " + b.improvement).join("\n")
         : "";
-      const leadCtx = forLead ? "LEAD CONTEXT: " + forLead : "";
 
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const auditPrompt = "You are a senior technical SEO auditor. Analyse this website's HTML and produce a detailed, impressive, client-ready audit."
-        + " Be specific — reference actual content from the HTML, mention exact missing tags, real page titles, actual H1 content."
-        + " Reference the latest algorithm updates where relevant to show you are current."
-        + "\n\nURL: " + _u
-        + (leadCtx ? "\n" + leadCtx : "")
+      const auditPrompt = "You are a senior technical SEO auditor. Produce a detailed, specific, client-ready audit."
+        + " Reference ACTUAL content from the HTML — exact title tag text, real H1 content, actual meta description."
+        + " Use the lead intelligence to make the audit relevant to their specific situation."
+        + " Reference algorithm updates to show you are current.\n\n"
+        + "URL: https://" + rawUrl
+        + (leadCtx ? "\n\n" + leadCtx : "")
         + (algoCtx ? "\n\n" + algoCtx : "")
         + (brainCtx ? "\n\n" + brainCtx : "")
-        + "\n\nHtml sample (first 12000 chars):\n" + _html.slice(0, 12000)
-        + "\n\nReturn ONLY raw JSON, no markdown. Schema: { score: integer 0-100, reachable: true, categories: [ { name: string, score: integer 0-100, issues: [ { issue: string (specific, references actual content), severity: \"critical\"|\"high\"|\"medium\"|\"low\", fix: string (exact actionable fix), algorithmNote: string or null (reference relevant algorithm update if applicable) } ] } ], quickWins: string[] (top 3 things to fix immediately), algorithmHighlights: string[] (2-3 specific algorithm updates relevant to this site), showcase_message: string (a compelling 200-word client-facing message referencing specific issues found, algorithm updates, and what you will do — written as if sending to the prospect, mention their site name and real issues found) }";
+        + "\n\nHTML (first 12000 chars):\n" + _html.slice(0, 12000)
+        + "\n\nReturn ONLY raw JSON. Schema: { score: integer 0-100, reachable: true,"
+        + " categories: [ { name: string, score: integer 0-100, issues: [ { issue: string (specific — reference actual HTML content),"
+        + " severity: \"critical\"|\"high\"|\"medium\"|\"low\", fix: string (exact step-by-step fix),"
+        + " algorithmNote: string or null } ] } ],"
+        + " quickWins: string[] (top 3 highest-impact fixes),"
+        + " algorithmHighlights: string[] (2-3 specific updates relevant to this site),"
+        + " showcase_message: string (compelling 200-word Fiverr pitch message — mention their site, specific issues, what you will fix, reference algorithm update that makes this urgent) }";
 
-      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 2500,
-        system: "You are a senior technical SEO auditor at SEO Season. Be specific, detailed, and impressive. Always reference actual content from the HTML and latest algorithm updates.",
-        messages: [{ role: "user", content: auditPrompt }] });
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 2500,
+        system: "You are a senior technical SEO auditor. Be specific and impressive. Reference actual HTML content and algorithm updates.",
+        messages: [{ role: "user", content: auditPrompt }]
+      });
       const raw = (_r.content[0] as any).text || "{}";
       const cleaned = raw.replace(/^```[a-z]*/i, "").replace(/```/g, "").trim();
       let result: any = null;
       try { result = JSON.parse(cleaned); } catch {
-        const m = cleaned.match(/\{[\s\S]+\}/);
-        try { result = m ? JSON.parse(m[0]) : null; } catch {}
+        const m2 = cleaned.match(/\{[\s\S]+\}/);
+        try { result = m2 ? JSON.parse(m2[0]) : null; } catch {}
       }
       if (!result) {
-        return ok(res, { success: false, url: _u, reachable: true, error: "Audit parse failed", raw: raw.slice(0, 200) });
+        return ok(res, { success: false, url: rawUrl, reachable: true, error: "Audit parse failed", raw: raw.slice(0, 300) });
       }
-      // Flatten issues for backward compat
       const allIssues: any[] = (result.categories || []).flatMap((c: any) => (c.issues || []).map((i: any) => ({ ...i, category: c.name })));
-      return ok(res, { success: true, url: _u, reachable: true, score: result.score, categories: result.categories || [], issues: allIssues, quickWins: result.quickWins || [], algorithmHighlights: result.algorithmHighlights || [], headline: _u + " — SEO Audit Score: " + result.score + "/100", showcase_message: result.showcase_message || "" });
+      return ok(res, { success: true, url: rawUrl, reachable: true, score: result.score,
+        categories: result.categories || [], issues: allIssues,
+        quickWins: result.quickWins || [], algorithmHighlights: result.algorithmHighlights || [],
+        headline: rawUrl + " — SEO Score: " + result.score + "/100",
+        showcase_message: result.showcase_message || "" });
     } catch (e: any) { return ok(res, { success: false, error: e.message }); }
   }
 

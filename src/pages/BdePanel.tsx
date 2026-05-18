@@ -681,7 +681,7 @@ export default function BdePanel() {
       }
     }
     else if (target==='save') saveLead();
-    else if (target==='tools') setTab('tools');
+    else if (target==='tools') { setTab('tools'); if(!auditFor&&(savedProspect?.name||leadNameInput)) setAuditFor(savedProspect?.name||leadNameInput||''); }
     else if (target==='docs') setTab('docs');
     else if (target==='fix') { const msg=deepAnalysis?.nextAction; if(msg) setNextMsg(msg); }
     else if (target==='intel') { if(savedProspect){setSelProspect(savedProspect);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');} setTab('intel'); loadProspects(); }
@@ -999,7 +999,12 @@ export default function BdePanel() {
   async function doAudit(){
     if(!auditUrl.trim())return;
     setAuditing(true);setAuditResult(null);
-    const r=await post('instant_audit_showcase',{url:auditUrl,forLead:auditFor});
+    // Pass full conversation analysis context so audit is relevant to this lead
+    const r=await post('instant_audit_showcase',{
+      url:auditUrl,
+      forLead:auditFor||savedProspect?.name||leadNameInput||'',
+      conversationAnalysis:analysis||savedProspect?.latestAnalysis||null
+    });
     setAuditResult(r);setAuditing(false);
   }
 
@@ -1724,9 +1729,11 @@ export default function BdePanel() {
               <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>⚡ Instant Site Audit</div>
               <div style={{display:'flex',gap:8,marginBottom:8}}>
                 <input style={{...S.inp,flex:2}} value={auditUrl} onChange={e=>setAuditUrl(e.target.value)} placeholder='yourlead.com' onKeyDown={e=>e.key==='Enter'&&doAudit()}/>
-                <input style={{...S.inp,flex:3}} value={auditFor} onChange={e=>setAuditFor(e.target.value)} placeholder='Lead context: e-commerce looking for organic traffic'/>
+                <input style={{...S.inp,flex:3}} value={auditFor} onChange={e=>setAuditFor(e.target.value)} placeholder='Lead name or context (auto-filled from conversation)'/>
               </div>
               <button style={S.btn()} onClick={doAudit} disabled={auditing||!auditUrl}>{auditing?'Auditing...':'🔍 Generate Audit Showcase'}</button>
+              {analysis&&<div style={{fontSize:10,color:'#10b981',marginTop:6}}>✓ Conversation analysis loaded — audit will reference {analysis.main_need||'their needs'} and {analysis.urgency||'urgency'}</div>}
+              {!analysis&&savedProspect?.latestAnalysis&&<div style={{fontSize:10,color:'#a78bfa',marginTop:6}}>✓ Lead Intel context loaded for {savedProspect.name}</div>}
             </div>
             {auditResult&&(
               <div style={S.card}>
