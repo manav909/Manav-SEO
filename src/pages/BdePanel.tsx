@@ -133,6 +133,20 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
             </div>
             {analysis?.main_need&&<div style={{...S3.card,borderColor:"rgba(16,185,129,.25)",padding:12,marginBottom:10}}><div style={{fontSize:10,color:"#10b981",fontWeight:700,marginBottom:4}}>CONVERSATION CONTEXT</div><div style={{fontSize:11,color:"hsl(var(--muted-foreground))",lineHeight:1.6}}><div><b>Need:</b> {analysis.main_need}</div>{analysis.hidden_concern&&<div><b>Concern:</b> {analysis.hidden_concern}</div>}</div></div>}
             {auditResult?.score!==undefined&&<div style={{...S3.card,borderColor:"rgba(99,102,241,.25)",padding:12,marginBottom:12}}><div style={{fontSize:10,color:"#a78bfa",fontWeight:700,marginBottom:4}}>AUDIT CONTEXT</div><div style={{fontSize:11,color:"hsl(var(--muted-foreground))",lineHeight:1.6}}><div><b>Score:</b> {auditResult.score}/100</div>{(auditResult.issues||[]).slice(0,2).map((iss:string,i:number)=><div key={i}>• {iss}</div>)}</div></div>}
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:10,color:"hsl(var(--muted-foreground))",marginBottom:3,fontWeight:600,letterSpacing:1}}>CREATOR / BRAND NAME</div>
+              <input style={{...S3.inp}} value={brandName} onChange={(e:any)=>setBrandName(e.target.value)} placeholder="Manav S"/>
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:"hsl(var(--muted-foreground))",marginBottom:3,fontWeight:600,letterSpacing:1}}>LANGUAGE</div>
+                <select style={{...S3.inp,fontSize:12}} value={docLang} onChange={(e:any)=>setDocLang(e.target.value)}><option value="US English">US English</option><option value="UK English">UK English</option><option value="Australian English">Australian English</option><option value="Hindi">Hindi</option><option value="Punjabi">Punjabi</option><option value="Arabic">Arabic</option><option value="French">French</option><option value="German">German</option><option value="Spanish">Spanish</option><option value="Portuguese">Portuguese</option><option value="Italian">Italian</option><option value="Dutch">Dutch</option><option value="Urdu">Urdu</option></select>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:"hsl(var(--muted-foreground))",marginBottom:3,fontWeight:600,letterSpacing:1}}>CURRENCY</div>
+                <select style={{...S3.inp,fontSize:12}} value={docCurrency} onChange={(e:any)=>setDocCurrency(e.target.value)}><option value="USD">USD — US Dollar</option><option value="GBP">GBP — British Pound</option><option value="EUR">EUR — Euro</option><option value="INR">INR — Indian Rupee</option><option value="AED">AED — UAE Dirham</option><option value="AUD">AUD — Australian Dollar</option><option value="CAD">CAD — Canadian Dollar</option><option value="SAR">SAR — Saudi Riyal</option><option value="SGD">SGD — Singapore Dollar</option></select>
+              </div>
+            </div>
             <button style={{...S3.btn("#6366f1"),width:"100%",padding:"12px 0",fontSize:13,borderRadius:10}} onClick={generate} disabled={generating}>{generating?"⏳ Generating...":"✨ Generate Document"}</button>
             {generating&&<div style={{fontSize:11,color:"hsl(var(--muted-foreground))",textAlign:"center" as const,marginTop:8}}>Fetching algorithm knowledge + writing full document...</div>}
           </div>
