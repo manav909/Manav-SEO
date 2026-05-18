@@ -302,7 +302,15 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         if (!/application\/ld\+json/.test(_h)) _iss.push("No structured data");
         if (!/canonical/i.test(_h)) _iss.push("No canonical tag");
         _sc = Math.max(20, 100 - _iss.length * 15);
-      } catch { _iss.push("Could not fetch site"); _sc = 40; }
+      } catch (fetchErr: any) {
+        // Site is unreachable — do not fabricate a score
+        const errMsg = String(fetchErr.message || "connection refused").slice(0, 100);
+        return ok(res, { success: true, url: _u, reachable: false, score: null,
+          issues: ["Site could not be reached (" + errMsg + ")"],
+          headline: _u + " could not be reached — verify the URL and that the site is live",
+          showcase_message: "I tried to run a technical audit on " + _u + " but the site was not reachable. Please check the URL is correct and the site is live. Once confirmed, I can run a full SEO audit.",
+          unreachable: true });
+      }
       const _hl = _iss.length > 0 ? ("Found " + _iss.length + " issue" + (_iss.length > 1 ? "s" : "") + " on " + _u) : (_u + " looks technically solid");
       const _sm = "Hi! Quick audit on " + _u + ":\n\n" + _iss.map((s: string, n: number) => (n + 1) + ". " + s).join("\n") + "\n\n" + _hl + "\n\nWant a full fix plan?";
       return ok(res, { success: true, url: _u, score: _sc, issues: _iss, headline: _hl, showcase_message: _sm });
@@ -588,9 +596,9 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (!messages.length) return ok(res, { error: "messages required" });
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const convSummary = messages.map((m: any, i: number) => (i+1) + ". [" + m.speaker.toUpperCase() + "] " + String(m.text).slice(0,300)).join("\n");
+      const convSummary = messages.map((m: any, i: number) => "idx" + i + " [" + m.speaker.toUpperCase() + "] " + String(m.text).slice(0,300)).join("\n");
       const sysPrompt = "You are an elite BDE coach analysing a Fiverr sales conversation. You identify exact moments where conversion probability changed, what was missed, what was done well, and what to do differently. Be brutally honest about mistakes. Flag Fiverr ToS violations immediately.";
-      const userPrompt = "Analyse this Fiverr conversation message by message:\n\n" + convSummary + "\n\nReturn a raw JSON object (no markdown) with: messages (array of per-message analysis), overallConversion (0-100 final probability), topMiss (the single biggest mistake made), topWin (the single best thing done), nextAction (exact thing to do right now to move this forward), urgency (high/medium/low). Each message in the array must have: index (number matching input), speaker (client or me), emotion (for client: curious/interested/frustrated/happy/hesitant/price_sensitive), intent (for client: one sentence), conversionProbability (running 0-100 after this message), probDelta (integer change from previous), missed (for me messages: specific missed opportunity or null), betterReply (for me messages: exact improved message to send or null), riskFlag (TOS_VIOLATION or SPAM or WEAK_CLOSE or MULTIPLE_MESSAGES or null).";
+      const userPrompt = "Analyse this Fiverr sales conversation. Messages are numbered idx0, idx1, idx2... (0-based).\n\n" + convSummary + "\n\nReturn raw JSON object only. Fields: messages (array), overallConversion (0-100), topMiss (biggest mistake as a sentence), topWin (best thing done), nextAction (exact message or action to take right now), urgency (high/medium/low). Each message object must have: index (INTEGER matching the idx0/idx1/idx2 number exactly), speaker (client or me), emotion (for client only: curious/interested/frustrated/happy/hesitant/price_sensitive/sceptical), intent (for client: one sentence on what they want), conversionProbability (INTEGER 0-100 running probability AFTER this message), probDelta (INTEGER change from previous message, can be negative), missed (for me messages: null if good, or a specific concrete missed opportunity as a sentence), betterReply (for me messages: null if good, or the exact improved Fiverr message to send), riskFlag (null or one of: TOS_VIOLATION if sharing external contact, SPAM if multiple messages, WEAK_CLOSE if missed closing opportunity, MULTIPLE_MESSAGES if sent 3+ messages in a row).";
       const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 2500, system: sysPrompt, messages: [{ role: "user", content: userPrompt }] });
       const raw = (_r.content[0] as any).text || "{}";
       let result: any = {};

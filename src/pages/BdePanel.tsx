@@ -265,7 +265,7 @@ function ConversationView({msgs, deepAnalysis, onAction}: {msgs: any[]; deepAnal
   const [expanded, setExpanded] = React.useState<Set<number>>(new Set());
   const toggle = (i: number) => setExpanded(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
 
-  const getMsgAnalysis = (idx: number) => deepAnalysis?.messages?.find((m: any) => m.index === idx);
+  const getMsgAnalysis = (idx: number) => deepAnalysis?.messages?.find((m: any) => Number(m.index) === idx || Number(m.index) === idx + 1);
 
   return (
     <div style={{display:'flex',flexDirection:'column' as const,gap:2}}>
@@ -284,7 +284,7 @@ function ConversationView({msgs, deepAnalysis, onAction}: {msgs: any[]; deepAnal
             <div style={{display:'flex',flexDirection:isMe?'row-reverse':'row' as const,alignItems:'flex-end',gap:8}}>
               {/* Avatar */}
               <div style={{width:32,height:32,borderRadius:'50%',background:isMe?'#19345E':'rgba(99,102,241,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,color:isMe?'#fff':'#a78bfa',flexShrink:0}}>
-                {isMe?'ME':msg.speakerName?.charAt(0)?.toUpperCase()||'C'}
+                {isMe?'M':msg.speakerName?.charAt(0)?.toUpperCase()||'C'}
               </div>
 
               {/* Bubble */}
@@ -322,8 +322,8 @@ function ConversationView({msgs, deepAnalysis, onAction}: {msgs: any[]; deepAnal
               </div>
             </div>
 
-            {/* Expandable analysis for Me messages */}
-            {isMe && isExp && ma && (
+            {/* Analysis panel for Me messages — always visible if has issues */}
+            {isMe && ma && (ma.missed || ma.riskFlag) && (
               <div style={{margin:'6px 40px 0',background:'rgba(0,0,0,.2)',borderRadius:10,padding:'10px 14px',border:`0.5px solid ${hasIssue?RISK_C[ma.riskFlag]||'#f59e0b':'rgba(99,102,241,.2)'}`}}>
                 {ma.missed && (
                   <div style={{marginBottom:8}}>
@@ -347,8 +347,8 @@ function ConversationView({msgs, deepAnalysis, onAction}: {msgs: any[]; deepAnal
               </div>
             )}
 
-            {/* Tap hint for me messages with issues */}
-            {isMe && hasIssue && !isExp && (
+            {/* Tap hint removed — analysis always visible */}
+            {false && isMe && hasIssue && !isExp && (
               <div style={{margin:'3px 40px 0',fontSize:10,color:'#f59e0b',cursor:'pointer'}} onClick={()=>toggle(i)}>
                 {ma.riskFlag && RISK_LABEL[ma.riskFlag] ? RISK_LABEL[ma.riskFlag] + ' · ' : ''}{ma.missed ? '⚠ Missed opportunity' : ''} — tap to see analysis
               </div>
@@ -575,7 +575,7 @@ export default function BdePanel() {
           {parsedMsgs.length>0&&<span style={{color:'#10b981'}}>✓ {parsedMsgs.length} messages parsed</span>}
           {analysis&&<span style={{color:'#10b981'}}>✓ Analysed · {analysis.fiverr_specific?.order_probability||'?'}% close</span>}
           {deepAnalysis&&<span style={{color:'#a78bfa'}}>✓ Deep analysis · {deepAnalysis.overallConversion}%</span>}
-          {auditResult&&<span style={{color:'#a78bfa'}}>✓ Audit: {auditResult.score}/100</span>}
+          {auditResult&&<span style={{color:auditResult.reachable===false?'#ef4444':'#a78bfa'}}>{auditResult.reachable===false?'⚠ Unreachable: '+auditResult.url:'✓ Audit: '+auditResult.score+'/100'}</span>}
           {leadSaved&&savedProspect&&<span style={{color:'#10b981'}}>✓ Saved: {savedProspect.name}</span>}
           {!leadSaved&&analysis&&<span style={{color:'#f59e0b'}}>⚠ Not saved</span>}
           <button style={{marginLeft:'auto',fontSize:10,background:'none',border:'0.5px solid rgba(239,68,68,.3)',borderRadius:6,color:'#ef4444',padding:'2px 8px',cursor:'pointer'}} onClick={clearAll}>✕ Clear</button>
@@ -893,7 +893,7 @@ export default function BdePanel() {
             {auditResult&&(
               <div style={S.card}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                  <div><div style={{fontSize:13,fontWeight:700}}>{auditResult.url}</div><div style={{display:'flex',gap:8,marginTop:4}}><span style={S.badge(auditResult.score>=70?'#10b981':auditResult.score>=50?'#f59e0b':'#ef4444')}>Score: {auditResult.score}/100</span><span style={S.badge('#ef4444')}>{auditResult.issues?.length} issues</span></div></div>
+                  <div><div style={{fontSize:13,fontWeight:700}}>{auditResult.url}</div><div style={{display:'flex',gap:8,marginTop:4}}><span style={S.badge(auditResult.reachable===false?'#ef4444':auditResult.score>=70?'#10b981':auditResult.score>=50?'#f59e0b':'#ef4444')}>{auditResult.reachable===false?'Unreachable':'Score: '+auditResult.score+'/100'}</span><span style={S.badge('#ef4444')}>{auditResult.issues?.length} issues</span></div></div>
                   <div style={{display:'flex',gap:6}}><button style={S.btn(copied==='audit_msg'?'#10b981':'#a78bfa')} onClick={()=>copyText(auditResult.showcase_message,'audit_msg')}>{copied==='audit_msg'?'✓ Copied!':'Copy Message'}</button><button style={S.btn('#6366f1')} onClick={()=>setTab('docs')}>Proposal →</button></div>
                 </div>
                 <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.7,whiteSpace:'pre-wrap' as const,padding:'10px 12px',background:'hsl(var(--background))',borderRadius:8,border:'0.5px solid #1a1a3a',marginBottom:10}}>{auditResult.showcase_message}</div>
