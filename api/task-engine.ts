@@ -287,57 +287,77 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
   if (action === "instant_audit_showcase") {
-    const { url = "", forLead, assignmentId } = body;
+    const { url = "", forLead = "", assignmentId } = body;
     if (!url) return ok(res, { error: "url required" });
     try {
       const _u = String(url).replace(/^https?:\/\//, "").replace(/\/$/, "");
-      const _iss: string[] = [];
-      let _sc = 50;
-      let _fetched = false;
-      let _html = "";
-      // Strategy 1: Jina Reader (bypasses Cloudflare, bot protection, redirects)
+
+      // Fetch site HTML (Jina Reader first, direct fallback)
+      let _html = ""; let _fetched = false;
       try {
         const jKey = process.env.JINA_API_KEY || "";
         const jHdr: any = { "Accept": "text/html", "X-Return-Format": "html" };
         if (jKey) jHdr["Authorization"] = "Bearer " + jKey;
-        const jr = await fetch("https://r.jina.ai/https://" + _u, {
-          headers: jHdr, signal: AbortSignal.timeout(12000)
-        });
-        if (jr.ok) { _html = (await jr.text()).slice(0, 12000); _fetched = true; }
-      } catch (_e1) {}
-      // Strategy 2: Direct fetch fallback
+        const jr = await fetch("https://r.jina.ai/https://" + _u, { headers: jHdr, signal: AbortSignal.timeout(12000) });
+        if (jr.ok) { _html = (await jr.text()).slice(0, 14000); _fetched = true; }
+      } catch {}
       if (!_fetched) {
         try {
-          const dr = await fetch("https://" + _u, {
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeason/1.0)" },
-            signal: AbortSignal.timeout(10000)
-          });
-          if (dr.ok) { _html = (await dr.text()).slice(0, 12000); _fetched = true; }
-        } catch (_e2) {}
+          const dr = await fetch("https://" + _u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeason/1.0)" }, signal: AbortSignal.timeout(10000) });
+          if (dr.ok) { _html = (await dr.text()).slice(0, 14000); _fetched = true; }
+        } catch {}
       }
       if (!_fetched || !_html) {
-        return ok(res, {
-          success: true, url: _u, reachable: false, score: null, unreachable: true,
-          issues: ["Site could not be reached — check URL and that it is live"],
+        return ok(res, { success: true, url: _u, reachable: false, score: null, unreachable: true,
+          issues: [{ issue: "Site could not be reached", severity: "critical", category: "Accessibility", fix: "Check URL is correct and site is live" }],
           headline: _u + " could not be reached",
-          showcase_message: "I ran a check on " + _u + " but could not reach the site. Please verify the URL is correct and the site is live, then I can run a full technical audit."
-        });
+          showcase_message: "I tried auditing " + _u + " but the site was unreachable. Please verify the URL is correct and the site is live, then I can run a full technical audit." });
       }
-      if (!/<title>[^<]{10,}/i.test(_html)) _iss.push("Missing or very short title tag");
-      if (!/meta[^>]+name=.description./i.test(_html)) _iss.push("Missing meta description");
-      if (!/<h1[^>]*>[^<]{5,}/i.test(_html)) _iss.push("No H1 tag found");
-      if (!/application\/ld\+json/.test(_html)) _iss.push("No structured data (schema markup)");
-      if (!/canonical/i.test(_html)) _iss.push("No canonical tag");
-      if (!/robots/i.test(_html)) _iss.push("No robots meta tag");
-      _sc = Math.max(20, 100 - _iss.length * 12);
-      const _hl = _iss.length > 0
-        ? "Found " + _iss.length + " issue" + (_iss.length > 1 ? "s" : "") + " on " + _u
-        : _u + " looks technically solid";
-      const _sm = "Hi! Quick SEO audit on " + _u + ":\n\n"
-        + _iss.map((s: string, n: number) => (n + 1) + ". " + s).join("\n")
-        + "\n\nScore: " + _sc + "/100. I can fix all of these — want me to proceed?";
-      return ok(res, { success: true, url: _u, score: _sc, reachable: true, issues: _iss, headline: _hl, showcase_message: _sm });
-    } catch (e: any) { return ok(res, { error: e.message }); }
+
+      // Fetch algorithm knowledge + brain learnings in parallel
+      const [algoRes, brainRes] = await Promise.allSettled([
+        db().from("algorithm_knowledge").select("topic,summary,recommendations,freshness_score").order("freshness_score", { ascending: false }).limit(6),
+        db().from("brain_learnings").select("card_title,improvement,what_worked,tags").order("applied_count", { ascending: false }).limit(5),
+      ]);
+      const algoData: any[] = algoRes.status === "fulfilled" ? (algoRes.value.data || []) : [];
+      const brainData: any[] = brainRes.status === "fulfilled" ? (brainRes.value.data || []) : [];
+
+      const algoCtx = algoData.length
+        ? "LATEST ALGORITHM UPDATES:\n" + algoData.map((a: any) => "- " + a.topic + ": " + a.summary + (a.recommendations ? " | Action: " + a.recommendations : "")).join("\n")
+        : "";
+      const brainCtx = brainData.length
+        ? "PROVEN RESULTS FROM SEO SEASON:\n" + brainData.map((b: any) => "- " + b.card_title + ": " + b.improvement).join("\n")
+        : "";
+      const leadCtx = forLead ? "LEAD CONTEXT: " + forLead : "";
+
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const auditPrompt = "You are a senior technical SEO auditor. Analyse this website's HTML and produce a detailed, impressive, client-ready audit."
+        + " Be specific — reference actual content from the HTML, mention exact missing tags, real page titles, actual H1 content."
+        + " Reference the latest algorithm updates where relevant to show you are current."
+        + "\n\nURL: " + _u
+        + (leadCtx ? "\n" + leadCtx : "")
+        + (algoCtx ? "\n\n" + algoCtx : "")
+        + (brainCtx ? "\n\n" + brainCtx : "")
+        + "\n\nHtml sample (first 12000 chars):\n" + _html.slice(0, 12000)
+        + "\n\nReturn ONLY raw JSON, no markdown. Schema: { score: integer 0-100, reachable: true, categories: [ { name: string, score: integer 0-100, issues: [ { issue: string (specific, references actual content), severity: \"critical\"|\"high\"|\"medium\"|\"low\", fix: string (exact actionable fix), algorithmNote: string or null (reference relevant algorithm update if applicable) } ] } ], quickWins: string[] (top 3 things to fix immediately), algorithmHighlights: string[] (2-3 specific algorithm updates relevant to this site), showcase_message: string (a compelling 200-word client-facing message referencing specific issues found, algorithm updates, and what you will do — written as if sending to the prospect, mention their site name and real issues found) }";
+
+      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 2500,
+        system: "You are a senior technical SEO auditor at SEO Season. Be specific, detailed, and impressive. Always reference actual content from the HTML and latest algorithm updates.",
+        messages: [{ role: "user", content: auditPrompt }] });
+      const raw = (_r.content[0] as any).text || "{}";
+      const cleaned = raw.replace(/^```[a-z]*/i, "").replace(/```/g, "").trim();
+      let result: any = null;
+      try { result = JSON.parse(cleaned); } catch {
+        const m = cleaned.match(/\{[\s\S]+\}/);
+        try { result = m ? JSON.parse(m[0]) : null; } catch {}
+      }
+      if (!result) {
+        return ok(res, { success: false, url: _u, reachable: true, error: "Audit parse failed", raw: raw.slice(0, 200) });
+      }
+      // Flatten issues for backward compat
+      const allIssues: any[] = (result.categories || []).flatMap((c: any) => (c.issues || []).map((i: any) => ({ ...i, category: c.name })));
+      return ok(res, { success: true, url: _u, reachable: true, score: result.score, categories: result.categories || [], issues: allIssues, quickWins: result.quickWins || [], algorithmHighlights: result.algorithmHighlights || [], headline: _u + " — SEO Audit Score: " + result.score + "/100", showcase_message: result.showcase_message || "" });
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
   }
 
   if (action === "get_pipeline") {

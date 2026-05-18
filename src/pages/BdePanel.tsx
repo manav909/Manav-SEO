@@ -843,7 +843,7 @@ export default function BdePanel() {
           {parsedMsgs.length>0&&<span style={{color:'#10b981'}}>✓ {parsedMsgs.length} messages parsed</span>}
           {analysis&&<span style={{color:'#10b981'}}>✓ Analysed · {analysis.fiverr_specific?.order_probability||'?'}% close</span>}
           {deepAnalysis&&<span style={{color:'#a78bfa'}}>✓ Deep analysis · {deepAnalysis.overallConversion}%</span>}
-          {auditResult&&<span style={{color:auditResult.reachable===false?'#ef4444':'#a78bfa'}}>{auditResult.reachable===false?'⚠ Unreachable: '+auditResult.url:'✓ Audit: '+auditResult.score+'/100'}</span>}
+          {auditResult&&<span style={{color:auditResult.reachable===false?'#ef4444':'#a78bfa'}}>{auditResult.reachable===false?'⚠ Unreachable: '+auditResult.url:'✓ Audit: '+auditResult.score+'/100 · '+(auditResult.categories?.length||0)+' categories'}</span>}
           {leadSaved&&savedProspect&&<span style={{color:'#10b981'}}>✓ Saved: {savedProspect.name}</span>}
           {!leadSaved&&analysis&&<span style={{color:'#f59e0b'}}>⚠ Not saved</span>}
           <button style={{marginLeft:'auto',fontSize:10,background:'none',border:'0.5px solid rgba(239,68,68,.3)',borderRadius:6,color:'#ef4444',padding:'2px 8px',cursor:'pointer'}} onClick={clearAll}>✕ Clear</button>
@@ -1209,12 +1209,90 @@ export default function BdePanel() {
             </div>
             {auditResult&&(
               <div style={S.card}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                  <div><div style={{fontSize:13,fontWeight:700}}>{auditResult.url}</div><div style={{display:'flex',gap:8,marginTop:4}}><span style={S.badge(auditResult.reachable===false?'#ef4444':auditResult.score>=70?'#10b981':auditResult.score>=50?'#f59e0b':'#ef4444')}>{auditResult.reachable===false?'Unreachable':'Score: '+auditResult.score+'/100'}</span><span style={S.badge('#ef4444')}>{auditResult.issues?.length} issues</span></div></div>
-                  <div style={{display:'flex',gap:6}}><button style={S.btn(copied==='audit_msg'?'#10b981':'#a78bfa')} onClick={()=>copyText(auditResult.showcase_message,'audit_msg')}>{copied==='audit_msg'?'✓ Copied!':'Copy Message'}</button><button style={S.btn('#6366f1')} onClick={()=>setTab('docs')}>Proposal →</button></div>
+                {/* Score header */}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,marginBottom:3}}>{auditResult.url}</div>
+                    <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap' as const}}>
+                      {auditResult.reachable===false
+                        ?<span style={{fontSize:12,color:'#ef4444',fontWeight:700}}>⚠ Site Unreachable</span>
+                        :<><div style={{width:52,height:52,borderRadius:'50%',background:`conic-gradient(${auditResult.score>=70?'#10b981':auditResult.score>=50?'#f59e0b':'#ef4444'} ${auditResult.score*3.6}deg, rgba(255,255,255,.1) 0deg)`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                            <div style={{width:38,height:38,borderRadius:'50%',background:'hsl(var(--background))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,color:auditResult.score>=70?'#10b981':auditResult.score>=50?'#f59e0b':'#ef4444'}}>{auditResult.score}</div>
+                          </div>
+                          <div><div style={{fontSize:11,fontWeight:700,color:'hsl(var(--foreground))'}}>SEO Score</div><div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>out of 100</div></div></>
+                      }
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap' as const,alignItems:'flex-start'}}>
+                    <button style={S.btn(copied==='audit_msg'?'#10b981':'#a78bfa')} onClick={()=>copyText(auditResult.showcase_message,'audit_msg')}>{copied==='audit_msg'?'✓ Copied!':'Copy Pitch Message'}</button>
+                    <button style={S.btn('#6366f1')} onClick={()=>setTab('docs')}>Generate Proposal →</button>
+                  </div>
                 </div>
-                <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.7,whiteSpace:'pre-wrap' as const,padding:'10px 12px',background:'hsl(var(--background))',borderRadius:8,border:'0.5px solid #1a1a3a',marginBottom:10}}>{auditResult.showcase_message}</div>
-                {auditResult.issues?.length>0&&<><div style={S.sec}>Issues Found</div>{auditResult.issues.map((iss:any,i:number)=><div key={i} style={{fontSize:11,color:'hsl(var(--foreground))',padding:'4px 0',borderBottom:'0.5px solid #1a1a3a'}}>• {iss}</div>)}</>}
+
+                {/* Algorithm Highlights */}
+                {auditResult.algorithmHighlights?.length>0&&(
+                  <div style={{marginBottom:12,padding:'8px 12px',background:'rgba(99,102,241,.06)',borderRadius:8,border:'0.5px solid rgba(99,102,241,.2)'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#a78bfa',letterSpacing:1,marginBottom:5}}>🔬 LATEST ALGORITHM RELEVANCE</div>
+                    {auditResult.algorithmHighlights.map((h:string,i:number)=>(
+                      <div key={i} style={{fontSize:11,color:'#d0d0e8',lineHeight:1.5,marginBottom:2}}>• {h}</div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Quick Wins */}
+                {auditResult.quickWins?.length>0&&(
+                  <div style={{marginBottom:12,padding:'8px 12px',background:'rgba(16,185,129,.06)',borderRadius:8,border:'0.5px solid rgba(16,185,129,.2)'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#10b981',letterSpacing:1,marginBottom:5}}>⚡ QUICK WINS — FIX THESE FIRST</div>
+                    {auditResult.quickWins.map((w:string,i:number)=>(
+                      <div key={i} style={{fontSize:11,color:'#d0d0e8',lineHeight:1.5,marginBottom:2}}>• {w}</div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Categories */}
+                {auditResult.categories?.map((cat:any,ci:number)=>(
+                  <div key={ci} style={{marginBottom:10}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+                      <div style={{fontSize:11,fontWeight:700,color:'hsl(var(--foreground))'}}>{cat.name}</div>
+                      <div style={{display:'flex',alignItems:'center',gap:5}}>
+                        <div style={{width:60,height:4,background:'rgba(255,255,255,.1)',borderRadius:2,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:`${cat.score}%`,background:cat.score>=70?'#10b981':cat.score>=50?'#f59e0b':'#ef4444',borderRadius:2}}/>
+                        </div>
+                        <span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{cat.score}/100</span>
+                      </div>
+                    </div>
+                    {cat.issues?.map((iss:any,ii:number)=>{
+                      const sevC:any={critical:'#ef4444',high:'#f59e0b',medium:'#6366f1',low:'hsl(var(--muted-foreground))'};
+                      const sevBg:any={critical:'rgba(239,68,68,.08)',high:'rgba(245,158,11,.06)',medium:'rgba(99,102,241,.06)',low:'rgba(255,255,255,.03)'};
+                      return(
+                        <div key={ii} style={{padding:'7px 10px',marginBottom:4,borderRadius:7,background:sevBg[iss.severity]||sevBg.low,border:`0.5px solid ${sevC[iss.severity]||'#333'}30`}}>
+                          <div style={{display:'flex',gap:6,alignItems:'flex-start',marginBottom:iss.fix||iss.algorithmNote?4:0}}>
+                            <span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:10,background:`${sevC[iss.severity]||'#6366f1'}20`,color:sevC[iss.severity]||'#6366f1',flexShrink:0,marginTop:1}}>{(iss.severity||'low').toUpperCase()}</span>
+                            <span style={{fontSize:12,color:'hsl(var(--foreground))',lineHeight:1.5}}>{iss.issue}</span>
+                          </div>
+                          {iss.fix&&<div style={{fontSize:11,color:'#10b981',marginLeft:40,lineHeight:1.45}}>→ {iss.fix}</div>}
+                          {iss.algorithmNote&&<div style={{fontSize:10,color:'#a78bfa',marginLeft:40,marginTop:3,fontStyle:'italic'}}>🔬 {iss.algorithmNote}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+
+                {/* Showcase message */}
+                {auditResult.showcase_message&&(
+                  <div style={{marginTop:10}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'hsl(var(--muted-foreground))',letterSpacing:1,marginBottom:5}}>READY-TO-SEND PITCH MESSAGE</div>
+                    <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.7,whiteSpace:'pre-wrap' as const,padding:'10px 12px',background:'hsl(var(--background))',borderRadius:8,border:'0.5px solid #1a1a3a',marginBottom:6}}>{auditResult.showcase_message}</div>
+                    <button style={S.btn(copied==='audit_msg2'?'#10b981':'#a78bfa')} onClick={()=>copyText(auditResult.showcase_message,'audit_msg2')}>{copied==='audit_msg2'?'✓ Copied!':'Copy Message'}</button>
+                  </div>
+                )}
+
+                {/* Fallback: flat issues list (legacy) */}
+                {!auditResult.categories?.length&&auditResult.issues?.length>0&&(
+                  <div>{auditResult.issues.map((iss:any,i:number)=>(
+                    <div key={i} style={{fontSize:11,color:'hsl(var(--foreground))',padding:'4px 0',borderBottom:'0.5px solid #1a1a3a'}}>• {typeof iss==='string'?iss:iss.issue}</div>
+                  ))}</div>
+                )}
               </div>
             )}
           </div>
