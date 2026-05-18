@@ -1,6 +1,4 @@
 import { supabase } from '@/lib/supabase';
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DeepEnrichModal from '@/components/DeepEnrichModal';
 import { useAuth } from '@/contexts/AuthContext';
@@ -652,7 +650,7 @@ export default function BrainLearning() {
           <div style={{display:'grid',gridTemplateColumns:'auto 1fr auto',gap:24,alignItems:'center',background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:20,padding:24}}>
 
             {/* Brain level */}
-            <CircleGauge value={level} color="var(--accent)" size={100} label="INTELLIGENCE" sublabel={`LEVEL ${level}`}/>
+            <CircleGauge value={level} color="hsl(var(--primary))" size={100} label="INTELLIGENCE" sublabel={`LEVEL ${level}`}/>
 
             {/* Stats row */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
@@ -691,7 +689,7 @@ export default function BrainLearning() {
                     <RadarChart data={radarData}>
                       <PolarGrid stroke="rgba(255,255,255,0.07)" />
                       <PolarAngleAxis dataKey="dimension" tick={{fontSize:9,fill:'rgba(255,255,255,0.4)',fontFamily:'monospace'}} />
-                      <Radar name="Intelligence" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.15} strokeWidth={2} />
+                      <Radar name="Intelligence" dataKey="score" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.15} strokeWidth={2} />
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>

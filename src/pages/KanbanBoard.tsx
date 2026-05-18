@@ -1,19 +1,17 @@
 import PortalNav from '@/components/PortalNav';
 import { useProject } from '@/contexts/ProjectContext';
 import React,{useState,useEffect,useCallback} from "react";
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",
   headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
 
 const COLS=[
   {id:"todo",label:"📋 To Do",color:"#4b4b6a"},
-  {id:"in_progress",label:"⚡ In Progress",color:"var(--accent)"},
+  {id:"in_progress",label:"⚡ In Progress",color:"hsl(var(--primary))"},
   {id:"review",label:"👁 Review",color:"#f59e0b"},
   {id:"done",label:"✅ Done",color:"#10b981"},
   {id:"verified",label:"🧠 Verified",color:"#a78bfa"},
 ];
-const PRIORITY_C:any={critical:"#ef4444",high:"#f59e0b",medium:"var(--accent)",low:"#10b981"};
+const PRIORITY_C:any={critical:"#ef4444",high:"#f59e0b",medium:"hsl(var(--primary))",low:"#10b981"};
 const CAT_I:any={seo:"🔍",content:"📝",technical:"⚙️",links:"🔗",reporting:"📊",comms:"💬",other:"📌"};
 
 export default function KanbanBoard(){
@@ -73,7 +71,7 @@ export default function KanbanBoard(){
   }
 
   const S:any={
-    root:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",
+    root:{minHeight:"100vh",background:"hsl(var(--background))",color:"hsl(var(--foreground))",
       fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif"},
     hdr:{background:"rgba(8,8,24,.92)",backdropFilter:"blur(20px)",
       borderBottom:"0.5px solid var(--border)",height:56,padding:"0 20px",
@@ -84,20 +82,20 @@ export default function KanbanBoard(){
     col:{minWidth:280,maxWidth:280,flexShrink:0},
     colHdr:{padding:"10px 12px",borderRadius:"10px 10px 0 0",
       display:"flex",justifyContent:"space-between",alignItems:"center",
-      background:"var(--bg-card)",borderBottom:"0.5px solid var(--border)"},
-    colBody:{background:"var(--bg-deep)",borderRadius:"0 0 10px 10px",
+      background:"hsl(var(--card))",borderBottom:"0.5px solid var(--border)"},
+    colBody:{background:"hsl(var(--input))",borderRadius:"0 0 10px 10px",
       border:"0.5px solid var(--border)",borderTop:"none",
       minHeight:200,padding:8,display:"flex",flexDirection:"column" as const,gap:6},
-    task:{background:"var(--bg-card)",border:"0.5px solid var(--border)",
+    task:{background:"hsl(var(--card))",border:"0.5px solid var(--border)",
       borderRadius:9,padding:"10px 12px",cursor:"grab" as const,
       transition:"box-shadow .15s,transform .15s",userSelect:"none" as const},
-    inp:{background:"var(--bg-deep)",border:"0.5px solid var(--border)",borderRadius:7,
-      color:"var(--text)",padding:"7px 10px",fontSize:12,outline:"none",width:"100%",
+    inp:{background:"hsl(var(--input))",border:"0.5px solid var(--border)",borderRadius:7,
+      color:"hsl(var(--foreground))",padding:"7px 10px",fontSize:12,outline:"none",width:"100%",
       boxSizing:"border-box" as const,marginBottom:6,fontFamily:"inherit"},
-    sel:{background:"var(--bg-deep)",border:"0.5px solid var(--border)",borderRadius:7,
-      color:"var(--text)",padding:"7px 10px",fontSize:12,width:"100%",marginBottom:6},
-    addBtn:{background:"var(--accent-glow)",border:"0.5px solid var(--border-glow)",
-      borderRadius:7,color:"var(--accent-soft)",padding:"6px 12px",fontSize:11,
+    sel:{background:"hsl(var(--input))",border:"0.5px solid var(--border)",borderRadius:7,
+      color:"hsl(var(--foreground))",padding:"7px 10px",fontSize:12,width:"100%",marginBottom:6},
+    addBtn:{background:"hsl(var(--primary) / .2)",border:"0.5px solid var(--border-glow)",
+      borderRadius:7,color:"hsl(var(--primary))",padding:"6px 12px",fontSize:11,
       fontWeight:600,cursor:"pointer",width:"100%",marginTop:4},
   };
 
@@ -111,14 +109,14 @@ export default function KanbanBoard(){
             <span style={{fontSize:18}}>📋</span>
             <div>
               <div style={{fontSize:14,fontWeight:700}}>Kanban Delivery Board</div>
-              <div style={{fontSize:10,color:"var(--text-muted)",letterSpacing:"1px"}}>
+              <div style={{fontSize:10,color:"hsl(var(--muted-foreground))",letterSpacing:"1px"}}>
                 {Object.values(columns).flat().length} tasks across {Object.keys(columns).length} stages
               </div>
             </div>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            <select style={{background:"var(--bg-card)",border:"0.5px solid var(--border)",
-              borderRadius:8,color:"var(--text)",padding:"6px 10px",fontSize:11}}
+            <select style={{background:"hsl(var(--card))",border:"0.5px solid var(--border)",
+              borderRadius:8,color:"hsl(var(--foreground))",padding:"6px 10px",fontSize:11}}
               value={sel} onChange={e=>setSel(e.target.value)}>
               {projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -127,7 +125,7 @@ export default function KanbanBoard(){
 
         {loading?(
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",
-            height:"calc(100vh - 56px)",color:"var(--text-muted)"}}>Loading board...</div>
+            height:"calc(100vh - 56px)",color:"hsl(var(--muted-foreground))"}}>Loading board...</div>
         ):(
           <div style={S.board}>
             {COLS.map(col=>{
@@ -141,14 +139,14 @@ export default function KanbanBoard(){
                         background:`${col.color}18`,color:col.color}}>{tasks.length}</span>
                     </div>
                     <button onClick={()=>setAdding(adding===col.id?null:col.id)}
-                      style={{background:"none",border:"none",color:"var(--text-muted)",
+                      style={{background:"none",border:"none",color:"hsl(var(--muted-foreground))",
                         cursor:"pointer",fontSize:16,lineHeight:1}}>+</button>
                   </div>
                   <div style={S.colBody}
                     onDragOver={onDragOver} onDrop={e=>onDrop(e,col.id)}>
                     {/* Add task form */}
                     {adding===col.id&&(
-                      <div style={{background:"var(--bg-card)",borderRadius:9,padding:10,
+                      <div style={{background:"hsl(var(--card))",borderRadius:9,padding:10,
                         border:"0.5px solid var(--border-glow)"}}>
                         <input style={S.inp} value={newTask.title}
                           onChange={e=>setNew({...newTask,title:e.target.value})}
@@ -181,13 +179,13 @@ export default function KanbanBoard(){
                         </select>
                         <div style={{display:"flex",gap:6}}>
                           <button style={S.addBtn} onClick={()=>addTask(col.id)}>Add Task</button>
-                          <button style={{...S.addBtn,background:"var(--bg-deep)",color:"var(--text-muted)"}}
+                          <button style={{...S.addBtn,background:"hsl(var(--input))",color:"hsl(var(--muted-foreground))"}}
                             onClick={()=>setAdding(null)}>Cancel</button>
                         </div>
                       </div>
                     )}
                     {tasks.map((t:any)=>(
-                      <div key={t.id} style={{...S.task,borderLeft:`3px solid ${PRIORITY_C[t.priority]||"var(--border)"}`}}
+                      <div key={t.id} style={{...S.task,borderLeft:`3px solid ${PRIORITY_C[t.priority]||"hsl(var(--border))"}`}}
                         draggable onDragStart={()=>onDragStart(t)}>
                         <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                           <span style={{fontSize:12}}>{CAT_I[t.category]||"📌"}</span>
@@ -197,15 +195,15 @@ export default function KanbanBoard(){
                               {t.priority?.toUpperCase()}
                             </span>
                             <button onClick={()=>deleteTask(t.id)}
-                              style={{background:"none",border:"none",color:"var(--text-muted)",
+                              style={{background:"none",border:"none",color:"hsl(var(--muted-foreground))",
                                 cursor:"pointer",fontSize:12,padding:0,lineHeight:1}}>✕</button>
                           </div>
                         </div>
-                        <div style={{fontSize:13,fontWeight:600,color:"var(--text)",marginBottom:t.description?4:0,lineHeight:1.3}}>
+                        <div style={{fontSize:13,fontWeight:600,color:"hsl(var(--foreground))",marginBottom:t.description?4:0,lineHeight:1.3}}>
                           {t.title}
                         </div>
                         {t.description&&(
-                          <div style={{fontSize:11,color:"var(--text-sub)",lineHeight:1.4,marginBottom:4}}>
+                          <div style={{fontSize:11,color:"hsl(var(--muted-foreground))",lineHeight:1.4,marginBottom:4}}>
                             {t.description.slice(0,80)}{t.description.length>80?"...":""}
                           </div>
                         )}
@@ -213,16 +211,16 @@ export default function KanbanBoard(){
                           {t.staff_members&&(
                             <div style={{display:"flex",gap:4,alignItems:"center"}}>
                               <div style={{width:18,height:18,borderRadius:"50%",
-                                background:"var(--accent-glow)",border:"0.5px solid var(--border-glow)",
+                                background:"hsl(var(--primary) / .2)",border:"0.5px solid var(--border-glow)",
                                 display:"flex",alignItems:"center",justifyContent:"center",
-                                fontSize:8,fontWeight:700,color:"var(--accent-soft)"}}>
+                                fontSize:8,fontWeight:700,color:"hsl(var(--primary))"}}>
                                 {(t.staff_members.avatar_initials||t.staff_members.name?.slice(0,2)||"?").toUpperCase()}
                               </div>
-                              <span style={{fontSize:10,color:"var(--text-muted)"}}>{t.staff_members.name}</span>
+                              <span style={{fontSize:10,color:"hsl(var(--muted-foreground))"}}>{t.staff_members.name}</span>
                             </div>
                           )}
                           {t.due_date&&(
-                            <span style={{fontSize:9,color:new Date(t.due_date)<new Date()?"#f87171":"var(--text-muted)"}}>
+                            <span style={{fontSize:9,color:new Date(t.due_date)<new Date()?"#f87171":"hsl(var(--muted-foreground))"}}>
                               📅 {new Date(t.due_date).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}
                             </span>
                           )}
@@ -240,7 +238,7 @@ export default function KanbanBoard(){
                       </div>
                     ))}
                     {!tasks.length&&!adding&&(
-                      <div style={{textAlign:"center" as const,padding:"20px 0",color:"var(--text-muted)",fontSize:11}}>
+                      <div style={{textAlign:"center" as const,padding:"20px 0",color:"hsl(var(--muted-foreground))",fontSize:11}}>
                         Drop here or +
                       </div>
                     )}

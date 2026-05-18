@@ -1,22 +1,102 @@
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
-import PortalNav from '@/components/PortalNav';
-import { useProject } from '@/contexts/ProjectContext';
-import React,{useState} from "react";
-const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
-export default function Intake(){
-  const { selectedProjectId: projectId } = useProject();
-  const[url,setUrl]=useState("");const[email,setEmail]=useState("");const[name,setName]=useState("");const[loading,setLoading]=useState(false);const[result,setResult]=useState<any>(null);const[step,setStep]=useState<"url"|"email"|"done">("url");
-  const analyse=async()=>{if(!url)return;setLoading(true);const r=await post("capture_lead",{url,source:"intake"});setResult(r);setStep("email");setLoading(false);};
-  const submit=async()=>{if(!email)return;setLoading(true);await post("capture_lead",{url,email,name,source:"intake"});setStep("done");setLoading(false);};
-  const S:any={p:{minHeight:"100vh",background:"var(--bg)",color:"var(--text)",fontFamily:"var(--font-display,-apple-system)",display:"flex",flexDirection:"column" as const,alignItems:"center",justifyContent:"center",padding:24},c:{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:16,padding:"36px 40px",width:"100%",maxWidth:520},h1:{fontSize:30,fontWeight:700,lineHeight:1.2,marginBottom:8,background:"linear-gradient(135deg,#a78bfa,#06b6d4)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"},inp:{width:"100%",background:"var(--bg)",border:"0.5px solid #1e1e3a",borderRadius:10,color:"var(--text)",padding:"13px 16px",fontSize:14,marginBottom:10,outline:"none",boxSizing:"border-box" as const},btn:{width:"100%",background:"linear-gradient(135deg,#6366f1,#a78bfa)",border:"none",borderRadius:10,color:"#fff",padding:14,fontSize:15,fontWeight:700,cursor:"pointer"}};
-  return(<div style={S.p}>
+import React, { useState } from "react";
+import PortalNav from "@/components/PortalNav";
+
+const post = (a: string, b: any = {}) =>
+  fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: a, ...b }) })
+    .then(r => r.json()).catch(() => ({}));
+
+export default function Intake() {
+  const [url, setUrl]     = useState("");
+  const [email, setEmail] = useState("");
+  const [name, setName]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult]   = useState<any>(null);
+  const [step, setStep] = useState<"url"|"email"|"done">("url");
+
+  const analyse = async () => {
+    if (!url) return;
+    setLoading(true);
+    const r = await post("instant_audit_showcase", { url });
+    setResult(r);
+    setStep("email");
+    setLoading(false);
+  };
+
+  const submit = async () => {
+    if (!email) return;
+    setLoading(true);
+    await post("capture_lead", { url, email, name, source: "intake", auditResult: result });
+    setStep("done");
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
       <PortalNav />
-      <div style={S.c}>
-    <div style={S.h1}>Is your website invisible to AI?</div>
-    <div style={{fontSize:15,color:"var(--text-sub)",marginBottom:28,lineHeight:1.6}}>Free instant audit — see what's costing you rankings in 30 seconds.</div>
-    {step==="url"&&<><input style={S.inp} value={url} onChange={e=>setUrl(e.target.value)} placeholder="yourdomain.com" onKeyDown={e=>e.key==="Enter"&&analyse()}/><button style={S.btn} onClick={analyse} disabled={loading||!url}>{loading?"Analysing...":"Get Free Instant Audit →"}</button></>}
-    {step==="email"&&result&&<><div style={{background:"var(--bg-card)",border:"0.5px solid rgba(99,102,241,.3)",borderRadius:12,padding:20,marginBottom:20}}><div style={{fontSize:15,fontWeight:700,marginBottom:10}}>{result.instantAudit?.headline||`Analysis of ${url} complete`}</div>{(result.instantAudit?.missingBasics||[]).map((i:string,idx:number)=><div key={idx} style={{display:"flex",gap:8,padding:"6px 0",borderBottom:"0.5px solid #1e1e3a",fontSize:13,color:"#f87171"}}><span>⚠</span>{i}</div>)}</div><input style={S.inp} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name (optional)"/><input style={S.inp} value={email} onChange={e=>setEmail(e.target.value)} placeholder="your@email.com"/><button style={S.btn} onClick={submit} disabled={loading||!email}>{loading?"Sending...":"Get Full Report →"}</button></>}
-    {step==="done"&&<div style={{textAlign:"center",padding:"20px 0"}}><div style={{fontSize:40,marginBottom:16}}>🚀</div><div style={{fontSize:20,fontWeight:700,marginBottom:8}}>Report on its way.</div><div style={{fontSize:14,color:"var(--text-sub)"}}>Check your inbox. Full analysis of {url} underway.</div></div>}
-  </div></div>);
+      <div className="max-w-2xl mx-auto px-6 py-16">
+        <div className="text-center mb-10">
+          <div className="text-4xl mb-4">🎯</div>
+          <h1 className="text-3xl font-bold mb-3">Is your website invisible to AI?</h1>
+          <p className="text-muted-foreground leading-relaxed">
+            Free instant audit — see exactly how ChatGPT, Perplexity and Claude find (or miss) your business.
+          </p>
+        </div>
+        {step === "url" && (
+          <div className="rounded-2xl border border-border bg-card p-6">
+            <label className="text-sm font-medium block mb-2">Your website URL</label>
+            <div className="flex gap-3">
+              <input value={url} onChange={e => setUrl(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && analyse()}
+                placeholder="yourdomain.com"
+                className="flex-1 h-10 rounded-xl border border-border bg-background px-4 text-sm outline-none focus:ring-1 focus:ring-primary/50" />
+              <button onClick={analyse} disabled={loading || !url}
+                className="px-6 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90">
+                {loading ? "Analysing..." : "Analyse →"}
+              </button>
+            </div>
+          </div>
+        )}
+        {step === "email" && result && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5">
+              <div className="text-xs font-bold text-primary uppercase tracking-widest mb-3">Quick Audit Results</div>
+              {result.score !== undefined && (
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="text-3xl font-bold font-mono text-primary">{result.score}</div>
+                  <div className="text-sm text-muted-foreground">/ 100 AI Visibility Score</div>
+                </div>
+              )}
+              {result.issues?.slice(0, 3).map((issue: string, i: number) => (
+                <div key={i} className="text-sm text-muted-foreground flex gap-2 mb-1">
+                  <span className="text-red-400">•</span>{issue}
+                </div>
+              ))}
+            </div>
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="text-sm font-semibold mb-4">Get your full report — free</div>
+              <div className="space-y-3">
+                <input value={name} onChange={e => setName(e.target.value)}
+                  placeholder="Your name"
+                  className="w-full h-10 rounded-xl border border-border bg-background px-4 text-sm outline-none focus:ring-1 focus:ring-primary/50" />
+                <input value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="your@email.com" type="email"
+                  className="w-full h-10 rounded-xl border border-border bg-background px-4 text-sm outline-none focus:ring-1 focus:ring-primary/50" />
+                <button onClick={submit} disabled={loading || !email}
+                  className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90">
+                  {loading ? "Sending..." : "Get Full Report →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {step === "done" && (
+          <div className="rounded-2xl border border-green-500/20 bg-green-500/5 p-10 text-center">
+            <div className="text-4xl mb-3">✅</div>
+            <div className="text-xl font-bold mb-2">Report sent!</div>
+            <p className="text-muted-foreground text-sm">Check your inbox. Our team will follow up with a personalised strategy.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

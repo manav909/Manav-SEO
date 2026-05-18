@@ -1,5 +1,3 @@
-import AnimatedBg from "@/components/AnimatedBg";
-import ThemeToggle from "@/components/ThemeToggle";
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
@@ -78,18 +76,18 @@ export default function BrainCommand() {
   }
 
   const S = {
-    page:   { minHeight:"100vh", background:"var(--bg)", color:"var(--text)", padding:"24px", fontFamily:"system-ui,sans-serif" } as React.CSSProperties,
+    page:   { minHeight:"100vh", background:"hsl(var(--background))", color:"hsl(var(--foreground))", padding:"24px", fontFamily:"system-ui,sans-serif" } as React.CSSProperties,
     header: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 } as React.CSSProperties,
-    title:  { fontSize:22, fontWeight:700, color:"var(--text)", display:"flex", alignItems:"center", gap:10 } as React.CSSProperties,
+    title:  { fontSize:22, fontWeight:700, color:"hsl(var(--foreground))", display:"flex", alignItems:"center", gap:10 } as React.CSSProperties,
     grid4:  { display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:12, marginBottom:24 } as React.CSSProperties,
-    tile:   { background:"var(--bg-card)", border:"0.5px solid #1e1e3a", borderRadius:12, padding:"16px 20px" } as React.CSSProperties,
+    tile:   { background:"hsl(var(--card))", border:"0.5px solid #1e1e3a", borderRadius:12, padding:"16px 20px" } as React.CSSProperties,
     tileN:  { fontSize:32, fontWeight:700, fontFamily:"monospace", lineHeight:1, marginBottom:4 } as React.CSSProperties,
-    tileL:  { fontSize:11, color:"var(--text-muted)", textTransform:"uppercase" as const, letterSpacing:1 },
-    card:   { background:"var(--bg-card)", border:"0.5px solid #1e1e3a", borderRadius:12, padding:20, marginBottom:16 } as React.CSSProperties,
+    tileL:  { fontSize:11, color:"hsl(var(--muted-foreground))", textTransform:"uppercase" as const, letterSpacing:1 },
+    card:   { background:"hsl(var(--card))", border:"0.5px solid #1e1e3a", borderRadius:12, padding:20, marginBottom:16 } as React.CSSProperties,
     cardT:  { fontSize:15, fontWeight:600, marginBottom:4 } as React.CSSProperties,
-    cardS:  { fontSize:12, color:"var(--text-muted)", marginBottom:16 } as React.CSSProperties,
+    cardS:  { fontSize:12, color:"hsl(var(--muted-foreground))", marginBottom:16 } as React.CSSProperties,
     grid2:  { display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))", gap:12 } as React.CSSProperties,
-    proj:   { background:"var(--bg-card)", border:"0.5px solid #1e1e3a", borderRadius:10, padding:14 } as React.CSSProperties,
+    proj:   { background:"hsl(var(--card))", border:"0.5px solid #1e1e3a", borderRadius:10, padding:14 } as React.CSSProperties,
     refresh:{ background:"transparent", border:"0.5px solid #1e1e3a", borderRadius:8, color:"#6b6b80", cursor:"pointer", padding:"6px 12px", fontSize:12, display:"flex", alignItems:"center", gap:6 } as React.CSSProperties,
   };
 
@@ -97,7 +95,7 @@ export default function BrainCommand() {
 
   return (
     <div style={S.page}>
-      <AnimatedBg/>
+      
       <div style={S.header}>
         <div style={S.title}>
           <Brain size={22} color="#6366f1"/>
@@ -136,9 +134,9 @@ export default function BrainCommand() {
                 <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <XAxis dataKey="date" tick={{fontSize:10,fill:"var(--text-muted)"}} tickLine={false} axisLine={false} interval={6}/>
-            <YAxis tick={{fontSize:10,fill:"var(--text-muted)"}} tickLine={false} axisLine={false}/>
-            <Tooltip contentStyle={{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:8,fontSize:12}} labelStyle={{color:"var(--text)"}} itemStyle={{color:"#818cf8"}}/>
+            <XAxis dataKey="date" tick={{fontSize:10,fill:"hsl(var(--muted-foreground))"}} tickLine={false} axisLine={false} interval={6}/>
+            <YAxis tick={{fontSize:10,fill:"hsl(var(--muted-foreground))"}} tickLine={false} axisLine={false}/>
+            <Tooltip contentStyle={{background:"hsl(var(--card))",border:"0.5px solid #1e1e3a",borderRadius:8,fontSize:12}} labelStyle={{color:"hsl(var(--foreground))"}} itemStyle={{color:"#818cf8"}}/>
             <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2} fill="url(#lv)"/>
           </AreaChart>
         </ResponsiveContainer>
@@ -152,15 +150,15 @@ export default function BrainCommand() {
           <div style={S.grid2}>
             {projects.map(p => (
               <div key={p.id} style={S.proj}>
-                <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:"var(--text)"}}>{p.name}</div>
+                <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:"hsl(var(--foreground))"}}>{p.name}</div>
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
                   <div style={{fontSize:24,fontWeight:700,color:scoreColor(p.brainScore),fontFamily:"monospace"}}>{p.brainScore}</div>
                   <div>
-                    <div style={{fontSize:10,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:.8}}>Brain Score</div>
-                    <div style={{fontSize:11,color:"var(--text-sub)"}}>{p.learnings} learnings</div>
+                    <div style={{fontSize:10,color:"hsl(var(--muted-foreground))",textTransform:"uppercase",letterSpacing:.8}}>Brain Score</div>
+                    <div style={{fontSize:11,color:"hsl(var(--muted-foreground))"}}>{p.learnings} learnings</div>
                   </div>
                 </div>
-                <div style={{background:"var(--border)",borderRadius:3,height:4,overflow:"hidden"}}>
+                <div style={{background:"hsl(var(--border))",borderRadius:3,height:4,overflow:"hidden"}}>
                   <div style={{width:`${p.brainScore}%`,height:"100%",background:`linear-gradient(90deg,#6366f1,${scoreColor(p.brainScore)})`,borderRadius:3}}/>
                 </div>
               </div>
@@ -176,10 +174,10 @@ export default function BrainCommand() {
           <div style={S.cardS}>Freshness score by topic — lower means higher risk</div>
           <ResponsiveContainer width="100%" height={280}>
             <RadarChart data={radar} margin={{top:10,right:30,bottom:10,left:30}}>
-              <PolarGrid stroke="var(--border)"/>
-              <PolarAngleAxis dataKey="topic" tick={{fontSize:10,fill:"var(--text-sub)"}}/>
+              <PolarGrid stroke="hsl(var(--border))"/>
+              <PolarAngleAxis dataKey="topic" tick={{fontSize:10,fill:"hsl(var(--muted-foreground))"}}/>
               <Radar dataKey="score" stroke="#ef4444" fill="#ef4444" fillOpacity={0.15} strokeWidth={1.5}/>
-              <Tooltip contentStyle={{background:"var(--bg-card)",border:"0.5px solid #1e1e3a",borderRadius:8,fontSize:12}}/>
+              <Tooltip contentStyle={{background:"hsl(var(--card))",border:"0.5px solid #1e1e3a",borderRadius:8,fontSize:12}}/>
             </RadarChart>
           </ResponsiveContainer>
         </div>
