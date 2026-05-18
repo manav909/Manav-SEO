@@ -626,7 +626,7 @@ function ConversationView({
 }
 export default function BdePanel() {
   const CTX_KEY = "bde_ctx_v3";
-  const [tab,setTab]=useState<'fiverr'|'intel'|'tools'|'responses'|'leads'|'docs'>('fiverr');
+  const [tab,setTab]=useState<'fiverr'|'intel'|'tools'|'responses'|'leads'|'docs'|'agent'>('fiverr');
   // Conversation state
   const [rawPaste,setRawPaste]=useState('');
   const [parsedMsgs,setParsedMsgs]=useState<any[]>([]);
@@ -680,6 +680,16 @@ export default function BdePanel() {
   const [expandedConv,setExpandedConv]=useState<Set<number>>(new Set());
   const [suggestions,setSuggestions]=useState<any[]>([]);
   const [genSugg,setGenSugg]=useState(false);
+  const [agentThread,setAgentThread]=useState<any[]>([]);
+  const [agentInput,setAgentInput]=useState('');
+  const [agentDraft,setAgentDraft]=useState('');
+  const [agentSuggestion,setAgentSuggestion]=useState('');
+  const [agentAnalysis,setAgentAnalysis]=useState<any>(null);
+  const [agentCoachNote,setAgentCoachNote]=useState('');
+  const [agentFollowUp,setAgentFollowUp]=useState<any>(null);
+  const [agentLoading,setAgentLoading]=useState(false);
+  const [agentNotes,setAgentNotes]=useState('');
+  const agentThreadRef=useRef<HTMLDivElement>(null);
   const [suggError,setSuggError]=useState('');
   const [pendingSuggDoc,setPendingSuggDoc]=useState<any>(null);
   const [prospectTab,setProspectTab]=useState<'suggestions'|'history'|'docs'>('suggestions');
@@ -723,10 +733,11 @@ export default function BdePanel() {
     if (parsedMsgs.length>0&&!analysis&&!analysing) items.push({icon:'🧠',msg:'Conversation parsed — analyse for intelligence',cta:'Analyse',target:'analyse',urgent:true});
     if (analysis&&!auditResult&&!auditing) items.push({icon:'🔍',msg:'Run site audit'+(auditUrl?' for '+auditUrl:'')+' to add proof',cta:'Open Tools',target:'tools',urgent:(analysis?.fiverr_specific?.order_probability||0)>55});
     if (analysis&&!leadSaved) items.push({icon:'💾',msg:'Save this lead — context lost on close',cta:'Save Lead',target:'save',urgent:true});
+    if (agentFollowUp) items.push({icon:'⏰',msg:(agentFollowUp.urgent?'🔴 Lead going cold — ':'⚠ ')+agentFollowUp.hours+'h since last client message',cta:'Open Agent',target:'agent',urgent:agentFollowUp.urgent});
     if (analysis&&auditResult&&!savedProspect) items.push({icon:'📋',msg:'Full context — generate a personalised proposal now',cta:'Generate Doc',target:'docs',urgent:false});
     if (deepAnalysis?.topMiss) items.push({icon:'⚠',msg:deepAnalysis.topMiss,cta:'Fix It',target:'fix',urgent:true});
     return items;
-  },[parsedMsgs,analysis,auditResult,leadSaved,savedProspect,analysing,auditing,deepAnalysis]);
+  },[parsedMsgs,analysis,auditResult,leadSaved,savedProspect,analysing,auditing,deepAnalysis,agentFollowUp]);
 
   const handlePulse=(target:string)=>{
     if (target==='analyse') {
@@ -744,6 +755,7 @@ export default function BdePanel() {
     else if (target==='tools') { setTab('tools'); if(!auditFor&&(savedProspect?.name||leadNameInput)) setAuditFor(savedProspect?.name||leadNameInput||''); }
     else if (target==='docs') setTab('docs');
     else if (target==='fix') { const msg=deepAnalysis?.nextAction; if(msg) setNextMsg(msg); }
+    else if (target==='agent') setTab('agent');
     else if (target==='intel') { if(savedProspect){setSelProspect(savedProspect);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');} setTab('intel'); loadProspects(); }
   };
 
@@ -1016,6 +1028,42 @@ export default function BdePanel() {
     await post('archive_lead',{prospectName:name,status:'archived'});
   }
 
+
+  useEffect(()=>{
+    if(!agentThread.length) return;
+    const last=agentThread.filter((m:any)=>m.role==='client').slice(-1)[0];
+    if(!last) return;
+    const h=(Date.now()-new Date(last.ts).getTime())/3600000;
+    if(h>48) setAgentFollowUp({urgent:true,hours:Math.round(h)});
+    else if(h>24) setAgentFollowUp({urgent:false,hours:Math.round(h)});
+    else setAgentFollowUp(null);
+  },[agentThread]);
+
+  async function handleAgentMessage(){
+    if(!agentInput.trim()) return;
+    const msg={role:'client',text:agentInput.trim(),ts:new Date().toISOString()};
+    const thread=[...agentThread,msg];
+    setAgentThread(thread);
+    setAgentInput('');
+    setAgentLoading(true);
+    setAgentSuggestion('');setAgentAnalysis(null);setAgentCoachNote('');
+    const lc={
+      name:savedProspect?.name||leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'',
+      url:savedProspect?.url||auditUrl||'',
+      ...(analysis||{}),
+      ...(analysis?.fiverr_specific||{})
+    };
+    const r=await post('live_coach',{thread,newClientMessage:msg.text,bdeNotes:agentNotes,leadContext:lc});
+    if((r as any).suggestedReply){
+      setAgentSuggestion((r as any).suggestedReply);
+      setAgentAnalysis((r as any).messageAnalysis||null);
+      setAgentCoachNote((r as any).coachNote||'');
+      setAgentFollowUp(null);
+    }
+    setAgentLoading(false);
+    setTimeout(()=>agentThreadRef.current?.scrollTo({top:99999,behavior:'smooth'}),100);
+  }
+
   async function saveLead(){
     if(!analysis)return;
     setSavingLead(true); setSaveError('');
@@ -1221,7 +1269,7 @@ export default function BdePanel() {
 
       {/* Tabs */}
       <div style={S.tabs}>
-        {([['fiverr','🟢 Fiverr Analyser'],['intel','🧠 Lead Intel'+(prospects.length?` (${prospects.length})`:'' )],['tools','⚡ Tools'],['responses','💬 Responses'],['leads','📋 Leads'],['docs','🏆 Documents']] as [string,string][]).map(([id,l])=>(
+        {([['fiverr','🟢 Fiverr Analyser'],['agent','⚡ Live Agent'],['intel','🧠 Lead Intel'+(prospects.length?` (${prospects.length})`:'' )],['tools','⚡ Tools'],['responses','💬 Responses'],['leads','📋 Leads'],['docs','🏆 Documents']] as [string,string][]).map(([id,l])=>(
           <button key={id} style={{...S.tab,...(tab===id?S.tabA:{})}} onClick={()=>setTab(id as any)}>{l}</button>
         ))}
       </div>
@@ -1662,6 +1710,102 @@ export default function BdePanel() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+
+        {tab==='agent'&&(
+          <div style={{display:'flex',flexDirection:'column' as const,gap:8}}>
+            {/* Header */}
+            <div style={{...S.card,padding:'10px 14px',borderColor:'rgba(16,185,129,.3)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div>
+                  <span style={{fontSize:13,fontWeight:700,color:'#10b981'}}>⚡ Live Conversation Agent</span>
+                  <div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:2}}>Paste each client message → get the best reply. Learns from every conversation.</div>
+                </div>
+                {agentThread.length>0&&<button style={{...S.btn('hsl(var(--muted-foreground))'),fontSize:10,padding:'3px 8px'}} onClick={()=>{if(window.confirm('Clear?')){setAgentThread([]);setAgentSuggestion('');setAgentAnalysis(null);setAgentFollowUp(null);}}}>✕ Clear</button>}
+              </div>
+            </div>
+
+            {/* Follow-up banner */}
+            {agentFollowUp&&(
+              <div style={{padding:'8px 14px',background:agentFollowUp.urgent?'rgba(239,68,68,.08)':'rgba(245,158,11,.06)',border:`0.5px solid ${agentFollowUp.urgent?'rgba(239,68,68,.3)':'rgba(245,158,11,.3)'}`,borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:12,color:agentFollowUp.urgent?'#ef4444':'#f59e0b',fontWeight:600}}>{agentFollowUp.urgent?'🔴':'⏰'} {agentFollowUp.hours}h since last client message — {agentFollowUp.urgent?'lead going cold':'consider following up'}</span>
+                <button style={{...S.btn(agentFollowUp.urgent?'#ef4444':'#f59e0b'),fontSize:10,padding:'3px 10px'}} onClick={async()=>{
+                  setAgentLoading(true);
+                  const lc={name:savedProspect?.name||leadNameInput||'',url:savedProspect?.url||auditUrl||''};
+                  const r=await post('live_coach',{thread:agentThread,newClientMessage:'[Follow-up needed — '+agentFollowUp.hours+'h silence]',bdeNotes:'Generate a follow-up message',leadContext:lc});
+                  if((r as any).suggestedReply){setAgentSuggestion((r as any).suggestedReply);setAgentCoachNote((r as any).coachNote||'');}
+                  setAgentLoading(false);
+                }}>✍ Generate Follow-up</button>
+              </div>
+            )}
+
+            {/* Thread */}
+            <div ref={agentThreadRef} style={{...S.card,padding:12,minHeight:200,maxHeight:360,overflowY:'auto' as const,display:'flex',flexDirection:'column' as const,gap:6}}>
+              {agentThread.length===0&&(
+                <div style={{textAlign:'center' as const,padding:'28px 0',color:'hsl(var(--muted-foreground))'}}>
+                  <div style={{fontSize:28,marginBottom:8}}>⚡</div>
+                  <div style={{fontSize:12,fontWeight:600}}>Paste the first client message below to start</div>
+                </div>
+              )}
+              {agentThread.map((m:any,idx:number)=>{
+                const isClient=m.role==='client';
+                const isAI=m.role==='ai';
+                return(
+                  <div key={idx} style={{display:'flex',justifyContent:isClient?'flex-start':'flex-end',gap:6,alignItems:'flex-start'}}>
+                    {isClient&&<div style={{width:24,height:24,borderRadius:'50%',background:'rgba(99,102,241,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,flexShrink:0}}>C</div>}
+                    <div style={{maxWidth:'78%',padding:'7px 11px',borderRadius:isClient?'4px 10px 10px 10px':'10px 4px 10px 10px',background:isClient?'rgba(99,102,241,.08)':isAI?'rgba(16,185,129,.08)':'rgba(167,139,250,.08)',border:`0.5px solid ${isClient?'rgba(99,102,241,.2)':isAI?'rgba(16,185,129,.2)':'rgba(167,139,250,.2)'}`,fontSize:12,lineHeight:1.6}}>
+                      {!isClient&&<div style={{fontSize:9,fontWeight:700,color:isAI?'#10b981':'#a78bfa',marginBottom:3}}>{isAI?'AI SUGGESTED':'YOU SENT'}{m.aiUsed?' (used AI)':''}</div>}
+                      <div style={{whiteSpace:'pre-wrap' as const,color:'hsl(var(--foreground))'}}>{m.text}</div>
+                      <div style={{fontSize:9,color:'hsl(var(--muted-foreground))',marginTop:3,textAlign:'right' as const}}>{new Date(m.ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
+                    </div>
+                    {!isClient&&<div style={{width:24,height:24,borderRadius:'50%',background:isAI?'rgba(16,185,129,.2)':'rgba(167,139,250,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,flexShrink:0}}>{isAI?'AI':'M'}</div>}
+                  </div>
+                );
+              })}
+              {agentLoading&&<div style={{textAlign:'center' as const,color:'#10b981',fontSize:12,padding:8}}>⚡ Thinking...</div>}
+            </div>
+
+            {/* Analysis strip */}
+            {agentAnalysis&&(
+              <div style={{...S.card,padding:'6px 12px',display:'flex',gap:10,flexWrap:'wrap' as const,fontSize:10}}>
+                {agentAnalysis.emotion&&<span style={{color:'#a78bfa'}}>😌 {agentAnalysis.emotion}</span>}
+                {agentAnalysis.intent&&<span style={{color:'hsl(var(--muted-foreground))'}}>🎯 {agentAnalysis.intent}</span>}
+                {agentAnalysis.signal&&<span style={{color:'#10b981'}}>📊 {agentAnalysis.signal}</span>}
+                {agentAnalysis.risk&&<span style={{color:'#ef4444'}}>⚠ {agentAnalysis.risk}</span>}
+                {agentCoachNote&&<span style={{color:'#f59e0b',fontStyle:'italic'}}>💡 {agentCoachNote}</span>}
+              </div>
+            )}
+
+            {/* Dual reply */}
+            {agentSuggestion&&(
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div style={{...S.card,padding:10,borderColor:'rgba(16,185,129,.3)'}}>
+                  <div style={{fontSize:9,color:'#10b981',fontWeight:700,marginBottom:4}}>⚡ AI SUGGESTED</div>
+                  <div style={{fontSize:12,lineHeight:1.6,whiteSpace:'pre-wrap' as const,color:'hsl(var(--foreground))',maxHeight:110,overflow:'auto',marginBottom:8}}>{agentSuggestion}</div>
+                  <div style={{display:'flex',gap:4}}>
+                    <button style={{...S.btn('#10b981'),fontSize:10,flex:1,padding:'4px 0'}} onClick={()=>{navigator.clipboard.writeText(agentSuggestion).catch(()=>{});setAgentThread(t=>[...t,{role:'me',text:agentSuggestion,ts:new Date().toISOString(),aiUsed:true}]);setAgentSuggestion('');setAgentAnalysis(null);setAgentDraft('');}}>✓ I sent this</button>
+                    <button style={{...S.btn('#a78bfa'),fontSize:10,padding:'4px 8px'}} onClick={()=>setAgentDraft(agentSuggestion)}>→ Edit</button>
+                  </div>
+                </div>
+                <div style={{...S.card,padding:10}}>
+                  <div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:4}}>✍ YOUR DRAFT</div>
+                  <textarea style={{width:'100%',background:'transparent',border:'none',color:'hsl(var(--foreground))',fontSize:12,lineHeight:1.6,resize:'none' as const,outline:'none',minHeight:80,maxHeight:110,boxSizing:'border-box' as const}} value={agentDraft} onChange={(e:any)=>setAgentDraft(e.target.value)} placeholder="Type your own message..."/>
+                  {agentDraft.trim()&&<button style={{...S.btn('#a78bfa'),fontSize:10,width:'100%',marginTop:4,padding:'4px 0'}} onClick={()=>{setAgentThread(t=>[...t,{role:'me',text:agentDraft,ts:new Date().toISOString(),aiUsed:false}]);setAgentSuggestion('');setAgentAnalysis(null);setAgentDraft('');}}>✓ I sent this</button>}
+                </div>
+              </div>
+            )}
+
+            {/* Input */}
+            <div style={{...S.card,padding:10,borderColor:'rgba(16,185,129,.2)'}}>
+              <div style={{fontSize:9,color:'hsl(var(--muted-foreground))',fontWeight:700,marginBottom:4}}>NEW CLIENT MESSAGE</div>
+              <textarea style={{width:'100%',background:'transparent',border:'none',color:'hsl(var(--foreground))',fontSize:12,lineHeight:1.6,resize:'none' as const,outline:'none',minHeight:64,boxSizing:'border-box' as const}} value={agentInput} onChange={(e:any)=>setAgentInput(e.target.value)} placeholder="Paste client's latest message here..." onKeyDown={(e:any)=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();handleAgentMessage();}}}/>
+              <div style={{display:'flex',gap:6,marginTop:6}}>
+                <input style={{...S.inp,flex:1,fontSize:11}} value={agentNotes} onChange={(e:any)=>setAgentNotes(e.target.value)} placeholder="Your thinking / context for AI (optional)"/>
+                <button style={{...S.btn('#10b981'),padding:'7px 16px',fontSize:12,flexShrink:0}} onClick={handleAgentMessage} disabled={agentLoading||!agentInput.trim()}>{agentLoading?'⏳':'⚡ Get Reply'}</button>
+              </div>
+            </div>
           </div>
         )}
 
