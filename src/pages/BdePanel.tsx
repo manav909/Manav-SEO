@@ -12,7 +12,7 @@ export default function BdePanel(){
   const[analysis,setAnalysis]=useState<any>(null);
   const[parsedLines,setParsed]=useState<any[]>([]);
   const[auditUrl,setAuditUrl]=useState("");
-  const[auditForLead,setAuditFor]=useState("");
+  const[auditFor,setAuditFor]=useState("");
   const[auditing,setAuditing]=useState(false);
   const[auditResult,setAuditResult]=useState<any>(null);
   const[quickResps,setQuickResps]=useState<any[]>([]);
@@ -38,7 +38,7 @@ export default function BdePanel(){
   async function doAudit(){
     if(!auditUrl.trim())return;
     setAuditing(true); setAuditResult(null);
-    const r=await post("instant_audit_showcase",{url:auditUrl,forLead:auditForLead});
+    const r=await post("instant_audit_showcase",{url:auditUrl,forLead:auditFor});
     setAuditResult(r); setAuditing(false);
   }
   async function genResponses(){
