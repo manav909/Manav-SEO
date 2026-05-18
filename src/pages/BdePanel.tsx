@@ -6,18 +6,6 @@ const STAGE_C:any={new:"hsl(var(--muted-foreground))",contacted:"#6366f1",demo_s
 const MOOD_C=(s:number)=>s>=70?"#10b981":s>=50?"#6366f1":s>=30?"#f59e0b":"#ef4444";
 
 const DOC_TYPES=[
-  {id:"proposal",      label:"📋 Custom Proposal",       desc:"Personalised proposal for their specific situation"},
-  {id:"pitch_email",   label:"📧 Cold Pitch Email",      desc:"First contact email with their site insights"},
-  {id:"followup_email",label:"✉️ Follow-up Email",       desc:"After discovery call — summarise and next steps"},
-  {id:"audit_summary", label:"📊 Audit Summary",         desc:"Plain-English audit results to share with client"},
-  {id:"whatsapp_msg",  label:"💬 WhatsApp Message",      desc:"Short message for Fiverr or WhatsApp — under 100 words"},
-  {id:"case_study",    label:"🏆 Case Study",            desc:"Results story from a similar business"},
-  {id:"objection_response",label:"🛡️ Objection Response",desc:"Professional reply to their main concern"},
-];
-const post3=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then((r:any)=>r.json()).catch(()=>({}));
-
-
-const DOC_TYPES=[
   {id:"proposal",      label:"Custom Proposal",       icon:"📋"},
   {id:"pitch_email",   label:"Cold Pitch Email",      icon:"📧"},
   {id:"followup_email",label:"Follow-up Email",       icon:"✉️"},
