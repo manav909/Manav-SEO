@@ -100,15 +100,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         prof = { ...prof, approved: true };
       }
       setProfile(prof);
-      // Look up staff member by email to get panel permissions
-      if (prof?.email) {
-        const { data: staffRow } = await supabase
-          .from('staff_members')
-          .select('permissions,role')
-          .eq('email', prof.email)
-          .maybeSingle();
-        if (staffRow?.permissions) setStaffPermissions(staffRow.permissions);
-      }
+      // Look up staff permissions — isolated so it never breaks sign-in
+      try {
+        if (prof?.email) {
+          const { data: staffRows } = await supabase
+            .from('staff_members')
+            .select('permissions,role')
+            .eq('email', prof.email)
+            .limit(1);
+          const staffRow = staffRows?.[0];
+          if (staffRow?.permissions) setStaffPermissions(staffRow.permissions);
+        }
+      } catch { /* staff lookup failure must never block sign-in */ }
 
       // Build the list of client IDs this user has access to
       const idList: string[] = [];
