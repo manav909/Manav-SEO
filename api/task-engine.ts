@@ -506,6 +506,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         const m = cleaned.match(/\{[\s\S]+\}/);
         if (m) try { doc = JSON.parse(m[0]); } catch {}
       }
+      const typeLabel: Record<string,string> = { proposal:"Strategic SEO Proposal", pitch_email:"Pitch Email", followup_email:"Follow-up", audit_summary:"SEO Audit Summary", whatsapp_msg:"Message", case_study:"Case Study", objection_response:"Response" };
       // Strategy 3: fallback — wrap raw text as a single section
       if (!doc || !doc.sections) {
         const fallbackBody = cleaned.replace(/^[`\s]*json\s*/i,"").replace(/[`\s]*$/,"").trim();
@@ -521,7 +522,6 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const clientName: string = doc.recipientName || leadInfo.name || "Valued Prospect";
       const companyName: string = doc.preparedFor || leadInfo.name || "";
       const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      const typeLabel: Record<string,string> = { proposal:"Strategic SEO Proposal", pitch_email:"Pitch Email", followup_email:"Follow-up", audit_summary:"SEO Audit Summary", whatsapp_msg:"Message", case_study:"Case Study", objection_response:"Response" };
       const secHtml = (doc.sections || []).map((s: any) => {
         const rows = (s.body || "").split("\n").map((ln: string) => {
           const t = ln.trim();
