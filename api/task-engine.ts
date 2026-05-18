@@ -494,13 +494,9 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const _r = await _ac.messages.create({
         model: "claude-sonnet-4-6", max_tokens: 3000, system: sysPrompt,
-        messages: [
-          { role: "user", content: userPrompt },
-          { role: "assistant", content: "{" }
-        ]
+        messages: [{ role: "user", content: userPrompt }]
       });
-      // Prepend the { we used as prefill
-      const raw = "{" + ((_r.content[0] as any).text || "");
+      const raw = (_r.content[0] as any).text || "{}";
       let doc: any = null;
       // Strategy 1: direct parse after stripping any accidental fences
       const cleaned = raw.replace(/^```json\s*/i,"").replace(/```\s*$/,"").trim();
