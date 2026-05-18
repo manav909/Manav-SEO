@@ -30,6 +30,8 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   const [leadName,setLeadName]=React.useState("");
   const [leadIndustry,setLeadIndustry]=React.useState("");
   const [brandName,setBrandName]=React.useState("Manav S");
+  const [suggCtx,setSuggCtx]=React.useState("");
+  const [autoGenTrigger,setAutoGenTrigger]=React.useState(0);
   const iframeRef=React.useRef<HTMLIFrameElement>(null);
   // Auto-fill fields from context (only when field is still empty)
   // Auto-trigger when a suggestion doc is passed from Intel tab
@@ -83,9 +85,6 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   };
   const printDoc=()=>{const iw=iframeRef.current?.contentWindow;if(iw){iw.focus();iw.print();}};
   // Auto-generate when triggered from Intel tab suggestions
-  React.useEffect(()=>{
-    if(autoGenTrigger>0) { generate(); if(onSuggDocUsed) onSuggDocUsed(); }
-  },[autoGenTrigger]);
   const downloadPdf=()=>{
     if(!iframeRef.current?.contentWindow) return;
     const w=iframeRef.current.contentWindow;
