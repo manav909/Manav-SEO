@@ -536,93 +536,160 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         if (!s.heading) return "<div class=\"sec body\">" + wrapped + "</div>";
         return "<div class=\"sec " + (s.type || "body") + "\"><h2>" + s.heading + "</h2>" + wrapped + "</div>";
       }).join("");
-      // Build Word-compatible HTML with proper mso styles
+      // ── Document renderer ────────────────────────────────────────
       const escH = (s: string) => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
       const renderBody = (body: string): string => {
         const rawLines = String(body||"").split("\n");
         let out = ""; let listType: string|null = null;
-        const closeList = () => { if (listType) { out += listType==="ol" ? "</ol>" : "</ul>"; listType = null; } };
+        const closeList = () => {
+          if (listType) { out += listType==="ol" ? "</ol>" : "</ul>"; listType = null; }
+        };
         for (const raw of rawLines) {
           const t = raw.trim();
-          if (!t) { closeList(); out += "<p style='margin:0;font-size:6pt'>&nbsp;</p>"; continue; }
-          if (t.startsWith("- ") || t.startsWith("• ") || t.startsWith("* ")) {
-            if (listType !== "ul") { closeList(); out += "<ul style='margin:6pt 0 6pt 18pt;padding:0'>"; listType = "ul"; }
-            out += `<li style='font-size:11pt;line-height:1.65;margin-bottom:3pt;color:#2a2a3e'>${escH(t.replace(/^[-•*]\s/,"")).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</li>`;
-          } else if (/^\d+\.\s/.test(t)) {
-            if (listType !== "ol") { closeList(); out += "<ol style='margin:6pt 0 6pt 18pt;padding:0'>"; listType = "ol"; }
-            out += `<li style='font-size:11pt;line-height:1.65;margin-bottom:3pt;color:#2a2a3e'>${escH(t.replace(/^\d+\.\s/,"")).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</li>`;
-          } else if (t.startsWith("## ") || t.startsWith("### ")) {
+          if (!t) { closeList(); out += "<w:p/>"; continue; }
+          const fmt = (s: string) => escH(s)
+            .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+            .replace(/\*(.+?)\*/g,"<em>$1</em>");
+          if (t.startsWith("## ") || t.startsWith("### ")) {
             closeList();
-            const ht = t.replace(/^#+\s*/,"");
-            out += `<p style='margin:10pt 0 4pt 0;font-size:10pt;font-weight:bold;color:#19345E;text-transform:uppercase;letter-spacing:0.5pt'>${escH(ht)}</p>`;
+            out += `<p class="subhead">${fmt(t.replace(/^#+\s*/,""))}</p>`;
+          } else if (/^[-•*]\s/.test(t)) {
+            if (listType !== "ul") { closeList(); out += "<ul>"; listType = "ul"; }
+            out += `<li>${fmt(t.replace(/^[-•*]\s/,""))}</li>`;
+          } else if (/^\d+\.\s/.test(t)) {
+            if (listType !== "ol") { closeList(); out += "<ol>"; listType = "ol"; }
+            out += `<li>${fmt(t.replace(/^\d+\.\s/,""))}</li>`;
           } else {
             closeList();
-            const fmt = escH(t).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/\*(.+?)\*/g,"<em>$1</em>");
-            out += `<p style='margin:0 0 7pt 0;font-size:11pt;line-height:1.75;color:#2a2a3e'>${fmt}</p>`;
+            out += `<p class="body-p">${fmt(t)}</p>`;
           }
         }
         closeList();
         return out;
       };
-      const secTypeStyles: Record<string,string> = {
-        findings: "background:#f4f7fc;border-left:4pt solid #19345E;padding:14pt 18pt;",
-        plan:     "background:#fff9f5;border-left:4pt solid #E8652A;padding:14pt 18pt;",
-        pricing:  "background:#eef3fb;border:1pt solid #c8d8ef;padding:14pt 18pt;",
-        proof:    "background:#f9fdf6;border-left:4pt solid #27ae60;padding:14pt 18pt;",
-        cta:      "background:#19345E;padding:16pt 20pt;",
-        intro:    "", body: "", default: ""
+
+      // Map section type → accent colour
+      const ACCENT: Record<string,string> = {
+        findings:"#1B4080", plan:"#C94F1A", pricing:"#1B4080",
+        proof:"#1A7A45", cta:"#C94F1A", intro:"#1B4080",
+        body:"#1B4080", default:"#1B4080"
       };
-      const secHtml2 = (doc.sections || []).map((s: any) => {
-        const st = secTypeStyles[s.type] || "";
-        const isCta = s.type === "cta";
-        const textCol = isCta ? "color:#fff;" : "color:#2a2a3e;";
-        const hCol = isCta ? "#E8652A" : (s.type==="findings"||s.type==="pricing" ? "#19345E" : "#E8652A");
-        let inner = "";
-        if (s.heading) {
-          inner += `<p style='margin:0 0 8pt 0;font-size:9pt;font-weight:bold;letter-spacing:1.5pt;text-transform:uppercase;color:${hCol};border-bottom:1.5pt solid ${hCol};padding-bottom:5pt'>${escH(s.heading)}</p>`;
-        }
-        inner += `<div style='${textCol}'>${renderBody(s.body)}</div>`;
-        return `<div style='margin-bottom:24pt;page-break-inside:avoid;${st}'>${inner}</div>`;
-      }).join("");
+
+      const secRows = (doc.sections||[]).map((s: any) => {
+        const accent = ACCENT[s.type] || "#1B4080";
+        const isCta  = s.type === "cta";
+        const bg     = isCta ? "#1B4080" : s.type==="findings" ? "#F2F5FB"
+                     : s.type==="plan" ? "#FFF8F3" : s.type==="pricing" ? "#EEF4FF"
+                     : s.type==="proof" ? "#F3FBF6" : "#FFFFFF";
+        const headHtml = s.heading
+          ? `<tr><td style="padding:14pt 22pt 0 22pt;">
+               <p style="margin:0 0 2pt 0;font-family:Calibri,Arial,sans-serif;font-size:7.5pt;font-weight:bold;letter-spacing:2pt;text-transform:uppercase;color:${isCta?"#E8652A":accent};">${escH(s.heading)}</p>
+               <div style="height:1.5pt;background:${isCta?"#E8652A":accent};margin-bottom:10pt;"></div>
+             </td></tr>`
+          : "";
+        const bodyHtml = renderBody(s.body);
+        return `<tr><td style="background:${bg};${isCta?"color:#fff;":""}padding:${s.heading?"4pt":"14pt"} 22pt 14pt 22pt;page-break-inside:avoid;">
+          ${headHtml ? headHtml.replace(/<tr><td[^>]*>/,"").replace(/<\/td><\/tr>/,"") : ""}
+          <div style="font-family:Calibri,Arial,sans-serif;${isCta?"color:#f0f0f0;":"color:#1E1E2E;"}">${bodyHtml}</div>
+        </td></tr>
+        <tr><td style="height:12pt;background:#fff;font-size:1pt;">&nbsp;</td></tr>`;
+      }).join("\n");
+
       const html = `<!DOCTYPE html>
-<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head><meta charset='UTF-8'><title>${escH(doc.title)}</title>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<title>${escH(doc.title)}</title>
+<!--[if gte mso 9]><xml>
+<w:WordDocument>
+  <w:View>Print</w:View><w:Zoom>90</w:Zoom>
+  <w:DefaultTabStop>720</w:DefaultTabStop>
+  <w:DoNotOptimizeForBrowser/>
+</w:WordDocument></xml><![endif]-->
 <style>
-@page { size: A4; margin: 2.5cm 2.8cm; mso-header-margin: 1cm; mso-footer-margin: 1cm; }
-body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; font-size: 11pt; color: #1a1a2e; background: #fff; margin: 0; padding: 0; }
-table { border-collapse: collapse; width: 100%; }
-p { margin: 0 0 8pt 0; }
-h1,h2,h3 { margin: 0; padding: 0; }
-ul,ol { margin: 6pt 0 10pt 20pt; }
-li { margin-bottom: 4pt; }
-@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-</style></head><body>
-<table width='100%' cellpadding='0' cellspacing='0' style='margin-bottom:0'>
-  <tr><td style='background:#19345E;padding:28pt 36pt 24pt;'>
-    <p style='font-size:9pt;font-weight:bold;letter-spacing:3pt;color:rgba(255,255,255,0.85);text-transform:uppercase;margin:0 0 10pt 0'>Manav S &mdash; SEO Season</p>
-    <p style='font-size:9pt;font-weight:bold;letter-spacing:1.5pt;color:#E8652A;text-transform:uppercase;margin:0 0 8pt 0'>${escH(typeLabel[docType]||"Strategic Document")}</p>
-    <h1 style='font-size:24pt;font-weight:300;color:#fff;line-height:1.2;margin:0 0 6pt 0'>${escH(doc.title)}</h1>
-    ${doc.subtitle ? `<p style='font-size:11pt;color:rgba(255,255,255,0.65);font-style:italic;margin:0'>${escH(doc.subtitle)}</p>` : ""}
-  </td></tr>
-  <tr><td style='background:#E8652A;padding:7pt 36pt'>
-    <table width='100%' cellpadding='0' cellspacing='0'><tr>
-      <td style='font-size:9pt;color:#fff;font-weight:600'>Prepared for: ${escH(clientName)}${companyName && companyName !== clientName ? ` &mdash; ${escH(companyName)}` : ""}</td>
-      <td align='center' style='font-size:9pt;color:#fff;font-weight:600'>${today}</td>
-      <td align='right' style='font-size:9pt;color:#fff;font-weight:600'>Confidential</td>
-    </tr></table>
+  /* ── Page ── */
+  @page { size:A4; margin:0; }
+  @page { mso-header-margin:0cm; mso-footer-margin:0cm; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:0; font-family:Calibri,"Segoe UI",Arial,sans-serif;
+         font-size:11pt; color:#1E1E2E; background:#fff;
+         -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  table { border-collapse:collapse; }
+
+  /* ── Typography ── */
+  p       { margin:0 0 7pt 0; font-size:11pt; line-height:1.75; color:#1E1E2E; }
+  p.body-p{ margin:0 0 8pt 0; font-size:11pt; line-height:1.8;  color:#2A2A3E; }
+  p.subhead{margin:12pt 0 4pt 0;font-size:10pt;font-weight:bold;color:#1B4080;
+             text-transform:uppercase;letter-spacing:0.6pt;}
+  ul,ol   { margin:4pt 0 10pt 20pt; padding:0; }
+  li      { font-size:11pt; line-height:1.7; color:#2A2A3E; margin-bottom:4pt; }
+  strong  { font-weight:700; color:#1B4080; }
+
+  /* ── Print ── */
+  @media print {
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ COVER HEADER ══════════════════════════════════════════════ -->
+<table width="100%" cellpadding="0" cellspacing="0">
+  <!-- Brand bar -->
+  <tr>
+    <td width="6" style="background:#E8652A;">&nbsp;</td>
+    <td style="background:#1B4080;padding:32pt 32pt 28pt 26pt;">
+      <p style="margin:0 0 4pt 0;font-size:8pt;font-weight:bold;letter-spacing:3pt;color:rgba(255,255,255,0.6);text-transform:uppercase;">${escH(bName)}&nbsp;&nbsp;/&nbsp;&nbsp;SEO Season</p>
+      <p style="margin:0 0 12pt 0;font-size:8pt;font-weight:bold;letter-spacing:1.8pt;color:#E8652A;text-transform:uppercase;">${escH(typeLabel[docType]||"Strategic Document")}</p>
+      <p style="margin:0 0 ${doc.subtitle?"8":"0"}pt 0;font-size:22pt;font-weight:300;color:#FFFFFF;line-height:1.2;">${escH(doc.title)}</p>
+      ${doc.subtitle ? `<p style="margin:0;font-size:11pt;color:rgba(255,255,255,0.55);font-style:italic;">${escH(doc.subtitle)}</p>` : ""}
+    </td>
+  </tr>
+  <!-- Meta strip -->
+  <tr>
+    <td width="6" style="background:#C94F1A;">&nbsp;</td>
+    <td style="background:#E8652A;padding:8pt 32pt 8pt 26pt;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="font-size:8.5pt;color:#fff;font-weight:600;">Prepared for: <strong style="color:#fff;">${escH(clientName)}${companyName && companyName !== clientName ? " &mdash; " + escH(companyName) : ""}</strong></td>
+          <td align="center" style="font-size:8.5pt;color:rgba(255,255,255,0.85);">${today}</td>
+          <td align="right" style="font-size:8.5pt;color:rgba(255,255,255,0.85);font-style:italic;">Confidential</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <!-- Spacer -->
+  <tr><td colspan="2" style="height:8pt;background:#fff;"></td></tr>
+</table>
+
+<!-- ══ BODY SECTIONS ═════════════════════════════════════════════ -->
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:0 32pt;">
+  <tr><td style="padding:0 32pt;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      ${secRows}
+    </table>
   </td></tr>
 </table>
-<div style='padding:28pt 36pt'>${secHtml2}</div>
-<table width='100%' cellpadding='0' cellspacing='0' style='margin:0 36pt'>
-  <tr><td style='border-top:1pt solid #dde4f0;padding:12pt 0'>
-    <table width='100%' cellpadding='0' cellspacing='0'><tr>
-      <td style='font-size:9pt;color:#888'><strong style='color:#19345E'>Manav S</strong> &mdash; SEO Season</td>
-      <td align='right' style='font-size:9pt;color:#888'>${doc.footerNote ? escH(doc.footerNote) : `Prepared exclusively for ${escH(clientName)}`}</td>
-    </tr></table>
-  </td></tr>
+
+<!-- ══ FOOTER ════════════════════════════════════════════════════ -->
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16pt;">
+  <tr>
+    <td width="6" style="background:#E8652A;">&nbsp;</td>
+    <td style="border-top:1pt solid #DDE4F0;padding:10pt 32pt 10pt 26pt;">
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="font-size:8pt;color:#888;"><strong style="color:#1B4080;font-weight:700;">${escH(bName)}</strong> &mdash; SEO Season</td>
+        <td align="right" style="font-size:8pt;color:#aaa;font-style:italic;">${doc.footerNote ? escH(doc.footerNote) : "Prepared exclusively for " + escH(clientName)}</td>
+      </tr></table>
+    </td>
+  </tr>
 </table>
+
 </body></html>`;
+      
             return ok(res, { success: true, html, docType, title: doc.title, clientName });
     } catch (e: any) { return ok(res, { error: e.message }); }
   }
