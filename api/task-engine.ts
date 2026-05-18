@@ -519,7 +519,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1200,
         system: "You are a senior BDE coach at SEO Season. Generate highly specific, immediately actionable suggestions to close, upsell or retain this lead. Every suggestion must name a specific action, include an exact opening line or message, and explain why it will work for THIS specific lead based on their context. Use algorithm knowledge to create urgency where relevant.",
-        messages: [{ role: "user", content: "LEAD CONTEXT: " + ctx.join(" | ") + " Generate exactly 5 suggestions. Return JSON array only: [{"type":"close|upsell|followup|audit|content","priority":"high|medium","action":"specific thing to do RIGHT NOW in one sentence","script":"exact opening message or line to use — ready to copy-paste","reason":"why this will work for this specific lead","timing":"e.g. Today, Within 24h, This week"}]" }]
+        messages: [{ role: "user", content: "LEAD CONTEXT: " + ctx.join(" | ") + " Generate 5 actionable suggestions. Return JSON array only, no markdown. Each item has fields: type (close/upsell/followup/audit/content), priority (high/medium), action (specific task), script (exact copy-paste message), reason (why for this lead), timing (when)." }]
       });
       const raw = (_r.content[0] as any).text || "[]";
       let suggestions: any[] = [];
