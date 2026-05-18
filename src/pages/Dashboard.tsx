@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
+import AnimatedBg from '@/components/AnimatedBg';
   LineChart, Line, XAxis, YAxis, ReferenceLine,
   CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';

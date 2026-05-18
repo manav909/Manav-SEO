@@ -13,6 +13,7 @@ import {
   AlertTriangle, CheckCircle2, Info
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import AnimatedBg from '@/components/AnimatedBg';
 
 const EMPTY_FORM = {
   llm_visibility_score: '', chatgpt_citations: '', perplexity_citations: '',

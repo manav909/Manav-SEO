@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import {
+import AnimatedBg from '@/components/AnimatedBg';
   Zap, Brain, ShieldCheck, AlertTriangle, CheckCircle2,
   ChevronRight, RefreshCw, Save, BarChart3, Globe,
   ArrowUpRight, Info, Shield, Target, Sparkles, Eye,
