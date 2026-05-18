@@ -1015,6 +1015,40 @@ export default function BdePanel() {
     setResponses(r);setGenResp(false);
   }
 
+  function buildAuditHtml(ar:any):string{
+    const sc=Number(ar.score)||0;
+    const c=sc>=70?'#10b981':sc>=50?'#f59e0b':'#ef4444';
+    const sevC:any={critical:'#ef4444',high:'#f59e0b',medium:'#6366f1',low:'#888'};
+    const issHtml=(ar.categories||[]).map((cat:any)=>`
+      <div class="cat"><div class="cat-hdr"><span>${cat.name}</span><span style="color:${cat.score>=70?'#10b981':cat.score>=50?'#f59e0b':'#ef4444'}">${cat.score}/100</span></div>
+      ${(cat.issues||[]).map((iss:any)=>`<div class="issue"><span class="sev" style="color:${sevC[iss.severity]||'#888'};background:${sevC[iss.severity]||'#888'}18">${(iss.severity||'low').toUpperCase()}</span><span class="iss-txt">${iss.issue||''}</span>${iss.fix?`<div class="fix">→ ${iss.fix}</div>`:''}${iss.algorithmNote?`<div class="algo">🔬 ${iss.algorithmNote}</div>`:''}</div>`).join('')}
+      </div>`).join('');
+    const qwHtml=(ar.quickWins||[]).map((w:string)=>`<li>${w}</li>`).join('');
+    const alHtml=(ar.algorithmHighlights||[]).map((h:string)=>`<li>${h}</li>`).join('');
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>SEO Audit — ${ar.url||''}</title><style>
+      body{font-family:Calibri,Arial,sans-serif;max-width:900px;margin:0 auto;padding:32px;color:#1a1a2e;background:#fff}
+      .hdr{background:#19345E;color:#fff;padding:28px 36px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
+      .hdr h1{font-size:22px;font-weight:300;margin:0}.hdr .url{font-size:13px;opacity:.7;margin-top:4px}
+      .score-circle{width:70px;height:70px;border-radius:50%;background:conic-gradient(${c} ${sc*3.6}deg,#eee 0);display:flex;align-items:center;justify-content:center}
+      .score-inner{width:52px;height:52px;border-radius:50%;background:#19345E;display:flex;flex-direction:column;align-items:center;justify-content:center;color:${c};font-weight:800;font-size:16px}
+      .score-inner small{font-size:8px;font-weight:400;color:#aaa}
+      section{margin-bottom:20px}.section-title{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#E8652A;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #eee}
+      .cat{margin-bottom:16px}.cat-hdr{display:flex;justify-content:space-between;font-weight:600;font-size:13px;margin-bottom:6px;padding:4px 0;border-bottom:1px solid #f0f0f0}
+      .issue{padding:7px 10px;margin-bottom:4px;border-radius:5px;background:#f9f9f9;border:1px solid #eee}
+      .sev{font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;margin-right:6px}
+      .iss-txt{font-size:12px}.fix{font-size:11px;color:#10b981;margin-top:3px;margin-left:4px}.algo{font-size:10px;color:#6366f1;margin-top:2px;margin-left:4px;font-style:italic}
+      .pitch{background:#f4f7fc;border-left:4px solid #19345E;padding:14px 18px;border-radius:0 8px 8px 0;font-size:12px;line-height:1.7;white-space:pre-wrap}
+      ul{margin:6px 0 0 18px}li{font-size:12px;margin-bottom:4px}
+      @media print{body{max-width:100%}.score-circle{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+    </style></head><body>
+      <div class="hdr"><div><h1>Technical SEO Audit</h1><div class="url">${ar.url||''}</div></div><div class="score-circle"><div class="score-inner">${sc}<small>/100</small></div></div></div>
+      ${qwHtml?`<section><div class="section-title">⚡ Quick Wins</div><ul>${qwHtml}</ul></section>`:''}
+      ${alHtml?`<section><div class="section-title">🔬 Algorithm Relevance</div><ul>${alHtml}</ul></section>`:''}
+      <section><div class="section-title">Detailed Findings</div>${issHtml}</section>
+      ${ar.showcase_message?`<section><div class="section-title">Pitch Message</div><div class="pitch">${ar.showcase_message}</div></section>`:''}
+    </body></html>`;
+  }
+
   function copyText(text:string,id:string){
     navigator.clipboard.writeText(text).catch(()=>{});
     setCopied(id);setTimeout(()=>setCopied(null),2000);
@@ -1736,7 +1770,7 @@ export default function BdePanel() {
               {!analysis&&savedProspect?.latestAnalysis&&<div style={{fontSize:10,color:'#a78bfa',marginTop:6}}>✓ Lead Intel context loaded for {savedProspect.name}</div>}
             </div>
             {auditResult&&(
-              <div style={S.card}>
+              <div style={{...S.card,maxHeight:700,overflowY:'auto' as const}}>
                 {/* Score header */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
                   <div>
@@ -1811,7 +1845,7 @@ export default function BdePanel() {
                   <div style={{marginTop:10}}>
                     <div style={{fontSize:9,fontWeight:700,color:'hsl(var(--muted-foreground))',letterSpacing:1,marginBottom:5}}>READY-TO-SEND PITCH MESSAGE</div>
                     <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.7,whiteSpace:'pre-wrap' as const,padding:'10px 12px',background:'hsl(var(--background))',borderRadius:8,border:'0.5px solid #1a1a3a',marginBottom:6}}>{auditResult.showcase_message}</div>
-                    <button style={S.btn(copied==='audit_msg2'?'#10b981':'#a78bfa')} onClick={()=>copyText(auditResult.showcase_message,'audit_msg2')}>{copied==='audit_msg2'?'✓ Copied!':'Copy Message'}</button>
+                    {auditResult.showcase_message&&auditResult.showcase_message!=='undefined'&&<button style={S.btn(copied==='audit_msg2'?'#10b981':'#a78bfa')} onClick={()=>copyText(auditResult.showcase_message,'audit_msg2')}>{copied==='audit_msg2'?'✓ Copied!':'Copy Message'}</button>}
                   </div>
                 )}
 

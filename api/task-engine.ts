@@ -468,7 +468,15 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (conversationAnalysis?.fiverr_specific?.order_probability) ctx.push("ORDER PROBABILITY: " + conversationAnalysis.fiverr_specific.order_probability + "%");
     if (auditResult?.score !== undefined) ctx.push("SEO SCORE: " + auditResult.score + "/100");
     if (auditResult?.url) ctx.push("AUDITED URL: " + auditResult.url);
-    if (auditResult?.issues?.length) ctx.push("AUDIT ISSUES FOUND: " + (auditResult.issues as string[]).join(" | "));
+    if (auditResult?.score !== undefined) {
+      // Issues are objects {issue, severity, category, fix} — serialize properly
+      const issueList = (auditResult.issues || []).map((iss: any) =>
+        typeof iss === "string" ? iss : `[${(iss.severity||"").toUpperCase()}] ${iss.issue||""} → Fix: ${iss.fix||""}`
+      ).join("\n");
+      if (issueList) ctx.push("AUDIT ISSUES FOUND:\n" + issueList);
+      if (auditResult.quickWins?.length) ctx.push("QUICK WINS: " + auditResult.quickWins.join(" | "));
+      if (auditResult.algorithmHighlights?.length) ctx.push("ALGORITHM RELEVANCE: " + auditResult.algorithmHighlights.join(" | "));
+    }
     if (algoData.length) ctx.push("CURRENT ALGORITHM KNOWLEDGE:\n" + algoData.map((a: any) => a.topic + ": " + a.summary + (a.recommendations ? " Recommendations: " + a.recommendations : "")).join("\n"));
     if (brainData.length) ctx.push("SEO SEASON PROVEN RESULTS:\n" + brainData.map((b: any) => b.card_title + ": " + b.improvement + (b.what_worked?.length ? " What worked: " + b.what_worked.join(", ") : "")).join("\n"));
     const DOC_PROMPTS: Record<string, string> = {
