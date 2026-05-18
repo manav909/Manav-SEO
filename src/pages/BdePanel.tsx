@@ -17,9 +17,10 @@ const DOC_TYPES=[
   {id:"whatsapp_msg",label:"WhatsApp / Fiverr",icon:"💬",desc:"Short personalised message"},
   {id:"case_study",label:"Case Study",icon:"🏆",desc:"Results story for their industry"},
   {id:"objection_response",label:"Objection Response",icon:"🛡️",desc:"Address their specific concern"},
+  {id:"suggestion_doc",label:"AI Suggestion Doc",icon:"✨",desc:"Document for the AI-suggested action"},
 ];
 
-function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clientIndustry=""}:{analysis:any;auditResult:any;prospectName?:string;prospectUrl?:string;clientIndustry?:string}) {
+function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clientIndustry="",pendingSuggDoc=null,onSuggDocUsed}:{analysis:any;auditResult:any;prospectName?:string;prospectUrl?:string;clientIndustry?:string;pendingSuggDoc?:any;onSuggDocUsed?:()=>void}) {
   const [docType,setDocType]=React.useState("proposal");
   const [generating,setGenerating]=React.useState(false);
   const [html,setHtml]=React.useState("");
@@ -31,6 +32,16 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   const [brandName,setBrandName]=React.useState("Manav S");
   const iframeRef=React.useRef<HTMLIFrameElement>(null);
   // Auto-fill fields from context (only when field is still empty)
+  // Auto-trigger when a suggestion doc is passed from Intel tab
+  React.useEffect(()=>{
+    if(pendingSuggDoc){
+      setDocType(pendingSuggDoc.docType||'suggestion_doc');
+      if(pendingSuggDoc.script) setSuggCtx(pendingSuggDoc.suggestionContext||'');
+      // Small delay so tab renders first, then auto-generate
+      setTimeout(()=>{ setAutoGenTrigger(t=>t+1); }, 200);
+    }
+  },[pendingSuggDoc]);
+
   React.useEffect(()=>{
     if(prospectUrl&&!leadUrl) setLeadUrl(prospectUrl);
     else if(auditResult?.url&&!leadUrl) setLeadUrl(auditResult.url);
@@ -43,6 +54,10 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
       for(const[k,v]of Object.entries(industryMap)){if(mn.includes(k)){setLeadIndustry(v);break;}}
     }
   },[prospectName,prospectUrl,clientIndustry,auditResult?.url,analysis?.main_need]);
+
+  React.useEffect(()=>{
+    if(autoGenTrigger>0) { generate(); if(onSuggDocUsed) onSuggDocUsed(); }
+  },[autoGenTrigger]);
   const S3:any={
     card:{background:"hsl(var(--background))",border:"0.5px solid #1a1a3a",borderRadius:11,padding:14,marginBottom:10},
     btn:(c:string="#10b981")=>({background:`${c}18`,border:`0.5px solid ${c}40`,borderRadius:8,color:c,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap" as const}),
@@ -51,7 +66,7 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   };
   const generate=async()=>{
     setGenerating(true);setHtml("");setTitle("");setClientName("");
-    const r=await post("generate_client_doc",{docType,conversationAnalysis:analysis,auditResult,brandName:brandName||'Manav S',leadInfo:{url:leadUrl,name:leadName,industry:leadIndustry}});
+    const r=await post("generate_client_doc",{docType,conversationAnalysis:analysis,auditResult,brandName:brandName||'Manav S',leadInfo:{url:leadUrl,name:leadName,industry:leadIndustry},suggestionContext:suggCtx||undefined});
     if((r as any).html){
       setHtml((r as any).html);
       setTitle((r as any).title||"SEO Season Document");
@@ -67,6 +82,17 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
     setGenerating(false);
   };
   const printDoc=()=>{const iw=iframeRef.current?.contentWindow;if(iw){iw.focus();iw.print();}};
+  const downloadPdf=()=>{
+    if(!iframeRef.current?.contentWindow) return;
+    const w=iframeRef.current.contentWindow;
+    w.focus();
+    // Add print-to-pdf styles temporarily
+    const s=w.document.createElement('style');
+    s.textContent='@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}';
+    w.document.head.appendChild(s);
+    w.print();
+    setTimeout(()=>s.remove(),1000);
+  };
   const downloadWord=()=>{
     const blob=new Blob(["﻿"+html],{type:"application/msword;charset=utf-8"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
@@ -636,6 +662,7 @@ export default function BdePanel() {
   const [suggestions,setSuggestions]=useState<any[]>([]);
   const [genSugg,setGenSugg]=useState(false);
   const [suggError,setSuggError]=useState('');
+  const [pendingSuggDoc,setPendingSuggDoc]=useState<any>(null);
   const [prospectTab,setProspectTab]=useState<'suggestions'|'history'|'docs'>('suggestions');
   const textRef=useRef<HTMLTextAreaElement>(null);
 
@@ -2007,7 +2034,7 @@ export default function BdePanel() {
 
         {/* ═══ DOCUMENTS ═══ */}
         {tab==='docs'&&(
-          <DocGenerator analysis={analysis} auditResult={auditResult} prospectName={savedProspect?.name||leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||''} prospectUrl={savedProspect?.url||auditResult?.url||auditUrl||''} clientIndustry={savedProspect?.industry||''}/>
+          <DocGenerator analysis={analysis} auditResult={auditResult} prospectName={savedProspect?.name||leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||''} prospectUrl={savedProspect?.url||auditResult?.url||auditUrl||''} clientIndustry={savedProspect?.industry||''} pendingSuggDoc={pendingSuggDoc} onSuggDocUsed={()=>setPendingSuggDoc(null)}/>
         )}
       </div>
     </div>
