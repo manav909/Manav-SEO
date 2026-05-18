@@ -707,6 +707,29 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     } catch (e: any) { return ok(res, { success: false, error: e.message }); }
   }
 
+  if (action === "extract_attachment_context") {
+    const { base64, mimeType = "image/jpeg", fileName = "file", conversationContext = "" } = body;
+    if (!base64) return ok(res, { error: "base64 required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const isPdf = mimeType === "application/pdf";
+      const isImage = mimeType.startsWith("image/");
+      const sysP = "You are an SEO consultant analysing a file shared in a Fiverr conversation. Extract all relevant information that would help understand the client's situation, problems, and what work needs to be done. Be specific and detailed.";
+      const userContent: any[] = [];
+      if (isImage) {
+        userContent.push({ type: "image", source: { type: "base64", media_type: mimeType, data: base64 } });
+      } else if (isPdf) {
+        userContent.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } });
+      }
+      const ctxNote = conversationContext ? "\n\nConversation context: " + conversationContext.slice(0, 500) : "";
+      userContent.push({ type: "text", text: "File: " + fileName + ctxNote + "\n\nAnalyse this file and extract: (1) What it shows/contains, (2) Key SEO/technical issues visible, (3) Specific numbers, errors, or data points, (4) What action this suggests. Be concrete and specific — no generic statements." });
+      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1200, system: sysP, messages: [{ role: "user", content: userContent }] });
+      const description = (_r.content[0] as any).text || "";
+      return ok(res, { success: true, description, fileName, mimeType });
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);

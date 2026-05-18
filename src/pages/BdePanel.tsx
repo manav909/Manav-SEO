@@ -568,6 +568,8 @@ export default function BdePanel() {
   const [genResp,setGenResp]=useState(false);
   const [selLine,setSelLine]=useState<number|null>(null);
   const [nextMsg,setNextMsg]=useState('');
+  const [attachments,setAttachments]=useState<any[]>([]);
+  const [extracting,setExtracting]=useState(false);
   // Audit state
   const [auditUrl,setAuditUrl]=useState('');
   const [auditFor,setAuditFor]=useState('');
@@ -646,7 +648,7 @@ export default function BdePanel() {
 
   const clearAll=()=>{
     if (!window.confirm('Clear all context?')) return;
-    setRawPaste('');setParsedMsgs([]);setConv('');setAnalysis(null);setDeepAnalysis(null);setParsed([]);
+    setRawPaste('');setParsedMsgs([]);setConv('');setAnalysis(null);setDeepAnalysis(null);setParsed([]);setAttachments([]);
     setAuditResult(null);setAuditUrl('');setLeadNameInput('');setLeadSaved(false);setSavedProspect(null);setResponses(null);setNextMsg('');
     try { localStorage.removeItem(CTX_KEY); } catch {}
   };
@@ -669,7 +671,9 @@ export default function BdePanel() {
   async function analyse(){
     if(!convText.trim())return;
     setAnalysing(true);setAnalysis(null);setParsed([]);setResponses(null);
-    const r=await post('analyse_fiverr_conversation',{text:convText});
+    const attCtx=attachments.filter((a:any)=>a.status==='done').map((a:any)=>'[ATTACHMENT: '+a.name+']\n'+a.description).join('\n\n');
+    const fullText=convText+(attCtx?'\n\n--- ATTACHED FILES ---\n'+attCtx:'');
+    const r=await post('analyse_fiverr_conversation',{text:fullText});
     setAnalysis((r as any).analysis);
     setParsed((r as any).parsed_lines||[]);
     setAnalysing(false);
@@ -683,6 +687,51 @@ export default function BdePanel() {
     setDeepLoading(false);
   }
 
+  const handleFiles=async(files:FileList|null)=>{
+    if(!files||!files.length)return;
+    setExtracting(true);
+    const ALLOWED=['image/jpeg','image/png','image/gif','image/webp','application/pdf','text/plain','text/markdown'];
+    const MAX_MB=10;
+    for(let i=0;i<Math.min(files.length,5);i++){
+      const f=files[i];
+      if(!ALLOWED.includes(f.type)&&!f.name.endsWith('.txt')&&!f.name.endsWith('.md')){
+        setAttachments(prev=>[...prev,{name:f.name,type:f.type,status:'error',description:'Unsupported format. Use: JPG, PNG, PDF, TXT'}]);
+        continue;
+      }
+      if(f.size>MAX_MB*1024*1024){
+        setAttachments(prev=>[...prev,{name:f.name,type:f.type,status:'error',description:`File too large (max ${MAX_MB}MB)`}]);
+        continue;
+      }
+      const placeholder={name:f.name,type:f.type,status:'extracting',description:'',size:f.size};
+      setAttachments(prev=>[...prev,placeholder]);
+      const base64:string=await new Promise(res=>{const rd=new FileReader();rd.onload=()=>res(String(rd.result).split(',')[1]||'');rd.readAsDataURL(f);});
+      if(f.type==='text/plain'||f.name.endsWith('.txt')||f.name.endsWith('.md')){
+        const text:string=await new Promise(res=>{const rd=new FileReader();rd.onload=()=>res(String(rd.result));rd.readAsText(f);});
+        setAttachments(prev=>prev.map(a=>a.name===f.name&&a.status==='extracting'?{...a,status:'done',description:text.slice(0,2000),isText:true}:a));
+        continue;
+      }
+      const r=await post('extract_attachment_context',{base64,mimeType:f.type,fileName:f.name,conversationContext:convText.slice(0,300)});
+      if((r as any).success){
+        setAttachments(prev=>prev.map(a=>a.name===f.name&&a.status==='extracting'?{...a,status:'done',description:(r as any).description}:a));
+      } else {
+        setAttachments(prev=>prev.map(a=>a.name===f.name&&a.status==='extracting'?{...a,status:'error',description:(r as any).error||'Failed to extract'}:a));
+      }
+    }
+    setExtracting(false);
+  };
+
+  // Smart attachment prompt: detect when conversation mentions files
+  const attachmentPrompt=React.useMemo(()=>{
+    const t=(rawPaste||convText).toLowerCase();
+    const hints:string[]=[];
+    if((t.includes('screenshot')||t.includes('screengrab'))&&!attachments.length) hints.push('Client may have shared a screenshot — upload it for full context');
+    if((t.includes('search console')||t.includes('gsc'))&&!attachments.some(a=>a.name.toLowerCase().includes('console'))) hints.push('GSC data mentioned — upload the Search Console screenshot');
+    if((t.includes('analytics')||t.includes('ga4'))&&!attachments.some(a=>a.name.toLowerCase().includes('analytic'))) hints.push('Analytics mentioned — upload the report screenshot');
+    if(t.includes('pdf')||t.includes('brief')||t.includes('document')) hints.push('Document mentioned — upload the PDF or brief');
+    if(t.includes('error')||t.includes('issue')) hints.push('Issues mentioned — a screenshot would help diagnose exactly');
+    return hints.slice(0,2);
+  },[rawPaste,convText,attachments]);
+
   async function saveLead(){
     if(!analysis)return;
     setSavingLead(true); setSaveError('');
@@ -692,7 +741,7 @@ export default function BdePanel() {
     setProspects(prev=>{const ex=prev.find((p:any)=>p.name===name);if(ex)return prev.map((p:any)=>p.name===name?{...p,conversationCount:p.conversationCount+1,latestAnalysis:np.latestAnalysis,lastSeen:np.lastSeen}:p);return [np,...prev];});
     setSavedProspect(np);
     // Wait for DB confirmation — brain_learnings is primary, doesn't need project_id
-    const r=await post('save_lead_conversation',{prospectName:name,prospectUrl:np.url,industry:'',analysis,conversationText:rawPaste||convText,deepAnalysis,auditResult,staffId:'bde'});
+    const r=await post('save_lead_conversation',{prospectName:name,prospectUrl:np.url,industry:'',analysis,conversationText:rawPaste||convText,deepAnalysis,auditResult,staffId:'bde',attachments:attachments.filter((a:any)=>a.status==='done').map((a:any)=>({name:a.name,description:a.description}))});
     if((r as any).success){
       setLeadSaved(true);
       loadProspects(); // Reload from DB to confirm it's there
@@ -828,6 +877,55 @@ export default function BdePanel() {
               )}
             </div>
 
+            {/* Attachment uploader */}
+            <div style={{...S.card,marginBottom:10}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <div style={{fontSize:12,fontWeight:700}}>📎 Attachments <span style={{fontSize:10,fontWeight:400,color:'hsl(var(--muted-foreground))'}}>— images, PDFs, screenshots, docs</span></div>
+                <label style={{...S.btn('#6366f1'),fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                  <input type="file" multiple accept="image/*,.pdf,.txt,.md" style={{display:'none'}} onChange={e=>handleFiles(e.target.files)} disabled={extracting}/>
+                  {extracting?'⏳ Reading...':'+ Add File'}
+                </label>
+              </div>
+              {/* Smart prompts */}
+              {attachmentPrompt.map((hint:string,i:number)=>(
+                <div key={i} style={{fontSize:11,color:'#6366f1',padding:'5px 10px',background:'rgba(99,102,241,.06)',borderRadius:7,border:'0.5px dashed rgba(99,102,241,.3)',marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                  <span>💡</span><span>{hint}</span>
+                  <label style={{marginLeft:'auto',fontSize:10,background:'rgba(99,102,241,.15)',border:'0.5px solid rgba(99,102,241,.3)',borderRadius:5,color:'#a78bfa',padding:'2px 8px',cursor:'pointer'}}>
+                    <input type="file" accept="image/*,.pdf" style={{display:'none'}} onChange={e=>handleFiles(e.target.files)}/>Upload
+                  </label>
+                </div>
+              ))}
+              {/* Drop zone when no files */}
+              {!attachments.length&&!attachmentPrompt.length&&(
+                <label style={{display:'block',border:'1px dashed rgba(99,102,241,.25)',borderRadius:9,padding:'16px',textAlign:'center' as const,cursor:'pointer',color:'hsl(var(--muted-foreground))',fontSize:11}}>
+                  <input type="file" multiple accept="image/*,.pdf,.txt,.md" style={{display:'none'}} onChange={e=>handleFiles(e.target.files)}/>
+                  📂 Drop or click to attach images, PDFs, screenshots — client shared files, GSC reports, briefs
+                </label>
+              )}
+              {/* Attachment chips */}
+              {attachments.length>0&&(
+                <div style={{display:'flex',flexDirection:'column' as const,gap:6}}>
+                  {attachments.map((a:any,i:number)=>(
+                    <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',padding:'8px 10px',background:'rgba(0,0,0,.12)',borderRadius:8,border:`0.5px solid ${a.status==='error'?'rgba(239,68,68,.3)':a.status==='extracting'?'rgba(99,102,241,.2)':'rgba(16,185,129,.2)'}`}}>
+                      <span style={{fontSize:16,flexShrink:0}}>{a.type?.startsWith('image')?'🖼️':a.type==='application/pdf'?'📄':'📝'}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                          <span style={{fontSize:11,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{a.name}</span>
+                          <div style={{display:'flex',gap:5,flexShrink:0}}>
+                            {a.status==='done'&&<span style={{fontSize:9,color:'#10b981',fontWeight:700}}>✓ Read</span>}
+                            {a.status==='extracting'&&<span style={{fontSize:9,color:'#6366f1'}}>⏳ Reading...</span>}
+                            {a.status==='error'&&<span style={{fontSize:9,color:'#ef4444'}}>✗ Error</span>}
+                            <button style={{fontSize:9,background:'none',border:'none',color:'hsl(var(--muted-foreground))',cursor:'pointer',padding:0}} onClick={()=>setAttachments(prev=>prev.filter((_:any,j:number)=>j!==i))}>✕</button>
+                          </div>
+                        </div>
+                        {a.description&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',lineHeight:1.5,maxHeight:80,overflow:'hidden'}}>{a.description.slice(0,300)}{a.description.length>300?'…':''}</div>}
+                        {a.status==='error'&&<div style={{fontSize:11,color:'#f87171'}}>{a.description}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             {/* Summary bar when deep analysis done */}
             {deepAnalysis&&(
               <div style={{...S.card,background:'rgba(0,0,0,.2)',marginBottom:10}}>
