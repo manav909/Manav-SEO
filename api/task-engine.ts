@@ -1779,6 +1779,8 @@ Respond with JSON only:
   if (action === "requirements") {
     const { card, context = {}, userInputs = {} } = body;
 
+  }
+
   if (action === 'get_prospects') {
     const{status:pSt='new',limit:pL=20}=body;
     let q=db().from('prospects').select('*');
@@ -2423,6 +2425,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   }
 
 
+  if (action === "requirements") {
   if (!card) return ok(res, { error: "Missing card" });
 
     const BLUEPRINTS: Record<string, any> = {
