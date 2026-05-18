@@ -605,6 +605,8 @@ export default function BdePanel() {
   const [savedProspect,setSavedProspect]=useState<any>(null);
   const [prospects,setProspects]=useState<any[]>([]);
   const [loadingPros,setLoadingPros]=useState(false);
+  const [showLeadPicker,setShowLeadPicker]=useState(false);
+  const [loadingLead,setLoadingLead]=useState(false);
   const [selProspect,setSelProspect]=useState<any>(null);
   const [prospectConvs,setProspectConvs]=useState<any[]>([]);
   const [expandedConv,setExpandedConv]=useState<Set<number>>(new Set());
@@ -668,6 +670,7 @@ export default function BdePanel() {
     setRawPaste('');setParsedMsgs([]);setConv('');setAnalysis(null);setDeepAnalysis(null);setParsed([]);setAttachments([]);
     setAuditResult(null);setAuditUrl('');setLeadNameInput('');setLeadSaved(false);setSavedProspect(null);setResponses(null);setNextMsg('');
     try { localStorage.removeItem(CTX_KEY); } catch {}
+    setShowLeadPicker(false);
   };
 
   const handlePaste=(raw:string)=>{
@@ -755,6 +758,29 @@ export default function BdePanel() {
     if(t.includes('error')||t.includes('issue')) hints.push('Issues mentioned — a screenshot would help diagnose exactly');
     return hints.slice(0,2);
   },[rawPaste,convText,attachments]);
+
+  async function loadLeadIntoAnalyser(prospect:any){
+    setLoadingLead(true); setShowLeadPicker(false);
+    // Load the most recent conversation for this prospect
+    const r=await post('get_lead_conversations',{prospectName:prospect.name});
+    const convs=(r as any).conversations||[];
+    const latest=convs[0];
+    let d:any={};
+    try{ d=JSON.parse(latest?.response||'{}'); }catch{}
+    // Restore conversation text
+    const ct=d.conversationText||'';
+    if(ct){ setRawPaste(ct); const msgs=parseFiverr(ct); setParsedMsgs(msgs); setConv(msgs.map((m:any)=>(m.speaker==='me'?'Me':'Client')+': '+m.text).join('\n')); }
+    // Restore analysis
+    if(d.analysis){ setAnalysis(d.analysis); }
+    // Restore audit
+    if(d.auditResult){ setAuditResult(d.auditResult); setAuditUrl(d.auditResult.url||''); }
+    // Pre-fill lead name and URL
+    setLeadNameInput(prospect.name);
+    if(prospect.url&&!auditUrl) setAuditUrl(prospect.url);
+    // Mark as already saved
+    setSavedProspect(prospect); setLeadSaved(true);
+    setLoadingLead(false);
+  }
 
   async function saveLead(){
     if(!analysis)return;
@@ -882,6 +908,44 @@ export default function BdePanel() {
         {/* ═══ FIVERR ANALYSER ═══ */}
         {tab==='fiverr'&&(
           <div>
+            {/* Load from saved lead */}
+            {prospects.length>0&&(
+              <div style={{marginBottom:10}}>
+                {!showLeadPicker?(
+                  <button style={{...S.btn('#6366f1'),width:'100%',justifyContent:'space-between',display:'flex',padding:'8px 14px',fontSize:12}} onClick={()=>setShowLeadPicker(true)}>
+                    <span>📂 Load from saved lead ({prospects.length} saved)</span>
+                    <span>▼</span>
+                  </button>
+                ):(
+                  <div style={{...S.card,padding:10,border:'0.5px solid rgba(99,102,241,.3)'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                      <span style={{fontSize:12,fontWeight:700,color:'#a78bfa'}}>Select a lead to load</span>
+                      <button style={{fontSize:10,background:'none',border:'none',color:'hsl(var(--muted-foreground))',cursor:'pointer'}} onClick={()=>setShowLeadPicker(false)}>✕</button>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column' as const,gap:4,maxHeight:220,overflowY:'auto' as const}}>
+                      {prospects.map((p:any)=>{
+                        const prob=p.latestAnalysis?.fiverr_specific?.order_probability;
+                        return(
+                          <div key={p.name} onClick={()=>loadLeadIntoAnalyser(p)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',borderRadius:8,cursor:'pointer',background:'rgba(99,102,241,.05)',border:'0.5px solid rgba(99,102,241,.15)'}}>
+                            <div>
+                              <div style={{fontSize:12,fontWeight:600,color:'hsl(var(--foreground))'}}>{p.name}</div>
+                              {p.url&&<div style={{fontSize:10,color:'#6366f1'}}>{p.url}</div>}
+                              {p.latestAnalysis?.main_need&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:1}}>{p.latestAnalysis.main_need}</div>}
+                            </div>
+                            <div style={{display:'flex',flexDirection:'column' as const,alignItems:'flex-end',gap:3,flexShrink:0,marginLeft:10}}>
+                              {prob!==undefined&&<span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:10,background:`${MOOD_C(prob)}20`,color:MOOD_C(prob)}}>{prob}%</span>}
+                              <span style={{fontSize:9,color:'hsl(var(--muted-foreground))'}}>{AGO(p.lastSeen)}</span>
+                              {p.conversationCount>1&&<span style={{fontSize:9,color:'#a78bfa'}}>{p.conversationCount} convs</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {loadingLead&&<div style={{fontSize:11,color:'#6366f1',marginTop:8,textAlign:'center' as const}}>⏳ Loading conversation...</div>}
+                  </div>
+                )}
+              </div>
+            )}
             {/* Smart paste area */}
             <div style={S.card}>
               <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>📋 Paste Fiverr Conversation</div>
