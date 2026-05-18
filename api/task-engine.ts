@@ -687,41 +687,47 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   if (action === "analyse_conversation_deep") {
     const { messages = [] } = body;
-    if (!messages.length) return ok(res, { error: "messages required" });
+    if (!messages.length) return ok(res, { success: false, error: "No messages to analyse" });
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      // Number messages 0-based so index field is unambiguous
       const msgList = (messages as any[]).map((m: any, i: number) =>
-        i + "|" + m.speaker + "|" + String(m.text).replace(/\n/g, " ").slice(0, 600)
+        i + "|" + (m.speaker || "unknown") + "|" + String(m.text || "").replace(/\n/g, " ").slice(0, 600)
       ).join("\n");
-      const sys2 = "You are a brutally honest Fiverr BDE coach. Analyse every message. Identify ToS violations, missed closings, emotional shifts, and conversion impact.";
-      const usr2 = "Conversation (INDEX|SPEAKER|TEXT):\n" + msgList
-        + "\n\nReturn ONLY a raw JSON object — zero markdown, zero code fences. Schema:\n"
-        + "{ \"messages\": [ { \"index\": <same integer as INDEX>, \"speaker\": \"client\" or \"me\","
-        + " \"emotion\": one of curious/interested/trusting/hesitant/frustrated/sceptical/price_sensitive or null (client only),"
-        + " \"intent\": string or null (client only),"
-        + " \"conversionAfter\": integer 0-100,"
-        + " \"delta\": integer (change from previous, negative allowed),"
-        + " \"quality\": \"good\" or \"ok\" or \"poor\" (me only),"
-        + " \"missed\": string or null (me only — concrete missed opportunity),"
-        + " \"betterReply\": string or null (me only — exact improved message),"
-        + " \"riskFlag\": \"TOS_VIOLATION\" or \"MULTIPLE_MESSAGES\" or \"WEAK_CLOSE\" or \"NO_VALUE_PROP\" or null } ],"
-        + " \"overallConversion\": integer, \"topMiss\": string, \"topWin\": string or null,"
-        + " \"nextAction\": string, \"urgency\": \"high\" or \"medium\" or \"low\" }";
+      const totalMsgs = messages.length;
+      const sys2 = "You are a brutally honest Fiverr BDE coach. You MUST analyse every single message and return data for ALL " + totalMsgs + " messages. Never skip a message. Be specific about missed opportunities and ToS risks.";
+      const usr2 = "Analyse every message in this Fiverr conversation (INDEX|SPEAKER|TEXT):\n" + msgList
+        + "\n\nIMPORTANT: Return data for ALL " + totalMsgs + " messages. Index must match exactly (0-based)."
+        + "\n\nReturn ONLY raw JSON. No markdown. No code fences. This exact structure:"
+        + "\n{\"messages\":[{\"index\":0,\"speaker\":\"client\",\"emotion\":\"curious\",\"intent\":\"what client wants\",\"conversionAfter\":50,\"delta\":0,\"quality\":null,\"missed\":null,\"betterReply\":null,\"riskFlag\":null}],"
+        + "\"overallConversion\":60,\"topMiss\":\"biggest mistake\",\"topWin\":\"best thing done or null\",\"nextAction\":\"exact next step\",\"urgency\":\"high\"}\n\n"
+        + "Rules: speaker=client: fill emotion+intent, quality=null. speaker=me: fill quality(good/ok/poor)+missed+betterReply+riskFlag, emotion=null+intent=null."
+        + " riskFlag: TOS_VIOLATION=shared external contact, MULTIPLE_MESSAGES=3+ messages in a row, WEAK_CLOSE=missed chance to close, NO_VALUE_PROP=no value mentioned."
+        + " betterReply=exact improved message to send. missed=specific thing that was missed.";
       const _r = await _ac.messages.create({
-        model: "claude-sonnet-4-6", max_tokens: 3500,
+        model: "claude-sonnet-4-6", max_tokens: 4000,
         system: sys2, messages: [{ role: "user", content: usr2 }]
       });
       const raw = (_r.content[0] as any).text || "{}";
-      // Strip any accidental markdown fences
       const cleaned = raw.replace(/^```[a-z]*\s*/i, "").replace(/```\s*$/g, "").trim();
       let result: any = null;
-      try { result = JSON.parse(cleaned); } catch {
+      // Try direct parse
+      try { result = JSON.parse(cleaned); } catch {}
+      // Try extracting JSON object
+      if (!result) {
         const m = cleaned.match(/\{[\s\S]+\}/);
-        try { result = m ? JSON.parse(m[0]) : null; } catch { result = null; }
+        try { result = m ? JSON.parse(m[0]) : null; } catch {}
       }
-      if (!result || !Array.isArray(result.messages)) {
-        return ok(res, { success: false, error: "Claude returned invalid JSON", rawPreview: raw.slice(0,300) });
+      if (!result) {
+        return ok(res, { success: false, error: "Claude returned unparseable response", rawPreview: raw.slice(0, 400) });
+      }
+      // Normalise: handle wrapped responses like {analysis:{messages:[...]}} or {data:{...}}
+      if (!Array.isArray(result.messages)) {
+        const nested = result.analysis || result.data || result.result || result.conversation;
+        if (nested && Array.isArray(nested.messages)) result = nested;
+        else if (Array.isArray(nested)) result.messages = nested;
+      }
+      if (!Array.isArray(result.messages) || !result.messages.length) {
+        return ok(res, { success: false, error: "Claude response missing messages array", rawPreview: raw.slice(0, 400), parsed: JSON.stringify(result).slice(0,200) });
       }
       return ok(res, { success: true, ...result });
     } catch (e: any) { return ok(res, { success: false, error: e.message }); }

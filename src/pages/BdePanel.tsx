@@ -579,6 +579,7 @@ export default function BdePanel() {
   const [analysis,setAnalysis]=useState<any>(null);
   const [deepAnalysis,setDeepAnalysis]=useState<any>(null);
   const [deepLoading,setDeepLoading]=useState(false);
+  const [deepError,setDeepError]=useState('');
   const [parsedLines,setParsed]=useState<any[]>([]);
   const [responses,setResponses]=useState<any>(null);
   const [genResp,setGenResp]=useState(false);
@@ -674,7 +675,7 @@ export default function BdePanel() {
     const msgs=parseFiverr(raw);
     setParsedMsgs(msgs);
     setConv(msgs.map((m:any)=>(m.speaker==='me'?'Me':'Client')+': '+m.text).join('\n'));
-    setAnalysis(null); setDeepAnalysis(null); setParsed([]); setResponses(null);
+    setAnalysis(null); setDeepAnalysis(null); setDeepError(''); setParsed([]); setResponses(null);
   };
 
   const loadProspects=async()=>{
@@ -697,9 +698,16 @@ export default function BdePanel() {
 
   async function runDeepAnalysis(){
     if (!parsedMsgs.length) return;
-    setDeepLoading(true); setDeepAnalysis(null);
+    setDeepLoading(true); setDeepAnalysis(null); setDeepError('');
     const r=await post('analyse_conversation_deep',{messages:parsedMsgs.map((m:any,i:number)=>({index:i,speaker:m.speaker,text:m.text}))});
-    if ((r as any).success) setDeepAnalysis(r);
+    if ((r as any).success && Array.isArray((r as any).messages)) {
+      setDeepAnalysis(r);
+    } else {
+      const err=(r as any).error||'Deep analysis failed — try again';
+      setDeepError(err);
+      if ((r as any).rawPreview) console.warn('Deep analysis raw preview:', (r as any).rawPreview);
+      if ((r as any).parsed) console.warn('Parsed (partial):', (r as any).parsed);
+    }
     setDeepLoading(false);
   }
 
@@ -993,7 +1001,7 @@ export default function BdePanel() {
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
                   <div style={{fontSize:13,fontWeight:700}}>💬 Conversation Preview</div>
                   <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                    {deepLoading&&<span style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>⏳ Deep analysis running...</span>}
+                    {deepLoading&&<span style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>⏳ Deep analysis running...</span>}{deepError&&!deepLoading&&<button style={{fontSize:10,color:'#ef4444',background:'rgba(239,68,68,.1)',border:'0.5px solid rgba(239,68,68,.3)',borderRadius:6,padding:'3px 10px',cursor:'pointer'}} onClick={runDeepAnalysis}>⚠ {deepError} — retry</button>}
                     {!deepAnalysis&&!deepLoading&&parsedMsgs.length>0&&<button style={S.btn('#6366f1')} onClick={runDeepAnalysis}>🔬 Deep Analysis</button>}
                     {analysis&&<button style={S.btn('#a78bfa')} onClick={()=>setTab('docs')}>Generate Doc →</button>}
                   </div>
