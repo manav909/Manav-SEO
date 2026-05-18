@@ -173,7 +173,7 @@ export default function BdePanel() {
 
   async function openProspect(p:any){
     setSelProspect(p);setProspectConvs([]);setSuggestions([]);setProspectTab("suggestions");
-    const r=await post("get_lead_conversations",{prospectId:p.id});
+    const r=await post("get_lead_conversations",{prospectName:p.name});
     setProspectConvs((r as any).conversations||[]);
     setTab("intel");
   }
@@ -184,7 +184,7 @@ export default function BdePanel() {
     const latest=prospectConvs[0];
     let la:any=null;
     try{la=JSON.parse(latest?.response||"{}").analysis;}catch{}
-    const r=await post("generate_lead_suggestions",{prospectId:selProspect.id,prospectName:selProspect.name,prospectUrl:selProspect.url||"",latestAnalysis:la,auditData:null,conversationCount:prospectConvs.length});
+    const r=await post("generate_lead_suggestions",{prospectName:selProspect.name,prospectUrl:selProspect.url||"",latestAnalysis:la,auditData:null,conversationCount:prospectConvs.length});
     setSuggestions((r as any).suggestions||[]);
     setGenSugg(false);
   }

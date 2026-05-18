@@ -429,6 +429,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   // === END GENERATE CLIENT DOCUMENT ===
 
   // ═══ LEAD INTELLIGENCE ACTIONS ═══
+
   if (action === "get_quick_responses") {
     try {
       const { data } = await db().from("quick_responses").select("*").eq("active", true).order("usage_count", { ascending: false }).limit(60);
@@ -437,47 +438,59 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
   if (action === "save_lead_conversation") {
-    const { prospectName = "Prospect", prospectUrl = "", industry = "", analysis, conversationText, auditResult: aRes, staffId = "bde" } = body;
+    // Store entirely in ai_content_cache — no prospects table dependency
+    const { prospectName = "Prospect", prospectUrl = "", industry = "", analysis, conversationText = "", auditResult: aRes, staffId = "bde" } = body;
+    const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
+    const cacheKey = "lead_intel_" + slug + "_" + Date.now();
+    const payload = JSON.stringify({ prospectName, prospectUrl, industry, analysis, conversationText: String(conversationText).slice(0, 3000), auditResult: aRes, savedAt: new Date().toISOString(), staffId });
     try {
-      let prospectId: string | null = null;
-      if (prospectUrl) {
-        const { data: ex } = await db().from("prospects").select("id").eq("url", prospectUrl).maybeSingle();
-        if (ex?.id) { prospectId = ex.id; }
-      }
-      if (!prospectId) {
-        const ins: any = { name: prospectName, status: "active" };
-        if (prospectUrl) ins.url = prospectUrl;
-        if (industry) ins.industry = industry;
-        const { data: np } = await db().from("prospects").insert(ins).select("id").single();
-        prospectId = np?.id || null;
-      }
-      const cacheKey = "lead_conv_" + staffId + "_" + Date.now();
-      await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: JSON.stringify({ prospectId, prospectName, prospectUrl, industry, analysis, conversationText, auditResult: aRes, savedAt: new Date().toISOString() }), project_id: null });
-      return ok(res, { success: true, prospectId, cacheKey });
-    } catch (e: any) { return ok(res, { error: e.message }); }
+      await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: payload, project_id: null });
+      return ok(res, { success: true, cacheKey, prospectName });
+    } catch (e1: any) {
+      // project_id null not allowed — try without it or with placeholder
+      try {
+        const { data: firstProj } = await db().from("projects").select("id").limit(1).single();
+        await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: payload, project_id: (firstProj as any)?.id || null });
+        return ok(res, { success: true, cacheKey, prospectName });
+      } catch (e2: any) { return ok(res, { error: e2.message }); }
+    }
   }
 
   if (action === "get_lead_prospects") {
     try {
-      const { data: pros } = await db().from("prospects").select("id,name,url,industry,status,created_at").order("created_at", { ascending: false }).limit(60);
-      const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_conv_%").order("created_at", { ascending: false }).limit(300);
-      const latest: Record<string, any> = {};
+      const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_intel_%").order("created_at", { ascending: false }).limit(500);
+      // Group by prospectName
+      const map: Record<string, any> = {};
       (convs || []).forEach((c: any) => {
-        try { const d = JSON.parse(c.response); if (d.prospectId && !latest[d.prospectId]) latest[d.prospectId] = { ...d.analysis, savedAt: c.created_at, conversationText: d.conversationText?.slice(0, 200) }; } catch {}
+        try {
+          const d = JSON.parse(c.response);
+          const key = String(d.prospectName || "Unknown");
+          if (!map[key]) {
+            map[key] = { name: key, url: d.prospectUrl || "", industry: d.industry || "", latestAnalysis: d.analysis, lastSeen: c.created_at, conversationCount: 0, status: "active" };
+          }
+          map[key].conversationCount++;
+        } catch {}
       });
-      const enriched = (pros || []).map((p: any) => ({ ...p, latestAnalysis: latest[p.id] || null }));
-      return ok(res, { success: true, prospects: enriched });
+      const prospects = Object.values(map).sort((a: any, b: any) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
+      return ok(res, { success: true, prospects });
     } catch (e: any) { return ok(res, { error: e.message, prospects: [] }); }
   }
 
   if (action === "get_lead_conversations") {
-    const { prospectId } = body;
-    if (!prospectId) return ok(res, { conversations: [] });
+    const { prospectName } = body;
+    if (!prospectName) return ok(res, { conversations: [] });
+    const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
     try {
-      const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_conv_%").order("created_at", { ascending: false }).limit(100);
-      const filtered = (convs || []).filter((c: any) => { try { return JSON.parse(c.response).prospectId === prospectId; } catch { return false; } });
-      return ok(res, { success: true, conversations: filtered });
-    } catch (e: any) { return ok(res, { error: e.message, conversations: [] }); }
+      const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_intel_" + slug + "_%").order("created_at", { ascending: false }).limit(50);
+      return ok(res, { success: true, conversations: convs || [] });
+    } catch (e: any) {
+      // Fallback: match by name in response
+      try {
+        const { data: all } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_intel_%").order("created_at", { ascending: false }).limit(200);
+        const filtered = (all || []).filter((c: any) => { try { return JSON.parse(c.response).prospectName === prospectName; } catch { return false; } });
+        return ok(res, { success: true, conversations: filtered });
+      } catch (e2: any) { return ok(res, { error: e2.message, conversations: [] }); }
+    }
   }
 
   if (action === "generate_lead_suggestions") {
@@ -497,23 +510,24 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       if (latestAnalysis?.hidden_concern) ctx.push("Hidden concern: " + latestAnalysis.hidden_concern);
       if (latestAnalysis?.fiverr_specific?.conversion_blocker) ctx.push("Blocker: " + latestAnalysis.fiverr_specific.conversion_blocker);
       if (latestAnalysis?.fiverr_specific?.order_probability) ctx.push("Order probability: " + latestAnalysis.fiverr_specific.order_probability + "%");
-      if (latestAnalysis?.best_next_message) ctx.push("Suggested reply: " + latestAnalysis.best_next_message);
+      if (latestAnalysis?.best_next_message) ctx.push("Last suggested reply: " + String(latestAnalysis.best_next_message).slice(0, 200));
       if (auditData?.score !== undefined) ctx.push("SEO score: " + auditData.score + "/100");
       if (auditData?.issues?.length) ctx.push("Issues: " + (auditData.issues as string[]).join("; "));
-      if (conversationCount) ctx.push("Past conversations: " + conversationCount);
-      if (algo.length) ctx.push("Algo updates: " + algo.map((a: any) => a.topic + ": " + a.summary).join(" | "));
-      if (brain.length) ctx.push("Proven wins: " + brain.map((b: any) => b.card_title + ": " + b.improvement).join(" | "));
+      if (conversationCount > 1) ctx.push("Past conversations: " + conversationCount);
+      if (algo.length) ctx.push("Latest algo updates: " + algo.map((a: any) => a.topic + ": " + a.summary).join(" | "));
+      if (brain.length) ctx.push("Proven results: " + brain.map((b: any) => b.card_title + ": " + b.improvement).join(" | "));
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1200,
-        system: "You are a BDE coach at SEO Season. Generate highly specific, immediately actionable suggestions to close, upsell or retain this lead. Use every piece of context. Be concrete — name specific actions, specific messages, specific offers.",
-        messages: [{ role: "user", content: "LEAD: " + ctx.join(" | ") + " Generate 5 suggestions. JSON array only: [{\"type\":\"close|upsell|followup|audit|content\",\"priority\":\"high|medium\",\"action\":\"specific thing to do RIGHT NOW\",\"script\":\"exact message or opening line to use\",\"reason\":\"why this works for this specific lead\",\"timing\":\"when\"}]" }]
+        system: "You are a senior BDE coach at SEO Season. Generate highly specific, immediately actionable suggestions to close, upsell or retain this lead. Every suggestion must name a specific action, include an exact opening line or message, and explain why it will work for THIS specific lead based on their context. Use algorithm knowledge to create urgency where relevant.",
+        messages: [{ role: "user", content: "LEAD CONTEXT: " + ctx.join(" | ") + " Generate exactly 5 suggestions. Return JSON array only: [{"type":"close|upsell|followup|audit|content","priority":"high|medium","action":"specific thing to do RIGHT NOW in one sentence","script":"exact opening message or line to use — ready to copy-paste","reason":"why this will work for this specific lead","timing":"e.g. Today, Within 24h, This week"}]" }]
       });
       const raw = (_r.content[0] as any).text || "[]";
       let suggestions: any[] = [];
-      try { suggestions = JSON.parse(raw.replace(/```json/g,"").replace(/```/g,"").trim()); } catch { suggestions = []; }
+      try { suggestions = JSON.parse(raw.replace(/```json/g, "").replace(/```/g, "").trim()); } catch { suggestions = []; }
       return ok(res, { success: true, suggestions });
     } catch (e: any) { return ok(res, { error: e.message, suggestions: [] }); }
   }
+
   // ═══ END LEAD INTELLIGENCE ACTIONS ═══
 
   if (action === "health_check") {
