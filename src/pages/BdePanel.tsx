@@ -1201,11 +1201,7 @@ export default function BdePanel() {
                       style={{width:'100%',background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:8,color:'hsl(var(--foreground))',padding:'9px 12px',fontSize:12,lineHeight:1.55,resize:'vertical' as const,outline:'none',minHeight:80,maxHeight:200,boxSizing:'border-box' as const,fontFamily:'monospace'}}
                       value={callPaste}
                       onChange={e=>handleCallPaste(e.target.value)}
-                      placeholder={'Paste Zoom/Meet/Teams transcript here — profile images and formatting stripped automatically
-
-Speaker Name: message text
-You: message text
-[00:01:23] Name: text'}
+                      placeholder="Paste Zoom/Meet/Teams transcript — images/formatting stripped. Supports: 'Name: text', 'You: text', '[00:01] Name: text'" 
                     />
                     {callPaste&&!parsedCallMsgs.length&&<div style={{fontSize:10,color:'#f59e0b',marginTop:2}}>Could not detect speaker format — try "Name: message" style</div>}
                   </div>
