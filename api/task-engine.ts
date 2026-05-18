@@ -1213,8 +1213,17 @@ HTML: ${html.slice(0,2000)}`}]})});
     const{text,staffId,assignmentId}=body;
     if(!text)return ok(res,{error:'text required'});
     try{
-      const{analyseFiverrConversation}=await import('./lib/roles-engine');
-      const result=await analyseFiverrConversation(text,staffId);
+      // Inline analyse_fiverr_conversation
+      const anthropicClient2 = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const aiResp2 = await anthropicClient2.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 2000,
+        messages: [{ role: "user", content: `Analyse this Fiverr conversation. Return ONLY valid JSON:\n{\n  "main_need": "string",\n  "urgency": "high/medium/low",\n  "hidden_concern": "string",\n  "best_next_message": "string",\n  "demo_to_show": ["string"],\n  "quick_wins_to_mention": ["string"],\n  "fiverr_specific": {"order_probability": 70, "conversion_blocker": "string"}\n}\n\nConversation:\n${text}` }]
+      });
+      const rawAI = (aiResp2.content[0] as any).text || "{}";
+      let analysis: any = {};
+      try { analysis = JSON.parse(rawAI.replace(/\`\`\`json|\`\`\`/g,"")); } catch { analysis = { main_need: rawAI.slice(0,200), urgency:"medium", hidden_concern:"Not determined", best_next_message:"Happy to help with your SEO!" }; }
+      const parsed_lines = (text as string).split("\n").filter((l:string)=>l.trim()).map((line:string)=>({ text: line.replace(/^(client:|me:|you:)/i,"").trim(), speaker: /^(client:|buyer:)/i.test(line.trim())?"client":"me" }));
+      const result = { analysis, parsed_lines };
       if(assignmentId&&result.id){
         await db().from('lead_assignments').update({last_contact:new Date().toISOString()}).eq('id',assignmentId);
       }
@@ -1226,17 +1235,34 @@ HTML: ${html.slice(0,2000)}`}]})});
     const{url,forLead,assignmentId}=body;
     if(!url)return ok(res,{error:'url required'});
     try{
-      const{generateInstantAuditShowcase}=await import('./lib/roles-engine');
-      const result=await generateInstantAuditShowcase(url,forLead);
-      return ok(res,{success:true,...result});
+      // Inline instant_audit_showcase
+      const urlClean2 = (url as string).replace(/^https?:\/\//,"").replace(/\//,"");
+      let score2=50; let issues2:string[]=[]; let headline2="";
+      try {
+        const fr=await fetch(\`https://\${urlClean2}\`,{headers:{"User-Agent":"Mozilla/5.0"},signal:AbortSignal.timeout(8000)});
+        const html2=(await fr.text()).slice(0,8000);
+        const chks=[
+          {ok:/<title>[^<]{10,}/i.test(html2),issue:"Missing title tag"},
+          {ok:/meta[^>]+name=["\'\`]description["\'\`]/i.test(html2),issue:"Missing meta description"},
+          {ok:/<h1[^>]*>[^<]{5,}/i.test(html2),issue:"No H1 tag found"},
+          {ok:/application\/ld\+json/.test(html2),issue:"No structured data"},
+          {ok:/canonical/i.test(html2),issue:"No canonical tag"},
+        ];
+        issues2=chks.filter(c=>!c.ok).map(c=>c.issue);
+        score2=Math.max(20,100-issues2.length*15);
+        headline2=issues2.length>0?\`Found \${issues2.length} issues on \${urlClean2}\`:\`\${urlClean2} looks technically solid\`;
+      } catch { issues2=["Could not fetch — may block bots"]; score2=40; headline2="Could not scan site"; }
+      const showcase_message2=\`Hi! Quick audit on \${urlClean2}:\n\n\${issues2.map((i:string,n:number)=>\`\${n+1}. \${i}\`).join("\n")}\n\n\${headline2}\n\nWant a full fix plan?\`;
+      return ok(res,{success:true,url:urlClean2,score:score2,issues:issues2,headline:headline2,showcase_message:showcase_message2});
     }catch(e:any){return ok(res,{error:e.message});}
   }
 
   if (action === 'get_pipeline') {
     const{staffId,role}=body;
     try{
-      const{getPipelineOverview}=await import('./lib/roles-engine');
-      return ok(res,{success:true,...await getPipelineOverview(staffId,role)});
+      // Inline get_pipeline
+      const{data:pipelineData}=await db().from("lead_assignments").select("*, prospects(*)").order("updated_at",{ascending:false}).limit(30);
+      return ok(res,{success:true,assignments:pipelineData||[]});
     }catch(e:any){return ok(res,{error:e.message});}
   }
 
