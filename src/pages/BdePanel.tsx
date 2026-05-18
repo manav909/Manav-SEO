@@ -1429,7 +1429,6 @@ export default function BdePanel() {
           <DocGenerator analysis={analysis} auditResult={auditResult} prospectName={savedProspect?.name||leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||''} prospectUrl={savedProspect?.url||auditResult?.url||auditUrl||''} clientIndustry={savedProspect?.industry||''}/>
         )}
       </div>
-          )}
     </div>
   );
 }
