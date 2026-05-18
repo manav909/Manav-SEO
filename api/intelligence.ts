@@ -169,8 +169,6 @@ function buildBrainPrompt(ctx: {
     : "";
 
   const system = `
-  // LANG_INJECT
-  const langNote = (ctx as any)?.language && (ctx as any).language!=='en' ? `\nRespond entirely in language code: ${(ctx as any).language}. All output must be in that language.` : '';
 You are MANAV BRAIN — the master intelligence of SEO Season.
 
 You are simultaneously a world-class SEO strategist, technical SEO expert, GEO specialist, and the operational brain of this software. You have complete knowledge of every feature and can direct the user or execute operations.
