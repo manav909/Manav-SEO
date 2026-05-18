@@ -119,6 +119,19 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
         </div>
       )}
     </div>
+      {/* Confirm delete modal */}
+      {confirmDelete&&(
+        <div style={{position:'fixed' as const,inset:0,background:'rgba(0,0,0,.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}} onClick={()=>setConfirmDelete(null)}>
+          <div style={{background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:14,padding:24,maxWidth:360,width:'90%'}} onClick={(e:any)=>e.stopPropagation()}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>Delete lead?</div>
+            <div style={{fontSize:12,color:'hsl(var(--muted-foreground))',marginBottom:16}}>This will permanently delete <b>{confirmDelete}</b> and all their conversation history from the database. This cannot be undone.</div>
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button style={{padding:'7px 16px',borderRadius:8,background:'rgba(255,255,255,.06)',border:'0.5px solid #1a1a3a',color:'hsl(var(--foreground))',cursor:'pointer',fontSize:12}} onClick={()=>setConfirmDelete(null)}>Cancel</button>
+              <button style={{padding:'7px 16px',borderRadius:8,background:'rgba(239,68,68,.15)',border:'0.5px solid rgba(239,68,68,.4)',color:'#ef4444',cursor:'pointer',fontSize:12,fontWeight:700}} onClick={()=>deleteLead(confirmDelete)}>Delete Permanently</button>
+            </div>
+          </div>
+        </div>
+      )}
   );
 }
 
@@ -606,6 +619,7 @@ export default function BdePanel() {
   const [prospects,setProspects]=useState<any[]>([]);
   const [loadingPros,setLoadingPros]=useState(false);
   const [showLeadPicker,setShowLeadPicker]=useState(false);
+  const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
   const [loadingLead,setLoadingLead]=useState(false);
   const [selProspect,setSelProspect]=useState<any>(null);
   const [prospectConvs,setProspectConvs]=useState<any[]>([]);
@@ -782,6 +796,19 @@ export default function BdePanel() {
     setLoadingLead(false);
   }
 
+  async function deleteLead(name:string){
+    setConfirmDelete(null);
+    setProspects(prev=>prev.filter((p:any)=>p.name!==name));
+    if(selProspect?.name===name){setSelProspect(null);setSuggestions([]);setProspectConvs([]);}
+    if(savedProspect?.name===name){setSavedProspect(null);setLeadSaved(false);}
+    await post('delete_lead',{prospectName:name});
+  }
+
+  async function archiveLead(name:string){
+    setProspects(prev=>prev.map((p:any)=>p.name===name?{...p,status:'archived'}:p));
+    await post('archive_lead',{prospectName:name,status:'archived'});
+  }
+
   async function saveLead(){
     if(!analysis)return;
     setSavingLead(true); setSaveError('');
@@ -908,12 +935,12 @@ export default function BdePanel() {
         {/* ═══ FIVERR ANALYSER ═══ */}
         {tab==='fiverr'&&(
           <div>
-            {/* Load from saved lead */}
-            {prospects.length>0&&(
+            {/* Load from saved lead — always visible */}
+            {(
               <div style={{marginBottom:10}}>
                 {!showLeadPicker?(
                   <button style={{...S.btn('#6366f1'),width:'100%',justifyContent:'space-between',display:'flex',padding:'8px 14px',fontSize:12}} onClick={()=>setShowLeadPicker(true)}>
-                    <span>📂 Load from saved lead ({prospects.length} saved)</span>
+                    <span>📂 {loadingPros?'Loading leads...':`Load from saved lead (${prospects.length} saved)`}</span>
                     <span>▼</span>
                   </button>
                 ):(
@@ -923,6 +950,8 @@ export default function BdePanel() {
                       <button style={{fontSize:10,background:'none',border:'none',color:'hsl(var(--muted-foreground))',cursor:'pointer'}} onClick={()=>setShowLeadPicker(false)}>✕</button>
                     </div>
                     <div style={{display:'flex',flexDirection:'column' as const,gap:4,maxHeight:220,overflowY:'auto' as const}}>
+                      {loadingPros&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',padding:'12px',textAlign:'center' as const}}>Loading saved leads...</div>}
+                      {!loadingPros&&prospects.length===0&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',padding:'12px',textAlign:'center' as const}}>No saved leads yet — analyse a conversation and save it first</div>}
                       {prospects.map((p:any)=>{
                         const prob=p.latestAnalysis?.fiverr_specific?.order_probability;
                         return(
@@ -1258,7 +1287,13 @@ export default function BdePanel() {
                           </div>
                         </div>
                         {la&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',lineHeight:1.5}}>{la.main_need&&<div>📌 {la.main_need}</div>}{la.urgency&&<div>⚡ {la.urgency} urgency</div>}{la.savedAt&&<div style={{fontSize:10,marginTop:4}}>Last: {AGO(la.savedAt)}</div>}</div>}
-                        <div style={{marginTop:8,fontSize:10,color:'#6366f1',fontWeight:600}}>View Intelligence →</div>
+                        <div style={{marginTop:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                          <span style={{fontSize:10,color:'#6366f1',fontWeight:600}}>View Intelligence →</span>
+                          <div style={{display:'flex',gap:4}} onClick={(e:any)=>e.stopPropagation()}>
+                            <button style={{fontSize:9,padding:'2px 7px',borderRadius:5,background:'rgba(245,158,11,.1)',border:'0.5px solid rgba(245,158,11,.3)',color:'#f59e0b',cursor:'pointer'}} onClick={()=>archiveLead(p.name)}>Archive</button>
+                            <button style={{fontSize:9,padding:'2px 7px',borderRadius:5,background:'rgba(239,68,68,.1)',border:'0.5px solid rgba(239,68,68,.3)',color:'#ef4444',cursor:'pointer'}} onClick={()=>setConfirmDelete(p.name)}>Delete</button>
+                          </div>
+                        </div>
                       </div>
                     );
                   })}

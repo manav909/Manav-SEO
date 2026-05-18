@@ -756,6 +756,44 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
 
+  if (action === "delete_lead") {
+    const { prospectName } = body;
+    if (!prospectName) return ok(res, { error: "prospectName required" });
+    const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
+    try {
+      // Delete from brain_learnings (primary store)
+      const { error: e1 } = await db().from("brain_learnings")
+        .delete().eq("source", "lead_intel").contains("tags", [slug]);
+      // Delete from ai_content_cache (fallback store)
+      try { await db().from("ai_content_cache").delete().like("cache_key", "lead_intel_" + slug + "_%"); } catch {}
+      if (e1) return ok(res, { success: false, error: e1.message });
+      return ok(res, { success: true, deleted: prospectName });
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
+  if (action === "archive_lead") {
+    const { prospectName, status = "archived" } = body;
+    if (!prospectName) return ok(res, { error: "prospectName required" });
+    const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
+    try {
+      // Update all brain_learnings entries for this lead
+      const { data: rows } = await db().from("brain_learnings")
+        .select("id,context_summary").eq("source", "lead_intel").contains("tags", [slug]);
+      for (const row of (rows || [])) {
+        try {
+          const payload = JSON.parse(row.context_summary || "{}");
+          payload.status = status;
+          await db().from("brain_learnings").update({
+            context_summary: JSON.stringify(payload),
+            updated_at: new Date().toISOString()
+          }).eq("id", row.id);
+        } catch {}
+      }
+      return ok(res, { success: true, archived: prospectName, status });
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);
