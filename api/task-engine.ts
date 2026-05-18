@@ -2330,29 +2330,35 @@ HTML: ${html.slice(0,2000)}`}]})});
     try {
       const { data, error } = await db()
         .from('staff_members')
-        .select('id,name,email,role,timezone,permissions,targets,avatar_initials,is_active,stats_cache')
-        .order('created_at', { ascending: true });
-      if (error) return ok(res, { error: error.message });
+        .select('id,name,email,role,timezone,permissions,avatar_initials');
+      if (error) return ok(res, { error: error.message, staff: [] });
       return ok(res, { staff: data || [] });
-    } catch(e:any) { return ok(res, { error: e.message }); }
+    } catch(e:any) { return ok(res, { error: e.message, staff: [] }); }
   }
 
   if (action === 'create_staff') {
-    const{name,email,role='bde',timezone='Europe/London',permissions={},targets={},managedBy}=body;
-    if(!name||!role)return ok(res,{error:'name and role required'});
-    const{data}=await db().from('staff_members').insert({
-      name,email,role,timezone,permissions,targets,
-      managed_by:managedBy||null,
-      avatar_initials:name.split(' ').map((n:string)=>n[0]).join('').toUpperCase().slice(0,2),
-    }).select().single();
-    return ok(res,{success:true,staff:data});
+    const{name,email,role='bde',timezone='Europe/London',permissions={},managedBy}=body;
+    if(!name||!role) return ok(res,{error:'name and role required'});
+    try {
+      const initials = name.split(' ').map((n:string)=>n[0]||'').join('').toUpperCase().slice(0,2);
+      const { data, error } = await db().from('staff_members').insert({
+        name, email: email||null, role, timezone,
+        permissions, avatar_initials: initials,
+        managed_by: managedBy||null,
+      }).select('id,name,email,role,timezone,permissions,avatar_initials').single();
+      if (error) return ok(res, { success:false, error: error.message });
+      return ok(res, { success:true, staff:data });
+    } catch(e:any) { return ok(res, { success:false, error: e.message }); }
   }
 
   if (action === 'update_staff_permissions') {
     const{staffId,permissions}=body;
-    if(!staffId)return ok(res,{error:'staffId required'});
-    await db().from('staff_members').update({permissions}).eq('id',staffId);
-    return ok(res,{success:true});
+    if(!staffId) return ok(res,{error:'staffId required'});
+    try {
+      const { error } = await db().from('staff_members').update({permissions}).eq('id',staffId);
+      if (error) return ok(res, { success:false, error: error.message });
+      return ok(res, { success:true });
+    } catch(e:any) { return ok(res, { success:false, error: e.message }); }
   }
 
   if (action === 'analyse_fiverr_conversation') {

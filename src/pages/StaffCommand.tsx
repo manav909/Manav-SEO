@@ -54,7 +54,7 @@ export default function StaffCommand() {
 
   const load = () => {
     setLoading(true);
-    post("get_staff").then(r => { setStaff((r as any).staff || []); setLoading(false); });
+    post("get_staff").then(r => { setStaff((r as any).staff || []); if((r as any).error) setError("Load error: "+(r as any).error); setLoading(false); });
   };
   useEffect(() => { load(); }, []);
 
