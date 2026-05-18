@@ -723,7 +723,6 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         model: "claude-sonnet-4-6", max_tokens: 1800,
         system: "You are a senior Fiverr BDE coach. Generate 5 specific, actionable suggestions to close this lead. IMPORTANT: Return ONLY a valid JSON array. No text before or after. No markdown. No wrapper object. Just the array starting with [ and ending with ].",
         messages: [{ role: "user", content: "LEAD CONTEXT:\n" + ctx.join("\n") + "\n\nGenerate exactly 5 suggestions. Return ONLY a JSON array [ ] with objects: type (close/followup/upsell/audit/content), priority (high/medium/low), action (exact step), script (word-for-word Fiverr message for this lead), reason (why this works), timing." }]
-        }]
       });
       const raw2 = (_r2.content[0] as any).text || "[]";
       // Try multiple parse strategies
@@ -1063,9 +1062,6 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         const m2 = raw.match(/\{[\s\S]+\}/);
         try { analysis = m2 ? JSON.parse(m2[0]) : null; } catch {}
       }
-      return ok(res, { success: true, analysis, newMessageCount: newMessages.length });
-    } catch (e: any) { return ok(res, { error: e.message }); }
-  }
       return ok(res, { success: true, analysis, newMessageCount: newMessages.length });
     } catch (e: any) { return ok(res, { error: e.message }); }
   }
