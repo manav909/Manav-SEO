@@ -979,6 +979,39 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
 
+  if (action === "auto_save_activity") {
+    // Fire-and-forget auto-save for all BDE activities with dates
+    const { activityType = "", prospectName = "", payload = {} } = body;
+    if (!activityType) return ok(res, { success: false });
+    const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
+    const now = new Date().toISOString();
+    const titleMap: Record<string, string> = {
+      chat_analysis: "Chat Analysis",
+      deep_analysis: "Deep Analysis",
+      audit_result: "Audit",
+      generated_doc: "Document",
+      call_analysis: "Call Analysis",
+    };
+    const title = (titleMap[activityType] || activityType) + (prospectName ? ": " + prospectName : "") + " — " + new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    try {
+      await db().from("brain_learnings").insert({
+        project_id: null,
+        card_type: "bde_activity",
+        card_title: title.slice(0, 100),
+        context_summary: JSON.stringify({ activityType, prospectName, savedAt: now, ...payload }),
+        improvement: (payload as any).summary || (payload as any).headline || title,
+        what_worked: [],
+        what_missed: [],
+        tags: ["bde_activity", activityType, slug].filter(Boolean),
+        source: activityType,
+        applied_count: 0,
+        updated_at: now,
+      });
+      return ok(res, { success: true });
+    } catch { return ok(res, { success: false }); }
+  }
+
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);

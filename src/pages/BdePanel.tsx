@@ -51,7 +51,17 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   const generate=async()=>{
     setGenerating(true);setHtml("");setTitle("");setClientName("");
     const r=await post("generate_client_doc",{docType,conversationAnalysis:analysis,auditResult,brandName:brandName||'Manav S',leadInfo:{url:leadUrl,name:leadName,industry:leadIndustry}});
-    if((r as any).html){setHtml((r as any).html);setTitle((r as any).title||"SEO Season Document");setClientName((r as any).clientName||leadName||"");}
+    if((r as any).html){
+      setHtml((r as any).html);
+      setTitle((r as any).title||"SEO Season Document");
+      setClientName((r as any).clientName||leadName||"");
+      // Auto-save document with type, date, and full HTML
+      const pName=leadName||prospectName||'';
+      const slug=pName.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,40);
+      const now=new Date().toISOString();
+      const docTitle=(r as any).title||'Document';
+      post('auto_save_activity',{activityType:'generated_doc',prospectName:pName,payload:{docType,title:docTitle,clientName:(r as any).clientName||leadName||'',url:leadUrl,html:(r as any).html?.slice(0,20000)||'',savedAt:now,summary:docTitle+' — '+docType.replace(/_/g,' ')+' for '+(pName||'prospect')}}).catch(()=>{});
+    }
     else setHtml("<body style='font-family:sans-serif;padding:20px;color:#c00'><b>Error:</b> "+((r as any).error||"Failed")+"</body>");
     setGenerating(false);
   };
@@ -717,9 +727,12 @@ export default function BdePanel() {
     const savedAttCtx=savedAttachments.length?'--- SAVED FILES ---\n'+savedAttachments.map((a:any)=>'[FILE: '+a.fileName+']\n'+(a.summary||a.description||'').slice(0,300)).join('\n\n'):'';
     const fullText=convText+(callPasteCtx?'\n\n'+callPasteCtx:'')+(attCtx?'\n\n--- ATTACHED FILES ---\n'+attCtx:'')+(savedAttCtx?'\n\n'+savedAttCtx:'')+(transcriptCtx?'\n\n'+transcriptCtx:'');
     const r=await post('analyse_fiverr_conversation',{text:fullText});
-    setAnalysis((r as any).analysis);
+    const an=(r as any).analysis;
+    setAnalysis(an);
     setParsed((r as any).parsed_lines||[]);
     setAnalysing(false);
+    // Auto-save chat analysis
+    if(an) autoSave('chat_analysis',{analysis:an,conversationText:(rawPaste||convText).slice(0,3000),messageCount:parsedMsgs.length,summary:an.main_need||'Chat analysis'});
   }
 
   async function runDeepAnalysis(){
@@ -728,6 +741,8 @@ export default function BdePanel() {
     const r=await post('analyse_conversation_deep',{messages:parsedMsgs.map((m:any,i:number)=>({index:i,speaker:m.speaker,text:m.text}))});
     if ((r as any).success && Array.isArray((r as any).messages)) {
       setDeepAnalysis(r);
+      // Auto-save every deep analysis run with timestamp — creates a new entry each time
+      autoSave('deep_analysis',{overallConversion:r.overallConversion,urgency:r.urgency,topMiss:r.topMiss,topWin:r.topWin,nextAction:r.nextAction,messageCount:(r.messages||[]).length,summary:'Deep analysis: '+(r.overallConversion||'?')+'% conversion · '+(r.urgency||'')});
     } else {
       const err=(r as any).error||'Deep analysis failed — try again';
       setDeepError(err);
@@ -786,6 +801,7 @@ export default function BdePanel() {
     });
     if ((r as any).success && Array.isArray((r as any).messages)) {
       setCallDeepAnalysis(r);
+      autoSave('call_analysis',{overallConversion:r.overallConversion,urgency:r.urgency,topMiss:r.topMiss,topWin:r.topWin,nextAction:r.nextAction,exchangeCount:parsedCallMsgs.length,summary:'Call analysis: '+(r.overallConversion||'?')+'% · '+(r.urgency||'')});
     } else {
       setCallDeepError((r as any).error || 'Call analysis failed');
     }
@@ -1006,6 +1022,10 @@ export default function BdePanel() {
       conversationAnalysis:analysis||savedProspect?.latestAnalysis||null
     });
     setAuditResult(r);setAuditing(false);
+    // Auto-save audit result with date
+    if((r as any).reachable!==false&&(r as any).score!=null){
+      autoSave('audit_result',{url:(r as any).url,score:(r as any).score,headline:(r as any).headline,quickWins:(r as any).quickWins,algorithmHighlights:(r as any).algorithmHighlights,issueCount:(r as any).issues?.length||0,summary:'Audit '+((r as any).url||auditUrl)+': '+((r as any).score||0)+'/100'});
+    }
   }
 
   async function genResponses(){
@@ -1053,6 +1073,12 @@ export default function BdePanel() {
     navigator.clipboard.writeText(text).catch(()=>{});
     setCopied(id);setTimeout(()=>setCopied(null),2000);
   }
+
+  // Fire-and-forget auto-save — never blocks UI, never shows errors
+  const autoSave=(type:string,payload:any)=>{
+    const pName=leadNameInput||savedProspect?.name||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'';
+    post('auto_save_activity',{activityType:type,prospectName:pName,payload}).catch(()=>{});
+  };
 
   const handleConvAction=(type:string,value:string)=>{
     if (type==='copy_reply'||type==='use_as_next') { navigator.clipboard.writeText(value).catch(()=>{}); setNextMsg(value); }
