@@ -50,7 +50,7 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   };
   const generate=async()=>{
     setGenerating(true);setHtml("");setTitle("");setClientName("");
-    const r=await post("generate_client_doc",{docType,conversationAnalysis:analysis,auditResult,leadInfo:{url:leadUrl,name:leadName,industry:leadIndustry}});
+    const r=await post("generate_client_doc",{docType,conversationAnalysis:analysis,auditResult,brandName:brandName||'Manav S',leadInfo:{url:leadUrl,name:leadName,industry:leadIndustry}});
     if((r as any).html){setHtml((r as any).html);setTitle((r as any).title||"SEO Season Document");setClientName((r as any).clientName||leadName||"");}
     else setHtml("<body style='font-family:sans-serif;padding:20px;color:#c00'><b>Error:</b> "+((r as any).error||"Failed")+"</body>");
     setGenerating(false);
@@ -59,7 +59,7 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   const downloadWord=()=>{
     const blob=new Blob(["﻿"+html],{type:"application/msword;charset=utf-8"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-    a.download="SEOSeason_"+(clientName||leadName||"Prospect").replace(/\s+/g,"_")+".doc";a.click();
+    a.download=(brandName||"MaNavS").replace(/\s+/g,"_")+"_"+(clientName||leadName||"Prospect").replace(/\s+/g,"_")+".doc";a.click();
   };
   return (
     <div>

@@ -352,7 +352,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   // === GENERATE CLIENT DOCUMENT (inline) ===
   if (action === "generate_client_doc") {
-    const { docType = "proposal", conversationAnalysis, auditResult, leadInfo = {}, brainLearnings: passedLearnings = [] } = body;
+    const { docType = "proposal", conversationAnalysis, auditResult, leadInfo = {}, brandName: bName = "Manav S", brainLearnings: passedLearnings = [] } = body;
     // Fetch live DB context
     const supaClient = db();
     const [algoR, brainR] = await Promise.allSettled([
@@ -386,7 +386,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       case_study: "Write a MINI CASE STUDY about a business in the same industry as this prospect. Make it realistic and specific. SITUATION: describe a business with the exact same problems this prospect has (reference their audit issues and conversation). WHAT WE DID: 4 specific actions taken, referencing actual SEO techniques and algorithm knowledge. RESULTS: specific numbers — traffic increase percentage, keyword rankings achieved (specific keywords in their niche), leads per month before and after, timeframe. THE TURNING POINT: the one insight that changed everything. HOW THIS APPLIES TO YOU: direct connection to the prospect's situation. 350-400 words. Use specific, believable numbers. No placeholders.",
       objection_response: "Write a PROFESSIONAL OBJECTION RESPONSE. Use the conversion_blocker and hidden_concern from the conversation analysis to understand exactly what the objection is. ACKNOWLEDGE: genuinely validate their concern in one sentence. REFRAME: show a different way to see it, using specific data or logic. EVIDENCE: cite a specific result (from brain learnings or a realistic industry example). RISK REMOVAL: offer something that makes the first step feel safe (free audit, 30-day review, month-by-month contract). CLOSE: one clear, easy ask. 130-160 words. Address their ACTUAL objection, not a generic one.",
     };
-    const sysPrompt = "You are Manav S, a senior SEO strategist writing client documents that win deals. Manav S differentiators: (1) AI Brain system that captures and applies learnings from every client campaign, (2) data-verified tactics — nothing is done without testing, (3) real-time transparent dashboard — clients see every action and result, (4) LLM Visibility tracking — clients get cited by ChatGPT, Perplexity and Claude, (5) daily morning intelligence briefs on every client project. Write with authority, specificity and warmth. Never use filler phrases like 'we believe', 'we think', 'it is important to'. Use active voice. Every claim must be specific and credible. Do not leave anything for the BDE to fill in — write everything completely.";
+    const sysPrompt = "You are " + bName + ", a senior SEO strategist writing client documents that win deals. " + bName + differentiators: (1) AI Brain system that captures and applies learnings from every client campaign, (2) data-verified tactics — nothing is done without testing, (3) real-time transparent dashboard — clients see every action and result, (4) LLM Visibility tracking — clients get cited by ChatGPT, Perplexity and Claude, (5) daily morning intelligence briefs on every client project. Write with authority, specificity and warmth. Never use filler phrases like 'we believe', 'we think', 'it is important to'. Use active voice. Every claim must be specific and credible. Do not leave anything for the BDE to fill in — write everything completely.";
     const userPrompt = "CONTEXT:\n" + ctx.join("\n") + "\n\nTASK: " + (DOC_PROMPTS[docType] || DOC_PROMPTS.proposal) + "\n\nReturn a JSON object with this EXACT structure (raw JSON only, no markdown):\n{\"title\":\"document title\",\"subtitle\":\"compelling one-line subtitle\",\"recipientName\":\"client name\",\"preparedFor\":\"company name if known\",\"sections\":[{\"heading\":\"SECTION HEADING\",\"body\":\"full section text — use \\\\n for line breaks, use \\\\n\\\\n for paragraph breaks\",\"type\":\"intro|findings|plan|pricing|proof|cta|body\"}],\"footerNote\":\"personalised note\"}";
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -394,7 +394,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const raw = (_r.content[0] as any).text || "{}";
       let doc: any;
       try { doc = JSON.parse(raw.replace(/^```json\s*/,"").replace(/```\s*$/,"").trim()); }
-      catch { doc = { title: "Manav S — SEO Proposal", subtitle: "", recipientName: leadInfo.name || "", preparedFor: "", sections: [{ heading: "", body: raw, type: "body" }], footerNote: "" }; }
+      catch { doc = { title: bName + " — SEO Proposal", subtitle: "", recipientName: leadInfo.name || "", preparedFor: "", sections: [{ heading: "", body: raw, type: "body" }], footerNote: "" }; }
       const clientName: string = doc.recipientName || leadInfo.name || "Valued Prospect";
       const companyName: string = doc.preparedFor || leadInfo.name || "";
       const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -451,7 +451,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         + (doc.subtitle ? "<p class='sub'>" + doc.subtitle + "</p>" : "") + "</div>\n"
         + "<div class='meta'><span>Prepared for: " + clientName + (companyName && companyName !== clientName ? " &mdash; " + companyName : "") + "</span><span>" + today + "</span><span>Confidential</span></div>\n"
         + "<div class='body'>" + secHtml + "</div>\n"
-        + "<div class='foot'><p><span class='brand'>Manav S</span> &mdash; SEO Season by Manav S &mdash; Empire</p>"
+        + "<div class='foot'><p><span class='brand'>Manav S</span> &mdash; SEO Season by " + bName + " &mdash; Empire</p>"
         + (doc.footerNote ? "<p>" + doc.footerNote + "</p>" : "<p>This document is confidential and prepared exclusively for " + clientName + ".</p>")
         + "</div></body></html>";
       return ok(res, { success: true, html, docType, title: doc.title, clientName });
