@@ -247,10 +247,7 @@ export default function BdePanel() {
           <div>
             <div style={{marginBottom:10,color:"hsl(var(--muted-foreground))",fontSize:12}}>Paste any Fiverr conversation — AI analyses intent, mood, urgency and best reply.</div>
             <div style={S.card}>
-              <textarea ref={textRef} style={S.textarea} value={convText} onChange={e=>setConv(e.target.value)} placeholder={"Paste Fiverr conversation here...
-
-Client: Hi can you help with my SEO?
-Me: Of course! Tell me about your business..."}/>
+              <textarea ref={textRef} style={S.textarea} value={convText} onChange={e=>setConv(e.target.value)} placeholder="Paste Fiverr conversation here... (Client: Hi, Me: Sure!)" rows={6}/>
               <div style={{display:"flex",gap:8,marginTop:10}}>
                 <button style={S.btn()} onClick={analyse} disabled={analysing||!convText.trim()}>{analysing?"Analysing...":"🧠 Analyse Conversation"}</button>
                 {analysis&&<button style={S.btn("#a78bfa")} onClick={genResponses} disabled={genResp}>{genResp?"Generating...":"✍️ Generate Responses"}</button>}
