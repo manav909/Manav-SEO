@@ -144,7 +144,7 @@ async function loadFullContext(project: any, client: any | null): Promise<Projec
   const [knR, metricsR, auditR, learningsR, algoR] = await Promise.allSettled([
     supabase.from('project_knowledge').select('category,field_key,field_value').eq('project_id', projectId),
     supabase.from('metrics').select('llm_visibility_score,algorithm_health_score,eeat_score,content_authority_score,overall_growth_score,pages_indexed,pages_submitted,recorded_at').eq('project_id', projectId).order('recorded_at', { ascending: false }).limit(1),
-    supabase.from('audit_reports').select('id,created_at,score').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('audit_reports').select('id,created_at,overall_score').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1),
     supabase.from('brain_learnings').select('id,card_type,card_title,improvement,confidence_score,applied_count,tags,what_worked,what_missed,status').eq('project_id', projectId).in('status', ['active', 'pending_review']).order('applied_count', { ascending: false }).order('confidence_score', { ascending: false }).limit(20),
     supabase.from('algorithm_knowledge').select('id,topic,summary,freshness_score').order('freshness_score', { ascending: false }).limit(10),
   ]);
@@ -236,7 +236,7 @@ async function loadFullContext(project: any, client: any | null): Promise<Projec
     goals,
     metrics,
     lastAuditDate:   aRow ? (aRow.created_at || '').split('T')[0] : null,
-    lastAuditScore:  aRow?.score ?? null,
+    lastAuditScore:  aRow?.overall_score ?? null,
     activeLearnings,
     pendingLearnings,
     algoTopics,
