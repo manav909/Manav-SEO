@@ -238,31 +238,17 @@ Fetch and analyse a URL:
 }
 
 /* ─── Handler ─── */
+export const config = { maxDuration: 300 };
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  /* ── Safety guard: ANTHROPIC_API_KEY + try-catch wrapper ── */
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("[intelligence] ANTHROPIC_API_KEY not set — cannot process request");
-    res.status(503).json({ error: "AI service not configured", details: "ANTHROPIC_API_KEY missing" });
-    return;
+    return res.status(503).json({ error: "AI service not configured", details: "ANTHROPIC_API_KEY not set on Vercel" });
   }
-  
-  /* ── Dynamic import ai-cache (prevents module-load crash) ── */
-  let extractAndSaveLearning: any = null;
-  try {
-    const aiCache = await import('./lib/ai-cache');
-    extractAndSaveLearning = aiCache.extractAndSaveLearning;
-  } catch (importErr) {
-    console.warn("[intelligence] ai-cache import failed (non-fatal):", (importErr as any)?.message);
-  }
-  
-  try { return await _handler(req, res); }
-  catch (e: any) {
-    console.error("[intelligence] unhandled:", e?.message, e?.stack?.slice(0, 800));
-    try {
-      if (!res.headersSent) res.status(200).json({ error: e?.message || "unknown crash", trace: (e?.stack || "").slice(0, 400) });
-      else { res.write(`\nError: ${e?.message || "unknown crash"}`); res.end(); }
-    } catch (_e) {}
-  }
+  return _handler(req, res).catch((e: any) => {
+    console.error("[intelligence] unhandled:", e?.message);
+    if (!res.headersSent) res.status(500).json({ error: e?.message || "Unknown error" });
+  });
+}
 
 async function _handler(req: VercelRequest, res: VercelResponse) {
   /* Top-level guard: if anything throws before res.end(), return clean error */
