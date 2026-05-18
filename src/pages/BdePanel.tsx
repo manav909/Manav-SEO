@@ -586,6 +586,7 @@ export default function BdePanel() {
   const [selLine,setSelLine]=useState<number|null>(null);
   const [nextMsg,setNextMsg]=useState('');
   const [attachments,setAttachments]=useState<any[]>([]);
+  const [savedAttachments,setSavedAttachments]=useState<any[]>([]);
   const [extracting,setExtracting]=useState(false);
   const [transcripts,setTranscripts]=useState<any[]>([]);
   const [uploadingTranscript,setUploadingTranscript]=useState(false);
@@ -632,6 +633,7 @@ export default function BdePanel() {
     } catch {}
     post('get_quick_responses',{role:'bde'}).then(r=>setQuickResps((r as any).responses||[]));
     post('get_call_transcripts',{}).then(r=>setTranscripts((r as any).transcripts||[]));
+    post('get_lead_attachments',{}).then(r=>setSavedAttachments((r as any).attachments||[]));
     post('get_pipeline',{role:'bde'}).then(r=>setAssignments((r as any).assignments||[]));
     loadProspects();
   },[]);
@@ -697,7 +699,8 @@ export default function BdePanel() {
     if(!convText.trim())return;
     setAnalysing(true);setAnalysis(null);setParsed([]);setResponses(null);
     const attCtx=attachments.filter((a:any)=>a.status==='done').map((a:any)=>'[ATTACHMENT: '+a.name+']\n'+a.description).join('\n\n');
-    const fullText=convText+(attCtx?'\n\n--- ATTACHED FILES ---\n'+attCtx:'')+(transcriptCtx?'\n\n'+transcriptCtx:'');
+    const savedAttCtx=savedAttachments.length?'--- SAVED FILES ---\n'+savedAttachments.map((a:any)=>'[FILE: '+a.fileName+']\n'+(a.summary||a.description||'').slice(0,300)).join('\n\n'):'';
+    const fullText=convText+(attCtx?'\n\n--- ATTACHED FILES ---\n'+attCtx:'')+(savedAttCtx?'\n\n'+savedAttCtx:'')+(transcriptCtx?'\n\n'+transcriptCtx:'');
     const r=await post('analyse_fiverr_conversation',{text:fullText});
     setAnalysis((r as any).analysis);
     setParsed((r as any).parsed_lines||[]);
@@ -780,7 +783,9 @@ export default function BdePanel() {
       }
       const r=await post('extract_attachment_context',{base64,mimeType:f.type,fileName:f.name,conversationContext:convText.slice(0,300)});
       if((r as any).success){
-        setAttachments(prev=>prev.map(a=>a.name===f.name&&a.status==='extracting'?{...a,status:'done',description:(r as any).description}:a));
+        const st2=(r as any).structured||null;const desc2=(r as any).description||'';
+        setAttachments(prev=>prev.map(a=>a.name===f.name&&a.status==='extracting'?{...a,status:'done',description:desc2,structured:st2}:a));
+        post('save_attachment_context',{prospectName:leadNameInput||savedProspect?.name||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'',fileName:f.name,fileType:f.type,description:desc2,summary:st2?.summary||desc2.slice(0,200),keyFindings:st2?.keyFindings||[],seoIssues:st2?.seoIssues||[],actionItems:st2?.actionItems||[]}).then((sv:any)=>{if((sv as any).success){setSavedAttachments(prev=>[{id:(sv as any).id,fileName:f.name,fileType:f.type,description:desc2,summary:st2?.summary||'',keyFindings:st2?.keyFindings||[],seoIssues:st2?.seoIssues||[],actionItems:st2?.actionItems||[],created_at:new Date().toISOString()},...prev]);}});
       } else {
         setAttachments(prev=>prev.map(a=>a.name===f.name&&a.status==='extracting'?{...a,status:'error',description:(r as any).error||'Failed to extract'}:a));
       }
@@ -1023,7 +1028,7 @@ export default function BdePanel() {
             {/* Attachment uploader */}
             <div style={{...S.card,marginBottom:10}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                <div style={{fontSize:12,fontWeight:700}}>📎 Attachments <span style={{fontSize:10,fontWeight:400,color:'hsl(var(--muted-foreground))'}}>— images, PDFs, screenshots, docs</span></div>
+                <div style={{fontSize:12,fontWeight:700}}>📎 Files & Attachments{savedAttachments.length>0&&<span style={{fontSize:10,color:'#10b981',marginLeft:6,fontWeight:400}}>✓ {savedAttachments.length} saved permanently</span>}</div>
                 <label style={{...S.btn('#6366f1'),fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
                   <input type="file" multiple accept="image/*,.pdf,.txt,.md" style={{display:'none'}} onChange={e=>handleFiles(e.target.files)} disabled={extracting}/>
                   {extracting?'⏳ Reading...':'+ Add File'}
@@ -1038,6 +1043,29 @@ export default function BdePanel() {
                   </label>
                 </div>
               ))}
+              {/* Saved attachments from DB */}
+              {savedAttachments.length>0&&(
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:9,fontWeight:700,letterSpacing:1,color:'#10b981',marginBottom:5}}>SAVED FILES — ALWAYS IN CONTEXT</div>
+                  <div style={{display:'flex',flexDirection:'column' as const,gap:5}}>
+                    {savedAttachments.map((a:any,i:number)=>(
+                      <div key={a.id||i} style={{padding:'8px 10px',background:'rgba(16,185,129,.04)',borderRadius:8,border:'0.5px solid rgba(16,185,129,.2)'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:a.summary?4:0}}>
+                          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                            <span style={{fontSize:13}}>{a.fileType?.startsWith('image')?'🖼️':a.fileType==='application/pdf'?'📄':'📝'}</span>
+                            <div><div style={{fontSize:11,fontWeight:600}}>{a.fileName}</div><div style={{fontSize:9,color:'hsl(var(--muted-foreground))'}}>{AGO(a.created_at)}</div></div>
+                          </div>
+                          <button style={{fontSize:9,background:'none',border:'none',color:'#ef4444',cursor:'pointer'}} onClick={()=>{if(window.confirm('Delete '+a.fileName+' permanently?')){setSavedAttachments((prev:any[])=>prev.filter((_:any,j:number)=>j!==i));post('delete_attachment',{id:a.id});}}}>✕</button>
+                        </div>
+                        {a.summary&&<div style={{fontSize:11,color:'#d0d0e8',lineHeight:1.5,marginBottom:a.keyFindings?.length?4:0}}>{a.summary}</div>}
+                        {a.keyFindings?.length>0&&<div style={{background:'rgba(0,0,0,.15)',borderRadius:6,padding:'5px 8px'}}><div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:2}}>KEY FINDINGS</div>{a.keyFindings.slice(0,4).map((f:string,fi:number)=><div key={fi} style={{fontSize:10,color:'#d0d0e8'}}>• {f}</div>)}</div>}
+                        {a.seoIssues?.length>0&&<div style={{fontSize:10,color:'#f59e0b',marginTop:3}}>⚠ {a.seoIssues.slice(0,2).join(' · ')}</div>}
+                        {a.actionItems?.length>0&&<div style={{fontSize:10,color:'#10b981',marginTop:2}}>→ {a.actionItems.slice(0,2).join(' · ')}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Drop zone when no files */}
               {!attachments.length&&!attachmentPrompt.length&&(
                 <label style={{display:'block',border:'1px dashed rgba(99,102,241,.25)',borderRadius:9,padding:'16px',textAlign:'center' as const,cursor:'pointer',color:'hsl(var(--muted-foreground))',fontSize:11}}>
@@ -1119,7 +1147,7 @@ export default function BdePanel() {
                               </div>
                               <button style={{fontSize:9,background:'none',border:'none',color:'#ef4444',cursor:'pointer',padding:'0 4px',flexShrink:0}} onClick={()=>{if(window.confirm('Remove '+t.fileName+'?')){setTranscripts((prev:any[])=>prev.filter((_:any,j:number)=>j!==idx));post('delete_call_transcript',{id:t.id});}}}>✕</button>
                             </div>
-                            {t.summary&&<div style={{fontSize:11,color:'#d0d0e8',lineHeight:1.5,marginBottom:3}}>{t.summary}</div>}
+                            {t.summary&&<div style={{background:'rgba(0,0,0,.15)',borderRadius:6,padding:'6px 8px',marginBottom:4}}><div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:2}}>CALL SUMMARY</div><div style={{fontSize:11,color:'#d0d0e8',lineHeight:1.5}}>{t.summary}</div></div>}
                             {t.keyPoints?.length>0&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>📌 {t.keyPoints.slice(0,3).join(' · ')}</div>}
                             {t.commitments?.length>0&&<div style={{fontSize:10,color:'#10b981',marginTop:2}}>✅ {t.commitments.slice(0,2).join(', ')}</div>}
                             {t.clientConcerns?.length>0&&<div style={{fontSize:10,color:'#f59e0b',marginTop:2}}>⚠ {t.clientConcerns.slice(0,2).join(', ')}</div>}

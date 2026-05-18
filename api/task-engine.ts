@@ -740,7 +740,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const isPdf = mimeType === "application/pdf";
       const isImage = mimeType.startsWith("image/");
-      const sysP = "You are an SEO consultant analysing a file shared in a Fiverr conversation. Extract all relevant information that would help understand the client's situation, problems, and what work needs to be done. Be specific and detailed.";
+      const sysP = "You are an SEO consultant analysing a file. Return ONLY raw JSON with: summary (2-3 sentences), keyFindings (string[] of specific facts/numbers/errors), seoIssues (string[] of SEO problems visible), actionItems (string[] of what to do), clientContext (string — what this reveals about the client). Be specific.";
       const userContent: any[] = [];
       if (isImage) {
         userContent.push({ type: "image", source: { type: "base64", media_type: mimeType, data: base64 } });
@@ -750,8 +750,10 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const ctxNote = conversationContext ? "\n\nConversation context: " + conversationContext.slice(0, 500) : "";
       userContent.push({ type: "text", text: "File: " + fileName + ctxNote + "\n\nAnalyse this file and extract: (1) What it shows/contains, (2) Key SEO/technical issues visible, (3) Specific numbers, errors, or data points, (4) What action this suggests. Be concrete and specific — no generic statements." });
       const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1200, system: sysP, messages: [{ role: "user", content: userContent }] });
-      const description = (_r.content[0] as any).text || "";
-      return ok(res, { success: true, description, fileName, mimeType });
+      const rawR = (_r.content[0] as any).text||"";
+      let st:any=null;try{st=JSON.parse(rawR.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim());}catch{}
+      const description = st?(st.summary||"")+(st.keyFindings?.length?"\n\nKey findings:\n"+st.keyFindings.map((f:string)=>"• "+f).join("\n"):"")+(st.seoIssues?.length?"\n\nSEO Issues:\n"+st.seoIssues.map((f:string)=>"• "+f).join("\n"):"")+(st.actionItems?.length?"\n\nAction items:\n"+st.actionItems.map((f:string)=>"→ "+f).join("\n"):""):rawR;
+      return ok(res, { success:true, description, structured:st, fileName, mimeType });
     } catch (e: any) { return ok(res, { success: false, error: e.message }); }
   }
 
@@ -851,6 +853,47 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       await db().from("brain_learnings").delete().eq("id", id);
       return ok(res, { success: true });
     } catch (e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
+
+  if (action === "save_attachment_context") {
+    const { prospectName="", fileName="", fileType="", description="", summary="", keyFindings=[], seoIssues=[], actionItems=[] } = body;
+    const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,40);
+    const payload = JSON.stringify({ prospectName, fileName, fileType, description, summary, keyFindings, seoIssues, actionItems, savedAt: new Date().toISOString() });
+    try {
+      const { data: ins } = await db().from("brain_learnings").insert({
+        project_id: null, card_type: "bde_attachment",
+        card_title: ("FILE: "+fileName+(prospectName?" | "+prospectName:"")).slice(0,100),
+        context_summary: payload, improvement: summary||description.slice(0,200),
+        what_worked: keyFindings, what_missed: [],
+        tags: ["bde_attachment", slug].filter(Boolean), source: "bde_attachment",
+        applied_count: 0, updated_at: new Date().toISOString()
+      }).select("id").single();
+      return ok(res, { success: true, id: (ins as any)?.id||"" });
+    } catch(e:any) { return ok(res, { success: false, error: e.message }); }
+  }
+
+  if (action === "get_lead_attachments") {
+    const { prospectName } = body;
+    try {
+      const slug = String(prospectName||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,40);
+      const q = slug
+        ? db().from("brain_learnings").select("id,card_title,context_summary,created_at").eq("source","bde_attachment").contains("tags",[slug]).order("created_at",{ascending:false}).limit(100)
+        : db().from("brain_learnings").select("id,card_title,context_summary,created_at").eq("source","bde_attachment").order("created_at",{ascending:false}).limit(100);
+      const { data } = await q;
+      const attachments = (data||[]).map((r:any) => {
+        let d:any={};try{d=JSON.parse(r.context_summary||"{}");}catch{}
+        return { id:r.id, fileName:d.fileName||r.card_title, fileType:d.fileType||"", description:d.description||"", summary:d.summary||"", keyFindings:d.keyFindings||[], seoIssues:d.seoIssues||[], actionItems:d.actionItems||[], prospectName:d.prospectName||"", created_at:r.created_at };
+      });
+      return ok(res, { success:true, attachments });
+    } catch(e:any) { return ok(res, { success:false, error:e.message, attachments:[] }); }
+  }
+
+  if (action === "delete_attachment") {
+    const { id } = body;
+    if (!id) return ok(res, { error:"id required" });
+    try { await db().from("brain_learnings").delete().eq("id",id); return ok(res,{success:true}); }
+    catch(e:any) { return ok(res,{success:false,error:e.message}); }
   }
 
 
