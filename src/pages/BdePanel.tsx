@@ -587,6 +587,10 @@ export default function BdePanel() {
   const [nextMsg,setNextMsg]=useState('');
   const [attachments,setAttachments]=useState<any[]>([]);
   const [extracting,setExtracting]=useState(false);
+  const [transcripts,setTranscripts]=useState<any[]>([]);
+  const [uploadingTranscript,setUploadingTranscript]=useState(false);
+  const [showTranscripts,setShowTranscripts]=useState(false);
+  const [transcriptFilter,setTranscriptFilter]=useState('');
   // Audit state
   const [auditUrl,setAuditUrl]=useState('');
   const [auditFor,setAuditFor]=useState('');
@@ -627,6 +631,7 @@ export default function BdePanel() {
       if (d.savedProspect) { setSavedProspect(d.savedProspect); setLeadSaved(true); }
     } catch {}
     post('get_quick_responses',{role:'bde'}).then(r=>setQuickResps((r as any).responses||[]));
+    post('get_call_transcripts',{}).then(r=>setTranscripts((r as any).transcripts||[]));
     post('get_pipeline',{role:'bde'}).then(r=>setAssignments((r as any).assignments||[]));
     loadProspects();
   },[]);
@@ -692,7 +697,7 @@ export default function BdePanel() {
     if(!convText.trim())return;
     setAnalysing(true);setAnalysis(null);setParsed([]);setResponses(null);
     const attCtx=attachments.filter((a:any)=>a.status==='done').map((a:any)=>'[ATTACHMENT: '+a.name+']\n'+a.description).join('\n\n');
-    const fullText=convText+(attCtx?'\n\n--- ATTACHED FILES ---\n'+attCtx:'');
+    const fullText=convText+(attCtx?'\n\n--- ATTACHED FILES ---\n'+attCtx:'')+(transcriptCtx?'\n\n'+transcriptCtx:'');
     const r=await post('analyse_fiverr_conversation',{text:fullText});
     setAnalysis((r as any).analysis);
     setParsed((r as any).parsed_lines||[]);
@@ -713,6 +718,42 @@ export default function BdePanel() {
     }
     setDeepLoading(false);
   }
+
+  const handleTranscriptUpload=async(files:FileList|null)=>{
+    if(!files||!files.length)return;
+    setUploadingTranscript(true);
+    for(let fi=0;fi<Math.min(files.length,10);fi++){
+      const f=files[fi];
+      if(f.size>20*1024*1024){alert(f.name+' too large (max 20MB)');continue;}
+      const isText=f.type==='text/plain'||/\.(txt|md|vtt|srt)$/i.test(f.name);
+      let payload:any={fileName:f.name,prospectName:leadNameInput||savedProspect?.name||''};
+      if(isText){
+        const text:string=await new Promise(res=>{const rd=new FileReader();rd.onload=()=>res(String(rd.result));rd.readAsText(f);});
+        payload.text=text.slice(0,20000);
+      } else {
+        const b64:string=await new Promise(res=>{const rd=new FileReader();rd.onload=()=>res(String(rd.result).split(',')[1]||'');rd.readAsDataURL(f);});
+        payload.base64=b64;payload.mimeType=f.type;
+      }
+      const r=await post('process_call_transcript',payload);
+      if((r as any).success){
+        const t=(r as any).parsed;
+        setTranscripts(prev=>[{id:(r as any).id||Date.now()+'_'+fi,fileName:f.name,clientName:t.clientName||payload.prospectName,callDate:t.callDate||'',summary:t.summary||'',keyPoints:t.keyPoints||[],decisions:t.decisions||[],commitments:t.commitments||[],clientConcerns:t.clientConcerns||[],nextSteps:t.nextSteps||[],sentiment:t.sentiment||'neutral',orderProbability:t.orderProbability,created_at:new Date().toISOString()},...prev]);
+      } else { alert('Failed to process '+f.name+': '+((r as any).error||'unknown error')); }
+    }
+    setUploadingTranscript(false);
+  };
+
+  const callDetected=React.useMemo(()=>{
+    const t=(rawPaste||convText).toLowerCase();
+    return t.includes('call')&&(t.includes('minute')||t.includes('discuss')||t.includes('spoke')||t.includes('transcript')||t.includes('recording')||t.includes('zoom')||t.includes('meet'));
+  },[rawPaste,convText]);
+
+  const transcriptCtx=React.useMemo(()=>{
+    if(!transcripts.length)return '';
+    const rel=transcriptFilter?transcripts.filter((t:any)=>String(t.clientName||t.fileName).toLowerCase().includes(transcriptFilter.toLowerCase())):transcripts;
+    if(!rel.length)return '';
+    return '--- CALL TRANSCRIPTS ('+rel.length+' calls) ---\n'+rel.map((t:any)=>'[CALL: '+t.fileName+(t.callDate?' | '+t.callDate:'')+']\nSummary: '+t.summary+(t.keyPoints?.length?'\nKey points: '+t.keyPoints.join(', '):'')+(t.decisions?.length?'\nDecisions: '+t.decisions.join(', '):'')+(t.commitments?.length?'\nCommitments: '+t.commitments.join(', '):'')+(t.clientConcerns?.length?'\nClient concerns: '+t.clientConcerns.join(', '):'')+(t.nextSteps?.length?'\nNext steps: '+t.nextSteps.join(', '):'')).join('\n\n');
+  },[transcripts,transcriptFilter]);
 
   const handleFiles=async(files:FileList|null)=>{
     if(!files||!files.length)return;
@@ -1025,6 +1066,69 @@ export default function BdePanel() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+            {/* Call Transcripts */}
+            <div style={{...S.card,marginBottom:10,borderColor:transcripts.length>0?'rgba(16,185,129,.25)':'rgba(99,102,241,.15)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:showTranscripts&&transcripts.length>0?10:0}}>
+                <div style={{display:'flex',gap:8,alignItems:'center',cursor:'pointer',flex:1}} onClick={()=>setShowTranscripts((p:boolean)=>!p)}>
+                  <span>📞</span>
+                  <div>
+                    <span style={{fontSize:12,fontWeight:700}}>Call Transcripts</span>
+                    {transcripts.length>0?<span style={{fontSize:10,color:'#10b981',marginLeft:6}}>✓ {transcripts.length} loaded into context</span>:<span style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginLeft:6}}>Upload to add context</span>}
+                  </div>
+                  <span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{showTranscripts?'▲':'▼'}</span>
+                </div>
+                <label style={{...S.btn('#10b981'),fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
+                  <input type="file" multiple accept=".txt,.md,.pdf,.vtt,.srt,.doc,.docx" style={{display:'none'}} onChange={e=>handleTranscriptUpload(e.target.files)} disabled={uploadingTranscript}/>
+                  {uploadingTranscript?'⏳ Processing...':'+ Add Transcript'}
+                </label>
+              </div>
+              {callDetected&&transcripts.length===0&&(
+                <div style={{fontSize:11,color:'#10b981',padding:'5px 10px',background:'rgba(16,185,129,.06)',borderRadius:7,border:'0.5px dashed rgba(16,185,129,.3)',marginTop:6,display:'flex',gap:6,alignItems:'center'}}>
+                  <span>📞</span><span>Call mentioned — upload the transcript for full context</span>
+                  <label style={{marginLeft:'auto',fontSize:10,background:'rgba(16,185,129,.15)',border:'0.5px solid rgba(16,185,129,.3)',borderRadius:5,color:'#10b981',padding:'2px 8px',cursor:'pointer',flexShrink:0}}>
+                    <input type="file" accept=".txt,.pdf,.vtt,.srt" style={{display:'none'}} onChange={e=>handleTranscriptUpload(e.target.files)}/>Upload
+                  </label>
+                </div>
+              )}
+              {showTranscripts&&(
+                <div style={{marginTop:8}}>
+                  {transcripts.length===0&&!uploadingTranscript&&(
+                    <label style={{display:'block',border:'1px dashed rgba(16,185,129,.2)',borderRadius:9,padding:'16px',textAlign:'center' as const,cursor:'pointer',color:'hsl(var(--muted-foreground))',fontSize:11}}>
+                      <input type="file" multiple accept=".txt,.md,.pdf,.vtt,.srt" style={{display:'none'}} onChange={e=>handleTranscriptUpload(e.target.files)}/>
+                      📞 Upload TXT, PDF, VTT (Zoom), SRT — up to 10 transcripts at once, saved permanently
+                    </label>
+                  )}
+                  {transcripts.length>0&&(
+                    <div>
+                      <input style={{...S.inp,width:'100%',marginBottom:8,fontSize:11,padding:'5px 10px'}} placeholder="Filter by client name..." value={transcriptFilter} onChange={(e:any)=>setTranscriptFilter(e.target.value)}/>
+                      <div style={{display:'flex',flexDirection:'column' as const,gap:5,maxHeight:320,overflowY:'auto' as const}}>
+                        {transcripts.filter((t:any)=>!transcriptFilter||String(t.clientName||t.fileName).toLowerCase().includes(transcriptFilter.toLowerCase())).map((t:any,idx:number)=>(
+                          <div key={t.id||idx} style={{padding:'8px 10px',background:'rgba(0,0,0,.12)',borderRadius:8,border:`0.5px solid ${t.sentiment==='positive'?'rgba(16,185,129,.25)':t.sentiment==='negative'?'rgba(239,68,68,.25)':'rgba(99,102,241,.2)'}`}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+                              <div>
+                                <div style={{fontSize:11,fontWeight:700}}>{t.fileName}</div>
+                                <div style={{display:'flex',gap:6,marginTop:2,flexWrap:'wrap' as const}}>
+                                  {t.clientName&&<span style={{fontSize:9,color:'#a78bfa'}}>👤 {t.clientName}</span>}
+                                  {t.callDate&&<span style={{fontSize:9,color:'hsl(var(--muted-foreground))'}}>📅 {t.callDate}</span>}
+                                  {t.orderProbability!==undefined&&<span style={{fontSize:9,fontWeight:700,color:t.orderProbability>=70?'#10b981':t.orderProbability>=50?'#f59e0b':'#ef4444'}}>{t.orderProbability}% prob</span>}
+                                  <span style={{fontSize:9,color:t.sentiment==='positive'?'#10b981':t.sentiment==='negative'?'#ef4444':'hsl(var(--muted-foreground))'}}>{t.sentiment==='positive'?'😊':t.sentiment==='negative'?'😤':'😐'} {t.sentiment}</span>
+                                </div>
+                              </div>
+                              <button style={{fontSize:9,background:'none',border:'none',color:'#ef4444',cursor:'pointer',padding:'0 4px',flexShrink:0}} onClick={()=>{if(window.confirm('Remove '+t.fileName+'?')){setTranscripts((prev:any[])=>prev.filter((_:any,j:number)=>j!==idx));post('delete_call_transcript',{id:t.id});}}}>✕</button>
+                            </div>
+                            {t.summary&&<div style={{fontSize:11,color:'#d0d0e8',lineHeight:1.5,marginBottom:3}}>{t.summary}</div>}
+                            {t.keyPoints?.length>0&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>📌 {t.keyPoints.slice(0,3).join(' · ')}</div>}
+                            {t.commitments?.length>0&&<div style={{fontSize:10,color:'#10b981',marginTop:2}}>✅ {t.commitments.slice(0,2).join(', ')}</div>}
+                            {t.clientConcerns?.length>0&&<div style={{fontSize:10,color:'#f59e0b',marginTop:2}}>⚠ {t.clientConcerns.slice(0,2).join(', ')}</div>}
+                            {t.nextSteps?.length>0&&<div style={{fontSize:10,color:'#6366f1',marginTop:2}}>→ {t.nextSteps.slice(0,2).join(', ')}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

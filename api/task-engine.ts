@@ -794,6 +794,66 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
 
+  if (action === "process_call_transcript") {
+    const { base64, mimeType = "text/plain", fileName = "transcript.txt", prospectName = "", prospectUrl = "", callDate = "", text: rawInput = "" } = body;
+    if (!base64 && !rawInput) return ok(res, { error: "base64 or text required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const rawText = rawInput || Buffer.from(base64, "base64").toString("utf-8").slice(0, 20000);
+      const userP = "Call transcript (" + fileName + ")" + (callDate ? " from " + callDate : "") + ":\n\n" + rawText.slice(0, 14000)
+        + "\n\nReturn ONLY raw JSON (no markdown). Fields: clientName (string), callDate (string), duration (string or null), summary (2-3 sentences), keyPoints (string[]), decisions (string[]), commitments (string[] — what YOU promised), clientConcerns (string[]), nextSteps (string[]), sentiment (\"positive\"|\"neutral\"|\"negative\"), orderProbability (integer 0-100).";
+      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1500,
+        system: "You are an expert at analysing sales call transcripts. Extract every detail that helps close the deal.",
+        messages: [{ role: "user", content: userP }] });
+      const raw = (_r.content[0] as any).text || "{}";
+      let parsed: any = {};
+      try { parsed = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {}
+      const pName = prospectName || parsed.clientName || "";
+      const slug = String(pName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
+      const payload = JSON.stringify({ ...parsed, fileName, prospectName: pName, prospectUrl, callDate: callDate || parsed.callDate || "", rawText: rawText.slice(0, 6000), savedAt: new Date().toISOString() });
+      let savedId = "";
+      try {
+        const { data: ins } = await db().from("brain_learnings").insert({ project_id: null, card_type: "call_transcript",
+          card_title: ("CALL: " + (pName || fileName)).slice(0, 100), context_summary: payload,
+          improvement: parsed.summary || "Call transcript", what_worked: parsed.commitments || [], what_missed: parsed.clientConcerns || [],
+          tags: ["call_transcript", slug], source: "call_transcript", applied_count: 0, updated_at: new Date().toISOString()
+        }).select("id").single();
+        savedId = (ins as any)?.id || "";
+      } catch {}
+      return ok(res, { success: true, parsed, id: savedId, fileName });
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
+  if (action === "get_call_transcripts") {
+    const { prospectName } = body;
+    try {
+      const { data } = await db().from("brain_learnings").select("id,card_title,context_summary,created_at")
+        .eq("source", "call_transcript").order("created_at", { ascending: false }).limit(200);
+      const transcripts = (data || []).map((r: any) => {
+        let d: any = {};
+        try { d = JSON.parse(r.context_summary || "{}"); } catch {}
+        return { id: r.id, fileName: d.fileName || r.card_title, clientName: d.clientName || d.prospectName || "",
+          callDate: d.callDate || "", summary: d.summary || "", keyPoints: d.keyPoints || [], decisions: d.decisions || [],
+          commitments: d.commitments || [], clientConcerns: d.clientConcerns || [], nextSteps: d.nextSteps || [],
+          sentiment: d.sentiment || "neutral", orderProbability: d.orderProbability, created_at: r.created_at };
+      });
+      const out = prospectName
+        ? transcripts.filter((t: any) => String(t.clientName).toLowerCase().includes(String(prospectName).toLowerCase()))
+        : transcripts;
+      return ok(res, { success: true, transcripts: out });
+    } catch (e: any) { return ok(res, { success: false, error: e.message, transcripts: [] }); }
+  }
+
+  if (action === "delete_call_transcript") {
+    const { id } = body;
+    if (!id) return ok(res, { error: "id required" });
+    try {
+      await db().from("brain_learnings").delete().eq("id", id);
+      return ok(res, { success: true });
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);
