@@ -722,28 +722,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const _r2 = await _ac2.messages.create({
         model: "claude-sonnet-4-6", max_tokens: 1800,
         system: "You are a senior Fiverr BDE coach. Generate 5 specific, actionable suggestions to close this lead. IMPORTANT: Return ONLY a valid JSON array. No text before or after. No markdown. No wrapper object. Just the array starting with [ and ending with ].",
-        messages: [{ role: "user", content:
-          "LEAD CONTEXT:
-" + ctx.join("
-") +
-          "
-
-Generate exactly 5 suggestions as a JSON array. Each object must have:
-" +
-          "- type: "close" | "followup" | "upsell" | "audit" | "content"
-" +
-          "- priority: "high" | "medium" | "low"
-" +
-          "- action: string (exact action to take right now)
-" +
-          "- script: string (word-for-word Fiverr message to send — reference their specific situation)
-" +
-          "- reason: string (why this works for THIS lead specifically)
-" +
-          "- timing: string (e.g. "Send now", "After 2 days", "This week")
-
-" +
-          "Return ONLY the JSON array. Start your response with [ and end with ]."
+        messages: [{ role: "user", content: "LEAD CONTEXT:\n" + ctx.join("\n") + "\n\nGenerate exactly 5 suggestions. Return ONLY a JSON array [ ] with objects: type (close/followup/upsell/audit/content), priority (high/medium/low), action (exact step), script (word-for-word Fiverr message for this lead), reason (why this works), timing." }]
         }]
       });
       const raw2 = (_r2.content[0] as any).text || "[]";
