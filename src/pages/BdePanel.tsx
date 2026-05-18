@@ -19,7 +19,7 @@ const DOC_TYPES=[
   {id:"objection_response",label:"Objection Response",icon:"🛡️",desc:"Address their specific concern"},
 ];
 
-function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
+function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clientIndustry=""}:{analysis:any;auditResult:any;prospectName?:string;prospectUrl?:string;clientIndustry?:string}) {
   const [docType,setDocType]=React.useState("proposal");
   const [generating,setGenerating]=React.useState(false);
   const [html,setHtml]=React.useState("");
@@ -29,6 +29,19 @@ function DocGenerator({analysis,auditResult}:{analysis:any;auditResult:any}) {
   const [leadName,setLeadName]=React.useState("");
   const [leadIndustry,setLeadIndustry]=React.useState("");
   const iframeRef=React.useRef<HTMLIFrameElement>(null);
+  // Auto-fill fields from context (only when field is still empty)
+  React.useEffect(()=>{
+    if(prospectUrl&&!leadUrl) setLeadUrl(prospectUrl);
+    else if(auditResult?.url&&!leadUrl) setLeadUrl(auditResult.url);
+    if(prospectName&&!leadName) setLeadName(prospectName);
+    if(clientIndustry&&!leadIndustry) setLeadIndustry(clientIndustry);
+    // Infer industry from analysis main_need if not set
+    if(!leadIndustry&&analysis?.main_need){
+      const mn=(analysis.main_need||"").toLowerCase();
+      const industryMap:Record<string,string>={dental:"dental clinic",clinic:"medical clinic",restaurant:"restaurant",ecommerce:"e-commerce",shop:"retail/e-commerce",store:"retail",lawyer:"legal services",law:"legal services",gym:"fitness",fitness:"fitness",salon:"beauty salon",hotel:"hospitality",real:"real estate",estate:"real estate",saas:"SaaS",software:"software/tech",plumb:"plumbing",electr:"electrical services",clean:"cleaning services"};
+      for(const[k,v]of Object.entries(industryMap)){if(mn.includes(k)){setLeadIndustry(v);break;}}
+    }
+  },[prospectName,prospectUrl,clientIndustry,auditResult?.url,analysis?.main_need]);
   const S3:any={
     card:{background:"hsl(var(--background))",border:"0.5px solid #1a1a3a",borderRadius:11,padding:14,marginBottom:10},
     btn:(c:string="#10b981")=>({background:`${c}18`,border:`0.5px solid ${c}40`,borderRadius:8,color:c,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap" as const}),
@@ -1129,7 +1142,7 @@ export default function BdePanel() {
 
         {/* ═══ DOCUMENTS ═══ */}
         {tab==='docs'&&(
-          <DocGenerator analysis={analysis} auditResult={auditResult}/>
+          <DocGenerator analysis={analysis} auditResult={auditResult} prospectName={savedProspect?.name||leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||''} prospectUrl={savedProspect?.url||auditResult?.url||auditUrl||''} clientIndustry={savedProspect?.industry||''}/>
         )}
       </div>
     </div>
