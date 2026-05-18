@@ -293,41 +293,50 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       const _u = String(url).replace(/^https?:\/\//, "").replace(/\/$/, "");
       const _iss: string[] = [];
       let _sc = 50;
+      let _fetched = false;
+      let _html = "";
+      // Strategy 1: Jina Reader (bypasses Cloudflare, bot protection, redirects)
       try {
-        // Try Jina Reader first (bypasses Cloudflare / bot protection)
-        let _h = "";
-        let _fetchedViaJina = false;
+        const jKey = process.env.JINA_API_KEY || "";
+        const jHdr: any = { "Accept": "text/html", "X-Return-Format": "html" };
+        if (jKey) jHdr["Authorization"] = "Bearer " + jKey;
+        const jr = await fetch("https://r.jina.ai/https://" + _u, {
+          headers: jHdr, signal: AbortSignal.timeout(12000)
+        });
+        if (jr.ok) { _html = (await jr.text()).slice(0, 12000); _fetched = true; }
+      } catch (_e1) {}
+      // Strategy 2: Direct fetch fallback
+      if (!_fetched) {
         try {
-          const jinaKey = process.env.JINA_API_KEY || "";
-          const jinaHeaders: any = { "Accept": "text/plain", "X-Return-Format": "html" };
-          if (jinaKey) jinaHeaders["Authorization"] = "Bearer " + jinaKey;
-          const _jr = await fetch("https://r.jina.ai/https://" + _u, { headers: jinaHeaders, signal: AbortSignal.timeout(12000) });
-          if (_jr.ok) { _h = (await _jr.text()).slice(0, 10000); _fetchedViaJina = true; }
-        } catch {}
-        // Fall back to direct fetch if Jina failed
-        if (!_h) {
-          const _fr = await fetch("https://" + _u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOBot/1.0)" }, signal: AbortSignal.timeout(10000) });
-          _h = (await _fr.text()).slice(0, 10000);
-        }
-        const _fakeVar = _h; // suppress unused warningal.timeout(8000) });
-        if (!/<title>[^<]{10,}/i.test(_h)) _iss.push("Missing title tag");
-        if (!/meta[^>]+name=.description./i.test(_h)) _iss.push("Missing meta description");
-        if (!/<h1[^>]*>[^<]{5,}/i.test(_h)) _iss.push("No H1 tag found");
-        if (!/application\/ld\+json/.test(_h)) _iss.push("No structured data");
-        if (!/canonical/i.test(_h)) _iss.push("No canonical tag");
-        _sc = Math.max(20, 100 - _iss.length * 15);
-      } catch (fetchErr: any) {
-        // Site is unreachable — do not fabricate a score
-        const errMsg = String(fetchErr.message || "connection refused").slice(0, 100);
-        return ok(res, { success: true, url: _u, reachable: false, score: null,
-          issues: ["Site could not be reached (" + errMsg + ")"],
-          headline: _u + " could not be reached — verify the URL and that the site is live",
-          showcase_message: "I tried to run a technical audit on " + _u + " but the site was not reachable. Please check the URL is correct and the site is live. Once confirmed, I can run a full SEO audit.",
-          unreachable: true });
+          const dr = await fetch("https://" + _u, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeason/1.0)" },
+            signal: AbortSignal.timeout(10000)
+          });
+          if (dr.ok) { _html = (await dr.text()).slice(0, 12000); _fetched = true; }
+        } catch (_e2) {}
       }
-      const _hl = _iss.length > 0 ? ("Found " + _iss.length + " issue" + (_iss.length > 1 ? "s" : "") + " on " + _u) : (_u + " looks technically solid");
-      const _sm = "Hi! Quick audit on " + _u + ":\n\n" + _iss.map((s: string, n: number) => (n + 1) + ". " + s).join("\n") + "\n\n" + _hl + "\n\nWant a full fix plan?";
-      return ok(res, { success: true, url: _u, score: _sc, issues: _iss, headline: _hl, showcase_message: _sm });
+      if (!_fetched || !_html) {
+        return ok(res, {
+          success: true, url: _u, reachable: false, score: null, unreachable: true,
+          issues: ["Site could not be reached — check URL and that it is live"],
+          headline: _u + " could not be reached",
+          showcase_message: "I ran a check on " + _u + " but could not reach the site. Please verify the URL is correct and the site is live, then I can run a full technical audit."
+        });
+      }
+      if (!/<title>[^<]{10,}/i.test(_html)) _iss.push("Missing or very short title tag");
+      if (!/meta[^>]+name=.description./i.test(_html)) _iss.push("Missing meta description");
+      if (!/<h1[^>]*>[^<]{5,}/i.test(_html)) _iss.push("No H1 tag found");
+      if (!/application\/ld\+json/.test(_html)) _iss.push("No structured data (schema markup)");
+      if (!/canonical/i.test(_html)) _iss.push("No canonical tag");
+      if (!/robots/i.test(_html)) _iss.push("No robots meta tag");
+      _sc = Math.max(20, 100 - _iss.length * 12);
+      const _hl = _iss.length > 0
+        ? "Found " + _iss.length + " issue" + (_iss.length > 1 ? "s" : "") + " on " + _u
+        : _u + " looks technically solid";
+      const _sm = "Hi! Quick SEO audit on " + _u + ":\n\n"
+        + _iss.map((s: string, n: number) => (n + 1) + ". " + s).join("\n")
+        + "\n\nScore: " + _sc + "/100. I can fix all of these — want me to proceed?";
+      return ok(res, { success: true, url: _u, score: _sc, reachable: true, issues: _iss, headline: _hl, showcase_message: _sm });
     } catch (e: any) { return ok(res, { error: e.message }); }
   }
 
@@ -536,7 +545,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { prospectName = "", prospectUrl = "", latestAnalysis, auditData, conversationCount = 0 } = body;
     try {
       const [algoR, brainR] = await Promise.allSettled([
-        db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(6),
+        db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(5),
         db().from("brain_learnings").select("card_title,improvement,what_worked").order("applied_count", { ascending: false }).limit(5),
       ]);
       const algo: any[] = algoR.status === "fulfilled" ? (algoR.value.data || []) : [];
@@ -547,30 +556,32 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       if (latestAnalysis?.main_need) ctx.push("Need: " + latestAnalysis.main_need);
       if (latestAnalysis?.urgency) ctx.push("Urgency: " + latestAnalysis.urgency);
       if (latestAnalysis?.hidden_concern) ctx.push("Hidden concern: " + latestAnalysis.hidden_concern);
-      if (latestAnalysis?.fiverr_specific?.conversion_blocker) ctx.push("Blocker: " + latestAnalysis.fiverr_specific.conversion_blocker);
+      if (latestAnalysis?.fiverr_specific?.conversion_blocker) ctx.push("Conversion blocker: " + latestAnalysis.fiverr_specific.conversion_blocker);
       if (latestAnalysis?.fiverr_specific?.order_probability) ctx.push("Order probability: " + latestAnalysis.fiverr_specific.order_probability + "%");
-      if (latestAnalysis?.best_next_message) ctx.push("Last suggested reply: " + String(latestAnalysis.best_next_message).slice(0, 200));
       if (auditData?.score !== undefined) ctx.push("SEO score: " + auditData.score + "/100");
-      if (auditData?.issues?.length) ctx.push("Issues: " + (auditData.issues as string[]).join("; "));
-      if (conversationCount > 1) ctx.push("Past conversations: " + conversationCount);
-      // Guarantee minimum context so Claude always has something to work with
-      if (!ctx.length) ctx.push("Prospect needs SEO help — no specific details yet, generate general high-value closing suggestions");
-      if (algo.length) ctx.push("Latest algo updates: " + algo.map((a: any) => a.topic + ": " + a.summary).join(" | "));
-      if (brain.length) ctx.push("Proven results: " + brain.map((b: any) => b.card_title + ": " + b.improvement).join(" | "));
-      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1200,
-        system: "You are a senior BDE coach at SEO Season. You MUST respond with a raw JSON array only — no wrapper object, no markdown, no code fences. The array contains exactly 5 suggestion objects, each with fields: type (close/followup/upsell/audit/content), priority (high/medium/low), action (string, the exact action to take), script (string, word-for-word message to send), reason (string, why this works), timing (string, when to do this)."ggestions to close, upsell or retain this lead. Every suggestion must name a specific action, include an exact opening line or message, and explain why it will work for THIS specific lead based on their context. Use algorithm knowledge to create urgency where relevant.",
-        messages: [{ role: "user", content: "LEAD CONTEXT: " + ctx.join(" | ") + " Generate 5 actionable suggestions. Return JSON array only, no markdown. Each item has fields: type (close/upsell/followup/audit/content), priority (high/medium), action (specific task), script (exact copy-paste message), reason (why for this lead), timing (when)." }]
+      if (auditData?.issues?.length) ctx.push("Audit issues: " + (auditData.issues as string[]).join("; "));
+      if (conversationCount > 1) ctx.push("Past conversations saved: " + conversationCount);
+      if (algo.length) ctx.push("Latest algorithm knowledge: " + algo.map((a: any) => a.topic + ": " + a.summary).join(" | "));
+      if (brain.length) ctx.push("Proven results from SEO Season: " + brain.map((b: any) => b.card_title + ": " + b.improvement).join(" | "));
+      if (!ctx.length) ctx.push("Prospect needs SEO help. Generate high-value general closing suggestions.");
+      const _ac2 = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const _r2 = await _ac2.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 1500,
+        system: "You are a senior BDE coach at SEO Season. You MUST respond with a raw JSON array only — absolutely no wrapper object, no markdown, no code fences. The array contains exactly 5 objects with fields: type (close/followup/upsell/audit/content), priority (high/medium/low), action (exact action to take), script (word-for-word message to send), reason (why this works for this lead), timing (when to send).",
+        messages: [{ role: "user", content: "LEAD CONTEXT: " + ctx.join(" | ") }]
       });
-      const raw = (_r.content[0] as any).text || "[]";
-            let suggestions: any[] = [];
+      const raw2 = (_r2.content[0] as any).text || "[]";
+      const cleaned2 = raw2.replace(/^```[a-z]*/i, "").replace(/```/g, "").trim();
+      let suggestions: any[] = [];
       try {
-        const cleaned2 = raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim();
         const parsed2 = JSON.parse(cleaned2);
-        // Normalise: Claude may return {suggestions:[...]} or [...]
-        suggestions = Array.isArray(parsed2) ? parsed2 : (Array.isArray(parsed2.suggestions) ? parsed2.suggestions : []);
+        suggestions = Array.isArray(parsed2) ? parsed2
+          : Array.isArray((parsed2 as any).suggestions) ? (parsed2 as any).suggestions
+          : [];
       } catch { suggestions = []; }
-      if (!suggestions.length) return ok(res, { success: false, error: "No suggestions generated — add more lead context", suggestions: [] });
+      if (!suggestions.length) {
+        return ok(res, { success: false, error: "No suggestions generated — provide more lead context", suggestions: [] });
+      }
       return ok(res, { success: true, suggestions });
     } catch (e: any) { return ok(res, { error: e.message, suggestions: [] }); }
   }
