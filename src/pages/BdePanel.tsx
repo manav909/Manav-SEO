@@ -652,7 +652,7 @@ export default function BdePanel() {
     } catch {}
     post('get_quick_responses',{role:'bde'}).then(r=>setQuickResps((r as any).responses||[]));
     post('get_call_transcripts',{}).then(r=>setTranscripts((r as any).transcripts||[]));
-    post('get_lead_attachments',{}).then(r=>setSavedAttachments((r as any).attachments||[]));
+    // Attachments are lead-scoped — load only when a lead is selected, not globally
     post('get_pipeline',{role:'bde'}).then(r=>setAssignments((r as any).assignments||[]));
     loadProspects();
   },[]);
@@ -704,7 +704,7 @@ export default function BdePanel() {
   const clearAll=()=>{
     if (!window.confirm('Clear all context?')) return;
     setRawPaste('');setParsedMsgs([]);setConv('');setAnalysis(null);setDeepAnalysis(null);setParsed([]);setAttachments([]);setCallPaste('');setParsedCallMsgs([]);setCallDeepAnalysis(null);setCallDeepError('');
-    setAuditResult(null);setAuditUrl('');setLeadNameInput('');setLeadSaved(false);setSavedProspect(null);setResponses(null);setNextMsg('');setNewMsgsDelta([]);setLastAnalysedMsgCount(0);
+    setAuditResult(null);setAuditUrl('');setLeadNameInput('');setLeadSaved(false);setSavedProspect(null);setResponses(null);setNextMsg('');setNewMsgsDelta([]);setLastAnalysedMsgCount(0);setSavedAttachments([]);
     try { localStorage.removeItem(CTX_KEY); } catch {}
     setShowLeadPicker(false);
   };
@@ -756,6 +756,9 @@ export default function BdePanel() {
     if(an){
       setLastAnalysedMsgCount(parsedMsgs.length);
       setNewMsgsDelta([]);
+      // Auto-fill lead name from parsed conversation if not set
+      const detectedName=parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'';
+      if(detectedName&&!leadNameInput&&!savedProspect) setLeadNameInput(detectedName);
       autoSave('chat_analysis',{analysis:an,conversationText:(rawPaste||convText).slice(0,3000),messageCount:parsedMsgs.length,summary:an.main_need||'Chat analysis'});
     }
   }
@@ -905,7 +908,11 @@ export default function BdePanel() {
       if((r as any).success){
         const st2=(r as any).structured||null;const desc2=(r as any).description||'';
         setAttachments(prev=>prev.map(a=>a.name===f.name&&a.status==='extracting'?{...a,status:'done',description:desc2,structured:st2}:a));
-        post('save_attachment_context',{prospectName:leadNameInput||savedProspect?.name||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'',fileName:f.name,fileType:f.type,description:desc2,summary:st2?.summary||desc2.slice(0,200),keyFindings:st2?.keyFindings||[],seoIssues:st2?.seoIssues||[],actionItems:st2?.actionItems||[]}).then((sv:any)=>{if((sv as any).success){setSavedAttachments(prev=>[{id:(sv as any).id,fileName:f.name,fileType:f.type,description:desc2,summary:st2?.summary||'',keyFindings:st2?.keyFindings||[],seoIssues:st2?.seoIssues||[],actionItems:st2?.actionItems||[],created_at:new Date().toISOString()},...prev]);}});
+        post('save_attachment_context',{prospectName:leadNameInput||savedProspect?.name||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'',fileName:f.name,fileType:f.type,description:desc2,summary:st2?.summary||desc2.slice(0,200),keyFindings:st2?.keyFindings||[],seoIssues:st2?.seoIssues||[],actionItems:st2?.actionItems||[]}).then((sv:any)=>{
+          if((sv as any).success){
+            setSavedAttachments((prev:any[])=>[{id:(sv as any).id,fileName:f.name,fileType:f.type,description:desc2,summary:st2?.summary||'',keyFindings:st2?.keyFindings||[],seoIssues:st2?.seoIssues||[],actionItems:st2?.actionItems||[],prospectName:leadNameInput||savedProspect?.name||'',created_at:new Date().toISOString()},...prev]);
+          }
+        });
       } else {
         setAttachments(prev=>prev.map(a=>a.name===f.name&&a.status==='extracting'?{...a,status:'error',description:(r as any).error||'Failed to extract'}:a));
       }
@@ -945,6 +952,9 @@ export default function BdePanel() {
     if(prospect.url&&!auditUrl) setAuditUrl(prospect.url);
     // Mark as already saved
     setSavedProspect(prospect); setLeadSaved(true);
+    // Load this lead's specific attachments (scoped)
+    post('get_lead_attachments',{prospectName:prospect.name}).then(r=>setSavedAttachments((r as any).attachments||[]));
+    post('get_call_transcripts',{prospectName:prospect.name}).then(r=>{if((r as any).transcripts?.length)setTranscripts((r as any).transcripts);});
     setLoadingLead(false);
   }
 
@@ -1274,7 +1284,11 @@ export default function BdePanel() {
             {/* Attachment uploader */}
             <div style={{...S.card,marginBottom:10}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                <div style={{fontSize:12,fontWeight:700}}>📎 Files & Attachments{savedAttachments.length>0&&<span style={{fontSize:10,color:'#10b981',marginLeft:6,fontWeight:400}}>✓ {savedAttachments.length} saved permanently</span>}</div>
+                <div style={{fontSize:12,fontWeight:700}}>
+                  📎 Files & Attachments
+                  {savedAttachments.length>0&&<span style={{fontSize:10,color:'#10b981',marginLeft:6,fontWeight:400}}>✓ {savedAttachments.length} saved to this lead</span>}
+                  {!leadSaved&&!savedProspect&&!leadNameInput&&<span style={{fontSize:10,color:'#f59e0b',marginLeft:6,fontWeight:400}}>⚠ Save lead first to scope files</span>}
+                </div>
                 <label style={{...S.btn('#6366f1'),fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
                   <input type="file" multiple accept="image/*,.pdf,.txt,.md" style={{display:'none'}} onChange={e=>handleFiles(e.target.files)} disabled={extracting}/>
                   {extracting?'⏳ Reading...':'+ Add File'}
@@ -1551,7 +1565,7 @@ export default function BdePanel() {
                   </div>
                   <BestMessagePanel analysis={analysis} convText={convText}/>
                 </div>
-                {/* Save to Lead Intel */}
+                {/* Save to Lead Intel — "Add New Lead" from analysis */}
                 {!leadSaved?(
                   <div style={{...S.card,borderColor:'rgba(99,102,241,.3)',background:'rgba(99,102,241,.04)'}}>
                     <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:'#a78bfa'}}>💾 Save to Lead Intelligence</div>
