@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectSync } from '@/hooks/useProjectSync';
 import PortalNav from '@/components/PortalNav';
+import AnimatedBg from '@/components/AnimatedBg';
 import {
   TrendingUp, Globe, Zap, Star, Brain,
   ShieldCheck, ArrowUpRight, ArrowDownRight,
@@ -15,7 +16,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import {
-import AnimatedBg from '@/components/AnimatedBg';
   LineChart, Line, XAxis, YAxis, ReferenceLine,
   CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
+import AnimatedBg from '@/components/AnimatedBg';
 import {
   Users, Plus, Globe, CheckCircle,
   ChevronDown, ChevronUp, Zap, DollarSign,
@@ -13,7 +14,6 @@ import {
   AlertTriangle, CheckCircle2, Info
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import AnimatedBg from '@/components/AnimatedBg';
 
 const EMPTY_FORM = {
   llm_visibility_score: '', chatgpt_citations: '', perplexity_citations: '',
