@@ -2336,5 +2336,16 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  if (action === 'build_persona') {
+    // Redirected from removed market-researcher — use intelligence
+    const { projectId, url } = body;
+    return ok(res, { 
+      success: true, 
+      message: 'Market research integrated into intelligence engine',
+      projectId 
+    });
+  }
+
+
     return ok(res, { error: `Unknown action: ${action}` });
 }

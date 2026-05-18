@@ -86,7 +86,7 @@ export function IntelligenceMemory({ projectId, onAskBrain }: Props) {
     if (!projectId) return;
     setLoading(true); setError("");
     try {
-      const res = await fetch("/api/market-researcher", {
+      const res = await fetch("/api/intelligence", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "list_intelligence", projectId }),
       });
@@ -105,7 +105,7 @@ export function IntelligenceMemory({ projectId, onAskBrain }: Props) {
   const resolveProposal = async (id: string, decision: "approved" | "rejected") => {
     if (!projectId) return;
     try {
-      await fetch("/api/market-researcher", {
+      await fetch("/api/intelligence", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "resolve_proposal", id, decision, reviewer: "user", projectId }),
       });
@@ -117,7 +117,7 @@ export function IntelligenceMemory({ projectId, onAskBrain }: Props) {
     if (!projectId) return;
     setDeepLearning(true); setError(""); setDeepLearnReport(null);
     try {
-      const res = await fetch("/api/market-researcher", {
+      const res = await fetch("/api/intelligence", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "deep_learn", projectId }),
       });

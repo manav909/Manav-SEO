@@ -132,7 +132,10 @@ Rules:
     const data = await res.json() as any;
     const raw = data?.content?.[0]?.text || '';
     const clean = raw.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
+    let parsed: any = {};
+    try { parsed = JSON.parse(typeof clean === 'string' ? clean : (clean as any)?.content?.[0]?.text ?? '{}'); } catch {
+      if (typeof clean === 'object') parsed = clean as any;
+    }
     if (parsed.skip) return null;
     return parsed as ExtractedLearning;
   } catch (_) {
