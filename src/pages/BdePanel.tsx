@@ -235,6 +235,19 @@ function BestMessagePanel({analysis,convText}:{analysis:any;convText:string}) {
       {/* Show them / Quick wins */}
       {analysis?.demo_to_show?.length>0&&<><div style={{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"hsl(var(--muted-foreground))",marginTop:12,marginBottom:4}}>Show Them</div>{analysis.demo_to_show.map((d:string,i:number)=><div key={i} style={{fontSize:11,color:"#a78bfa",padding:"2px 0"}}>→ {d}</div>)}</>}
       {analysis?.quick_wins_to_mention?.length>0&&<><div style={{fontSize:10,fontWeight:600,letterSpacing:1.2,textTransform:"uppercase" as const,color:"hsl(var(--muted-foreground))",marginTop:10,marginBottom:4}}>Quick Wins to Mention</div>{analysis.quick_wins_to_mention.map((w:string,i:number)=><div key={i} style={{fontSize:11,color:"#10b981",padding:"2px 0"}}>✓ {w}</div>)}</>}
+      {/* Confirm delete modal */}
+      {confirmDelete&&(
+        <div style={{position:'fixed' as const,inset:0,background:'rgba(0,0,0,.7)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}} onClick={()=>setConfirmDelete(null)}>
+          <div style={{background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:14,padding:24,maxWidth:360,width:'90%'}} onClick={(e:any)=>e.stopPropagation()}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>Delete lead?</div>
+            <div style={{fontSize:12,color:'hsl(var(--muted-foreground))',marginBottom:16}}>This will permanently delete <b>{confirmDelete}</b> and all their conversation history. Cannot be undone.</div>
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button style={{padding:'7px 16px',borderRadius:8,background:'rgba(255,255,255,.06)',border:'0.5px solid #1a1a3a',color:'hsl(var(--foreground))',cursor:'pointer',fontSize:12}} onClick={()=>setConfirmDelete(null)}>Cancel</button>
+              <button style={{padding:'7px 16px',borderRadius:8,background:'rgba(239,68,68,.15)',border:'0.5px solid rgba(239,68,68,.4)',color:'#ef4444',cursor:'pointer',fontSize:12,fontWeight:700}} onClick={()=>deleteLead(confirmDelete)}>Delete Permanently</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
