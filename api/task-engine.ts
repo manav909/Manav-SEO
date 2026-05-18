@@ -1301,6 +1301,86 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
 
+  if (action === "live_coach") {
+    const { thread = [], newClientMessage = "", bdeNotes = "", leadContext = {}, attachmentCtx = "" } = body;
+    if (!newClientMessage && !thread.length) return ok(res, { error: "message required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+      // Build conversation history
+      const history = (thread as any[]).map((m: any) =>
+        (m.role === "client" ? "CLIENT" : "BDE") + ": " + String(m.text || "").slice(0, 400)
+      ).join("\n");
+
+      // Lead context summary
+      const lc: string[] = [];
+      if (leadContext.name) lc.push("Lead: " + leadContext.name);
+      if (leadContext.url)  lc.push("Website: " + leadContext.url);
+      if (leadContext.main_need) lc.push("Need: " + leadContext.main_need);
+      if (leadContext.urgency)   lc.push("Urgency: " + leadContext.urgency);
+      if (leadContext.hidden_concern) lc.push("Hidden concern: " + leadContext.hidden_concern);
+      if (leadContext.order_probability !== undefined) lc.push("Close probability: " + leadContext.order_probability + "%");
+      if (bdeNotes) lc.push("BDE is thinking: " + String(bdeNotes).slice(0, 300));
+      if (attachmentCtx) lc.push("Client shared: " + String(attachmentCtx).slice(0, 400));
+
+      const sysPrompt = "You are an elite Fiverr BDE coach working live alongside a salesperson. Your job is to help them close deals. You know the full conversation history and the client context. When given the client's latest message, you provide the single best reply the BDE should send. Write in first person as the BDE. Be natural, warm, and persuasive — never robotic. Reference specifics from the conversation. Keep messages short enough to feel like real Fiverr messages (under 150 words unless the situation demands more). Never say things that would feel like a template.";
+
+      const userPrompt = (lc.length ? "LEAD CONTEXT:\n" + lc.join("\n") + "\n\n" : "")
+        + (history ? "CONVERSATION SO FAR:\n" + history + "\n\n" : "")
+        + "CLIENT'S LATEST MESSAGE:\n" + newClientMessage
+        + "\n\nProvide a JSON response:\n"
+        + '{"suggestedReply":"the exact message to send","messageAnalysis":{"emotion":"curious/excited/hesitant/frustrated/ready_to_buy","intent":"what they really want","signal":"what this message reveals about close probability","risk":"any red flag to be aware of"},"followUp":{"needed":true/false,"when":"e.g. if no reply in 24 hours","what":"what to say"},"coachNote":"one sentence of tactical advice for the BDE"}';
+
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 1000, system: sysPrompt,
+        messages: [{ role: "user", content: userPrompt }]
+      });
+      const raw = (_r.content[0] as any).text || "{}";
+      let result: any = {};
+      try { result = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {
+        const m = raw.match(/\{[\s\S]+\}/);
+        try { result = m ? JSON.parse(m[0]) : {}; } catch {}
+      }
+      if (!result.suggestedReply) result.suggestedReply = raw.slice(0, 300);
+
+      // Auto-save to brain_learnings fire-and-forget
+      if (thread.length > 1 && leadContext.name) {
+        const slug = String(leadContext.name).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,40);
+        db().from("brain_learnings").insert({
+          project_id: null, card_type: "bde_activity",
+          card_title: ("Live Coach: " + (leadContext.name || "Lead")).slice(0,100),
+          context_summary: JSON.stringify({ leadContext, newClientMessage, suggestedReply: result.suggestedReply, bdeNotes, savedAt: new Date().toISOString() }),
+          improvement: result.coachNote || "Live coaching session",
+          what_worked: [], what_missed: [],
+          tags: ["live_coach", slug], source: "live_coach",
+          applied_count: 0, updated_at: new Date().toISOString()
+        }).then(() => {}).catch(() => {});
+      }
+
+      return ok(res, { success: true, ...result });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+  if (action === "save_live_outcome") {
+    // BDE reports what they actually sent + how client responded
+    const { leadName = "", messageSent = "", clientResponse = "", outcome = "", bdeNotes = "" } = body;
+    const slug = String(leadName).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,40);
+    try {
+      await db().from("brain_learnings").insert({
+        project_id: null, card_type: "bde_activity",
+        card_title: ("Outcome: " + leadName + " — " + outcome).slice(0,100),
+        context_summary: JSON.stringify({ leadName, messageSent, clientResponse, outcome, bdeNotes, savedAt: new Date().toISOString() }),
+        improvement: outcome + (clientResponse ? ": " + String(clientResponse).slice(0,100) : ""),
+        what_worked: outcome === "positive" ? [messageSent.slice(0,100)] : [],
+        what_missed: outcome === "negative" ? [messageSent.slice(0,100)] : [],
+        tags: ["live_coach", "outcome", slug], source: "live_coach_outcome",
+        applied_count: 0, updated_at: new Date().toISOString()
+      });
+      return ok(res, { success: true });
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);
@@ -2247,10 +2327,14 @@ HTML: ${html.slice(0,2000)}`}]})});
 
   // ── ROLE-BASED STAFF & BDE SYSTEM ───────────────────────
   if (action === 'get_staff') {
-    try{
-      const{getStaffWithStats}=await import('./lib/roles-engine');
-      return ok(res,{staff:await getStaffWithStats()});
-    }catch(e:any){return ok(res,{error:e.message});}
+    try {
+      const { data, error } = await db()
+        .from('staff_members')
+        .select('id,name,email,role,timezone,permissions,targets,avatar_initials,is_active,stats_cache')
+        .order('created_at', { ascending: true });
+      if (error) return ok(res, { error: error.message });
+      return ok(res, { staff: data || [] });
+    } catch(e:any) { return ok(res, { error: e.message }); }
   }
 
   if (action === 'create_staff') {
