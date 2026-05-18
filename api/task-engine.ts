@@ -318,6 +318,69 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   // ═══ END INLINE BDE ACTIONS ═══
 
+
+  // ═══ GENERATE CLIENT DOCUMENT (AI-powered, inline) ═══
+  if (action === "generate_client_doc") {
+    const { docType = "proposal", conversationAnalysis, auditResult, leadInfo = {}, brainLearnings = [] } = body;
+    if (!docType) return ok(res, { error: "docType required" });
+
+    const DOC_PROMPTS: Record<string, string> = {
+      proposal: "Write a PERSONALISED SEO PROPOSAL for this prospect. Include: Executive Summary (their specific situation), What We Found (3-4 issues from the audit), Our 90-Day Plan (Month 1: technical fixes, Month 2: content & authority, Month 3: scaling), Investment (leave [PRICE] placeholder), Expected ROI (use their industry), Why SEO Season (3 specific differentiators). Professional tone, no jargon, benefit-led. 400-600 words.",
+      pitch_email: "Write a COLD PITCH EMAIL to this prospect. Subject line + body. Open with a specific observation about their website or business (not generic). Mention 1-2 issues we found. Ask for a 20-minute call. Include a specific benefit for their industry. Under 200 words. Conversational but professional.",
+      followup_email: "Write a FOLLOW-UP EMAIL after our discovery call with this prospect. Reference what they told us about their goals. Summarise the 3 key opportunities we identified. Outline next steps clearly. Include a link placeholder [PROPOSAL_LINK]. Under 250 words.",
+      audit_summary: "Write a CLIENT-READY SEO AUDIT SUMMARY based on the audit results. Format: 1) Overall Score and what it means, 2) Top 3 Issues Found (explain each in plain English, no jargon), 3) Quick Wins (what we can fix in week 1), 4) The Opportunity (what ranking on page 1 would mean for their business). 300-400 words.",
+      whatsapp_msg: "Write a SHORT WHATSAPP/FIVERR MESSAGE to this prospect. Based on our conversation analysis. Professional but conversational. Address their main concern directly. Include a clear call to action. Under 100 words.",
+      case_study: "Write a MINI CASE STUDY about a similar business (use a generic placeholder company name). Show: The Situation (similar challenges to this prospect), What We Did (3 specific actions), The Results (realistic but compelling — traffic increase, ranking improvements, lead growth). End with how this applies to the prospect. 300 words.",
+      objection_response: "Write a PROFESSIONAL RESPONSE to the prospect's main objection (based on conversation analysis). Acknowledge their concern genuinely, provide evidence-based reassurance, reframe the value, and give a clear low-risk next step. Under 150 words.",
+    };
+
+    const prompt = DOC_PROMPTS[docType] || DOC_PROMPTS.proposal;
+
+    const context = [
+      leadInfo.url ? "PROSPECT WEBSITE: " + leadInfo.url : "",
+      leadInfo.name ? "PROSPECT NAME: " + leadInfo.name : "",
+      leadInfo.industry ? "INDUSTRY: " + leadInfo.industry : "",
+      conversationAnalysis ? "CONVERSATION INSIGHTS:
+- Main Need: " + (conversationAnalysis.main_need || "") + "
+- Urgency: " + (conversationAnalysis.urgency || "") + "
+- Hidden Concern: " + (conversationAnalysis.hidden_concern || "") + "
+- Conversion Blocker: " + (conversationAnalysis.fiverr_specific?.conversion_blocker || "") : "",
+      auditResult?.issues?.length ? "SITE AUDIT FINDINGS:
+- SEO Score: " + auditResult.score + "/100
+- Issues: " + (auditResult.issues || []).join(", ") : "",
+      brainLearnings?.length ? "RELEVANT BRAIN LEARNINGS:
+" + brainLearnings.slice(0, 5).map((l: any) => "- " + l.card_title + ": " + l.improvement).join("
+") : "",
+    ].filter(Boolean).join("
+
+");
+
+    const fullPrompt = "You are writing client-facing documents for SEO Season, a premium intelligence-led SEO agency. " +
+      "SEO Season differentiators: AI Brain system that learns from every client, data-verified tactics, real-time reporting dashboard, LLM visibility tracking (ChatGPT/Claude/Perplexity citations), morning intelligence briefs, transparent task logging.
+
+" +
+      "TASK: " + prompt + "
+
+" +
+      "CONTEXT:
+" + context + "
+
+" +
+      "Write the document now. Output the document text ONLY — no explanations, no meta-commentary.";
+
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const _resp = await _ac.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1500,
+        messages: [{ role: "user", content: fullPrompt }]
+      });
+      const docText = (_resp.content[0] as any).text || "";
+      return ok(res, { success: true, document: docText, docType });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+  // ═══ END GENERATE CLIENT DOCUMENT ═══
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);
