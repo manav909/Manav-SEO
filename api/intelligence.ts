@@ -183,7 +183,7 @@ VERIFIED INFRASTRUCTURE FACTS — never contradict these:
 • FUNCTION_INVOCATION_FAILED = Lambda process crashed. Causes: (a) code not yet deployed, (b) module load error, (c) uncaught exception. NEVER caused by region misconfiguration. Fix: push and deploy.
 • Vercel Pro plan is active — no Hobby plan limits.
 • Supabase v2 PostgrestBuilder does NOT support .catch() chaining — use try/catch.
-• claude-sonnet-4-6 does NOT support assistant message prefill.
+• claude-sonnet-4-5 does NOT support assistant message prefill.
 • All API Lambda files are standalone (no ./lib/ imports) — module resolution is not the issue.
 
 RULES:
@@ -461,7 +461,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
     /* ── Stream the response ── */
     const stream = await new Anthropic().messages.stream({
-      model:      "claude-sonnet-4-6",
+      model:      "claude-sonnet-4-5",
       max_tokens: 16000,
       system:     systemPrompt,
       messages:   [{ role: "user", content: userPrompt }],
@@ -540,7 +540,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
         summary:      fullOutput.slice(0, 480),
         output:       { question, response: fullOutput, role, mode, projectSummary },
         sources,
-        modelUsed:    "claude-sonnet-4-6",
+        modelUsed:    "claude-sonnet-4-5",
         createdBy:    "intelligence_api",
       });
     } catch (_e) { /* non-fatal */ }

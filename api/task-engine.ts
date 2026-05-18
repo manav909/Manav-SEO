@@ -268,7 +268,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       try {
         const client = new Anthropic({ apiKey: anthropicKey });
         const msg = await client.messages.create({
-          model: "claude-sonnet-4-6", max_tokens: 1,
+          model: "claude-sonnet-4-5", max_tokens: 1,
           messages: [{ role: "user", content: "hi" }],
         });
         results.anthropic_live_test = { status: "OK", stop_reason: msg.stop_reason };
@@ -1602,7 +1602,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
     try {
       const r = await new Anthropic().messages.create({
-        model: "claude-sonnet-4-6", max_tokens: 2000, system: SYSTEM,
+        model: "claude-sonnet-4-5", max_tokens: 2000, system: SYSTEM,
         messages: [{ role: "user", content: prompt }],
       });
       const raw = r.content[0].type === "text" ? r.content[0].text : "{}";
@@ -1699,7 +1699,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     let execFull = "";
     try {
       const stream = await new Anthropic().messages.stream({
-        model: "claude-sonnet-4-6", max_tokens: 8192, system: SYSTEM,
+        model: "claude-sonnet-4-5", max_tokens: 8192, system: SYSTEM,
         messages: [{ role: "user", content: executePrompt }],
       });
       let stopReason = "";
@@ -2069,7 +2069,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
     try {
       const r = await new Anthropic().messages.create({
-        model: "claude-sonnet-4-6", max_tokens: 2000, system: SYSTEM,
+        model: "claude-sonnet-4-5", max_tokens: 2000, system: SYSTEM,
         messages: [{ role: "user", content: prompt }],
       });
       const raw = r.content[0].type === "text" ? r.content[0].text : "{}";
