@@ -13,8 +13,6 @@ const ROLE_COLORS: any = {
   content_writer:"#f59e0b", sales_manager:"#a78bfa", bdm:"#f97316",
 };
 const ROLES = ["bde","bdm","pm","content_writer","sales_manager","hod"];
-
-// All available panels with labels
 const PANELS = [
   { key:"bde_panel",        label:"BDE Panel",          desc:"Fiverr analyser, lead intel, live agent, documents" },
   { key:"lead_intel",       label:"Lead Intel",         desc:"Saved leads, suggestions, history" },
@@ -30,8 +28,6 @@ const PANELS = [
   { key:"morning_brief",    label:"Morning Brief",      desc:"Daily AI intelligence brief" },
   { key:"staff_command",    label:"Staff Command",      desc:"Manage team (HOD only)" },
 ];
-
-// Default permissions by role
 const ROLE_DEFAULTS: any = {
   bde:            { bde_panel:true, lead_intel:true, live_agent:true, documents:true, audit_tools:true },
   bdm:            { bde_panel:true, lead_intel:true, live_agent:true, documents:true, audit_tools:true, dashboard:true, morning_brief:true },
@@ -42,32 +38,37 @@ const ROLE_DEFAULTS: any = {
 };
 
 export default function StaffCommand() {
-  const [staff,     setStaff]     = useState<any[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [saving,    setSaving]    = useState(false);
-  const [error,     setError]     = useState("");
-  const [form,      setForm]      = useState({ name:"", email:"", role:"bde", timezone:"Europe/London" });
-  const [openPerms, setOpenPerms] = useState<string|null>(null); // staff id with open perm panel
+  const [staff,       setStaff]       = useState<any[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [loadError,   setLoadError]   = useState("");
+  const [showModal,   setShowModal]   = useState(false);
+  const [saving,      setSaving]      = useState(false);
+  const [formError,   setFormError]   = useState("");
+  const [form,        setForm]        = useState({ name:"", email:"", role:"bde", timezone:"Europe/London" });
+  const [openPerms,   setOpenPerms]   = useState<string|null>(null);
   const [savingPerms, setSavingPerms] = useState<string|null>(null);
+  const [inviting,    setInviting]    = useState<string|null>(null);
+  const [inviteMsg,   setInviteMsg]   = useState<{id:string,msg:string,ok:boolean}|null>(null);
   const navigate = useNavigate();
 
   const load = () => {
-    setLoading(true);
-    post("get_staff").then(r => { setStaff((r as any).staff || []); if((r as any).error) setError("Load error: "+(r as any).error); setLoading(false); });
+    setLoading(true); setLoadError("");
+    post("get_staff").then(r => {
+      setStaff((r as any).staff || []);
+      if ((r as any).error) setLoadError((r as any).error);
+      setLoading(false);
+    });
   };
   useEffect(() => { load(); }, []);
 
   const handleAdd = async () => {
-    if (!form.name.trim()) { setError("Name is required"); return; }
-    setSaving(true); setError("");
-    const defaultPerms = ROLE_DEFAULTS[form.role] || {};
+    if (!form.name.trim()) { setFormError("Name is required"); return; }
+    setSaving(true); setFormError("");
     const r = await post("create_staff", {
       name: form.name.trim(),
       email: form.email.trim() || undefined,
-      role: form.role,
-      timezone: form.timezone,
-      permissions: defaultPerms,
+      role: form.role, timezone: form.timezone,
+      permissions: ROLE_DEFAULTS[form.role] || {},
     });
     setSaving(false);
     if ((r as any).success) {
@@ -75,24 +76,32 @@ export default function StaffCommand() {
       setForm({ name:"", email:"", role:"bde", timezone:"Europe/London" });
       load();
     } else {
-      setError((r as any).error || "Failed to create staff");
+      setFormError((r as any).error || "Failed to create staff");
     }
   };
 
+  const sendInvite = async (s: any) => {
+    if (!s.email) { setInviteMsg({id:s.id, msg:"Add an email to this staff member first", ok:false}); return; }
+    setInviting(s.id); setInviteMsg(null);
+    const r = await post("invite_staff", { staffId:s.id, email:s.email, name:s.name });
+    setInviting(null);
+    setInviteMsg({ id:s.id, msg:(r as any).message||(r as any).error||"Unknown response", ok:!!(r as any).success });
+    setTimeout(() => setInviteMsg(null), 5000);
+  };
+
   const togglePerm = async (s: any, key: string) => {
-    const current = s.permissions || {};
-    const updated  = { ...current, [key]: !current[key] };
+    const updated = { ...(s.permissions||{}), [key]: !s.permissions?.[key] };
     setSavingPerms(s.id);
-    await post("update_staff_permissions", { staffId: s.id, permissions: updated });
-    setStaff(prev => prev.map(m => m.id === s.id ? { ...m, permissions: updated } : m));
+    await post("update_staff_permissions", { staffId:s.id, permissions:updated });
+    setStaff(prev => prev.map(m => m.id===s.id ? {...m, permissions:updated} : m));
     setSavingPerms(null);
   };
 
   const applyRoleDefaults = async (s: any) => {
     const defaults = ROLE_DEFAULTS[s.role] || {};
     setSavingPerms(s.id);
-    await post("update_staff_permissions", { staffId: s.id, permissions: defaults });
-    setStaff(prev => prev.map(m => m.id === s.id ? { ...m, permissions: defaults } : m));
+    await post("update_staff_permissions", { staffId:s.id, permissions:defaults });
+    setStaff(prev => prev.map(m => m.id===s.id ? {...m, permissions:defaults} : m));
     setSavingPerms(null);
   };
 
@@ -102,16 +111,23 @@ export default function StaffCommand() {
     <div className="min-h-screen bg-background text-foreground">
       <PortalNav />
       <div className="max-w-5xl mx-auto px-6 py-8">
+
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Staff Command</h1>
-            <p className="text-sm text-muted-foreground mt-1">Manage team members and their panel access</p>
+            <p className="text-sm text-muted-foreground mt-1">Manage team members, permissions, and logins</p>
           </div>
-          <button onClick={() => { setShowModal(true); setError(""); }}
+          <button onClick={() => { setShowModal(true); setFormError(""); }}
             className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90">
             + Add Staff
           </button>
         </div>
+
+        {loadError && (
+          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+            ⚠ {loadError}
+          </div>
+        )}
 
         {/* Add Staff Modal */}
         {showModal && (
@@ -125,29 +141,29 @@ export default function StaffCommand() {
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Full Name *</label>
                   <input className={inp} placeholder="e.g. Aryan Sharma" value={form.name}
-                    onChange={e => setForm(f=>({...f, name:e.target.value}))}
-                    onKeyDown={e => e.key==="Enter" && handleAdd()} autoFocus />
+                    onChange={e => setForm(f=>({...f,name:e.target.value}))} autoFocus
+                    onKeyDown={e => e.key==="Enter" && handleAdd()} />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Email (optional)</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">Email — required to send login invite</label>
                   <input className={inp} placeholder="aryan@seoseason.com" type="email" value={form.email}
-                    onChange={e => setForm(f=>({...f, email:e.target.value}))} />
+                    onChange={e => setForm(f=>({...f,email:e.target.value}))} />
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Role</label>
-                  <select className={inp} value={form.role} onChange={e => setForm(f=>({...f, role:e.target.value}))}>
-                    {ROLES.map(r => <option key={r} value={r}>{r.replace(/_/g," ").replace(/_./g,c=>c[1].toUpperCase()).replace(/^./,c=>c.toUpperCase())}</option>)}
+                  <select className={inp} value={form.role} onChange={e => setForm(f=>({...f,role:e.target.value}))}>
+                    {ROLES.map(r => <option key={r} value={r}>{r.replace(/_/g," ").toUpperCase()}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Timezone</label>
-                  <select className={inp} value={form.timezone} onChange={e => setForm(f=>({...f, timezone:e.target.value}))}>
+                  <select className={inp} value={form.timezone} onChange={e => setForm(f=>({...f,timezone:e.target.value}))}>
                     {["Europe/London","Asia/Kolkata","America/New_York","America/Los_Angeles","Asia/Dubai","Australia/Sydney"]
                       .map(tz => <option key={tz} value={tz}>{tz.replace(/_/g," ")}</option>)}
                   </select>
                 </div>
-                <p className="text-xs text-muted-foreground">Default panel access for <strong>{form.role.replace(/_/g," ")}</strong> will be applied automatically. You can customise after adding.</p>
-                {error && <p className="text-xs text-red-400">{error}</p>}
+                <p className="text-xs text-muted-foreground">Default {form.role.replace(/_/g," ")} permissions applied. You can customise after adding.</p>
+                {formError && <p className="text-xs text-red-400">{formError}</p>}
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => setShowModal(false)}
                     className="flex-1 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground">
@@ -165,10 +181,10 @@ export default function StaffCommand() {
 
         {loading ? (
           <div className="text-center py-16 text-sm text-muted-foreground">Loading team...</div>
-        ) : staff.length === 0 ? (
+        ) : staff.length === 0 && !loadError ? (
           <div className="text-center py-16">
             <div className="text-4xl mb-4">👥</div>
-            <p className="text-sm text-muted-foreground mb-4">No staff yet.</p>
+            <p className="text-sm text-muted-foreground mb-4">No staff yet. Add your first team member.</p>
             <button onClick={() => setShowModal(true)}
               className="px-6 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium">
               + Add First Staff Member
@@ -183,42 +199,39 @@ export default function StaffCommand() {
               const isOpen  = openPerms === s.id;
               return (
                 <div key={s.id} className="border border-border rounded-2xl bg-card overflow-hidden">
-                  {/* Staff row */}
                   <div className="flex items-center gap-4 p-4">
                     <div className="h-10 w-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
-                      style={{background:`${color}15`, color, border:`1px solid ${color}30`}}>
+                      style={{background:`${color}15`,color,border:`1px solid ${color}30`}}>
                       {s.avatar_initials || s.name?.slice(0,2).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold">{s.name}</div>
                       <div className="text-xs capitalize" style={{color}}>{s.role?.replace(/_/g," ")}</div>
-                      {s.email && <div className="text-xs text-muted-foreground truncate">{s.email}</div>}
+                      {s.email
+                        ? <div className="text-xs text-muted-foreground">{s.email}</div>
+                        : <div className="text-xs text-yellow-500">⚠ No email — can&apos;t send login invite</div>}
                     </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="text-xs text-muted-foreground">{enabled}/{PANELS.length} panels</span>
-                      <button
-                        onClick={() => setOpenPerms(isOpen ? null : s.id)}
+                    <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+                      {inviteMsg?.id===s.id && (
+                        <span className={`text-xs ${inviteMsg.ok?"text-green-400":"text-red-400"}`}>{inviteMsg.msg}</span>
+                      )}
+                      <button onClick={() => sendInvite(s)} disabled={inviting===s.id}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:border-primary/40 transition-colors disabled:opacity-50">
+                        {inviting===s.id ? "Sending..." : "📧 Send Login"}
+                      </button>
+                      <button onClick={() => setOpenPerms(isOpen ? null : s.id)}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:border-primary/40 transition-colors">
                         {isOpen ? "✕ Close" : "🔑 Permissions"}
                       </button>
-                      <button onClick={() => navigate(`/profile/${s.id}`)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border hover:border-primary/40 transition-colors">
-                        View Profile
-                      </button>
+                      <span className="text-xs text-muted-foreground">{enabled}/{PANELS.length}</span>
                     </div>
                   </div>
 
-                  {/* Permissions panel */}
                   {isOpen && (
                     <div className="border-t border-border p-4 bg-muted/20">
                       <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <span className="text-sm font-semibold">Panel Access</span>
-                          <span className="text-xs text-muted-foreground ml-2">{enabled} of {PANELS.length} enabled</span>
-                        </div>
-                        <button
-                          onClick={() => applyRoleDefaults(s)}
-                          disabled={savingPerms === s.id}
+                        <span className="text-sm font-semibold">Panel Access — {enabled} of {PANELS.length} enabled</span>
+                        <button onClick={() => applyRoleDefaults(s)} disabled={savingPerms===s.id}
                           className="text-xs px-3 py-1.5 rounded-lg border border-border hover:border-primary/40">
                           ↺ Reset to {s.role?.replace(/_/g," ")} defaults
                         </button>
@@ -227,18 +240,13 @@ export default function StaffCommand() {
                         {PANELS.map(panel => {
                           const on = !!perms[panel.key];
                           return (
-                            <button key={panel.key}
-                              onClick={() => togglePerm(s, panel.key)}
-                              disabled={savingPerms === s.id}
+                            <button key={panel.key} onClick={() => togglePerm(s, panel.key)}
+                              disabled={savingPerms===s.id}
                               className="flex items-start gap-3 p-3 rounded-xl border text-left transition-all"
-                              style={{
-                                borderColor: on ? `${color}40` : "var(--border)",
-                                background:  on ? `${color}08` : "transparent",
-                                opacity: savingPerms === s.id ? 0.6 : 1,
-                              }}>
+                              style={{borderColor:on?`${color}40`:"var(--border)",background:on?`${color}08`:"transparent",opacity:savingPerms===s.id?0.6:1}}>
                               <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 mt-0.5"
-                                style={{background: on ? color : "transparent", border:`1.5px solid ${on?color:"#555"}`}}>
-                                {on && <span className="text-white text-xs font-bold">✓</span>}
+                                style={{background:on?color:"transparent",border:`1.5px solid ${on?color:"#555"}`}}>
+                                {on && <span className="text-white text-xs font-bold leading-none">✓</span>}
                               </div>
                               <div>
                                 <div className="text-xs font-semibold">{panel.label}</div>

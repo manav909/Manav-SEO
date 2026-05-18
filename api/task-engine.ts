@@ -2326,6 +2326,30 @@ HTML: ${html.slice(0,2000)}`}]})});
   }
 
   // ── ROLE-BASED STAFF & BDE SYSTEM ───────────────────────
+
+  if (action === 'invite_staff') {
+    const { staffId, email, name, redirectTo = 'https://seoseason.com' } = body;
+    if (!email) return ok(res, { success: false, error: 'Email is required to send an invite' });
+    try {
+      // Use admin client to send invite email
+      const adminClient = require('@supabase/supabase-js').createClient(
+        process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_KEY || '',
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      );
+      const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, {
+        redirectTo,
+        data: { name, staffId }
+      });
+      if (error) return ok(res, { success: false, error: error.message });
+      // Update staff row with auth user id if available
+      if (data?.user?.id && staffId) {
+        await db().from('staff_members').update({ auth_user_id: data.user.id }).eq('id', staffId);
+      }
+      return ok(res, { success: true, message: `Invite sent to ${email}` });
+    } catch(e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
   if (action === 'get_staff') {
     try {
       const { data, error } = await db()
