@@ -90,7 +90,6 @@ async function saveIntelligenceOutput(sbc: any, p: {
   } catch (_e) { return null; }
 }
 
-export const config = { maxDuration: 300 };
 
 /* Log module-load to Vercel — if THIS doesn't appear in logs, module init crashed */
 console.log("[intelligence] module loaded at", new Date().toISOString());
