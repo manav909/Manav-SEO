@@ -568,6 +568,7 @@ export default function BdePanel() {
   // Lead state
   const [leadNameInput,setLeadNameInput]=useState('');
   const [leadSaved,setLeadSaved]=useState(false);
+  const [saveError,setSaveError]=useState('');
   const [savingLead,setSavingLead]=useState(false);
   const [savedProspect,setSavedProspect]=useState<any>(null);
   const [prospects,setProspects]=useState<any[]>([]);
@@ -627,7 +628,7 @@ export default function BdePanel() {
     else if (target==='tools') setTab('tools');
     else if (target==='docs') setTab('docs');
     else if (target==='fix') { const msg=deepAnalysis?.nextAction; if(msg) setNextMsg(msg); }
-    else if (target==='intel') { if(savedProspect){setSelProspect(savedProspect);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');} setTab('intel'); }
+    else if (target==='intel') { if(savedProspect){setSelProspect(savedProspect);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');} setTab('intel'); loadProspects(); }
   };
 
   const clearAll=()=>{
@@ -671,14 +672,23 @@ export default function BdePanel() {
 
   async function saveLead(){
     if(!analysis)return;
-    setSavingLead(true);
-    const name=leadNameInput||parsedMsgs.find(m=>m.speaker==='client')?.speakerName||analysis?.main_need?.split(' ').slice(0,4).join(' ')||'New Prospect';
+    setSavingLead(true); setSaveError('');
+    const name=leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||analysis?.main_need?.split(' ').slice(0,4).join(' ')||'New Prospect';
     const np={name,url:auditResult?.url||auditUrl||'',industry:'',latestAnalysis:{...analysis,savedAt:new Date().toISOString()},lastSeen:new Date().toISOString(),conversationCount:1,status:'active'};
+    // Optimistic update
     setProspects(prev=>{const ex=prev.find((p:any)=>p.name===name);if(ex)return prev.map((p:any)=>p.name===name?{...p,conversationCount:p.conversationCount+1,latestAnalysis:np.latestAnalysis,lastSeen:np.lastSeen}:p);return [np,...prev];});
-    setSavedProspect(np); setLeadSaved(true); setSavingLead(false);
-    post('save_lead_conversation',{prospectName:name,prospectUrl:np.url,industry:'',analysis,conversationText:rawPaste||convText,deepAnalysis,auditResult,staffId:'bde'}).then((r:any)=>{if(r.error)console.warn('Lead DB save:',r.error);});
+    setSavedProspect(np);
+    // Wait for DB confirmation — brain_learnings is primary, doesn't need project_id
+    const r=await post('save_lead_conversation',{prospectName:name,prospectUrl:np.url,industry:'',analysis,conversationText:rawPaste||convText,deepAnalysis,auditResult,staffId:'bde'});
+    if((r as any).success){
+      setLeadSaved(true);
+      loadProspects(); // Reload from DB to confirm it's there
+    } else {
+      setSaveError((r as any).error||'DB save failed — check Supabase permissions for brain_learnings table');
+      setLeadSaved(false);
+    }
+    setSavingLead(false);
   }
-
   async function openProspect(p:any){
     setSelProspect(p);setProspectConvs([]);setSuggestions([]);setProspectTab('suggestions');setExpandedConv(new Set());
     setTab('intel');
@@ -897,7 +907,7 @@ export default function BdePanel() {
                       <button style={{...S.btn('#6366f1'),padding:'7px 16px'}} onClick={saveLead} disabled={savingLead}>{savingLead?'Saving...':'Save Lead'}</button>
                       <button style={{...S.btn('#a78bfa'),padding:'7px 14px'}} onClick={()=>setTab('docs')}>Generate Doc</button>
                     </div>
-                    <div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginTop:6}}>Saves full conversation, analysis, per-message intelligence, and audit. AI generates follow-up suggestions.</div>
+                    <div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginTop:6}}>Saves to database permanently — survives cookie clears, browser restarts, and new devices.</div>{saveError&&<div style={{fontSize:11,color:'#ef4444',marginTop:4,padding:'4px 8px',background:'rgba(239,68,68,.08)',borderRadius:6}}>⚠ {saveError}</div>}
                   </div>
                 ):(
                   <div style={{...S.card,borderColor:'rgba(16,185,129,.3)'}}>

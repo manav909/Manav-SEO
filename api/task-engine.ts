@@ -469,77 +469,118 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
   if (action === "save_lead_conversation") {
-    const { prospectName = "Prospect", prospectUrl = "", industry = "", analysis, conversationText = "", auditResult: aRes, staffId = "bde" } = body;
+    const { prospectName = "Prospect", prospectUrl = "", industry = "",
+            analysis, conversationText = "", deepAnalysis: deepAn,
+            auditResult: aRes, staffId = "bde" } = body;
     const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
+    const payload = JSON.stringify({
+      prospectName, prospectUrl, industry, analysis,
+      conversationText: String(conversationText).slice(0, 8000),
+      deepAnalysis: deepAn || null,
+      auditResult: aRes || null,
+      savedAt: new Date().toISOString(), staffId
+    });
+    // PRIMARY: brain_learnings with null project_id (always works)
+    try {
+      const { error: blErr } = await db().from("brain_learnings").insert({
+        project_id: null,
+        card_type: "lead_intel",
+        card_title: ("LEAD: " + prospectName).slice(0, 100),
+        context_summary: payload,
+        improvement: "Lead saved from BDE panel",
+        what_worked: [],
+        what_missed: [],
+        tags: ["lead_intel", slug],
+        source: "lead_intel",
+        applied_count: 0,
+        updated_at: new Date().toISOString()
+      });
+      if (!blErr) return ok(res, { success: true, prospectName, store: "brain_learnings" });
+    } catch (_e1) {}
+    // FALLBACK: ai_content_cache
     const cacheKey = "lead_intel_" + slug + "_" + Date.now();
-    const payload = JSON.stringify({ prospectName, prospectUrl, industry, analysis, conversationText: String(conversationText).slice(0, 3000), auditResult: aRes, savedAt: new Date().toISOString(), staffId });
-    // Try ai_content_cache with null project_id
     try {
       await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: payload, project_id: null });
-      return ok(res, { success: true, cacheKey, prospectName, store: "cache_null" });
-    } catch (_e1) {}
-    // Try ai_content_cache with first project id
+      return ok(res, { success: true, prospectName, store: "cache_null", cacheKey });
+    } catch (_e2) {}
     try {
       const { data: fp } = await db().from("projects").select("id").limit(1).single();
       const pid = (fp as any)?.id || null;
       await db().from("ai_content_cache").insert({ cache_key: cacheKey, response: payload, project_id: pid });
-      return ok(res, { success: true, cacheKey, prospectName, store: "cache_proj" });
-    } catch (_e2) {}
-    // Fallback: brain_desk
-    try {
-      const { data: fp2 } = await db().from("projects").select("id").limit(1).single();
-      const pid2 = (fp2 as any)?.id;
-      if (pid2) {
-        await db().from("brain_desk").insert({ project_id: pid2, title: ("LEAD_INTEL:" + prospectName).slice(0, 200), content_type: "json", content: payload, source: "lead_intel", tags: ["lead_intel", slug], pinned: false, updated_at: new Date().toISOString() });
-        return ok(res, { success: true, cacheKey, prospectName, store: "brain_desk" });
-      }
+      return ok(res, { success: true, prospectName, store: "cache_proj", cacheKey });
     } catch (_e3) {}
-    // All failed — return error so UI can show it
-    return ok(res, { success: false, error: "Could not save to any table — check DB permissions" });
+    return ok(res, { success: false, error: "All storage strategies failed — check Supabase permissions for brain_learnings and ai_content_cache" });
   }
+
 
   if (action === "get_lead_prospects") {
     try {
-      // Gather from ai_content_cache (all variants)
-      const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_intel_%").order("created_at", { ascending: false }).limit(500);
-      // Also check brain_desk
-      let deskEntries: any[] = [];
-      try {
-        const { data: dk } = await db().from("brain_desk").select("title,content,created_at").eq("source", "lead_intel").order("created_at", { ascending: false }).limit(200);
-        deskEntries = dk || [];
-      } catch {}
       const map: Record<string, any> = {};
-      const processEntry = (raw: string, ts: string) => {
+      const processRaw = (raw: string, ts: string) => {
         try {
           const d = JSON.parse(raw);
           const key = String(d.prospectName || "Unknown");
-          if (!map[key]) map[key] = { name: key, url: d.prospectUrl || "", industry: d.industry || "", latestAnalysis: d.analysis, lastSeen: ts, conversationCount: 0, status: "active" };
+          if (!map[key]) {
+            map[key] = { name: key, url: d.prospectUrl || "", industry: d.industry || "",
+              latestAnalysis: d.analysis || null, lastSeen: ts, conversationCount: 0, status: "active" };
+          }
           map[key].conversationCount++;
+          if (new Date(ts) > new Date(map[key].lastSeen)) {
+            map[key].lastSeen = ts;
+            map[key].latestAnalysis = d.analysis || map[key].latestAnalysis;
+          }
         } catch {}
       };
-      (convs || []).forEach((c: any) => processEntry(c.response, c.created_at));
-      deskEntries.forEach((d: any) => processEntry(d.content, d.created_at));
-      const prospects = Object.values(map).sort((a: any, b: any) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
+      // PRIMARY: brain_learnings
+      const { data: bLeads } = await db().from("brain_learnings")
+        .select("context_summary,created_at,updated_at")
+        .eq("source", "lead_intel")
+        .order("created_at", { ascending: false }).limit(500);
+      (bLeads || []).forEach((r: any) => processRaw(r.context_summary, r.updated_at || r.created_at));
+      // FALLBACK: ai_content_cache
+      try {
+        const { data: convs } = await db().from("ai_content_cache")
+          .select("response,created_at").like("cache_key", "lead_intel_%")
+          .order("created_at", { ascending: false }).limit(200);
+        (convs || []).forEach((c: any) => processRaw(c.response, c.created_at));
+      } catch {}
+      const prospects = Object.values(map)
+        .sort((a: any, b: any) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
       return ok(res, { success: true, prospects });
-    } catch (e: any) { return ok(res, { error: e.message, prospects: [] }); }
+    } catch (e: any) { return ok(res, { success: false, error: e.message, prospects: [] }); }
   }
+
 
   if (action === "get_lead_conversations") {
     const { prospectName } = body;
     if (!prospectName) return ok(res, { conversations: [] });
     const slug = String(prospectName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
     try {
-      const { data: convs } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_intel_" + slug + "_%").order("created_at", { ascending: false }).limit(50);
-      return ok(res, { success: true, conversations: convs || [] });
-    } catch (e: any) {
-      // Fallback: match by name in response
-      try {
-        const { data: all } = await db().from("ai_content_cache").select("cache_key,response,created_at").like("cache_key", "lead_intel_%").order("created_at", { ascending: false }).limit(200);
-        const filtered = (all || []).filter((c: any) => { try { return JSON.parse(c.response).prospectName === prospectName; } catch { return false; } });
-        return ok(res, { success: true, conversations: filtered });
-      } catch (e2: any) { return ok(res, { error: e2.message, conversations: [] }); }
-    }
+      const convs: any[] = [];
+      // PRIMARY: brain_learnings
+      const { data: bLeads } = await db().from("brain_learnings")
+        .select("id,context_summary,created_at,updated_at")
+        .eq("source", "lead_intel")
+        .contains("tags", [slug])
+        .order("created_at", { ascending: false }).limit(100);
+      (bLeads || []).forEach((r: any) => convs.push({
+        id: r.id, response: r.context_summary,
+        created_at: r.created_at, updated_at: r.updated_at
+      }));
+      // FALLBACK: ai_content_cache
+      if (!convs.length) {
+        try {
+          const { data: cached } = await db().from("ai_content_cache")
+            .select("cache_key,response,created_at")
+            .like("cache_key", "lead_intel_" + slug + "_%")
+            .order("created_at", { ascending: false }).limit(100);
+          (cached || []).forEach((c: any) => convs.push(c));
+        } catch {}
+      }
+      return ok(res, { success: true, conversations: convs });
+    } catch (e: any) { return ok(res, { success: false, error: e.message, conversations: [] }); }
   }
+
 
   if (action === "generate_lead_suggestions") {
     const { prospectName = "", prospectUrl = "", latestAnalysis, auditData, conversationCount = 0 } = body;
