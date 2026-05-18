@@ -692,8 +692,8 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(6),
         db().from("brain_learnings").select("card_title,improvement,what_worked").order("applied_count", { ascending: false }).limit(5),
       ]);
-      const algo: any[] = algoR.status === "fulfilled" ? (algoRes?.value?.data || algoR.value?.data || []) : [];
-      const brain: any[] = brainR.status === "fulfilled" ? (brainRes?.value?.data || brainR.value?.data || []) : [];
+      const algo: any[] = algoR.status === "fulfilled" ? (algoR.value?.data || []) : [];
+      const brain: any[] = brainR.status === "fulfilled" ? (brainR.value?.data || []) : [];
 
       const ctx: string[] = [];
       if (prospectName) ctx.push("Prospect: " + prospectName);
