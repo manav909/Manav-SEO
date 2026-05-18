@@ -215,147 +215,327 @@ function BestMessagePanel({analysis,convText}:{analysis:any;convText:string}) {
 
 
 // ─── Fiverr conversation parser ───────────────────────────────
-function parseFiverr(raw: string): any[] {
-  const SKIP = /^(promoted|this message relates to:|translate to english|we have your back|for added safety|learn more|\s*$)/i;
-  const GIG_LINE = /^(i will |gig:|expert |fix |audit |seo |google )/i;
-  const TIMESTAMP = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d+,?\s+\d+:\d+\s*(am|pm)\b/i;
-  const SPEAKER_RE = /^(me|[a-zA-Z0-9_]{3,30})\s*(promoted\s+)?(\w+ \d+,?\s*\d+:\d+\s*[ap]m)?$/i;
 
-  const lines = raw.split('\n');
+// ─── Fiverr parser ─────────────────────────────────────────────────────────────
+// Fiverr copy-paste format (each on its own line):
+//   USERNAME          ← alphanumeric only, no spaces
+//   PROMOTED          ← optional badge, skip
+//   May 18, 3:47 PM  ← timestamp line
+//   message text      ← one or more lines
+//   This message relates to:   ← gig card header → skip ALL lines until next speaker
+//   Translate to English       ← UI chrome → skip
+function parseFiverr(raw: string): any[] {
+  const TS_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2},?\s+\d{1,2}:\d{2}\s*(am|pm)$/i;
+  const UN_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.]{2,29}$/;
+  const SKIP_EXACT = new Set([
+    'promoted','we have your back','learn more',
+    'translate to english','\u{1F501} translate to english',
+  ]);
+  const SKIP_STARTS = ['for added safety','for your protection','this message relates to','learn more'];
+  const COMMON = new Set(['hi','hello','hey','yes','no','ok','sure','thanks','okay','bye','great']);
+
+  const isTS   = (l: string) => TS_RE.test(l);
+  const isSkip = (l: string) => {
+    const ll = l.toLowerCase();
+    if (SKIP_EXACT.has(ll)) return true;
+    if (ll.includes('translate to english')) return true;
+    return SKIP_STARTS.some(p => ll.startsWith(p));
+  };
+  const isUser = (l: string): boolean => {
+    if (l === 'Me') return true;
+    if (!UN_RE.test(l)) return false;
+    return !COMMON.has(l.toLowerCase());
+  };
+
   const msgs: any[] = [];
   let cur: any = null;
   let clientName = '';
+  let skipGig = false; // skip ALL lines after "This message relates to:" until next speaker
 
-  for (const raw_line of lines) {
-    const line = raw_line.trim();
-    if (!line || SKIP.test(line) || GIG_LINE.test(line) || TIMESTAMP.test(line) && line.length < 30) continue;
+  for (const rawLine of raw.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
 
-    const sm = line.match(SPEAKER_RE);
-    if (sm && !line.includes(' ') || (sm && (sm[3] || sm[2]))) {
-      if (cur && cur.text.trim()) msgs.push(cur);
-      const spk = sm[1].toLowerCase() === 'me' ? 'me' : 'client';
-      if (spk === 'client' && sm[1].toLowerCase() !== 'me') clientName = sm[1];
-      const ts = sm[3] || '';
-      cur = { speaker: spk, speakerName: spk === 'me' ? 'Me' : (clientName || sm[1]), text: '', timestamp: ts.replace(/,/g,'').trim() };
+    // ── Inside a gig card block: skip everything until the next speaker ──
+    if (skipGig) {
+      if (isUser(line)) { skipGig = false; /* fall through */ }
+      else { continue; }
+    }
+
+    // ── Fiverr UI chrome ──
+    if (isSkip(line)) {
+      if (line.toLowerCase().startsWith('this message relates to')) skipGig = true;
       continue;
     }
 
-    if (cur) {
-      if (cur.text) cur.text += '\n' + line;
-      else cur.text = line;
-    } else {
-      // First message before any speaker detected — treat as client
-      const spk = 'client';
-      if (!clientName) clientName = 'Client';
-      cur = { speaker: spk, speakerName: clientName, text: line, timestamp: '' };
+    // ── Timestamp → attach to current speaker ──
+    if (isTS(line)) {
+      if (cur && !cur.timestamp) cur.timestamp = line;
+      continue;
     }
+
+    // ── Speaker header ──
+    if (isUser(line)) {
+      if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
+      const isMe = (line === 'Me');
+      if (!isMe && !clientName) clientName = line;
+      cur = { speaker: isMe ? 'me' : 'client', speakerName: line, text: '', timestamp: '' };
+      continue;
+    }
+
+    // ── Regular message text ──
+    if (cur) cur.text = cur.text ? cur.text + '\n' + line : line;
   }
-  if (cur && cur.text.trim()) msgs.push(cur);
-  return msgs.filter(m => m.text.trim().length > 2);
+  if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
+  return msgs.filter(m => m.text.trim().length > 1);
 }
 
-// ─── Risk flag styles ──────────────────────────────────────────
-const RISK_C: any = { TOS_VIOLATION:'#ef4444', SPAM:'#f59e0b', WEAK_CLOSE:'#6366f1', MULTIPLE_MESSAGES:'#f59e0b' };
-const RISK_LABEL: any = { TOS_VIOLATION:'⚠️ ToS Violation', SPAM:'⚠️ Spam risk', WEAK_CLOSE:'⚡ Weak close', MULTIPLE_MESSAGES:'📨 Multiple messages' };
-const EMO_C: any = { curious:'#6366f1', interested:'#10b981', frustrated:'#ef4444', happy:'#10b981', hesitant:'#f59e0b', price_sensitive:'#f59e0b' };
-const EMO_ICON: any = { curious:'🤔', interested:'😊', frustrated:'😤', happy:'😊', hesitant:'🤷', price_sensitive:'💰' };
+// ─── Styles for flags / emotions ────────────────────────────────────────────────
+const RISK_C: any = {
+  TOS_VIOLATION:'#ef4444', MULTIPLE_MESSAGES:'#f59e0b',
+  WEAK_CLOSE:'#a78bfa',   NO_VALUE_PROP:'#f59e0b',
+};
+const RISK_LABEL: any = {
+  TOS_VIOLATION:'🚨 ToS Violation',  MULTIPLE_MESSAGES:'📨 Multiple msgs',
+  WEAK_CLOSE:'⚡ Weak close',          NO_VALUE_PROP:'💡 No value shown',
+};
+const EMO_C: any = {
+  curious:'#6366f1', interested:'#10b981', trusting:'#10b981',
+  hesitant:'#f59e0b', frustrated:'#ef4444', sceptical:'#ef4444', price_sensitive:'#f59e0b',
+};
+const EMO_ICON: any = {
+  curious:'🤔', interested:'😊', trusting:'🤝',
+  hesitant:'🤷', frustrated:'😤', sceptical:'🧐', price_sensitive:'💰',
+};
+const QUALITY_C: any = { good:'#10b981', ok:'#f59e0b', poor:'#ef4444' };
 
-// ─── Conversation View Component ───────────────────────────────
-function ConversationView({msgs, deepAnalysis, onAction}: {msgs: any[]; deepAnalysis: any; onAction: (type:string, value:string) => void}) {
-  const [expanded, setExpanded] = React.useState<Set<number>>(new Set());
-  const toggle = (i: number) => setExpanded(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
+// ─── ConversationView ────────────────────────────────────────────────────────────
+function ConversationView({
+  msgs, deepAnalysis, onAction,
+}: {
+  msgs: any[]; deepAnalysis: any;
+  onAction: (type: string, value: string) => void;
+}) {
+  const [showBetter, setShowBetter] = React.useState<Set<number>>(new Set());
+  const [cpId, setCpId] = React.useState<string|null>(null);
 
-  const getMsgAnalysis = (idx: number) => deepAnalysis?.messages?.find((m: any) => Number(m.index) === idx || Number(m.index) === idx + 1);
+  const toggleBetter = (i: number) =>
+    setShowBetter(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
+
+  // Exact 0-based index match — Claude is told to use same integer as INDEX in the list
+  const ma = (idx: number) =>
+    deepAnalysis?.messages?.find((m: any) => Number(m.index) === idx);
+
+  const cp = (text: string, id: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCpId(id); setTimeout(() => setCpId(null), 2000);
+  };
+
+  if (!msgs.length) return (
+    <div style={{color:'hsl(var(--muted-foreground))',fontSize:12,padding:20,textAlign:'center' as const}}>
+      Paste a Fiverr conversation above to see the preview.
+    </div>
+  );
+
+  // Conversion probability timeline bar
+  const timeline = msgs.map((_, i) => ma(i)?.conversionAfter).filter(v => v !== undefined) as number[];
 
   return (
-    <div style={{display:'flex',flexDirection:'column' as const,gap:2}}>
-      {msgs.map((msg, i) => {
-        const ma = getMsgAnalysis(i);
-        const isMe = msg.speaker === 'me';
-        const isExp = expanded.has(i);
-        const prob = ma?.conversionProbability;
-        const delta = ma?.probDelta;
-        const hasIssue = ma && (ma.missed || ma.riskFlag);
-        const probColor = prob >= 70 ? '#10b981' : prob >= 50 ? '#f59e0b' : prob !== undefined ? '#ef4444' : '#6366f1';
+    <div>
+      {/* Emotional / conversion timeline */}
+      {timeline.length > 0 && (
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:9,color:'hsl(var(--muted-foreground))',fontWeight:700,letterSpacing:1.2,marginBottom:5}}>
+            CONVERSION PROBABILITY FLOW
+          </div>
+          <div style={{display:'flex',alignItems:'flex-end',gap:3,height:44,background:'rgba(0,0,0,.1)',padding:'4px 6px',borderRadius:8}}>
+            {msgs.map((_, i) => {
+              const a = ma(i); const v = a?.conversionAfter;
+              if (v === undefined) return <div key={i} style={{flex:1,height:4,background:'rgba(255,255,255,.1)',borderRadius:2}}/>;
+              const h = Math.max(4, Math.round(v / 100 * 36));
+              const c = v >= 70 ? '#10b981' : v >= 50 ? '#f59e0b' : '#ef4444';
+              return (
+                <div key={i} title={`Msg ${i+1}: ${v}%`} style={{flex:1,height:h,background:c,borderRadius:'2px 2px 0 0',opacity:.9}}/>
+              );
+            })}
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:'hsl(var(--muted-foreground))',marginTop:3}}>
+            <span>Message 1</span>
+            <span style={{fontWeight:700,color:deepAnalysis.overallConversion>=60?'#10b981':'#ef4444'}}>
+              Final: {deepAnalysis.overallConversion}%
+            </span>
+          </div>
+        </div>
+      )}
 
-        return (
-          <div key={i} style={{marginBottom:12}}>
-            {/* Message bubble row */}
-            <div style={{display:'flex',flexDirection:isMe?'row-reverse':'row' as const,alignItems:'flex-end',gap:8}}>
-              {/* Avatar */}
-              <div style={{width:32,height:32,borderRadius:'50%',background:isMe?'#19345E':'rgba(99,102,241,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,color:isMe?'#fff':'#a78bfa',flexShrink:0}}>
-                {isMe?'M':msg.speakerName?.charAt(0)?.toUpperCase()||'C'}
-              </div>
+      {/* Per-message bubbles */}
+      <div style={{display:'flex',flexDirection:'column' as const,gap:10}}>
+        {msgs.map((msg, i) => {
+          const a    = ma(i);
+          const isMe = msg.speaker === 'me';
+          const prob = a?.conversionAfter;
+          const pc   = prob !== undefined ? (prob >= 70 ? '#10b981' : prob >= 50 ? '#f59e0b' : '#ef4444') : undefined;
+          const hasIssue = !!(a && (a.missed || a.riskFlag || a.betterReply));
 
-              {/* Bubble */}
-              <div style={{maxWidth:'72%',display:'flex',flexDirection:'column' as const,alignItems:isMe?'flex-end':'flex-start'}}>
-                {/* Speaker + time */}
-                <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:4,flexDirection:isMe?'row-reverse':'row' as const}}>
-                  <span style={{fontSize:11,fontWeight:600,color:'hsl(var(--foreground))'}}>{isMe?'Me':msg.speakerName}</span>
-                  {msg.timestamp&&<span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{msg.timestamp}</span>}
-                  {ma?.emotion&&!isMe&&<span style={{fontSize:10,background:`${EMO_C[ma.emotion]||'#6366f1'}18`,color:EMO_C[ma.emotion]||'#6366f1',padding:'1px 7px',borderRadius:10,border:`0.5px solid ${EMO_C[ma.emotion]||'#6366f1'}40`}}>{EMO_ICON[ma.emotion]||'💬'} {ma.emotion}</span>}
-                  {ma?.riskFlag&&<span style={{fontSize:10,background:`${RISK_C[ma.riskFlag]}18`,color:RISK_C[ma.riskFlag],padding:'1px 7px',borderRadius:10,border:`0.5px solid ${RISK_C[ma.riskFlag]}40`}}>{RISK_LABEL[ma.riskFlag]}</span>}
+          return (
+            <div key={i}>
+              {/* Row */}
+              <div style={{display:'flex',flexDirection:isMe?'row-reverse':'row' as const,alignItems:'flex-start',gap:8}}>
+                {/* Avatar */}
+                <div style={{
+                  width:34,height:34,borderRadius:'50%',flexShrink:0,
+                  background: isMe ? '#19345E' : '#8B6914',
+                  border:`2px solid ${isMe?'#2a4a7a':'#a07820'}`,
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  fontSize:13,fontWeight:700,color:'#fff',
+                }}>
+                  {isMe ? 'Y' : msg.speakerName?.charAt(0)?.toUpperCase() || 'C'}
                 </div>
 
-                {/* Message text */}
-                <div style={{background:isMe?'rgba(25,52,94,.6)':'rgba(99,102,241,.1)',border:`0.5px solid ${isMe?'rgba(25,52,94,.8)':'rgba(99,102,241,.25)'}`,borderRadius:isMe?'12px 12px 2px 12px':'12px 12px 12px 2px',padding:'10px 14px',fontSize:13,color:'hsl(var(--foreground))',lineHeight:1.6,whiteSpace:'pre-wrap' as const,cursor:hasIssue?'pointer':'default'}} onClick={()=>hasIssue&&toggle(i)}>
-                  {msg.text}
-                </div>
-
-                {/* Probability bar */}
-                {prob !== undefined && (
-                  <div style={{display:'flex',alignItems:'center',gap:6,marginTop:5,flexDirection:isMe?'row-reverse':'row' as const}}>
-                    <div style={{width:80,height:3,background:'rgba(255,255,255,.1)',borderRadius:2,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${prob}%`,background:probColor,borderRadius:2}}/>
-                    </div>
-                    <span style={{fontSize:10,color:probColor,fontWeight:600}}>{prob}%</span>
-                    {delta !== undefined && delta !== 0 && (
-                      <span style={{fontSize:10,color:delta > 0 ? '#10b981' : '#ef4444'}}>{delta > 0 ? '+' : ''}{delta}%</span>
+                {/* Bubble column */}
+                <div style={{maxWidth:'74%',display:'flex',flexDirection:'column' as const,alignItems:isMe?'flex-end':'flex-start'}}>
+                  {/* Speaker line */}
+                  <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:3,flexWrap:'wrap' as const,flexDirection:isMe?'row-reverse':'row' as const}}>
+                    <span style={{fontSize:11,fontWeight:700,color:'hsl(var(--foreground))'}}>
+                      {isMe ? 'Me' : msg.speakerName}
+                    </span>
+                    {msg.timestamp && (
+                      <span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{msg.timestamp}</span>
+                    )}
+                    {/* Client emotion badge */}
+                    {!isMe && a?.emotion && (
+                      <span style={{
+                        fontSize:10,fontWeight:600,padding:'1px 8px',borderRadius:10,
+                        background:`${EMO_C[a.emotion]||'#6366f1'}20`,
+                        color:EMO_C[a.emotion]||'#6366f1',
+                        border:`0.5px solid ${EMO_C[a.emotion]||'#6366f1'}50`,
+                      }}>
+                        {EMO_ICON[a.emotion]||'💬'} {a.emotion}
+                      </span>
+                    )}
+                    {/* Risk flag */}
+                    {a?.riskFlag && (
+                      <span style={{
+                        fontSize:10,fontWeight:700,padding:'1px 8px',borderRadius:10,
+                        background:`${RISK_C[a.riskFlag]||'#f59e0b'}20`,
+                        color:RISK_C[a.riskFlag]||'#f59e0b',
+                        border:`0.5px solid ${RISK_C[a.riskFlag]||'#f59e0b'}50`,
+                      }}>
+                        {RISK_LABEL[a.riskFlag]||a.riskFlag}
+                      </span>
+                    )}
+                    {/* Quality pill for me messages */}
+                    {isMe && a?.quality && (
+                      <span style={{fontSize:9,color:QUALITY_C[a.quality]||'#6366f1',fontWeight:600}}>
+                        {a.quality==='good'?'✓ Good':a.quality==='ok'?'~ OK':'✗ Poor'}
+                      </span>
                     )}
                   </div>
-                )}
 
-                {/* Client intent */}
-                {ma?.intent&&!isMe&&(
-                  <div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:3,fontStyle:'italic'}}>{ma.intent}</div>
-                )}
-              </div>
-            </div>
-
-            {/* Analysis panel for Me messages — always visible if has issues */}
-            {isMe && ma && (ma.missed || ma.riskFlag) && (
-              <div style={{margin:'6px 40px 0',background:'rgba(0,0,0,.2)',borderRadius:10,padding:'10px 14px',border:`0.5px solid ${hasIssue?RISK_C[ma.riskFlag]||'#f59e0b':'rgba(99,102,241,.2)'}`}}>
-                {ma.missed && (
-                  <div style={{marginBottom:8}}>
-                    <div style={{fontSize:10,fontWeight:700,color:'#f59e0b',letterSpacing:1,marginBottom:4}}>⚠ WHAT YOU MISSED</div>
-                    <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.55}}>{ma.missed}</div>
+                  {/* Message bubble */}
+                  <div style={{
+                    background: isMe?'rgba(25,52,94,.6)':'rgba(99,102,241,.1)',
+                    border:`0.5px solid ${isMe?'rgba(25,52,94,.9)':'rgba(99,102,241,.25)'}`,
+                    borderRadius: isMe?'12px 2px 12px 12px':'2px 12px 12px 12px',
+                    padding:'9px 13px',fontSize:13,color:'hsl(var(--foreground))',
+                    lineHeight:1.65,whiteSpace:'pre-wrap' as const,
+                  }}>
+                    {msg.text}
                   </div>
-                )}
-                {ma.betterReply && (
-                  <div style={{marginBottom:8}}>
-                    <div style={{fontSize:10,fontWeight:700,color:'#10b981',letterSpacing:1,marginBottom:4}}>💡 BETTER VERSION</div>
-                    <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.6,background:'rgba(16,185,129,.05)',padding:'8px 10px',borderRadius:8,border:'0.5px solid rgba(16,185,129,.2)',whiteSpace:'pre-wrap' as const,fontStyle:'italic'}}>{ma.betterReply}</div>
-                    <div style={{display:'flex',gap:6,marginTop:6}}>
-                      <button style={{fontSize:10,background:'rgba(16,185,129,.15)',border:'0.5px solid rgba(16,185,129,.3)',borderRadius:6,color:'#10b981',padding:'3px 10px',cursor:'pointer'}} onClick={()=>onAction('copy_reply',ma.betterReply)}>Copy Better Reply</button>
-                      <button style={{fontSize:10,background:'rgba(99,102,241,.15)',border:'0.5px solid rgba(99,102,241,.3)',borderRadius:6,color:'#a78bfa',padding:'3px 10px',cursor:'pointer'}} onClick={()=>onAction('use_as_next',ma.betterReply)}>Use as Next Message</button>
+
+                  {/* Probability bar */}
+                  {prob !== undefined && (
+                    <div style={{display:'flex',alignItems:'center',gap:5,marginTop:4,flexDirection:isMe?'row-reverse':'row' as const}}>
+                      <div style={{width:72,height:3,background:'rgba(255,255,255,.1)',borderRadius:2,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:`${prob}%`,background:pc,borderRadius:2}}/>
+                      </div>
+                      <span style={{fontSize:10,color:pc,fontWeight:700}}>{prob}%</span>
+                      {a.delta!==undefined && a.delta!==0 && (
+                        <span style={{fontSize:10,color:a.delta>0?'#10b981':'#ef4444'}}>
+                          {a.delta>0?'+':''}{a.delta}%
+                        </span>
+                      )}
                     </div>
-                  </div>
-                )}
-                {ma.riskFlag === 'TOS_VIOLATION' && (
-                  <div style={{padding:'6px 10px',background:'rgba(239,68,68,.08)',borderRadius:6,border:'0.5px solid rgba(239,68,68,.3)',fontSize:11,color:'#f87171'}}>⚠️ This message may violate Fiverr ToS. Sharing external contacts can get your account suspended.</div>
-                )}
-              </div>
-            )}
+                  )}
 
-            {/* Tap hint removed — analysis always visible */}
-            {false && isMe && hasIssue && !isExp && (
-              <div style={{margin:'3px 40px 0',fontSize:10,color:'#f59e0b',cursor:'pointer'}} onClick={()=>toggle(i)}>
-                {ma.riskFlag && RISK_LABEL[ma.riskFlag] ? RISK_LABEL[ma.riskFlag] + ' · ' : ''}{ma.missed ? '⚠ Missed opportunity' : ''} — tap to see analysis
+                  {/* Client intent */}
+                  {!isMe && a?.intent && (
+                    <div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:2,fontStyle:'italic',maxWidth:320}}>{a.intent}</div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-        );
-      })}
+
+              {/* Analysis panel — always visible for me messages with any issue */}
+              {isMe && a && (a.missed || a.betterReply || a.riskFlag) && (
+                <div style={{
+                  margin:'5px 0 0 42px',borderRadius:10,padding:'10px 14px',
+                  background:'rgba(0,0,0,.18)',
+                  border:`0.5px solid ${a.riskFlag?RISK_C[a.riskFlag]+'40':'rgba(245,158,11,.2)'}`,
+                }}>
+                  {/* TOS warning */}
+                  {a.riskFlag === 'TOS_VIOLATION' && (
+                    <div style={{marginBottom:8,padding:'7px 10px',background:'rgba(239,68,68,.1)',borderRadius:7,border:'0.5px solid rgba(239,68,68,.4)',fontSize:11,color:'#f87171',lineHeight:1.55}}>
+                      🚨 <b>Fiverr ToS Violation.</b> Sharing external contacts (email, phone) can permanently suspend your account. Fiverr actively scans for this. Always use Fiverr's messaging system only.
+                    </div>
+                  )}
+                  {/* Missed */}
+                  {a.missed && (
+                    <div style={{marginBottom:a.betterReply?8:0}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#f59e0b',letterSpacing:1,marginBottom:3}}>⚠ WHAT YOU MISSED</div>
+                      <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.55}}>{a.missed}</div>
+                    </div>
+                  )}
+                  {/* Better reply */}
+                  {a.betterReply && (
+                    <div>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                        <div style={{fontSize:10,fontWeight:700,color:'#10b981',letterSpacing:1}}>💡 BETTER VERSION</div>
+                        <button style={{fontSize:10,background:'none',border:'none',color:'#6366f1',cursor:'pointer',padding:0}} onClick={()=>toggleBetter(i)}>
+                          {showBetter.has(i)?'▲ Hide':'▼ Show'}
+                        </button>
+                      </div>
+                      {showBetter.has(i) && (
+                        <div>
+                          <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.65,background:'rgba(16,185,129,.06)',padding:'8px 12px',borderRadius:8,border:'0.5px solid rgba(16,185,129,.2)',whiteSpace:'pre-wrap' as const,fontStyle:'italic',marginBottom:6}}>
+                            {a.betterReply}
+                          </div>
+                          <button style={{fontSize:10,background:'rgba(16,185,129,.15)',border:'0.5px solid rgba(16,185,129,.3)',borderRadius:6,color:'#10b981',padding:'3px 12px',cursor:'pointer',fontWeight:600}}
+                            onClick={()=>{cp(a.betterReply,'b'+i); onAction('use_as_next',a.betterReply);}}>
+                            {cpId==='b'+i?'✓ Copied!':'Use as Next Message'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Good message note */}
+              {isMe && a?.quality==='good' && !a.missed && !a.riskFlag && (
+                <div style={{margin:'3px 0 0 42px',fontSize:10,color:'#10b981'}}>✓ Good message</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Overall summary */}
+      {deepAnalysis?.topMiss && (
+        <div style={{marginTop:16,padding:'10px 14px',background:'rgba(245,158,11,.06)',borderRadius:10,border:'0.5px solid rgba(245,158,11,.2)'}}>
+          <div style={{fontSize:9,color:'#f59e0b',fontWeight:700,letterSpacing:1,marginBottom:3}}>BIGGEST MISTAKE</div>
+          <div style={{fontSize:12,color:'#d0d0e8',marginBottom:deepAnalysis.nextAction?8:0}}>{deepAnalysis.topMiss}</div>
+          {deepAnalysis.nextAction && (
+            <div>
+              <div style={{fontSize:9,color:'#10b981',fontWeight:700,letterSpacing:1,marginBottom:3}}>DO THIS RIGHT NOW</div>
+              <div style={{fontSize:12,color:'#d0d0e8',marginBottom:6}}>{deepAnalysis.nextAction}</div>
+              <button style={{fontSize:10,background:'rgba(16,185,129,.15)',border:'0.5px solid rgba(16,185,129,.3)',borderRadius:6,color:'#10b981',padding:'3px 12px',cursor:'pointer'}}
+                onClick={()=>onAction('use_as_next',deepAnalysis.nextAction)}>
+                Use as Next Message
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -596,16 +596,41 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (!messages.length) return ok(res, { error: "messages required" });
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const convSummary = messages.map((m: any, i: number) => "idx" + i + " [" + m.speaker.toUpperCase() + "] " + String(m.text).slice(0,300)).join("\n");
-      const sysPrompt = "You are an elite BDE coach analysing a Fiverr sales conversation. You identify exact moments where conversion probability changed, what was missed, what was done well, and what to do differently. Be brutally honest about mistakes. Flag Fiverr ToS violations immediately.";
-      const userPrompt = "Analyse this Fiverr sales conversation. Messages are numbered idx0, idx1, idx2... (0-based).\n\n" + convSummary + "\n\nReturn raw JSON object only. Fields: messages (array), overallConversion (0-100), topMiss (biggest mistake as a sentence), topWin (best thing done), nextAction (exact message or action to take right now), urgency (high/medium/low). Each message object must have: index (INTEGER matching the idx0/idx1/idx2 number exactly), speaker (client or me), emotion (for client only: curious/interested/frustrated/happy/hesitant/price_sensitive/sceptical), intent (for client: one sentence on what they want), conversionProbability (INTEGER 0-100 running probability AFTER this message), probDelta (INTEGER change from previous message, can be negative), missed (for me messages: null if good, or a specific concrete missed opportunity as a sentence), betterReply (for me messages: null if good, or the exact improved Fiverr message to send), riskFlag (null or one of: TOS_VIOLATION if sharing external contact, SPAM if multiple messages, WEAK_CLOSE if missed closing opportunity, MULTIPLE_MESSAGES if sent 3+ messages in a row).";
-      const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 2500, system: sysPrompt, messages: [{ role: "user", content: userPrompt }] });
+      // Number messages 0-based so index field is unambiguous
+      const msgList = (messages as any[]).map((m: any, i: number) =>
+        i + "|" + m.speaker + "|" + String(m.text).replace(/\n/g, " ").slice(0, 280)
+      ).join("\n");
+      const sys2 = "You are a brutally honest Fiverr BDE coach. Analyse every message. Identify ToS violations, missed closings, emotional shifts, and conversion impact.";
+      const usr2 = "Conversation (INDEX|SPEAKER|TEXT):\n" + msgList
+        + "\n\nReturn ONLY a raw JSON object — zero markdown, zero code fences. Schema:\n"
+        + "{ \"messages\": [ { \"index\": <same integer as INDEX>, \"speaker\": \"client\" or \"me\","
+        + " \"emotion\": one of curious/interested/trusting/hesitant/frustrated/sceptical/price_sensitive or null (client only),"
+        + " \"intent\": string or null (client only),"
+        + " \"conversionAfter\": integer 0-100,"
+        + " \"delta\": integer (change from previous, negative allowed),"
+        + " \"quality\": \"good\" or \"ok\" or \"poor\" (me only),"
+        + " \"missed\": string or null (me only — concrete missed opportunity),"
+        + " \"betterReply\": string or null (me only — exact improved message),"
+        + " \"riskFlag\": \"TOS_VIOLATION\" or \"MULTIPLE_MESSAGES\" or \"WEAK_CLOSE\" or \"NO_VALUE_PROP\" or null } ],"
+        + " \"overallConversion\": integer, \"topMiss\": string, \"topWin\": string or null,"
+        + " \"nextAction\": string, \"urgency\": \"high\" or \"medium\" or \"low\" }";
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 3500,
+        system: sys2, messages: [{ role: "user", content: usr2 }]
+      });
       const raw = (_r.content[0] as any).text || "{}";
-      let result: any = {};
-      try { result = JSON.parse(raw.replace(/^```json\s*/,"").replace(/```\s*$/,"").trim()); }
-      catch { result = { messages: [], overallConversion: 50, topMiss: "Analysis parse error", topWin: "", nextAction: "Review conversation manually", urgency: "medium" }; }
+      // Strip any accidental markdown fences
+      const cleaned = raw.replace(/^```[a-z]*\s*/i, "").replace(/```\s*$/g, "").trim();
+      let result: any = null;
+      try { result = JSON.parse(cleaned); } catch {
+        const m = cleaned.match(/\{[\s\S]+\}/);
+        try { result = m ? JSON.parse(m[0]) : null; } catch { result = null; }
+      }
+      if (!result || !Array.isArray(result.messages)) {
+        return ok(res, { success: false, error: "Claude returned invalid JSON", rawPreview: raw.slice(0,300) });
+      }
       return ok(res, { success: true, ...result });
-    } catch (e: any) { return ok(res, { error: e.message }); }
+    } catch (e: any) { return ok(res, { success: false, error: e.message }); }
   }
 
   if (action === "health_check") {
