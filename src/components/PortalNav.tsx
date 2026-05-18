@@ -94,7 +94,7 @@ const EMPIRE_SECTIONS = [
 export default function PortalNav({ clientName, companyName, onProjectChange }: Props) {
   const navigate  = useNavigate();
   const location  = useLocation();
-  const { signOut } = useAuth();
+  const { staffPermissions, signOut } = useAuth();
   const { selectedProjectId, setSelectedProjectId, selectedProject, selectedClient } = useProject();
   const { projects } = useAuth();
   const safeProjects = (projects || []).filter((p: any) => p?.id);

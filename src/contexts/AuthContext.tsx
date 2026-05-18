@@ -37,7 +37,8 @@ interface AuthState {
   projects:    any[];
   loading:     boolean;
   authChecked: boolean;
-  isApproved:  boolean;
+  isApproved:      boolean;
+  staffPermissions: Record<string,boolean> | null;
   hasClient:   boolean;
   signOut:     () => Promise<void>;
   refreshData: () => Promise<void>;
@@ -47,7 +48,7 @@ const AuthContext = createContext<AuthState>({
   user: null, session: null, profile: null,
   clients: [], projects: [],
   loading: true, authChecked: false,
-  isApproved: false, hasClient: false,
+  isApproved: false, hasClient: false, staffPermissions: null,
   signOut: async () => {}, refreshData: async () => {},
 });
 
@@ -57,6 +58,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user,        setUser]        = useState<User | null>(null);
   const [session,     setSession]     = useState<Session | null>(null);
   const [profile,     setProfile]     = useState<Profile | null>(null);
+  const [staffPermissions, setStaffPermissions] = useState<Record<string,boolean>|null>(null);
   const [clients,     setClients]     = useState<any[]>([]);
   const [projects,    setProjects]    = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -98,6 +100,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         prof = { ...prof, approved: true };
       }
       setProfile(prof);
+      // Look up staff member by email to get panel permissions
+      if (prof?.email) {
+        const { data: staffRow } = await supabase
+          .from('staff_members')
+          .select('permissions,role')
+          .eq('email', prof.email)
+          .maybeSingle();
+        if (staffRow?.permissions) setStaffPermissions(staffRow.permissions);
+      }
 
       // Build the list of client IDs this user has access to
       const idList: string[] = [];
@@ -247,6 +258,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user, session, profile, clients, projects,
       loading, authChecked,
       isApproved: profile?.approved === true,
+      staffPermissions,
       hasClient:  clients.length > 0,
       signOut, refreshData,
     }}>
