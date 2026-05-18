@@ -181,7 +181,7 @@ VERIFIED INFRASTRUCTURE FACTS — never contradict these:
 • FUNCTION_INVOCATION_FAILED = Lambda process crashed. Causes: (a) code not yet deployed, (b) module load error, (c) uncaught exception. NEVER caused by region misconfiguration. Fix: push and deploy.
 • Vercel Pro plan is active — no Hobby plan limits.
 • Supabase v2 PostgrestBuilder does NOT support .catch() chaining — use try/catch.
-• claude-sonnet-4-5 does NOT support assistant message prefill.
+• claude-sonnet-4-6 does NOT support assistant message prefill.
 • All API Lambda files are standalone (no ./lib/ imports) — module resolution is not the issue.
 
 RULES:

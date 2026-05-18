@@ -27,6 +27,7 @@ import GuestTour      from './pages/GuestTour';
 import Desk           from './pages/Desk';
 import BrainCommand   from './pages/BrainCommand';
 import NotFound       from "./pages/NotFound";
+import PortalNav from '@/components/PortalNav';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectSync } from '@/hooks/useProjectSync';
+import { useProject } from '@/hooks/useProject';
 import PortalNav from '@/components/PortalNav';
 
 interface Section {
@@ -14,7 +14,7 @@ interface Section {
 
 export default function SystemControl() {
   const { user } = useAuth();
-  const { project } = useProjectSync();
+  const { selectedProject } = useProject();
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState<string | null>(null);

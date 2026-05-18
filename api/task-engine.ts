@@ -1334,7 +1334,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       const ai=await fetch('https://api.anthropic.com/v1/messages',{
         method:'POST',
         headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
-        body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:1000,system:systemPrompt,messages})
+        body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,system:systemPrompt,messages})
       });
       const aj=await ai.json() as any;
       const answer=aj?.content?.[0]?.text||'Could not generate answer.';
@@ -1795,7 +1795,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     const aiRes = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:900,messages:[{role:'user',content:templates[briefType]||templates.progress}]}),
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:900,messages:[{role:'user',content:templates[briefType]||templates.progress}]}),
     });
     const aiJson = await aiRes.json() as any;
     return ok(res, { success:true, brief:aiJson?.content?.[0]?.text||'Failed', briefType, projectName:proj.name });
@@ -1884,7 +1884,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     const prompt = `${voice}\n\nProject: ${proj.name}\nGoals: ${proj.goals||'not set'}\nRecent tasks: ${tasks.map((t:any)=>t.task_type).join(', ')||'none'}\nProven learnings: ${learns.map((l:any)=>l.card_title).join('; ')||'accumulating'}\n${ctx2||''}`;
     const aiRes = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:600,messages:[{role:'user',content:prompt}]}),
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:600,messages:[{role:'user',content:prompt}]}),
     });
     const aiJson=await aiRes.json() as any;
     return ok(res,{success:true,brief:aiJson?.content?.[0]?.text||'Failed',role,projectName:proj.name});

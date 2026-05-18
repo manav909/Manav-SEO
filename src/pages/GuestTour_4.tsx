@@ -1,6 +1,7 @@
 import React,{useEffect} from "react";
 import {useTour} from "@/contexts/TourContext";
 import {useNavigate} from "react-router-dom";
+import PortalNav from '@/components/PortalNav';
 
 export default function Tour(){
   const{start,completed}=useTour();
@@ -21,6 +22,7 @@ export default function Tour(){
     <div className="empire-page" style={{minHeight:"100vh",background:"hsl(var(--background))",
       color:"hsl(var(--foreground))",fontFamily:"-apple-system,'SF Pro Display',system-ui,sans-serif",
       display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <PortalNav />
       
       <div style={{position:"relative",zIndex:1,textAlign:"center" as const,
         maxWidth:680,padding:"0 24px"}}>
