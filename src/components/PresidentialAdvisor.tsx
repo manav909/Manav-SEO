@@ -82,7 +82,7 @@ export default function PresidentialAdvisor({ mode, projectName, projectContext,
             canvasBlocks: canvasBlocks || [],
             history:      historyForApi,
           },
-        }),
+        }).catch(() => ({ ok: false, json: () => Promise.resolve({ error: "offline" }) })),
       });
 
       if (!r.ok || !r.body) throw new Error('Advisor unavailable');
