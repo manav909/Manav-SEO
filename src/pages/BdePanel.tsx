@@ -690,6 +690,8 @@ export default function BdePanel() {
   const [agentLoading,setAgentLoading]=useState(false);
   const [agentNotes,setAgentNotes]=useState('');
   const agentThreadRef=useRef<HTMLDivElement>(null);
+  const [agentSelectedLead,setAgentSelectedLead]=useState<any>(null);
+  const [agentLeadOpen,setAgentLeadOpen]=useState(false);
   const [suggError,setSuggError]=useState('');
   const [pendingSuggDoc,setPendingSuggDoc]=useState<any>(null);
   const [prospectTab,setProspectTab]=useState<'suggestions'|'history'|'docs'>('suggestions');
@@ -1047,7 +1049,13 @@ export default function BdePanel() {
     setAgentInput('');
     setAgentLoading(true);
     setAgentSuggestion('');setAgentAnalysis(null);setAgentCoachNote('');
-    const lc={
+    const lc=agentSelectedLead ? {
+      name:agentSelectedLead.name||'',
+      url:agentSelectedLead.url||'',
+      ...(agentSelectedLead.analysis||{}),
+      ...(agentSelectedLead.analysis?.fiverr_specific||{}),
+      auditScore:agentSelectedLead.auditResult?.score
+    } : {
       name:savedProspect?.name||leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||'',
       url:savedProspect?.url||auditUrl||'',
       ...(analysis||{}),
@@ -1716,15 +1724,53 @@ export default function BdePanel() {
 
         {tab==='agent'&&(
           <div style={{display:'flex',flexDirection:'column' as const,gap:8}}>
-            {/* Header */}
+            {/* Header + Lead Selector */}
             <div style={{...S.card,padding:'10px 14px',borderColor:'rgba(16,185,129,.3)'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div>
-                  <span style={{fontSize:13,fontWeight:700,color:'#10b981'}}>⚡ Live Conversation Agent</span>
-                  <div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:2}}>Paste each client message → get the best reply. Learns from every conversation.</div>
-                </div>
-                {agentThread.length>0&&<button style={{...S.btn('hsl(var(--muted-foreground))'),fontSize:10,padding:'3px 8px'}} onClick={()=>{if(window.confirm('Clear?')){setAgentThread([]);setAgentSuggestion('');setAgentAnalysis(null);setAgentFollowUp(null);}}}>✕ Clear</button>}
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <span style={{fontSize:13,fontWeight:700,color:'#10b981'}}>⚡ Live Conversation Agent</span>
+                {agentThread.length>0&&<button style={{...S.btn('hsl(var(--muted-foreground))'),fontSize:10,padding:'3px 8px'}} onClick={()=>{if(window.confirm('Clear conversation?')){setAgentThread([]);setAgentSuggestion('');setAgentAnalysis(null);setAgentFollowUp(null);setAgentSelectedLead(null);}}}>✕ Clear</button>}
               </div>
+              {/* Lead picker */}
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <div style={{flex:1,position:'relative' as const}}>
+                  <button style={{...S.btn(agentSelectedLead?'#10b981':'hsl(var(--muted-foreground))'),width:'100%',textAlign:'left' as const,padding:'6px 10px',fontSize:11,display:'flex',justifyContent:'space-between',alignItems:'center'}}
+                    onClick={()=>{if(!agentLeadOpen) loadProspects(); setAgentLeadOpen(o=>!o);}}>
+                    <span>{agentSelectedLead?'📋 '+agentSelectedLead.name:'🔍 Select saved lead (optional)'}</span>
+                    <span style={{fontSize:9}}>{agentLeadOpen?'▲':'▼'}</span>
+                  </button>
+                  {agentLeadOpen&&(
+                    <div style={{position:'absolute' as const,top:'100%',left:0,right:0,zIndex:50,background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:8,marginTop:2,maxHeight:220,overflowY:'auto' as const,boxShadow:'0 8px 24px rgba(0,0,0,.4)'}}>
+                      <div style={{padding:'6px 10px',fontSize:10,color:'hsl(var(--muted-foreground))',borderBottom:'0.5px solid #1a1a3a'}}>Instant chat (no lead)</div>
+                      <button style={{width:'100%',textAlign:'left' as const,padding:'8px 10px',background:'none',border:'none',color:'hsl(var(--foreground))',fontSize:12,cursor:'pointer'}}
+                        onClick={()=>{setAgentSelectedLead(null);setAgentLeadOpen(false);}}>
+                        ⚡ Start fresh — no lead context
+                      </button>
+                      {prospects.length>0&&<div style={{padding:'6px 10px',fontSize:10,color:'hsl(var(--muted-foreground))',borderTop:'0.5px solid #1a1a3a',borderBottom:'0.5px solid #1a1a3a'}}>Saved leads ({prospects.length})</div>}
+                      {prospects.map((p:any)=>(
+                        <button key={p.id||p.name} style={{width:'100%',textAlign:'left' as const,padding:'8px 10px',background:'none',border:'none',color:'hsl(var(--foreground))',fontSize:12,cursor:'pointer',borderBottom:'0.5px solid rgba(255,255,255,.05)'}}
+                          onClick={()=>{setAgentSelectedLead(p);setAgentLeadOpen(false);}}>
+                          <div style={{fontWeight:600}}>{p.name}</div>
+                          {p.url&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{p.url}</div>}
+                          {p.analysis?.main_need&&<div style={{fontSize:10,color:'#10b981'}}>{p.analysis.main_need?.slice(0,60)}</div>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {agentSelectedLead&&<button style={{...S.btn('hsl(var(--muted-foreground))'),fontSize:10,padding:'6px 8px',flexShrink:0}} onClick={()=>setAgentSelectedLead(null)}>✕</button>}
+              </div>
+              {/* Selected lead context strip */}
+              {agentSelectedLead&&(
+                <div style={{marginTop:8,padding:'6px 10px',background:'rgba(16,185,129,.06)',borderRadius:6,border:'0.5px solid rgba(16,185,129,.2)'}}>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap' as const,fontSize:10}}>
+                    {agentSelectedLead.url&&<span style={{color:'hsl(var(--muted-foreground))'}}>🌐 {agentSelectedLead.url}</span>}
+                    {agentSelectedLead.analysis?.main_need&&<span style={{color:'#10b981'}}>🎯 {agentSelectedLead.analysis.main_need?.slice(0,80)}</span>}
+                    {agentSelectedLead.analysis?.hidden_concern&&<span style={{color:'#f59e0b'}}>💭 {agentSelectedLead.analysis.hidden_concern?.slice(0,60)}</span>}
+                    {agentSelectedLead.analysis?.fiverr_specific?.order_probability!==undefined&&<span style={{color:'#a78bfa'}}>📊 {agentSelectedLead.analysis.fiverr_specific.order_probability}% close probability</span>}
+                  </div>
+                </div>
+              )}
+              {!agentSelectedLead&&<div style={{marginTop:6,fontSize:10,color:'hsl(var(--muted-foreground))'}}>💬 Instant mode — paste any client message and get a reply. Select a saved lead above to load their full context.</div>}
             </div>
 
             {/* Follow-up banner */}
@@ -1733,7 +1779,7 @@ export default function BdePanel() {
                 <span style={{fontSize:12,color:agentFollowUp.urgent?'#ef4444':'#f59e0b',fontWeight:600}}>{agentFollowUp.urgent?'🔴':'⏰'} {agentFollowUp.hours}h since last client message — {agentFollowUp.urgent?'lead going cold':'consider following up'}</span>
                 <button style={{...S.btn(agentFollowUp.urgent?'#ef4444':'#f59e0b'),fontSize:10,padding:'3px 10px'}} onClick={async()=>{
                   setAgentLoading(true);
-                  const lc={name:savedProspect?.name||leadNameInput||'',url:savedProspect?.url||auditUrl||''};
+                  const lc=agentSelectedLead?{name:agentSelectedLead.name,url:agentSelectedLead.url,...(agentSelectedLead.analysis||{})}:{name:savedProspect?.name||leadNameInput||'',url:savedProspect?.url||auditUrl||''};
                   const r=await post('live_coach',{thread:agentThread,newClientMessage:'[Follow-up needed — '+agentFollowUp.hours+'h silence]',bdeNotes:'Generate a follow-up message',leadContext:lc});
                   if((r as any).suggestedReply){setAgentSuggestion((r as any).suggestedReply);setAgentCoachNote((r as any).coachNote||'');}
                   setAgentLoading(false);
