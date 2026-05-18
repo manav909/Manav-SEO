@@ -488,7 +488,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       audit_summary: "Write a CLIENT-READY SEO AUDIT SUMMARY. Use every audit issue found. For each issue: (1) issue name in plain English, (2) what it means for their customers finding them, (3) what we will do to fix it, (4) expected improvement timeline. Then: QUICK WINS section — 2-3 fixes achievable in the first week. THE BIG PICTURE section — if all issues are fixed, what does ranking on page 1 look like in 90 days for their main keywords. Reference algorithm knowledge to explain why these issues matter right now in terms of current Google/AI search behaviour. 400-500 words. No placeholders.",
       whatsapp_msg: "Write a SHORT WHATSAPP/FIVERR MESSAGE. One paragraph, maximum 100 words. Reference something SPECIFIC about their website or their message (use actual audit finding or conversation insight). Show you have done your homework. End with one clear, easy call to action. Must feel personal, not templated. No placeholders.",
       case_study: "Write a MINI CASE STUDY about a business in the same industry as this prospect. Make it realistic and specific. SITUATION: describe a business with the exact same problems this prospect has (reference their audit issues and conversation). WHAT WE DID: 4 specific actions taken, referencing actual SEO techniques and algorithm knowledge. RESULTS: specific numbers — traffic increase percentage, keyword rankings achieved (specific keywords in their niche), leads per month before and after, timeframe. THE TURNING POINT: the one insight that changed everything. HOW THIS APPLIES TO YOU: direct connection to the prospect's situation. 350-400 words. Use specific, believable numbers. No placeholders.",
-      suggestion_doc: "You are following up on a specific strategic recommendation for this client. Your job is to expand this into a COMPLETE CLIENT-READY DOCUMENT that accompanies the script message. The document should: (1) OPENING — use the exact script as the opening message/cover note in a styled box, formatted word-for-word as it should be sent. (2) THE CONTEXT — 2 paragraphs explaining exactly WHY this approach works for this specific client right now, referencing their situation, urgency, and what you found. (3) THE EVIDENCE — specific data, case study, or proven result that supports this suggestion (use brain learnings if available). (4) WHAT HAPPENS NEXT — clear 3-step process showing what we do if they say yes, with timeline. (5) THE ASK — one sentence, low friction next step. Must feel like a strategic communication, not a sales pitch. 400-500 words total. No placeholders. The script box must appear exactly as provided — do not paraphrase it.",
+      suggestion_doc: "You are a senior SEO consultant producing a client-facing strategic document. This document backs up a specific outreach message with substance, credibility, and a clear path forward. Structure: (1) THE MESSAGE — reproduce the exact script word-for-word in a formatted box under the heading 'Recommended Message'. Do not change a single word. (2) WHY NOW — 2 focused paragraphs: first, what you specifically found about this client's situation that makes this the right move; second, why timing matters and what they risk by waiting. Reference their actual website, industry, and any audit findings. (3) THE PLAN — a numbered 3-step process showing exactly what happens if they say yes. Each step: one sentence of what we do, one sentence of what they get, timeline in days. (4) EVIDENCE — one specific case example from a similar business: situation, what was done, result in numbers. Make it realistic and industry-relevant. (5) NEXT STEP — one short paragraph, one clear low-friction ask. No pressure, just logic. Total: 450-600 words. No placeholders. Write as a senior consultant who has done this many times — authoritative, specific, and human.",
       objection_response: "Write a PROFESSIONAL OBJECTION RESPONSE. Use the conversion_blocker and hidden_concern from the conversation analysis to understand exactly what the objection is. ACKNOWLEDGE: genuinely validate their concern in one sentence. REFRAME: show a different way to see it, using specific data or logic. EVIDENCE: cite a specific result (from brain learnings or a realistic industry example). RISK REMOVAL: offer something that makes the first step feel safe (free audit, 30-day review, month-by-month contract). CLOSE: one clear, easy ask. 130-160 words. Address their ACTUAL objection, not a generic one.",
     };
     const sysPrompt = "You are " + bName + ", a senior SEO consultant who has been doing this for years. You write client documents that win business — proposals, emails, and strategic documents that feel personal, authoritative, and impossible to ignore. Write as a real human expert would: with conviction, specific knowledge, and genuine insight into the client's situation. Never use phrases like 'leverage', 'cutting-edge', 'state-of-the-art', 'innovative solutions', 'we believe', 'we think', 'it is important to'. Never mention AI, automation, or technology tools. Write entirely in your own voice — confident, warm, specific, and direct. Every sentence must earn its place. No padding, no corporate speak. Use active voice throughout. Do not leave anything for the reader to fill in.";
@@ -539,25 +539,29 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       // Build Word-compatible HTML with proper mso styles
       const escH = (s: string) => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
       const renderBody = (body: string): string => {
-        const lines = String(body||"").split("\n");
-        let out = ""; let inList = false;
-        for (const raw of lines) {
+        const rawLines = String(body||"").split("\n");
+        let out = ""; let listType: string|null = null;
+        const closeList = () => { if (listType) { out += listType==="ol" ? "</ol>" : "</ul>"; listType = null; } };
+        for (const raw of rawLines) {
           const t = raw.trim();
-          if (!t) { if (inList) { out += "</ul>"; inList = false; } out += "<p style='margin:0;line-height:1.6;font-size:11pt'>&nbsp;</p>"; continue; }
-          if (t.startsWith("- ") || t.startsWith("• ")) {
-            if (!inList) { out += "<ul style='margin:8pt 0 8pt 20pt;padding:0'>"; inList = true; }
-            out += `<li style='font-size:11pt;line-height:1.7;margin-bottom:4pt;color:#2a2a3e'>${escH(t.slice(2))}</li>`;
-          } else if (t.match(/^\d+\.\s/)) {
-            if (!inList) { out += "<ol style='margin:8pt 0 8pt 20pt;padding:0'>"; inList = true; }
-            out += `<li style='font-size:11pt;line-height:1.7;margin-bottom:4pt;color:#2a2a3e'>${escH(t.replace(/^\d+\.\s/,""))}</li>`;
+          if (!t) { closeList(); out += "<p style='margin:0;font-size:6pt'>&nbsp;</p>"; continue; }
+          if (t.startsWith("- ") || t.startsWith("• ") || t.startsWith("* ")) {
+            if (listType !== "ul") { closeList(); out += "<ul style='margin:6pt 0 6pt 18pt;padding:0'>"; listType = "ul"; }
+            out += `<li style='font-size:11pt;line-height:1.65;margin-bottom:3pt;color:#2a2a3e'>${escH(t.replace(/^[-•*]\s/,"")).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</li>`;
+          } else if (/^\d+\.\s/.test(t)) {
+            if (listType !== "ol") { closeList(); out += "<ol style='margin:6pt 0 6pt 18pt;padding:0'>"; listType = "ol"; }
+            out += `<li style='font-size:11pt;line-height:1.65;margin-bottom:3pt;color:#2a2a3e'>${escH(t.replace(/^\d+\.\s/,"")).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</li>`;
+          } else if (t.startsWith("## ") || t.startsWith("### ")) {
+            closeList();
+            const ht = t.replace(/^#+\s*/,"");
+            out += `<p style='margin:10pt 0 4pt 0;font-size:10pt;font-weight:bold;color:#19345E;text-transform:uppercase;letter-spacing:0.5pt'>${escH(ht)}</p>`;
           } else {
-            if (inList) { out += inList ? "</ul>" : "</ol>"; inList = false; }
-            // Bold: **text**
-            const formatted = escH(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-            out += `<p style='margin:0 0 8pt 0;font-size:11pt;line-height:1.75;color:#2a2a3e'>${formatted}</p>`;
+            closeList();
+            const fmt = escH(t).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/\*(.+?)\*/g,"<em>$1</em>");
+            out += `<p style='margin:0 0 7pt 0;font-size:11pt;line-height:1.75;color:#2a2a3e'>${fmt}</p>`;
           }
         }
-        if (inList) out += "</ul>";
+        closeList();
         return out;
       };
       const secTypeStyles: Record<string,string> = {

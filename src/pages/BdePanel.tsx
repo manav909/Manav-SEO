@@ -1720,7 +1720,18 @@ export default function BdePanel() {
                               <div style={{background:'rgba(99,102,241,.06)',border:'0.5px solid rgba(99,102,241,.2)',borderRadius:8,padding:'8px 12px'}}>
                                 <div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:3}}>SCRIPT</div>
                                 <div style={{fontSize:12,color:'#d0d0e8',fontStyle:'italic',lineHeight:1.6}}>{s.script}</div>
-                                <button style={{...S.btn('#a78bfa'),fontSize:10,marginTop:6,padding:'3px 10px'}} onClick={()=>copyText(s.script,`sugg_${i}`)}>{copied===`sugg_${i}`?'✓ Copied!':'Copy Script'}</button>
+                                <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap' as const}}>
+                                  <button style={{...S.btn('#a78bfa'),fontSize:10,padding:'3px 10px'}} onClick={()=>copyText(s.script,`sugg_${i}`)}>{copied===`sugg_${i}`?'✓ Copied!':'Copy Script'}</button>
+                                  <button style={{...S.btn('#10b981'),fontSize:10,padding:'3px 10px'}} onClick={()=>{
+                                    const allCtx=suggestions.map((sg:any,si2:number)=>`Suggestion ${si2+1} [${sg.type}]: ${sg.action}`).join('\n');
+                                    setPendingSuggDoc({
+                                      docType:'suggestion_doc',
+                                      suggestionContext:'THIS DOCUMENT IS FOR:\nType: '+s.type+'\nAction: '+s.action+'\nScript to include: '+s.script+'\nReason this works: '+s.reason+'\nTiming: '+s.timing+'\n\nFULL STRATEGY (all '+suggestions.length+' suggestions):\n'+allCtx,
+                                      script:s.script, type:s.type, action:s.action, idx:i
+                                    });
+                                    setTab('docs');
+                                  }}>📄 Generate Document</button>
+                                </div>
                               </div>
                             )}
                           </div>
