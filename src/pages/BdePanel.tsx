@@ -592,6 +592,11 @@ export default function BdePanel() {
   const [uploadingTranscript,setUploadingTranscript]=useState(false);
   const [showTranscripts,setShowTranscripts]=useState(false);
   const [transcriptFilter,setTranscriptFilter]=useState('');
+  const [callPaste,setCallPaste]=useState('');
+  const [parsedCallMsgs,setParsedCallMsgs]=useState<any[]>([]);
+  const [callDeepAnalysis,setCallDeepAnalysis]=useState<any>(null);
+  const [callDeepLoading,setCallDeepLoading]=useState(false);
+  const [callDeepError,setCallDeepError]=useState('');
   // Audit state
   const [auditUrl,setAuditUrl]=useState('');
   const [auditFor,setAuditFor]=useState('');
@@ -664,7 +669,17 @@ export default function BdePanel() {
   },[parsedMsgs,analysis,auditResult,leadSaved,savedProspect,analysing,auditing,deepAnalysis]);
 
   const handlePulse=(target:string)=>{
-    if (target==='analyse') { analyse(); if (parsedMsgs.length) runDeepAnalysis(); }
+    if (target==='analyse') {
+      analyse();
+      if (parsedMsgs.length) {
+        runDeepAnalysis().then(() => {
+          // Run call analysis AFTER chat — sequential to avoid timeout
+          if (parsedCallMsgs.length) runCallDeepAnalysis();
+        });
+      } else if (parsedCallMsgs.length) {
+        runCallDeepAnalysis();
+      }
+    }
     else if (target==='save') saveLead();
     else if (target==='tools') setTab('tools');
     else if (target==='docs') setTab('docs');
@@ -674,7 +689,7 @@ export default function BdePanel() {
 
   const clearAll=()=>{
     if (!window.confirm('Clear all context?')) return;
-    setRawPaste('');setParsedMsgs([]);setConv('');setAnalysis(null);setDeepAnalysis(null);setParsed([]);setAttachments([]);
+    setRawPaste('');setParsedMsgs([]);setConv('');setAnalysis(null);setDeepAnalysis(null);setParsed([]);setAttachments([]);setCallPaste('');setParsedCallMsgs([]);setCallDeepAnalysis(null);setCallDeepError('');
     setAuditResult(null);setAuditUrl('');setLeadNameInput('');setLeadSaved(false);setSavedProspect(null);setResponses(null);setNextMsg('');
     try { localStorage.removeItem(CTX_KEY); } catch {}
     setShowLeadPicker(false);
@@ -700,7 +715,7 @@ export default function BdePanel() {
     setAnalysing(true);setAnalysis(null);setParsed([]);setResponses(null);
     const attCtx=attachments.filter((a:any)=>a.status==='done').map((a:any)=>'[ATTACHMENT: '+a.name+']\n'+a.description).join('\n\n');
     const savedAttCtx=savedAttachments.length?'--- SAVED FILES ---\n'+savedAttachments.map((a:any)=>'[FILE: '+a.fileName+']\n'+(a.summary||a.description||'').slice(0,300)).join('\n\n'):'';
-    const fullText=convText+(attCtx?'\n\n--- ATTACHED FILES ---\n'+attCtx:'')+(savedAttCtx?'\n\n'+savedAttCtx:'')+(transcriptCtx?'\n\n'+transcriptCtx:'');
+    const fullText=convText+(callPasteCtx?'\n\n'+callPasteCtx:'')+(attCtx?'\n\n--- ATTACHED FILES ---\n'+attCtx:'')+(savedAttCtx?'\n\n'+savedAttCtx:'')+(transcriptCtx?'\n\n'+transcriptCtx:'');
     const r=await post('analyse_fiverr_conversation',{text:fullText});
     setAnalysis((r as any).analysis);
     setParsed((r as any).parsed_lines||[]);
@@ -721,6 +736,61 @@ export default function BdePanel() {
     }
     setDeepLoading(false);
   }
+
+  // Parse raw copy-pasted call transcript (Zoom/Meet/Teams)
+  // Handles: "Speaker: text", "[00:01] Speaker: text", "Speaker\ntext", strips images/metadata
+  function parseCallTranscript(raw: string): any[] {
+    const lines = raw.split('\n');
+    const msgs: any[] = [];
+    // Patterns to skip: pure timestamps, image lines, metadata, blank
+    const SKIP_RE = /^(\d{1,2}:\d{2}(:\d{2})?(\s*(am|pm))?|from .+|to .+|everyone|participants|attendees|meeting\s|transcript\s|recording\s|\[.*\]$|https?:\/\/|---+|\s*)$/i;
+    const TS_RE = /^\[?\d{1,2}:\d{2}(:\d{2})?\]?\s*/;  // leading timestamp
+    // Speaker patterns: "Name: text", "Name (time): text", "[time] Name: text"
+    const SPEAKER_COLON = /^([A-Za-z][A-Za-z0-9 ._-]{1,40}):\s*(.+)$/;
+    let cur: any = null;
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].replace(TS_RE, '').trim();
+      if (!line || SKIP_RE.test(line)) continue;
+      // Try speaker: text pattern on this line
+      const m = line.match(SPEAKER_COLON);
+      if (m) {
+        if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
+        const spk = m[1].trim();
+        // "You" or "Me" → speaker=me
+        const isMe = /^(you|me|i)$/i.test(spk);
+        cur = { speaker: isMe ? 'me' : 'client', speakerName: isMe ? 'Me' : spk, text: m[2].trim(), timestamp: '' };
+      } else if (cur) {
+        // Continuation line
+        cur.text = cur.text ? cur.text + '\n' + line : line;
+      } else {
+        // First line before any speaker — treat as client
+        cur = { speaker: 'client', speakerName: 'Client', text: line, timestamp: '' };
+      }
+    }
+    if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
+    return msgs.filter(m => m.text.trim().length > 2);
+  }
+
+  const handleCallPaste = (raw: string) => {
+    setCallPaste(raw);
+    const msgs = parseCallTranscript(raw);
+    setParsedCallMsgs(msgs);
+    setCallDeepAnalysis(null); setCallDeepError('');
+  };
+
+  const runCallDeepAnalysis = async () => {
+    if (!parsedCallMsgs.length) return;
+    setCallDeepLoading(true); setCallDeepAnalysis(null); setCallDeepError('');
+    const r = await post('analyse_conversation_deep', {
+      messages: parsedCallMsgs.map((m: any, i: number) => ({ index: i, speaker: m.speaker, text: m.text }))
+    });
+    if ((r as any).success && Array.isArray((r as any).messages)) {
+      setCallDeepAnalysis(r);
+    } else {
+      setCallDeepError((r as any).error || 'Call analysis failed');
+    }
+    setCallDeepLoading(false);
+  };
 
   const handleTranscriptUpload=async(files:FileList|null)=>{
     if(!files||!files.length)return;
@@ -750,6 +820,15 @@ export default function BdePanel() {
     const t=(rawPaste||convText).toLowerCase();
     return t.includes('call')&&(t.includes('minute')||t.includes('discuss')||t.includes('spoke')||t.includes('transcript')||t.includes('recording')||t.includes('zoom')||t.includes('meet'));
   },[rawPaste,convText]);
+
+  // Include pasted call transcript in analysis context
+  const callPasteCtx = React.useMemo(() => {
+    if (!parsedCallMsgs.length) return '';
+    const callSummary = callDeepAnalysis
+      ? 'CALL ANALYSIS: ' + (callDeepAnalysis.topMiss || '') + ' | Next: ' + (callDeepAnalysis.nextAction || '') + ' | Probability: ' + callDeepAnalysis.overallConversion + '%'
+      : 'CALL TRANSCRIPT (' + parsedCallMsgs.length + ' exchanges):\n' + parsedCallMsgs.map((m: any) => (m.speaker === 'me' ? 'Me' : m.speakerName) + ': ' + m.text.slice(0, 200)).join('\n');
+    return '--- CALL CONTEXT ---\n' + callSummary;
+  }, [parsedCallMsgs, callDeepAnalysis]);
 
   const transcriptCtx=React.useMemo(()=>{
     if(!transcripts.length)return '';
@@ -1019,7 +1098,7 @@ export default function BdePanel() {
               {parsedMsgs.length>0&&(
                 <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center',flexWrap:'wrap' as const}}>
                   <span style={{fontSize:11,color:'#10b981'}}>✓ {parsedMsgs.length} messages parsed ({parsedMsgs.filter((m:any)=>m.speaker==='client').length} client, {parsedMsgs.filter((m:any)=>m.speaker==='me').length} me)</span>
-                  <button style={S.btn()} onClick={()=>{analyse();runDeepAnalysis();}} disabled={analysing||deepLoading}>{analysing||deepLoading?'Analysing...':'🧠 Analyse All'}</button>
+                  <button style={S.btn()} onClick={async()=>{analyse();await runDeepAnalysis();if(parsedCallMsgs.length)runCallDeepAnalysis();}} disabled={analysing||deepLoading||callDeepLoading}>{analysing||deepLoading||callDeepLoading?'Analysing...':'🧠 Analyse All'}</button>
                   {analysis&&<button style={S.btn('#f59e0b')} onClick={genResponses} disabled={genResp||!analysis}>{genResp?'⏳ Generating...':'✍️ Generate Responses'}</button>}
                   <button style={S.btn('hsl(var(--muted-foreground))')} onClick={clearAll}>✕ Clear</button>
                 </div>
@@ -1098,66 +1177,132 @@ export default function BdePanel() {
                 </div>
               )}
             </div>
-            {/* Call Transcripts */}
-            <div style={{...S.card,marginBottom:10,borderColor:transcripts.length>0?'rgba(16,185,129,.25)':'rgba(99,102,241,.15)'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:showTranscripts&&transcripts.length>0?10:0}}>
-                <div style={{display:'flex',gap:8,alignItems:'center',cursor:'pointer',flex:1}} onClick={()=>setShowTranscripts((p:boolean)=>!p)}>
+            {/* Call Transcript */}
+            <div style={{...S.card,marginBottom:10,borderColor:parsedCallMsgs.length>0?'rgba(16,185,129,.3)':transcripts.length>0?'rgba(16,185,129,.2)':'rgba(99,102,241,.15)'}}>
+              {/* Header row */}
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}} onClick={()=>setShowTranscripts((p:boolean)=>!p)}>
+                <div style={{display:'flex',gap:7,alignItems:'center'}}>
                   <span>📞</span>
-                  <div>
-                    <span style={{fontSize:12,fontWeight:700}}>Call Transcripts</span>
-                    {transcripts.length>0?<span style={{fontSize:10,color:'#10b981',marginLeft:6}}>✓ {transcripts.length} loaded into context</span>:<span style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginLeft:6}}>Upload to add context</span>}
-                  </div>
-                  <span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{showTranscripts?'▲':'▼'}</span>
+                  <span style={{fontSize:12,fontWeight:700}}>Call Transcript</span>
+                  {parsedCallMsgs.length>0&&<span style={{fontSize:10,color:'#10b981'}}>✓ {parsedCallMsgs.length} exchanges parsed</span>}
+                  {callDeepAnalysis&&<span style={{fontSize:10,color:'#a78bfa'}}>✓ Analysed · {callDeepAnalysis.overallConversion}%</span>}
+                  {!parsedCallMsgs.length&&transcripts.length>0&&<span style={{fontSize:10,color:'#10b981'}}>{transcripts.length} saved</span>}
+                  {!parsedCallMsgs.length&&!transcripts.length&&<span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>Paste or upload</span>}
                 </div>
-                <label style={{...S.btn('#10b981'),fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
-                  <input type="file" multiple accept=".txt,.md,.pdf,.vtt,.srt,.doc,.docx" style={{display:'none'}} onChange={e=>handleTranscriptUpload(e.target.files)} disabled={uploadingTranscript}/>
-                  {uploadingTranscript?'⏳ Processing...':'+ Add Transcript'}
-                </label>
+                <span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>{showTranscripts?'▲':'▼'}</span>
               </div>
-              {callDetected&&transcripts.length===0&&(
-                <div style={{fontSize:11,color:'#10b981',padding:'5px 10px',background:'rgba(16,185,129,.06)',borderRadius:7,border:'0.5px dashed rgba(16,185,129,.3)',marginTop:6,display:'flex',gap:6,alignItems:'center'}}>
-                  <span>📞</span><span>Call mentioned — upload the transcript for full context</span>
-                  <label style={{marginLeft:'auto',fontSize:10,background:'rgba(16,185,129,.15)',border:'0.5px solid rgba(16,185,129,.3)',borderRadius:5,color:'#10b981',padding:'2px 8px',cursor:'pointer',flexShrink:0}}>
-                    <input type="file" accept=".txt,.pdf,.vtt,.srt" style={{display:'none'}} onChange={e=>handleTranscriptUpload(e.target.files)}/>Upload
-                  </label>
-                </div>
-              )}
+
               {showTranscripts&&(
-                <div style={{marginTop:8}}>
-                  {transcripts.length===0&&!uploadingTranscript&&(
-                    <label style={{display:'block',border:'1px dashed rgba(16,185,129,.2)',borderRadius:9,padding:'16px',textAlign:'center' as const,cursor:'pointer',color:'hsl(var(--muted-foreground))',fontSize:11}}>
-                      <input type="file" multiple accept=".txt,.md,.pdf,.vtt,.srt" style={{display:'none'}} onChange={e=>handleTranscriptUpload(e.target.files)}/>
-                      📞 Upload TXT, PDF, VTT (Zoom), SRT — up to 10 transcripts at once, saved permanently
-                    </label>
-                  )}
-                  {transcripts.length>0&&(
-                    <div>
-                      <input style={{...S.inp,width:'100%',marginBottom:8,fontSize:11,padding:'5px 10px'}} placeholder="Filter by client name..." value={transcriptFilter} onChange={(e:any)=>setTranscriptFilter(e.target.value)}/>
-                      <div style={{display:'flex',flexDirection:'column' as const,gap:5,maxHeight:320,overflowY:'auto' as const}}>
-                        {transcripts.filter((t:any)=>!transcriptFilter||String(t.clientName||t.fileName).toLowerCase().includes(transcriptFilter.toLowerCase())).map((t:any,idx:number)=>(
-                          <div key={t.id||idx} style={{padding:'8px 10px',background:'rgba(0,0,0,.12)',borderRadius:8,border:`0.5px solid ${t.sentiment==='positive'?'rgba(16,185,129,.25)':t.sentiment==='negative'?'rgba(239,68,68,.25)':'rgba(99,102,241,.2)'}`}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
-                              <div>
-                                <div style={{fontSize:11,fontWeight:700}}>{t.fileName}</div>
-                                <div style={{display:'flex',gap:6,marginTop:2,flexWrap:'wrap' as const}}>
-                                  {t.clientName&&<span style={{fontSize:9,color:'#a78bfa'}}>👤 {t.clientName}</span>}
-                                  {t.callDate&&<span style={{fontSize:9,color:'hsl(var(--muted-foreground))'}}>📅 {t.callDate}</span>}
-                                  {t.orderProbability!==undefined&&<span style={{fontSize:9,fontWeight:700,color:t.orderProbability>=70?'#10b981':t.orderProbability>=50?'#f59e0b':'#ef4444'}}>{t.orderProbability}% prob</span>}
-                                  <span style={{fontSize:9,color:t.sentiment==='positive'?'#10b981':t.sentiment==='negative'?'#ef4444':'hsl(var(--muted-foreground))'}}>{t.sentiment==='positive'?'😊':t.sentiment==='negative'?'😤':'😐'} {t.sentiment}</span>
-                                </div>
-                              </div>
-                              <button style={{fontSize:9,background:'none',border:'none',color:'#ef4444',cursor:'pointer',padding:'0 4px',flexShrink:0}} onClick={()=>{if(window.confirm('Remove '+t.fileName+'?')){setTranscripts((prev:any[])=>prev.filter((_:any,j:number)=>j!==idx));post('delete_call_transcript',{id:t.id});}}}>✕</button>
+                <div style={{marginTop:10}}>
+                  {/* Paste box — primary method */}
+                  <div style={{marginBottom:8}}>
+                    <div style={{fontSize:10,fontWeight:700,color:'hsl(var(--muted-foreground))',letterSpacing:1,marginBottom:4}}>PASTE CALL TRANSCRIPT</div>
+                    <textarea
+                      style={{width:'100%',background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:8,color:'hsl(var(--foreground))',padding:'9px 12px',fontSize:12,lineHeight:1.55,resize:'vertical' as const,outline:'none',minHeight:80,maxHeight:200,boxSizing:'border-box' as const,fontFamily:'monospace'}}
+                      value={callPaste}
+                      onChange={e=>handleCallPaste(e.target.value)}
+                      placeholder={'Paste Zoom/Meet/Teams transcript here — profile images and formatting stripped automatically
+
+Speaker Name: message text
+You: message text
+[00:01:23] Name: text'}
+                    />
+                    {callPaste&&!parsedCallMsgs.length&&<div style={{fontSize:10,color:'#f59e0b',marginTop:2}}>Could not detect speaker format — try "Name: message" style</div>}
+                  </div>
+
+                  {/* Parsed preview — compact, max 5 lines shown */}
+                  {parsedCallMsgs.length>0&&(
+                    <div style={{marginBottom:8}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                        <span style={{fontSize:10,fontWeight:700,color:'hsl(var(--muted-foreground))',letterSpacing:1}}>{parsedCallMsgs.length} EXCHANGES PARSED</span>
+                        <div style={{display:'flex',gap:5}}>
+                          {!callDeepAnalysis&&!callDeepLoading&&<button style={{...S.btn('#10b981'),padding:'3px 10px',fontSize:10}} onClick={runCallDeepAnalysis}>🔬 Analyse Call</button>}
+                          {callDeepLoading&&<span style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>⏳ Analysing...</span>}
+                          <button style={{fontSize:10,background:'none',border:'none',color:'hsl(var(--muted-foreground))',cursor:'pointer'}} onClick={()=>{setCallPaste('');setParsedCallMsgs([]);setCallDeepAnalysis(null);}}>✕ Clear</button>
+                        </div>
+                      </div>
+                      <div style={{maxHeight:130,overflowY:'auto' as const,background:'rgba(0,0,0,.15)',borderRadius:8,padding:'6px 8px',display:'flex',flexDirection:'column' as const,gap:4}}>
+                        {parsedCallMsgs.slice(0,6).map((m:any,i:number)=>{
+                          const isMe=m.speaker==='me';
+                          return(
+                            <div key={i} style={{display:'flex',gap:6,alignItems:'flex-start'}}>
+                              <span style={{fontSize:9,fontWeight:700,color:isMe?'#10b981':'#a78bfa',flexShrink:0,minWidth:18,paddingTop:1}}>{isMe?'ME':'C'}</span>
+                              <span style={{fontSize:11,color:'#d0d0e8',lineHeight:1.45,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const,flex:1}}>{m.text.slice(0,120)}{m.text.length>120?'…':''}</span>
                             </div>
-                            {t.summary&&<div style={{background:'rgba(0,0,0,.15)',borderRadius:6,padding:'6px 8px',marginBottom:4}}><div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:2}}>CALL SUMMARY</div><div style={{fontSize:11,color:'#d0d0e8',lineHeight:1.5}}>{t.summary}</div></div>}
-                            {t.keyPoints?.length>0&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))'}}>📌 {t.keyPoints.slice(0,3).join(' · ')}</div>}
-                            {t.commitments?.length>0&&<div style={{fontSize:10,color:'#10b981',marginTop:2}}>✅ {t.commitments.slice(0,2).join(', ')}</div>}
-                            {t.clientConcerns?.length>0&&<div style={{fontSize:10,color:'#f59e0b',marginTop:2}}>⚠ {t.clientConcerns.slice(0,2).join(', ')}</div>}
-                            {t.nextSteps?.length>0&&<div style={{fontSize:10,color:'#6366f1',marginTop:2}}>→ {t.nextSteps.slice(0,2).join(', ')}</div>}
-                          </div>
-                        ))}
+                          );
+                        })}
+                        {parsedCallMsgs.length>6&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))',textAlign:'center' as const}}>+{parsedCallMsgs.length-6} more exchanges</div>}
                       </div>
                     </div>
                   )}
+
+                  {/* Call deep analysis — compact summary box */}
+                  {callDeepError&&<div style={{fontSize:11,color:'#ef4444',marginBottom:6}}>⚠ {callDeepError}</div>}
+                  {callDeepAnalysis&&(
+                    <div style={{background:'rgba(16,185,129,.05)',borderRadius:8,border:'0.5px solid rgba(16,185,129,.2)',padding:'8px 10px',marginBottom:8}}>
+                      <div style={{display:'flex',gap:10,marginBottom:6}}>
+                        <div style={{textAlign:'center' as const,flexShrink:0}}>
+                          <div style={{fontSize:18,fontWeight:800,color:callDeepAnalysis.overallConversion>=70?'#10b981':callDeepAnalysis.overallConversion>=50?'#f59e0b':'#ef4444'}}>{callDeepAnalysis.overallConversion}%</div>
+                          <div style={{fontSize:8,color:'hsl(var(--muted-foreground))'}}>CLOSE PROB</div>
+                        </div>
+                        <div style={{flex:1}}>
+                          {callDeepAnalysis.topMiss&&<div style={{fontSize:10,color:'#f59e0b',marginBottom:2}}>⚠ {callDeepAnalysis.topMiss}</div>}
+                          {callDeepAnalysis.topWin&&<div style={{fontSize:10,color:'#10b981',marginBottom:2}}>✓ {callDeepAnalysis.topWin}</div>}
+                        </div>
+                      </div>
+                      {callDeepAnalysis.nextAction&&(
+                        <div style={{display:'flex',gap:6,alignItems:'center',background:'rgba(0,0,0,.1)',borderRadius:6,padding:'5px 8px'}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:8,color:'#10b981',fontWeight:700,marginBottom:1}}>NEXT ACTION</div>
+                            <div style={{fontSize:11,color:'#d0d0e8'}}>{callDeepAnalysis.nextAction}</div>
+                          </div>
+                          <button style={{...S.btn('#10b981'),fontSize:9,padding:'3px 8px',flexShrink:0}} onClick={()=>setNextMsg(callDeepAnalysis.nextAction)}>Use</button>
+                        </div>
+                      )}
+                      {/* Per-turn quick flags */}
+                      {callDeepAnalysis.messages?.filter((m:any)=>m.speaker==='me'&&(m.missed||m.riskFlag)).length>0&&(
+                        <div style={{marginTop:6}}>
+                          <div style={{fontSize:8,color:'hsl(var(--muted-foreground))',fontWeight:700,letterSpacing:1,marginBottom:3}}>FLAGGED MOMENTS</div>
+                          {callDeepAnalysis.messages.filter((m:any)=>m.speaker==='me'&&(m.missed||m.riskFlag)).slice(0,3).map((m:any,i:number)=>(
+                            <div key={i} style={{fontSize:10,color:m.riskFlag?'#ef4444':'#f59e0b',marginBottom:2}}>• {m.riskFlag?'🚨 '+m.riskFlag.replace('_',' '):'⚠'} {m.missed||''}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Upload + saved transcripts (secondary, collapsed) */}
+                  <details style={{marginTop:4}}>
+                    <summary style={{fontSize:10,color:'hsl(var(--muted-foreground))',cursor:'pointer',userSelect:'none' as const}}>
+                      📁 Upload files or view {transcripts.length} saved transcript{transcripts.length!==1?'s':''}
+                    </summary>
+                    <div style={{marginTop:6}}>
+                      <label style={{...S.btn('#10b981'),fontSize:10,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4,marginBottom:6}}>
+                        <input type="file" multiple accept=".txt,.md,.pdf,.vtt,.srt" style={{display:'none'}} onChange={e=>handleTranscriptUpload(e.target.files)} disabled={uploadingTranscript}/>
+                        {uploadingTranscript?'⏳ Processing...':'+ Upload File'}
+                      </label>
+                      {transcripts.length>0&&(
+                        <div style={{display:'flex',flexDirection:'column' as const,gap:4,maxHeight:220,overflowY:'auto' as const}}>
+                          {transcripts.map((t:any,idx:number)=>(
+                            <div key={t.id||idx} style={{padding:'6px 8px',background:'rgba(0,0,0,.12)',borderRadius:7,border:'0.5px solid rgba(99,102,241,.2)'}}>
+                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:t.summary?3:0}}>
+                                <div>
+                                  <span style={{fontSize:11,fontWeight:600}}>{t.fileName}</span>
+                                  {t.clientName&&<span style={{fontSize:9,color:'#a78bfa',marginLeft:6}}>👤 {t.clientName}</span>}
+                                  {t.callDate&&<span style={{fontSize:9,color:'hsl(var(--muted-foreground))',marginLeft:4}}>📅 {t.callDate}</span>}
+                                </div>
+                                <button style={{fontSize:9,background:'none',border:'none',color:'#ef4444',cursor:'pointer'}} onClick={()=>{if(window.confirm('Remove?')){setTranscripts((p:any[])=>p.filter((_:any,j:number)=>j!==idx));post('delete_call_transcript',{id:t.id});}}}>✕</button>
+                              </div>
+                              {t.summary&&<div style={{background:'rgba(0,0,0,.15)',borderRadius:5,padding:'4px 7px'}}><div style={{fontSize:9,color:'#a78bfa',fontWeight:700,marginBottom:1}}>CALL SUMMARY</div><div style={{fontSize:10,color:'#d0d0e8',lineHeight:1.45}}>{t.summary}</div></div>}
+                              {t.keyPoints?.length>0&&<div style={{fontSize:9,color:'hsl(var(--muted-foreground))',marginTop:2}}>📌 {t.keyPoints.slice(0,2).join(' · ')}</div>}
+                              {t.commitments?.length>0&&<div style={{fontSize:9,color:'#10b981',marginTop:1}}>✅ {t.commitments.slice(0,2).join(', ')}</div>}
+                              {t.clientConcerns?.length>0&&<div style={{fontSize:9,color:'#f59e0b',marginTop:1}}>⚠ {t.clientConcerns.slice(0,2).join(', ')}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
                 </div>
               )}
             </div>
