@@ -2332,19 +2332,14 @@ HTML: ${html.slice(0,2000)}`}]})});
     const { email, staffId, name } = body;
     if (!email) return ok(res, { success: false, error: 'Email is required' });
     try {
-      const adminClient = createClient(
-        process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
-        process.env.SUPABASE_SERVICE_KEY || '',
-        { auth: { autoRefreshToken: false, persistSession: false } }
-      );
-      const { data, error } = await adminClient.auth.admin.generateLink({
+      const { data, error } = await (db() as any).auth.admin.generateLink({
         type: 'invite',
         email,
         options: { redirectTo: 'https://seoseason.com', data: { name, staffId } }
       });
       if (error) return ok(res, { success: false, error: error.message });
       const link = data?.properties?.action_link || data?.action_link || '';
-      if (!link) return ok(res, { success: false, error: 'Link not returned by Supabase' });
+      if (!link) return ok(res, { success: false, error: 'Link not returned — ensure SUPABASE_SERVICE_KEY is set (not anon key)' });
       return ok(res, { success: true, link });
     } catch(e: any) { return ok(res, { success: false, error: e.message }); }
   }
@@ -2353,21 +2348,10 @@ HTML: ${html.slice(0,2000)}`}]})});
     const { staffId, email, name, redirectTo = 'https://seoseason.com' } = body;
     if (!email) return ok(res, { success: false, error: 'Email is required to send an invite' });
     try {
-      // Use admin client with service key
-      const adminClient = createClient(
-        process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
-        process.env.SUPABASE_SERVICE_KEY || '',
-        { auth: { autoRefreshToken: false, persistSession: false } }
-      );
-      const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, {
-        redirectTo,
-        data: { name, staffId }
+      const { data, error } = await (db() as any).auth.admin.inviteUserByEmail(email, {
+        redirectTo, data: { name, staffId }
       });
       if (error) return ok(res, { success: false, error: error.message });
-      // Update staff row with auth user id if available
-      if (data?.user?.id && staffId) {
-        await db().from('staff_members').update({ auth_user_id: data.user.id }).eq('id', staffId);
-      }
       return ok(res, { success: true, message: `Invite sent to ${email}` });
     } catch(e: any) { return ok(res, { success: false, error: e.message }); }
   }
