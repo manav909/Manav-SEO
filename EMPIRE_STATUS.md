@@ -1,5 +1,5 @@
 # SEO Season Empire Status
-Updated: 2026-05-18 11:57:46 UTC
+Updated: 2026-05-18 12:07:49 UTC
 Branch: main
 
 ## Build Status
@@ -128,6 +128,7 @@ Branch: main
   - upsert_lead_assignment
 
 ## Recent Commits
+8ad6804 status: 11:57 — 42p 71a 0 tables missing
 cd721d5 fix(intelligence): remove duplicate export const config — was causing SyntaxError in Node.js ESM
 2fa374a fix(vercel): inline ./lib/ functions in seo-agent analysis crawl playground — fixes ERR_MODULE_NOT_FOUND
 ef65bc2 status: 11:47 — 42p 71a 0 tables missing
@@ -135,9 +136,8 @@ c68a719 fix(intelligence): rewrite handler wrapper from scratch — clean 8-line
 92f3fb4 status: 11:37 — 42p 71a 0 tables missing
 3d2bba8 fix(intelligence): remove orphaned try{} syntax error — was blocking TypeScript compilation on Vercel
 2fe53f2 fix(model): claude-sonnet-4-5 → claude-sonnet-4-6 in all API files + PresidentialAdvisor mode fix
-99a072d status: 11:27 — 42p 71a 0 tables missing
 
 ## Watcher Status
 - Running: YES
 - Files watched: ['/Users/manav909/Downloads/empire_comms_setup.py', '/Users/manav909/Downloads/empire_finish.py', '/Users/manav909/Downloads/empire_help.py', '/Users/manav909/Downloads/empire_comms_a.py', '/Users/manav909/Downloads/empire_comms_b.py', '/Users/manav909/Downloads/empire_roles_a.py', '/Users/manav909/Downloads/empire_roles_b.py', '/Users/manav909/Downloads/empire_monitor_demo.py', '/Users/manav909/Downloads/empire_fix_build.py', '/Users/manav909/Downloads/empire_themes_a.py', '/Users/manav909/Downloads/empire_themes_b.py', '/Users/manav909/Downloads/empire_fix_critical.py', '/Users/manav909/Downloads/empire_fix_build_001.py', '/Users/manav909/Downloads/empire_complete_001.py', '/Users/manav909/Downloads/empire_fix_braincommand.py', '/Users/manav909/Downloads/empire_fix_clientdash.py', '/Users/manav909/Downloads/empire_enhance_a.py', '/Users/manav909/Downloads/empire_enhance_b.py', '/Users/manav909/Downloads/empire_ui_system.py', '/Users/manav909/Downloads/empire_fix_build_002.py', '/Users/manav909/Downloads/empire_tour.py', '/Users/manav909/Downloads/empire_ui_global.py', '/Users/manav909/Downloads/empire_jarvis_nav.py', '/Users/manav909/Downloads/empire_legacy_ui.py', '/Users/manav909/Downloads/empire_fix_build_003.py', '/Users/manav909/Downloads/empire_patch_all_pages.py', '/Users/manav909/Downloads/empire_fix_build_004.py', '/Users/manav909/Downloads/empire_fix_build_005.py', '/Users/manav909/Downloads/empire_fix_build_006.py', '/Users/manav909/Downloads/empire_fix_system.py', '/Users/manav909/Downloads/empire_fix_build_007.py', '/Users/manav909/Downloads/empire_fix_ai.py', '/Users/manav909/Downloads/empire_unify.py', '/Users/manav909/Downloads/empire_fix_build_008.py', '/Users/manav909/Downloads/empire_fix_portal.py', '/Users/manav909/Downloads/empire_fix_divs.py', '/Users/manav909/Downloads/empire_fix_empirecommand.py', '/Users/manav909/Downloads/empire_fix_all.py', '/Users/manav909/Downloads/empire_patch_revenueproof.py', '/Users/manav909/Downloads/empire_fix_revenue_proof.py', '/Users/manav909/Downloads/empire_rewrite_broken.py', '/Users/manav909/Downloads/empire_rewrite_empirecommand.py', '/Users/manav909/Downloads/empire_rewrite_pages.py', '/Users/manav909/Downloads/empire_rewrite_all.py', '/Users/manav909/Downloads/empire_rewrite_final.py', '/Users/manav909/Downloads/empire_fix_now.py', '/Users/manav909/Downloads/empire_fix_staffcommand.py', '/Users/manav909/Downloads/empire_fix_css.py', '/Users/manav909/Downloads/empire_fix_pages2.py', '/Users/manav909/Downloads/empire_fix_sysctl.py', '/Users/manav909/Downloads/empire_fix_model.py', '/Users/manav909/Downloads/empire_ui_rebuild.py', '/Users/manav909/Downloads/empire_ui_rebuild2.py', '/Users/manav909/Downloads/empire_fix_tailwind.py', '/Users/manav909/Downloads/empire_fix_imports.py', '/Users/manav909/Downloads/empire_fix_dashboard_import.py', '/Users/manav909/Downloads/empire_fix_playground.py', '/Users/manav909/Downloads/empire_fix_nav.py', '/Users/manav909/Downloads/empire_diagnose.py', '/Users/manav909/Downloads/empire_restore_pages.py', '/Users/manav909/Downloads/empire_fix_endpoints.py', '/Users/manav909/Downloads/empire_fix_mba.py', '/Users/manav909/Downloads/empire_fix_mba2.py', '/Users/manav909/Downloads/empire_fix_mba3.py', '/Users/manav909/Downloads/empire_system_audit.py', '/Users/manav909/Downloads/empire_read_and_fix.py', '/Users/manav909/Downloads/empire_dump_files.py', '/Users/manav909/Downloads/empire_fix_intelligence.py', '/Users/manav909/Downloads/empire_check_intel.py', '/Users/manav909/Downloads/empire_fix_intel_syntax.py', '/Users/manav909/Downloads/empire_rewrite_handler.py', '/Users/manav909/Downloads/empire_fix_lib_imports.py', '/Users/manav909/Downloads/empire_fix_dup_config.py']
-- Last update: 2026-05-18T11:57:46.760920
+- Last update: 2026-05-18T12:07:49.702648
