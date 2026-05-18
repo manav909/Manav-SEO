@@ -258,6 +258,66 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     return ok(res, { success: true, id: data?.id });
   }
 
+
+  // ═══ INLINE BDE ACTIONS (override dynamic-import versions below) ═══
+
+  if (action === "analyse_fiverr_conversation") {
+    const { text = "", staffId, assignmentId } = body;
+    if (!text) return ok(res, { error: "text required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const _resp = await _ac.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 2000,
+        messages: [{
+          role: "user",
+          content: "Analyse this Fiverr conversation. Return ONLY valid JSON with fields: main_need, urgency (high/medium/low), hidden_concern, best_next_message, demo_to_show (array), quick_wins_to_mention (array), fiverr_specific.order_probability (0-100 number), fiverr_specific.conversion_blocker. No markdown.\n\nConversation:\n" + String(text)
+        }]
+      });
+      const _raw = (_resp.content[0] as any).text || "{}";
+      let _analysis: any = {};
+      try { _analysis = JSON.parse(_raw.replace(/```json/g, "").replace(/```/g, "").trim()); }
+      catch { _analysis = { main_need: _raw.slice(0, 200), urgency: "medium", hidden_concern: "N/A", best_next_message: "Happy to help with your SEO!", demo_to_show: [], quick_wins_to_mention: [], fiverr_specific: { order_probability: 50, conversion_blocker: "" } }; }
+      const _lines = String(text).split("\n").filter((l: string) => l.trim()).map((l: string) => ({
+        text: l.replace(/^(client:|me:|you:|buyer:)/i, "").trim(),
+        speaker: /^(client:|buyer:)/i.test(l.trim()) ? "client" : "me",
+      }));
+      return ok(res, { success: true, analysis: _analysis, parsed_lines: _lines });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+  if (action === "instant_audit_showcase") {
+    const { url = "", forLead, assignmentId } = body;
+    if (!url) return ok(res, { error: "url required" });
+    try {
+      const _u = String(url).replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const _iss: string[] = [];
+      let _sc = 50;
+      try {
+        const _fr = await fetch("https://" + _u, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) });
+        const _h = (await _fr.text()).slice(0, 8000);
+        if (!/<title>[^<]{10,}/i.test(_h)) _iss.push("Missing title tag");
+        if (!/meta[^>]+name=.description./i.test(_h)) _iss.push("Missing meta description");
+        if (!/<h1[^>]*>[^<]{5,}/i.test(_h)) _iss.push("No H1 tag found");
+        if (!/application\/ld\+json/.test(_h)) _iss.push("No structured data");
+        if (!/canonical/i.test(_h)) _iss.push("No canonical tag");
+        _sc = Math.max(20, 100 - _iss.length * 15);
+      } catch { _iss.push("Could not fetch site"); _sc = 40; }
+      const _hl = _iss.length > 0 ? ("Found " + _iss.length + " issue" + (_iss.length > 1 ? "s" : "") + " on " + _u) : (_u + " looks technically solid");
+      const _sm = "Hi! Quick audit on " + _u + ":\n\n" + _iss.map((s: string, n: number) => (n + 1) + ". " + s).join("\n") + "\n\n" + _hl + "\n\nWant a full fix plan?";
+      return ok(res, { success: true, url: _u, score: _sc, issues: _iss, headline: _hl, showcase_message: _sm });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+  if (action === "get_pipeline") {
+    try {
+      const { data: _pd } = await db().from("lead_assignments").select("*, prospects(*)").order("updated_at", { ascending: false }).limit(30);
+      return ok(res, { success: true, assignments: _pd || [] });
+    } catch (e: any) { return ok(res, { error: e.message }); }
+  }
+
+  // ═══ END INLINE BDE ACTIONS ═══
+
   if (action === "health_check") {
     try {
       const { error } = await db().from("brain_learnings").select("id").limit(1);
