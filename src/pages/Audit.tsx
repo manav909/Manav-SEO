@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
-import AnimatedBg from '@/components/AnimatedBg';
 import {
   Zap, Brain, ShieldCheck, AlertTriangle, CheckCircle2,
   ChevronRight, RefreshCw, Save, BarChart3, Globe,
@@ -313,7 +312,7 @@ export default function Audit() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <AnimatedBg/>
+      
       <PortalNav
         companyName={client?.company ? `${client.company} — SEO Audit` : 'SEO Audit Tool'}
         projects={projects}
@@ -663,7 +662,7 @@ export default function Audit() {
                 {/* Agent 3: AI Visibility */}
                 {s?.visibility && (
                   <SectionCard title="AI Visibility Tester" agent="Agent 3 — Live Perplexity test, brand mention count, LLM readiness estimate"
-                    ceiling={s.visibility.ceiling} icon={Sparkles} color="var(--accent)" data={s.visibility.data}>
+                    ceiling={s.visibility.ceiling} icon={Sparkles} color="hsl(var(--primary))" data={s.visibility.data}>
                     <DataRow label="Perplexity AI Mentions"  value={s.visibility.data.perplexity_citations?.value}  confidence={s.visibility.data.perplexity_citations?.confidence}  limitations={s.visibility.data.perplexity_citations?.limitations} />
                     <DataRow label="Google AI Overview"      value={null} confidence={0} limitations={['Requires authenticated Google session — not verifiable in automated analysis']} />
                     <DataRow label="ChatGPT Citations"       value={s.visibility.data.chatgpt_citations?.value}     confidence={s.visibility.data.chatgpt_citations?.confidence}     limitations={s.visibility.data.chatgpt_citations?.limitations} />

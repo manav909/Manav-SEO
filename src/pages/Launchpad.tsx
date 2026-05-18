@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PortalNav from '@/components/PortalNav';
-import AnimatedBg from '@/components/AnimatedBg';
 import {
   ChevronRight, Zap, Shield, TrendingUp,
   CheckCircle, Clock, BarChart3, Globe, Star,
@@ -281,7 +280,7 @@ export default function Launchpad() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <AnimatedBg/>
+      
       <PortalNav
         clientName={client.name}
         companyName={`${client.company} — Strategy Launchpad`}
