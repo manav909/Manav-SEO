@@ -1,6 +1,34 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { saveLearning }                       from "./lib/save";
+
+/* ── Inline saveLearning: routes through task-engine to avoid ./lib/ imports ── */
+async function saveLearning(opts: {
+  source: string; projectId: string | null; content: string;
+  title?: string; cardType?: string; contextSummary?: string;
+  whatWorked?: string[]; whatMissed?: string[];
+}): Promise<{ saved: boolean }> {
+  try {
+    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
+    await fetch(`${base}/api/task-engine`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "save_learning",
+        project_id: opts.projectId,
+        card_type: opts.cardType || "strategy",
+        card_title: (opts.title || opts.content).slice(0, 100),
+        improvement: opts.content,
+        what_worked: opts.whatWorked || [],
+        what_missed: opts.whatMissed || [],
+        tags: [opts.source],
+        source: opts.source,
+        context_summary: opts.contextSummary || "",
+      }),
+    });
+    return { saved: true };
+  } catch (_e) { return { saved: false }; }
+}
+
 
 // Increased to 300s: extraction (4000 tokens) + optional live verify both fit comfortably
 export const config = { maxDuration: 300 };

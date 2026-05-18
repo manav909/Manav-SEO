@@ -1,8 +1,53 @@
 import { extractAndSaveLearning } from './lib/ai-cache';
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db } from "./lib/db";
-import { fetchUrl, cleanHtml, parseJson } from "./lib/fetch";
+
+/* ── Inline db() — avoids ./lib/db import ── */
+import { createClient } from "@supabase/supabase-js";
+let _db: any = null;
+function db(): any {
+  if (_db) return _db;
+  try {
+    _db = createClient(
+      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co",
+      process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder"
+    );
+  } catch (_e) { _db = null; }
+  return _db;
+}
+
+
+/* ── Inline fetch utilities — avoids ./lib/fetch import ── */
+function cleanHtml(html: string, maxChars = 12000): string {
+  return html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "").replace(/<svg[\s\S]*?<\/svg>/gi, "")
+    .replace(/<!--[\s\S]*?-->/g, "").replace(/\s{2,}/g, " ").trim().slice(0, maxChars);
+}
+function parseJson(text: string): any | null {
+  const clean = text.replace(/^```[a-z]*
+?/gm, "").replace(/^```\s*$/gm, "").trim();
+  const f = clean.indexOf("{"); const l = clean.lastIndexOf("}");
+  if (f < 0 || l < 0) return null;
+  try { return JSON.parse(clean.slice(f, l + 1)); } catch (_e) {}
+  try { return JSON.parse(clean.slice(f) + '"}]}'); } catch (_e) {}
+  return null;
+}
+async function fetchUrl(url: string): Promise<{ html: string; status: number; strategy: string; chars: number; allFailed?: boolean; error?: string }> {
+  const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36";
+  try {
+    const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 12000);
+    const r = await fetch(url.startsWith("http") ? url : `https://${url}`, {
+      signal: ctrl.signal, headers: { "User-Agent": ua, "Accept": "text/html,*/*", "Cache-Control": "no-cache" }
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const text = await r.text();
+    const html = cleanHtml(text);
+    return { html, status: r.status, strategy: "direct", chars: html.length };
+  } catch (e: any) {
+    return { html: "", status: 0, strategy: "failed", chars: 0, allFailed: true, error: e?.message || "Fetch failed" };
+  }
+}
+
 
 export const config = { maxDuration: 300 };
 
