@@ -486,10 +486,10 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       audit_summary: "Write a CLIENT-READY SEO AUDIT SUMMARY. Use every audit issue found. For each issue: (1) issue name in plain English, (2) what it means for their customers finding them, (3) what we will do to fix it, (4) expected improvement timeline. Then: QUICK WINS section — 2-3 fixes achievable in the first week. THE BIG PICTURE section — if all issues are fixed, what does ranking on page 1 look like in 90 days for their main keywords. Reference algorithm knowledge to explain why these issues matter right now in terms of current Google/AI search behaviour. 400-500 words. No placeholders.",
       whatsapp_msg: "Write a SHORT WHATSAPP/FIVERR MESSAGE. One paragraph, maximum 100 words. Reference something SPECIFIC about their website or their message (use actual audit finding or conversation insight). Show you have done your homework. End with one clear, easy call to action. Must feel personal, not templated. No placeholders.",
       case_study: "Write a MINI CASE STUDY about a business in the same industry as this prospect. Make it realistic and specific. SITUATION: describe a business with the exact same problems this prospect has (reference their audit issues and conversation). WHAT WE DID: 4 specific actions taken, referencing actual SEO techniques and algorithm knowledge. RESULTS: specific numbers — traffic increase percentage, keyword rankings achieved (specific keywords in their niche), leads per month before and after, timeframe. THE TURNING POINT: the one insight that changed everything. HOW THIS APPLIES TO YOU: direct connection to the prospect's situation. 350-400 words. Use specific, believable numbers. No placeholders.",
-      suggestion_doc: "You are given a specific AI-generated sales suggestion and its script. Your job is to expand this into a COMPLETE CLIENT-READY DOCUMENT that accompanies the script message. The document should: (1) OPENING — use the exact script as the opening message/cover note in a styled box, formatted word-for-word as it should be sent. (2) THE CONTEXT — 2 paragraphs explaining exactly WHY this approach works for this specific client right now, referencing their situation, urgency, and what you found. (3) THE EVIDENCE — specific data, case study, or proven result that supports this suggestion (use brain learnings if available). (4) WHAT HAPPENS NEXT — clear 3-step process showing what we do if they say yes, with timeline. (5) THE ASK — one sentence, low friction next step. Must feel like a strategic communication, not a sales pitch. 400-500 words total. No placeholders. The script box must appear exactly as provided — do not paraphrase it.",
+      suggestion_doc: "You are following up on a specific strategic recommendation for this client. Your job is to expand this into a COMPLETE CLIENT-READY DOCUMENT that accompanies the script message. The document should: (1) OPENING — use the exact script as the opening message/cover note in a styled box, formatted word-for-word as it should be sent. (2) THE CONTEXT — 2 paragraphs explaining exactly WHY this approach works for this specific client right now, referencing their situation, urgency, and what you found. (3) THE EVIDENCE — specific data, case study, or proven result that supports this suggestion (use brain learnings if available). (4) WHAT HAPPENS NEXT — clear 3-step process showing what we do if they say yes, with timeline. (5) THE ASK — one sentence, low friction next step. Must feel like a strategic communication, not a sales pitch. 400-500 words total. No placeholders. The script box must appear exactly as provided — do not paraphrase it.",
       objection_response: "Write a PROFESSIONAL OBJECTION RESPONSE. Use the conversion_blocker and hidden_concern from the conversation analysis to understand exactly what the objection is. ACKNOWLEDGE: genuinely validate their concern in one sentence. REFRAME: show a different way to see it, using specific data or logic. EVIDENCE: cite a specific result (from brain learnings or a realistic industry example). RISK REMOVAL: offer something that makes the first step feel safe (free audit, 30-day review, month-by-month contract). CLOSE: one clear, easy ask. 130-160 words. Address their ACTUAL objection, not a generic one.",
     };
-    const sysPrompt = "You are " + bName + ", a senior SEO strategist writing client documents that win deals. " + bName + " differentiators: (1) AI Brain system that captures and applies learnings from every client campaign, (2) data-verified tactics — nothing is done without testing, (3) real-time transparent dashboard — clients see every action and result, (4) LLM Visibility tracking — clients get cited by ChatGPT, Perplexity and Claude, (5) daily morning intelligence briefs on every client project. Write with authority, specificity and warmth. Never use filler phrases like 'we believe', 'we think', 'it is important to'. Use active voice. Every claim must be specific and credible. Do not leave anything for the BDE to fill in — write everything completely.";
+    const sysPrompt = "You are " + bName + ", a senior SEO consultant who has been doing this for years. You write client documents that win business — proposals, emails, and strategic documents that feel personal, authoritative, and impossible to ignore. Write as a real human expert would: with conviction, specific knowledge, and genuine insight into the client's situation. Never use phrases like 'leverage', 'cutting-edge', 'state-of-the-art', 'innovative solutions', 'we believe', 'we think', 'it is important to'. Never mention AI, automation, or technology tools. Write entirely in your own voice — confident, warm, specific, and direct. Every sentence must earn its place. No padding, no corporate speak. Use active voice throughout. Do not leave anything for the reader to fill in.";
     const userPrompt = "CONTEXT:\n" + ctx.join("\n") + (body.suggestionContext ? "\n\nSUGGESTION CONTEXT:\n" + String(body.suggestionContext).slice(0,600) : "") + "\n\nTASK: " + (DOC_PROMPTS[docType] || DOC_PROMPTS.proposal) + "\n\nReturn a JSON object with this EXACT structure (raw JSON only, no markdown):\n{\"title\":\"document title\",\"subtitle\":\"compelling one-line subtitle\",\"recipientName\":\"client name\",\"preparedFor\":\"company name if known\",\"sections\":[{\"heading\":\"SECTION HEADING\",\"body\":\"full section text — use \\\\n for line breaks, use \\\\n\\\\n for paragraph breaks\",\"type\":\"intro|findings|plan|pricing|proof|cta|body\"}],\"footerNote\":\"personalised note\"}";
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -534,51 +534,90 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         if (!s.heading) return "<div class=\"sec body\">" + wrapped + "</div>";
         return "<div class=\"sec " + (s.type || "body") + "\"><h2>" + s.heading + "</h2>" + wrapped + "</div>";
       }).join("");
-      const html = "<!DOCTYPE html>\n"
-        + "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>\n"
-        + "<head><meta charset='UTF-8'><title>" + doc.title + "</title>\n"
-        + "<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->\n"
-        + "<style>\n"
-        + "@page { size: A4; margin: 2cm 2.5cm; }\n"
-        + "* { margin:0; padding:0; box-sizing:border-box; }\n"
-        + "body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1a2e; background: #fff; line-height: 1.6; }\n"
-        + ".hdr { background: #19345E; color: #fff; padding: 32px 40px 28px; }\n"
-        + ".hdr .logo { font-size: 11pt; font-weight: 800; letter-spacing: 3px; color: rgba(255,255,255,0.9); text-transform: uppercase; margin-bottom: 16px; }\n"
-        + ".hdr .tag { font-size: 9pt; font-weight: 700; color: #E8652A; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px; }\n"
-        + ".hdr h1 { font-size: 22pt; font-weight: 300; color: #fff; line-height: 1.25; margin-bottom: 6px; }\n"
-        + ".hdr .sub { font-size: 11pt; color: rgba(255,255,255,0.65); font-style: italic; }\n"
-        + ".meta { background: #E8652A; padding: 9px 40px; display: flex; justify-content: space-between; }\n"
-        + ".meta span { font-size: 9pt; color: #fff; font-weight: 600; }\n"
-        + ".body { padding: 32px 40px; }\n"
-        + ".sec { margin-bottom: 28px; page-break-inside: avoid; }\n"
-        + ".sec h2 { font-size: 9pt; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: #E8652A; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #E8652A; }\n"
-        + ".sec p { font-size: 11pt; line-height: 1.75; color: #2a2a3e; margin-bottom: 8px; }\n"
-        + ".sec ul { margin: 6px 0 10px 20px; }\n"
-        + ".sec li { font-size: 11pt; line-height: 1.7; color: #2a2a3e; margin-bottom: 4px; }\n"
-        + ".sec.findings { background: #f4f7fc; border-left: 4px solid #19345E; padding: 18px 22px; border-radius: 0 6px 6px 0; }\n"
-        + ".sec.findings h2 { color: #19345E; border-bottom-color: #19345E; }\n"
-        + ".sec.plan { background: #fff9f5; border-left: 4px solid #E8652A; padding: 18px 22px; border-radius: 0 6px 6px 0; }\n"
-        + ".sec.pricing { background: #f0f4fa; padding: 20px 24px; border-radius: 6px; border: 1px solid #c8d8ef; }\n"
-        + ".sec.pricing h2 { color: #19345E; border-bottom-color: #19345E; }\n"
-        + ".sec.cta { background: #19345E; padding: 22px 28px; border-radius: 8px; }\n"
-        + ".sec.cta h2 { color: #E8652A; border-bottom-color: #E8652A; }\n"
-        + ".sec.cta p, .sec.cta li { color: rgba(255,255,255,0.9); }\n"
-        + ".sec.proof { background: #f9fdf6; border-left: 4px solid #27ae60; padding: 18px 22px; border-radius: 0 6px 6px 0; }\n"
-        + ".sec.proof h2 { color: #27ae60; border-bottom-color: #27ae60; }\n"
-        + ".foot { border-top: 1px solid #dde4f0; margin: 0 40px; padding: 16px 0; display: flex; justify-content: space-between; }\n"
-        + ".foot p { font-size: 9pt; color: #888; }\n"
-        + ".foot .brand { color: #19345E; font-weight: 700; }\n"
-        + "@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }\n"
-        + "</style></head><body>\n"
-        + "<div class='hdr'><div class='logo'>SEO Season</div><div class='tag'>" + (typeLabel[docType]||"Document") + "</div>"
-        + "<h1>" + doc.title + "</h1>"
-        + (doc.subtitle ? "<p class='sub'>" + doc.subtitle + "</p>" : "") + "</div>\n"
-        + "<div class='meta'><span>Prepared for: " + clientName + (companyName && companyName !== clientName ? " &mdash; " + companyName : "") + "</span><span>" + today + "</span><span>Confidential</span></div>\n"
-        + "<div class='body'>" + secHtml + "</div>\n"
-        + "<div class='foot'><p><span class='brand'>Manav S</span> &mdash; SEO Season by " + bName + " &mdash; Empire</p>"
-        + (doc.footerNote ? "<p>" + doc.footerNote + "</p>" : "<p>This document is confidential and prepared exclusively for " + clientName + ".</p>")
-        + "</div></body></html>";
-      return ok(res, { success: true, html, docType, title: doc.title, clientName });
+      // Build Word-compatible HTML with proper mso styles
+      const escH = (s: string) => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      const renderBody = (body: string): string => {
+        const lines = String(body||"").split("\n");
+        let out = ""; let inList = false;
+        for (const raw of lines) {
+          const t = raw.trim();
+          if (!t) { if (inList) { out += "</ul>"; inList = false; } out += "<p style='margin:0;line-height:1.6;font-size:11pt'>&nbsp;</p>"; continue; }
+          if (t.startsWith("- ") || t.startsWith("• ")) {
+            if (!inList) { out += "<ul style='margin:8pt 0 8pt 20pt;padding:0'>"; inList = true; }
+            out += `<li style='font-size:11pt;line-height:1.7;margin-bottom:4pt;color:#2a2a3e'>${escH(t.slice(2))}</li>`;
+          } else if (t.match(/^\d+\.\s/)) {
+            if (!inList) { out += "<ol style='margin:8pt 0 8pt 20pt;padding:0'>"; inList = true; }
+            out += `<li style='font-size:11pt;line-height:1.7;margin-bottom:4pt;color:#2a2a3e'>${escH(t.replace(/^\d+\.\s/,""))}</li>`;
+          } else {
+            if (inList) { out += inList ? "</ul>" : "</ol>"; inList = false; }
+            // Bold: **text**
+            const formatted = escH(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            out += `<p style='margin:0 0 8pt 0;font-size:11pt;line-height:1.75;color:#2a2a3e'>${formatted}</p>`;
+          }
+        }
+        if (inList) out += "</ul>";
+        return out;
+      };
+      const secTypeStyles: Record<string,string> = {
+        findings: "background:#f4f7fc;border-left:4pt solid #19345E;padding:14pt 18pt;",
+        plan:     "background:#fff9f5;border-left:4pt solid #E8652A;padding:14pt 18pt;",
+        pricing:  "background:#eef3fb;border:1pt solid #c8d8ef;padding:14pt 18pt;",
+        proof:    "background:#f9fdf6;border-left:4pt solid #27ae60;padding:14pt 18pt;",
+        cta:      "background:#19345E;padding:16pt 20pt;",
+        intro:    "", body: "", default: ""
+      };
+      const secHtml2 = (doc.sections || []).map((s: any) => {
+        const st = secTypeStyles[s.type] || "";
+        const isCta = s.type === "cta";
+        const textCol = isCta ? "color:#fff;" : "color:#2a2a3e;";
+        const hCol = isCta ? "#E8652A" : (s.type==="findings"||s.type==="pricing" ? "#19345E" : "#E8652A");
+        let inner = "";
+        if (s.heading) {
+          inner += `<p style='margin:0 0 8pt 0;font-size:9pt;font-weight:bold;letter-spacing:1.5pt;text-transform:uppercase;color:${hCol};border-bottom:1.5pt solid ${hCol};padding-bottom:5pt'>${escH(s.heading)}</p>`;
+        }
+        inner += `<div style='${textCol}'>${renderBody(s.body)}</div>`;
+        return `<div style='margin-bottom:24pt;page-break-inside:avoid;${st}'>${inner}</div>`;
+      }).join("");
+      const html = `<!DOCTYPE html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset='UTF-8'><title>${escH(doc.title)}</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>90</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+<style>
+@page { size: A4; margin: 2.5cm 2.8cm; mso-header-margin: 1cm; mso-footer-margin: 1cm; }
+body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; font-size: 11pt; color: #1a1a2e; background: #fff; margin: 0; padding: 0; }
+table { border-collapse: collapse; width: 100%; }
+p { margin: 0 0 8pt 0; }
+h1,h2,h3 { margin: 0; padding: 0; }
+ul,ol { margin: 6pt 0 10pt 20pt; }
+li { margin-bottom: 4pt; }
+@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+<table width='100%' cellpadding='0' cellspacing='0' style='margin-bottom:0'>
+  <tr><td style='background:#19345E;padding:28pt 36pt 24pt;'>
+    <p style='font-size:9pt;font-weight:bold;letter-spacing:3pt;color:rgba(255,255,255,0.85);text-transform:uppercase;margin:0 0 10pt 0'>Manav S &mdash; SEO Season</p>
+    <p style='font-size:9pt;font-weight:bold;letter-spacing:1.5pt;color:#E8652A;text-transform:uppercase;margin:0 0 8pt 0'>${escH(typeLabel[docType]||"Strategic Document")}</p>
+    <h1 style='font-size:24pt;font-weight:300;color:#fff;line-height:1.2;margin:0 0 6pt 0'>${escH(doc.title)}</h1>
+    ${doc.subtitle ? `<p style='font-size:11pt;color:rgba(255,255,255,0.65);font-style:italic;margin:0'>${escH(doc.subtitle)}</p>` : ""}
+  </td></tr>
+  <tr><td style='background:#E8652A;padding:7pt 36pt'>
+    <table width='100%' cellpadding='0' cellspacing='0'><tr>
+      <td style='font-size:9pt;color:#fff;font-weight:600'>Prepared for: ${escH(clientName)}${companyName && companyName !== clientName ? ` &mdash; ${escH(companyName)}` : ""}</td>
+      <td align='center' style='font-size:9pt;color:#fff;font-weight:600'>${today}</td>
+      <td align='right' style='font-size:9pt;color:#fff;font-weight:600'>Confidential</td>
+    </tr></table>
+  </td></tr>
+</table>
+<div style='padding:28pt 36pt'>${secHtml2}</div>
+<table width='100%' cellpadding='0' cellspacing='0' style='margin:0 36pt'>
+  <tr><td style='border-top:1pt solid #dde4f0;padding:12pt 0'>
+    <table width='100%' cellpadding='0' cellspacing='0'><tr>
+      <td style='font-size:9pt;color:#888'><strong style='color:#19345E'>Manav S</strong> &mdash; SEO Season</td>
+      <td align='right' style='font-size:9pt;color:#888'>${doc.footerNote ? escH(doc.footerNote) : `Prepared exclusively for ${escH(clientName)}`}</td>
+    </tr></table>
+  </td></tr>
+</table>
+</body></html>`;
+            return ok(res, { success: true, html, docType, title: doc.title, clientName });
     } catch (e: any) { return ok(res, { error: e.message }); }
   }
   // === END GENERATE CLIENT DOCUMENT ===

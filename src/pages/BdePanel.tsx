@@ -104,7 +104,7 @@ function DocGenerator({analysis,auditResult,prospectName="",prospectUrl="",clien
   return (
     <div>
       <div style={{color:"hsl(var(--muted-foreground))",fontSize:12,marginBottom:14}}>
-        AI generates fully detailed client-ready documents — no placeholders. Uses conversation, audit, algorithm knowledge and proven results.
+        Fully detailed client-ready documents. Uses conversation context, audit findings, and industry knowledge.
         {analysis?.main_need&&<span style={{color:"#10b981",marginLeft:6}}>✓ Conversation loaded</span>}
         {auditResult?.score!==undefined&&<span style={{color:"#10b981",marginLeft:6}}>✓ Audit loaded</span>}
       </div>
