@@ -19,6 +19,57 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
+/* ── Lead email notification via Resend API ── */
+async function sendLeadEmail(opts: {
+  toManav: boolean;
+  toLead?: string;
+  leadName?: string;
+  leadUrl?: string;
+  auditScore?: number;
+  auditIssues?: string[];
+}): Promise<void> {
+  const RESEND_KEY = process.env.RESEND_API_KEY;
+  const MANAV_EMAIL = process.env.MANAV_EMAIL || "manav@seoseason.com";
+  if (!RESEND_KEY) {
+    console.log("[intake] RESEND_API_KEY not set — email not sent. Set it in Vercel env vars.");
+    return;
+  }
+  try {
+    const issuesList = (opts.auditIssues || []).slice(0,5).map(i => `• ${i}`).join("\n");
+    const scoreText = opts.auditScore !== undefined ? `Score: ${opts.auditScore}/100` : "";
+    
+    // Notify Manav
+    if (opts.toManav) {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "SEO Season <noreply@seoseason.com>",
+          to: [MANAV_EMAIL],
+          subject: `🎯 New Lead: ${opts.leadUrl || "Unknown"}`,
+          text: `New lead captured on SEO Season\n\nURL: ${opts.leadUrl}\nName: ${opts.leadName || "Not provided"}\n${scoreText}\n\nIssues Found:\n${issuesList}\n\nCheck your prospects dashboard: https://seoseason.com/staff-command`,
+        }),
+      });
+    }
+    // Send confirmation to lead
+    if (opts.toLead) {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "Manav | SEO Season <manav@seoseason.com>",
+          to: [opts.toLead],
+          subject: `Your Free SEO Audit — ${opts.leadUrl || ""}`,
+          text: `Hi ${opts.leadName || "there"},\n\nThank you for requesting your free SEO audit.\n\n${scoreText}\n\nKey Issues Found:\n${issuesList || "No major issues detected."}\n\nI'll be in touch shortly with your full report and personalised recommendations.\n\nBest,\nManav\nSEO Season\nhttps://seoseason.com`,
+        }),
+      });
+    }
+  } catch (e: any) {
+    console.error("[intake] Email send failed:", e?.message);
+  }
+}
+
+
 export const config = { maxDuration: 300, regions: ["iad1"] };
 
 /* ── Inline Supabase client (avoid ./lib/db Lambda cold-start crash) ── */
