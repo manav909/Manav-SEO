@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import PortalNav from '@/components/PortalNav';
-import { useProjectSync } from '@/hooks/useProjectSync';
+import { useProject } from '@/contexts/ProjectContext';
 
 export default function Playground() {
-  const { project } = useProjectSync();
-  const [tab, setTab] = useState<'strategy'|'pipeline'|'reports'>('strategy');
+  const { selectedProject, selectedProjectId } = useProject();
+  const [tab, setTab] = useState<'strategy' | 'pipeline' | 'reports'>('strategy');
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -13,14 +13,18 @@ export default function Playground() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight">Canvas</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {project ? `Strategy & execution for ${project.name}` : 'Select a project to begin'}
+            {selectedProject
+              ? `Strategy & execution for ${selectedProject.name}`
+              : 'Select a project to begin'}
           </p>
         </div>
         <div className="flex gap-1 border-b border-border mb-6">
           {(['strategy', 'pipeline', 'reports'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${
-                tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+                tab === t
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}>
               {t}
             </button>
@@ -30,8 +34,8 @@ export default function Playground() {
           <div className="rounded-2xl border border-border bg-card p-6">
             <h2 className="font-semibold mb-2">SEO Strategy Canvas</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {project
-                ? `Working on ${project.name} — ${project.goals || 'Building organic visibility'}.`
+              {selectedProject
+                ? `Working on ${selectedProject.name} — ${(selectedProject as any).goals || 'Building organic visibility'}.`
                 : 'Select a project from the navigation to load your strategy canvas.'}
             </p>
           </div>
@@ -41,7 +45,7 @@ export default function Playground() {
             <h2 className="font-semibold mb-2">AI Pipeline</h2>
             <p className="text-sm text-muted-foreground">
               The AI pipeline analyses your project and generates strategic recommendations.
-              {!project && ' Select a project to begin.'}
+              {!selectedProject && ' Select a project to begin.'}
             </p>
           </div>
         )}
