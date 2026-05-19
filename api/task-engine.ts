@@ -341,32 +341,31 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (!url) return ok(res, { error: "url required" });
     try {
       const rawUrl = String(url).replace(/^https?:\/\//, "").replace(/\/$/, "");
-      const variants = [
-        "https://" + rawUrl,
-        rawUrl.startsWith("www.") ? "https://" + rawUrl : "https://www." + rawUrl,
-        "http://" + rawUrl,
-      ];
+
+      // ── Fetch HTML ──────────────────────────────────────────
+      let _html = ""; let _fetched = false;
       const hdrs = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
         "Accept-Language": "en-GB,en;q=0.9",
         "Cache-Control": "no-cache",
       };
 
-      let _html = ""; let _fetched = false;
-
-      // Jina first (bypasses Cloudflare)
+      // Jina reader first
       try {
         const jKey = process.env.JINA_API_KEY || "";
         const jh: any = { "Accept": "text/html", "X-Return-Format": "html", "X-No-Cache": "true" };
         if (jKey) jh["Authorization"] = "Bearer " + jKey;
         const jr = await fetch("https://r.jina.ai/https://" + rawUrl, { headers: jh, signal: AbortSignal.timeout(14000), redirect: "follow" });
-        if (jr.ok) { const t = await jr.text(); if (t.length > 500 && !t.includes("blocked") && !t.includes("Access denied")) { _html = t.slice(0, 12000); _fetched = true; } }
+        if (jr.ok) {
+          const t = await jr.text();
+          if (t.length > 500 && !t.includes("blocked") && !t.includes("Access denied")) { _html = t.slice(0, 12000); _fetched = true; }
+        }
       } catch {}
 
-      // Direct fetch fallback
+      // Direct fetch variants
       if (!_fetched) {
-        for (const v of variants) {
+        for (const v of ["https://"+rawUrl, "https://www."+rawUrl, "http://"+rawUrl]) {
           try {
             const dr = await fetch(v, { headers: hdrs, signal: AbortSignal.timeout(10000), redirect: "follow" });
             if (dr.ok) { const t = await dr.text(); if (t.length > 200) { _html = t.slice(0, 12000); _fetched = true; break; } }
@@ -376,89 +375,169 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
       if (!_fetched || !_html) {
         return ok(res, { success: true, url: rawUrl, reachable: false, score: 20, unreachable: true,
-          categories: [], issues: [{ issue: "Site could not be reached", severity: "critical", category: "Accessibility", fix: "Verify the URL is correct and the site is publicly accessible." }],
-          quickWins: ["Verify site is live and accessible"], algorithmHighlights: [], showcase_message: "" });
+          categories: [{ name: "Accessibility", score: 0, issues: [{ issue: "Site could not be reached after multiple attempts", severity: "critical", fix: "Verify the URL is live and publicly accessible.", algorithmNote: null }] }],
+          issues: [{ issue: "Site unreachable", severity: "critical", category: "Accessibility", fix: "Verify site is live.", algorithmNote: null }],
+          quickWins: ["Verify site URL is correct", "Check site is publicly accessible", "Remove Cloudflare bot protection for crawlers"],
+          algorithmHighlights: [], showcase_message: "" });
       }
 
-      // Fetch DB context
+      // ── DB context ─────────────────────────────────────────
       const [algoR, brainR] = await Promise.allSettled([
-        db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(4),
-        db().from("brain_learnings").select("card_title,improvement").order("applied_count", { ascending: false }).limit(3),
+        db().from("algorithm_knowledge").select("topic,summary").order("freshness_score", { ascending: false }).limit(3),
+        db().from("brain_learnings").select("card_title,improvement").order("applied_count", { ascending: false }).limit(2),
       ]);
       const algoData: any[] = algoR.status === "fulfilled" ? (algoR.value.data || []) : [];
       const brainData: any[] = brainR.status === "fulfilled" ? (brainR.value.data || []) : [];
 
+      const ctxParts: string[] = [];
+      if (forLead) ctxParts.push("Client: " + forLead);
       const ca: any = conversationAnalysis || {};
-      const ctx: string[] = [];
-      if (forLead)  ctx.push("Client: " + forLead);
-      if (ca.main_need) ctx.push("Need: " + ca.main_need);
-      if (ca.urgency)   ctx.push("Urgency: " + ca.urgency);
-      if (algoData.length) ctx.push("Algorithm updates: " + algoData.map((a: any) => a.topic + " — " + a.summary).join("; "));
-      if (brainData.length) ctx.push("Proven results: " + brainData.map((b: any) => b.card_title + ": " + b.improvement).join("; "));
+      if (ca.main_need) ctxParts.push("Need: " + ca.main_need);
+      if (algoData.length) ctxParts.push("Recent algo: " + algoData.map((a:any) => a.topic).join(", "));
+      if (brainData.length) ctxParts.push("Results: " + brainData.map((b:any) => b.improvement).join("; "));
 
+      // ── AI Audit ───────────────────────────────────────────
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-      // IMPORTANT: compact JSON schema — no long prose fields to prevent truncation
-      const prompt = [
-        "You are a senior SEO auditor. Analyse this website and return ONLY raw JSON.",
-        "CRITICAL: Return compact JSON only. No markdown, no code fences, no commentary.",
-        "Keep ALL string values under 100 characters to prevent truncation.",
-        "",
-        "URL: https://" + rawUrl,
-        ctx.length ? "Context: " + ctx.join(" | ") : "",
-        "HTML excerpt:\n" + _html.slice(0, 10000),
-        "",
-        'JSON schema (all fields required):',
-        '{"score":0-100,"categories":[{"name":"string","score":0-100,"issues":[{"issue":"string max 80 chars","severity":"critical|high|medium|low","fix":"string max 100 chars","algorithmNote":"string or null"}]}],"quickWins":["string","string","string"],"algorithmHighlights":["string","string"],"showcase_message":"string max 200 chars"}',
-        "",
-        "Include exactly 4 categories: Technical SEO, Content Quality, On-Page SEO, User Experience.",
-        "Each category: 2-4 issues. Issues must reference actual content from the HTML.",
-      ].filter(Boolean).join("\n");
+      const prompt = \`Audit this website and return ONLY a raw JSON object. No markdown. No code fences. No explanation.
+
+URL: https://\${rawUrl}
+\${ctxParts.length ? "Context: " + ctxParts.join(" | ") : ""}
+HTML:\n\${_html.slice(0, 10000)}
+
+Return this exact JSON structure:
+{
+  "score": <integer 0-100>,
+  "categories": [
+    {
+      "name": "Technical SEO",
+      "score": <integer 0-100>,
+      "issues": [
+        {"issue": "<specific issue found in HTML>", "severity": "critical|high|medium|low", "fix": "<exact fix>", "algorithmNote": "<or null>"}
+      ]
+    },
+    {"name": "On-Page SEO", "score": <integer>, "issues": [...]},
+    {"name": "Content Quality", "score": <integer>, "issues": [...]},
+    {"name": "User Experience", "score": <integer>, "issues": [...]}
+  ],
+  "quickWins": ["<action 1>", "<action 2>", "<action 3>"],
+  "algorithmHighlights": ["<update 1>", "<update 2>"],
+  "showcase_message": "<one sentence summary>"
+}
+
+Rules: Each category needs 2-4 issues. Reference exact HTML content (actual title text, H1 text, etc). Keep all strings under 120 chars. No line breaks inside strings.\`;
 
       const _r = await _ac.messages.create({
         model: "claude-sonnet-4-6",
-        max_tokens: 4000, // Generous — audit JSON needs space
-        system: "Return ONLY compact valid JSON. No markdown fences. No line breaks inside string values. Every string under 120 characters.",
+        max_tokens: 4000,
+        system: "You are a JSON API. Return ONLY raw JSON. Never use markdown. Never use code fences. Never put line breaks inside string values.",
         messages: [{ role: "user", content: prompt }]
       });
 
       const raw = (_r.content[0] as any).text || "";
 
-      // Check for truncation (common cause of parse failure)
-      const trimmed = raw.trimEnd();
-      const isTruncated = !trimmed.endsWith("}");
+      // ── Parse with recovery ─────────────────────────────────
+      let result: any = safeParseJSON(raw);
 
-      let result: any = null;
-
-      if (!isTruncated) {
-        result = safeParseJSON(raw);
-      }
-
-      // If truncated or parse failed — attempt surgical recovery
-      if (!result) {
+      // Truncation recovery — close open brackets
+      if (!result || !Array.isArray(result.categories) || result.categories.length === 0) {
         try {
-          // Try to close the truncated JSON by finding last complete object
-          const lastBrace = raw.lastIndexOf('"}');
-          if (lastBrace > 100) {
-            const partial = raw.slice(0, lastBrace + 2);
-            // Count open/close to figure out how many brackets to add
-            let opens = 0, closes = 0, arrOpens = 0, arrCloses = 0;
-            let inStr = false, esc = false;
-            for (const c of partial) {
-              if (esc) { esc = false; continue; }
-              if (c === "\\") { esc = true; continue; }
-              if (c === '"') { inStr = !inStr; continue; }
+          const trimmed = raw.trimEnd();
+          if (!trimmed.endsWith("}")) {
+            let opens=0, closes=0, aOpens=0, aCloses=0, inStr=false, esc=false;
+            for (const c of trimmed) {
+              if (esc) { esc=false; continue; }
+              if (c==="\\") { esc=true; continue; }
+              if (c==='"') { inStr=!inStr; continue; }
               if (!inStr) {
-                if (c === "{") opens++;
-                if (c === "}") closes++;
-                if (c === "[") arrOpens++;
-                if (c === "]") arrCloses++;
+                if (c==="{") opens++; if (c==="}") closes++;
+                if (c==="[") aOpens++; if (c==="]") aCloses++;
               }
             }
-            const closing = "]".repeat(Math.max(0, arrOpens - arrCloses)) + "}".repeat(Math.max(0, opens - closes));
-            result = safeParseJSON(partial + closing);
+            const closing = "]".repeat(Math.max(0,aOpens-aCloses)) + "}".repeat(Math.max(0,opens-closes));
+            const recovered = safeParseJSON(trimmed + closing);
+            if (recovered && Array.isArray(recovered.categories) && recovered.categories.length > 0) {
+              result = recovered;
+            }
           }
         } catch {}
+      }
+
+      // ── HTML fallback if parse failed or categories empty ───
+      const hasValidCategories = result && Array.isArray(result.categories) && result.categories.length > 0
+        && result.categories.some((c:any) => Array.isArray(c.issues) && c.issues.length > 0);
+
+      if (!hasValidCategories) {
+        // Build audit from raw HTML checks
+        const hasTitle = /<title>[^<]{5,}/i.test(_html);
+        const hasMeta  = /meta[^>]+name=["']description["'][^>]+content=/i.test(_html) || /meta[^>]+content=[^>]+name=["']description["']/i.test(_html);
+        const hasH1    = /<h1[^>]*>[^<]{3,}/i.test(_html);
+        const hasSchema = /application\/ld\+json/i.test(_html);
+        const hasAlt   = /<img[^>]+alt=["'][^"']{3,}/i.test(_html);
+        const hasViewport = /name=["']viewport["']/i.test(_html);
+        const hasCanonical = /rel=["']canonical["']/i.test(_html);
+        const titleText = (_html.match(/<title>([^<]{1,70})/i) || [])[1] || "";
+        const h1Text    = (_html.match(/<h1[^>]*>([^<]{1,60})/i) || [])[1] || "";
+        const metaDesc  = (_html.match(/meta[^>]+content=["']([^"']{10,})/i) || [])[1] || "";
+
+        const techIssues: any[] = [];
+        if (!hasSchema) techIssues.push({ issue: "No structured data / JSON-LD schema markup found", severity: "high", fix: "Add Organization and WebPage schema to your homepage.", algorithmNote: "Structured data helps Google understand your content type" });
+        if (!hasCanonical) techIssues.push({ issue: "No canonical tag found", severity: "medium", fix: "Add <link rel='canonical' href='...'> to prevent duplicate content issues.", algorithmNote: null });
+        if (!hasViewport) techIssues.push({ issue: "Viewport meta tag missing", severity: "high", fix: "Add <meta name='viewport' content='width=device-width, initial-scale=1'>", algorithmNote: "Required for mobile-first indexing" });
+        if (techIssues.length === 0) techIssues.push({ issue: "Basic technical setup looks correct", severity: "low", fix: "Run a deeper crawl to uncover hidden technical issues.", algorithmNote: null });
+
+        const onPageIssues: any[] = [];
+        if (!hasTitle) onPageIssues.push({ issue: "Title tag missing or too short", severity: "critical", fix: "Add a descriptive 50-60 character title with your primary keyword.", algorithmNote: null });
+        else if (titleText) onPageIssues.push({ issue: "Title: "" + titleText.trim().slice(0,60) + """ + (titleText.length > 60 ? " — too long" : titleText.length < 30 ? " — too short" : " — check keyword placement"), severity: titleText.length > 60 || titleText.length < 30 ? "medium" : "low", fix: "Optimise title to 50-60 chars with primary keyword near the start.", algorithmNote: null });
+        if (!hasMeta) onPageIssues.push({ issue: "Meta description missing", severity: "high", fix: "Add a compelling 150-160 character meta description with a call to action.", algorithmNote: null });
+        else if (metaDesc) onPageIssues.push({ issue: "Meta description present — review for keyword inclusion and CTR optimisation", severity: "low", fix: "Ensure meta description includes primary keyword and has a clear CTA.", algorithmNote: null });
+        if (!hasH1) onPageIssues.push({ issue: "H1 heading not found", severity: "critical", fix: "Add one clear H1 heading containing your primary target keyword.", algorithmNote: null });
+        else if (h1Text) onPageIssues.push({ issue: "H1: "" + h1Text.trim() + """, severity: "low", fix: "Ensure H1 matches the page title topic and includes the target keyword.", algorithmNote: null });
+
+        const contentIssues: any[] = [
+          { issue: "Full content depth requires complete crawl", severity: "medium", fix: "Analyse content length, keyword density, and topical coverage on key pages.", algorithmNote: "Helpful Content Update rewards depth and expertise" },
+          { issue: !hasAlt ? "Image alt tags appear to be missing" : "Image alt tags present — verify all are descriptive", severity: !hasAlt ? "medium" : "low", fix: "Add descriptive alt text to all images including primary keywords where natural.", algorithmNote: null },
+        ];
+
+        const uxIssues: any[] = [
+          { issue: "Page speed not assessed (requires live test)", severity: "medium", fix: "Run Google PageSpeed Insights — aim for 90+ on mobile.", algorithmNote: "Core Web Vitals are a confirmed ranking signal" },
+          { issue: "Internal linking structure not assessed", severity: "low", fix: "Ensure key pages are reachable within 3 clicks from homepage.", algorithmNote: null },
+        ];
+
+        const allMissing = [!hasTitle&&"Add title tag", !hasMeta&&"Add meta description", !hasH1&&"Add H1 heading", !hasSchema&&"Add structured data"].filter(Boolean) as string[];
+        const score = Math.max(25, Math.min(80, 90 - allMissing.length * 12 + (hasSchema?5:0) + (hasCanonical?3:0)));
+
+        result = {
+          score,
+          categories: [
+            { name: "Technical SEO", score: hasSchema && hasCanonical && hasViewport ? 75 : 45, issues: techIssues },
+            { name: "On-Page SEO",   score: hasTitle && hasMeta && hasH1 ? 70 : 40, issues: onPageIssues },
+            { name: "Content Quality", score: 50, issues: contentIssues },
+            { name: "User Experience", score: hasViewport ? 60 : 40, issues: uxIssues },
+          ],
+          quickWins: allMissing.length > 0 ? allMissing.slice(0,3) : ["Improve page load speed", "Add structured data markup", "Review internal linking"],
+          algorithmHighlights: algoData.slice(0,2).map((a:any) => a.topic + ": " + (a.summary||"").slice(0,80)),
+          showcase_message: rawUrl + " — " + (allMissing.length > 0 ? allMissing.length + " critical issues found" : "passing basics, deeper issues found"),
+        };
+      }
+
+      const allIssues: any[] = (result.categories || []).flatMap((c:any) =>
+        (c.issues || []).map((i:any) => ({ ...i, category: c.name })));
+
+      return ok(res, {
+        success: true, url: rawUrl, reachable: true,
+        score: typeof result.score === "number" ? result.score : 50,
+        categories: result.categories || [],
+        issues: allIssues,
+        quickWins: result.quickWins || [],
+        algorithmHighlights: result.algorithmHighlights || [],
+        headline: rawUrl + " — SEO Score: " + result.score + "/100",
+        showcase_message: result.showcase_message || "",
+      });
+
+    } catch (e: any) { return ok(res, { success: false, url: "", error: e.message }); }
+  }
+
       }
 
       // If still no result — build a basic result from HTML directly
