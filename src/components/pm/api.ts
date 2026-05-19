@@ -212,3 +212,12 @@ export async function generateTaskReport(projectId: string, range: 'daily' | 'on
   const r = await post(ENGINE, { action: 'pm_task_report', projectId, range });
   return r?.success ? r.report : null;
 }
+
+/* Run a fresh crawl of the project's + competitors' pages and the AI
+   competitive comparison. Slow (crawls live pages) — show a spinner. */
+export async function runCrawl(projectId: string, extraUrls: string[] = []): Promise<{
+  success: boolean; comparison?: any; crawledCount?: number; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_run_crawl', projectId, extraUrls });
+  return r || { success: false, error: 'No response' };
+}

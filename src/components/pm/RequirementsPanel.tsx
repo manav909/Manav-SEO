@@ -10,6 +10,7 @@
 import { useState, useEffect } from 'react';
 import type {
   RequirementContext, SourceRef, DataRoomContext, KeywordPageMapping,
+  CrawlComparison,
 } from './types';
 import * as pmApi from './api';
 
@@ -100,10 +101,14 @@ export default function RequirementsPanel({
       {/* Data Room — the project's structured definition */}
       {ctx.dataRoom && <DataRoomSection dr={ctx.dataRoom} />}
 
-      {/* Crawl & competitive pages — keyword -> landing page */}
-      {ctx.keywordMap && ctx.keywordMap.length > 0 && (
-        <CrawlSection keywordMap={ctx.keywordMap} summary={ctx.crawlSummary} />
-      )}
+      {/* Crawl & competitive pages — keyword -> landing page + AI comparison */}
+      <CrawlSection
+        projectId={projectId}
+        keywordMap={ctx.keywordMap || []}
+        summary={ctx.crawlSummary}
+        comparison={ctx.crawlComparison || null}
+        comparisonAt={ctx.crawlComparisonAt || ''}
+      />
 
       {/* Intelligence sources — full transparency */}
       <div className="rounded-2xl border border-border bg-card p-5">
@@ -264,61 +269,188 @@ function DataRoomSection({ dr }: { dr: DataRoomContext }) {
   );
 }
 
-/* ── Crawl & competitive pages — keyword -> landing page ── */
-function CrawlSection({ keywordMap, summary }: {
+/* ── Crawl & competitive pages — keyword -> landing page + AI comparison ── */
+function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt }: {
+  projectId: string;
   keywordMap: KeywordPageMapping[];
   summary?: { total: number; ours: number; competitor: number; lastCrawled: string };
+  comparison: CrawlComparison | null;
+  comparisonAt: string;
 }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult]   = useState('');
+  const [cmp, setCmp]         = useState<CrawlComparison | null>(comparison);
+
+  const runCrawl = async () => {
+    setRunning(true);
+    setResult('');
+    const r = await pmApi.runCrawl(projectId);
+    setRunning(false);
+    if (r.success) {
+      setCmp(r.comparison || null);
+      setResult(`Crawl complete — ${r.crawledCount || 0} pages analysed and compared.`);
+    } else {
+      setResult(r.error || 'Crawl failed.');
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Crawl & competitive pages — by keyword
+          Crawl & competitive comparison
         </div>
-        {summary && (
-          <span className="text-xs text-muted-foreground font-mono">
-            {summary.total} pages · {summary.ours} ours · {summary.competitor} competitor
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {summary && summary.total > 0 && (
+            <span className="text-xs text-muted-foreground font-mono">
+              {summary.total} pages · {summary.ours} ours · {summary.competitor} competitor
+            </span>
+          )}
+          <button
+            onClick={runCrawl}
+            disabled={running}
+            className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {running ? 'Crawling live pages…' : 'Run fresh crawl'}
+          </button>
+        </div>
       </div>
-      <div className="space-y-2">
-        {keywordMap.map((k, i) => (
-          <div key={i} className="rounded-xl border border-border bg-background/50 p-3">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-sm font-semibold">{k.keyword}</span>
-              {k.anyInferred && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
-                  keyword match inferred
-                </span>
-              )}
-            </div>
-            <div className="grid sm:grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-muted-foreground">Our page: </span>
-                {k.ourPage ? (
-                  <span className="text-foreground/90">
-                    {k.ourPage.url} <span className="text-muted-foreground">
-                      ({k.ourPage.contentType}{k.ourPage.titleIssues ? `, ${k.ourPage.titleIssues}` : ''})
+
+      {result && (
+        <div className={`rounded-lg border p-3 text-xs mb-3 ${
+          result.startsWith('Crawl complete')
+            ? 'border-green-500/30 bg-green-500/5 text-green-400'
+            : 'border-amber-500/30 bg-amber-500/5 text-amber-300'
+        }`}>
+          {result}
+        </div>
+      )}
+
+      {/* keyword -> landing page mapping */}
+      {keywordMap.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {keywordMap.map((k, i) => (
+            <div key={i} className="rounded-xl border border-border bg-background/50 p-3">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-sm font-semibold">{k.keyword}</span>
+                {k.anyInferred && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
+                    keyword match inferred
+                  </span>
+                )}
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-muted-foreground">Our page: </span>
+                  {k.ourPage ? (
+                    <span className="text-foreground/90">
+                      {k.ourPage.url} <span className="text-muted-foreground">
+                        ({k.ourPage.contentType}{k.ourPage.titleIssues ? `, ${k.ourPage.titleIssues}` : ''})
+                      </span>
                     </span>
-                  </span>
-                ) : (
-                  <span className="text-amber-400">no page targeting this keyword</span>
-                )}
-              </div>
-              <div>
-                <span className="text-muted-foreground">Competitor: </span>
-                {k.competitorPages.length ? (
-                  <span className="text-foreground/90">
-                    {k.competitorPages.map(p => p.url).join(', ')}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground/60 italic">none crawled</span>
-                )}
+                  ) : (
+                    <span className="text-amber-400">no page targeting this keyword</span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Competitor: </span>
+                  {k.competitorPages.length ? (
+                    <span className="text-foreground/90">
+                      {k.competitorPages.map(p => p.url).join(', ')}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground/60 italic">none crawled</span>
+                  )}
+                </div>
               </div>
             </div>
+          ))}
+        </div>
+      )}
+
+      {/* AI competitive comparison — the cross-verification */}
+      {cmp ? (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-primary uppercase tracking-wider">
+              AI competitive comparison
+            </div>
+            {comparisonAt && (
+              <span className="text-[10px] text-muted-foreground">
+                {new Date(comparisonAt).toLocaleString('en-GB')}
+              </span>
+            )}
           </div>
-        ))}
-      </div>
+
+          {cmp.executive_summary && (
+            <p className="text-xs text-foreground/90 leading-relaxed">{cmp.executive_summary}</p>
+          )}
+
+          {/* comparison matrix */}
+          {cmp.comparison_matrix?.rows?.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground">
+                    {(cmp.comparison_matrix.headers || []).map((h, i) => (
+                      <th key={i} className="text-left font-medium py-1 pr-3">{h}</th>
+                    ))}
+                    <th className="text-left font-medium py-1">Verdict</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cmp.comparison_matrix.rows.map((row, i) => (
+                    <tr key={i} className="border-t border-border/50">
+                      <td className="py-1 pr-3 font-medium">{row.signal}</td>
+                      {(row.values || []).map((v, j) => (
+                        <td key={j} className="py-1 pr-3 text-foreground/80">{v}</td>
+                      ))}
+                      <td className="py-1 text-muted-foreground">{row.verdict}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {/* competitive gaps */}
+          {cmp.competitive_gaps?.length ? (
+            <div>
+              <div className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider mb-1">
+                Competitive gaps
+              </div>
+              <ul className="space-y-1">
+                {cmp.competitive_gaps.map((g, i) => (
+                  <li key={i} className="text-xs text-foreground/85">
+                    • {g.gap}{g.action ? <span className="text-muted-foreground"> — {g.action}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {/* opportunities */}
+          {cmp.opportunities?.length ? (
+            <div>
+              <div className="text-[10px] font-semibold text-green-400 uppercase tracking-wider mb-1">
+                Opportunities
+              </div>
+              <ul className="space-y-1">
+                {cmp.opportunities.slice(0, 5).map((o, i) => (
+                  <li key={i} className="text-xs text-foreground/85">
+                    • {o.title}{o.impact ? <span className="text-muted-foreground"> ({o.impact} impact)</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-border bg-background/50 p-4 text-xs text-muted-foreground text-center">
+          No competitive comparison yet. Run a fresh crawl to compare your pages
+          against competitors and cross-verify the gathered intelligence against live data.
+        </div>
+      )}
     </div>
   );
 }

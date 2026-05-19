@@ -140,6 +140,23 @@ export interface RequirementContext {
   crawlPages?:          CrawlPage[];
   keywordMap?:          KeywordPageMapping[];
   crawlSummary?:        { total: number; ours: number; competitor: number; lastCrawled: string };
+  crawlComparison?:     CrawlComparison | null;
+  crawlComparisonAt?:   string;
+}
+
+/* The AI competitive comparison — from the crawl's compare_analysis. */
+export interface CrawlComparison {
+  executive_summary?: string;
+  overall_score?:     number;
+  comparison_matrix?: {
+    headers: string[];
+    rows: { signal: string; values: string[]; verdict: string }[];
+  };
+  errors?:           { severity: string; issue: string; affected_urls?: string[]; fix?: string; quick_fix?: boolean }[];
+  opportunities?:    { rank?: number; title: string; description?: string; affected_urls?: string[]; effort?: string; impact?: string; data_basis?: string }[];
+  competitive_gaps?: { gap: string; evidence?: string; action?: string; priority?: string }[];
+  advantages?:       { advantage: string; urls?: string[]; how_to_leverage?: string }[];
+  geo_analysis?:     any;
 }
 
 /* The Data Room — the project's deliberate, structured definition. */

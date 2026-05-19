@@ -390,6 +390,10 @@ async function pmGatherRequirements(projectId: string) {
         lastCrawled: crawlPages[0]?.crawledAt || "",
       },
 
+      /* the stored AI competitive comparison (from the last pm_run_crawl) */
+      crawlComparison:   (proj as any).crawl_comparison || null,
+      crawlComparisonAt: (proj as any).crawl_comparison_at || "",
+
       sales:       [] as any[],
       clientNotes: [] as any[],
       gaps,
@@ -702,6 +706,97 @@ async function pmTaskReport(projectId: string, range: string) {
    DISPATCHER — called from task-engine.ts
    Returns null if the action is not a PM action.
 ════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════
+   3c. RUN A FRESH CRAWL + AI COMPARISON
+   Crawls the project's pages + competitor pages, runs the
+   crawl's compare_analysis, and stores the result so the
+   Requirements tab can show it as a live cross-verification.
+════════════════════════════════════════════════════ */
+function crawlBaseUrl(): string {
+  const v = process.env.VERCEL_URL || process.env.VERCEL_BRANCH_URL || "";
+  if (v) return v.startsWith("http") ? v : `https://${v}`;
+  return process.env.PM_PUBLIC_URL || "https://seoseason.com";
+}
+
+async function pmRunCrawl(projectId: string, extraUrls: string[] = []) {
+  if (!projectId) return { success: false, error: "projectId required" };
+  try {
+    /* 1. Assemble the URL list — project + landing pages + competitors. */
+    const { data: proj } = await db().from("projects")
+      .select("name,url,industry").eq("id", projectId).maybeSingle();
+    const { data: kn } = await db().from("project_knowledge")
+      .select("category,field_key,field_value").eq("project_id", projectId);
+
+    const km: Record<string, Record<string, string>> = {};
+    for (const k of (kn || [])) {
+      if (!k?.category) continue;
+      (km[k.category] ||= {})[k.field_key] = k.field_value || "";
+    }
+    const splitUrls = (s: string) =>
+      (s || "").split(/[,\n]/).map((u) => u.trim()).filter(Boolean);
+
+    const urlSet = new Set<string>();
+    if ((proj as any)?.url) urlSet.add((proj as any).url);
+    splitUrls(km["analytics"]?.["top_landing_pages"] || "").forEach((u) => urlSet.add(u));
+    ["competitor_1", "competitor_2", "competitor_3"].forEach((k) => {
+      const d = km["competitor"]?.[k];
+      if (d) urlSet.add(d.startsWith("http") ? d : `https://${d}`);
+    });
+    extraUrls.forEach((u) => { if (u?.trim()) urlSet.add(u.trim()); });
+
+    const urls = [...urlSet].slice(0, 12);
+    if (!urls.length) {
+      return { success: false, error: "No URLs to crawl — add the site URL, landing pages, or competitors in the Data Room." };
+    }
+
+    const base = crawlBaseUrl();
+    const projectContext = `${(proj as any)?.name || ""} — ${(proj as any)?.industry || ""}`.trim();
+
+    /* 2. Crawl the URLs (fresh — forceRefresh). */
+    const crawlResp = await fetch(`${base}/api/crawl`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "crawl_urls", urls, projectId,
+        projectContext, forceRefresh: true,
+      }),
+    });
+    const crawlResults = await crawlResp.json();
+    if (!crawlResults?.results?.length) {
+      return { success: false, error: crawlResults?.error || "Crawl returned no results" };
+    }
+
+    /* 3. Run the AI competitive comparison on the crawl results. */
+    const cmpResp = await fetch(`${base}/api/crawl`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "compare_analysis", crawlResults, projectContext,
+      }),
+    });
+    const cmp = await cmpResp.json();
+    const comparison = cmp?.analysis || cmp;
+    if (cmp?.error && !comparison?.executive_summary) {
+      return { success: false, error: cmp.error };
+    }
+
+    /* 4. Store the comparison on the project so gather can read it. */
+    await db().from("projects").update({
+      crawl_comparison:    comparison,
+      crawl_comparison_at: new Date().toISOString(),
+    }).eq("id", projectId);
+
+    return {
+      success: true,
+      comparison,
+      crawledCount: crawlResults.results.length,
+      crawledAt: new Date().toISOString(),
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "crawl run failed" };
+  }
+}
+
 export async function handlePM(action: string, body: any): Promise<any | null> {
   switch (action) {
     case "pm_get_cards":             return pmGetCards(body.projectId);
@@ -709,6 +804,7 @@ export async function handlePM(action: string, body: any): Promise<any | null> {
     case "pm_delete_card":           return pmDeleteCard(body.cardId);
     case "pm_gather_requirements":   return pmGatherRequirements(body.projectId);
     case "pm_generate_cards":        return pmGenerateCards(body.projectId);
+    case "pm_run_crawl":             return pmRunCrawl(body.projectId, body.extraUrls || []);
     case "pm_enhance_card":          return pmEnhanceCard(body.card || {});
     case "pm_analyze_dependencies":  return pmAnalyzeDependencies(body.projectId);
     case "pm_save_execution":        return pmSaveExecution(body);
