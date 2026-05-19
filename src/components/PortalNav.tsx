@@ -62,6 +62,7 @@ const EMPIRE_SECTIONS = [
     label: 'Delivery',
     items: [
       { href: '/kanban',          label: 'Kanban Board',    icon: Kanban,       desc: 'Task delivery',      perm: 'playground' },
+      { href: '/pm',              label: 'Project Manager', icon: Layers,       desc: 'Plan, run & verify', perm: 'playground' },
       { href: '/content-hub',     label: 'Content Hub',     icon: FileText,     desc: 'Content briefs',     perm: 'playground' },
       { href: '/content-writer',  label: 'Content Writer',  icon: FileText,     desc: 'Writer dashboard',   perm: 'playground' },
       { href: '/launchpad',       label: 'Launchpad',       icon: Sparkles,     desc: 'Project launchpad',  perm: 'playground' },
@@ -288,7 +289,6 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
           <div className="fixed inset-0 z-[998]" onClick={() => setMoreOpen(false)} style={{background:'transparent'}}/>
           <div
             ref={dropdownRef}
-            style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 999 }}
             className="w-[620px] max-h-[72vh] overflow-y-auto rounded-2xl border border-border shadow-2xl p-3"
             style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, zIndex: 999,
               backgroundColor: 'hsl(var(--card))',

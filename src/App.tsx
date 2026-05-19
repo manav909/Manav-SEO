@@ -24,6 +24,7 @@ import Dashboard      from "./pages/Dashboard";
 import Launchpad      from "./pages/Launchpad";
 import Audit          from "./pages/Audit";
 import Admin          from "./pages/Admin";
+import PMModule       from "./pages/PMModule";
 import Playground     from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
 import SystemControl  from './pages/SystemControl';
@@ -111,6 +112,7 @@ const AppRoutes = () => {
         <Route path="/launchpad"       element={<B name="launchpad">      <StaffGuard perm="playground">     <Launchpad />      </StaffGuard></B>} />
         <Route path="/audit"           element={<B name="audit">          <StaffGuard perm="audit_tools">    <Audit />          </StaffGuard></B>} />
         <Route path="/playground"      element={<B name="playground">     <StaffGuard perm="playground">     <Playground />     </StaffGuard></B>} />
+        <Route path="/pm"              element={<B name="pm-module">      <StaffGuard perm="playground">     <PMModule />       </StaffGuard></B>} />
         <Route path="/system-control"  element={<B name="system-control"> <StaffGuard perm="system_control"> <SystemControl />  </StaffGuard></B>} />
         <Route path="/algorithm-intel" element={<B name="algo-intel">     <StaffGuard perm="algorithm_intel"><AlgorithmIntel /> </StaffGuard></B>} />
         <Route path="/brain-learning"  element={<B name="brain-learning"> <StaffGuard perm="brain_learning"> <BrainLearning />  </StaffGuard></B>} />
