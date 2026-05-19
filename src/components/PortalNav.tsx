@@ -165,7 +165,6 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
               <div className="w-px h-5 bg-border mx-2 shrink-0"/>
 
               {/* Empire dropdown */}
-              {moreOpen && <div className="fixed inset-0 z-[199]" onClick={() => setMoreOpen(false)} />}
               <div className="relative">
                 <button onClick={() => setMoreOpen(o => !o)}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150 ${
@@ -189,8 +188,8 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
 
                 {moreOpen && (
                   <>
-                    <div className="fixed inset-0 z-10" onClick={() => { setMoreOpen(false); setActiveSection(null); }}/>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[600px] max-h-[80vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl z-[200] p-3">
+                    <div className="fixed inset-0 z-[9998]" onClick={() => { setMoreOpen(false); setActiveSection(null); }}/>
+                    <div className="fixed top-14 left-1/2 -translate-x-1/2 w-[620px] max-h-[75vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-[0_8px_40px_rgba(0,0,0,0.6)] z-[9999] p-3">
                       <div className="grid grid-cols-3 gap-2">
                         {EMPIRE_SECTIONS.map(section => {
                           const visibleItems = section.items.filter(item => canAccess(item.perm));
