@@ -47,6 +47,7 @@ export default function StaffCommand() {
   const [form,        setForm]        = useState({ name:"", email:"", role:"bde", timezone:"Europe/London" });
   const [openPerms,   setOpenPerms]   = useState<string|null>(null);
   const [savingPerms, setSavingPerms] = useState<string|null>(null);
+  const [syncedId,   setSyncedId]   = useState<string|null>(null);
   const [inviting,    setInviting]    = useState<string|null>(null);
   const [genLinkId,   setGenLinkId]   = useState<string|null>(null);
   const [genLinks,    setGenLinks]    = useState<Record<string,string>>({});
@@ -279,7 +280,7 @@ export default function StaffCommand() {
                   {isOpen && (
                     <div className="border-t border-border p-4 bg-muted/20">
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm font-semibold">Panel Access — {enabled} of {PANELS.length} enabled</span>
+                        <span className="text-sm font-semibold">Panel Access — {enabled} of {PANELS.length} enabled</span>{syncedId===s.id&&<span className="text-xs text-green-400 ml-2">✓ Synced to BDE live</span>}
                         <button onClick={() => applyRoleDefaults(s)} disabled={savingPerms===s.id}
                           className="text-xs px-3 py-1.5 rounded-lg border border-border hover:border-primary/40">
                           ↺ Reset to {s.role?.replace(/_/g," ")} defaults

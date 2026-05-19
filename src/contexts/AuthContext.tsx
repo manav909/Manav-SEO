@@ -61,6 +61,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [profile,     setProfile]     = useState<Profile | null>(null);
   const [staffPermissions, setStaffPermissions] = useState<Record<string,boolean>|null>(null);
   const [staffRole, setStaffRole] = useState<string|null>(null);
+  const [staffMemberId, setStaffMemberId] = useState<string|null>(null);
   const [clients,     setClients]     = useState<any[]>([]);
   const [projects,    setProjects]    = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -107,12 +108,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (prof?.email) {
           const { data: staffRows } = await supabase
             .from('staff_members')
-            .select('permissions,role')
+            .select('id,permissions,role')
             .eq('email', prof.email)
             .limit(1);
           const staffRow = staffRows?.[0];
           if (staffRow?.permissions) setStaffPermissions(staffRow.permissions);
           if (staffRow?.role) setStaffRole(staffRow.role);
+          if (staffRow?.id) setStaffMemberId(staffRow.id);
         }
       } catch { /* staff lookup failure must never block sign-in */ }
 
@@ -258,6 +260,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       subscription.unsubscribe();
     };
   }, [loadUserData]);
+
+  // Realtime: listen for permission changes on this staff member's row
+  // HOD changes permissions in Staff Command → BDE's nav updates instantly
+  React.useEffect(() => {
+    if (!staffMemberId) return;
+    const channel = supabase
+      .channel('staff_members_perms')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'staff_members',
+        filter: `id=eq.${staffMemberId}`,
+      }, (payload: any) => {
+        const updated = payload.new;
+        if (updated?.permissions) setStaffPermissions(updated.permissions);
+        if (updated?.role)        setStaffRole(updated.role);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [staffMemberId]);
 
   return (
     <AuthContext.Provider value={{
