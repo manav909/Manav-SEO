@@ -2069,22 +2069,22 @@ Return ONLY raw JSON:
     const { projectId } = body;
     if (!projectId) return ok(res, { error: "projectId required" });
     try {
-      const { data: proj } = await db()
+      const { data: projRows, error: projErr } = await db()
         .from("projects")
         .select("id,name,goals,playground_strategy,playground_canvas")
-        .eq("id", projectId).single();
+        .eq("id", projectId)
+        .limit(1);
+      const proj = projRows?.[0] || null;
       if (!proj) {
-        // Debug: list first 5 project IDs to check what's in the DB
-        const { data: allProjs } = await db().from("projects").select("id,name").limit(5);
         return ok(res, {
           error: "Project not found",
           _debug: {
             projectIdSent: projectId,
-            supabaseUrl: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "NOT SET").slice(0,40),
+            projErr: projErr?.message || null,
+            rowsReturned: projRows?.length ?? "null",
             keyUsed: process.env.SUPABASE_SERVICE_KEY ? "SUPABASE_SERVICE_KEY" :
                      process.env.SUPABASE_SERVICE_ROLE_KEY ? "SUPABASE_SERVICE_ROLE_KEY" :
                      process.env.SUPABASE_ANON_KEY ? "SUPABASE_ANON_KEY(RLS!)" : "NONE",
-            sampleProjectIds: (allProjs||[]).map((p:any) => ({id:p.id, name:p.name})),
           }
         });
       }
