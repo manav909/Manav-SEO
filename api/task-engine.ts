@@ -347,7 +347,6 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         "Accept-Language": "en-GB,en;q=0.9", "Cache-Control": "no-cache",
       };
       let _html = ""; let _fetched = false;
-      // Jina reader (bypasses Cloudflare)
       try {
         const jKey = process.env.JINA_API_KEY || "";
         const jh: any = { "Accept": "text/html", "X-Return-Format": "html", "X-No-Cache": "true" };
@@ -355,7 +354,6 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         const jr = await fetch("https://r.jina.ai/https://" + rawUrl, { headers: jh, signal: AbortSignal.timeout(14000), redirect: "follow" });
         if (jr.ok) { const t = await jr.text(); if (t.length > 500 && !t.includes("blocked")) { _html = t.slice(0, 14000); _fetched = true; } }
       } catch {}
-      // Direct fetch fallback
       if (!_fetched) {
         for (const v of ["https://"+rawUrl, "https://www."+rawUrl, "http://"+rawUrl]) {
           try {
@@ -366,60 +364,43 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       }
       if (!_fetched || !_html) {
         return ok(res, { success: true, url: rawUrl, reachable: false, score: 20,
-          categories: [{ name: "Accessibility", score: 0, issues: [{ issue: "Site could not be reached", severity: "critical", fix: "Verify the URL is live.", explanation: "The site was unreachable after multiple fetch strategies.", algorithmNote: null }] }],
+          categories: [{ name: "Accessibility", score: 0, issues: [{ issue: "Site could not be reached", severity: "critical", fix: "Verify the URL is live.", explanation: "The site was unreachable.", algorithmNote: null }] }],
           issues: [], quickWins: ["Verify URL is correct", "Check site is live"], algorithmHighlights: [],
-          showcase_message: "", contextSummary: "" });
+          executiveSummary: "", showcase_message: "", contextSummary: "" });
       }
-
-      // DB context
       const [algoR, brainR] = await Promise.allSettled([
         db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(4),
         db().from("brain_learnings").select("card_title,improvement,what_worked").order("applied_count", { ascending: false }).limit(3),
       ]);
       const algoData: any[] = algoR.status === "fulfilled" ? (algoR.value.data || []) : [];
       const brainData: any[] = brainR.status === "fulfilled" ? (brainR.value.data || []) : [];
-
       const ctxParts: string[] = [];
       if (forLead) ctxParts.push("Client name: " + forLead);
       const ca: any = conversationAnalysis || {};
       if (ca.main_need) ctxParts.push("Their main need: " + ca.main_need);
       if (ca.urgency)   ctxParts.push("Urgency level: " + ca.urgency);
       if (algoData.length) ctxParts.push("Relevant algorithm updates: " + algoData.map((a:any) => a.topic + " — " + (a.summary||"").slice(0,80)).join("; "));
-      if (brainData.length) ctxParts.push("Proven results from similar projects: " + brainData.map((b:any) => b.improvement).join("; "));
-
-      const salesInst = salesContext
-        ? "SALES BRIEF — this is your editorial brief for the entire document. Follow every instruction precisely:\n" + String(salesContext).slice(0, 600)
-        : "";
-
+      if (brainData.length) ctxParts.push("Proven results: " + brainData.map((b:any) => b.improvement).join("; "));
+      const salesInst = salesContext ? "SALES BRIEF — follow every instruction precisely:\n" + String(salesContext).slice(0, 600) : "";
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
+      const schemaStr = '{"score":<0-100>,"executiveSummary":"<3-4 sentences about this specific site>","categories":[{"name":"Technical SEO","score":<0-100>,"narrative":"<2-3 sentences for this site>","issues":[{"issue":"<specific>","severity":"critical|high|medium|low","explanation":"<2 sentences why it matters>","fix":"<specific step>","algorithmNote":"<or null>"}]},{"name":"On-Page SEO","score":<0-100>,"narrative":"<narrative>","issues":[...]},{"name":"Content Quality","score":<0-100>,"narrative":"<narrative>","issues":[...]},{"name":"User Experience","score":<0-100>,"narrative":"<narrative>","issues":[...]}],"quickWins":["<action>","<action>","<action>"],"algorithmHighlights":["<update>","<update>"],"showcase_message":"<one sentence>","contextSummary":"<what was adjusted based on sales brief, or empty string>"}';
       const prompt = [
-        "You are a senior SEO consultant writing a detailed, client-facing audit report.",
-        "This is a real document a client will read — write with authority, specificity and warmth.",
-        "Reference the ACTUAL content you can see in the HTML: exact title text, H1 content, meta description, URL structure.",
-        "Do not write generic SEO advice. Every sentence must be specific to THIS website.",
+        "You are a senior SEO consultant writing a client-facing audit. Return ONLY raw JSON. No markdown. No code fences.",
+        "Write as a real expert — specific to THIS site. Reference actual HTML content.",
+        "URL: https://" + rawUrl,
+        ctxParts.length ? "Context: " + ctxParts.join(" | ") : "",
         salesInst,
-        ctxParts.length ? "\nSITE CONTEXT:\n" + ctxParts.join("\n") : "",
-        "\nURL BEING AUDITED: https://" + rawUrl,
-        "\nHTML CONTENT FROM THEIR SITE:\n" + _html.slice(0, 12000),
-        "\n\nReturn ONLY raw JSON. No markdown. No code fences. No line breaks inside string values.",
-        "JSON STRUCTURE:",
-        '{"score":<0-100>,"executiveSummary":"<3-4 sentences. Start with their site name/URL. State the overall situation clearly. Mention the biggest opportunity. Set the tone for what follows.>","categories":[{"name":"Technical SEO","score":<0-100>,"narrative":"<2-3 sentences summarising this category specifically for this site>","issues":[{"issue":"<specific issue — name the actual HTML element or content found>","severity":"critical|high|medium|low","explanation":"<2 sentences: what this means for their rankings and why it matters right now>","fix":"<specific step-by-step fix for this exact site>","algorithmNote":"<relevant algorithm update or null>"}]}],"quickWins":["<specific action with expected impact>","<specific action>","<specific action>"],"algorithmHighlights":["<algorithm update and why it matters for this site>","<another>"],"contextSummary":"<if salesContext was provided: 1-2 sentences explaining what you adjusted based on the brief. If no brief: empty string>"}',
-        "Include exactly 4 categories: Technical SEO, On-Page SEO, Content Quality, User Experience. Each 2-4 issues.",
-        "The executiveSummary and narrative fields should read like a consultant wrote them — professional prose, not bullet points.",
-        "contextSummary must specifically say what was emphasised, omitted or adjusted based on the sales brief.",
+        "HTML from their site:\n" + _html.slice(0, 12000),
+        "Return this JSON structure (4 categories, 2-4 issues each, no line breaks in strings):",
+        schemaStr,
       ].filter(Boolean).join("\n");
-
       const _r = await _ac.messages.create({
         model: "claude-sonnet-4-6", max_tokens: 5000,
-        system: "You are a senior SEO consultant writing a client-facing audit. Return ONLY valid JSON. No markdown. No code fences. Every string value must be on one line — no literal line breaks inside string values.",
+        system: "Return ONLY valid JSON. No markdown. No code fences. No line breaks inside string values.",
         messages: [{ role: "user", content: prompt }]
       });
-
       const raw = (_r.content[0] as any).text || "";
       let result: any = safeParseJSON(raw);
-
-      // Truncation recovery
       if (!result || !Array.isArray(result.categories) || !result.categories.length) {
         try {
           const trimmed = raw.trimEnd();
@@ -436,65 +417,60 @@ async function _run(req: VercelRequest, res: VercelResponse) {
           }
         } catch {}
       }
-
-      // HTML fallback with basic checks
-      const hasData = result && Array.isArray(result.categories) && result.categories.length > 0
-        && result.categories.some((c:any) => Array.isArray(c.issues) && c.issues.length > 0);
-
+      const hasData = result && Array.isArray(result.categories) && result.categories.length>0
+        && result.categories.some((c:any)=>Array.isArray(c.issues)&&c.issues.length>0);
       if (!hasData) {
-        const hasTitle   = /<title>[^<]{5,}/i.test(_html);
-        const hasMeta    = /meta[^>]+(name=["']description["'][^>]+content=|content=[^>]+name=["']description["'])/i.test(_html);
-        const hasH1      = /<h1[^>]*>[^<]{3,}/i.test(_html);
-        const hasSchema  = /application\/ld\+json/i.test(_html);
-        const hasVp      = /name=["']viewport["']/i.test(_html);
-        const titleText  = (_html.match(/<title>([^<]{1,70})/i)||[])[1]||"";
-        const h1Text     = (_html.match(/<h1[^>]*>([^<]{1,60})/i)||[])[1]||"";
-        const missing: string[] = [];
+        const hasTitle=/<title>[^<]{5,}/i.test(_html);
+        const hasMeta=/meta[^>]+(name=["']description["'][^>]+content=|content=[^>]+name=["']description["'])/i.test(_html);
+        const hasH1=/<h1[^>]*>[^<]{3,}/i.test(_html);
+        const hasSchema=/application\/ld\+json/i.test(_html);
+        const hasVp=/name=["']viewport["']/i.test(_html);
+        const hasCan=/rel=["']canonical["']/i.test(_html);
+        const titleText=(_html.match(/<title>([^<]{1,70})/i)||[])[1]||"";
+        const h1Text=(_html.match(/<h1[^>]*>([^<]{1,60})/i)||[])[1]||"";
+        const missing:string[]=[];
         if(!hasTitle) missing.push("Add title tag");
         if(!hasMeta)  missing.push("Add meta description");
         if(!hasH1)    missing.push("Add H1 heading");
         if(!hasSchema) missing.push("Add structured data");
-        const score = Math.max(25, 90 - missing.length*12);
-        result = {
-          score, executiveSummary: rawUrl + " shows " + (missing.length > 0 ? missing.length + " foundational SEO gaps that are suppressing search visibility." : "a solid technical foundation, though deeper optimisation opportunities exist."),
-          categories: [
-            { name:"Technical SEO", score:hasSchema?65:40, narrative:"Technical foundations are "+ (hasSchema?"partially in place":"largely missing") +". Priority work needed before other optimisation efforts.",
-              issues:[!hasSchema?{issue:"No structured data (JSON-LD) found",severity:"high",explanation:"Without schema markup, Google cannot identify your business type, location, or services. This directly reduces rich result eligibility.",fix:"Add Organization and WebPage schema to the homepage. Use Google's Structured Data Markup Helper.",algorithmNote:"Google's Helpful Content system rewards clearly-identified content types"}:{issue:"Basic technical setup present",severity:"low",explanation:"Core technical elements are in place.",fix:"Run a full technical crawl for deeper issues.",algorithmNote:null}] },
-            { name:"On-Page SEO", score:hasTitle&&hasMeta&&hasH1?65:40, narrative:"On-page signals "+ (hasTitle&&hasMeta&&hasH1?"are present but need refinement":"are incomplete, limiting how Google understands page content") +".",
+        const score=Math.max(25,90-missing.length*12+(hasSchema?5:0)+(hasCan?3:0));
+        result={
+          score, executiveSummary:rawUrl+" shows "+(missing.length>0?missing.length+" foundational SEO gaps that need immediate attention.":"a solid technical foundation with opportunities for deeper optimisation."),
+          categories:[
+            {name:"Technical SEO",score:hasSchema&&hasVp?70:40,narrative:"Technical foundations "+(hasSchema?"partially in place":"largely missing")+".",
+              issues:[!hasSchema?{issue:"No structured data (JSON-LD) found",severity:"high",explanation:"Without schema markup, Google cannot identify your business type or services. Rich results require this.",fix:"Add Organization and WebPage schema to the homepage via Google's Structured Data Markup Helper.",algorithmNote:"Google rewards clearly-identified content types"}:{issue:"Basic technical setup present",severity:"low",explanation:"Core technical elements detected.",fix:"Run a deeper crawl for hidden issues.",algorithmNote:null}]},
+            {name:"On-Page SEO",score:hasTitle&&hasMeta&&hasH1?70:40,narrative:"On-page signals "+(hasTitle&&hasMeta&&hasH1?"present but can be refined":"incomplete")+".",
               issues:[
-                ...((!hasTitle)?[{issue:"Title tag missing",severity:"critical",explanation:"The page title is one of the strongest on-page ranking signals. Without it, Google generates its own title — usually less effective.",fix:"Add a 50-60 character title tag with your primary keyword in the first half.",algorithmNote:null}]:[{issue:'Title: "'+titleText.trim().slice(0,55)+'"',severity:titleText.length>60||titleText.length<30?"medium":"low",explanation:"The current title "+ (titleText.length>60?"exceeds 60 characters and will be truncated in search results":titleText.length<30?"is too short to effectively signal relevance":"is a reasonable length") +".",fix:"Ensure the primary keyword appears in the first 30 characters. Keep between 50-60 characters.",algorithmNote:null}]),
-                ...((!hasMeta)?[{issue:"Meta description missing",severity:"high",explanation:"Meta descriptions directly influence click-through rates from search results. Missing descriptions get auto-generated by Google — typically less compelling.",fix:"Write a 150-160 character meta description ending with a clear call to action.",algorithmNote:null}]:[]),
-                ...((!hasH1)?[{issue:"H1 heading not found",severity:"critical",explanation:"The H1 is the primary on-page heading signal. Without it, Google has reduced clarity about the page topic.",fix:"Add one H1 tag per page containing the primary target keyword.",algorithmNote:null}]:(h1Text?[{issue:'H1: "'+h1Text.trim().slice(0,55)+'"',severity:"low",explanation:"The H1 is present and visible to search engines.",fix:"Verify the H1 includes the exact keyword phrase you want to rank for.",algorithmNote:null}]:[])),
+                ...(!hasTitle?[{issue:"Title tag missing",severity:"critical",explanation:"Title tags are one of the strongest ranking signals. Missing = Google generates its own, usually less effective.",fix:"Add a 50-60 char title with primary keyword in the first 30 characters.",algorithmNote:null}]:
+                  titleText?[{issue:'Title found: "'+titleText.trim().slice(0,50)+'"',severity:titleText.length>60||titleText.length<30?"medium":"low",explanation:titleText.length>60?"Title exceeds 60 chars and will be truncated in search results.":titleText.length<30?"Title is too short to signal relevance effectively.":"Title length is good. Verify keyword placement.",fix:"Ensure primary keyword appears in first 30 characters. Keep 50-60 chars.",algorithmNote:null}]:[]),
+                ...(!hasMeta?[{issue:"Meta description missing",severity:"high",explanation:"Meta descriptions directly influence click-through rates. Missing ones get auto-generated by Google.",fix:"Write 150-160 char meta description with a clear call to action.",algorithmNote:null}]:[]),
+                ...(!hasH1?[{issue:"H1 heading not found",severity:"critical",explanation:"H1 is the primary on-page topic signal. Without it Google has reduced clarity about page content.",fix:"Add one H1 per page containing your primary target keyword.",algorithmNote:null}]:h1Text?[{issue:'H1: "'+h1Text.trim().slice(0,50)+'"',severity:"low",explanation:"H1 is present. Verify it contains the target keyword.",fix:"Ensure H1 exactly matches the keyword you want to rank for.",algorithmNote:null}]:[]),
               ]},
-            { name:"Content Quality", score:50, narrative:"Content depth and quality signals require a full crawl to assess properly. Initial indicators suggest optimisation opportunities exist.",
-              issues:[{issue:"Content depth not fully assessable from homepage alone",severity:"medium",explanation:"Google's Helpful Content Update rewards sites that demonstrate genuine expertise and depth. Thin or shallow content is actively downranked.",fix:"Conduct a content audit across all pages. Aim for comprehensive coverage of each topic, with clear authorship and E-E-A-T signals.",algorithmNote:"Helpful Content Update (2023) — AI-generated or thin content is actively penalised"}]},
-            { name:"User Experience", score:hasVp?60:40, narrative:"User experience signals directly feed into Core Web Vitals scoring, which is a confirmed ranking factor.",
-              issues:[{issue:"Page speed and Core Web Vitals not tested",severity:"medium",explanation:"Core Web Vitals (LCP, CLS, INP) are confirmed ranking factors. Sites below threshold are disadvantaged in competitive searches.",fix:"Run Google PageSpeed Insights on your key pages. Target 90+ on mobile. Focus on LCP under 2.5s first.",algorithmNote:"Core Web Vitals — direct ranking signal since 2021"}]},
+            {name:"Content Quality",score:50,narrative:"Content depth requires a full crawl to assess properly.",
+              issues:[{issue:"Content depth not fully assessable",severity:"medium",explanation:"Google's Helpful Content system rewards sites demonstrating genuine expertise. Thin content is actively penalised.",fix:"Audit all pages for content depth, authorship signals and E-E-A-T compliance.",algorithmNote:"Helpful Content Update — depth and expertise are direct ranking factors"}]},
+            {name:"User Experience",score:hasVp?60:40,narrative:"Core Web Vitals are a confirmed ranking factor.",
+              issues:[{issue:"Page speed not tested",severity:"medium",explanation:"Core Web Vitals (LCP, CLS, INP) directly affect rankings in competitive searches.",fix:"Run Google PageSpeed Insights on key pages. Target 90+ on mobile. Focus on LCP under 2.5s first.",algorithmNote:"Core Web Vitals — direct ranking signal since 2021"}]},
           ],
-          quickWins: missing.length>0 ? missing : ["Improve mobile page speed","Add structured data markup","Review internal linking structure"],
-          algorithmHighlights: algoData.slice(0,2).map((a:any)=>a.topic+": "+(a.summary||"").slice(0,100)),
-          contextSummary: salesContext ? "Sales brief applied to this report." : "",
+          quickWins:missing.length>0?missing.slice(0,3):["Improve mobile page speed","Add structured data","Review internal linking"],
+          algorithmHighlights:algoData.slice(0,2).map((a:any)=>a.topic+": "+(a.summary||"").slice(0,100)),
+          showcase_message:"",
+          contextSummary:salesContext?"Sales brief applied.":"",
         };
       }
-
-      const allIssues: any[] = (result.categories||[]).flatMap((c:any) =>
-        (c.issues||[]).map((i:any) => ({ ...i, category: c.name })));
-
-      return ok(res, {
-        success: true, url: rawUrl, reachable: true,
-        score: typeof result.score==="number" ? result.score : 50,
-        executiveSummary: result.executiveSummary || "",
-        categories: result.categories || [],
-        issues: allIssues,
-        quickWins: result.quickWins || [],
-        algorithmHighlights: result.algorithmHighlights || [],
-        showcase_message: result.showcase_message || "",
-        contextSummary: result.contextSummary || "",
+      const allIssues:any[]=(result.categories||[]).flatMap((c:any)=>(c.issues||[]).map((i:any)=>({...i,category:c.name})));
+      return ok(res,{
+        success:true, url:rawUrl, reachable:true,
+        score:typeof result.score==="number"?result.score:50,
+        executiveSummary:result.executiveSummary||"",
+        categories:result.categories||[],
+        issues:allIssues,
+        quickWins:result.quickWins||[],
+        algorithmHighlights:result.algorithmHighlights||[],
+        showcase_message:result.showcase_message||"",
+        contextSummary:result.contextSummary||"",
       });
-
     } catch(e:any){ return ok(res,{success:false,url:"",error:e.message}); }
   }
-
 
   if (action === "generate_context_suggestions") {
     const { auditResult, url, currentContext = "" } = body;
