@@ -347,70 +347,87 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         "Accept-Language": "en-GB,en;q=0.9", "Cache-Control": "no-cache",
       };
       let _html = ""; let _fetched = false;
+      // Jina reader (bypasses Cloudflare)
       try {
         const jKey = process.env.JINA_API_KEY || "";
         const jh: any = { "Accept": "text/html", "X-Return-Format": "html", "X-No-Cache": "true" };
         if (jKey) jh["Authorization"] = "Bearer " + jKey;
         const jr = await fetch("https://r.jina.ai/https://" + rawUrl, { headers: jh, signal: AbortSignal.timeout(14000), redirect: "follow" });
-        if (jr.ok) { const t = await jr.text(); if (t.length > 500 && !t.includes("blocked")) { _html = t.slice(0, 12000); _fetched = true; } }
+        if (jr.ok) { const t = await jr.text(); if (t.length > 500 && !t.includes("blocked")) { _html = t.slice(0, 14000); _fetched = true; } }
       } catch {}
+      // Direct fetch fallback
       if (!_fetched) {
         for (const v of ["https://"+rawUrl, "https://www."+rawUrl, "http://"+rawUrl]) {
           try {
             const dr = await fetch(v, { headers: hdrs, signal: AbortSignal.timeout(10000), redirect: "follow" });
-            if (dr.ok) { const t = await dr.text(); if (t.length > 200) { _html = t.slice(0, 12000); _fetched = true; break; } }
+            if (dr.ok) { const t = await dr.text(); if (t.length > 200) { _html = t.slice(0, 14000); _fetched = true; break; } }
           } catch {}
         }
       }
       if (!_fetched || !_html) {
         return ok(res, { success: true, url: rawUrl, reachable: false, score: 20,
-          categories: [{ name: "Accessibility", score: 0, issues: [{ issue: "Site could not be reached", severity: "critical", fix: "Verify the URL is live and publicly accessible.", algorithmNote: null }] }],
-          issues: [], quickWins: ["Verify URL is correct", "Check site is live", "Check DNS settings"], algorithmHighlights: [], showcase_message: "" });
+          categories: [{ name: "Accessibility", score: 0, issues: [{ issue: "Site could not be reached", severity: "critical", fix: "Verify the URL is live.", explanation: "The site was unreachable after multiple fetch strategies.", algorithmNote: null }] }],
+          issues: [], quickWins: ["Verify URL is correct", "Check site is live"], algorithmHighlights: [],
+          showcase_message: "", contextSummary: "" });
       }
+
+      // DB context
       const [algoR, brainR] = await Promise.allSettled([
-        db().from("algorithm_knowledge").select("topic,summary").order("freshness_score", { ascending: false }).limit(3),
-        db().from("brain_learnings").select("card_title,improvement").order("applied_count", { ascending: false }).limit(2),
+        db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(4),
+        db().from("brain_learnings").select("card_title,improvement,what_worked").order("applied_count", { ascending: false }).limit(3),
       ]);
       const algoData: any[] = algoR.status === "fulfilled" ? (algoR.value.data || []) : [];
       const brainData: any[] = brainR.status === "fulfilled" ? (brainR.value.data || []) : [];
+
       const ctxParts: string[] = [];
-      if (forLead) ctxParts.push("Client: " + forLead);
+      if (forLead) ctxParts.push("Client name: " + forLead);
       const ca: any = conversationAnalysis || {};
-      if (ca.main_need) ctxParts.push("Need: " + ca.main_need);
-      if (algoData.length) ctxParts.push("Recent algo updates: " + algoData.map((a:any) => a.topic).join(", "));
+      if (ca.main_need) ctxParts.push("Their main need: " + ca.main_need);
+      if (ca.urgency)   ctxParts.push("Urgency level: " + ca.urgency);
+      if (algoData.length) ctxParts.push("Relevant algorithm updates: " + algoData.map((a:any) => a.topic + " — " + (a.summary||"").slice(0,80)).join("; "));
+      if (brainData.length) ctxParts.push("Proven results from similar projects: " + brainData.map((b:any) => b.improvement).join("; "));
+
+      const salesInst = salesContext
+        ? "SALES BRIEF — this is your editorial brief for the entire document. Follow every instruction precisely:\n" + String(salesContext).slice(0, 600)
+        : "";
+
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const schemaStr = '{"score":<0-100>,"categories":[{"name":"Technical SEO","score":<0-100>,"issues":[{"issue":"<from HTML>","severity":"critical|high|medium|low","fix":"<under 100 chars>","algorithmNote":"<or null>"}]},{"name":"On-Page SEO","score":<0-100>,"issues":[...]},{"name":"Content Quality","score":<0-100>,"issues":[...]},{"name":"User Experience","score":<0-100>,"issues":[...]}],"quickWins":["<fix1>","<fix2>","<fix3>"],"algorithmHighlights":["<update1>","<update2>"],"showcase_message":"<one sentence>"}';
-      const salesInst = salesContext ? "SALES PERSON INSTRUCTIONS — apply these to every finding, issue description and recommendation: " + String(salesContext).slice(0, 500) : "";
+
       const prompt = [
-        "You are a senior SEO consultant writing a detailed audit for a prospect.",
-        "Write issue descriptions as a real expert who has reviewed this specific site — reference actual content from the HTML.",
-        "Each issue must explain WHY it matters for this site, not generically.",
-        "Each fix must be specific and actionable for this exact site.",
-        "URL: https://" + rawUrl,
-        ctxParts.length ? "Context: " + ctxParts.join(" | ") : "",
+        "You are a senior SEO consultant writing a detailed, client-facing audit report.",
+        "This is a real document a client will read — write with authority, specificity and warmth.",
+        "Reference the ACTUAL content you can see in the HTML: exact title text, H1 content, meta description, URL structure.",
+        "Do not write generic SEO advice. Every sentence must be specific to THIS website.",
         salesInst,
-        "HTML from their site:\n" + _html.slice(0, 10000),
-        "",
-        "Return ONLY raw JSON. No markdown. No code fences. No line breaks inside string values. All strings under 150 chars.",
-        "Return this exact JSON structure (all 4 categories required, 2-4 issues each):",
-        schemaStr,
+        ctxParts.length ? "\nSITE CONTEXT:\n" + ctxParts.join("\n") : "",
+        "\nURL BEING AUDITED: https://" + rawUrl,
+        "\nHTML CONTENT FROM THEIR SITE:\n" + _html.slice(0, 12000),
+        "\n\nReturn ONLY raw JSON. No markdown. No code fences. No line breaks inside string values.",
+        "JSON STRUCTURE:",
+        '{"score":<0-100>,"executiveSummary":"<3-4 sentences. Start with their site name/URL. State the overall situation clearly. Mention the biggest opportunity. Set the tone for what follows.>","categories":[{"name":"Technical SEO","score":<0-100>,"narrative":"<2-3 sentences summarising this category specifically for this site>","issues":[{"issue":"<specific issue — name the actual HTML element or content found>","severity":"critical|high|medium|low","explanation":"<2 sentences: what this means for their rankings and why it matters right now>","fix":"<specific step-by-step fix for this exact site>","algorithmNote":"<relevant algorithm update or null>"}]}],"quickWins":["<specific action with expected impact>","<specific action>","<specific action>"],"algorithmHighlights":["<algorithm update and why it matters for this site>","<another>"],"contextSummary":"<if salesContext was provided: 1-2 sentences explaining what you adjusted based on the brief. If no brief: empty string>"}',
+        "Include exactly 4 categories: Technical SEO, On-Page SEO, Content Quality, User Experience. Each 2-4 issues.",
+        "The executiveSummary and narrative fields should read like a consultant wrote them — professional prose, not bullet points.",
+        "contextSummary must specifically say what was emphasised, omitted or adjusted based on the sales brief.",
       ].filter(Boolean).join("\n");
+
       const _r = await _ac.messages.create({
-        model: "claude-sonnet-4-6", max_tokens: 4000,
-        system: "You are a senior SEO consultant and JSON API. Return ONLY raw JSON. Apply any sales instructions to shape the tone, emphasis and content of your findings. Never use markdown or code fences. No line breaks inside string values.",
+        model: "claude-sonnet-4-6", max_tokens: 5000,
+        system: "You are a senior SEO consultant writing a client-facing audit. Return ONLY valid JSON. No markdown. No code fences. Every string value must be on one line — no literal line breaks inside string values.",
         messages: [{ role: "user", content: prompt }]
       });
+
       const raw = (_r.content[0] as any).text || "";
       let result: any = safeParseJSON(raw);
+
       // Truncation recovery
-      if (!result || !Array.isArray(result.categories) || result.categories.length === 0) {
+      if (!result || !Array.isArray(result.categories) || !result.categories.length) {
         try {
           const trimmed = raw.trimEnd();
           if (!trimmed.endsWith("}")) {
             let op=0,cl=0,ao=0,ac=0,inS=false,es=false;
             for (const c of trimmed) {
               if(es){es=false;continue;} if(c==="\\"){es=true;continue;}
-              if(c==='"'){ inS=!inS;continue;}
+              if(c==='"'){inS=!inS;continue;}
               if(!inS){if(c==="{")op++;if(c==="}") cl++;if(c==="[")ao++;if(c==="]")ac++;}
             }
             const closing="]".repeat(Math.max(0,ao-ac))+"}".repeat(Math.max(0,op-cl));
@@ -419,16 +436,17 @@ async function _run(req: VercelRequest, res: VercelResponse) {
           }
         } catch {}
       }
-      // HTML fallback
-      const hasData = result && Array.isArray(result.categories) && result.categories.length>0
-        && result.categories.some((c:any) => Array.isArray(c.issues) && c.issues.length>0);
+
+      // HTML fallback with basic checks
+      const hasData = result && Array.isArray(result.categories) && result.categories.length > 0
+        && result.categories.some((c:any) => Array.isArray(c.issues) && c.issues.length > 0);
+
       if (!hasData) {
         const hasTitle   = /<title>[^<]{5,}/i.test(_html);
         const hasMeta    = /meta[^>]+(name=["']description["'][^>]+content=|content=[^>]+name=["']description["'])/i.test(_html);
         const hasH1      = /<h1[^>]*>[^<]{3,}/i.test(_html);
         const hasSchema  = /application\/ld\+json/i.test(_html);
         const hasVp      = /name=["']viewport["']/i.test(_html);
-        const hasCan     = /rel=["']canonical["']/i.test(_html);
         const titleText  = (_html.match(/<title>([^<]{1,70})/i)||[])[1]||"";
         const h1Text     = (_html.match(/<h1[^>]*>([^<]{1,60})/i)||[])[1]||"";
         const missing: string[] = [];
@@ -436,113 +454,45 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         if(!hasMeta)  missing.push("Add meta description");
         if(!hasH1)    missing.push("Add H1 heading");
         if(!hasSchema) missing.push("Add structured data");
-        const score = Math.max(25, 90 - missing.length*12 + (hasSchema?5:0) + (hasCan?3:0));
-        const techIssues: any[] = [];
-        if(!hasSchema) techIssues.push({issue:"No structured data (JSON-LD) found",severity:"high",fix:"Add Organization/WebPage schema to homepage.",algorithmNote:"Structured data helps Google understand content"});
-        if(!hasVp)    techIssues.push({issue:"Viewport meta tag missing",severity:"high",fix:"Add <meta name='viewport' content='width=device-width, initial-scale=1'>",algorithmNote:"Required for mobile-first indexing"});
-        if(!hasCan)   techIssues.push({issue:"No canonical tag detected",severity:"medium",fix:"Add canonical tag to prevent duplicate content issues.",algorithmNote:null});
-        if(!techIssues.length) techIssues.push({issue:"Basic technical setup present",severity:"low",fix:"Run deeper crawl for hidden issues.",algorithmNote:null});
-        const onIssues: any[] = [];
-        if(!hasTitle) onIssues.push({issue:"Title tag missing",severity:"critical",fix:"Add 50-60 char title with primary keyword.",algorithmNote:null});
-        else if(titleText) onIssues.push({issue:"Title: "+titleText.trim().slice(0,55),severity:titleText.length>60||titleText.length<30?"medium":"low",fix:"Optimise to 50-60 chars with keyword near start.",algorithmNote:null});
-        if(!hasMeta) onIssues.push({issue:"Meta description missing",severity:"high",fix:"Add 150-160 char meta description with CTA.",algorithmNote:null});
-        if(!hasH1) onIssues.push({issue:"H1 heading not found",severity:"critical",fix:"Add one H1 with the target keyword.",algorithmNote:null});
-        else if(h1Text) onIssues.push({issue:"H1: "+h1Text.trim().slice(0,55),severity:"low",fix:"Ensure H1 contains the target keyword.",algorithmNote:null});
+        const score = Math.max(25, 90 - missing.length*12);
         result = {
-          score,
+          score, executiveSummary: rawUrl + " shows " + (missing.length > 0 ? missing.length + " foundational SEO gaps that are suppressing search visibility." : "a solid technical foundation, though deeper optimisation opportunities exist."),
           categories: [
-            {name:"Technical SEO",   score:hasSchema&&hasVp?70:40, issues:techIssues},
-            {name:"On-Page SEO",     score:hasTitle&&hasMeta&&hasH1?70:40, issues:onIssues.length?onIssues:[{issue:"On-page elements need review",severity:"medium",fix:"Check title, meta description and H1.",algorithmNote:null}]},
-            {name:"Content Quality", score:50, issues:[{issue:"Full content analysis needs deeper crawl",severity:"medium",fix:"Analyse content depth, keyword usage and E-E-A-T signals.",algorithmNote:"Helpful Content Update rewards depth and expertise"}]},
-            {name:"User Experience", score:hasVp?60:40, issues:[{issue:"Page speed not tested — run PageSpeed Insights",severity:"medium",fix:"Target 90+ on mobile. Fix LCP, CLS and INP.",algorithmNote:"Core Web Vitals are a confirmed ranking signal"}]},
+            { name:"Technical SEO", score:hasSchema?65:40, narrative:"Technical foundations are "+ (hasSchema?"partially in place":"largely missing") +". Priority work needed before other optimisation efforts.",
+              issues:[!hasSchema?{issue:"No structured data (JSON-LD) found",severity:"high",explanation:"Without schema markup, Google cannot identify your business type, location, or services. This directly reduces rich result eligibility.",fix:"Add Organization and WebPage schema to the homepage. Use Google's Structured Data Markup Helper.",algorithmNote:"Google's Helpful Content system rewards clearly-identified content types"}:{issue:"Basic technical setup present",severity:"low",explanation:"Core technical elements are in place.",fix:"Run a full technical crawl for deeper issues.",algorithmNote:null}] },
+            { name:"On-Page SEO", score:hasTitle&&hasMeta&&hasH1?65:40, narrative:"On-page signals "+ (hasTitle&&hasMeta&&hasH1?"are present but need refinement":"are incomplete, limiting how Google understands page content") +".",
+              issues:[
+                ...((!hasTitle)?[{issue:"Title tag missing",severity:"critical",explanation:"The page title is one of the strongest on-page ranking signals. Without it, Google generates its own title — usually less effective.",fix:"Add a 50-60 character title tag with your primary keyword in the first half.",algorithmNote:null}]:[{issue:'Title: "'+titleText.trim().slice(0,55)+'"',severity:titleText.length>60||titleText.length<30?"medium":"low",explanation:"The current title "+ (titleText.length>60?"exceeds 60 characters and will be truncated in search results":titleText.length<30?"is too short to effectively signal relevance":"is a reasonable length") +".",fix:"Ensure the primary keyword appears in the first 30 characters. Keep between 50-60 characters.",algorithmNote:null}]),
+                ...((!hasMeta)?[{issue:"Meta description missing",severity:"high",explanation:"Meta descriptions directly influence click-through rates from search results. Missing descriptions get auto-generated by Google — typically less compelling.",fix:"Write a 150-160 character meta description ending with a clear call to action.",algorithmNote:null}]:[]),
+                ...((!hasH1)?[{issue:"H1 heading not found",severity:"critical",explanation:"The H1 is the primary on-page heading signal. Without it, Google has reduced clarity about the page topic.",fix:"Add one H1 tag per page containing the primary target keyword.",algorithmNote:null}]:(h1Text?[{issue:'H1: "'+h1Text.trim().slice(0,55)+'"',severity:"low",explanation:"The H1 is present and visible to search engines.",fix:"Verify the H1 includes the exact keyword phrase you want to rank for.",algorithmNote:null}]:[])),
+              ]},
+            { name:"Content Quality", score:50, narrative:"Content depth and quality signals require a full crawl to assess properly. Initial indicators suggest optimisation opportunities exist.",
+              issues:[{issue:"Content depth not fully assessable from homepage alone",severity:"medium",explanation:"Google's Helpful Content Update rewards sites that demonstrate genuine expertise and depth. Thin or shallow content is actively downranked.",fix:"Conduct a content audit across all pages. Aim for comprehensive coverage of each topic, with clear authorship and E-E-A-T signals.",algorithmNote:"Helpful Content Update (2023) — AI-generated or thin content is actively penalised"}]},
+            { name:"User Experience", score:hasVp?60:40, narrative:"User experience signals directly feed into Core Web Vitals scoring, which is a confirmed ranking factor.",
+              issues:[{issue:"Page speed and Core Web Vitals not tested",severity:"medium",explanation:"Core Web Vitals (LCP, CLS, INP) are confirmed ranking factors. Sites below threshold are disadvantaged in competitive searches.",fix:"Run Google PageSpeed Insights on your key pages. Target 90+ on mobile. Focus on LCP under 2.5s first.",algorithmNote:"Core Web Vitals — direct ranking signal since 2021"}]},
           ],
-          quickWins: missing.length?missing.slice(0,3):["Improve page speed","Add structured data","Review internal links"],
-          algorithmHighlights: algoData.slice(0,2).map((a:any)=>a.topic+": "+(a.summary||"").slice(0,80)),
-          showcase_message: rawUrl+" — "+( missing.length? missing.length+" issues identified":"audit complete"),
+          quickWins: missing.length>0 ? missing : ["Improve mobile page speed","Add structured data markup","Review internal linking structure"],
+          algorithmHighlights: algoData.slice(0,2).map((a:any)=>a.topic+": "+(a.summary||"").slice(0,100)),
+          contextSummary: salesContext ? "Sales brief applied to this report." : "",
         };
       }
-      const allIssues: any[] = (result.categories||[]).flatMap((c:any)=>(c.issues||[]).map((i:any)=>({...i,category:c.name})));
+
+      const allIssues: any[] = (result.categories||[]).flatMap((c:any) =>
+        (c.issues||[]).map((i:any) => ({ ...i, category: c.name })));
+
       return ok(res, {
-        success:true, url:rawUrl, reachable:true,
+        success: true, url: rawUrl, reachable: true,
         score: typeof result.score==="number" ? result.score : 50,
-        categories: result.categories||[],
+        executiveSummary: result.executiveSummary || "",
+        categories: result.categories || [],
         issues: allIssues,
-        quickWins: result.quickWins||[],
-        algorithmHighlights: result.algorithmHighlights||[],
-        headline: rawUrl+" — SEO Score: "+(result.score||0)+"/100",
-        showcase_message: result.showcase_message||"",
+        quickWins: result.quickWins || [],
+        algorithmHighlights: result.algorithmHighlights || [],
+        showcase_message: result.showcase_message || "",
+        contextSummary: result.contextSummary || "",
       });
+
     } catch(e:any){ return ok(res,{success:false,url:"",error:e.message}); }
-  }
-
-
-  if (action === "generate_context_suggestions") {
-    const { auditResult, url, currentContext = "" } = body;
-    if (!auditResult) return ok(res, { error: "auditResult required" });
-    try {
-      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const issues = (auditResult.issues||[]).slice(0,6).map((i:any)=>(i.issue||i)+" ["+( i.severity||"high")+"]").join("; ");
-      const score = auditResult.score || 0;
-      const prompt = [
-        "You are helping a sales person customise an SEO audit and sales pack for a prospect.",
-        "URL: " + (url||auditResult.url||"their site"),
-        "SEO Score: " + score + "/100",
-        "Issues found: " + issues,
-        currentContext ? "Current sales context: " + currentContext : "",
-        "",
-        "Generate 6 smart context suggestions the sales person could add to customise their documents.",
-        "Each suggestion should be a ready-to-use instruction they can click to include.",
-        "Examples: emphasise urgency, skip price objections, focus on competitor threat, use friendly tone, omit technical jargon, highlight quick wins first, mention specific algorithm, push for upsell.",
-        "",
-        'Return ONLY raw JSON array: [{"label":"<short label>","text":"<the actual context instruction, under 100 chars>","category":"emphasis|omit|tone|focus|strategy"}]',
-        "Generate exactly 6 suggestions that are specific to THIS site and its findings.",
-      ].filter(Boolean).join("\n");
-      const _r = await _ac.messages.create({
-        model: "claude-sonnet-4-6", max_tokens: 1000,
-        system: "You are a JSON API. Return ONLY raw JSON array. No markdown.",
-        messages: [{ role: "user", content: prompt }]
-      });
-      const raw = (_r.content[0] as any).text || "[]";
-      const suggestions = safeParseJSON(raw) || [];
-      return ok(res, { success: true, suggestions: Array.isArray(suggestions) ? suggestions : [] });
-    } catch(e:any){ return ok(res,{success:false,suggestions:[],error:e.message}); }
-  }
-
-  if (action === "save_intake_session") {
-    const { url, salesContext, auditResult, pack, email, name } = body;
-    const slug = String(url||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,50);
-    try {
-      await db().from("brain_learnings").upsert({
-        card_type: "intake_session",
-        card_title: ("Intake: " + (url||"")).slice(0,100),
-        context_summary: JSON.stringify({ url, salesContext, auditResult, pack, email, name, savedAt: new Date().toISOString() }),
-        improvement: "Score: " + (auditResult?.score||0) + "/100 — " + (auditResult?.issues?.length||0) + " issues",
-        what_worked: [], what_missed: [],
-        tags: ["intake", slug],
-        source: "intake_session",
-        applied_count: 0,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "card_title" });
-      return ok(res, { success: true });
-    } catch(e:any){ return ok(res,{success:false,error:e.message}); }
-  }
-
-  if (action === "load_intake_session") {
-    const { url } = body;
-    if (!url) return ok(res, { error: "url required" });
-    const slug = String(url).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,50);
-    try {
-      const { data } = await db().from("brain_learnings")
-        .select("context_summary,updated_at")
-        .eq("source","intake_session")
-        .contains("tags",[slug])
-        .order("updated_at",{ascending:false})
-        .limit(1);
-      if (!data?.length) return ok(res, { found: false });
-      let session: any = {};
-      try { session = JSON.parse(data[0].context_summary||"{}"); } catch {}
-      return ok(res, { found: true, session, updatedAt: data[0].updated_at });
-    } catch(e:any){ return ok(res,{found:false,error:e.message}); }
   }
 
   if (action === "generate_sales_pack") {

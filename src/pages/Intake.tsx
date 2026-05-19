@@ -150,48 +150,64 @@ export default function Intake() {
 
   const auditHTML = () => {
     if (!audit) return "";
-    const cats = (audit.categories||[]).map((c:any)=>`
-      <div style="margin-bottom:20px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;page-break-inside:avoid;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <strong style="font-size:15px;color:#1B4080;">${c.name}</strong>
-          <span style="font-size:22px;font-weight:900;color:${c.score>=70?"#ef4444":c.score>=50?"#f59e0b":"#10b981"}">${c.score}/100</span>
+    const sev = (s:string) => ({critical:"#dc2626",high:"#ea580c",medium:"#d97706",low:"#16a34a"}[s]||"#6366f1");
+    const cats = (audit.categories||[]).map((c:any)=>
+      `<section style="margin-bottom:32px;page-break-inside:avoid;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #1B4080;padding-bottom:8px;margin-bottom:16px;">
+          <h2 style="margin:0;font-size:16px;font-weight:700;color:#1B4080;">${c.name}</h2>
+          <span style="font-size:24px;font-weight:900;color:${c.score>=70?"#dc2626":c.score>=50?"#d97706":"#16a34a"}">${c.score}<span style="font-size:13px;font-weight:400;color:#94a3b8;">/100</span></span>
         </div>
+        ${c.narrative?`<p style="font-size:14px;color:#475569;line-height:1.7;margin:0 0 20px;font-style:italic;">${c.narrative}</p>`:""}
         ${(c.issues||[]).map((i:any)=>`
-          <div style="margin-bottom:10px;padding:12px;background:#f8fafc;border-radius:6px;border-left:3px solid ${SEV_COLOR[i.severity]||"#6366f1"}">
-            <div style="font-weight:700;font-size:13px;color:#1e293b;margin-bottom:4px;">${i.issue}</div>
-            <div style="font-size:12px;color:#475569;"><strong>Fix:</strong> ${i.fix}</div>
-            ${i.algorithmNote?`<div style="font-size:11px;color:#6366f1;margin-top:4px;">⚡ ${i.algorithmNote}</div>`:""}
+          <div style="margin-bottom:16px;padding:16px 20px;border-left:4px solid ${sev(i.severity)};background:${sev(i.severity)}08;border-radius:0 8px 8px 0;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <span style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#fff;background:${sev(i.severity)};padding:2px 8px;border-radius:4px;">${i.severity}</span>
+              <strong style="font-size:14px;color:#1e293b;">${i.issue}</strong>
+            </div>
+            ${i.explanation?`<p style="font-size:13px;color:#475569;line-height:1.65;margin:0 0 10px;">${i.explanation}</p>`:""}
+            <div style="font-size:13px;background:rgba(0,0,0,0.03);padding:10px 14px;border-radius:6px;">
+              <strong style="color:#1B4080;">Recommended fix:</strong> <span style="color:#334155;">${i.fix}</span>
+            </div>
+            ${i.algorithmNote?`<div style="font-size:12px;color:#6366f1;margin-top:8px;">⚡ ${i.algorithmNote}</div>`:""}
           </div>`).join("")}
-      </div>`).join("");
-    const ctx = salesContext ? `<div style="margin-bottom:24px;padding:14px;background:#f0fdf4;border-radius:8px;border-left:3px solid #10b981;font-size:12px;color:#166534;"><strong>Custom Focus:</strong> ${salesContext}</div>` : "";
+      </section>`).join("");
+    const ctxBanner = audit.contextSummary ? `<div style="margin-bottom:28px;padding:14px 18px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#15803d;margin-bottom:4px;">✦ Sales Context Applied</div><p style="font-size:13px;color:#166534;margin:0;">${audit.contextSummary}</p></div>` : "";
+    const summaryBlock = audit.executiveSummary ? `<div style="margin-bottom:32px;padding:20px 24px;background:#f8fafc;border-radius:10px;border-left:5px solid #1B4080;"><h2 style="margin:0 0 10px;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1B4080;">Executive Summary</h2><p style="font-size:15px;color:#1e293b;line-height:1.75;margin:0;">${audit.executiveSummary}</p></div>` : "";
+    const printCSS = "@media print{body{max-width:100%;margin:0;padding:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{size:A4;margin:1.5cm;}.no-print{display:none;}}";
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>SEO Audit — ${url}</title>
-      <style>body{font-family:'Segoe UI',system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 24px;color:#1e293b;line-height:1.6;}h1,h2{color:#1B4080;}${printCSS}</style>
-      </head><body>
-      <div style="background:#1B4080;color:#fff;padding:24px 28px;border-radius:8px;margin-bottom:24px;">
-        <div style="font-size:11px;letter-spacing:2px;opacity:0.7;text-transform:uppercase;margin-bottom:6px;">SEO Season · Manav S</div>
-        <h1 style="margin:0 0 8px;font-size:24px;font-weight:300;color:#fff;">SEO Audit Report</h1>
-        <div style="font-size:13px;opacity:0.8;">${url} · ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</div>
-      </div>
-      <div style="display:flex;gap:24px;margin-bottom:24px;">
-        <div style="flex:1;padding:20px;background:#f8fafc;border-radius:8px;border-left:4px solid ${(audit.score||0)>=70?"#ef4444":(audit.score||0)>=50?"#f59e0b":"#10b981"}">
-          <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;">Overall Score</div>
-          <div style="font-size:48px;font-weight:900;color:${(audit.score||0)>=70?"#ef4444":(audit.score||0)>=50?"#f59e0b":"#10b981"}">${audit.score||0}</div>
-          <div style="font-size:13px;color:#64748b;">/100</div>
+      <style>
+        *{box-sizing:border-box;}
+        body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;max-width:820px;margin:40px auto;padding:0 28px;color:#1e293b;line-height:1.6;background:#fff;}
+        h1,h2,h3{font-weight:700;line-height:1.3;}
+        section{margin-bottom:32px;}
+        ${printCSS}
+      </style></head><body>
+      <div style="background:linear-gradient(135deg,#1B4080,#0f2655);color:#fff;padding:32px 36px;border-radius:12px;margin-bottom:32px;">
+        <div style="font-size:10px;letter-spacing:3px;opacity:0.6;text-transform:uppercase;margin-bottom:8px;font-weight:600;">SEO Season · Manav S · Confidential</div>
+        <h1 style="margin:0 0 6px;font-size:28px;font-weight:300;color:#fff;letter-spacing:-0.5px;">SEO Audit Report</h1>
+        <div style="font-size:14px;opacity:0.75;margin-bottom:20px;">${url}</div>
+        <div style="display:flex;gap:32px;align-items:flex-end;">
+          <div><div style="font-size:11px;opacity:0.6;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Overall Score</div>
+            <div style="font-size:52px;font-weight:900;line-height:1;color:${(audit.score||0)>=70?"#fca5a5":(audit.score||0)>=50?"#fcd34d":"#86efac"}">${audit.score||0}<span style="font-size:20px;opacity:0.5;">/100</span></div></div>
+          <div style="flex:1;max-width:300px;">
+            <div style="font-size:11px;opacity:0.6;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Quick Wins</div>
+            ${(audit.quickWins||[]).map((w:string)=>`<div style="font-size:13px;margin-bottom:5px;opacity:0.9;">✓ ${w}</div>`).join("")}
+          </div>
+          <div style="text-align:right;opacity:0.6;font-size:13px;">${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</div>
         </div>
-        <div style="flex:2;padding:20px;background:#f8fafc;border-radius:8px;">
-          <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Quick Wins</div>
-          ${(audit.quickWins||[]).map((w:string)=>`<div style="font-size:13px;color:#166534;margin-bottom:6px;">✓ ${w}</div>`).join("")}
-        </div>
       </div>
-      ${ctx}
-      <h2 style="font-size:16px;border-bottom:2px solid #1B4080;padding-bottom:8px;">Detailed Findings</h2>
+      ${ctxBanner}
+      ${summaryBlock}
       ${cats}
-      ${(audit.algorithmHighlights||[]).length?`<div style="padding:16px;background:#eef4ff;border-radius:8px;margin-top:8px;"><div style="font-size:11px;color:#1B4080;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Algorithm Context</div>${(audit.algorithmHighlights||[]).map((a:string)=>`<div style="font-size:12px;color:#3730a3;margin-bottom:4px;">◆ ${a}</div>`).join("")}</div>`:""}
-      <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;">
-        <span><strong style="color:#1B4080;">Manav S</strong> · SEO Season</span>
+      ${(audit.algorithmHighlights||[]).length?`<section style="padding:20px 24px;background:#eef4ff;border-radius:10px;">
+        <h2 style="margin:0 0 12px;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#3730a3;">Algorithm Context</h2>
+        ${(audit.algorithmHighlights||[]).map((a:string)=>`<div style="font-size:13px;color:#3730a3;margin-bottom:6px;padding-left:16px;border-left:3px solid #6366f1;">◆ ${a}</div>`).join("")}
+      </section>`:""}
+      <div style="margin-top:40px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;">
+        <span><strong style="color:#1B4080;font-weight:700;">Manav S</strong> · SEO Season · seoseason.com</span>
         <span>Prepared exclusively for ${url}</span>
       </div></body></html>`;
-  };
+  };;
 
   const packHTML = () => {
     if (!pack) return "";
@@ -375,6 +391,25 @@ export default function Intake() {
               </div>
             )}
 
+            {/* Executive Summary */}
+            {audit.executiveSummary && (
+              <div className="mb-5 p-4 rounded-xl border border-border bg-card/50">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Executive Summary</div>
+                <p className="text-sm leading-relaxed text-foreground">{audit.executiveSummary}</p>
+              </div>
+            )}
+
+            {/* Context Applied Banner */}
+            {audit.contextSummary && (
+              <div className="mb-5 p-3 rounded-xl border border-green-500/30 bg-green-500/5 flex items-start gap-2">
+                <span className="text-green-400 shrink-0 mt-0.5">✦</span>
+                <div>
+                  <div className="text-xs font-bold text-green-400 mb-0.5">Sales Context Applied</div>
+                  <p className="text-xs text-green-300/80">{audit.contextSummary}</p>
+                </div>
+              </div>
+            )}
+
             {/* Categories */}
             <div className="space-y-4">
               {(audit.categories||[]).map((cat:any,ci:number)=>(
@@ -388,7 +423,8 @@ export default function Intake() {
                       <div key={ii} className="text-xs p-3 rounded-lg"
                         style={{background:`${SEV_COLOR[issue.severity]||"#6366f1"}10`,borderLeft:`2px solid ${SEV_COLOR[issue.severity]||"#6366f1"}`}}>
                         <div className="font-semibold mb-1" style={{color:SEV_COLOR[issue.severity]||"#6366f1"}}>[{issue.severity}] {issue.issue}</div>
-                        <div className="text-muted-foreground">Fix: {issue.fix}</div>
+                        {issue.explanation && <div className="text-muted-foreground mb-1.5 leading-relaxed">{issue.explanation}</div>}
+                        <div className="text-muted-foreground"><span className="font-semibold text-foreground">Fix: </span>{issue.fix}</div>
                         {issue.algorithmNote&&<div className="mt-1 text-primary">⚡ {issue.algorithmNote}</div>}
                       </div>
                     ))}
