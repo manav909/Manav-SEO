@@ -438,12 +438,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         messages: [{ role: "user", content: auditPrompt }]
       });
       const raw = (_r.content[0] as any).text || "{}";
-      const cleaned = raw.replace(/^```[a-z]*/i, "").replace(/```/g, "").trim();
-      let result: any = null;
-      try { result = JSON.parse(cleaned); } catch {
-        const m2 = cleaned.match(/\{[\s\S]+\}/);
-        try { result = m2 ? JSON.parse(m2[0]) : null; } catch {}
-      }
+      const result: any = safeParseJSON(raw);
       if (!result) {
         return ok(res, { success: false, url: rawUrl, reachable: true, error: "Audit parse failed", raw: raw.slice(0, 300) });
       }
@@ -505,11 +500,7 @@ Return ONLY raw JSON with this structure:
         messages: [{ role: "user", content: prompt }]
       });
       const raw = (_r.content[0] as any).text || "{}";
-      let pack: any = {};
-      try { pack = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {
-        const m = raw.match(/\{[\s\S]+\}/);
-        try { pack = m ? JSON.parse(m[0]) : {}; } catch {}
-      }
+      const pack: any = safeParseJSON(raw) || {};
       return ok(res, { success: true, pack });
     } catch(e: any) { return ok(res, { success: false, error: e.message }); }
   }
@@ -582,8 +573,7 @@ Return ONLY raw JSON with this structure:
       const raw = (_r.content[0] as any).text || "{}";
       let doc: any = null;
       // Strategy 1: direct parse after stripping any accidental fences
-      const cleaned = raw.replace(/^```json\s*/i,"").replace(/```\s*$/,"").trim();
-      try { doc = JSON.parse(cleaned); } catch {}
+            try { doc = JSON.parse(cleaned); } catch {}
       // Strategy 2: extract first {...} block
       if (!doc) {
         const m = cleaned.match(/\{[\s\S]+\}/);
@@ -1044,15 +1034,7 @@ Return ONLY raw JSON with this structure:
         system: sys2, messages: [{ role: "user", content: usr2 }]
       });
       const raw = (_r.content[0] as any).text || "{}";
-      const cleaned = raw.replace(/^```[a-z]*\s*/i, "").replace(/```\s*$/g, "").trim();
-      let result: any = null;
-      // Try direct parse
-      try { result = JSON.parse(cleaned); } catch {}
-      // Try extracting JSON object
-      if (!result) {
-        const m = cleaned.match(/\{[\s\S]+\}/);
-        try { result = m ? JSON.parse(m[0]) : null; } catch {}
-      }
+            const result: any = safeParseJSON(raw);
       if (!result) {
         return ok(res, { success: false, error: "Claude returned unparseable response", rawPreview: raw.slice(0, 400) });
       }
@@ -1087,7 +1069,7 @@ Return ONLY raw JSON with this structure:
       userContent.push({ type: "text", text: "File: " + fileName + ctxNote + "\n\nAnalyse this file and extract: (1) What it shows/contains, (2) Key SEO/technical issues visible, (3) Specific numbers, errors, or data points, (4) What action this suggests. Be concrete and specific — no generic statements." });
       const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 1200, system: sysP, messages: [{ role: "user", content: userContent }] });
       const rawR = (_r.content[0] as any).text||"";
-      let st:any=null;try{st=JSON.parse(rawR.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim());}catch{}
+      let st:any=safeParseJSON(rawR);
       const description = st?(st.summary||"")+(st.keyFindings?.length?"\n\nKey findings:\n"+st.keyFindings.map((f:string)=>"• "+f).join("\n"):"")+(st.seoIssues?.length?"\n\nSEO Issues:\n"+st.seoIssues.map((f:string)=>"• "+f).join("\n"):"")+(st.actionItems?.length?"\n\nAction items:\n"+st.actionItems.map((f:string)=>"→ "+f).join("\n"):""):rawR;
       return ok(res, { success:true, description, structured:st, fileName, mimeType });
     } catch (e: any) { return ok(res, { success: false, error: e.message }); }
@@ -1145,7 +1127,7 @@ Return ONLY raw JSON with this structure:
         messages: [{ role: "user", content: userP }] });
       const raw = (_r.content[0] as any).text || "{}";
       let parsed: any = {};
-      try { parsed = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {}
+      parsed = safeParseJSON(raw) || {};
       const pName = prospectName || parsed.clientName || "";
       const slug = String(pName).toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40);
       const payload = JSON.stringify({ ...parsed, fileName, prospectName: pName, prospectUrl, callDate: callDate || parsed.callDate || "", rawText: rawText.slice(0, 6000), savedAt: new Date().toISOString() });
@@ -1292,10 +1274,7 @@ Return ONLY raw JSON with this structure:
       });
       const raw = (_r.content[0] as any).text || "{}";
       let analysis = null;
-      try { analysis = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {
-        const m2 = raw.match(/\{[\s\S]+\}/);
-        try { analysis = m2 ? JSON.parse(m2[0]) : null; } catch {}
-      }
+      analysis = safeParseJSON(raw);
       return ok(res, { success: true, analysis, newMessageCount: newMessages.length });
     } catch (e: any) { return ok(res, { error: e.message }); }
   }
