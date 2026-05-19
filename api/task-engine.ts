@@ -2073,7 +2073,21 @@ Return ONLY raw JSON:
         .from("projects")
         .select("id,name,goals,playground_strategy,playground_canvas")
         .eq("id", projectId).single();
-      if (!proj) return ok(res, { error: "Project not found" });
+      if (!proj) {
+        // Debug: list first 5 project IDs to check what's in the DB
+        const { data: allProjs } = await db().from("projects").select("id,name").limit(5);
+        return ok(res, {
+          error: "Project not found",
+          _debug: {
+            projectIdSent: projectId,
+            supabaseUrl: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "NOT SET").slice(0,40),
+            keyUsed: process.env.SUPABASE_SERVICE_KEY ? "SUPABASE_SERVICE_KEY" :
+                     process.env.SUPABASE_SERVICE_ROLE_KEY ? "SUPABASE_SERVICE_ROLE_KEY" :
+                     process.env.SUPABASE_ANON_KEY ? "SUPABASE_ANON_KEY(RLS!)" : "NONE",
+            sampleProjectIds: (allProjs||[]).map((p:any) => ({id:p.id, name:p.name})),
+          }
+        });
+      }
 
       // Source 1: playground_strategy.canvas_blocks (Brain-created cards)
       const strategy = proj.playground_strategy || {};
@@ -2137,6 +2151,11 @@ Return ONLY raw JSON:
           reqError: reqRows === null ? "null result — table may not exist" : null,
           projectFound: true,
           playgroundStrategyKeys: Object.keys(strategy),
+          projectIdReceived: projectId,
+          supabaseUrl: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "NOT SET").slice(0,40),
+          keyUsed: process.env.SUPABASE_SERVICE_KEY ? "SUPABASE_SERVICE_KEY" :
+                   process.env.SUPABASE_SERVICE_ROLE_KEY ? "SUPABASE_SERVICE_ROLE_KEY" :
+                   process.env.SUPABASE_ANON_KEY ? "SUPABASE_ANON_KEY" : "NONE",
         },
       });
     } catch(e:any){ return ok(res,{success:false,error:e.message}); }
