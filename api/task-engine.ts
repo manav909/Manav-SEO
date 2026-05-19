@@ -254,6 +254,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+
+function safeParseJSON(raw: string): any {
+  if (!raw || typeof raw !== "string") return null;
+  const stripped = raw.replace(/^\s*```[a-z]*\s*/i,"").replace(/\s*```\s*$/,"").trim();
+  const sanitise = (s: string): string => {
+    let o="",inS=false,esc=false;
+    for(let i=0;i<s.length;i++){
+      const c=s[i];
+      if(esc){o+=c;esc=false;continue;}
+      if(c==="\\"){esc=true;o+=c;continue;}
+      if(c==='"'){inS=!inS;o+=c;continue;}
+      if(inS&&c==="\n"){o+="\\n";continue;}
+      if(inS&&c==="\r"){o+="\\r";continue;}
+      if(inS&&c==="\t"){o+="\\t";continue;}
+      o+=c;
+    }
+    return o;
+  };
+  const san = sanitise(stripped);
+  try{return JSON.parse(san);}catch{}
+  const m1=san.match(/\{[\s\S]*\}/);
+  if(m1)try{return JSON.parse(m1[0]);}catch{}
+  try{return JSON.parse(stripped);}catch{}
+  const m2=san.match(/\[[\s\S]*\]/);
+  if(m2)try{return JSON.parse(m2[0]);}catch{}
+  return null;
+}
+
 async function _run(req: VercelRequest, res: VercelResponse) {
   /* Vercel cron trigger (GET or x-vercel-cron header) — auto-routes to verification runner */
   const isCron = req.method === "GET" || req.headers["x-vercel-cron"] === "1";
