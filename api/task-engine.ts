@@ -796,16 +796,10 @@ Return ONLY raw JSON:
         messages: [{ role: "user", content: userPrompt }]
       });
       const raw = (_r.content[0] as any).text || "{}";
-      let doc: any = null;
-      // Strategy 1: direct parse after stripping any accidental fences
-            try { doc = JSON.parse(cleaned); } catch {}
-      // Strategy 2: extract first {...} block
-      if (!doc) {
-        const m = cleaned.match(/\{[\s\S]+\}/);
-        if (m) try { doc = JSON.parse(m[0]); } catch {}
-      }
+      const cleaned = raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim();
+      let doc: any = safeParseJSON(raw);
       const typeLabel: Record<string,string> = { proposal:"Strategic SEO Proposal", pitch_email:"Pitch Email", followup_email:"Follow-up", audit_summary:"SEO Audit Summary", whatsapp_msg:"Message", case_study:"Case Study", objection_response:"Response", suggestion_doc:"AI Suggestion Document" };
-      // Strategy 3: fallback — wrap raw text as a single section
+      // Fallback — wrap raw text as a single section
       if (!doc || !doc.sections) {
         const fallbackBody = cleaned.replace(/^[`\s]*json\s*/i,"").replace(/[`\s]*$/,"").trim();
         doc = {
