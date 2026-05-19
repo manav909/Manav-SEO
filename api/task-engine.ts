@@ -2071,7 +2071,7 @@ Return ONLY raw JSON:
     try {
       const { data: projRows, error: projErr } = await db()
         .from("projects")
-        .select("id,name,goals,playground_strategy,playground_canvas")
+        .select("id,name,playground_strategy,playground_canvas")
         .eq("id", projectId)
         .limit(1);
       const proj = projRows?.[0] || null;
@@ -2143,7 +2143,6 @@ Return ONLY raw JSON:
         cards: allCards,
         tasks: tasks || [],
         projectName: proj.name,
-        goals: proj.goals,
         _debug: {
           reqCards: reqCards.length,
           blockCards: mergedBlocks.length,
