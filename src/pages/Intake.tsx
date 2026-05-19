@@ -95,11 +95,25 @@ export default function Intake() {
     setStep("done");
   };
 
-  const downloadHTML = (content: string, filename: string) => {
-    const blob = new Blob([content], { type: "text/html" });
+  const downloadAsPDF = (content: string, filename: string) => {
+    // Open in new window and trigger print dialog (Save as PDF)
+    const win = window.open("", "_blank");
+    if (!win) { alert("Allow popups to download PDF"); return; }
+    win.document.write(content);
+    win.document.close();
+    win.focus();
+    setTimeout(() => {
+      win.print();
+      // Close after print dialog
+      win.onafterprint = () => win.close();
+    }, 500);
+  };
+
+  const downloadAsDoc = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: "application/msword" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = filename;
+    a.download = filename.replace(".html", ".doc");
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -120,7 +134,7 @@ export default function Intake() {
           </div>`).join("")}
       </div>`).join("");
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>SEO Audit — ${url}</title>
-      <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1e293b;}
+      <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1e293b;}@media print{body{max-width:100%;margin:0;padding:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{size:A4;margin:1.5cm;}}@media print{body{max-width:100%;margin:0;padding:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{size:A4;margin:1.5cm;}}
       h1{color:#1B4080;}h2{color:#1B4080;margin-top:32px;}</style></head><body>
       <h1>SEO Audit Report</h1><p><strong>URL:</strong> ${url}</p>
       <p><strong>Date:</strong> ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</p>
@@ -134,6 +148,8 @@ export default function Intake() {
 
   const packHTML = () => {
     if (!pack) return "";
+    // quickWinPlan uses | separator — convert to bullets
+    const qwp = (pack.quickWinPlan||"").split("|").map((s:string)=>s.trim()).filter(Boolean);
     const proposal = (pack.proposalPoints||[]).map((p: any) =>
       `<div style="margin-bottom:16px;padding:14px;background:#f8fafc;border-radius:8px;border-left:3px solid #6366f1;">
         <strong>${p.heading}</strong><p style="margin:6px 0 0;color:#475569;font-size:14px;">${p.body}</p></div>`).join("");
@@ -161,7 +177,7 @@ export default function Intake() {
       <div style="padding:16px;background:#faf5ff;border-radius:8px;border-left:3px solid #6366f1;white-space:pre-wrap;font-size:14px;">${pack.pitchScript||""}</div>
       <h2>Objection Handlers</h2>${objections}
       <h2>Follow-up Sequence</h2>${followup}
-      <h2>Quick Win Plan (First 7 Days)</h2><p>${pack.quickWinPlan||""}</p>
+      <h2>Quick Win Plan (First 7 Days)</h2><ul>${qwp.map(b=>"<li>"+b+"</li>").join("")||"<li>"+pack.quickWinPlan+"</li>"}</ul>
       <p style="margin-top:40px;font-size:12px;color:#94a3b8;">SEO Season · seoseason.com</p>
       </body></html>`;
   };
@@ -250,7 +266,7 @@ export default function Intake() {
                   </div>
                   <div className="text-xs text-muted-foreground">/100</div>
                 </div>
-                <button onClick={() => downloadHTML(auditHTML(), `audit-${url.replace(/[^a-z0-9]/gi,"_")}.html`)}
+                <button onClick={() => downloadAsPDF(auditHTML(), `audit-${url.replace(/[^a-z0-9]/gi,"_")}.pdf`)}
                   className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:border-primary/40">
                   ⬇ Download Audit
                 </button>
@@ -333,7 +349,7 @@ export default function Intake() {
                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Sales Pack</div>
                 <div className="text-base font-semibold">{url}</div>
               </div>
-              <button onClick={() => downloadHTML(packHTML(), `sales-pack-${url.replace(/[^a-z0-9]/gi,"_")}.html`)}
+              <button onClick={() => downloadAsPDF(packHTML(), `sales-pack-${url.replace(/[^a-z0-9]/gi,"_")}.pdf`)}
                 className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:border-primary/40">
                 ⬇ Download Pack
               </button>
@@ -426,7 +442,7 @@ export default function Intake() {
             {pack.quickWinPlan && (
               <div className="p-4 rounded-xl bg-green-500/5 border border-green-500/20">
                 <div className="text-xs font-bold text-green-400 uppercase tracking-wider mb-2">First 7 Days Plan</div>
-                <p className="text-xs text-muted-foreground whitespace-pre-wrap">{pack.quickWinPlan}</p>
+                <ul className="space-y-1">{(pack.quickWinPlan||"").split("|").map((b:string,i:number)=>b.trim()&&<li key={i} className="text-xs text-muted-foreground flex items-start gap-1"><span className="text-green-400 shrink-0">•</span>{b.trim()}</li>)}</ul>
               </div>
             )}
 

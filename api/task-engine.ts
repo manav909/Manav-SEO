@@ -475,53 +475,59 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (!auditResult) return ok(res, { error: "auditResult required" });
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const issues = (auditResult.issues || []).slice(0, 8).map((i: any) =>
-        typeof i === "string" ? i : `${i.issue || i} (${i.severity || "high"})`).join("\n");
-      const cats = (auditResult.categories || []).map((c: any) =>
-        `${c.name}: ${c.score}/100`).join(", ");
+      const issues = (auditResult.issues || []).slice(0, 6)
+        .map((i: any) => (typeof i==="string" ? i : (i.issue||"")+" ("+( i.severity||"high")+")")).join("; ");
+      const cats = (auditResult.categories || []).map((c: any) => c.name+": "+c.score+"/100").join(", ");
+      const wins = (auditResult.quickWins || []).join(", ");
+      const siteUrl = String(url || auditResult.url || "their website");
 
-      const prompt = `You are a senior SEO sales consultant creating a complete sales pack for a prospect.
-URL: ${url || auditResult.url || "their website"}
-SEO Score: ${auditResult.score}/100
-Categories: ${cats}
-Top Issues:\n${issues}
-Quick Wins: ${(auditResult.quickWins || []).join(", ")}
+      const schemaStr = '{"executiveSummary":"<3 sentences>","caseStudy":{"title":"<title>","situation":"<2 sentences>","approach":"<2 sentences>","result":"<numbers+timeline>","relevance":"<1 sentence>"},"proposalPoints":[{"heading":"<h>","body":"<2 sentences>"},{"heading":"<h>","body":"<2 sentences>"},{"heading":"<h>","body":"<2 sentences>"}],"objectionHandlers":[{"objection":"<obj>","response":"<2 sentences>"},{"objection":"<obj>","response":"<2 sentences>"}],"pitchScript":"<120 word Fiverr pitch mentioning their URL and issues>","followUpSequence":[{"day":1,"message":"<60 word message>"},{"day":3,"message":"<60 word message>"},{"day":7,"message":"<60 word message>"}],"quickWinPlan":"<3 bullet points as one string, bullets separated by | character>"}';
 
-Return ONLY raw JSON with this structure:
-{
-  "executiveSummary": "3-4 sentence compelling summary of their SEO situation and opportunity. No fluff.",
-  "caseStudy": {
-    "title": "Realistic case study title for a similar business",
-    "situation": "2 sentences — similar business, similar issues",
-    "approach": "2 sentences — what was done",
-    "result": "Specific numbers: traffic increase %, ranking improvements, timeline",
-    "relevance": "1 sentence linking this to the prospect"
-  },
-  "proposalPoints": [
-    {"heading": "string", "body": "2-3 sentences of compelling copy"}
-  ],
-  "objectionHandlers": [
-    {"objection": "string", "response": "2-3 sentence confident response"}
-  ],
-  "pitchScript": "Complete 200-word Fiverr message pitch. Mention their site, their specific issues, what you will fix, expected outcome. Sound human and confident — not a template.",
-  "followUpSequence": [
-    {"day": 1, "message": "string"},
-    {"day": 3, "message": "string"},
-    {"day": 7, "message": "string"}
-  ],
-  "quickWinPlan": "3-bullet action plan for the first 7 days after they order"
-}`;
+      const prompt = [
+        "You are a senior SEO sales consultant. Return ONLY raw JSON. No markdown. No code fences.",
+        "Prospect: " + siteUrl,
+        "SEO Score: " + (auditResult.score||0) + "/100",
+        "Categories: " + cats,
+        "Issues: " + issues,
+        "Quick Wins: " + wins,
+        "",
+        "Return this exact JSON structure:",
+        schemaStr,
+        "",
+        "Rules: Keep ALL strings under 150 chars. No line breaks inside strings. Be specific to this site.",
+      ].join("\n");
 
       const _r = await _ac.messages.create({
-        model: "claude-sonnet-4-6", max_tokens: 2000,
-        system: "You are a senior SEO sales consultant. Be specific, compelling, and human. No generic fluff.",
+        model: "claude-sonnet-4-6", max_tokens: 3000,
+        system: "You are a JSON API. Return ONLY raw JSON. Never use markdown or code fences. No line breaks inside string values. All strings under 150 chars.",
         messages: [{ role: "user", content: prompt }]
       });
-      const raw = (_r.content[0] as any).text || "{}";
-      const pack: any = safeParseJSON(raw) || {};
+      const raw = (_r.content[0] as any).text || "";
+      let pack: any = safeParseJSON(raw);
+      // Truncation recovery
+      if (!pack || !pack.executiveSummary) {
+        try {
+          const trimmed = raw.trimEnd();
+          if (!trimmed.endsWith("}")) {
+            let op=0,cl=0,ao=0,ac=0,inS=false,es=false;
+            for (const c of trimmed) {
+              if(es){es=false;continue;} if(c==="\\"){es=true;continue;}
+              if(c==='"'){inS=!inS;continue;}
+              if(!inS){if(c==="{")op++;if(c==="}") cl++;if(c==="[")ao++;if(c==="]")ac++;}
+            }
+            const closing="]".repeat(Math.max(0,ao-ac))+"}".repeat(Math.max(0,op-cl));
+            const rec = safeParseJSON(trimmed+closing);
+            if(rec && rec.executiveSummary) pack = rec;
+          }
+        } catch {}
+      }
+      if (!pack || !pack.executiveSummary) {
+        return ok(res, { success: false, error: "Sales pack generation failed — please retry" });
+      }
       return ok(res, { success: true, pack });
-    } catch(e: any) { return ok(res, { success: false, error: e.message }); }
+    } catch(e:any){ return ok(res,{success:false,error:e.message}); }
   }
+
 
   if (action === "get_pipeline") {
     try {
