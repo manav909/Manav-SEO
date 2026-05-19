@@ -7,7 +7,7 @@
    is missing — full transparency before any card is created.
 ════════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type {
   RequirementContext, SourceRef, DataRoomContext, KeywordPageMapping,
   CrawlComparison,
@@ -25,18 +25,22 @@ export default function RequirementsPanel({
   const [loading, setLoading]   = useState(false);
   const [generating, setGen]    = useState(false);
   const [result, setResult]     = useState('');
+  const [gatheredAt, setGatheredAt] = useState<string>('');
 
-  /* Gather the project's intelligence on mount / project change. */
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setResult('');
-      const gathered = await pmApi.gatherRequirements(projectId);
-      if (!cancelled) { setCtx(gathered); setLoading(false); }
-    })();
-    return () => { cancelled = true; };
+  /* Re-gather the project's intelligence — re-runs every backend query.
+     This is the truth-source refresh: it re-reads the Data Room,
+     audits, learnings, crawl and documents live. */
+  const gather = useCallback(async () => {
+    setLoading(true);
+    setResult('');
+    const gathered = await pmApi.gatherRequirements(projectId);
+    setCtx(gathered);
+    setGatheredAt(new Date().toISOString());
+    setLoading(false);
   }, [projectId]);
+
+  /* Gather on mount and whenever the project changes. */
+  useEffect(() => { gather(); }, [gather]);
 
   const generate = async () => {
     setGen(true);
@@ -64,19 +68,39 @@ export default function RequirementsPanel({
   }
 
   /* Group every source for display. */
-  const sourceGroups: { title: string; icon: string; refs: SourceRef[]; note: string }[] = [
-    { title: 'Audits',           icon: '🔍', refs: ctx.audits,      note: 'Technical & on-page findings' },
-    { title: 'Algorithm Intel',  icon: '📡', refs: ctx.algorithm,   note: 'Recent algorithm signals' },
-    { title: 'Brain Learnings',  icon: '🧠', refs: ctx.brain,       note: 'Lessons from past work' },
-    { title: 'Competitors',      icon: '🎯', refs: ctx.competitors, note: 'Competitive context' },
-    { title: 'Sales Findings',   icon: '💬', refs: ctx.sales,       note: 'From client conversations' },
-    { title: 'Client Notes',     icon: '📝', refs: ctx.clientNotes, note: 'Scope & requirements' },
+  const sourceGroups: { title: string; icon: string; refs: SourceRef[]; note: string; source: string }[] = [
+    { title: 'Audits',           icon: '🔍', refs: ctx.audits,      note: 'Technical & on-page findings', source: 'audit_reports' },
+    { title: 'Algorithm Intel',  icon: '📡', refs: ctx.algorithm,   note: 'Recent algorithm signals',     source: 'algorithm_knowledge' },
+    { title: 'Brain Learnings',  icon: '🧠', refs: ctx.brain,       note: 'Lessons from past work',       source: 'brain_learnings' },
+    { title: 'Competitors',      icon: '🎯', refs: ctx.competitors, note: 'Competitive context',          source: 'Data Room' },
+    { title: 'Documents',        icon: '📄', refs: ctx.documents || [], note: 'Uploaded project documents', source: 'project_documents' },
+    { title: 'Sales Findings',   icon: '💬', refs: ctx.sales,       note: 'From client conversations',    source: 'sales' },
+    { title: 'Client Notes',     icon: '📝', refs: ctx.clientNotes, note: 'Scope & requirements',         source: 'Data Room' },
   ];
 
   const totalSources = sourceGroups.reduce((n, g) => n + g.refs.length, 0);
 
   return (
     <div className="space-y-6">
+
+      {/* Refresh bar — re-gathers from all live sources, shows freshness */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="text-xs text-muted-foreground">
+          {gatheredAt
+            ? `Gathered from live sources at ${new Date(gatheredAt).toLocaleString('en-GB')}`
+            : 'Gathering…'}
+          <span className="text-muted-foreground/60">
+            {' '}— edit the Data Room or run an audit, then Refresh to pull the latest.
+          </span>
+        </div>
+        <button
+          onClick={gather}
+          disabled={loading}
+          className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-50 transition-colors shrink-0"
+        >
+          {loading ? 'Refreshing…' : 'Refresh from sources'}
+        </button>
+      </div>
 
       {/* Project summary — uses the project record the app already loaded,
           falling back to the gathered context. */}
@@ -126,7 +150,10 @@ export default function RequirementsPanel({
                 <span className="text-sm font-semibold">{g.title}</span>
                 <span className="text-xs text-muted-foreground ml-auto font-mono">{g.refs.length}</span>
               </div>
-              <div className="text-xs text-muted-foreground mb-2">{g.note}</div>
+              <div className="text-xs text-muted-foreground mb-1">{g.note}</div>
+              <div className="text-[10px] text-muted-foreground/60 mb-2 font-mono">
+                source: {g.source}
+              </div>
               {g.refs.length > 0 ? (
                 <ul className="space-y-2">
                   {g.refs.slice(0, 4).map((r, i) => (

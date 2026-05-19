@@ -228,7 +228,8 @@ export async function runCrawl(projectId: string): Promise<{
       return { success: false, error: t?.error || 'No URLs to crawl — add the site URL, landing pages, or competitors in the Data Room.' };
     }
 
-    /* 2. Crawl the URLs — relative /api/crawl, fresh. */
+    /* 2. Crawl the URLs — /api/crawl crawl_urls streams NDJSON
+          (one JSON object per line, final line type:"complete"). */
     const crawlRes = await fetch('/api/crawl', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'pm-module' },
@@ -237,12 +238,38 @@ export async function runCrawl(projectId: string): Promise<{
         projectContext: t.projectContext || '', forceRefresh: true,
       }),
     });
-    const crawlText = await crawlRes.text();
-    let crawlResults: any;
-    try { crawlResults = JSON.parse(crawlText); }
-    catch { return { success: false, error: 'Crawl service returned an unexpected response.' }; }
+    if (!crawlRes.ok || !crawlRes.body) {
+      return { success: false, error: `Crawl service error (${crawlRes.status}).` };
+    }
+
+    /* read the NDJSON stream — the final {type:"complete"} line carries results */
+    const reader = crawlRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let crawlResults: any = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.type === 'complete') crawlResults = msg;
+        } catch { /* skip non-JSON line */ }
+      }
+    }
+    /* the trailing buffer may hold the final line */
+    if (buf.trim()) {
+      try {
+        const msg = JSON.parse(buf);
+        if (msg.type === 'complete') crawlResults = msg;
+      } catch { /* ignore */ }
+    }
     if (!crawlResults?.results?.length) {
-      return { success: false, error: crawlResults?.error || 'Crawl returned no results.' };
+      return { success: false, error: 'Crawl returned no results.' };
     }
 
     /* 3. Run the AI competitive comparison. */
