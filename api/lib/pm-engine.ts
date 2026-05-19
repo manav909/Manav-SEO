@@ -12,7 +12,7 @@
 ════════════════════════════════════════════════════════════════ */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { db } from "./db";
+import { db } from "./db.js";
 
 const MODEL = "claude-sonnet-4-6";
 
