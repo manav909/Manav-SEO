@@ -127,8 +127,8 @@ export default function RequirementsPanel({
         </div>
         <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
           <Row label="Name"  value={project?.name || ctx.projectName || 'Unnamed'} />
-          <Row label="URL"   value={project?.url || project?.website || ctx.url || 'Not set'} />
-          <Row label="Goal"  value={project?.goals || project?.goal || ctx.goal || 'Not set'} />
+          <Row label="URL"   value={project?.url || ctx.url || 'Not set'} />
+          <Row label="Goal"  value={ctx.goal || ctx.dataRoom?.goal?.primaryGoal || 'Not set'} />
           <Row label="Scope" value={ctx.scope || 'Not set'} />
         </div>
         {ctx.projError && (

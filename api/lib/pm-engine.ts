@@ -287,7 +287,7 @@ async function pmGatherRequirements(projectId: string) {
 
     /* ── data gaps ── */
     const gaps: string[] = [];
-    if (!dr("goal", "primary_goal") && !(proj as any).goals)
+    if (!dr("goal", "primary_goal"))
       gaps.push("No campaign goal set in the Data Room");
     if (!keywords.length)        gaps.push("No target keywords — content/GEO cards will be vague");
     if (!competitors.length)     gaps.push("No competitors recorded in the Data Room");
@@ -299,8 +299,10 @@ async function pmGatherRequirements(projectId: string) {
     const context = {
       projectId,
       projectName: (proj as any).name || "",
-      url:         (proj as any).url || (proj as any).website || "",
-      goal:        dr("goal", "primary_goal") || (proj as any).goals || "",
+      url:         (proj as any).url || "",
+      /* goal lives only in the Data Room (project_knowledge), never on
+         the projects table — projects has no goals column. */
+      goal:        dr("goal", "primary_goal") || "",
       scope:       dr("goal", "success_metric") || "",
       projError,
       keywords,
@@ -358,15 +360,22 @@ async function pmGatherRequirements(projectId: string) {
       })),
       contentGapKeywords: toList(dr("competitor", "content_gap_keywords")),
 
-      documents: docs.map((d: any) => ({
-        kind: "document", refId: d?.id,
-        label: d?.name || d?.page_title || d?.file_name || "Document",
-        overview: [
-          d?.doc_type ? `Type: ${d.doc_type}` : "",
-          d?.doc_summary || "",
-          d?.grade ? `Grade: ${d.grade}` : "",
-        ].filter(Boolean).join(" — "),
-      })),
+      documents: docs.map((d: any) => {
+        /* project_documents real columns: name, doc_type, extracted_data,
+           source_date, file_size_kb. The doc's findings live in
+           extracted_data (jsonb) — surface a count of what was extracted. */
+        const ex = d?.extracted_data;
+        const exCount = ex && typeof ex === "object" ? Object.keys(ex).length : 0;
+        return {
+          kind: "document", refId: d?.id,
+          label: d?.name || "Document",
+          overview: [
+            d?.doc_type ? `Type: ${d.doc_type}` : "",
+            exCount ? `${exCount} data point${exCount === 1 ? "" : "s"} extracted` : "",
+            d?.source_date ? `Dated ${d.source_date}` : "",
+          ].filter(Boolean).join(" — "),
+        };
+      }),
 
       audits: audits.map((a: any) => ({
         kind: "audit", refId: a?.id,
@@ -741,7 +750,7 @@ async function pmCrawlTargets(projectId: string) {
   if (!projectId) return { success: false, error: "projectId required" };
   try {
     const [{ data: proj }, { data: kn }] = await Promise.all([
-      db().from("projects").select("name,url,industry").eq("id", projectId).maybeSingle(),
+      db().from("projects").select("name,url").eq("id", projectId).maybeSingle(),
       db().from("project_knowledge").select("category,field_key,field_value").eq("project_id", projectId),
     ]);
     const km: Record<string, Record<string, string>> = {};
@@ -763,7 +772,7 @@ async function pmCrawlTargets(projectId: string) {
     return {
       success: true,
       urls: [...urlSet].slice(0, 12),
-      projectContext: `${(proj as any)?.name || ""} — ${(proj as any)?.industry || ""}`.trim(),
+      projectContext: (proj as any)?.name || "",
     };
   } catch (e: any) {
     return { success: false, error: e?.message || "failed", urls: [] };
