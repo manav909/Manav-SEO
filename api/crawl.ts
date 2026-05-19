@@ -24,8 +24,7 @@ function cleanHtml(html: string, maxChars = 12000): string {
     .replace(/<!--[\s\S]*?-->/g, "").replace(/\s{2,}/g, " ").trim().slice(0, maxChars);
 }
 function parseJson(text: string): any | null {
-  const clean = text.replace(/^```[a-z]*
-?/gm, "").replace(/^```\s*$/gm, "").trim();
+  const clean = text.replace(/^```[a-z]*\n?/gm, "").replace(/^```\s*$/gm, "").trim();
   const f = clean.indexOf("{"); const l = clean.lastIndexOf("}");
   if (f < 0 || l < 0) return null;
   try { return JSON.parse(clean.slice(f, l + 1)); } catch (_e) {}
