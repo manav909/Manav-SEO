@@ -2074,23 +2074,59 @@ Return ONLY raw JSON:
         .select("id,name,goals,playground_strategy,playground_canvas")
         .eq("id", projectId).single();
       if (!proj) return ok(res, { error: "Project not found" });
-      const strategy = proj.playground_strategy || { canvas_blocks: [] };
-      const canvas: any[] = Array.isArray(proj.playground_canvas) ? proj.playground_canvas : [];
+
+      // Source 1: playground_strategy.canvas_blocks (Brain-created cards)
+      const strategy = proj.playground_strategy || {};
       const blocks: any[] = Array.isArray(strategy.canvas_blocks) ? strategy.canvas_blocks : [];
-      // Merge: blocks is the source of truth, canvas may have extra placed/position data
-      const merged = blocks.map((b:any) => {
+
+      // Source 2: playground_canvas (position/status overrides)
+      const canvas: any[] = Array.isArray(proj.playground_canvas) ? proj.playground_canvas : [];
+
+      // Source 3: task_requirements table (cards created by task engine)
+      const { data: reqRows } = await db()
+        .from("task_requirements")
+        .select("id,task_type,title,description,status,priority,week,effort,impact,tags,created_at,completed_at")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      // Convert task_requirements rows to card format
+      const reqCards: any[] = (reqRows || []).map((r:any) => ({
+        id: r.id,
+        type: r.task_type || "task",
+        title: r.title || r.task_type || "Task",
+        content: r.description || "",
+        status: r.status || "todo",
+        priority: r.priority || "medium",
+        week: r.week || null,
+        effort: r.effort || null,
+        impact: r.impact || null,
+        tags: r.tags || [],
+        source: "task_engine",
+        created_at: r.created_at,
+      }));
+
+      // Merge canvas overrides onto blocks
+      const mergedBlocks = blocks.map((b:any) => {
         const extra = canvas.find((c:any) => c.id === b.id) || {};
         return { ...b, ...extra };
       });
+
+      // Deduplicate: prefer task_requirements rows, then canvas blocks
+      const reqIds = new Set(reqCards.map((c:any) => c.id));
+      const uniqueBlocks = mergedBlocks.filter((b:any) => !reqIds.has(b.id));
+      const allCards = [...reqCards, ...uniqueBlocks];
+
       const { data: tasks } = await db()
         .from("task_executions")
         .select("id,task_type,status,output,created_at")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .limit(50);
+
       return ok(res, {
         success: true,
-        cards: merged,
+        cards: allCards,
         tasks: tasks || [],
         projectName: proj.name,
         goals: proj.goals,
