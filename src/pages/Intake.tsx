@@ -45,13 +45,20 @@ export default function Intake() {
   }, [url]);
 
   const generateDoc = async (docId: string) => {
-    if (!audit) return;
+    if (!audit) { setError("Run an audit first"); return; }
     setGeneratingDoc(docId);
-    const r = await post("generate_sales_documents", {
-      auditResult: audit, url, salesContext, docType: docId
-    });
-    if ((r as any).success) {
-      setGeneratedDocs(prev => ({ ...prev, [docId]: r }));
+    setError("");
+    try {
+      const r = await post("generate_sales_documents", {
+        auditResult: audit, url, salesContext, docType: docId,
+      });
+      if ((r as any).success && (r as any).data) {
+        setGeneratedDocs((prev: any) => ({ ...prev, [docId]: r }));
+      } else {
+        setError((r as any).error || "Generation failed — check Vercel logs");
+      }
+    } catch (e: any) {
+      setError("Network error: " + e.message);
     }
     setGeneratingDoc(null);
   };
