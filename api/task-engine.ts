@@ -341,29 +341,19 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (!url) return ok(res, { error: "url required" });
     try {
       const rawUrl = String(url).replace(/^https?:\/\//, "").replace(/\/$/, "");
-
-      // ── Fetch HTML ──────────────────────────────────────────
-      let _html = ""; let _fetched = false;
       const hdrs = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-        "Accept-Language": "en-GB,en;q=0.9",
-        "Cache-Control": "no-cache",
+        "Accept-Language": "en-GB,en;q=0.9", "Cache-Control": "no-cache",
       };
-
-      // Jina reader first
+      let _html = ""; let _fetched = false;
       try {
         const jKey = process.env.JINA_API_KEY || "";
         const jh: any = { "Accept": "text/html", "X-Return-Format": "html", "X-No-Cache": "true" };
         if (jKey) jh["Authorization"] = "Bearer " + jKey;
         const jr = await fetch("https://r.jina.ai/https://" + rawUrl, { headers: jh, signal: AbortSignal.timeout(14000), redirect: "follow" });
-        if (jr.ok) {
-          const t = await jr.text();
-          if (t.length > 500 && !t.includes("blocked") && !t.includes("Access denied")) { _html = t.slice(0, 12000); _fetched = true; }
-        }
+        if (jr.ok) { const t = await jr.text(); if (t.length > 500 && !t.includes("blocked")) { _html = t.slice(0, 12000); _fetched = true; } }
       } catch {}
-
-      // Direct fetch variants
       if (!_fetched) {
         for (const v of ["https://"+rawUrl, "https://www."+rawUrl, "http://"+rawUrl]) {
           try {
@@ -372,229 +362,113 @@ async function _run(req: VercelRequest, res: VercelResponse) {
           } catch {}
         }
       }
-
       if (!_fetched || !_html) {
-        return ok(res, { success: true, url: rawUrl, reachable: false, score: 20, unreachable: true,
-          categories: [{ name: "Accessibility", score: 0, issues: [{ issue: "Site could not be reached after multiple attempts", severity: "critical", fix: "Verify the URL is live and publicly accessible.", algorithmNote: null }] }],
-          issues: [{ issue: "Site unreachable", severity: "critical", category: "Accessibility", fix: "Verify site is live.", algorithmNote: null }],
-          quickWins: ["Verify site URL is correct", "Check site is publicly accessible", "Remove Cloudflare bot protection for crawlers"],
-          algorithmHighlights: [], showcase_message: "" });
+        return ok(res, { success: true, url: rawUrl, reachable: false, score: 20,
+          categories: [{ name: "Accessibility", score: 0, issues: [{ issue: "Site could not be reached", severity: "critical", fix: "Verify the URL is live and publicly accessible.", algorithmNote: null }] }],
+          issues: [], quickWins: ["Verify URL is correct", "Check site is live", "Check DNS settings"], algorithmHighlights: [], showcase_message: "" });
       }
-
-      // ── DB context ─────────────────────────────────────────
       const [algoR, brainR] = await Promise.allSettled([
         db().from("algorithm_knowledge").select("topic,summary").order("freshness_score", { ascending: false }).limit(3),
         db().from("brain_learnings").select("card_title,improvement").order("applied_count", { ascending: false }).limit(2),
       ]);
       const algoData: any[] = algoR.status === "fulfilled" ? (algoR.value.data || []) : [];
       const brainData: any[] = brainR.status === "fulfilled" ? (brainR.value.data || []) : [];
-
       const ctxParts: string[] = [];
       if (forLead) ctxParts.push("Client: " + forLead);
       const ca: any = conversationAnalysis || {};
       if (ca.main_need) ctxParts.push("Need: " + ca.main_need);
-      if (algoData.length) ctxParts.push("Recent algo: " + algoData.map((a:any) => a.topic).join(", "));
-      if (brainData.length) ctxParts.push("Results: " + brainData.map((b:any) => b.improvement).join("; "));
-
-      // ── AI Audit ───────────────────────────────────────────
+      if (algoData.length) ctxParts.push("Recent algo updates: " + algoData.map((a:any) => a.topic).join(", "));
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-      const prompt = \`Audit this website and return ONLY a raw JSON object. No markdown. No code fences. No explanation.
-
-URL: https://\${rawUrl}
-\${ctxParts.length ? "Context: " + ctxParts.join(" | ") : ""}
-HTML:\n\${_html.slice(0, 10000)}
-
-Return this exact JSON structure:
-{
-  "score": <integer 0-100>,
-  "categories": [
-    {
-      "name": "Technical SEO",
-      "score": <integer 0-100>,
-      "issues": [
-        {"issue": "<specific issue found in HTML>", "severity": "critical|high|medium|low", "fix": "<exact fix>", "algorithmNote": "<or null>"}
-      ]
-    },
-    {"name": "On-Page SEO", "score": <integer>, "issues": [...]},
-    {"name": "Content Quality", "score": <integer>, "issues": [...]},
-    {"name": "User Experience", "score": <integer>, "issues": [...]}
-  ],
-  "quickWins": ["<action 1>", "<action 2>", "<action 3>"],
-  "algorithmHighlights": ["<update 1>", "<update 2>"],
-  "showcase_message": "<one sentence summary>"
-}
-
-Rules: Each category needs 2-4 issues. Reference exact HTML content (actual title text, H1 text, etc). Keep all strings under 120 chars. No line breaks inside strings.\`;
-
+      const schemaStr = '{"score":<0-100>,"categories":[{"name":"Technical SEO","score":<0-100>,"issues":[{"issue":"<from HTML>","severity":"critical|high|medium|low","fix":"<under 100 chars>","algorithmNote":"<or null>"}]},{"name":"On-Page SEO","score":<0-100>,"issues":[...]},{"name":"Content Quality","score":<0-100>,"issues":[...]},{"name":"User Experience","score":<0-100>,"issues":[...]}],"quickWins":["<fix1>","<fix2>","<fix3>"],"algorithmHighlights":["<update1>","<update2>"],"showcase_message":"<one sentence>"}';
+      const prompt = [
+        "Audit this website. Return ONLY raw JSON. No markdown. No code fences.",
+        "URL: https://" + rawUrl,
+        ctxParts.length ? "Context: " + ctxParts.join(" | ") : "",
+        "HTML:\n" + _html.slice(0, 10000),
+        "",
+        "Return this exact JSON structure (all 4 categories, 2-4 issues each):",
+        schemaStr,
+        "Rules: reference actual HTML content. No line breaks inside strings. Strings under 120 chars.",
+      ].filter(Boolean).join("\n");
       const _r = await _ac.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4000,
-        system: "You are a JSON API. Return ONLY raw JSON. Never use markdown. Never use code fences. Never put line breaks inside string values.",
+        model: "claude-sonnet-4-6", max_tokens: 4000,
+        system: "You are a JSON API. Return ONLY raw JSON. Never use markdown. Never code fences. No line breaks inside string values.",
         messages: [{ role: "user", content: prompt }]
       });
-
       const raw = (_r.content[0] as any).text || "";
-
-      // ── Parse with recovery ─────────────────────────────────
       let result: any = safeParseJSON(raw);
-
-      // Truncation recovery — close open brackets
+      // Truncation recovery
       if (!result || !Array.isArray(result.categories) || result.categories.length === 0) {
         try {
           const trimmed = raw.trimEnd();
           if (!trimmed.endsWith("}")) {
-            let opens=0, closes=0, aOpens=0, aCloses=0, inStr=false, esc=false;
+            let op=0,cl=0,ao=0,ac=0,inS=false,es=false;
             for (const c of trimmed) {
-              if (esc) { esc=false; continue; }
-              if (c==="\\") { esc=true; continue; }
-              if (c==='"') { inStr=!inStr; continue; }
-              if (!inStr) {
-                if (c==="{") opens++; if (c==="}") closes++;
-                if (c==="[") aOpens++; if (c==="]") aCloses++;
-              }
+              if(es){es=false;continue;} if(c==="\\"){es=true;continue;}
+              if(c==='"'){ inS=!inS;continue;}
+              if(!inS){if(c==="{")op++;if(c==="}") cl++;if(c==="[")ao++;if(c==="]")ac++;}
             }
-            const closing = "]".repeat(Math.max(0,aOpens-aCloses)) + "}".repeat(Math.max(0,opens-closes));
-            const recovered = safeParseJSON(trimmed + closing);
-            if (recovered && Array.isArray(recovered.categories) && recovered.categories.length > 0) {
-              result = recovered;
-            }
+            const closing="]".repeat(Math.max(0,ao-ac))+"}".repeat(Math.max(0,op-cl));
+            const rec = safeParseJSON(trimmed+closing);
+            if(rec && Array.isArray(rec.categories) && rec.categories.length>0) result=rec;
           }
         } catch {}
       }
-
-      // ── HTML fallback if parse failed or categories empty ───
-      const hasValidCategories = result && Array.isArray(result.categories) && result.categories.length > 0
-        && result.categories.some((c:any) => Array.isArray(c.issues) && c.issues.length > 0);
-
-      if (!hasValidCategories) {
-        // Build audit from raw HTML checks
-        const hasTitle = /<title>[^<]{5,}/i.test(_html);
-        const hasMeta  = /meta[^>]+name=["']description["'][^>]+content=/i.test(_html) || /meta[^>]+content=[^>]+name=["']description["']/i.test(_html);
-        const hasH1    = /<h1[^>]*>[^<]{3,}/i.test(_html);
-        const hasSchema = /application\/ld\+json/i.test(_html);
-        const hasAlt   = /<img[^>]+alt=["'][^"']{3,}/i.test(_html);
-        const hasViewport = /name=["']viewport["']/i.test(_html);
-        const hasCanonical = /rel=["']canonical["']/i.test(_html);
-        const titleText = (_html.match(/<title>([^<]{1,70})/i) || [])[1] || "";
-        const h1Text    = (_html.match(/<h1[^>]*>([^<]{1,60})/i) || [])[1] || "";
-        const metaDesc  = (_html.match(/meta[^>]+content=["']([^"']{10,})/i) || [])[1] || "";
-
+      // HTML fallback
+      const hasData = result && Array.isArray(result.categories) && result.categories.length>0
+        && result.categories.some((c:any) => Array.isArray(c.issues) && c.issues.length>0);
+      if (!hasData) {
+        const hasTitle   = /<title>[^<]{5,}/i.test(_html);
+        const hasMeta    = /meta[^>]+(name=["']description["'][^>]+content=|content=[^>]+name=["']description["'])/i.test(_html);
+        const hasH1      = /<h1[^>]*>[^<]{3,}/i.test(_html);
+        const hasSchema  = /application\/ld\+json/i.test(_html);
+        const hasVp      = /name=["']viewport["']/i.test(_html);
+        const hasCan     = /rel=["']canonical["']/i.test(_html);
+        const titleText  = (_html.match(/<title>([^<]{1,70})/i)||[])[1]||"";
+        const h1Text     = (_html.match(/<h1[^>]*>([^<]{1,60})/i)||[])[1]||"";
+        const missing: string[] = [];
+        if(!hasTitle) missing.push("Add title tag");
+        if(!hasMeta)  missing.push("Add meta description");
+        if(!hasH1)    missing.push("Add H1 heading");
+        if(!hasSchema) missing.push("Add structured data");
+        const score = Math.max(25, 90 - missing.length*12 + (hasSchema?5:0) + (hasCan?3:0));
         const techIssues: any[] = [];
-        if (!hasSchema) techIssues.push({ issue: "No structured data / JSON-LD schema markup found", severity: "high", fix: "Add Organization and WebPage schema to your homepage.", algorithmNote: "Structured data helps Google understand your content type" });
-        if (!hasCanonical) techIssues.push({ issue: "No canonical tag found", severity: "medium", fix: "Add <link rel='canonical' href='...'> to prevent duplicate content issues.", algorithmNote: null });
-        if (!hasViewport) techIssues.push({ issue: "Viewport meta tag missing", severity: "high", fix: "Add <meta name='viewport' content='width=device-width, initial-scale=1'>", algorithmNote: "Required for mobile-first indexing" });
-        if (techIssues.length === 0) techIssues.push({ issue: "Basic technical setup looks correct", severity: "low", fix: "Run a deeper crawl to uncover hidden technical issues.", algorithmNote: null });
-
-        const onPageIssues: any[] = [];
-        if (!hasTitle) onPageIssues.push({ issue: "Title tag missing or too short", severity: "critical", fix: "Add a descriptive 50-60 character title with your primary keyword.", algorithmNote: null });
-        else if (titleText) onPageIssues.push({ issue: "Title: "" + titleText.trim().slice(0,60) + """ + (titleText.length > 60 ? " — too long" : titleText.length < 30 ? " — too short" : " — check keyword placement"), severity: titleText.length > 60 || titleText.length < 30 ? "medium" : "low", fix: "Optimise title to 50-60 chars with primary keyword near the start.", algorithmNote: null });
-        if (!hasMeta) onPageIssues.push({ issue: "Meta description missing", severity: "high", fix: "Add a compelling 150-160 character meta description with a call to action.", algorithmNote: null });
-        else if (metaDesc) onPageIssues.push({ issue: "Meta description present — review for keyword inclusion and CTR optimisation", severity: "low", fix: "Ensure meta description includes primary keyword and has a clear CTA.", algorithmNote: null });
-        if (!hasH1) onPageIssues.push({ issue: "H1 heading not found", severity: "critical", fix: "Add one clear H1 heading containing your primary target keyword.", algorithmNote: null });
-        else if (h1Text) onPageIssues.push({ issue: "H1: "" + h1Text.trim() + """, severity: "low", fix: "Ensure H1 matches the page title topic and includes the target keyword.", algorithmNote: null });
-
-        const contentIssues: any[] = [
-          { issue: "Full content depth requires complete crawl", severity: "medium", fix: "Analyse content length, keyword density, and topical coverage on key pages.", algorithmNote: "Helpful Content Update rewards depth and expertise" },
-          { issue: !hasAlt ? "Image alt tags appear to be missing" : "Image alt tags present — verify all are descriptive", severity: !hasAlt ? "medium" : "low", fix: "Add descriptive alt text to all images including primary keywords where natural.", algorithmNote: null },
-        ];
-
-        const uxIssues: any[] = [
-          { issue: "Page speed not assessed (requires live test)", severity: "medium", fix: "Run Google PageSpeed Insights — aim for 90+ on mobile.", algorithmNote: "Core Web Vitals are a confirmed ranking signal" },
-          { issue: "Internal linking structure not assessed", severity: "low", fix: "Ensure key pages are reachable within 3 clicks from homepage.", algorithmNote: null },
-        ];
-
-        const allMissing = [!hasTitle&&"Add title tag", !hasMeta&&"Add meta description", !hasH1&&"Add H1 heading", !hasSchema&&"Add structured data"].filter(Boolean) as string[];
-        const score = Math.max(25, Math.min(80, 90 - allMissing.length * 12 + (hasSchema?5:0) + (hasCanonical?3:0)));
-
+        if(!hasSchema) techIssues.push({issue:"No structured data (JSON-LD) found",severity:"high",fix:"Add Organization/WebPage schema to homepage.",algorithmNote:"Structured data helps Google understand content"});
+        if(!hasVp)    techIssues.push({issue:"Viewport meta tag missing",severity:"high",fix:"Add <meta name='viewport' content='width=device-width, initial-scale=1'>",algorithmNote:"Required for mobile-first indexing"});
+        if(!hasCan)   techIssues.push({issue:"No canonical tag detected",severity:"medium",fix:"Add canonical tag to prevent duplicate content issues.",algorithmNote:null});
+        if(!techIssues.length) techIssues.push({issue:"Basic technical setup present",severity:"low",fix:"Run deeper crawl for hidden issues.",algorithmNote:null});
+        const onIssues: any[] = [];
+        if(!hasTitle) onIssues.push({issue:"Title tag missing",severity:"critical",fix:"Add 50-60 char title with primary keyword.",algorithmNote:null});
+        else if(titleText) onIssues.push({issue:"Title: "+titleText.trim().slice(0,55),severity:titleText.length>60||titleText.length<30?"medium":"low",fix:"Optimise to 50-60 chars with keyword near start.",algorithmNote:null});
+        if(!hasMeta) onIssues.push({issue:"Meta description missing",severity:"high",fix:"Add 150-160 char meta description with CTA.",algorithmNote:null});
+        if(!hasH1) onIssues.push({issue:"H1 heading not found",severity:"critical",fix:"Add one H1 with the target keyword.",algorithmNote:null});
+        else if(h1Text) onIssues.push({issue:"H1: "+h1Text.trim().slice(0,55),severity:"low",fix:"Ensure H1 contains the target keyword.",algorithmNote:null});
         result = {
           score,
           categories: [
-            { name: "Technical SEO", score: hasSchema && hasCanonical && hasViewport ? 75 : 45, issues: techIssues },
-            { name: "On-Page SEO",   score: hasTitle && hasMeta && hasH1 ? 70 : 40, issues: onPageIssues },
-            { name: "Content Quality", score: 50, issues: contentIssues },
-            { name: "User Experience", score: hasViewport ? 60 : 40, issues: uxIssues },
+            {name:"Technical SEO",   score:hasSchema&&hasVp?70:40, issues:techIssues},
+            {name:"On-Page SEO",     score:hasTitle&&hasMeta&&hasH1?70:40, issues:onIssues.length?onIssues:[{issue:"On-page elements need review",severity:"medium",fix:"Check title, meta description and H1.",algorithmNote:null}]},
+            {name:"Content Quality", score:50, issues:[{issue:"Full content analysis needs deeper crawl",severity:"medium",fix:"Analyse content depth, keyword usage and E-E-A-T signals.",algorithmNote:"Helpful Content Update rewards depth and expertise"}]},
+            {name:"User Experience", score:hasVp?60:40, issues:[{issue:"Page speed not tested — run PageSpeed Insights",severity:"medium",fix:"Target 90+ on mobile. Fix LCP, CLS and INP.",algorithmNote:"Core Web Vitals are a confirmed ranking signal"}]},
           ],
-          quickWins: allMissing.length > 0 ? allMissing.slice(0,3) : ["Improve page load speed", "Add structured data markup", "Review internal linking"],
-          algorithmHighlights: algoData.slice(0,2).map((a:any) => a.topic + ": " + (a.summary||"").slice(0,80)),
-          showcase_message: rawUrl + " — " + (allMissing.length > 0 ? allMissing.length + " critical issues found" : "passing basics, deeper issues found"),
+          quickWins: missing.length?missing.slice(0,3):["Improve page speed","Add structured data","Review internal links"],
+          algorithmHighlights: algoData.slice(0,2).map((a:any)=>a.topic+": "+(a.summary||"").slice(0,80)),
+          showcase_message: rawUrl+" — "+( missing.length? missing.length+" issues identified":"audit complete"),
         };
       }
-
-      const allIssues: any[] = (result.categories || []).flatMap((c:any) =>
-        (c.issues || []).map((i:any) => ({ ...i, category: c.name })));
-
+      const allIssues: any[] = (result.categories||[]).flatMap((c:any)=>(c.issues||[]).map((i:any)=>({...i,category:c.name})));
       return ok(res, {
-        success: true, url: rawUrl, reachable: true,
-        score: typeof result.score === "number" ? result.score : 50,
-        categories: result.categories || [],
+        success:true, url:rawUrl, reachable:true,
+        score: typeof result.score==="number" ? result.score : 50,
+        categories: result.categories||[],
         issues: allIssues,
-        quickWins: result.quickWins || [],
-        algorithmHighlights: result.algorithmHighlights || [],
-        headline: rawUrl + " — SEO Score: " + result.score + "/100",
-        showcase_message: result.showcase_message || "",
+        quickWins: result.quickWins||[],
+        algorithmHighlights: result.algorithmHighlights||[],
+        headline: rawUrl+" — SEO Score: "+(result.score||0)+"/100",
+        showcase_message: result.showcase_message||"",
       });
-
-    } catch (e: any) { return ok(res, { success: false, url: "", error: e.message }); }
+    } catch(e:any){ return ok(res,{success:false,url:"",error:e.message}); }
   }
-
-      }
-
-      // If still no result — build a basic result from HTML directly
-      if (!result || !result.categories) {
-        const hasTitle = /<title>[^<]{5,}/i.test(_html);
-        const hasMeta  = /meta[^>]+name=["']description["'][^>]+content=/i.test(_html);
-        const hasH1    = /<h1[^>]*>[^<]{3,}/i.test(_html);
-        const hasSchema = /application\/ld\+json/i.test(_html);
-        const titleMatch = _html.match(/<title>([^<]{1,80})/i);
-        const h1Match = _html.match(/<h1[^>]*>([^<]{1,60})/i);
-        const missing = [
-          !hasTitle  && "Missing or short title tag",
-          !hasMeta   && "Missing meta description",
-          !hasH1     && "Missing H1 heading",
-          !hasSchema && "No structured data / schema markup",
-        ].filter(Boolean) as string[];
-        const score = Math.max(20, 95 - missing.length * 15);
-        result = {
-          score,
-          categories: [
-            {
-              name: "Technical SEO", score: hasSchema ? 70 : 40,
-              issues: missing.slice(0,3).map(m => ({ issue: m, severity: "high", fix: "Add the missing element to your page HTML.", algorithmNote: null }))
-            },
-            {
-              name: "On-Page SEO", score: (hasTitle && hasMeta && hasH1) ? 75 : 45,
-              issues: [
-                { issue: titleMatch ? "Title: "" + titleMatch[1].slice(0,50) + """ : "Title tag not detected", severity: hasTitle ? "medium" : "high", fix: hasTitle ? "Ensure title is 50-60 chars and includes primary keyword." : "Add a descriptive title tag.", algorithmNote: null },
-                { issue: h1Match ? "H1: "" + h1Match[1].slice(0,50) + """ : "H1 heading not detected", severity: hasH1 ? "medium" : "high", fix: "Each page needs one clear H1 with the target keyword.", algorithmNote: null },
-              ]
-            },
-            { name: "Content Quality", score: 50, issues: [{ issue: "Full content analysis requires parse recovery", severity: "medium", fix: "Re-run the audit for a complete content assessment.", algorithmNote: null }] },
-            { name: "User Experience", score: 60, issues: [{ issue: "UX assessment incomplete", severity: "low", fix: "Re-run the audit for full UX assessment.", algorithmNote: null }] },
-          ],
-          quickWins: missing.slice(0,3).length ? missing.slice(0,3) : ["Review title tag", "Add meta description", "Check page speed"],
-          algorithmHighlights: algoData.slice(0,2).map((a: any) => a.topic + ": " + a.summary),
-          showcase_message: "Audit of " + rawUrl + " complete — " + missing.length + " critical issues found.",
-        };
-      }
-
-      const allIssues: any[] = (result.categories || []).flatMap((c: any) =>
-        (c.issues || []).map((i: any) => ({ ...i, category: c.name })));
-
-      return ok(res, {
-        success: true, url: rawUrl, reachable: true,
-        score: result.score || 0,
-        categories: result.categories || [],
-        issues: allIssues,
-        quickWins: result.quickWins || [],
-        algorithmHighlights: result.algorithmHighlights || [],
-        headline: rawUrl + " — SEO Score: " + (result.score || 0) + "/100",
-        showcase_message: result.showcase_message || "",
-      });
-
-    } catch (e: any) { return ok(res, { success: false, url: "", error: e.message }); }
-  }
-
 
   if (action === "generate_sales_pack") {
     const { auditResult, url } = body;
