@@ -132,6 +132,59 @@ export interface RequirementContext {
   clientNotes:  SourceRef[];
   gaps:         string[];   // what's missing for high-quality card generation
   keywords?:    string[];
-  hasAnalysis?: boolean;    // project has a saved last_analysis
-  projError?:   string;     // server-side project-read error, if any
+  hasAnalysis?: boolean;
+  projError?:   string;
+  documents?:           SourceRef[];
+  contentGapKeywords?:  string[];
+  dataRoom?:            DataRoomContext;
+  crawlPages?:          CrawlPage[];
+  keywordMap?:          KeywordPageMapping[];
+  crawlSummary?:        { total: number; ours: number; competitor: number; lastCrawled: string };
+}
+
+/* The Data Room — the project's deliberate, structured definition. */
+export interface DataRoomContext {
+  goal: {
+    primaryGoal: string; timeline: string; successMetric: string;
+    baseline: string; budget: string; reportingCadence: string;
+  };
+  tech: {
+    cms: string; cmsVersion: string; theme: string; seoPlugin: string;
+    hosting: string; pagespeedMobile: string; pagespeedDesktop: string; ssl: string;
+  };
+  access: {
+    gsc: string; ga4: string; ahrefs: string; cmsAdmin: string; hosting: string;
+  };
+  analytics: {
+    organicSessions: string; topLandingPages: string; bounceRate: string;
+    conversions: string; gscImpressions: string; gscClicks: string; gscPosition: string;
+  };
+  technical: {
+    pagesIndexed: string; pagesSubmitted: string; crawlErrors: string;
+    brokenLinks: string; duplicateContent: string; schemaMarkup: string;
+    robotsTxt: string; canonicalIssues: string;
+  };
+}
+
+/* A single page from the live crawl. */
+export interface CrawlPage {
+  url:             string;
+  owner:           'ours' | 'competitor' | 'other';
+  contentType:     string;
+  crawlStatus:     string;
+  crawledAt:       string;
+  keywords:        string[];
+  keywordsInferred: boolean;   // true = page->keyword match was inferred, not explicit
+  targetsKeywords: string[];
+  titleIssues:     string;
+  contentQuality:  string;
+  wordCount:       number | null;
+}
+
+/* keyword -> our landing page vs competitor pages, from the crawl. */
+export interface KeywordPageMapping {
+  keyword:          string;
+  ourPage:          CrawlPage | null;
+  competitorPages:  CrawlPage[];
+  anyInferred:      boolean;
 }

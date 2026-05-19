@@ -139,7 +139,7 @@ async function pmDeleteCard(cardId: string) {
 async function pmGatherRequirements(projectId: string) {
   if (!projectId) return { success: false, error: "projectId required" };
   try {
-    const [projR, auditR, algoR, brainR, knowledgeR] =
+    const [projR, auditR, algoR, brainR, knowledgeR, docsR, crawlR] =
       await Promise.allSettled([
         db().from("projects").select("*").eq("id", projectId).maybeSingle(),
         db().from("audit_reports").select("*")
@@ -153,15 +153,19 @@ async function pmGatherRequirements(projectId: string) {
         db().from("project_knowledge")
           .select("category,field_key,field_value")
           .eq("project_id", projectId),
+        db().from("project_documents")
+          .select("id,doc_type,file_name,created_at")
+          .eq("project_id", projectId).order("created_at", { ascending: false }).limit(10),
+        db().from("crawled_pages")
+          .select("url,page_analysis,crawl_status,crawled_at")
+          .eq("project_id", projectId).order("crawled_at", { ascending: false }).limit(40),
       ]);
 
-    /* Surface the project-query error explicitly — never silently swallow it. */
     let projError = "";
-    if (projR.status === "rejected") {
+    if (projR.status === "rejected")
       projError = String((projR as any).reason?.message || (projR as any).reason || "projects query rejected");
-    } else if (projR.value?.error) {
+    else if (projR.value?.error)
       projError = String(projR.value.error.message || projR.value.error);
-    }
 
     const val = (r: PromiseSettledResult<any>) =>
       r.status === "fulfilled" ? r.value?.data : null;
@@ -171,16 +175,20 @@ async function pmGatherRequirements(projectId: string) {
     const algo      = Array.isArray(val(algoR))      ? val(algoR)      : [];
     const brainAll  = Array.isArray(val(brainR))     ? val(brainR)     : [];
     const knowledge = Array.isArray(val(knowledgeR)) ? val(knowledgeR) : [];
+    const docs      = Array.isArray(val(docsR))      ? val(docsR)      : [];
+    const crawl     = Array.isArray(val(crawlR))     ? val(crawlR)     : [];
 
     const brainOwn = brainAll.filter((b: any) => b && b.project_id === projectId);
     const brain    = (brainOwn.length ? brainOwn : brainAll).slice(0, 12);
 
+    /* ── Data Room: project_knowledge -> category -> {field_key: value} ── */
     const km: Record<string, Record<string, string>> = {};
     for (const k of knowledge) {
       if (!k || !k.category) continue;
       if (!km[k.category]) km[k.category] = {};
       km[k.category][k.field_key] = k.field_value || "";
     }
+    const dr = (cat: string, key: string) => km[cat]?.[key] || "";
 
     const toList = (raw: any): string[] => {
       if (Array.isArray(raw)) return raw.filter(Boolean);
@@ -191,22 +199,28 @@ async function pmGatherRequirements(projectId: string) {
       }
       return [];
     };
-    const competitors = toList((proj as any).competitors);
-    const keywords    = toList((proj as any).keywords);
+
+    /* keywords: Data Room goal.target_keywords first, then project column */
+    const keywords = toList(dr("goal", "target_keywords") || (proj as any).keywords);
+
+    /* competitors: Data Room competitor category (named, with DR) first */
+    const drComps = [
+      { domain: dr("competitor", "competitor_1"), dr: dr("competitor", "competitor_1_dr") },
+      { domain: dr("competitor", "competitor_2"), dr: dr("competitor", "competitor_2_dr") },
+      { domain: dr("competitor", "competitor_3"), dr: "" },
+    ].filter((c) => c.domain);
+    const competitors = drComps.length
+      ? drComps
+      : toList((proj as any).competitors).map((d) => ({ domain: d, dr: "" }));
 
     const auditScore = (a: any) =>
       a?.score ?? a?.overall_score ?? a?.overall_confidence ?? null;
-
-    /* Pull a human-readable overview out of an audit's sections/synthesis. */
     const auditOverview = (a: any): string => {
-      const s = a?.sections || a?.last_analysis || {};
+      const s = a?.sections || {};
       const syn = s?.synthesis || a?.synthesis || {};
       if (syn?.overall_verdict && syn.overall_verdict.length > 10) return syn.overall_verdict;
-      const t = s?.technical?.data || s?.technical || {};
-      if (typeof t?.summary === "string" && t.summary) return t.summary;
       const gap = syn?.most_urgent_gap || syn?.growth_opportunities?.[0];
-      if (gap) return `Key gap: ${gap}`;
-      return "";
+      return gap ? `Key gap: ${gap}` : "";
     };
     const auditWins = (a: any): string[] => {
       const syn = a?.sections?.synthesis || a?.synthesis || {};
@@ -217,21 +231,139 @@ async function pmGatherRequirements(projectId: string) {
       return out;
     };
 
+    /* ── Crawl: organise pages at the keyword -> landing-page grain ──
+       Each crawled page declares its content type and the keywords found
+       on it (page_analysis.keyword_presence). We map page -> keyword,
+       preferring an explicit target_keywords on the page, inferring from
+       keyword_presence otherwise (flagged inferred). */
+    const ownDomain = ((proj as any).url || "").replace(/^https?:\/\//, "").split("/")[0].toLowerCase();
+    const compDomains = competitors.map((c) =>
+      c.domain.replace(/^https?:\/\//, "").split("/")[0].toLowerCase());
+
+    const crawlPages = crawl.map((row: any) => {
+      const pa = row?.page_analysis || {};
+      const host = (row?.url || "").replace(/^https?:\/\//, "").split("/")[0].toLowerCase();
+      const isOwn = ownDomain && host === ownDomain;
+      const isCompetitor = compDomains.includes(host);
+
+      /* explicit page keywords if present, else inferred from keyword_presence */
+      const explicitKw = toList(pa.target_keywords);
+      const inferredKw = Array.isArray(pa.keyword_presence)
+        ? pa.keyword_presence.filter(Boolean) : [];
+      const pageKeywords = explicitKw.length ? explicitKw : inferredKw;
+      const keywordsInferred = !explicitKw.length && inferredKw.length > 0;
+
+      /* match page keywords against the project's target keyword list */
+      const matchedTargets = keywords.filter((k) =>
+        pageKeywords.some((pk: string) =>
+          pk.toLowerCase().includes(k.toLowerCase()) ||
+          k.toLowerCase().includes(pk.toLowerCase())));
+
+      return {
+        url: row?.url || "",
+        owner: isOwn ? "ours" : isCompetitor ? "competitor" : "other",
+        contentType: pa.content_type || "unknown",
+        crawlStatus: row?.crawl_status || "unknown",
+        crawledAt: row?.crawled_at || "",
+        keywords: pageKeywords,
+        keywordsInferred,
+        targetsKeywords: matchedTargets,
+        titleIssues: pa.title_issues || "",
+        contentQuality: pa.content_quality || "",
+        wordCount: pa.word_count ?? null,
+      };
+    });
+
+    /* group: for each target keyword, our page vs competitor pages */
+    const keywordMap = keywords.map((kw) => {
+      const pagesFor = crawlPages.filter((p) => p.targetsKeywords.includes(kw));
+      return {
+        keyword: kw,
+        ourPage: pagesFor.find((p) => p.owner === "ours") || null,
+        competitorPages: pagesFor.filter((p) => p.owner === "competitor"),
+        anyInferred: pagesFor.some((p) => p.keywordsInferred),
+      };
+    });
+
+    /* ── data gaps ── */
     const gaps: string[] = [];
-    if (!(proj as any).goals)   gaps.push("No campaign goal — card priorities will be generic");
-    if (!competitors.length)    gaps.push("No competitors recorded — competitive cards limited");
-    if (!audits.length)         gaps.push("No audit run yet — technical cards based on estimate only");
-    if (!keywords.length)       gaps.push("No target keywords — content/GEO cards will be vague");
-    if (projError)              gaps.push(`Project record could not be read: ${projError}`);
+    if (!dr("goal", "primary_goal") && !(proj as any).goals)
+      gaps.push("No campaign goal set in the Data Room");
+    if (!keywords.length)        gaps.push("No target keywords — content/GEO cards will be vague");
+    if (!competitors.length)     gaps.push("No competitors recorded in the Data Room");
+    if (!audits.length)          gaps.push("No audit run yet");
+    if (!crawlPages.length)      gaps.push("No pages crawled — competitive comparison unavailable");
+    if (!dr("access", "gsc_access")) gaps.push("Tool access not recorded — card prerequisites may be incomplete");
+    if (projError)               gaps.push(`Project record could not be read: ${projError}`);
 
     const context = {
       projectId,
       projectName: (proj as any).name || "",
-      url:         (proj as any).url  || (proj as any).website || "",
-      goal:        (proj as any).goals || (proj as any).goal || "",
-      scope:       km["goal"]?.["scope"] || km["scope"]?.["description"] || "",
-      hasAnalysis: !!(proj as any).last_analysis,
+      url:         (proj as any).url || (proj as any).website || "",
+      goal:        dr("goal", "primary_goal") || (proj as any).goals || "",
+      scope:       dr("goal", "success_metric") || "",
       projError,
+      keywords,
+
+      /* full Data Room, grouped by category for the UI */
+      dataRoom: {
+        goal: {
+          primaryGoal:    dr("goal", "primary_goal"),
+          timeline:       dr("goal", "target_timeline"),
+          successMetric:  dr("goal", "success_metric"),
+          baseline:       dr("goal", "current_baseline"),
+          budget:         dr("goal", "budget_monthly"),
+          reportingCadence: dr("goal", "reporting_cadence"),
+        },
+        tech: {
+          cms:        dr("cms", "cms"),
+          cmsVersion: dr("cms", "cms_version"),
+          theme:      dr("cms", "theme"),
+          seoPlugin:  dr("cms", "seo_plugin"),
+          hosting:    dr("cms", "hosting"),
+          pagespeedMobile:  dr("cms", "pagespeed_mobile"),
+          pagespeedDesktop: dr("cms", "pagespeed_desktop"),
+          ssl:        dr("cms", "ssl"),
+        },
+        access: {
+          gsc:    dr("access", "gsc_access"),
+          ga4:    dr("access", "ga4_access"),
+          ahrefs: dr("access", "ahrefs_access"),
+          cmsAdmin: dr("access", "cms_admin"),
+          hosting:  dr("access", "hosting_access"),
+        },
+        analytics: {
+          organicSessions: dr("analytics", "organic_sessions_monthly"),
+          topLandingPages: dr("analytics", "top_landing_pages"),
+          bounceRate:      dr("analytics", "bounce_rate"),
+          conversions:     dr("analytics", "conversions_monthly"),
+          gscImpressions:  dr("analytics", "gsc_total_impressions"),
+          gscClicks:       dr("analytics", "gsc_total_clicks"),
+          gscPosition:     dr("analytics", "gsc_avg_position"),
+        },
+        technical: {
+          pagesIndexed:   dr("technical", "pages_indexed"),
+          pagesSubmitted: dr("technical", "pages_submitted"),
+          crawlErrors:    dr("technical", "crawl_errors"),
+          brokenLinks:    dr("technical", "broken_links"),
+          duplicateContent: dr("technical", "duplicate_content"),
+          schemaMarkup:   dr("technical", "schema_markup"),
+          robotsTxt:      dr("technical", "robots_txt"),
+          canonicalIssues: dr("technical", "canonical_issues"),
+        },
+      },
+
+      competitors: competitors.map((c) => ({
+        kind: "competitor", label: c.dr ? `${c.domain} (${c.dr})` : c.domain,
+      })),
+      contentGapKeywords: toList(dr("competitor", "content_gap_keywords")),
+
+      documents: docs.map((d: any) => ({
+        kind: "document", refId: d?.id,
+        label: d?.file_name || "Document",
+        overview: d?.doc_type ? `Type: ${d.doc_type}` : "",
+      })),
+
       audits: audits.map((a: any) => ({
         kind: "audit", refId: a?.id,
         label: `Audit ${(a?.created_at || "").split("T")[0] || "recent"} — score ${auditScore(a) ?? "n/a"}`,
@@ -247,8 +379,17 @@ async function pmGatherRequirements(projectId: string) {
         kind: "brain_learning", refId: b?.id, label: b?.card_title || "Learning",
         overview: b?.improvement || "",
       })),
-      competitors: competitors.map((c: string) => ({ kind: "competitor", label: c })),
-      keywords,
+
+      /* crawl & competitive pages — keyword -> landing-page grain */
+      crawlPages,
+      keywordMap,
+      crawlSummary: {
+        total:       crawlPages.length,
+        ours:        crawlPages.filter((p) => p.owner === "ours").length,
+        competitor:  crawlPages.filter((p) => p.owner === "competitor").length,
+        lastCrawled: crawlPages[0]?.crawledAt || "",
+      },
+
       sales:       [] as any[],
       clientNotes: [] as any[],
       gaps,
@@ -258,6 +399,135 @@ async function pmGatherRequirements(projectId: string) {
     return { success: false, error: e?.message || "unknown" };
   }
 }
+
+/* ════════════════════════════════════════════════════
+   3b. GENERATE CARDS
+════════════════════════════════════════════════════ */
+async function pmGenerateCards(projectId: string) {
+  const gathered = await pmGatherRequirements(projectId);
+  if (!gathered.success) return gathered;
+  const ctx = (gathered as any).context;
+
+  const auditSections = (ctx.audits || [])
+    .map((a: any) => `- ${a.label}: ${a.overview || "(no summary)"}`).join("\n") || "- No audits.";
+
+  const dr = ctx.dataRoom || {};
+  const drBlock = [
+    "DATA ROOM — PROJECT DEFINITION:",
+    `  Goal: ${dr.goal?.primaryGoal || "not set"} | Timeline: ${dr.goal?.timeline || "n/a"} | Success: ${dr.goal?.successMetric || "n/a"}`,
+    `  Budget: ${dr.goal?.budget || "n/a"} | Reporting: ${dr.goal?.reportingCadence || "n/a"}`,
+    `  Tech: CMS ${dr.tech?.cms || "?"} ${dr.tech?.cmsVersion || ""} | SEO plugin ${dr.tech?.seoPlugin || "?"} | Hosting ${dr.tech?.hosting || "?"} | SSL ${dr.tech?.ssl || "?"}`,
+    `  Tool access: GSC ${dr.access?.gsc || "?"} | GA4 ${dr.access?.ga4 || "?"} | Ahrefs ${dr.access?.ahrefs || "?"} | CMS admin ${dr.access?.cmsAdmin || "?"}`,
+    `  Analytics: ${dr.analytics?.organicSessions || "?"} organic sessions/mo | GSC ${dr.analytics?.gscClicks || "?"} clicks, pos ${dr.analytics?.gscPosition || "?"}`,
+    `  Technical: ${dr.technical?.pagesIndexed || "?"} indexed | crawl errors: ${dr.technical?.crawlErrors || "none recorded"} | broken links: ${dr.technical?.brokenLinks || "none"} | schema: ${dr.technical?.schemaMarkup || "?"} | robots: ${dr.technical?.robotsTxt || "?"}`,
+  ].join("\n");
+
+  const compBlock = (ctx.competitors || []).length
+    ? "COMPETITORS: " + ctx.competitors.map((c: any) => c.label).join(", ")
+      + (ctx.contentGapKeywords?.length ? `\n  Content-gap keywords: ${ctx.contentGapKeywords.join(", ")}` : "")
+    : "COMPETITORS: none recorded.";
+
+  /* keyword -> landing page comparison from the live crawl */
+  const kwBlock = (ctx.keywordMap || []).length
+    ? "KEYWORD -> LANDING PAGE (from live crawl):\n" + ctx.keywordMap.map((k: any) => {
+        const our = k.ourPage ? `our page ${k.ourPage.url} (${k.ourPage.contentType}, ${k.ourPage.titleIssues || "title ok"})` : "NO own page targeting this";
+        const comp = k.competitorPages?.length
+          ? k.competitorPages.map((p: any) => p.url).join(", ") : "no competitor page seen";
+        return `  "${k.keyword}": ${our} | competitor: ${comp}${k.anyInferred ? " [keyword match inferred]" : ""}`;
+      }).join("\n")
+    : "KEYWORD -> LANDING PAGE: no crawl data — recommend running a crawl.";
+
+  const brainBlock = (ctx.brain || []).length
+    ? "BRAIN LEARNINGS — APPLY THESE:\n" + ctx.brain.slice(0, 8)
+        .map((b: any) => `- ${b.label}: ${b.overview || ""}`).join("\n")
+    : "BRAIN LEARNINGS: none yet.";
+
+  const prompt = [
+    "Create a set of SEO project task cards for this project. You are a senior digital",
+    "marketing strategist. Use ALL the intelligence below — every card must be grounded",
+    "in this project's real data, not generic advice.",
+    "",
+    `PROJECT: ${ctx.projectName} | URL: ${ctx.url || "not set"}`,
+    `TARGET KEYWORDS: ${(ctx.keywords || []).join(", ") || "none set"}`,
+    "",
+    drBlock,
+    "",
+    compBlock,
+    "",
+    kwBlock,
+    "",
+    "AUDIT FINDINGS:",
+    auditSections,
+    "",
+    brainBlock,
+    "",
+    ctx.gaps?.length ? `KNOWN DATA GAPS: ${ctx.gaps.join("; ")}` : "",
+    "",
+    "RULES FOR THE CARDS:",
+    "- Produce 8-14 concrete task cards covering technical, content, GEO, competitive work.",
+    "- Content & competitive cards must target a SPECIFIC landing page for a SPECIFIC keyword,",
+    "  citing the competitor's page from the crawl where relevant.",
+    "- Technical cards must reflect the actual CMS and recorded technical issues.",
+    "- Each card's requirements must reflect real tool access — if GSC is 'view only' or",
+    "  CMS admin must be requested, list that as a prerequisite.",
+    "- Never invent data. If a card rests on an assumption, say so in its content.",
+    "",
+    'Return ONLY a raw JSON array, no markdown:',
+    '[{',
+    '  "type": "quick-win|technical|content|geo|competitive|insight|weekly|kpi",',
+    '  "title": "concise action title",',
+    '  "content": "what to do and why — specific, references the data above",',
+    '  "priority": "high|medium|low",',
+    '  "week": 1-5,',
+    '  "requirements": ["prerequisites incl. any tool access needed"],',
+    '  "target_url": "the landing page this card is about, if applicable",',
+    '  "target_keyword": "the keyword this card targets, if applicable",',
+    '  "source_label": "which finding/data this card came from"',
+    "}]",
+  ].filter(Boolean).join("\n");
+
+  try {
+    const resp = await ai().messages.create({
+      model: MODEL, max_tokens: 4500, system: PM_SYSTEM,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const raw = (resp.content[0] as any)?.text || "[]";
+    const parsed = parseJSON(raw);
+    if (!Array.isArray(parsed)) return { success: false, error: "AI did not return a card list", cards: [] };
+
+    const saved: any[] = [];
+    for (const c of parsed.slice(0, 14)) {
+      const reqs = Array.isArray(c.requirements)
+        ? c.requirements.map((label: string, i: number) => ({
+            id: `r${i}`, label, category: "general", met: false,
+          }))
+        : [];
+      const refs: any[] = [];
+      if (c.source_label)    refs.push({ kind: "scope", label: String(c.source_label) });
+      if (c.target_url)      refs.push({ kind: "metric", label: `Page: ${c.target_url}` });
+      if (c.target_keyword)  refs.push({ kind: "metric", label: `Keyword: ${c.target_keyword}` });
+      const r = await pmSaveCard({
+        projectId,
+        title:        String(c.title || "Untitled task").slice(0, 200),
+        description:  String(c.content || ""),
+        card_type:    c.type || "custom",
+        priority:     ["high", "medium", "low"].includes(c.priority) ? c.priority : "medium",
+        status:       "todo",
+        week:         Number(c.week) >= 1 && Number(c.week) <= 5 ? Number(c.week) : 5,
+        placed:       false,
+        requirements: reqs,
+        source:       "ai_generated",
+        source_refs:  refs,
+        tags:         ["ai-generated"],
+      });
+      if (r.success && r.card) saved.push(r.card);
+    }
+    return { success: true, cards: saved, generated: saved.length };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "AI generation failed", cards: [] };
+  }
+}
+
 /* ════════════════════════════════════════════════════
    4. ENHANCE A SINGLE CARD
 ════════════════════════════════════════════════════ */

@@ -8,7 +8,9 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect } from 'react';
-import type { RequirementContext, SourceRef } from './types';
+import type {
+  RequirementContext, SourceRef, DataRoomContext, KeywordPageMapping,
+} from './types';
 import * as pmApi from './api';
 
 export default function RequirementsPanel({
@@ -94,6 +96,14 @@ export default function RequirementsPanel({
           </div>
         )}
       </div>
+
+      {/* Data Room — the project's structured definition */}
+      {ctx.dataRoom && <DataRoomSection dr={ctx.dataRoom} />}
+
+      {/* Crawl & competitive pages — keyword -> landing page */}
+      {ctx.keywordMap && ctx.keywordMap.length > 0 && (
+        <CrawlSection keywordMap={ctx.keywordMap} summary={ctx.crawlSummary} />
+      )}
 
       {/* Intelligence sources — full transparency */}
       <div className="rounded-2xl border border-border bg-card p-5">
@@ -191,6 +201,124 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex gap-2">
       <span className="text-muted-foreground shrink-0">{label}:</span>
       <span className="text-foreground/90 truncate">{value}</span>
+    </div>
+  );
+}
+
+/* ── Data Room — the project's structured definition ── */
+function DataRoomSection({ dr }: { dr: DataRoomContext }) {
+  const groups: { title: string; icon: string; rows: [string, string][] }[] = [
+    { title: 'Goal & Scope', icon: '🎯', rows: [
+      ['Primary goal', dr.goal.primaryGoal], ['Timeline', dr.goal.timeline],
+      ['Success metric', dr.goal.successMetric], ['Budget', dr.goal.budget],
+      ['Reporting', dr.goal.reportingCadence],
+    ]},
+    { title: 'Tech Stack', icon: '⚙️', rows: [
+      ['CMS', `${dr.tech.cms} ${dr.tech.cmsVersion}`.trim()], ['SEO plugin', dr.tech.seoPlugin],
+      ['Hosting', dr.tech.hosting], ['SSL', dr.tech.ssl],
+      ['PageSpeed', `${dr.tech.pagespeedMobile || '?'} mob / ${dr.tech.pagespeedDesktop || '?'} desk`],
+    ]},
+    { title: 'Tool Access', icon: '🔑', rows: [
+      ['GSC', dr.access.gsc], ['GA4', dr.access.ga4], ['Ahrefs', dr.access.ahrefs],
+      ['CMS admin', dr.access.cmsAdmin], ['Hosting', dr.access.hosting],
+    ]},
+    { title: 'Analytics Baseline', icon: '📊', rows: [
+      ['Organic sessions', dr.analytics.organicSessions], ['GSC clicks', dr.analytics.gscClicks],
+      ['GSC impressions', dr.analytics.gscImpressions], ['Avg position', dr.analytics.gscPosition],
+      ['Conversions', dr.analytics.conversions], ['Bounce rate', dr.analytics.bounceRate],
+    ]},
+    { title: 'Technical Baseline', icon: '🔧', rows: [
+      ['Pages indexed', dr.technical.pagesIndexed], ['Crawl errors', dr.technical.crawlErrors],
+      ['Broken links', dr.technical.brokenLinks], ['Duplicate content', dr.technical.duplicateContent],
+      ['Schema', dr.technical.schemaMarkup], ['Robots.txt', dr.technical.robotsTxt],
+      ['Canonical issues', dr.technical.canonicalIssues],
+    ]},
+  ];
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+        Data Room — project definition
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {groups.map(g => (
+          <div key={g.title} className="rounded-xl border border-border bg-background/50 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span>{g.icon}</span>
+              <span className="text-sm font-semibold">{g.title}</span>
+            </div>
+            <div className="space-y-1">
+              {g.rows.map(([k, v]) => (
+                <div key={k} className="flex gap-2 text-xs">
+                  <span className="text-muted-foreground shrink-0">{k}:</span>
+                  <span className={v ? 'text-foreground/90 truncate' : 'text-muted-foreground/50 italic'}>
+                    {v || 'not set'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Crawl & competitive pages — keyword -> landing page ── */
+function CrawlSection({ keywordMap, summary }: {
+  keywordMap: KeywordPageMapping[];
+  summary?: { total: number; ours: number; competitor: number; lastCrawled: string };
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Crawl & competitive pages — by keyword
+        </div>
+        {summary && (
+          <span className="text-xs text-muted-foreground font-mono">
+            {summary.total} pages · {summary.ours} ours · {summary.competitor} competitor
+          </span>
+        )}
+      </div>
+      <div className="space-y-2">
+        {keywordMap.map((k, i) => (
+          <div key={i} className="rounded-xl border border-border bg-background/50 p-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-sm font-semibold">{k.keyword}</span>
+              {k.anyInferred && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
+                  keyword match inferred
+                </span>
+              )}
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-muted-foreground">Our page: </span>
+                {k.ourPage ? (
+                  <span className="text-foreground/90">
+                    {k.ourPage.url} <span className="text-muted-foreground">
+                      ({k.ourPage.contentType}{k.ourPage.titleIssues ? `, ${k.ourPage.titleIssues}` : ''})
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-amber-400">no page targeting this keyword</span>
+                )}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Competitor: </span>
+                {k.competitorPages.length ? (
+                  <span className="text-foreground/90">
+                    {k.competitorPages.map(p => p.url).join(', ')}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground/60 italic">none crawled</span>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
