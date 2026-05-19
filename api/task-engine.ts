@@ -2130,6 +2130,14 @@ Return ONLY raw JSON:
         tasks: tasks || [],
         projectName: proj.name,
         goals: proj.goals,
+        _debug: {
+          reqCards: reqCards.length,
+          blockCards: mergedBlocks.length,
+          totalCards: allCards.length,
+          reqError: reqRows === null ? "null result — table may not exist" : null,
+          projectFound: true,
+          playgroundStrategyKeys: Object.keys(strategy),
+        },
       });
     } catch(e:any){ return ok(res,{success:false,error:e.message}); }
   }

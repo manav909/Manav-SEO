@@ -31,15 +31,18 @@ export default function Playground() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [copied, setCopied] = useState('');
+  const [debugInfo, setDebugInfo] = useState<any>(null);
 
   useEffect(() => {
     if (!selectedProjectId) { setCards([]); setTasks([]); return; }
     setLoading(true);
     post('get_canvas_data', { projectId: selectedProjectId }).then(r => {
+      console.log('[Canvas] API response:', JSON.stringify(r, null, 2));
       if ((r as any).success) {
         setCards((r as any).cards || []);
         setTasks((r as any).tasks || []);
       }
+      setDebugInfo(r);
       setLoading(false);
     });
   }, [selectedProjectId]);
@@ -109,10 +112,18 @@ export default function Playground() {
             )}
 
             {selectedProjectId && !loading && cards.length === 0 && (
-              <div className="rounded-2xl border border-border bg-card p-10 text-center">
-                <div className="text-3xl mb-3">📋</div>
-                <p className="text-sm font-semibold mb-2">No canvas cards yet</p>
-                <p className="text-xs text-muted-foreground">Cards are created automatically when the AI Brain generates tasks. Run a strategy generation or task engine for this project.</p>
+              <div>
+                <div className="rounded-2xl border border-border bg-card p-10 text-center mb-4">
+                  <div className="text-3xl mb-3">📋</div>
+                  <p className="text-sm font-semibold mb-2">No canvas cards found</p>
+                  <p className="text-xs text-muted-foreground">Checked: task_requirements table + playground_strategy.canvas_blocks</p>
+                </div>
+                {debugInfo && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs font-mono">
+                    <div className="font-bold text-amber-400 mb-2">Debug Info</div>
+                    <pre className="text-muted-foreground whitespace-pre-wrap">{JSON.stringify(debugInfo, null, 2)}</pre>
+                  </div>
+                )}
               </div>
             )}
 
