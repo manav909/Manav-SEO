@@ -18,6 +18,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { handlePM, buildExecutePrompt } from "./lib/pm-engine";
 
 /* ── Lead email notification via Resend API ── */
 async function sendLeadEmail(opts: {
@@ -306,6 +307,73 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       kind, title, body: msgBody, created_by, metadata
     }).select().single();
     return ok(res, { success: true, id: data?.id });
+  }
+
+  /* ═══ PM MODULE — streaming card execution ═══
+     pm_execute_card streams like `execute`; all other pm_* actions are
+     non-streaming and handled by the handlePM dispatcher below. */
+  if (action === "pm_execute_card") {
+    const { card, projectId, mode = "ai_execute", role = "senior_seo",
+            userInputs = {}, context = {}, brainLearnings = [] } = body;
+    if (!card) return ok(res, { error: "Missing card" });
+
+    const { system, prompt } = buildExecutePrompt({
+      card, mode, role, userInputs, context, brainLearnings,
+    });
+
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Accel-Buffering": "no",
+      "Cache-Control": "no-cache, no-transform",
+      "Transfer-Encoding": "chunked",
+    });
+
+    let execFull = "";
+    try {
+      const stream = await new Anthropic().messages.stream({
+        model: "claude-sonnet-4-6", max_tokens: 8192, system,
+        messages: [{ role: "user", content: prompt }],
+      });
+      let stopReason = "";
+      for await (const chunk of stream) {
+        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+          const t = chunk.delta.text;
+          res.write(t);
+          execFull += t;
+        }
+        if (chunk.type === "message_delta" && chunk.delta.stop_reason) stopReason = chunk.delta.stop_reason;
+      }
+      if (stopReason === "max_tokens") res.write("\n\n---\n⚠️ Output reached length limit.");
+    } catch (err: any) {
+      res.write(`\nError: ${err.message}`);
+    } finally {
+      res.end();
+    }
+
+    /* Background: persist the output onto the card + capture a learning. */
+    if (card.id && execFull.length > 200) {
+      Promise.resolve().then(async () => {
+        await handlePM("pm_save_execution", {
+          cardId: card.id, mode, role, output: execFull,
+        });
+        await saveLearning({
+          source:    "pm_task_execution",
+          projectId: projectId || context?.project?.id || null,
+          content:   execFull,
+          title:     `${card.card_type || "task"}: ${(card.title || "").slice(0, 55)}`,
+          cardType:  card.card_type,
+          contextSummary: `PM module ${mode} of a ${card.card_type} card`,
+          tags:      [card.card_type, "pm-module"],
+        });
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  /* ═══ PM MODULE — non-streaming actions ═══ */
+  if (typeof action === "string" && action.startsWith("pm_")) {
+    const pmResult = await handlePM(action, body);
+    if (pmResult !== null) return ok(res, pmResult);
   }
 
 
@@ -1670,6 +1738,48 @@ Return ONLY raw JSON:
     }
   }
 
+  /* ── CHECK SYSTEM HEALTH (lightweight — AskEmpire status indicator) ── */
+  if (action === "check_system_health") {
+    const health: any = {
+      env_vars_ok: !!(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL) && !!process.env.ANTHROPIC_API_KEY,
+      can_reach_anthropic: false,
+      can_reach_supabase: false,
+    };
+    try {
+      const { error } = await db().from("brain_learnings").select("id").limit(1);
+      health.can_reach_supabase = !error;
+    } catch (_e) { health.can_reach_supabase = false; }
+    try {
+      if (process.env.ANTHROPIC_API_KEY) {
+        const _c = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const _m = await _c.messages.create({
+          model: "claude-sonnet-4-6", max_tokens: 1,
+          messages: [{ role: "user", content: "hi" }],
+        });
+        health.can_reach_anthropic = !!_m;
+      }
+    } catch (_e) { health.can_reach_anthropic = false; }
+    return ok(res, { success: true, health, ts: new Date().toISOString() });
+  }
+
+  /* ── GET REVENUE RECORDS (RevenueBI records list) ── */
+  if (action === "get_revenue_records") {
+    const { projectId, limit = 12 } = body;
+    try {
+      let q: any = db().from("revenue_records")
+        .select("id,amount,record_type,currency,status,period_month,period_year,notes,invoice_number,projects(name)")
+        .order("period_year", { ascending: false })
+        .order("period_month", { ascending: false })
+        .limit(Math.min(Number(limit) || 12, 100));
+      if (projectId) q = q.eq("project_id", projectId);
+      const { data, error } = await q;
+      if (error) return ok(res, { success: false, records: [], error: error.message });
+      return ok(res, { success: true, records: data || [] });
+    } catch (e: any) {
+      return ok(res, { success: false, records: [], error: e?.message || "unknown" });
+    }
+  }
+
   /* ── HEALTH DIAGNOSTIC (full env + connectivity + Anthropic live test) ──
      Merged from former api/health-diagnostic.ts. Call: POST /api/task-engine
      with { action: "health_diagnostic" } ── */
@@ -2414,12 +2524,6 @@ Respond with JSON only:
       results,
       timestamp: new Date().toISOString(),
     });
-  }
-
-  /* ── REQUIREMENTS ── */
-  if (action === "requirements") {
-    const { card, context = {}, userInputs = {} } = body;
-
   }
 
   if (action === 'get_prospects') {
