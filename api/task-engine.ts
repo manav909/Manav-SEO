@@ -2495,8 +2495,9 @@ HTML: ${html.slice(0,2000)}`}]})});
   }
 
   if (action === "generate_responses") {
-    const { text = "", analysis = {} } = body;
-    if (!text || !analysis) return ok(res, { error: "text and analysis required" });
+    const { text = "", conversationText = "", analysis = {} } = body;
+    const convText = conversationText || text;
+    if (!convText && !analysis?.main_need) return ok(res, { error: "text and analysis required" });
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const a: any = analysis;
@@ -2510,7 +2511,7 @@ HTML: ${html.slice(0,2000)}`}]})});
       const _r = await _ac.messages.create({ model: "claude-sonnet-4-6", max_tokens: 2200,
         system: "You are an elite Fiverr BDE. Write conversion-focused response strategies. Return raw JSON only.",
         messages: [{ role: "user", content:
-          "Conversation:\n" + String(text).slice(0, 1500) +
+          "Conversation:\n" + String(convText).slice(0, 1500) +
           "\n\nIntelligence: " + ctx +
           "\n\nWrite 3 response strategies. Return JSON only:\n" +
           '{ "responses": [ { "title": "Strategy name", "tone": "empathetic|confident|direct|consultative", "when_to_use": "one sentence", "response": "full Fiverr message — ready to send, no placeholders", "conversion_probability": 0-100 } ], "follow_up_sequence": ["follow up after 2 days", "follow up after 5 days"] }'
