@@ -2376,7 +2376,10 @@ export default function BdePanel() {
                 <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Analyse a Fiverr conversation and save the lead to see it here.</div>
               </div>
             )}
-            {prospects.map((p:any)=>{
+            {(()=>{
+              const q=leadSearch.trim().toLowerCase();
+              const list=q?prospects.filter((p:any)=>(p.name||'').toLowerCase().includes(q)||(p.url||'').toLowerCase().includes(q)||(p.latestAnalysis?.main_need||'').toLowerCase().includes(q)||(p.industry||'').toLowerCase().includes(q)||(p.latestAnalysis?.hidden_concern||'').toLowerCase().includes(q)):prospects;
+              return list.map((p:any)=>{
               const score=p.latestAnalysis?.fiverr_specific?.order_probability||0;
               const scoreCol=score>=70?'#10b981':score>=50?'#f59e0b':'#ef4444';
               return(
@@ -2410,7 +2413,8 @@ export default function BdePanel() {
                   {p.lastSeen&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:6,opacity:.6}}>Last seen {new Date(p.lastSeen).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>}
                 </div>
               );
-            })}
+              });
+            })()}
           </div>
         )}
 
