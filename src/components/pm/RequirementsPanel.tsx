@@ -12,9 +12,10 @@ import type { RequirementContext, SourceRef } from './types';
 import * as pmApi from './api';
 
 export default function RequirementsPanel({
-  projectId, onCardsGenerated,
+  projectId, project, onCardsGenerated,
 }: {
   projectId: string;
+  project: any;
   onCardsGenerated: () => void;
 }) {
   const [ctx, setCtx]           = useState<RequirementContext | null>(null);
@@ -74,17 +75,24 @@ export default function RequirementsPanel({
   return (
     <div className="space-y-6">
 
-      {/* Project summary */}
+      {/* Project summary — uses the project record the app already loaded,
+          falling back to the gathered context. */}
       <div className="rounded-2xl border border-border bg-card p-5">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
           Project
         </div>
         <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-          <Row label="Name" value={ctx.projectName} />
-          <Row label="URL" value={ctx.url || 'Not set'} />
-          <Row label="Goal" value={ctx.goal || 'Not set'} />
+          <Row label="Name"  value={project?.name || ctx.projectName || 'Unnamed'} />
+          <Row label="URL"   value={project?.url || project?.website || ctx.url || 'Not set'} />
+          <Row label="Goal"  value={project?.goals || project?.goal || ctx.goal || 'Not set'} />
           <Row label="Scope" value={ctx.scope || 'Not set'} />
         </div>
+        {ctx.projError && (
+          <div className="mt-3 text-xs text-amber-400">
+            Note: the project record could not be fully read on the server ({ctx.projError}).
+            Showing what the app has loaded.
+          </div>
+        )}
       </div>
 
       {/* Intelligence sources — full transparency */}
@@ -105,9 +113,21 @@ export default function RequirementsPanel({
               </div>
               <div className="text-xs text-muted-foreground mb-2">{g.note}</div>
               {g.refs.length > 0 ? (
-                <ul className="space-y-1">
+                <ul className="space-y-2">
                   {g.refs.slice(0, 4).map((r, i) => (
-                    <li key={i} className="text-xs text-foreground/80 truncate">• {r.label}</li>
+                    <li key={i} className="text-xs">
+                      <div className="font-medium text-foreground/90">{r.label}</div>
+                      {r.overview && (
+                        <div className="text-muted-foreground mt-0.5 leading-snug">{r.overview}</div>
+                      )}
+                      {r.highlights && r.highlights.length > 0 && (
+                        <ul className="mt-1 space-y-0.5">
+                          {r.highlights.map((h, j) => (
+                            <li key={j} className="text-foreground/70 pl-2">– {h}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
                   ))}
                   {g.refs.length > 4 && (
                     <li className="text-xs text-muted-foreground">+{g.refs.length - 4} more</li>

@@ -139,17 +139,10 @@ async function pmDeleteCard(cardId: string) {
 async function pmGatherRequirements(projectId: string) {
   if (!projectId) return { success: false, error: "projectId required" };
   try {
-    /* Every query is independent and fail-soft. Audits are selected with
-       "*" because the score column is named differently depending on
-       which tool saved the audit (score vs overall_score) — selecting an
-       explicit list would reject the whole query on the missing name. */
     const [projR, auditR, algoR, brainR, knowledgeR] =
       await Promise.allSettled([
-        db().from("projects")
-          .select("id,name,url,industry,goals,keywords,competitors,client_id,last_analysis,last_analysis_at")
-          .eq("id", projectId).maybeSingle(),
-        db().from("audit_reports")
-          .select("*")
+        db().from("projects").select("*").eq("id", projectId).maybeSingle(),
+        db().from("audit_reports").select("*")
           .eq("project_id", projectId).order("created_at", { ascending: false }).limit(5),
         db().from("algorithm_knowledge")
           .select("id,topic,summary,freshness_score,updated_at")
@@ -162,6 +155,14 @@ async function pmGatherRequirements(projectId: string) {
           .eq("project_id", projectId),
       ]);
 
+    /* Surface the project-query error explicitly — never silently swallow it. */
+    let projError = "";
+    if (projR.status === "rejected") {
+      projError = String((projR as any).reason?.message || (projR as any).reason || "projects query rejected");
+    } else if (projR.value?.error) {
+      projError = String(projR.value.error.message || projR.value.error);
+    }
+
     const val = (r: PromiseSettledResult<any>) =>
       r.status === "fulfilled" ? r.value?.data : null;
 
@@ -171,11 +172,9 @@ async function pmGatherRequirements(projectId: string) {
     const brainAll  = Array.isArray(val(brainR))     ? val(brainR)     : [];
     const knowledge = Array.isArray(val(knowledgeR)) ? val(knowledgeR) : [];
 
-    /* Brain learnings: prefer this project's own, fall back to global. */
     const brainOwn = brainAll.filter((b: any) => b && b.project_id === projectId);
     const brain    = (brainOwn.length ? brainOwn : brainAll).slice(0, 12);
 
-    /* knowledge -> category map (defensive against null rows) */
     const km: Record<string, Record<string, string>> = {};
     for (const k of knowledge) {
       if (!k || !k.category) continue;
@@ -183,14 +182,11 @@ async function pmGatherRequirements(projectId: string) {
       km[k.category][k.field_key] = k.field_value || "";
     }
 
-    /* competitors / keywords may be array, JSON string, or null */
     const toList = (raw: any): string[] => {
       if (Array.isArray(raw)) return raw.filter(Boolean);
       if (typeof raw === "string" && raw.trim()) {
-        try {
-          const p = JSON.parse(raw);
-          if (Array.isArray(p)) return p.filter(Boolean);
-        } catch { /* not json */ }
+        try { const p = JSON.parse(raw); if (Array.isArray(p)) return p.filter(Boolean); }
+        catch { /* not json */ }
         return raw.split(",").map((s) => s.trim()).filter(Boolean);
       }
       return [];
@@ -198,32 +194,58 @@ async function pmGatherRequirements(projectId: string) {
     const competitors = toList((proj as any).competitors);
     const keywords    = toList((proj as any).keywords);
 
-    /* an audit row's score may be `score` or `overall_score` */
     const auditScore = (a: any) =>
       a?.score ?? a?.overall_score ?? a?.overall_confidence ?? null;
+
+    /* Pull a human-readable overview out of an audit's sections/synthesis. */
+    const auditOverview = (a: any): string => {
+      const s = a?.sections || a?.last_analysis || {};
+      const syn = s?.synthesis || a?.synthesis || {};
+      if (syn?.overall_verdict && syn.overall_verdict.length > 10) return syn.overall_verdict;
+      const t = s?.technical?.data || s?.technical || {};
+      if (typeof t?.summary === "string" && t.summary) return t.summary;
+      const gap = syn?.most_urgent_gap || syn?.growth_opportunities?.[0];
+      if (gap) return `Key gap: ${gap}`;
+      return "";
+    };
+    const auditWins = (a: any): string[] => {
+      const syn = a?.sections?.synthesis || a?.synthesis || {};
+      const out: string[] = [];
+      if (syn?.biggest_verified_win) out.push(`Win: ${syn.biggest_verified_win}`);
+      if (syn?.most_urgent_gap)      out.push(`Urgent: ${syn.most_urgent_gap}`);
+      (syn?.growth_opportunities || []).slice(0, 2).forEach((g: string) => out.push(`Opportunity: ${g}`));
+      return out;
+    };
 
     const gaps: string[] = [];
     if (!(proj as any).goals)   gaps.push("No campaign goal — card priorities will be generic");
     if (!competitors.length)    gaps.push("No competitors recorded — competitive cards limited");
     if (!audits.length)         gaps.push("No audit run yet — technical cards based on estimate only");
     if (!keywords.length)       gaps.push("No target keywords — content/GEO cards will be vague");
+    if (projError)              gaps.push(`Project record could not be read: ${projError}`);
 
     const context = {
       projectId,
       projectName: (proj as any).name || "",
-      url:         (proj as any).url  || "",
-      goal:        (proj as any).goals || "",
+      url:         (proj as any).url  || (proj as any).website || "",
+      goal:        (proj as any).goals || (proj as any).goal || "",
       scope:       km["goal"]?.["scope"] || km["scope"]?.["description"] || "",
       hasAnalysis: !!(proj as any).last_analysis,
+      projError,
       audits: audits.map((a: any) => ({
         kind: "audit", refId: a?.id,
         label: `Audit ${(a?.created_at || "").split("T")[0] || "recent"} — score ${auditScore(a) ?? "n/a"}`,
+        overview: auditOverview(a),
+        url: a?.url || "",
+        highlights: auditWins(a),
       })),
       algorithm: algo.map((a: any) => ({
         kind: "algorithm", refId: a?.id, label: a?.topic || "Algorithm topic",
+        overview: a?.summary || "",
       })),
       brain: brain.map((b: any) => ({
         kind: "brain_learning", refId: b?.id, label: b?.card_title || "Learning",
+        overview: b?.improvement || "",
       })),
       competitors: competitors.map((c: string) => ({ kind: "competitor", label: c })),
       keywords,
@@ -235,101 +257,7 @@ async function pmGatherRequirements(projectId: string) {
   } catch (e: any) {
     return { success: false, error: e?.message || "unknown" };
   }
-}/* ════════════════════════════════════════════════════
-   3. AI CARD GENERATION
-   Turn gathered intelligence into a set of task cards.
-════════════════════════════════════════════════════ */
-async function pmGenerateCards(projectId: string) {
-  const gathered = await pmGatherRequirements(projectId);
-  if (!gathered.success) return gathered;
-  const ctx = (gathered as any).context;
-
-  /* Pull the actual audit + brain detail for the prompt. */
-  const [auditDetailR, brainDetailR] = await Promise.allSettled([
-    db().from("audit_reports").select("sections").eq("project_id", projectId)
-      .order("created_at", { ascending: false }).limit(1),
-    db().from("brain_learnings").select("card_type,card_title,improvement,what_missed")
-      .eq("status", "active").order("applied_count", { ascending: false }).limit(8),
-  ]);
-  const auditSections = auditDetailR.status === "fulfilled"
-    ? (auditDetailR.value?.data?.[0]?.sections || {}) : {};
-  const brainDetail = brainDetailR.status === "fulfilled"
-    ? (brainDetailR.value?.data || []) : [];
-
-  const prompt = [
-    "Create a set of SEO project task cards for this project.",
-    "",
-    `PROJECT: ${ctx.projectName} | URL: ${ctx.url || "not set"}`,
-    `GOAL: ${ctx.goal || "not set"}`,
-    `SCOPE: ${ctx.scope || "not set"}`,
-    ctx.gaps.length ? `KNOWN DATA GAPS: ${ctx.gaps.join("; ")}` : "",
-    "",
-    "AUDIT FINDINGS:",
-    Object.keys(auditSections).length
-      ? Object.entries(auditSections).map(([k, v]) => `- ${k}: ${String(v).slice(0, 300)}`).join("\n")
-      : "- No audit data available. Base technical cards on best practice and mark them [ASSUMPTION].",
-    "",
-    "BRAIN LEARNINGS (apply these — past lessons):",
-    brainDetail.length
-      ? brainDetail.map((b: any) => `- [${b.card_type}] ${b.card_title}: ${b.improvement || ""}`).join("\n")
-      : "- None yet.",
-    "",
-    "Produce 8-14 task cards covering the project comprehensively. Each card must be a",
-    "concrete, single unit of work that moves the project toward its goal.",
-    "",
-    'Return ONLY a raw JSON array, no markdown:',
-    '[{',
-    '  "type": "quick-win|technical|content|geo|competitive|insight|weekly|kpi",',
-    '  "title": "concise action title",',
-    '  "content": "what to do and why — specific, references the audit/goal where relevant",',
-    '  "priority": "high|medium|low",',
-    '  "week": 1-5,',
-    '  "requirements": ["what is needed before this can start"],',
-    '  "source_label": "which finding/goal this card came from"',
-    "}]",
-    "",
-    "Do not invent audit numbers. If a card rests on an assumption, say so in content.",
-  ].filter(Boolean).join("\n");
-
-  try {
-    const resp = await ai().messages.create({
-      model: MODEL, max_tokens: 4000, system: PM_SYSTEM,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const raw = (resp.content[0] as any)?.text || "[]";
-    const parsed = parseJSON(raw);
-    if (!Array.isArray(parsed)) return { success: false, error: "AI did not return a card list", cards: [] };
-
-    /* Persist each generated card to kanban_tasks. */
-    const saved: any[] = [];
-    for (const c of parsed.slice(0, 14)) {
-      const reqs = Array.isArray(c.requirements)
-        ? c.requirements.map((label: string, i: number) => ({
-            id: `r${i}`, label, category: "general", met: false,
-          }))
-        : [];
-      const r = await pmSaveCard({
-        projectId,
-        title:        String(c.title || "Untitled task").slice(0, 200),
-        description:  String(c.content || ""),
-        card_type:    c.type || "custom",
-        priority:     ["high", "medium", "low"].includes(c.priority) ? c.priority : "medium",
-        status:       "todo",
-        week:         Number(c.week) >= 1 && Number(c.week) <= 5 ? Number(c.week) : 5,
-        placed:       false,
-        requirements: reqs,
-        source:       "ai_generated",
-        source_refs:  c.source_label ? [{ kind: "scope", label: String(c.source_label) }] : [],
-        tags:         ["ai-generated"],
-      });
-      if (r.success && r.card) saved.push(r.card);
-    }
-    return { success: true, cards: saved, generated: saved.length };
-  } catch (e: any) {
-    return { success: false, error: e?.message || "AI generation failed", cards: [] };
-  }
 }
-
 /* ════════════════════════════════════════════════════
    4. ENHANCE A SINGLE CARD
 ════════════════════════════════════════════════════ */

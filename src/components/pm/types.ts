@@ -94,6 +94,9 @@ export interface SourceRef {
         | 'sales' | 'client_note' | 'scope' | 'metric';
   refId?: string;     // row id in the source table, when applicable
   label:  string;     // human-readable description of the source
+  overview?:   string;   // a short summary of what this source actually says
+  highlights?: string[]; // key takeaways (wins, gaps, opportunities)
+  url?:        string;   // the audited / referenced URL, when applicable
 }
 
 /* ── Expert engine output ── */
@@ -128,4 +131,7 @@ export interface RequirementContext {
   sales:        SourceRef[];
   clientNotes:  SourceRef[];
   gaps:         string[];   // what's missing for high-quality card generation
+  keywords?:    string[];
+  hasAnalysis?: boolean;    // project has a saved last_analysis
+  projError?:   string;     // server-side project-read error, if any
 }

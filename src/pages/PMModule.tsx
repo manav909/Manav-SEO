@@ -126,6 +126,7 @@ export default function PMModule() {
             {tab === 'requirements' && (
               <RequirementsPanel
                 projectId={selectedProjectId}
+                project={selectedProject}
                 onCardsGenerated={loadCards}
               />
             )}
