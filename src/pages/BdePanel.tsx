@@ -2195,7 +2195,17 @@ export default function BdePanel() {
                   </div>
                 )}
                 <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:10}}>
-                  {prospects.map((p:any)=>{
+                  {(leadSearch.trim()
+              ? prospects.filter((p:any)=>{
+                  const q=leadSearch.toLowerCase().trim();
+                  return (p.name||'').toLowerCase().includes(q)
+                    ||(p.url||'').toLowerCase().includes(q)
+                    ||(p.latestAnalysis?.main_need||'').toLowerCase().includes(q)
+                    ||(p.industry||'').toLowerCase().includes(q)
+                    ||(p.latestAnalysis?.hidden_concern||'').toLowerCase().includes(q);
+                })
+              : prospects
+            ).map((p:any)=>{
                     const la=p.latestAnalysis;const prob=la?.fiverr_specific?.order_probability;
                     return(
                       <div key={p.name} style={{...S.card,cursor:'pointer'}} onClick={()=>openProspect(p)}>
