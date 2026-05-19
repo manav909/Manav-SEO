@@ -101,6 +101,10 @@ export interface SourceRef {
   keywords?:    string[];   // audit: the keywords analysed
   detail?:      AuditDetail; // audit: the full extracted findings
   saved?:       boolean;     // algorithm: backed by a saved Library row
+  impact?:      string;      // algorithm: impact level
+  practices?:   string[];    // algorithm: best practices (when saved)
+  checklist?:   string[];    // algorithm: checklist items (when saved)
+  rankingFactors?: string[]; // algorithm: ranking factors (when saved)
 }
 
 /* ── Expert engine output ── */

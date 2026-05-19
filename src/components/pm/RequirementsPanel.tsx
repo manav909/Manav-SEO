@@ -75,9 +75,6 @@ export default function RequirementsPanel({
     title: string; icon: string; refs: SourceRef[]; note: string;
     source: string; emptyAction: string;
   }[] = [
-    { title: 'Algorithm Intel', icon: '📡', refs: ctx.algorithm, note: 'Algorithm factors shaping cards',
-      source: 'algorithm catalog + algorithm_knowledge',
-      emptyAction: 'No algorithm intelligence available.' },
     { title: 'Brain Learnings', icon: '🧠', refs: ctx.brain, note: 'Lessons from past work',
       source: 'brain_learnings',
       emptyAction: 'No learnings captured yet — these build up as work is verified.' },
@@ -141,6 +138,9 @@ export default function RequirementsPanel({
 
       {/* Audit findings — the real detail, not just a score */}
       {ctx.audits && ctx.audits.length > 0 && <AuditSection audits={ctx.audits} />}
+
+      {/* Algorithm intelligence — practices & checklists, not just names */}
+      {ctx.algorithm && ctx.algorithm.length > 0 && <AlgorithmSection topics={ctx.algorithm} />}
 
       {/* Crawl & competitive pages — keyword -> landing page + AI comparison */}
       <CrawlSection
@@ -688,6 +688,116 @@ function AuditBox({ label, text, tone }: { label: string; text: string; tone: st
         {label}
       </div>
       <div className="text-xs text-foreground/85 leading-relaxed">{text}</div>
+    </div>
+  );
+}
+
+/* ── Algorithm intelligence — real practices & checklists ── */
+function AlgorithmSection({ topics }: { topics: SourceRef[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  /* topics with real saved depth first — they carry practices/checklists */
+  const ordered = [...topics].sort((a, b) =>
+    (b.saved ? 1 : 0) - (a.saved ? 1 : 0));
+  const enrichedCount = topics.filter(t => t.saved).length;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Algorithm intelligence
+        </div>
+        <span className="text-[10px] text-muted-foreground/60 font-mono">
+          {enrichedCount}/{topics.length} enriched
+        </span>
+      </div>
+      <div className="text-xs text-muted-foreground mb-3">
+        Practices and checklists from these topics are applied during card generation.
+        {enrichedCount < topics.length && (
+          <span className="text-muted-foreground/70">
+            {' '}Topics without depth are generated automatically when cards are created.
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        {ordered.map((t, i) => {
+          const isOpen = open === i;
+          const hasDepth = (t.practices?.length || 0) + (t.checklist?.length || 0) > 0;
+          return (
+            <div key={i} className="rounded-xl border border-border bg-background/50">
+              <button
+                onClick={() => setOpen(isOpen ? null : i)}
+                className="w-full flex items-center gap-2 p-3 text-left"
+              >
+                <span className="text-sm font-semibold text-foreground/90">{t.label}</span>
+                {t.impact && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    t.impact === 'critical' ? 'bg-red-500/15 text-red-400'
+                    : t.impact === 'high' ? 'bg-amber-500/15 text-amber-400'
+                    : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {t.impact}
+                  </span>
+                )}
+                {t.saved
+                  ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400">enriched</span>
+                  : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground/70">on-demand</span>}
+                <span className="ml-auto text-muted-foreground text-xs">{isOpen ? '−' : '+'}</span>
+              </button>
+
+              {isOpen && (
+                <div className="px-3 pb-3 space-y-2 border-t border-border/50 pt-2">
+                  {t.overview && (
+                    <div className="text-xs text-foreground/80 leading-relaxed">{t.overview}</div>
+                  )}
+                  {!hasDepth && (
+                    <div className="text-xs text-muted-foreground/70">
+                      Full practices and checklist are generated automatically the first time
+                      a card draws on this topic.
+                    </div>
+                  )}
+                  {t.practices && t.practices.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-1">
+                        Best practices
+                      </div>
+                      <ul className="space-y-0.5">
+                        {t.practices.map((p, j) => (
+                          <li key={j} className="text-xs text-foreground/80">• {p}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {t.checklist && t.checklist.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-semibold text-green-400 uppercase tracking-wider mb-1">
+                        Checklist
+                      </div>
+                      <ul className="space-y-0.5">
+                        {t.checklist.map((c, j) => (
+                          <li key={j} className="text-xs text-foreground/80">☐ {c}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {t.rankingFactors && t.rankingFactors.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider mb-1">
+                        Ranking factors
+                      </div>
+                      <ul className="space-y-0.5">
+                        {t.rankingFactors.map((f, j) => (
+                          <li key={j} className="text-xs text-foreground/80">→ {f}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

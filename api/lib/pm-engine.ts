@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./db.js";
 import { TOPIC_CATALOG } from "./algo-catalog.js";
+import { getTopicsDepth } from "./algo-depth.js";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -457,21 +458,25 @@ async function pmGatherRequirements(projectId: string) {
         keywords:    Array.isArray(a?.keywords) ? a.keywords.filter(Boolean) : [],
         detail:      auditDetail(a),
       })),
-      /* Algorithm intelligence — the built-in TOPIC_CATALOG (the same
-         topics the Algorithm page shows, always present) merged with
-         the project's saved Library rows. Highest-weight topics first
-         so card generation reasons over the factors that matter most. */
+      /* Algorithm intelligence — the built-in TOPIC_CATALOG merged with
+         the project's saved Library rows. Saved rows carry real depth
+         (practices, ranking factors, checklist items); the card
+         generator fetches/generates depth on demand for the rest. */
       algorithm: (() => {
         const savedByLabel = new Map<string, any>();
         for (const a of algo) {
           const key = (a?.title || a?.topic || "").toLowerCase().trim();
           if (key) savedByLabel.set(key, a);
         }
+        const aArr = (v: any) => (Array.isArray(v) ? v : []);
         const topTopics = [...TOPIC_CATALOG]
           .sort((x, y) => y.weight - x.weight)
           .slice(0, 12)
           .map((t) => {
             const saved = savedByLabel.get(t.label.toLowerCase().trim());
+            const practices = aArr(saved?.best_practices);
+            const checks    = aArr(saved?.checklist_items);
+            const factors   = aArr(saved?.ranking_factors);
             return {
               kind: "algorithm",
               refId: saved?.id || t.id,
@@ -479,6 +484,16 @@ async function pmGatherRequirements(projectId: string) {
               overview: saved?.summary || saved?.what_changed
                 || `${t.group} — ${t.engine} (priority ${t.weight}/10)`,
               saved: !!saved,
+              impact: saved?.impact_level || "",
+              /* real depth — surfaced when the topic is in the Library */
+              practices: practices.slice(0, 5).map((p: any) =>
+                typeof p === "string" ? p : `${p.practice || ""}: ${p.description || ""}`),
+              checklist: checks.slice(0, 6).map((c: any) =>
+                typeof c === "string" ? c
+                  : `${c.item || ""}${c.pass_criteria ? ` (pass: ${c.pass_criteria})` : ""}`),
+              rankingFactors: factors.slice(0, 5).map((f: any) =>
+                typeof f === "string" ? f
+                  : `${f.factor || ""} [${f.signal || ""}]: ${f.detail || ""}`),
             };
           });
         return topTopics;
@@ -555,6 +570,59 @@ async function pmGenerateCards(projectId: string) {
         .map((b: any) => `- ${b.label}: ${b.overview || ""}`).join("\n")
     : "BRAIN LEARNINGS: none yet.";
 
+  /* ── Algorithm intelligence — stage 1: pick relevant topics ──
+     Show the AI the catalog and let it choose the topics that
+     actually matter for this project, rather than dumping all 37. */
+  let algoDepthBlock = "ALGORITHM INTELLIGENCE: none selected.";
+  let algoDepths: any[] = [];
+  try {
+    const catalogList = TOPIC_CATALOG
+      .map((t) => `${t.id} | ${t.label} (${t.engine}/${t.category})`)
+      .join("\n");
+    const pickResp = await ai().messages.create({
+      model: MODEL, max_tokens: 400,
+      system: "You select which SEO algorithm topics are relevant to a project. Return ONLY a raw JSON array of topic id strings.",
+      messages: [{
+        role: "user",
+        content:
+          `Project: ${ctx.projectName} | Goal: ${ctx.goal || "n/a"}\n` +
+          `Keywords: ${(ctx.keywords || []).join(", ") || "none"}\n\n` +
+          `Pick the 6-8 most relevant algorithm topics for this project's SEO work ` +
+          `from the catalog below. Return ONLY their ids as a JSON array, e.g. ["g_eeat","g_ai_overviews"].\n\n` +
+          catalogList,
+      }],
+    });
+    const pickRaw = (pickResp.content[0] as any)?.text || "[]";
+    const pickedIds: string[] = (() => {
+      const p = parseJSON(pickRaw);
+      return Array.isArray(p) ? p.filter((x) => typeof x === "string") : [];
+    })();
+    /* stage 2: fetch full depth for the picked topics (library or AI),
+       bounded to 8 to keep latency and cost in check */
+    const pickedTopics = TOPIC_CATALOG
+      .filter((t) => pickedIds.includes(t.id))
+      .slice(0, 8);
+    if (pickedTopics.length) {
+      algoDepths = await getTopicsDepth(pickedTopics);
+    }
+    if (algoDepths.length) {
+      algoDepthBlock = "ALGORITHM INTELLIGENCE — apply these practices and checklists:\n" +
+        algoDepths.map((d: any) => {
+          const practices = (d.best_practices || []).slice(0, 4)
+            .map((p: any) => `    • ${p.practice}: ${p.description}`).join("\n");
+          const checks = (d.checklist_items || []).slice(0, 5)
+            .map((c: any) => `    ☐ ${c.item} (pass: ${c.pass_criteria || "n/a"})`).join("\n");
+          return `\n  [${d.title}] — impact: ${d.impact_level}\n` +
+            `  ${d.summary}\n` +
+            (practices ? `  Best practices:\n${practices}\n` : "") +
+            (checks ? `  Checklist:\n${checks}` : "");
+        }).join("\n");
+    }
+  } catch (e: any) {
+    console.error("[pm] algorithm depth stage failed:", e?.message || e);
+    /* card generation continues without algorithm depth rather than failing */
+  }
+
   const prompt = [
     "Create a set of SEO project task cards for this project. You are a senior digital",
     "marketing strategist. Use ALL the intelligence below — every card must be grounded",
@@ -574,6 +642,8 @@ async function pmGenerateCards(projectId: string) {
     "",
     brainBlock,
     "",
+    algoDepthBlock,
+    "",
     ctx.gaps?.length ? `KNOWN DATA GAPS: ${ctx.gaps.join("; ")}` : "",
     "",
     "RULES FOR THE CARDS:",
@@ -583,6 +653,9 @@ async function pmGenerateCards(projectId: string) {
     "- Technical cards must reflect the actual CMS and recorded technical issues.",
     "- Each card's requirements must reflect real tool access — if GSC is 'view only' or",
     "  CMS admin must be requested, list that as a prerequisite.",
+    "- Apply the ALGORITHM INTELLIGENCE: where a card relates to a topic above, copy its",
+    "  relevant checklist items into the card's \"checklist\" so execution is measured against",
+    "  real algorithm criteria. Reference the practice in the card content.",
     "- Never invent data. If a card rests on an assumption, say so in its content.",
     "",
     'Return ONLY a raw JSON array, no markdown:',
@@ -593,8 +666,10 @@ async function pmGenerateCards(projectId: string) {
     '  "priority": "high|medium|low",',
     '  "week": 1-5,',
     '  "requirements": ["prerequisites incl. any tool access needed"],',
+    '  "checklist": ["algorithm checklist items this card must satisfy, from the intelligence above"],',
     '  "target_url": "the landing page this card is about, if applicable",',
     '  "target_keyword": "the keyword this card targets, if applicable",',
+    '  "algorithm_basis": "which algorithm topic(s) inform this card, if any",',
     '  "source_label": "which finding/data this card came from"',
     "}]",
   ].filter(Boolean).join("\n");
@@ -615,10 +690,20 @@ async function pmGenerateCards(projectId: string) {
             id: `r${i}`, label, category: "general", met: false,
           }))
         : [];
+      /* algorithm checklist items become verifiable requirements —
+         the card executor checks the card against real algo criteria */
+      if (Array.isArray(c.checklist)) {
+        c.checklist.forEach((label: string, i: number) => {
+          if (label && typeof label === "string") {
+            reqs.push({ id: `a${i}`, label, category: "algorithm", met: false });
+          }
+        });
+      }
       const refs: any[] = [];
       if (c.source_label)    refs.push({ kind: "scope", label: String(c.source_label) });
       if (c.target_url)      refs.push({ kind: "metric", label: `Page: ${c.target_url}` });
       if (c.target_keyword)  refs.push({ kind: "metric", label: `Keyword: ${c.target_keyword}` });
+      if (c.algorithm_basis) refs.push({ kind: "algorithm", label: String(c.algorithm_basis) });
       const r = await pmSaveCard({
         projectId,
         title:        String(c.title || "Untitled task").slice(0, 200),
