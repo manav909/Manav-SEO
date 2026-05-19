@@ -36,57 +36,57 @@ const EMPIRE_SECTIONS = [
   {
     label: 'Intelligence',
     items: [
-      { href: '/empire',          label: 'Empire Command',   icon: Crown,        desc: 'God view — all clients' },
-      { href: '/morning-brief',   label: 'Morning Brief',    icon: Sparkles,     desc: 'Daily AI briefing' },
-      { href: '/mission-control', label: 'Mission Control',  icon: Rocket,       desc: 'Pipeline overview' },
-      { href: '/health',          label: 'Client Health',    icon: Heart,        desc: 'Churn risk & upsell' },
-      { href: '/alerts',          label: 'Alert Center',     icon: Activity,     desc: 'Live monitoring' },
-      { href: '/ask',             label: 'Ask the Empire',   icon: Bot,          desc: 'AI intelligence chat' },
+      { href: '/empire',          label: 'Empire Command',   icon: Crown,         desc: 'God view — all clients',    perm: 'dashboard' },
+      { href: '/morning-brief',   label: 'Morning Brief',    icon: Sparkles,      desc: 'Daily AI briefing',         perm: 'morning_brief' },
+      { href: '/mission-control', label: 'Mission Control',  icon: Rocket,        desc: 'Pipeline overview',         perm: 'dashboard' },
+      { href: '/health',          label: 'Client Health',    icon: Heart,         desc: 'Churn risk & upsell',       perm: 'dashboard' },
+      { href: '/alerts',          label: 'Alert Center',     icon: Activity,      desc: 'Live monitoring',           perm: 'dashboard' },
+      { href: '/ask',             label: 'Ask the Empire',   icon: Bot,           desc: 'AI intelligence chat',      perm: 'dashboard' },
     ]
   },
   {
     label: 'Brain & Learning',
     items: [
-      { href: '/brain-command',   label: 'Brain Command',    icon: Brain,        desc: 'Learning velocity' },
-      { href: '/brain-learning',  label: 'Brain Learning',   icon: BookOpenCheck,desc: 'Manage learnings' },
-      { href: '/algorithm-intel', label: 'Algorithms',       icon: Search,       desc: 'Algorithm tracking' },
-      { href: '/llm-visibility',  label: 'LLM Visibility',   icon: Eye,          desc: 'AI citation tracking' },
+      { href: '/brain-command',   label: 'Brain Command',    icon: Brain,         desc: 'Learning velocity',         perm: 'brain_learning' },
+      { href: '/brain-learning',  label: 'Brain Learning',   icon: BookOpenCheck, desc: 'Manage learnings',          perm: 'brain_learning' },
+      { href: '/algorithm-intel', label: 'Algorithms',       icon: Search,        desc: 'Algorithm tracking',        perm: 'algorithm_intel' },
+      { href: '/llm-visibility',  label: 'LLM Visibility',   icon: Eye,           desc: 'AI citation tracking',      perm: 'algorithm_intel' },
     ]
   },
   {
     label: 'Clients & Leads',
     items: [
-      { href: '/client-comms',    label: 'Client Comms',     icon: MessageSquare,desc: 'Conversation analyser' },
-      { href: '/intake',          label: 'Lead Intake',      icon: Target,       desc: 'Capture leads' },
-      { href: '/client-dashboard',label: 'Client Dashboard', icon: BarChart3,    desc: 'Client view' },
-      { href: '/reports',         label: 'Reports',          icon: FileText,     desc: 'Auto-generated reports' },
+      { href: '/client-comms',    label: 'Client Comms',     icon: MessageSquare, desc: 'Conversation analyser',     perm: 'bde_panel' },
+      { href: '/intake',          label: 'Lead Intake',      icon: Target,        desc: 'Capture leads',             perm: 'lead_intel' },
+      { href: '/client-dashboard',label: 'Client Dashboard', icon: BarChart3,     desc: 'Client view',               perm: 'dashboard' },
+      { href: '/reports',         label: 'Reports',          icon: FileText,      desc: 'Auto-generated reports',    perm: 'data_room' },
     ]
   },
   {
     label: 'Delivery',
     items: [
-      { href: '/kanban',          label: 'Kanban Board',     icon: Kanban,       desc: 'Task delivery' },
-      { href: '/content-hub',     label: 'Content Hub',      icon: FileText,     desc: 'Content briefs' },
-      { href: '/content-writer',  label: 'Content Writer',   icon: FileText,     desc: 'Writer dashboard' },
-      { href: '/launchpad',       label: 'Launchpad',        icon: Sparkles,     desc: 'Project launchpad' },
+      { href: '/kanban',          label: 'Kanban Board',     icon: Kanban,        desc: 'Task delivery',             perm: 'playground' },
+      { href: '/content-hub',     label: 'Content Hub',      icon: FileText,      desc: 'Content briefs',            perm: 'playground' },
+      { href: '/content-writer',  label: 'Content Writer',   icon: FileText,      desc: 'Writer dashboard',          perm: 'playground' },
+      { href: '/launchpad',       label: 'Launchpad',        icon: Sparkles,      desc: 'Project launchpad',         perm: 'playground' },
     ]
   },
   {
     label: 'Team',
     items: [
-      { href: '/staff-command',   label: 'Staff Command',    icon: Users,        desc: 'HOD control panel' },
-      { href: '/bde-panel',       label: 'BDE Panel',        icon: Target,       desc: 'Fiverr tools' },
-      { href: '/revenue',         label: 'Revenue BI',       icon: DollarSign,   desc: 'MRR, ARR, pipeline' },
-      { href: '/desk',            label: 'Brain Desk',       icon: Brain,        desc: 'Save learnings' },
+      { href: '/staff-command',   label: 'Staff Command',    icon: Users,         desc: 'HOD control panel',         perm: 'staff_command' },
+      { href: '/bde-panel',       label: 'BDE Panel',        icon: Target,        desc: 'Fiverr tools',              perm: 'bde_panel' },
+      { href: '/revenue',         label: 'Revenue BI',       icon: DollarSign,    desc: 'MRR, ARR, pipeline',        perm: 'dashboard' },
+      { href: '/desk',            label: 'Brain Desk',       icon: Brain,         desc: 'Save learnings',            perm: 'brain_learning' },
     ]
   },
   {
     label: 'System',
     items: [
-      { href: '/system-control',  label: 'System Control',   icon: Activity,     desc: 'System management' },
-      { href: '/data-room',       label: 'Data Room',        icon: Database,     desc: 'Raw data access' },
-      { href: '/themes',          label: 'Themes',           icon: Palette,      desc: '10 environments' },
-      { href: '/tour',            label: 'Guided Tour',      icon: Map,          desc: 'Software walkthrough' },
+      { href: '/system-control',  label: 'System Control',   icon: Activity,      desc: 'System management',         perm: 'system_control' },
+      { href: '/data-room',       label: 'Data Room',        icon: Database,      desc: 'Raw data access',           perm: 'data_room' },
+      { href: '/themes',          label: 'Themes',           icon: Palette,       desc: '10 environments',           perm: null },
+      { href: '/tour',            label: 'Guided Tour',      icon: Map,           desc: 'Software walkthrough',      perm: null },
     ]
   },
 ];
@@ -102,6 +102,10 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [activeSection, setActiveSection] = useState<string|null>(null);
+
+  // null staffPermissions = owner/HOD = sees everything
+  const canAccess = (perm: string | null) =>
+    !staffPermissions || perm === null || staffPermissions[perm] === true;
 
   const isActive = (href: string) => path === href || path.startsWith(href + '/');
   const activeEmpire = EMPIRE_SECTIONS.flatMap(s => s.items).find(l => isActive(l.href));
@@ -187,12 +191,14 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                     <div className="fixed inset-0 z-10" onClick={() => { setMoreOpen(false); setActiveSection(null); }}/>
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[600px] max-h-[80vh] overflow-y-auto rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-2xl z-20 p-3">
                       <div className="grid grid-cols-3 gap-2">
-                        {EMPIRE_SECTIONS.map(section => (
-                          <div key={section.label}>
+                        {EMPIRE_SECTIONS.map(section => {
+                          const visibleItems = section.items.filter(item => canAccess(item.perm));
+                          if (!visibleItems.length) return null;
+                          return (<div key={section.label}>
                             <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest mb-1">
                               {section.label}
                             </div>
-                            {section.items.map(({ href, label, icon: Icon, desc }) => {
+                            {section.items.filter(item => canAccess(item.perm)).map(({ href, label, icon: Icon, desc }) => {
                               const active = isActive(href);
                               return (
                                 <button key={href}
@@ -205,8 +211,8 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                                 </button>
                               );
                             })}
-                          </div>
-                        ))}
+                          </div>);
+                        })}
                       </div>
                     </div>
                   </>
