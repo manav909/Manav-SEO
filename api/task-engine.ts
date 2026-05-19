@@ -2064,6 +2064,57 @@ Return ONLY raw JSON:
   }
 
   /* ── ADD CANVAS CARD ── */
+
+  if (action === "get_canvas_data") {
+    const { projectId } = body;
+    if (!projectId) return ok(res, { error: "projectId required" });
+    try {
+      const { data: proj } = await db()
+        .from("projects")
+        .select("id,name,goals,playground_strategy,playground_canvas")
+        .eq("id", projectId).single();
+      if (!proj) return ok(res, { error: "Project not found" });
+      const strategy = proj.playground_strategy || { canvas_blocks: [] };
+      const canvas: any[] = Array.isArray(proj.playground_canvas) ? proj.playground_canvas : [];
+      const blocks: any[] = Array.isArray(strategy.canvas_blocks) ? strategy.canvas_blocks : [];
+      // Merge: blocks is the source of truth, canvas may have extra placed/position data
+      const merged = blocks.map((b:any) => {
+        const extra = canvas.find((c:any) => c.id === b.id) || {};
+        return { ...b, ...extra };
+      });
+      const { data: tasks } = await db()
+        .from("task_executions")
+        .select("id,task_type,status,output,created_at")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return ok(res, {
+        success: true,
+        cards: merged,
+        tasks: tasks || [],
+        projectName: proj.name,
+        goals: proj.goals,
+      });
+    } catch(e:any){ return ok(res,{success:false,error:e.message}); }
+  }
+
+  if (action === "update_canvas_card") {
+    const { projectId, cardId, updates } = body;
+    if (!projectId || !cardId) return ok(res, { error: "projectId and cardId required" });
+    try {
+      const { data: proj } = await db().from("projects")
+        .select("playground_strategy,playground_canvas").eq("id", projectId).single();
+      const strategy = proj?.playground_strategy || { canvas_blocks: [] };
+      if (!Array.isArray(strategy.canvas_blocks)) strategy.canvas_blocks = [];
+      strategy.canvas_blocks = strategy.canvas_blocks.map((b:any) =>
+        b.id === cardId ? { ...b, ...updates } : b);
+      const canvas: any[] = Array.isArray(proj?.playground_canvas) ? proj.playground_canvas : [];
+      const newCanvas = canvas.map((c:any) => c.id === cardId ? { ...c, ...updates } : c);
+      await db().from("projects").update({ playground_strategy: strategy, playground_canvas: newCanvas }).eq("id", projectId);
+      return ok(res, { success: true });
+    } catch(e:any){ return ok(res,{success:false,error:e.message}); }
+  }
+
   if (action === "add_canvas_card") {
     const { project_id, card: newCard } = body;
     if (!project_id || !newCard?.type || !newCard?.title) {
