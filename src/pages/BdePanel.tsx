@@ -697,13 +697,14 @@ function ResponsesPanel({quickResps, analysis, rawPaste, copied, copyText, post}
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                 <div>
                   <div style={{fontSize:12,fontWeight:700}}>{r.title||r.label||'Response '+(i+1)}</div>
-                  {r.scenario&&<span style={S2.badge('#a78bfa')}>{r.scenario}</span>}
+                  {r.scenario&&<span style={S2.badge('#a78bfa')}>{r.scenario}</span>}{r.tone&&<span style={S2.badge('#6366f1')}>{r.tone}</span>}{r.conversion_probability&&<span style={S2.badge('#10b981')}>{r.conversion_probability}% close</span>}
                 </div>
-                <button style={S2.btn(copied==='gen-'+i?'#10b981':'#a78bfa')} onClick={()=>copyText(r.body||r.text||'','gen-'+i)}>
+                <button style={S2.btn(copied==='gen-'+i?'#10b981':'#a78bfa')} onClick={()=>copyText(r.response||r.body||r.text||'','gen-'+i)}>
                   {copied==='gen-'+i?'✓ Copied!':'Copy'}
                 </button>
               </div>
-              <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.6,whiteSpace:'pre-wrap' as const}}>{r.body||r.text||''}</div>
+              <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.6,whiteSpace:'pre-wrap' as const}}>{r.response||r.body||r.text||''}</div>
+              {r.when_to_use&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:6,fontStyle:'italic' as const}}>💡 {r.when_to_use}</div>}
             </div>
           ))}
         </div>
