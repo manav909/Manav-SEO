@@ -337,7 +337,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   }
 
   if (action === "instant_audit_showcase") {
-    const { url = "", forLead = "", conversationAnalysis } = body;
+    const { url = "", forLead = "", conversationAnalysis, salesContext = "" } = body;
     if (!url) return ok(res, { error: "url required" });
     try {
       const rawUrl = String(url).replace(/^https?:\/\//, "").replace(/\/$/, "");
@@ -470,8 +470,79 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     } catch(e:any){ return ok(res,{success:false,url:"",error:e.message}); }
   }
 
+
+  if (action === "generate_context_suggestions") {
+    const { auditResult, url, currentContext = "" } = body;
+    if (!auditResult) return ok(res, { error: "auditResult required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const issues = (auditResult.issues||[]).slice(0,6).map((i:any)=>(i.issue||i)+" ["+( i.severity||"high")+"]").join("; ");
+      const score = auditResult.score || 0;
+      const prompt = [
+        "You are helping a sales person customise an SEO audit and sales pack for a prospect.",
+        "URL: " + (url||auditResult.url||"their site"),
+        "SEO Score: " + score + "/100",
+        "Issues found: " + issues,
+        currentContext ? "Current sales context: " + currentContext : "",
+        "",
+        "Generate 6 smart context suggestions the sales person could add to customise their documents.",
+        "Each suggestion should be a ready-to-use instruction they can click to include.",
+        "Examples: emphasise urgency, skip price objections, focus on competitor threat, use friendly tone, omit technical jargon, highlight quick wins first, mention specific algorithm, push for upsell.",
+        "",
+        'Return ONLY raw JSON array: [{"label":"<short label>","text":"<the actual context instruction, under 100 chars>","category":"emphasis|omit|tone|focus|strategy"}]',
+        "Generate exactly 6 suggestions that are specific to THIS site and its findings.",
+      ].filter(Boolean).join("
+");
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 1000,
+        system: "You are a JSON API. Return ONLY raw JSON array. No markdown.",
+        messages: [{ role: "user", content: prompt }]
+      });
+      const raw = (_r.content[0] as any).text || "[]";
+      const suggestions = safeParseJSON(raw) || [];
+      return ok(res, { success: true, suggestions: Array.isArray(suggestions) ? suggestions : [] });
+    } catch(e:any){ return ok(res,{success:false,suggestions:[],error:e.message}); }
+  }
+
+  if (action === "save_intake_session") {
+    const { url, salesContext, auditResult, pack, email, name } = body;
+    const slug = String(url||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,50);
+    try {
+      await db().from("brain_learnings").upsert({
+        card_type: "intake_session",
+        card_title: ("Intake: " + (url||"")).slice(0,100),
+        context_summary: JSON.stringify({ url, salesContext, auditResult, pack, email, name, savedAt: new Date().toISOString() }),
+        improvement: "Score: " + (auditResult?.score||0) + "/100 — " + (auditResult?.issues?.length||0) + " issues",
+        what_worked: [], what_missed: [],
+        tags: ["intake", slug],
+        source: "intake_session",
+        applied_count: 0,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "card_title" });
+      return ok(res, { success: true });
+    } catch(e:any){ return ok(res,{success:false,error:e.message}); }
+  }
+
+  if (action === "load_intake_session") {
+    const { url } = body;
+    if (!url) return ok(res, { error: "url required" });
+    const slug = String(url).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,50);
+    try {
+      const { data } = await db().from("brain_learnings")
+        .select("context_summary,updated_at")
+        .eq("source","intake_session")
+        .contains("tags",[slug])
+        .order("updated_at",{ascending:false})
+        .limit(1);
+      if (!data?.length) return ok(res, { found: false });
+      let session: any = {};
+      try { session = JSON.parse(data[0].context_summary||"{}"); } catch {}
+      return ok(res, { found: true, session, updatedAt: data[0].updated_at });
+    } catch(e:any){ return ok(res,{found:false,error:e.message}); }
+  }
+
   if (action === "generate_sales_pack") {
-    const { auditResult, url } = body;
+    const { auditResult, url, salesContext: spCtx = "" } = body;
     if (!auditResult) return ok(res, { error: "auditResult required" });
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -494,6 +565,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         "Return this exact JSON structure:",
         schemaStr,
         "",
+        spCtx ? "SALES CONTEXT — follow these instructions to customise the pack: " + spCtx : "",
         "Rules: Keep ALL strings under 150 chars. No line breaks inside strings. Be specific to this site.",
       ].join("\n");
 
