@@ -2340,21 +2340,55 @@ export default function BdePanel() {
         {/* ═══ LEADS ═══ */}
         {tab==='leads'&&(
           <div>
-            {assignments.map((a:any)=>(
-              <div key={a.id} style={{...S.card,borderLeft:`3px solid ${STAGE_C[a.stage]||'hsl(var(--border))'}`,borderRadius:'0 11px 11px 0'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                  <div><div style={{fontSize:13,fontWeight:700}}>{a.prospects?.company||a.prospects?.name||a.prospects?.url||'Lead'}</div><div style={{display:'flex',gap:6,marginTop:4,flexWrap:'wrap' as const}}><span style={S.badge(STAGE_C[a.stage]||'hsl(var(--muted-foreground))')}>{a.stage}</span><span style={S.badge(a.priority==='hot'?'#ef4444':'#f59e0b')}>{a.priority}</span></div></div>
-                  {a.prospects?.url&&<button style={S.btn()} onClick={()=>{setAuditUrl(a.prospects.url);setTab('tools');}}>Quick Audit</button>}
-                </div>
-              </div>
-            ))}
-            {!assignments.length&&(
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700}}>All Leads ({prospects.length})</div>
+              <button style={S.btn('#6366f1')} onClick={()=>{setLoadingPros(true);post('get_lead_prospects',{}).then(r=>{setProspects((r as any).prospects||[]);setLoadingPros(false);});}}>
+                {loadingPros?'Loading…':'↺ Refresh'}
+              </button>
+            </div>
+            {loadingPros&&<div style={{textAlign:'center' as const,padding:32,color:'hsl(var(--muted-foreground))',fontSize:12}}>Loading leads…</div>}
+            {!loadingPros&&prospects.length===0&&(
               <div style={{...S.card,textAlign:'center' as const,padding:32}}>
                 <div style={{fontSize:24,marginBottom:10}}>📋</div>
-                <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>No leads assigned via pipeline</div>
-                <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>This tab shows leads assigned to you through the SEO Season pipeline system (lead_assignments table). Your saved Fiverr leads are in the 🧠 Lead Intel tab.</div>
+                <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>No leads saved yet</div>
+                <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Analyse a Fiverr conversation and save the lead to see it here.</div>
               </div>
             )}
+            {prospects.map((p:any)=>{
+              const score=p.latestAnalysis?.fiverr_specific?.order_probability||0;
+              const scoreCol=score>=70?'#10b981':score>=50?'#f59e0b':'#ef4444';
+              return(
+                <div key={p.name+p.url} style={{...S.card,borderLeft:`3px solid ${scoreCol}`,borderRadius:'0 11px 11px 0',cursor:'pointer'}}
+                  onClick={()=>{
+                    if(p.latestAnalysis){setAnalysis(p.latestAnalysis);}
+                    if(p.url){setAuditUrl(p.url);}
+                    if(p.name){setLeadNameInput(p.name);}
+                    setSavedProspect(p);
+                    setTab('fiverr');
+                  }}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,marginBottom:3}}>{p.name||'Unknown Lead'}</div>
+                      {p.url&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginBottom:4}}>{p.url}</div>}
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap' as const}}>
+                        {score>0&&<span style={S.badge(scoreCol)}>{score}% close probability</span>}
+                        {p.latestAnalysis?.main_need&&<span style={S.badge('#6366f1')}>{String(p.latestAnalysis.main_need).slice(0,30)}</span>}
+                        {p.conversationCount>1&&<span style={S.badge('#a78bfa')}>{p.conversationCount} conversations</span>}
+                      </div>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column' as const,gap:5,alignItems:'flex-end',flexShrink:0,marginLeft:10}}>
+                      {score>0&&<div style={{fontSize:18,fontWeight:900,color:scoreCol,lineHeight:1}}>{score}<span style={{fontSize:9,opacity:.6}}>%</span></div>}
+                      <div style={{display:'flex',gap:5}}>
+                        {p.url&&<button style={{...S.btn('#6366f1'),fontSize:10,padding:'3px 8px'}} onClick={(e)=>{e.stopPropagation();setAuditUrl(p.url);setTab('tools');}}>Audit</button>}
+                        <button style={{...S.btn('#a78bfa'),fontSize:10,padding:'3px 8px'}} onClick={(e)=>{e.stopPropagation();if(p.latestAnalysis)setAnalysis(p.latestAnalysis);if(p.name)setLeadNameInput(p.name);if(p.url)setAuditUrl(p.url);setSavedProspect(p);setTab('docs');}}>Proposal</button>
+                      </div>
+                    </div>
+                  </div>
+                  {p.latestAnalysis?.hidden_concern&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',fontStyle:'italic' as const,marginTop:4}}>💡 {p.latestAnalysis.hidden_concern}</div>}
+                  {p.lastSeen&&<div style={{fontSize:10,color:'hsl(var(--muted-foreground))',marginTop:6,opacity:.6}}>Last seen {new Date(p.lastSeen).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>}
+                </div>
+              );
+            })}
           </div>
         )}
 
