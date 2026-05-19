@@ -27,6 +27,9 @@ export default function Intake() {
   const [loadingSugg,   setLoadingSugg]   = useState(false);
   const [saved,          setSaved]          = useState(false);
   const [prevSession,    setPrevSession]    = useState<any>(null);
+  const [docSuggestions, setDocSuggestions] = useState<any[]>([]);
+  const [generatedDocs,  setGeneratedDocs]  = useState<Record<string,any>>({});
+  const [generatingDoc,  setGeneratingDoc]  = useState<string|null>(null);
   const auditRef = useRef<HTMLDivElement>(null);
   const packRef  = useRef<HTMLDivElement>(null);
   const ctxRef   = useRef<HTMLTextAreaElement>(null);
@@ -40,6 +43,223 @@ export default function Intake() {
     }, 800);
     return () => clearTimeout(t);
   }, [url]);
+
+  const generateDoc = async (docId: string) => {
+    if (!audit) return;
+    setGeneratingDoc(docId);
+    const r = await post("generate_sales_documents", {
+      auditResult: audit, url, salesContext, docType: docId
+    });
+    if ((r as any).success) {
+      setGeneratedDocs(prev => ({ ...prev, [docId]: r }));
+    }
+    setGeneratingDoc(null);
+  };
+
+  const renderDocHTML = (docId: string, data: any, siteUrl: string, auditScore: number): string => {
+    const printCSS = "@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{size:A4;margin:1.5cm;}}";
+    const catScores = (audit?.categories||[]).map((c:any)=>({name:c.name,score:c.score}));
+    const scoreBar = (val:number,color:string) => `<div style="height:6px;border-radius:3px;background:#e2e8f0;overflow:hidden;"><div style="height:100%;width:${val}%;background:${color};border-radius:3px;"></div></div>`;
+    const scoreColor = (s:number) => s>=70?"#dc2626":s>=50?"#d97706":"#16a34a";
+
+    // Shared SVG Score Donut
+    const donutSVG = (score:number) => {
+      const r=54,c=2*Math.PI*r,dash=(score/100)*c;
+      const col=score>=70?"#dc2626":score>=50?"#d97706":"#16a34a";
+      return `<svg width="140" height="140" viewBox="0 0 140 140"><circle cx="70" cy="70" r="${r}" fill="none" stroke="#e2e8f0" stroke-width="12"/><circle cx="70" cy="70" r="${r}" fill="none" stroke="${col}" stroke-width="12" stroke-dasharray="${dash} ${c}" stroke-dashoffset="${c/4}" stroke-linecap="round"/><text x="70" y="74" text-anchor="middle" font-size="28" font-weight="900" fill="${col}" font-family="system-ui">${score}</text><text x="70" y="90" text-anchor="middle" font-size="11" fill="#94a3b8" font-family="system-ui">/100</text></svg>`;
+    };
+
+    const header = (title:string, subtitle:string) => `
+      <div style="background:linear-gradient(135deg,#1B4080 0%,#0d2545 100%);padding:40px 48px;margin-bottom:0;">
+        <div style="font-size:10px;letter-spacing:3px;color:rgba(255,255,255,0.5);text-transform:uppercase;margin-bottom:10px;font-weight:600;">SEO Season · Manav S · Prepared for ${siteUrl}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+          <div>
+            <h1 style="margin:0 0 6px;font-size:30px;font-weight:200;color:#fff;letter-spacing:-0.5px;">${title}</h1>
+            <p style="margin:0;font-size:15px;color:rgba(255,255,255,0.6);">${subtitle}</p>
+          </div>
+          ${donutSVG(auditScore)}
+        </div>
+      </div>
+      <div style="height:4px;background:linear-gradient(90deg,#E8652A,#f97316);"></div>`;
+
+    const footer = () => `<div style="margin-top:40px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;font-family:system-ui;"><span><strong style="color:#1B4080;">Manav S</strong> · SEO Season · seoseason.com</span><span>${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</span></div>`;
+
+    const base = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;background:#fff;line-height:1.6;}${printCSS}</style>`;
+
+    // Category scores bar chart
+    const catChart = catScores.length ? `<div style="padding:24px 0;">
+      ${catScores.map((c:any)=>`<div style="margin-bottom:14px;"><div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span style="font-size:13px;font-weight:600;color:#374151;">${c.name}</span><span style="font-size:13px;font-weight:700;color:${scoreColor(c.score)}">${c.score}/100</span></div>${scoreBar(c.score,scoreColor(c.score))}</div>`).join("")}
+    </div>` : "";
+
+    if (docId === "executive_brief") {
+      const findings = (data.topFindings||[]).map((f:any,i:number)=>`
+        <div style="padding:20px;border:1px solid #e2e8f0;border-radius:10px;border-top:3px solid ${i===0?"#dc2626":i===1?"#d97706":"#16a34a"};">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${i===0?"#dc2626":i===1?"#d97706":"#16a34a"};margin-bottom:6px;">Finding ${i+1}</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${f.title||""}</div>
+          <div style="font-size:13px;color:#475569;line-height:1.6;margin-bottom:8px;">${f.detail||""}</div>
+          <div style="font-size:12px;font-weight:600;color:#1B4080;background:#EEF4FF;padding:8px 12px;border-radius:6px;">Impact: ${f.impact||""}</div>
+        </div>`).join("");
+      return base + `<body>
+        ${header(data.headline||"SEO Executive Brief", data.subtitle||"")}
+        <div style="padding:40px 48px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:32px;">
+            <div>
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1B4080;margin-bottom:12px;">Situation Overview</div>
+              <p style="font-size:14px;color:#374151;line-height:1.75;">${data.scoreContext||""}</p>
+              <div style="margin-top:20px;">${catChart}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1B4080;margin-bottom:12px;">Top Findings</div>
+              <div style="display:flex;flex-direction:column;gap:12px;">${findings}</div>
+            </div>
+          </div>
+          <div style="padding:24px;background:linear-gradient(135deg,#F0F9FF,#E0F2FE);border-radius:12px;margin-bottom:24px;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#0369a1;margin-bottom:10px;">The Opportunity</div>
+            <p style="font-size:14px;color:#0c4a6e;line-height:1.75;">${data.opportunity||""}</p>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+            <div style="padding:20px;background:#FEF9EE;border:1px solid #FCD34D;border-radius:10px;">
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#92400E;margin-bottom:8px;">Why Act Now</div>
+              <p style="font-size:13px;color:#78350F;line-height:1.6;">${data.urgencyReason||""}</p>
+            </div>
+            <div style="padding:20px;background:#F0FDF4;border:1px solid #86EFAC;border-radius:10px;">
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#166534;margin-bottom:8px;">Recommended Next Step</div>
+              <p style="font-size:13px;color:#14532D;line-height:1.6;font-weight:600;">${data.nextStep||""}</p>
+            </div>
+          </div>
+        </div>
+        ${footer()}</body></html>`;
+    }
+
+    if (docId === "pitch_deck") {
+      const slideColors = ["#1B4080","#0f2655","#1B4080","#0d4429","#1B4080","#2d1b4e","#C94F1A"];
+      const slides = (data.slides||[]).map((s:any,i:number)=>`
+        <div style="background:${slideColors[i]||"#1B4080"};color:#fff;padding:44px 52px;min-height:320px;border-radius:12px;margin-bottom:20px;page-break-inside:avoid;position:relative;overflow:hidden;">
+          <div style="position:absolute;top:0;right:0;width:200px;height:200px;background:rgba(255,255,255,0.03);border-radius:50%;transform:translate(50px,-50px);"></div>
+          <div style="font-size:10px;letter-spacing:3px;color:rgba(255,255,255,0.4);text-transform:uppercase;margin-bottom:8px;">Slide ${s.slide} · ${s.title||""}</div>
+          <h2 style="font-size:26px;font-weight:300;margin-bottom:16px;line-height:1.2;max-width:600px;">${s.headline||""}</h2>
+          ${s.body?`<p style="font-size:14px;color:rgba(255,255,255,0.8);line-height:1.7;max-width:580px;">${s.body}</p>`:""}
+          ${s.bullets?`<ul style="margin:0;padding:0 0 0 18px;">${(s.bullets||[]).map((b:string)=>`<li style="font-size:14px;color:rgba(255,255,255,0.85);margin-bottom:8px;line-height:1.5;">${b}</li>`).join("")}</ul>`:""}
+          ${s.situation?`<div style="margin-top:12px;padding:12px 16px;background:rgba(255,255,255,0.08);border-radius:8px;"><div style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:4px;">Situation:</div><p style="font-size:13px;margin:0;">${s.situation}</p><div style="font-size:12px;color:#86EFAC;margin-top:8px;font-weight:600;">Result: ${s.result||""}</div></div>`:""}
+          ${s.dataPoint?`<div style="position:absolute;bottom:24px;right:32px;font-size:11px;color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.08);padding:4px 12px;border-radius:20px;">${s.dataPoint}</div>`:""}
+        </div>`).join("");
+      return base + `<body><div style="padding:32px;">${header("SEO Pitch Deck","Strategy · Findings · Opportunity")}<div style="padding:32px 0;">${slides}</div>${footer()}</div></body></html>`;
+    }
+
+    if (docId === "case_study") {
+      const metrics = Object.values(data.results||{}).map((m:any,i:number)=>`
+        <div style="text-align:center;padding:24px;background:${i===0?"#F0FDF4":i===1?"#EFF6FF":"#FEF9EE"};border-radius:12px;">
+          <div style="font-size:32px;font-weight:900;color:${i===0?"#16a34a":i===1?"#1B4080":"#d97706"};margin-bottom:4px;">${m.value||""}</div>
+          <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:2px;">${m.label||""}</div>
+          <div style="font-size:11px;color:#6b7280;">${m.timeframe||""}</div>
+        </div>`).join("");
+      const phases = Object.entries(data.approach||{}).map(([k,v]:any)=>`
+        <div style="display:flex;gap:16px;margin-bottom:16px;">
+          <div style="width:80px;shrink:0;"><div style="background:#1B4080;color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:4px 8px;border-radius:4px;text-align:center;">${k.replace("phase","Phase ")}</div></div>
+          <div style="flex:1;padding:12px 16px;background:#f8fafc;border-radius:8px;border-left:3px solid #1B4080;font-size:13px;color:#374151;">${v}</div>
+        </div>`).join("");
+      return base + `<body>
+        ${header("Case Study","A similar business · similar challenges · measurable results")}
+        <div style="padding:40px 48px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px;">
+            <div style="padding:24px;background:#F8FAFC;border-radius:12px;">
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1B4080;margin-bottom:10px;">Client Profile</div>
+              <p style="font-size:13px;color:#374151;line-height:1.65;">${data.clientProfile||""}</p>
+            </div>
+            <div style="padding:24px;background:#FEF2F2;border-radius:12px;border-left:3px solid #dc2626;">
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#dc2626;margin-bottom:10px;">The Challenge</div>
+              <p style="font-size:13px;color:#374151;line-height:1.65;">${data.challenge||""}</p>
+            </div>
+          </div>
+          <div style="margin-bottom:28px;"><div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1B4080;margin-bottom:14px;">Our Approach</div>${phases}</div>
+          <div style="margin-bottom:28px;"><div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1B4080;margin-bottom:14px;">Results</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">${metrics}</div></div>
+          <div style="padding:20px 24px;background:linear-gradient(135deg,#1B4080,#0d2545);border-radius:12px;margin-bottom:24px;">
+            <div style="font-size:32px;color:rgba(255,255,255,0.3);margin-bottom:8px;">"</div>
+            <p style="font-size:15px;color:#fff;font-style:italic;line-height:1.7;margin-bottom:0;">${data.quote||""}</p>
+          </div>
+          <div style="padding:16px 20px;background:#F0FDF4;border-radius:10px;border-left:3px solid #16a34a;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#166534;margin-bottom:6px;">Why This Is Relevant For You</div>
+            <p style="font-size:13px;color:#166534;line-height:1.6;">${data.relevance||""}</p>
+          </div>
+        </div>
+        ${footer()}</body></html>`;
+    }
+
+    if (docId === "action_plan") {
+      const phaseColors = ["#1B4080","#0d4429","#2d1b4e"];
+      const phases = (data.phases||[]).map((p:any,i:number)=>`
+        <div style="margin-bottom:28px;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;page-break-inside:avoid;">
+          <div style="background:${phaseColors[i]||"#1B4080"};padding:18px 24px;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-size:10px;letter-spacing:2px;color:rgba(255,255,255,0.5);text-transform:uppercase;">${p.phase||""}</div>
+              <div style="font-size:18px;font-weight:600;color:#fff;">${p.label||""}</div>
+            </div>
+            <div style="text-align:right;"><div style="font-size:12px;color:rgba(255,255,255,0.6);">${p.days||""}</div><div style="font-size:11px;color:rgba(255,255,255,0.4);">${p.focus||""}</div></div>
+          </div>
+          <div style="padding:20px 24px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+              ${(p.tasks||[]).map((t:string,ti:number)=>`<div style="padding:10px 14px;background:#F8FAFC;border-radius:6px;font-size:13px;color:#374151;display:flex;gap:8px;align-items:flex-start;"><span style="color:${phaseColors[i]};font-weight:700;flex-shrink:0;">${ti+1}.</span>${t}</div>`).join("")}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div style="padding:12px 16px;background:#EFF6FF;border-radius:8px;"><div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1B4080;margin-bottom:4px;">Deliverable</div><div style="font-size:13px;color:#1e40af;">${p.deliverable||""}</div></div>
+              <div style="padding:12px 16px;background:#F0FDF4;border-radius:8px;"><div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#166534;margin-bottom:4px;">KPI</div><div style="font-size:13px;color:#14532D;">${p.kpi||""}</div></div>
+            </div>
+          </div>
+        </div>`).join("");
+      return base + `<body>
+        ${header("90-Day Action Plan","Phased roadmap · specific tasks · measurable outcomes")}
+        <div style="padding:40px 48px;">
+          <div style="padding:20px 24px;background:#F0F9FF;border-radius:12px;margin-bottom:28px;border-left:4px solid #1B4080;">
+            <p style="font-size:14px;color:#0c4a6e;line-height:1.75;margin:0;">${data.overview||""}</p>
+          </div>
+          ${phases}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;">
+            <div style="padding:20px;background:#FEF9EE;border:1px solid #FCD34D;border-radius:10px;"><div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#92400E;margin-bottom:6px;">Investment</div><div style="font-size:22px;font-weight:700;color:#78350F;">${data.investment||"[INVESTMENT]"}</div></div>
+            <div style="padding:20px;background:#F0FDF4;border:1px solid #86EFAC;border-radius:10px;"><div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#166534;margin-bottom:6px;">Outcome Commitment</div><div style="font-size:13px;color:#14532D;line-height:1.6;">${data.guarantee||""}</div></div>
+          </div>
+        </div>
+        ${footer()}</body></html>`;
+    }
+
+    if (docId === "competitive_brief") {
+      const listItems = (items:string[], color:string, bg:string) =>
+        (items||[]).map(i=>`<div style="padding:12px 16px;background:${bg};border-radius:8px;border-left:3px solid ${color};font-size:13px;color:#374151;line-height:1.6;margin-bottom:8px;">${i}</div>`).join("");
+      return base + `<body>
+        ${header("Competitive Opportunity Brief","Market position · vulnerabilities · strategic opportunity")}
+        <div style="padding:40px 48px;">
+          <div style="padding:20px 24px;background:#F8FAFC;border-radius:12px;margin-bottom:28px;border-left:4px solid #6366f1;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#4338ca;margin-bottom:10px;">Market Context</div>
+            <p style="font-size:14px;color:#374151;line-height:1.75;margin:0;">${data.marketContext||""}</p>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
+            <div>
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#dc2626;margin-bottom:12px;">🔴 Current Gaps</div>
+              ${listItems(data.gapAnalysis||[], "#dc2626", "#FEF2F2")}
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#d97706;margin-bottom:12px;">⚠ Vulnerabilities</div>
+              ${listItems(data.vulnerabilities||[], "#d97706", "#FEF9EE")}
+            </div>
+          </div>
+          <div style="margin-bottom:24px;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#16a34a;margin-bottom:12px;">✅ Opportunities</div>
+            ${listItems(data.opportunities||[], "#16a34a", "#F0FDF4")}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+            <div style="padding:20px;background:#FEF9EE;border:1px solid #FCD34D;border-radius:10px;">
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#92400E;margin-bottom:8px;">Why Act Now</div>
+              <p style="font-size:13px;color:#78350F;line-height:1.6;margin:0;">${data.urgency||""}</p>
+            </div>
+            <div style="padding:20px;background:linear-gradient(135deg,#1B4080,#0d2545);border-radius:10px;">
+              <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,0.5);margin-bottom:8px;">Strategic Recommendation</div>
+              <p style="font-size:13px;color:#fff;line-height:1.6;margin:0;">${data.recommendation||""}</p>
+            </div>
+          </div>
+        </div>
+        ${footer()}</body></html>`;
+    }
+    return `<html><body><p>Unknown document type</p></body></html>`;
+  };
 
   const autoSave = async (overrides: any = {}) => {
     if (!audit && !pack) return;
@@ -87,9 +307,11 @@ export default function Intake() {
     setLoading(false);
     setStep("audit");
     setTimeout(() => auditRef.current?.scrollIntoView({ behavior:"smooth" }), 100);
-    // Auto-load context suggestions after audit
+    // Auto-load context suggestions + document suggestions after audit
     post("generate_context_suggestions", { auditResult: r, url: url.trim(), currentContext: salesContext })
       .then(rs => setCtxSuggestions((rs as any).suggestions || []));
+    post("suggest_sales_documents", { auditResult: r, url: url.trim() })
+      .then(rs => setDocSuggestions((rs as any).suggestions || []));
     autoSave({ auditResult: r });
   };
 
@@ -444,17 +666,70 @@ export default function Intake() {
               </div>
             )}
 
-            {/* Regenerate + Sales Pack CTA */}
-            <div className="mt-5 pt-5 border-t border-border flex items-center justify-between flex-wrap gap-3">
+            {/* Regenerate */}
+            <div className="mt-5 pt-5 border-t border-border flex justify-between">
               <button onClick={runAudit} disabled={loading}
                 className="px-4 py-2 rounded-xl border border-border text-xs font-medium hover:border-primary/40 disabled:opacity-50">
                 ↺ Regenerate with context
               </button>
-              <button onClick={generatePack} disabled={packLoad}
-                className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
-                {packLoad?"Generating…":"✨ Generate Sales Pack"}
-              </button>
             </div>
+          </div>
+        )}
+
+        {/* Sales Documents Suite */}
+        {audit && (
+          <div className="rounded-2xl border border-border bg-card p-5 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-sm font-bold">📁 Sales Documents</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Client-ready documents based on the audit. Each is beautifully formatted and downloadable as PDF or Word.</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              {(docSuggestions.length > 0 ? docSuggestions : [
+                {id:"executive_brief",label:"Executive Brief",icon:"📋",desc:"1-page summary for decision makers",priority:"essential"},
+                {id:"pitch_deck",label:"Pitch Deck",icon:"🎯",desc:"7-slide visual presentation",priority:"essential"},
+                {id:"case_study",label:"Case Study",icon:"📊",desc:"Real-world results from a similar business",priority:"essential"},
+                {id:"action_plan",label:"90-Day Action Plan",icon:"🗓",desc:"Phased roadmap with KPIs",priority:"essential"},
+                {id:"competitive_brief",label:"Competitive Brief",icon:"⚔️",desc:"Gaps, vulnerabilities and opportunities",priority:"recommended"},
+              ]).map((doc:any) => {
+                const generated = generatedDocs[doc.id];
+                const isGenerating = generatingDoc === doc.id;
+                return (
+                  <div key={doc.id} className="flex items-center gap-4 p-4 rounded-xl border border-border hover:border-primary/30 transition-colors">
+                    <div className="text-2xl">{doc.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-semibold">{doc.label}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${doc.priority==="essential"?"bg-primary/10 text-primary":"bg-secondary text-muted-foreground"}`}>{doc.priority}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">{doc.desc}</div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {generated ? (
+                        <>
+                          <button onClick={() => {
+                            const html = renderDocHTML(doc.id, generated.data, url, audit.score||0);
+                            downloadAsPDF(html, doc.id+"-"+slug+".pdf");
+                          }} className="px-3 py-1.5 rounded-lg border border-green-500/40 text-green-400 text-xs font-medium hover:bg-green-500/10">⬇ PDF</button>
+                          <button onClick={() => {
+                            const html = renderDocHTML(doc.id, generated.data, url, audit.score||0);
+                            downloadAsDoc(html, doc.id+"-"+slug+".doc");
+                          }} className="px-3 py-1.5 rounded-lg border border-green-500/40 text-green-400 text-xs font-medium hover:bg-green-500/10">⬇ Word</button>
+                          <button onClick={() => generateDoc(doc.id)} className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:border-primary/40">↺</button>
+                        </>
+                      ) : (
+                        <button onClick={() => generateDoc(doc.id)} disabled={isGenerating}
+                          className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50">
+                          {isGenerating ? "Generating…" : "Generate"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           </div>
         )}
 

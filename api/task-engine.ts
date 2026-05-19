@@ -572,6 +572,128 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     } catch(e:any){ return ok(res, { found: false, error: e.message }); }
   }
 
+
+  if (action === "generate_sales_documents") {
+    const { auditResult, url, salesContext = "", docType } = body;
+    if (!auditResult || !docType) return ok(res, { error: "auditResult and docType required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const siteUrl = String(url || auditResult.url || "their site");
+      const score = auditResult.score || 0;
+      const issues = (auditResult.issues||[]).slice(0,8)
+        .map((i:any) => "- [" + (i.severity||"high").toUpperCase() + "] " + (i.issue||"") + ": " + (i.explanation||i.fix||"")).join("\n");
+      const cats = (auditResult.categories||[]).map((c:any) => c.name + ": " + c.score + "/100").join(", ");
+      const wins = (auditResult.quickWins||[]).join("; ");
+      const execSummary = auditResult.executiveSummary || "";
+      const salesBrief = salesContext ? "\n\nSALES BRIEF (follow these instructions): " + salesContext : "";
+
+      const PROMPTS: any = {
+        executive_brief: {
+          system: "You are a senior SEO consultant writing a one-page executive brief for a C-suite decision maker. Be authoritative, data-driven, and concise. Every claim must come from the audit data provided.",
+          user: `Write a client-ready executive brief for: ${siteUrl}
+SEO Score: ${score}/100 | Categories: ${cats}
+Executive Summary: ${execSummary}
+Key Issues:\n${issues}
+Quick Wins: ${wins}${salesBrief}
+
+Return ONLY raw JSON:
+{"headline":"<compelling 10-word headline>","subtitle":"<2-line subtitle>","scoreContext":"<2 sentences explaining what the score means for their business>","topFindings":[{"title":"<4 words>","detail":"<2 sentences — specific to this site>","impact":"<measurable impact statement>"}],"opportunity":"<3-4 sentences on the total opportunity if issues are fixed>","nextStep":"<one clear, specific call to action>","urgencyReason":"<1 sentence why this matters now>"}`,
+        },
+        pitch_deck: {
+          system: "You are a world-class sales consultant creating a pitch deck for a prospect. Write compelling, specific copy for each slide. Every statistic and claim must be directly from the audit data. No assumed numbers.",
+          user: `Create a 7-slide pitch deck for: ${siteUrl}
+SEO Score: ${score}/100 | Categories: ${cats}
+Issues:\n${issues}
+Quick Wins: ${wins}
+Executive Summary: ${execSummary}${salesBrief}
+
+Return ONLY raw JSON:
+{"slides":[
+  {"slide":1,"title":"The Situation","headline":"<compelling statement about their current SEO state>","body":"<2-3 sentences using actual audit data>","dataPoint":"Score: ${score}/100"},
+  {"slide":2,"title":"What We Found","headline":"<key finding>","bullets":["<specific finding 1>","<specific finding 2>","<specific finding 3>"],"dataPoint":"<category with lowest score>/100"},
+  {"slide":3,"title":"The Opportunity","headline":"<what fixing this means>","body":"<2-3 sentences on business impact>","dataPoint":"<estimated opportunity statement>"},
+  {"slide":4,"title":"Quick Wins","headline":"<3 fastest fixes>","bullets":["<quick win 1 with timeline>","<quick win 2>","<quick win 3>"],"dataPoint":"30-day impact"},
+  {"slide":5,"title":"Our Approach","headline":"<methodology>","bullets":["<step 1>","<step 2>","<step 3>","<step 4>"],"dataPoint":"<timeline>"},
+  {"slide":6,"title":"Case Study","headline":"<similar client title>","situation":"<2 sentences>","result":"<specific numbers>","relevance":"<1 sentence connecting to this prospect>"},
+  {"slide":7,"title":"Next Step","headline":"<CTA>","body":"<2-3 sentences>","dataPoint":"<start date or timeline>"}
+]}`,
+        },
+        case_study: {
+          system: "You are writing a compelling case study for a sales consultant. The case study must be realistic and credible — no fake statistics. Base all numbers on reasonable SEO industry benchmarks consistent with the issues found.",
+          user: `Write a case study for a business similar to: ${siteUrl}
+Their SEO Score: ${score}/100 | Main issues: ${issues.slice(0,400)}${salesBrief}
+
+Return ONLY raw JSON:
+{"clientProfile":"<2 sentences describing a similar anonymous business, same industry/size>","challenge":"<2-3 sentences — the specific challenges they had, similar to the issues found>","approach":{"phase1":"<week 1-2: what was done>","phase2":"<week 3-6: what was done>","phase3":"<week 7-12: what was done>"},"results":{"metric1":{"label":"<metric>","value":"<value based on typical SEO gains>","timeframe":"<realistic timeframe>"},"metric2":{"label":"<metric>","value":"<value>","timeframe":"<timeframe>"},"metric3":{"label":"<metric>","value":"<value>","timeframe":"<timeframe>"}},"quote":"<realistic client testimonial>","relevance":"<2 sentences connecting this case study to the prospect>"}`,
+        },
+        action_plan: {
+          system: "You are a senior SEO project manager creating a 90-day action plan. Every action must be directly tied to fixing an issue found in the audit. No generic advice.",
+          user: `Create a 90-day SEO action plan for: ${siteUrl}
+Score: ${score}/100 | Issues:\n${issues}
+Quick Wins: ${wins}${salesBrief}
+
+Return ONLY raw JSON:
+{"overview":"<2-3 sentences on the plan focus>","phases":[
+  {"phase":"Phase 1","label":"Foundation","days":"Days 1-30","focus":"<what this phase addresses>","tasks":["<specific task tied to actual issue>","<specific task>","<specific task>","<specific task>"],"deliverable":"<what client receives>","kpi":"<measurable outcome>"},
+  {"phase":"Phase 2","label":"Growth","days":"Days 31-60","focus":"<what this phase addresses>","tasks":["<specific task>","<specific task>","<specific task>","<specific task>"],"deliverable":"<deliverable>","kpi":"<measurable outcome>"},
+  {"phase":"Phase 3","label":"Scale","days":"Days 61-90","focus":"<what this phase addresses>","tasks":["<specific task>","<specific task>","<specific task>","<specific task>"],"deliverable":"<deliverable>","kpi":"<measurable outcome>"}
+],"investment":"[INVESTMENT]","guarantee":"<realistic outcome guarantee>"}`,
+        },
+        competitive_brief: {
+          system: "You are a senior SEO strategist writing a competitive opportunity brief. Base all claims on the audit findings. Do not invent competitor data.",
+          user: `Write a competitive opportunity brief for: ${siteUrl}
+Score: ${score}/100 | Issues found:\n${issues}
+Executive Summary: ${execSummary}${salesBrief}
+
+Return ONLY raw JSON:
+{"marketContext":"<2-3 sentences about SEO competition in their space based on what the site reveals>","gapAnalysis":["<specific gap 1 found in audit and its competitive implication>","<gap 2>","<gap 3>"],"vulnerabilities":["<where competitors can outrank them based on issues found>","<vulnerability 2>","<vulnerability 3>"],"opportunities":["<specific opportunity 1 tied to an audit finding>","<opportunity 2>","<opportunity 3>"],"urgency":"<2 sentences on why acting now matters — based on algorithm context>","recommendation":"<2-3 sentences on the recommended strategy>"}`,
+        },
+      };
+
+      const cfg = PROMPTS[docType];
+      if (!cfg) return ok(res, { error: "Unknown docType: " + docType });
+
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 3000,
+        system: cfg.system + " Return ONLY raw JSON. No markdown. No code fences. No line breaks inside string values.",
+        messages: [{ role: "user", content: cfg.user }]
+      });
+      const raw = (_r.content[0] as any).text || "{}";
+      let data: any = safeParseJSON(raw);
+
+      // Truncation recovery
+      if (!data) {
+        try {
+          const t = raw.trimEnd();
+          let op=0,cl=0,ao=0,ac=0,inS=false,es=false;
+          for(const c of t){if(es){es=false;continue;}if(c==="\\"){es=true;continue;}if(c==='"'){inS=!inS;continue;}if(!inS){if(c==="{")op++;if(c==="}") cl++;if(c==="[")ao++;if(c==="]")ac++;}}
+          const closing="]".repeat(Math.max(0,ao-ac))+"}".repeat(Math.max(0,op-cl));
+          data = safeParseJSON(t+closing);
+        } catch {}
+      }
+      if (!data) return ok(res, { success: false, error: "Document generation failed — please retry" });
+
+      return ok(res, { success: true, docType, data, url: siteUrl, score });
+    } catch(e:any){ return ok(res, { success: false, error: e.message }); }
+  }
+
+  if (action === "suggest_sales_documents") {
+    const { auditResult, url } = body;
+    if (!auditResult) return ok(res, { error: "auditResult required" });
+    const score = auditResult.score || 0;
+    const sevCounts: any = { critical:0, high:0, medium:0, low:0 };
+    (auditResult.issues||[]).forEach((i:any) => { sevCounts[i.severity] = (sevCounts[i.severity]||0)+1; });
+
+    const docs: any[] = [
+      { id:"executive_brief", label:"Executive Brief", icon:"📋", desc:"1-page summary for decision makers. High impact, fast to read.", priority: score < 60 ? "essential" : "recommended" },
+      { id:"pitch_deck", label:"Pitch Deck", icon:"🎯", desc:"7-slide visual presentation covering findings, opportunity and next steps.", priority: "essential" },
+      { id:"case_study", label:"Case Study", icon:"📊", desc:"Real-world example from a similar business showing measurable results.", priority: sevCounts.critical > 0 ? "essential" : "recommended" },
+      { id:"action_plan", label:"90-Day Action Plan", icon:"🗓", desc:"Phased roadmap with specific tasks, deliverables and KPIs.", priority: "essential" },
+      { id:"competitive_brief", label:"Competitive Brief", icon:"⚔️", desc:"Where they're vulnerable and the opportunity to outrank competitors.", priority: score < 50 ? "essential" : "recommended" },
+    ];
+    return ok(res, { success: true, suggestions: docs });
+  }
+
   if (action === "generate_sales_pack") {
     const { auditResult, url, salesContext: spCtx = "" } = body;
     if (!auditResult) return ok(res, { error: "auditResult required" });
