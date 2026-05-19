@@ -18,7 +18,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { handlePM, buildExecutePrompt } from "./lib/pm-engine";
 
 /* ── Lead email notification via Resend API ── */
 async function sendLeadEmail(opts: {
@@ -317,6 +316,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
             userInputs = {}, context = {}, brainLearnings = [] } = body;
     if (!card) return ok(res, { error: "Missing card" });
 
+    const { buildExecutePrompt } = await import("./lib/pm-engine");
     const { system, prompt } = buildExecutePrompt({
       card, mode, role, userInputs, context, brainLearnings,
     });
@@ -353,6 +353,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     /* Background: persist the output onto the card + capture a learning. */
     if (card.id && execFull.length > 200) {
       Promise.resolve().then(async () => {
+        const { handlePM } = await import("./lib/pm-engine");
         await handlePM("pm_save_execution", {
           cardId: card.id, mode, role, output: execFull,
         });
@@ -372,6 +373,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   /* ═══ PM MODULE — non-streaming actions ═══ */
   if (typeof action === "string" && action.startsWith("pm_")) {
+    const { handlePM } = await import("./lib/pm-engine");
     const pmResult = await handlePM(action, body);
     if (pmResult !== null) return ok(res, pmResult);
   }
