@@ -316,7 +316,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
             userInputs = {}, context = {}, brainLearnings = [] } = body;
     if (!card) return ok(res, { error: "Missing card" });
 
-    const { buildExecutePrompt } = await import("./lib/pm-engine");
+    const { buildExecutePrompt } = await import("./lib/pm-engine.js");
     const { system, prompt } = buildExecutePrompt({
       card, mode, role, userInputs, context, brainLearnings,
     });
@@ -353,7 +353,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     /* Background: persist the output onto the card + capture a learning. */
     if (card.id && execFull.length > 200) {
       Promise.resolve().then(async () => {
-        const { handlePM } = await import("./lib/pm-engine");
+        const { handlePM } = await import("./lib/pm-engine.js");
         await handlePM("pm_save_execution", {
           cardId: card.id, mode, role, output: execFull,
         });
@@ -373,7 +373,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   /* ═══ PM MODULE — non-streaming actions ═══ */
   if (typeof action === "string" && action.startsWith("pm_")) {
-    const { handlePM } = await import("./lib/pm-engine");
+    const { handlePM } = await import("./lib/pm-engine.js");
     const pmResult = await handlePM(action, body);
     if (pmResult !== null) return ok(res, pmResult);
   }
