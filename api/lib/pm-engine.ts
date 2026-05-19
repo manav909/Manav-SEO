@@ -145,8 +145,8 @@ async function pmGatherRequirements(projectId: string) {
         db().from("audit_reports").select("*")
           .eq("project_id", projectId).order("created_at", { ascending: false }).limit(5),
         db().from("algorithm_knowledge")
-          .select("id,topic,summary,freshness_score,updated_at")
-          .order("freshness_score", { ascending: false }).limit(8),
+          .select("*")
+          .order("updated_at", { ascending: false }).limit(8),
         db().from("brain_learnings")
           .select("id,card_type,card_title,improvement,project_id")
           .eq("status", "active").order("applied_count", { ascending: false }).limit(40),
@@ -154,7 +154,7 @@ async function pmGatherRequirements(projectId: string) {
           .select("category,field_key,field_value")
           .eq("project_id", projectId),
         db().from("project_documents")
-          .select("id,doc_type,file_name,created_at")
+          .select("*")
           .eq("project_id", projectId).order("created_at", { ascending: false }).limit(10),
         db().from("crawled_pages")
           .select("url,page_analysis,crawl_status,crawled_at")
@@ -360,8 +360,12 @@ async function pmGatherRequirements(projectId: string) {
 
       documents: docs.map((d: any) => ({
         kind: "document", refId: d?.id,
-        label: d?.file_name || "Document",
-        overview: d?.doc_type ? `Type: ${d.doc_type}` : "",
+        label: d?.name || d?.page_title || d?.file_name || "Document",
+        overview: [
+          d?.doc_type ? `Type: ${d.doc_type}` : "",
+          d?.doc_summary || "",
+          d?.grade ? `Grade: ${d.grade}` : "",
+        ].filter(Boolean).join(" — "),
       })),
 
       audits: audits.map((a: any) => ({
@@ -372,8 +376,9 @@ async function pmGatherRequirements(projectId: string) {
         highlights: auditWins(a),
       })),
       algorithm: algo.map((a: any) => ({
-        kind: "algorithm", refId: a?.id, label: a?.topic || "Algorithm topic",
-        overview: a?.summary || "",
+        kind: "algorithm", refId: a?.id,
+        label: a?.topic || a?.title || "Algorithm update",
+        overview: a?.summary || a?.what_changed || "",
       })),
       brain: brain.map((b: any) => ({
         kind: "brain_learning", refId: b?.id, label: b?.card_title || "Learning",

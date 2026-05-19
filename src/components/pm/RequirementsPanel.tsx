@@ -68,17 +68,34 @@ export default function RequirementsPanel({
   }
 
   /* Group every source for display. */
-  const sourceGroups: { title: string; icon: string; refs: SourceRef[]; note: string; source: string }[] = [
-    { title: 'Audits',           icon: '🔍', refs: ctx.audits,      note: 'Technical & on-page findings', source: 'audit_reports' },
-    { title: 'Algorithm Intel',  icon: '📡', refs: ctx.algorithm,   note: 'Recent algorithm signals',     source: 'algorithm_knowledge' },
-    { title: 'Brain Learnings',  icon: '🧠', refs: ctx.brain,       note: 'Lessons from past work',       source: 'brain_learnings' },
-    { title: 'Competitors',      icon: '🎯', refs: ctx.competitors, note: 'Competitive context',          source: 'Data Room' },
-    { title: 'Documents',        icon: '📄', refs: ctx.documents || [], note: 'Uploaded project documents', source: 'project_documents' },
-    { title: 'Sales Findings',   icon: '💬', refs: ctx.sales,       note: 'From client conversations',    source: 'sales' },
-    { title: 'Client Notes',     icon: '📝', refs: ctx.clientNotes, note: 'Scope & requirements',         source: 'Data Room' },
+  /* Only sources backed by a real table. Placeholder sources (sales,
+     client notes) are deliberately not shown — an empty box for a
+     feature with no data source is noise, not information. */
+  const sourceGroups: {
+    title: string; icon: string; refs: SourceRef[]; note: string;
+    source: string; emptyAction: string;
+  }[] = [
+    { title: 'Audits', icon: '🔍', refs: ctx.audits, note: 'Technical & on-page findings',
+      source: 'audit_reports',
+      emptyAction: 'No audit yet — run an Audit so technical cards are grounded in real findings.' },
+    { title: 'Algorithm Intel', icon: '📡', refs: ctx.algorithm, note: 'Recent algorithm signals',
+      source: 'algorithm_knowledge',
+      emptyAction: 'No algorithm intelligence recorded yet.' },
+    { title: 'Brain Learnings', icon: '🧠', refs: ctx.brain, note: 'Lessons from past work',
+      source: 'brain_learnings',
+      emptyAction: 'No learnings captured yet — these build up as work is verified.' },
+    { title: 'Competitors', icon: '🎯', refs: ctx.competitors, note: 'Competitive context',
+      source: 'Data Room',
+      emptyAction: 'No competitors set — add them in the Data Room for competitive cards.' },
+    { title: 'Documents', icon: '📄', refs: ctx.documents || [], note: 'Uploaded project documents',
+      source: 'project_documents',
+      emptyAction: 'No documents uploaded — add briefs or reports in the Data Room.' },
   ];
 
-  const totalSources = sourceGroups.reduce((n, g) => n + g.refs.length, 0);
+  /* Only render groups that have data OR a meaningful action. */
+  const visibleGroups = sourceGroups;
+
+  const totalSources = visibleGroups.reduce((n, g) => n + g.refs.length, 0);
 
   return (
     <div className="space-y-6">
@@ -143,7 +160,7 @@ export default function RequirementsPanel({
           <span className="text-xs text-muted-foreground font-mono">{totalSources} sources</span>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {sourceGroups.map(g => (
+          {visibleGroups.map(g => (
             <div key={g.title} className="rounded-xl border border-border bg-background/50 p-3">
               <div className="flex items-center gap-2 mb-1">
                 <span>{g.icon}</span>
@@ -176,7 +193,7 @@ export default function RequirementsPanel({
                   )}
                 </ul>
               ) : (
-                <div className="text-xs text-muted-foreground/60 italic">None available</div>
+                <div className="text-xs text-amber-400/70 leading-snug">{g.emptyAction}</div>
               )}
             </div>
           ))}
