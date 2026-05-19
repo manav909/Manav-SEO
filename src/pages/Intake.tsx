@@ -30,6 +30,7 @@ export default function Intake() {
   const [docSuggestions, setDocSuggestions] = useState<any[]>([]);
   const [generatedDocs,  setGeneratedDocs]  = useState<Record<string,any>>({});
   const [generatingDoc,  setGeneratingDoc]  = useState<string|null>(null);
+  const [docErrors,      setDocErrors]      = useState<Record<string,string>>({});
   const auditRef = useRef<HTMLDivElement>(null);
   const packRef  = useRef<HTMLDivElement>(null);
   const ctxRef   = useRef<HTMLTextAreaElement>(null);
@@ -45,20 +46,17 @@ export default function Intake() {
   }, [url]);
 
   const generateDoc = async (docId: string) => {
-    if (!audit) { setError("Run an audit first"); return; }
+    if (!audit) return;
     setGeneratingDoc(docId);
-    setError("");
-    try {
-      const r = await post("generate_sales_documents", {
-        auditResult: audit, url, salesContext, docType: docId,
-      });
-      if ((r as any).success && (r as any).data) {
-        setGeneratedDocs((prev: any) => ({ ...prev, [docId]: r }));
-      } else {
-        setError((r as any).error || "Generation failed — check Vercel logs");
-      }
-    } catch (e: any) {
-      setError("Network error: " + e.message);
+    setDocErrors(prev => { const n = {...prev}; delete n[docId]; return n; });
+    const r = await post("generate_sales_documents", {
+      auditResult: audit, url, salesContext, docType: docId,
+    });
+    if ((r as any).success && (r as any).data) {
+      setGeneratedDocs(prev => ({ ...prev, [docId]: r }));
+    } else {
+      const msg = (r as any).error || (r as any).message || "Failed — please retry";
+      setDocErrors(prev => ({ ...prev, [docId]: msg }));
     }
     setGeneratingDoc(null);
   };
@@ -726,10 +724,16 @@ export default function Intake() {
                           <button onClick={() => generateDoc(doc.id)} className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:border-primary/40">↺</button>
                         </>
                       ) : (
-                        <button onClick={() => generateDoc(doc.id)} disabled={isGenerating}
-                          className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50">
-                          {isGenerating ? "Generating…" : "Generate"}
-                        </button>
+                        <div className="flex flex-col items-end gap-1">
+                          <button onClick={() => generateDoc(doc.id)} disabled={isGenerating}
+                            className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2">
+                            {isGenerating && <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"/>}
+                            {isGenerating ? "Generating…" : "Generate"}
+                          </button>
+                          {docErrors[doc.id] && (
+                            <span className="text-xs text-red-400 max-w-[160px] text-right">{docErrors[doc.id]}</span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
