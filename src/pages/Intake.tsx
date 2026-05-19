@@ -226,7 +226,7 @@ export default function Intake() {
       </div></body></html>`;
   };
 
-  const ProgressBar = () => !progress ? null : (
+  const progressBarJSX = !progress ? null : (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
       <div className="w-full max-w-md mx-6 rounded-2xl border border-border bg-card p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-3">
@@ -244,7 +244,7 @@ export default function Intake() {
     </div>
   );
 
-  const ContextPanel = () => (
+  const contextPanelJSX = (
     <div className="rounded-2xl border border-border bg-card p-5 mb-6">
       <div className="flex items-center justify-between mb-3">
         <div>
@@ -288,7 +288,7 @@ export default function Intake() {
     </div>
   );
 
-  const DownloadButtons = ({ htmlFn, name: fname }: { htmlFn:()=>string; name:string }) => (
+  const downloadButtonsFn = (htmlFn:()=>string, fname:string) => (
     <div className="flex gap-2">
       <button onClick={() => downloadAsPDF(htmlFn(), fname+".pdf")}
         className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:border-primary/40">⬇ PDF</button>
@@ -301,7 +301,7 @@ export default function Intake() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <ProgressBar />
+      {progressBarJSX}
       <PortalNav />
       <div className="max-w-4xl mx-auto px-6 py-8">
         <div className="mb-6">
@@ -342,7 +342,7 @@ export default function Intake() {
         </div>
 
         {/* Sales Context panel — always visible once URL entered */}
-        {url.trim().length > 5 && <ContextPanel />}
+        {url.trim().length > 5 && {contextPanelJSX}}
 
         {/* Audit results */}
         {audit && (
@@ -357,7 +357,7 @@ export default function Intake() {
                   <div className={`text-3xl font-black ${(audit.score||0)>=70?"text-red-400":(audit.score||0)>=50?"text-yellow-400":"text-green-400"}`}>{audit.score||0}</div>
                   <div className="text-xs text-muted-foreground">/100</div>
                 </div>
-                <DownloadButtons htmlFn={auditHTML} name={"audit-"+slug} />
+                {downloadButtonsFn(auditHTML, "audit-"+slug)}
               </div>
             </div>
 
@@ -432,7 +432,7 @@ export default function Intake() {
                 <div className="text-base font-semibold">{url}</div>
               </div>
               <div className="flex items-center gap-3">
-                <DownloadButtons htmlFn={packHTML} name={"sales-pack-"+slug} />
+                {downloadButtonsFn(packHTML, "sales-pack-"+slug)}
                 <button onClick={generatePack} disabled={packLoad}
                   className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:border-primary/40">
                   ↺ Regenerate
