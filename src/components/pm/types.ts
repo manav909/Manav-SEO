@@ -91,12 +91,16 @@ export interface CardRequirement {
    makes every card traceable back to its source. */
 export interface SourceRef {
   kind:   'audit' | 'algorithm' | 'brain_learning' | 'competitor'
-        | 'sales' | 'client_note' | 'scope' | 'metric';
+        | 'sales' | 'client_note' | 'scope' | 'metric' | 'document';
   refId?: string;     // row id in the source table, when applicable
   label:  string;     // human-readable description of the source
   overview?:   string;   // a short summary of what this source actually says
   highlights?: string[]; // key takeaways (wins, gaps, opportunities)
   url?:        string;   // the audited / referenced URL, when applicable
+  competitors?: string[];   // audit: the competitors analysed
+  keywords?:    string[];   // audit: the keywords analysed
+  detail?:      AuditDetail; // audit: the full extracted findings
+  saved?:       boolean;     // algorithm: backed by a saved Library row
 }
 
 /* ── Expert engine output ── */
@@ -139,6 +143,7 @@ export interface RequirementContext {
   dataRoom?:            DataRoomContext;
   crawlPages?:          CrawlPage[];
   keywordMap?:          KeywordPageMapping[];
+  unmatchedPages?:      CrawlPage[];
   crawlSummary?:        { total: number; ours: number; competitor: number; lastCrawled: string };
   crawlComparison?:     CrawlComparison | null;
   crawlComparisonAt?:   string;
@@ -204,4 +209,18 @@ export interface KeywordPageMapping {
   ourPage:          CrawlPage | null;
   competitorPages:  CrawlPage[];
   anyInferred:      boolean;
+  manuallyLinked:   boolean;
+}
+
+/* The detailed findings extracted from an audit's sections jsonb. */
+export interface AuditDetail {
+  verdict:       string;
+  biggestWin:    string;
+  urgentGap:     string;
+  strengths:     string[];
+  opportunities: string[];
+  technical:     string;
+  content:       string;
+  visibility:    string;
+  competitive:   string;
 }

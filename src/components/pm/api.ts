@@ -213,6 +213,15 @@ export async function generateTaskReport(projectId: string, range: 'daily' | 'on
   return r?.success ? r.report : null;
 }
 
+/* Manually link a target keyword to a crawled landing-page URL.
+   Pass url='' to remove the link. Overrides inferred matching. */
+export async function linkKeywordPage(
+  projectId: string, keyword: string, url: string,
+): Promise<{ success: boolean; linked?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_link_keyword_page', projectId, keyword, url });
+  return r || { success: false, error: 'No response' };
+}
+
 /* Run a fresh crawl + AI competitive comparison.
    The crawl itself calls /api/crawl directly (relative path — works
    reliably from the browser). The resulting comparison is then saved

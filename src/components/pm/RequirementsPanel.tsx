@@ -10,7 +10,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type {
   RequirementContext, SourceRef, DataRoomContext, KeywordPageMapping,
-  CrawlComparison,
+  CrawlComparison, CrawlPage,
 } from './types';
 import * as pmApi from './api';
 
@@ -75,12 +75,9 @@ export default function RequirementsPanel({
     title: string; icon: string; refs: SourceRef[]; note: string;
     source: string; emptyAction: string;
   }[] = [
-    { title: 'Audits', icon: '🔍', refs: ctx.audits, note: 'Technical & on-page findings',
-      source: 'audit_reports',
-      emptyAction: 'No audit yet — run an Audit so technical cards are grounded in real findings.' },
-    { title: 'Algorithm Intel', icon: '📡', refs: ctx.algorithm, note: 'Recent algorithm signals',
-      source: 'algorithm_knowledge',
-      emptyAction: 'No algorithm intelligence recorded yet.' },
+    { title: 'Algorithm Intel', icon: '📡', refs: ctx.algorithm, note: 'Algorithm factors shaping cards',
+      source: 'algorithm catalog + algorithm_knowledge',
+      emptyAction: 'No algorithm intelligence available.' },
     { title: 'Brain Learnings', icon: '🧠', refs: ctx.brain, note: 'Lessons from past work',
       source: 'brain_learnings',
       emptyAction: 'No learnings captured yet — these build up as work is verified.' },
@@ -142,13 +139,19 @@ export default function RequirementsPanel({
       {/* Data Room — the project's structured definition */}
       {ctx.dataRoom && <DataRoomSection dr={ctx.dataRoom} />}
 
+      {/* Audit findings — the real detail, not just a score */}
+      {ctx.audits && ctx.audits.length > 0 && <AuditSection audits={ctx.audits} />}
+
       {/* Crawl & competitive pages — keyword -> landing page + AI comparison */}
       <CrawlSection
         projectId={projectId}
         keywordMap={ctx.keywordMap || []}
+        unmatchedPages={ctx.unmatchedPages || []}
+        crawlPages={ctx.crawlPages || []}
         summary={ctx.crawlSummary}
         comparison={ctx.crawlComparison || null}
         comparisonAt={ctx.crawlComparisonAt || ''}
+        onLinkChanged={gather}
       />
 
       {/* Intelligence sources — full transparency */}
@@ -314,16 +317,23 @@ function DataRoomSection({ dr }: { dr: DataRoomContext }) {
 }
 
 /* ── Crawl & competitive pages — keyword -> landing page + AI comparison ── */
-function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt }: {
+function CrawlSection({
+  projectId, keywordMap, unmatchedPages, crawlPages, summary,
+  comparison, comparisonAt, onLinkChanged,
+}: {
   projectId: string;
   keywordMap: KeywordPageMapping[];
+  unmatchedPages: CrawlPage[];
+  crawlPages: CrawlPage[];
   summary?: { total: number; ours: number; competitor: number; lastCrawled: string };
   comparison: CrawlComparison | null;
   comparisonAt: string;
+  onLinkChanged: () => void;
 }) {
   const [running, setRunning] = useState(false);
   const [result, setResult]   = useState('');
   const [cmp, setCmp]         = useState<CrawlComparison | null>(comparison);
+  const [linking, setLinking] = useState('');
 
   const runCrawl = async () => {
     setRunning(true);
@@ -333,10 +343,21 @@ function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt
     if (r.success) {
       setCmp(r.comparison || null);
       setResult(`Crawl complete — ${r.crawledCount || 0} pages analysed and compared.`);
+      onLinkChanged();
     } else {
       setResult(r.error || 'Crawl failed.');
     }
   };
+
+  const linkPage = async (keyword: string, url: string) => {
+    setLinking(keyword);
+    await pmApi.linkKeywordPage(projectId, keyword, url);
+    setLinking('');
+    onLinkChanged();
+  };
+
+  /* our crawled pages — the options for manual keyword linking */
+  const ourPages = crawlPages.filter(p => p.owner === 'ours');
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
@@ -370,20 +391,25 @@ function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt
         </div>
       )}
 
-      {/* keyword -> landing page mapping */}
+      {/* keyword -> landing page mapping, with a manual link control */}
       {keywordMap.length > 0 && (
         <div className="space-y-2 mb-4">
           {keywordMap.map((k, i) => (
             <div key={i} className="rounded-xl border border-border bg-background/50 p-3">
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                 <span className="text-sm font-semibold">{k.keyword}</span>
-                {k.anyInferred && (
+                {k.manuallyLinked && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400">
+                    manually linked
+                  </span>
+                )}
+                {k.anyInferred && !k.manuallyLinked && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">
                     keyword match inferred
                   </span>
                 )}
               </div>
-              <div className="grid sm:grid-cols-2 gap-2 text-xs">
+              <div className="grid sm:grid-cols-2 gap-2 text-xs mb-2">
                 <div>
                   <span className="text-muted-foreground">Our page: </span>
                   {k.ourPage ? (
@@ -407,8 +433,51 @@ function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt
                   )}
                 </div>
               </div>
+              {/* manual link control — assign a crawled page to this keyword */}
+              {ourPages.length > 0 && (
+                <div className="flex items-center gap-2 pt-1 border-t border-border/50">
+                  <span className="text-[10px] text-muted-foreground">Link a page:</span>
+                  <select
+                    value={k.ourPage?.url || ''}
+                    disabled={linking === k.keyword}
+                    onChange={(e) => linkPage(k.keyword, e.target.value)}
+                    className="text-[11px] bg-background border border-border rounded px-1.5 py-0.5 text-foreground/80 max-w-[60%]"
+                  >
+                    <option value="">— inferred / none —</option>
+                    {ourPages.map((p, j) => (
+                      <option key={j} value={p.url}>{p.url}</option>
+                    ))}
+                  </select>
+                  {linking === k.keyword && (
+                    <span className="text-[10px] text-muted-foreground">saving…</span>
+                  )}
+                </div>
+              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* crawled pages not matched to any keyword — never hidden */}
+      {unmatchedPages.length > 0 && (
+        <div className="rounded-xl border border-border bg-background/30 p-3 mb-4">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Other crawled pages — not matched to a keyword
+          </div>
+          <ul className="space-y-1">
+            {unmatchedPages.map((p, i) => (
+              <li key={i} className="text-xs text-foreground/75">
+                <span className={p.owner === 'ours' ? 'text-primary' : 'text-muted-foreground'}>
+                  [{p.owner}]
+                </span>{' '}
+                {p.url}
+                <span className="text-muted-foreground/60"> ({p.contentType})</span>
+              </li>
+            ))}
+          </ul>
+          <div className="text-[10px] text-muted-foreground/60 mt-2">
+            Use the dropdowns above to link any of your pages to a keyword.
+          </div>
         </div>
       )}
 
@@ -430,7 +499,6 @@ function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt
             <p className="text-xs text-foreground/90 leading-relaxed">{cmp.executive_summary}</p>
           )}
 
-          {/* comparison matrix */}
           {cmp.comparison_matrix?.rows?.length ? (
             <div className="overflow-x-auto">
               <table className="w-full text-[11px]">
@@ -457,7 +525,6 @@ function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt
             </div>
           ) : null}
 
-          {/* competitive gaps */}
           {cmp.competitive_gaps?.length ? (
             <div>
               <div className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider mb-1">
@@ -473,7 +540,6 @@ function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt
             </div>
           ) : null}
 
-          {/* opportunities */}
           {cmp.opportunities?.length ? (
             <div>
               <div className="text-[10px] font-semibold text-green-400 uppercase tracking-wider mb-1">
@@ -495,6 +561,129 @@ function CrawlSection({ projectId, keywordMap, summary, comparison, comparisonAt
           against competitors and cross-verify the gathered intelligence against live data.
         </div>
       )}
+    </div>
+  );
+}
+
+function AuditSection({ audits }: { audits: SourceRef[] }) {
+  const [open, setOpen] = useState(0);
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Audit findings
+        </div>
+        <span className="text-[10px] text-muted-foreground/60 font-mono">
+          source: audit_reports
+        </span>
+      </div>
+
+      {/* audit selector when there's more than one */}
+      {audits.length > 1 && (
+        <div className="flex gap-1 mb-3 flex-wrap">
+          {audits.map((a, i) => (
+            <button
+              key={i}
+              onClick={() => setOpen(i)}
+              className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${
+                i === open
+                  ? 'border-primary/50 bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {(() => {
+        const a = audits[open] || audits[0];
+        const d = a.detail;
+        return (
+          <div className="space-y-3">
+            <div className="text-sm font-semibold text-foreground/90">{a.label}</div>
+            {a.url && <div className="text-xs text-muted-foreground font-mono">{a.url}</div>}
+
+            {a.keywords && a.keywords.length > 0 && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">Keywords audited: </span>
+                <span className="text-foreground/85">{a.keywords.join(', ')}</span>
+              </div>
+            )}
+            {a.competitors && a.competitors.length > 0 && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">Competitors analysed: </span>
+                <span className="text-foreground/85">{a.competitors.join(', ')}</span>
+              </div>
+            )}
+
+            {d?.verdict && (
+              <div className="rounded-lg border border-border bg-background/50 p-3">
+                <div className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Verdict</div>
+                <div className="text-xs text-foreground/90 leading-relaxed">{d.verdict}</div>
+              </div>
+            )}
+
+            <div className="grid sm:grid-cols-2 gap-2">
+              {d?.biggestWin && (
+                <AuditBox label="Biggest verified win" tone="green" text={d.biggestWin} />
+              )}
+              {d?.urgentGap && (
+                <AuditBox label="Most urgent gap" tone="amber" text={d.urgentGap} />
+              )}
+            </div>
+
+            {d?.competitive && (
+              <AuditBox label="Competitive intelligence" tone="blue" text={d.competitive} />
+            )}
+
+            {/* the four audit agents' findings */}
+            <div className="grid sm:grid-cols-2 gap-2">
+              {d?.technical  && <AuditBox label="Technical findings"   tone="plain" text={d.technical} />}
+              {d?.content    && <AuditBox label="Content & E-E-A-T"     tone="plain" text={d.content} />}
+              {d?.visibility && <AuditBox label="AI visibility"         tone="plain" text={d.visibility} />}
+            </div>
+
+            {d && d.opportunities.length > 0 && (
+              <div>
+                <div className="text-[10px] font-semibold text-green-400 uppercase tracking-wider mb-1">
+                  Growth opportunities
+                </div>
+                <ul className="space-y-0.5">
+                  {d.opportunities.map((o, i) => (
+                    <li key={i} className="text-xs text-foreground/85">• {o}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {(!d || (!d.verdict && !d.technical && !d.competitive)) && (
+              <div className="text-xs text-amber-400/70">
+                This audit recorded a score but no detailed sections — re-run the audit
+                to capture full findings for card generation.
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function AuditBox({ label, text, tone }: { label: string; text: string; tone: string }) {
+  const tones: Record<string, string> = {
+    green: 'border-green-500/30 bg-green-500/5',
+    amber: 'border-amber-500/30 bg-amber-500/5',
+    blue:  'border-primary/30 bg-primary/5',
+    plain: 'border-border bg-background/50',
+  };
+  return (
+    <div className={`rounded-lg border p-3 ${tones[tone] || tones.plain}`}>
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+        {label}
+      </div>
+      <div className="text-xs text-foreground/85 leading-relaxed">{text}</div>
     </div>
   );
 }

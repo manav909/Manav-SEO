@@ -13,6 +13,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "./db.js";
+import { TOPIC_CATALOG } from "./algo-catalog.js";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -231,6 +232,41 @@ async function pmGatherRequirements(projectId: string) {
       return out;
     };
 
+    /* Pull the real findings out of an audit's sections jsonb so the
+       PM tab shows what the audit actually found — not just a score.
+       sections = { technical:{data}, content:{data}, visibility:{data},
+       ranking:{data}, synthesis, cross_verifications }. */
+    const auditDetail = (a: any) => {
+      const s = a?.sections || {};
+      const syn = s?.synthesis || a?.synthesis || {};
+      const txt = (v: any): string => {
+        if (!v) return "";
+        if (typeof v === "string") return v;
+        if (Array.isArray(v)) return v.filter(Boolean).map(txt).join("; ");
+        if (typeof v === "object")
+          return Object.values(v).filter((x) => typeof x === "string").join("; ");
+        return String(v);
+      };
+      /* the ranking section carries competitive intelligence */
+      const rank = s?.ranking?.data || {};
+      const competitive =
+        txt(rank.competitor_comparison) ||
+        txt(rank.competitors) ||
+        txt(rank.competitive_gaps) ||
+        txt(rank.serp_analysis) || "";
+      return {
+        verdict:     syn?.overall_verdict || "",
+        biggestWin:  syn?.biggest_verified_win || "",
+        urgentGap:   syn?.most_urgent_gap || "",
+        strengths:   (syn?.verified_strengths || []).slice(0, 4),
+        opportunities: (syn?.growth_opportunities || []).slice(0, 4),
+        technical:   txt(s?.technical?.data?.summary || s?.technical?.data) .slice(0, 400),
+        content:     txt(s?.content?.data?.summary || s?.content?.data).slice(0, 400),
+        visibility:  txt(s?.visibility?.data?.summary || s?.visibility?.data).slice(0, 400),
+        competitive: competitive.slice(0, 500),
+      };
+    };
+
     /* ── Crawl: organise pages at the keyword -> landing-page grain ──
        Each crawled page declares its content type and the keywords found
        on it (page_analysis.keyword_presence). We map page -> keyword,
@@ -253,11 +289,24 @@ async function pmGatherRequirements(projectId: string) {
       const pageKeywords = explicitKw.length ? explicitKw : inferredKw;
       const keywordsInferred = !explicitKw.length && inferredKw.length > 0;
 
-      /* match page keywords against the project's target keyword list */
-      const matchedTargets = keywords.filter((k) =>
-        pageKeywords.some((pk: string) =>
-          pk.toLowerCase().includes(k.toLowerCase()) ||
-          k.toLowerCase().includes(pk.toLowerCase())));
+      /* match page keywords against the project's target keyword list.
+         Word-overlap, not substring — a page "targets" a keyword if
+         they share a meaningful word, or the page's URL slug or found
+         keywords overlap with the keyword's words. */
+      const norm = (s: string) =>
+        s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 2);
+      const slugWords = norm((row?.url || "").replace(/^https?:\/\/[^/]+/, "").replace(/[/-]/g, " "));
+      const pageWordBag = new Set<string>([
+        ...pageKeywords.flatMap((pk: string) => norm(pk)),
+        ...slugWords,
+      ]);
+      const matchedTargets = keywords.filter((k) => {
+        const kw = norm(k);
+        if (!kw.length) return false;
+        const hits = kw.filter((w) => pageWordBag.has(w)).length;
+        /* match if at least half the keyword's words appear on the page */
+        return hits >= Math.ceil(kw.length / 2);
+      });
 
       return {
         url: row?.url || "",
@@ -274,16 +323,37 @@ async function pmGatherRequirements(projectId: string) {
       };
     });
 
-    /* group: for each target keyword, our page vs competitor pages */
+    /* manual keyword -> page links from the Data Room
+       (project_knowledge category "keyword_pages", field_key = keyword). */
+    const manualLinks = km["keyword_pages"] || {};
+
+    /* group: for each target keyword, our page vs competitor pages.
+       A manual link always wins over inference. */
     const keywordMap = keywords.map((kw) => {
-      const pagesFor = crawlPages.filter((p) => p.targetsKeywords.includes(kw));
+      const manualUrl = manualLinks[kw] || manualLinks[kw.toLowerCase()] || "";
+      let pagesFor = crawlPages.filter((p) => p.targetsKeywords.includes(kw));
+      if (manualUrl) {
+        const linked = crawlPages.find((p) => p.url === manualUrl);
+        if (linked && !pagesFor.includes(linked)) pagesFor = [linked, ...pagesFor];
+      }
       return {
         keyword: kw,
-        ourPage: pagesFor.find((p) => p.owner === "ours") || null,
+        ourPage: (manualUrl && crawlPages.find((p) => p.url === manualUrl && p.owner === "ours"))
+          || pagesFor.find((p) => p.owner === "ours") || null,
         competitorPages: pagesFor.filter((p) => p.owner === "competitor"),
-        anyInferred: pagesFor.some((p) => p.keywordsInferred),
+        anyInferred: pagesFor.some((p) => p.keywordsInferred) && !manualUrl,
+        manuallyLinked: !!manualUrl,
       };
     });
+
+    /* crawled pages that matched NO target keyword — never hide them,
+       they still carry findings and can be manually linked. */
+    const matchedUrls = new Set(
+      keywordMap.flatMap((k) => [
+        k.ourPage?.url,
+        ...k.competitorPages.map((p: any) => p.url),
+      ]).filter(Boolean));
+    const unmatchedPages = crawlPages.filter((p) => !matchedUrls.has(p.url));
 
     /* ── data gaps ── */
     const gaps: string[] = [];
@@ -383,12 +453,36 @@ async function pmGatherRequirements(projectId: string) {
         overview: auditOverview(a),
         url: a?.url || "",
         highlights: auditWins(a),
+        competitors: Array.isArray(a?.competitors) ? a.competitors.filter(Boolean) : [],
+        keywords:    Array.isArray(a?.keywords) ? a.keywords.filter(Boolean) : [],
+        detail:      auditDetail(a),
       })),
-      algorithm: algo.map((a: any) => ({
-        kind: "algorithm", refId: a?.id,
-        label: a?.topic || a?.title || "Algorithm update",
-        overview: a?.summary || a?.what_changed || "",
-      })),
+      /* Algorithm intelligence — the built-in TOPIC_CATALOG (the same
+         topics the Algorithm page shows, always present) merged with
+         the project's saved Library rows. Highest-weight topics first
+         so card generation reasons over the factors that matter most. */
+      algorithm: (() => {
+        const savedByLabel = new Map<string, any>();
+        for (const a of algo) {
+          const key = (a?.title || a?.topic || "").toLowerCase().trim();
+          if (key) savedByLabel.set(key, a);
+        }
+        const topTopics = [...TOPIC_CATALOG]
+          .sort((x, y) => y.weight - x.weight)
+          .slice(0, 12)
+          .map((t) => {
+            const saved = savedByLabel.get(t.label.toLowerCase().trim());
+            return {
+              kind: "algorithm",
+              refId: saved?.id || t.id,
+              label: t.label,
+              overview: saved?.summary || saved?.what_changed
+                || `${t.group} — ${t.engine} (priority ${t.weight}/10)`,
+              saved: !!saved,
+            };
+          });
+        return topTopics;
+      })(),
       brain: brain.map((b: any) => ({
         kind: "brain_learning", refId: b?.id, label: b?.card_title || "Learning",
         overview: b?.improvement || "",
@@ -397,6 +491,7 @@ async function pmGatherRequirements(projectId: string) {
       /* crawl & competitive pages — keyword -> landing-page grain */
       crawlPages,
       keywordMap,
+      unmatchedPages,
       crawlSummary: {
         total:       crawlPages.length,
         ours:        crawlPages.filter((p) => p.owner === "ours").length,
@@ -779,6 +874,31 @@ async function pmCrawlTargets(projectId: string) {
   }
 }
 
+/* Manually link a target keyword to a landing-page URL.
+   Stored in project_knowledge (category "keyword_pages") so it
+   persists and overrides inferred matching. Pass url="" to unlink. */
+async function pmLinkKeywordPage(projectId: string, keyword: string, url: string) {
+  if (!projectId || !keyword) return { success: false, error: "projectId and keyword required" };
+  try {
+    if (!url) {
+      await db().from("project_knowledge").delete()
+        .eq("project_id", projectId).eq("category", "keyword_pages").eq("field_key", keyword);
+      return { success: true, linked: false };
+    }
+    /* upsert: remove any existing link for this keyword, then insert */
+    await db().from("project_knowledge").delete()
+      .eq("project_id", projectId).eq("category", "keyword_pages").eq("field_key", keyword);
+    const { error } = await db().from("project_knowledge").insert({
+      project_id: projectId, category: "keyword_pages",
+      field_key: keyword, field_value: url, source: "manual",
+    });
+    if (error) return { success: false, error: error.message };
+    return { success: true, linked: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "link failed" };
+  }
+}
+
 export async function handlePM(action: string, body: any): Promise<any | null> {
   switch (action) {
     case "pm_get_cards":             return pmGetCards(body.projectId);
@@ -788,6 +908,7 @@ export async function handlePM(action: string, body: any): Promise<any | null> {
     case "pm_generate_cards":        return pmGenerateCards(body.projectId);
     case "pm_crawl_targets":         return pmCrawlTargets(body.projectId);
     case "pm_save_crawl_comparison": return pmSaveCrawlComparison(body.projectId, body.comparison);
+    case "pm_link_keyword_page":     return pmLinkKeywordPage(body.projectId, body.keyword, body.url || "");
     case "pm_enhance_card":          return pmEnhanceCard(body.card || {});
     case "pm_analyze_dependencies":  return pmAnalyzeDependencies(body.projectId);
     case "pm_save_execution":        return pmSaveExecution(body);
