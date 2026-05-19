@@ -2097,7 +2097,7 @@ Return ONLY raw JSON:
       const canvas: any[] = Array.isArray(proj.playground_canvas) ? proj.playground_canvas : [];
 
       // Source 3: task_requirements table (cards created by task engine)
-      const { data: reqRows } = await db()
+      const { data: reqRows, error: reqRowsErr } = await db()
         .from("task_requirements")
         .select("id,task_type,title,description,status,priority,week,effort,impact,tags,created_at,completed_at")
         .eq("project_id", projectId)
@@ -2144,17 +2144,16 @@ Return ONLY raw JSON:
         tasks: tasks || [],
         projectName: proj.name,
         _debug: {
+          totalCards: allCards.length,
           reqCards: reqCards.length,
           blockCards: mergedBlocks.length,
-          totalCards: allCards.length,
-          reqError: reqRows === null ? "null result — table may not exist" : null,
-          projectFound: true,
-          playgroundStrategyKeys: Object.keys(strategy),
-          projectIdReceived: projectId,
-          supabaseUrl: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "NOT SET").slice(0,40),
-          keyUsed: process.env.SUPABASE_SERVICE_KEY ? "SUPABASE_SERVICE_KEY" :
-                   process.env.SUPABASE_SERVICE_ROLE_KEY ? "SUPABASE_SERVICE_ROLE_KEY" :
-                   process.env.SUPABASE_ANON_KEY ? "SUPABASE_ANON_KEY" : "NONE",
+          canvasRows: canvas.length,
+          reqError: reqRowsErr?.message || null,
+          projStrategyIsNull: proj.playground_strategy === null,
+          projCanvasIsNull: proj.playground_canvas === null,
+          projStrategyType: typeof proj.playground_strategy,
+          canvasBlocksLength: Array.isArray(strategy?.canvas_blocks) ? strategy.canvas_blocks.length : "not array",
+          taskExecCount: tasks?.length || 0,
         },
       });
     } catch(e:any){ return ok(res,{success:false,error:e.message}); }
