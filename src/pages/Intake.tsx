@@ -87,11 +87,9 @@ export default function Intake() {
     setLoading(false);
     setStep("audit");
     setTimeout(() => auditRef.current?.scrollIntoView({ behavior:"smooth" }), 100);
-    // Auto-load context suggestions
-    setTimeout(() => {
-      post("generate_context_suggestions", { auditResult: r, url: url.trim(), currentContext: salesContext })
-        .then(rs => setCtxSuggestions((rs as any).suggestions || []));
-    }, 500);
+    // Auto-load context suggestions after audit
+    post("generate_context_suggestions", { auditResult: r, url: url.trim(), currentContext: salesContext })
+      .then(rs => setCtxSuggestions((rs as any).suggestions || []));
     autoSave({ auditResult: r });
   };
 
@@ -171,7 +169,7 @@ export default function Intake() {
             ${i.algorithmNote?`<div style="font-size:12px;color:#6366f1;margin-top:8px;">⚡ ${i.algorithmNote}</div>`:""}
           </div>`).join("")}
       </section>`).join("");
-    const ctxBanner = audit.contextSummary ? `<div style="margin-bottom:28px;padding:14px 18px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#15803d;margin-bottom:4px;">✦ Sales Context Applied</div><p style="font-size:13px;color:#166534;margin:0;">${audit.contextSummary}</p></div>` : "";
+    const ctxBanner = ""; // Never shown in client document
     const summaryBlock = audit.executiveSummary ? `<div style="margin-bottom:32px;padding:20px 24px;background:#f8fafc;border-radius:10px;border-left:5px solid #1B4080;"><h2 style="margin:0 0 10px;font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#1B4080;">Executive Summary</h2><p style="font-size:15px;color:#1e293b;line-height:1.75;margin:0;">${audit.executiveSummary}</p></div>` : "";
     const printCSS = "@media print{body{max-width:100%;margin:0;padding:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{size:A4;margin:1.5cm;}.no-print{display:none;}}";
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>SEO Audit — ${url}</title>
@@ -212,7 +210,7 @@ export default function Intake() {
   const packHTML = () => {
     if (!pack) return "";
     const qwp = (pack.quickWinPlan||"").split("|").map((s:string)=>s.trim()).filter(Boolean);
-    const ctx = salesContext ? `<div style="margin-bottom:20px;padding:12px;background:#f0fdf4;border-radius:6px;border-left:3px solid #10b981;font-size:12px;color:#166534;"><strong>Sales Context Applied:</strong> ${salesContext}</div>` : "";
+    const ctx = ""; // Never shown in client document
     const proposal = (pack.proposalPoints||[]).map((p:any)=>
       `<div style="margin-bottom:14px;padding:14px;background:#f8fafc;border-radius:6px;border-left:3px solid #6366f1;"><strong style="color:#1B4080;">${p.heading}</strong><p style="margin:6px 0 0;color:#475569;font-size:13px;">${p.body}</p></div>`).join("");
     const objections = (pack.objectionHandlers||[]).map((o:any)=>
@@ -399,14 +397,15 @@ export default function Intake() {
               </div>
             )}
 
-            {/* Context Applied Banner */}
-            {audit.contextSummary && (
-              <div className="mb-5 p-3 rounded-xl border border-green-500/30 bg-green-500/5 flex items-start gap-2">
-                <span className="text-green-400 shrink-0 mt-0.5">✦</span>
-                <div>
-                  <div className="text-xs font-bold text-green-400 mb-0.5">Sales Context Applied</div>
-                  <p className="text-xs text-green-300/80">{audit.contextSummary}</p>
+            {/* What Changed — BDE only, never in client documents */}
+            {audit.contextSummary && salesContext && (
+              <div className="mb-5 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-amber-400">✦</span>
+                  <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Context Applied — What Changed</div>
+                  <span className="text-xs text-muted-foreground ml-auto italic">Not visible in client document</span>
                 </div>
+                <p className="text-xs text-amber-300/90 leading-relaxed">{audit.contextSummary}</p>
               </div>
             )}
 

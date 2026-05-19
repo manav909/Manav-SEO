@@ -495,6 +495,83 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     } catch(e:any){ return ok(res,{success:false,url:"",error:e.message}); }
   }
 
+
+  if (action === "generate_context_suggestions") {
+    const { auditResult, url, currentContext = "" } = body;
+    if (!auditResult) return ok(res, { success: false, suggestions: [] });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const issues = (auditResult.issues||[]).slice(0,6)
+        .map((i:any) => (i.issue||"")+" ["+( i.severity||"high")+"]").join("; ");
+      const score = auditResult.score || 0;
+      const siteUrl = url || auditResult.url || "their site";
+      const prompt = [
+        "You are helping a sales person customise an SEO audit for a prospect.",
+        "Site: " + siteUrl + " | Score: " + score + "/100",
+        "Issues found: " + issues,
+        currentContext ? "Current instructions already given: " + currentContext : "",
+        "",
+        "Generate 6 smart context instructions the sales person can click to add.",
+        "Each should be a ready-to-use instruction that changes how the document is written.",
+        "Make them specific to this site and score.",
+        "",
+        'Return ONLY raw JSON array: [{"label":"<4 word label>","text":"<the actual instruction under 100 chars>","category":"emphasis|omit|tone|focus|strategy"}]',
+        "Example categories: emphasis=highlight something, omit=exclude something, tone=writing style, focus=prioritise area, strategy=sales angle.",
+      ].filter(Boolean).join("\n");
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 800,
+        system: "Return ONLY a raw JSON array. No markdown.",
+        messages: [{ role: "user", content: prompt }]
+      });
+      const raw = (_r.content[0] as any).text || "[]";
+      const suggestions = safeParseJSON(raw);
+      return ok(res, { success: true, suggestions: Array.isArray(suggestions) ? suggestions : [] });
+    } catch(e:any){ return ok(res, { success: false, suggestions: [], error: e.message }); }
+  }
+
+  if (action === "save_intake_session") {
+    const { url, salesContext, auditResult, pack, email, name } = body;
+    if (!url) return ok(res, { success: false });
+    const slug = String(url).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,50);
+    try {
+      const existing = await db().from("brain_learnings")
+        .select("id").eq("source","intake_session").eq("card_title",("Intake: "+url).slice(0,100)).limit(1);
+      const payload: any = {
+        card_type: "intake_session",
+        card_title: ("Intake: " + url).slice(0,100),
+        context_summary: JSON.stringify({ url, salesContext, auditResult, pack, email, name, savedAt: new Date().toISOString() }),
+        improvement: "Score: " + (auditResult?.score||0) + "/100",
+        what_worked: [], what_missed: [],
+        tags: ["intake", slug], source: "intake_session",
+        applied_count: 0, updated_at: new Date().toISOString(),
+      };
+      if (existing.data?.length) {
+        await db().from("brain_learnings").update(payload).eq("id", existing.data[0].id);
+      } else {
+        await db().from("brain_learnings").insert(payload);
+      }
+      return ok(res, { success: true });
+    } catch(e:any){ return ok(res, { success: false, error: e.message }); }
+  }
+
+  if (action === "load_intake_session") {
+    const { url } = body;
+    if (!url) return ok(res, { found: false });
+    const slug = String(url).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,50);
+    try {
+      const { data } = await db().from("brain_learnings")
+        .select("context_summary,updated_at")
+        .eq("source","intake_session")
+        .contains("tags",[slug])
+        .order("updated_at",{ascending:false})
+        .limit(1);
+      if (!data?.length) return ok(res, { found: false });
+      let session: any = {};
+      try { session = JSON.parse(data[0].context_summary||"{}"); } catch {}
+      return ok(res, { found: true, session, updatedAt: data[0].updated_at });
+    } catch(e:any){ return ok(res, { found: false, error: e.message }); }
+  }
+
   if (action === "generate_sales_pack") {
     const { auditResult, url, salesContext: spCtx = "" } = body;
     if (!auditResult) return ok(res, { error: "auditResult required" });
