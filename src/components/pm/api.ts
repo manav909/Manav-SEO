@@ -213,11 +213,65 @@ export async function generateTaskReport(projectId: string, range: 'daily' | 'on
   return r?.success ? r.report : null;
 }
 
-/* Run a fresh crawl of the project's + competitors' pages and the AI
-   competitive comparison. Slow (crawls live pages) — show a spinner. */
-export async function runCrawl(projectId: string, extraUrls: string[] = []): Promise<{
+/* Run a fresh crawl + AI competitive comparison.
+   The crawl itself calls /api/crawl directly (relative path — works
+   reliably from the browser). The resulting comparison is then saved
+   server-side so the Requirements tab can show it later.
+   Slow — crawls live pages + two AI passes. Show a spinner. */
+export async function runCrawl(projectId: string): Promise<{
   success: boolean; comparison?: any; crawledCount?: number; error?: string;
 }> {
-  const r = await post(ENGINE, { action: 'pm_run_crawl', projectId, extraUrls });
-  return r || { success: false, error: 'No response' };
+  try {
+    /* 1. Ask the server which URLs to crawl (site + landing + competitors). */
+    const t = await post(ENGINE, { action: 'pm_crawl_targets', projectId });
+    if (!t?.success || !Array.isArray(t.urls) || !t.urls.length) {
+      return { success: false, error: t?.error || 'No URLs to crawl — add the site URL, landing pages, or competitors in the Data Room.' };
+    }
+
+    /* 2. Crawl the URLs — relative /api/crawl, fresh. */
+    const crawlRes = await fetch('/api/crawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'pm-module' },
+      body: JSON.stringify({
+        action: 'crawl_urls', urls: t.urls, projectId,
+        projectContext: t.projectContext || '', forceRefresh: true,
+      }),
+    });
+    const crawlText = await crawlRes.text();
+    let crawlResults: any;
+    try { crawlResults = JSON.parse(crawlText); }
+    catch { return { success: false, error: 'Crawl service returned an unexpected response.' }; }
+    if (!crawlResults?.results?.length) {
+      return { success: false, error: crawlResults?.error || 'Crawl returned no results.' };
+    }
+
+    /* 3. Run the AI competitive comparison. */
+    const cmpRes = await fetch('/api/crawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'pm-module' },
+      body: JSON.stringify({
+        action: 'compare_analysis', crawlResults,
+        projectContext: t.projectContext || '',
+      }),
+    });
+    const cmpText = await cmpRes.text();
+    let cmp: any;
+    try { cmp = JSON.parse(cmpText); }
+    catch { return { success: false, error: 'Comparison service returned an unexpected response.' }; }
+    const comparison = cmp?.analysis || cmp;
+    if (cmp?.error && !comparison?.executive_summary) {
+      return { success: false, error: cmp.error };
+    }
+
+    /* 4. Persist the comparison server-side. */
+    await post(ENGINE, { action: 'pm_save_crawl_comparison', projectId, comparison });
+
+    return {
+      success: true,
+      comparison,
+      crawledCount: crawlResults.results.length,
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Crawl failed' };
+  }
 }
