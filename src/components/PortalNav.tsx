@@ -23,12 +23,12 @@ interface Props {
   onProjectChange?:   (id: string) => void;
 }
 
-// Primary tabs — always visible
+// Primary tabs — filtered by staffPermissions
 const PRIMARY = [
-  { href: '/oval',       label: 'The Oval',  icon: Crown,    desc: 'Presidential suite' },
-  { href: '/dashboard',  label: 'Dashboard', icon: BarChart3, desc: 'Overview & metrics' },
-  { href: '/playground', label: 'Canvas',    icon: Layers,   desc: 'Strategy & execution' },
-  { href: '/audit',      label: 'Audit',     icon: Zap,      desc: 'SEO audit tool' },
+  { href: '/oval',       label: 'The Oval',  icon: Crown,    desc: 'Presidential suite',    perm: null },
+  { href: '/dashboard',  label: 'Dashboard', icon: BarChart3, desc: 'Overview & metrics',   perm: 'dashboard' },
+  { href: '/playground', label: 'Canvas',    icon: Layers,   desc: 'Strategy & execution',  perm: 'playground' },
+  { href: '/audit',      label: 'Audit',     icon: Zap,      desc: 'SEO audit tool',        perm: 'audit_tools' },
 ];
 
 // All empire sections in "More" dropdown
@@ -125,7 +125,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
           <div className="flex items-center justify-between h-14 gap-4">
 
             {/* Brand */}
-            <button onClick={() => navigate('/oval')}
+            <button onClick={() => navigate(staffPermissions ? '/bde-panel' : '/oval')}
               className="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
               <div className="relative">
                 <img src="/manav.jpg" alt="SEO Season"
@@ -147,7 +147,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
 
             {/* Primary nav */}
             <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
-              {PRIMARY.map(({ href, label, icon: Icon, desc }) => {
+              {PRIMARY.filter(item => canAccess(item.perm)).map(({ href, label, icon: Icon, desc }) => {
                 const active = isActive(href);
                 return (
                   <button key={href} onClick={() => navigate(href)} title={desc}
