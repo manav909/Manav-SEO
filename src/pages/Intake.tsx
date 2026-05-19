@@ -20,6 +20,7 @@ export default function Intake() {
   const [step,     setStep]     = useState<"url"|"audit"|"pack"|"done">("url");
   const [loading,  setLoading]  = useState(false);
   const [packLoad, setPackLoad] = useState(false);
+  const [progress, setProgress] = useState<{pct:number;msg:string}|null>(null);
   const [error,    setError]    = useState("");
   const auditRef = useRef<HTMLDivElement>(null);
   const packRef  = useRef<HTMLDivElement>(null);
@@ -27,7 +28,28 @@ export default function Intake() {
   const runAudit = async () => {
     if (!url.trim()) return;
     setLoading(true); setError(""); setAudit(null); setPack(null);
+    // Animated progress steps
+    const auditSteps = [
+      { pct: 8,  msg: "Fetching " + url.trim().replace(/^https?:\/\//,"").split("/")[0] + "…" },
+      { pct: 22, msg: "Reading page structure and content…" },
+      { pct: 38, msg: "Checking title tags, meta descriptions, H1s…" },
+      { pct: 52, msg: "Analysing technical SEO signals…" },
+      { pct: 65, msg: "Checking structured data and schema…" },
+      { pct: 76, msg: "Cross-referencing algorithm updates…" },
+      { pct: 86, msg: "Scoring against 47 ranking factors…" },
+      { pct: 94, msg: "Compiling recommendations…" },
+    ];
+    let stepIdx = 0;
+    setProgress(auditSteps[0]);
+    const ticker = setInterval(() => {
+      stepIdx = Math.min(stepIdx + 1, auditSteps.length - 1);
+      setProgress(auditSteps[stepIdx]);
+    }, 1800);
     const r = await post("instant_audit_showcase", { url: url.trim() });
+    clearInterval(ticker);
+    setProgress({ pct: 100, msg: "Audit complete ✓" });
+    await new Promise(res => setTimeout(res, 600));
+    setProgress(null);
     if (r.error) { setError(r.error); setLoading(false); return; }
     setAudit(r);
     setLoading(false);
@@ -37,7 +59,26 @@ export default function Intake() {
 
   const generatePack = async () => {
     setPackLoad(true); setPack(null);
+    const packSteps = [
+      { pct: 10, msg: "Analysing audit findings…" },
+      { pct: 25, msg: "Researching similar case studies…" },
+      { pct: 42, msg: "Writing executive summary…" },
+      { pct: 58, msg: "Crafting pitch script…" },
+      { pct: 72, msg: "Building objection handlers…" },
+      { pct: 84, msg: "Creating follow-up sequence…" },
+      { pct: 93, msg: "Finalising sales pack…" },
+    ];
+    let si = 0;
+    setProgress(packSteps[0]);
+    const ticker = setInterval(() => {
+      si = Math.min(si + 1, packSteps.length - 1);
+      setProgress(packSteps[si]);
+    }, 2000);
     const r = await post("generate_sales_pack", { auditResult: audit, url });
+    clearInterval(ticker);
+    setProgress({ pct: 100, msg: "Sales pack ready ✓" });
+    await new Promise(res => setTimeout(res, 600));
+    setProgress(null);
     if (r.success) {
       setPack(r.pack);
       setStep("pack");
@@ -125,6 +166,39 @@ export default function Intake() {
       </body></html>`;
   };
 
+  // Progress bar render
+  const ProgressBar = () => !progress ? null : (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+      <div className="w-full max-w-md mx-6 rounded-2xl border border-border bg-card p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-semibold">{progress.msg}</span>
+          <span className="text-sm font-bold text-primary">{progress.pct}%</span>
+        </div>
+        {/* Track */}
+        <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-700 ease-out"
+            style={{
+              width: progress.pct + "%",
+              background: progress.pct === 100
+                ? "hsl(var(--primary))"
+                : "linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary)/0.7))",
+            }}
+          />
+        </div>
+        {/* Animated dots */}
+        {progress.pct < 100 && (
+          <div className="flex gap-1.5 mt-4 justify-center">
+            {[0,1,2].map(i => (
+              <div key={i} className="w-1.5 h-1.5 rounded-full bg-primary/60"
+                style={{ animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const S = {
     card: "rounded-2xl border border-border bg-card p-5",
     btn: (col: string) => `px-4 py-2 rounded-xl text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40`,
@@ -132,6 +206,7 @@ export default function Intake() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <ProgressBar />
       <PortalNav />
       <div className="max-w-4xl mx-auto px-6 py-8">
 
