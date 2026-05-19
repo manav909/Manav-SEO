@@ -590,7 +590,7 @@ export default function Intake() {
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-center">
-                  <div className={`text-3xl font-black ${(audit.score||0)>=70?"text-red-400":(audit.score||0)>=50?"text-yellow-400":"text-green-400"}`}>{audit.score||0}</div>
+                  <div className={"text-3xl font-black " + ((audit.score||0)>=70?"text-red-400":(audit.score||0)>=50?"text-yellow-400":"text-green-400")}>{audit.score||0}</div>
                   <div className="text-xs text-muted-foreground">/100</div>
                 </div>
                 {downloadButtonsFn(auditHTML, "audit-"+slug)}
@@ -637,12 +637,12 @@ export default function Intake() {
                 <div key={ci} className="border border-border rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-semibold">{cat.name}</span>
-                    <span className={`text-sm font-bold ${cat.score>=70?"text-red-400":cat.score>=50?"text-yellow-400":"text-green-400"}`}>{cat.score}/100</span>
+                    <span className={"text-sm font-bold " + (cat.score>=70?"text-red-400":cat.score>=50?"text-yellow-400":"text-green-400")}>{cat.score}/100</span>
                   </div>
                   <div className="space-y-2">
                     {(cat.issues||[]).map((issue:any,ii:number)=>(
                       <div key={ii} className="text-xs p-3 rounded-lg"
-                        style={{background:`${SEV_COLOR[issue.severity]||"#6366f1"}10`,borderLeft:`2px solid ${SEV_COLOR[issue.severity]||"#6366f1"}`}}>
+                        style={{background:(SEV_COLOR[issue.severity]||"#6366f1")+"10",borderLeft:"2px solid "+(SEV_COLOR[issue.severity]||"#6366f1")}}>
                         <div className="font-semibold mb-1" style={{color:SEV_COLOR[issue.severity]||"#6366f1"}}>[{issue.severity}] {issue.issue}</div>
                         {issue.explanation && <div className="text-muted-foreground mb-1.5 leading-relaxed">{issue.explanation}</div>}
                         <div className="text-muted-foreground"><span className="font-semibold text-foreground">Fix: </span>{issue.fix}</div>
@@ -701,7 +701,7 @@ export default function Intake() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-sm font-semibold">{doc.label}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${doc.priority==="essential"?"bg-primary/10 text-primary":"bg-secondary text-muted-foreground"}`}>{doc.priority}</span>
+                        <span className={"text-xs px-2 py-0.5 rounded-full font-medium " + (doc.priority==="essential" ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground")}>{doc.priority}</span>
                       </div>
                       <div className="text-xs text-muted-foreground">{doc.desc}</div>
                     </div>
@@ -729,7 +729,6 @@ export default function Intake() {
                 );
               })}
             </div>
-          </div>
           </div>
         )}
 
