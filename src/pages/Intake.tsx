@@ -53,7 +53,7 @@ export default function Intake() {
       auditResult: audit, url, salesContext, docType: docId,
     });
     if ((r as any).success && (r as any).data) {
-      setGeneratedDocs(prev => ({ ...prev, [docId]: r }));
+      setGeneratedDocs(prev => { const next = { ...prev, [docId]: r }; autoSave({ generatedDocs: next }); return next; });
     } else {
       const msg = (r as any).error || (r as any).message || "Failed — please retry";
       setDocErrors(prev => ({ ...prev, [docId]: msg }));
@@ -269,7 +269,7 @@ export default function Intake() {
   const autoSave = async (overrides: any = {}) => {
     if (!audit && !pack) return;
     await post("save_intake_session", {
-      url, salesContext, auditResult: audit, pack, email, name, ...overrides
+      url, salesContext, auditResult: audit, pack, email, name, generatedDocs, ...overrides
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -538,6 +538,16 @@ export default function Intake() {
     </div>
   );
 
+  const cleanUrl = url.replace(/^https?:\/\//,'').replace(/\/$/,'').replace(/[^a-zA-Z0-9.-]/g,'-').slice(0,40);
+  const dateStr = new Date().toLocaleDateString('en-GB',{month:'short',year:'numeric'}).replace(' ','-');
+  const docFileName = (docId: string) => {
+    const labels: Record<string,string> = {
+      executive_brief:'Executive-Brief', pitch_deck:'Pitch-Deck',
+      case_study:'Case-Study', action_plan:'90-Day-Action-Plan',
+      competitive_brief:'Competitive-Brief',
+    };
+    return (labels[docId] || docId) + '_' + cleanUrl + '_' + dateStr;
+  };
   const slug = url.replace(/[^a-z0-9]/gi,"_").slice(0,30);
 
   return (
@@ -561,6 +571,7 @@ export default function Intake() {
               setSalesContext(prevSession.session?.salesContext||"");
               if(prevSession.session?.auditResult){ setAudit(prevSession.session.auditResult); setStep("audit"); }
               if(prevSession.session?.pack){ setPack(prevSession.session.pack); setStep("pack"); }
+              if(prevSession.session?.generatedDocs){ setGeneratedDocs(prevSession.session.generatedDocs); }
             }} className="text-xs px-3 py-1.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20">
               ↩ Restore session
             </button>
@@ -572,7 +583,7 @@ export default function Intake() {
           <div className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Website URL</div>
           <div className="flex gap-3">
             <input className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
-              placeholder="yourprospect.com" value={url} onChange={e=>{setUrl(e.target.value);setSaved(false);}}
+              placeholder="yourprospect.com" value={url} onChange={e=>{setUrl(e.target.value);setSaved(false);setGeneratedDocs({});setDocErrors({});setAudit(null);setPack(null);}}
               onKeyDown={e=>e.key==="Enter"&&runAudit()} />
             <button onClick={runAudit} disabled={loading||!url.trim()}
               className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
@@ -598,7 +609,7 @@ export default function Intake() {
                   <div className={"text-3xl font-black " + ((audit.score||0)>=70?"text-red-400":(audit.score||0)>=50?"text-yellow-400":"text-green-400")}>{audit.score||0}</div>
                   <div className="text-xs text-muted-foreground">/100</div>
                 </div>
-                {downloadButtonsFn(auditHTML, "audit-"+slug)}
+                {downloadButtonsFn(auditHTML, "SEO-Audit-Report_"+cleanUrl+"_"+dateStr)}
               </div>
             </div>
 
@@ -715,11 +726,11 @@ export default function Intake() {
                         <>
                           <button onClick={() => {
                             const html = renderDocHTML(doc.id, generated.data, url, audit.score||0);
-                            downloadAsPDF(html, doc.id+"-"+slug+".pdf");
+                            downloadAsPDF(html, docFileName(doc.id)+".pdf");
                           }} className="px-3 py-1.5 rounded-lg border border-green-500/40 text-green-400 text-xs font-medium hover:bg-green-500/10">⬇ PDF</button>
                           <button onClick={() => {
                             const html = renderDocHTML(doc.id, generated.data, url, audit.score||0);
-                            downloadAsDoc(html, doc.id+"-"+slug+".doc");
+                            downloadAsDoc(html, docFileName(doc.id)+".doc");
                           }} className="px-3 py-1.5 rounded-lg border border-green-500/40 text-green-400 text-xs font-medium hover:bg-green-500/10">⬇ Word</button>
                           <button onClick={() => generateDoc(doc.id)} className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:border-primary/40">↺</button>
                         </>
@@ -752,7 +763,7 @@ export default function Intake() {
                 <div className="text-base font-semibold">{url}</div>
               </div>
               <div className="flex items-center gap-3">
-                {downloadButtonsFn(packHTML, "sales-pack-"+slug)}
+                {downloadButtonsFn(packHTML, "Sales-Pack_"+cleanUrl+"_"+dateStr)}
                 <button onClick={generatePack} disabled={packLoad}
                   className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:border-primary/40">
                   ↺ Regenerate
