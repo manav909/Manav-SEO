@@ -380,19 +380,24 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       if (algoData.length) ctxParts.push("Recent algo updates: " + algoData.map((a:any) => a.topic).join(", "));
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const schemaStr = '{"score":<0-100>,"categories":[{"name":"Technical SEO","score":<0-100>,"issues":[{"issue":"<from HTML>","severity":"critical|high|medium|low","fix":"<under 100 chars>","algorithmNote":"<or null>"}]},{"name":"On-Page SEO","score":<0-100>,"issues":[...]},{"name":"Content Quality","score":<0-100>,"issues":[...]},{"name":"User Experience","score":<0-100>,"issues":[...]}],"quickWins":["<fix1>","<fix2>","<fix3>"],"algorithmHighlights":["<update1>","<update2>"],"showcase_message":"<one sentence>"}';
+      const salesInst = salesContext ? "SALES PERSON INSTRUCTIONS — apply these to every finding, issue description and recommendation: " + String(salesContext).slice(0, 500) : "";
       const prompt = [
-        "Audit this website. Return ONLY raw JSON. No markdown. No code fences.",
+        "You are a senior SEO consultant writing a detailed audit for a prospect.",
+        "Write issue descriptions as a real expert who has reviewed this specific site — reference actual content from the HTML.",
+        "Each issue must explain WHY it matters for this site, not generically.",
+        "Each fix must be specific and actionable for this exact site.",
         "URL: https://" + rawUrl,
         ctxParts.length ? "Context: " + ctxParts.join(" | ") : "",
-        "HTML:\n" + _html.slice(0, 10000),
+        salesInst,
+        "HTML from their site:\n" + _html.slice(0, 10000),
         "",
-        "Return this exact JSON structure (all 4 categories, 2-4 issues each):",
+        "Return ONLY raw JSON. No markdown. No code fences. No line breaks inside string values. All strings under 150 chars.",
+        "Return this exact JSON structure (all 4 categories required, 2-4 issues each):",
         schemaStr,
-        "Rules: reference actual HTML content. No line breaks inside strings. Strings under 120 chars.",
       ].filter(Boolean).join("\n");
       const _r = await _ac.messages.create({
         model: "claude-sonnet-4-6", max_tokens: 4000,
-        system: "You are a JSON API. Return ONLY raw JSON. Never use markdown. Never code fences. No line breaks inside string values.",
+        system: "You are a senior SEO consultant and JSON API. Return ONLY raw JSON. Apply any sales instructions to shape the tone, emphasis and content of your findings. Never use markdown or code fences. No line breaks inside string values.",
         messages: [{ role: "user", content: prompt }]
       });
       const raw = (_r.content[0] as any).text || "";
@@ -564,8 +569,8 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         "Return this exact JSON structure:",
         schemaStr,
         "",
-        spCtx ? "SALES CONTEXT — follow these instructions to customise the pack: " + spCtx : "",
-        "Rules: Keep ALL strings under 150 chars. No line breaks inside strings. Be specific to this site.",
+        spCtx ? "SALES PERSON INSTRUCTIONS — apply throughout the entire pack, affecting tone, emphasis, what to highlight and what to omit: " + spCtx : "",
+        "Rules: Keep ALL strings under 150 chars. No line breaks inside strings. Be specific to this site and its actual findings.",
       ].join("\n");
 
       const _r = await _ac.messages.create({
