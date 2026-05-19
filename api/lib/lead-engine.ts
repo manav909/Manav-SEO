@@ -16,6 +16,39 @@ export async function captureAndScoreLead(input:LeadInput){
     audit.headline=m>0?`We found ${m} critical issue${m>1?"s":""} on ${urlClean} hurting your rankings.`:`${urlClean} looks solid — enter your email for a full competitive analysis.`;
   }catch{audit.headline=`Enter your email to get a full analysis of ${urlClean}.`;audit.missingBasics=[];}
   const{data}=await db().from("prospects").upsert({url:input.url,email:input.email,name:input.name,company:input.company,source:input.source||"organic",market:input.market||"global",lead_score:score,opportunity_size:score>=70?"high":score>=50?"medium":"low",instant_audit:audit,status:"new",next_followup:new Date(Date.now()+3*864e5).toISOString()},{onConflict:"url"}).select().single();
+
+  // Send emails fire-and-forget
+  const RESEND_KEY = process.env.RESEND_API_KEY;
+  const MANAV_EMAIL = process.env.MANAV_EMAIL || "manav@seoseason.com";
+  if (RESEND_KEY) {
+    const issuesList = (audit.missingBasics || []).slice(0,5).map((i:string) => `• ${i}`).join("\n");
+    const scoreText = `Score: ${score}/100`;
+    // Notify Manav
+    fetch("https://api.resend.com/emails", {
+      method:"POST",
+      headers:{"Authorization":`Bearer ${RESEND_KEY}`,"Content-Type":"application/json"},
+      body:JSON.stringify({
+        from:"SEO Season <noreply@seoseason.com>",
+        to:[MANAV_EMAIL],
+        subject:`🎯 New Lead: ${urlClean}`,
+        text:`New lead captured\n\nURL: ${input.url}\nName: ${input.name||"Not provided"}\nEmail: ${input.email||"Not provided"}\n${scoreText}\n\nIssues Found:\n${issuesList||"None detected"}\n\nView: https://seoseason.com/staff-command`,
+      }),
+    }).catch(()=>{});
+    // Send audit to lead
+    if (input.email) {
+      fetch("https://api.resend.com/emails", {
+        method:"POST",
+        headers:{"Authorization":`Bearer ${RESEND_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify({
+          from:"Manav | SEO Season <manav@seoseason.com>",
+          to:[input.email],
+          subject:`Your Free SEO Audit — ${urlClean}`,
+          text:`Hi ${input.name||"there"},\n\nThank you for your free SEO audit request.\n\n${scoreText}\n\nKey Issues Found:\n${issuesList||"No major issues detected — great start!"}\n\n${audit.headline||""}\n\nI'll be in touch shortly with your full personalised report.\n\nBest,\nManav\nSEO Season\nhttps://seoseason.com`,
+        }),
+      }).catch(()=>{});
+    }
+  }
+
   return{prospect:data,score,instantAudit:audit};
 }
 export async function generateProposalHTML(prospectId:string){
