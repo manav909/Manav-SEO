@@ -139,11 +139,13 @@ async function pmDeleteCard(cardId: string) {
 async function pmGatherRequirements(projectId: string) {
   if (!projectId) return { success: false, error: "projectId required" };
   try {
-    const [projR, auditR, algoR, brainR, knowledgeR, prospectsR] =
+    /* All queries are independent and fail-soft. A single table or
+       column problem must never blank the whole tab. */
+    const [projR, auditR, algoR, brainR, knowledgeR] =
       await Promise.allSettled([
         db().from("projects")
           .select("id,name,url,industry,goals,keywords,competitors,client_id")
-          .eq("id", projectId).single(),
+          .eq("id", projectId).maybeSingle(),
         db().from("audit_reports")
           .select("id,created_at,score,sections")
           .eq("project_id", projectId).order("created_at", { ascending: false }).limit(3),
@@ -156,57 +158,69 @@ async function pmGatherRequirements(projectId: string) {
         db().from("project_knowledge")
           .select("category,field_key,field_value")
           .eq("project_id", projectId),
-        db().from("prospects")
-          .select("id,url,instant_audit")
-          .eq("url", projectId).limit(1),
       ]);
 
     const val = (r: PromiseSettledResult<any>) =>
       r.status === "fulfilled" ? r.value?.data : null;
 
-    const proj      = val(projR);
-    const audits    = val(auditR) || [];
-    const algo      = val(algoR) || [];
-    const brain     = val(brainR) || [];
-    const knowledge = val(knowledgeR) || [];
+    const proj      = val(projR) || {};
+    const audits    = Array.isArray(val(auditR))     ? val(auditR)     : [];
+    const algo      = Array.isArray(val(algoR))      ? val(algoR)      : [];
+    const brain     = Array.isArray(val(brainR))     ? val(brainR)     : [];
+    const knowledge = Array.isArray(val(knowledgeR)) ? val(knowledgeR) : [];
 
-    if (!proj) return { success: false, error: "Project not found" };
-
-    /* knowledge → category map */
+    /* knowledge -> category map (defensive against null rows) */
     const km: Record<string, Record<string, string>> = {};
     for (const k of knowledge) {
+      if (!k || !k.category) continue;
       if (!km[k.category]) km[k.category] = {};
       km[k.category][k.field_key] = k.field_value || "";
     }
 
+    /* competitors may be an array, a JSON string, or null — normalise */
+    let competitors: string[] = [];
+    const rawComp = (proj as any).competitors;
+    if (Array.isArray(rawComp)) competitors = rawComp.filter(Boolean);
+    else if (typeof rawComp === "string" && rawComp.trim()) {
+      try {
+        const parsed = JSON.parse(rawComp);
+        competitors = Array.isArray(parsed) ? parsed.filter(Boolean)
+                    : rawComp.split(",").map((s) => s.trim()).filter(Boolean);
+      } catch {
+        competitors = rawComp.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    }
+
+    /* keywords may likewise be array / string / null */
+    const rawKw = (proj as any).keywords;
+    const hasKeywords = Array.isArray(rawKw) ? rawKw.length > 0 : !!rawKw;
+
     const gaps: string[] = [];
-    if (!proj.goals)                      gaps.push("No campaign goal — card priorities will be generic");
-    if (!proj.competitors?.length)        gaps.push("No competitors recorded — competitive cards limited");
-    if (!audits.length)                   gaps.push("No audit run yet — technical cards based on estimate only");
-    if (!km["analytics"])                 gaps.push("No analytics baseline — impact cannot be forecast");
-    if (!proj.keywords?.length)           gaps.push("No target keywords — content/GEO cards will be vague");
+    if (!(proj as any).goals)   gaps.push("No campaign goal — card priorities will be generic");
+    if (!competitors.length)    gaps.push("No competitors recorded — competitive cards limited");
+    if (!audits.length)         gaps.push("No audit run yet — technical cards based on estimate only");
+    if (!km["analytics"])       gaps.push("No analytics baseline — impact cannot be forecast");
+    if (!hasKeywords)           gaps.push("No target keywords — content/GEO cards will be vague");
 
     const context = {
       projectId,
-      projectName: proj.name || "",
-      url:         proj.url || "",
-      goal:        proj.goals || "",
+      projectName: (proj as any).name || "",
+      url:         (proj as any).url  || "",
+      goal:        (proj as any).goals || "",
       scope:       km["goal"]?.["scope"] || km["scope"]?.["description"] || "",
-      audits:      audits.map((a: any) => ({
-        kind: "audit", refId: a.id,
-        label: `Audit ${(a.created_at || "").split("T")[0]} — score ${a.score ?? "n/a"}`,
+      audits: audits.map((a: any) => ({
+        kind: "audit", refId: a?.id,
+        label: `Audit ${(a?.created_at || "").split("T")[0] || "recent"} — score ${a?.score ?? "n/a"}`,
       })),
-      algorithm:   algo.map((a: any) => ({
-        kind: "algorithm", refId: a.id, label: a.topic || "Algorithm topic",
+      algorithm: algo.map((a: any) => ({
+        kind: "algorithm", refId: a?.id, label: a?.topic || "Algorithm topic",
       })),
-      brain:       brain.map((b: any) => ({
-        kind: "brain_learning", refId: b.id, label: b.card_title || "Learning",
+      brain: brain.map((b: any) => ({
+        kind: "brain_learning", refId: b?.id, label: b?.card_title || "Learning",
       })),
-      competitors: (proj.competitors || []).map((c: string) => ({
-        kind: "competitor", label: c,
-      })),
-      sales:       [],
-      clientNotes: [],
+      competitors: competitors.map((c: string) => ({ kind: "competitor", label: c })),
+      sales:       [] as any[],
+      clientNotes: [] as any[],
       gaps,
     };
     return { success: true, context };
@@ -214,7 +228,6 @@ async function pmGatherRequirements(projectId: string) {
     return { success: false, error: e?.message || "unknown" };
   }
 }
-
 /* ════════════════════════════════════════════════════
    3. AI CARD GENERATION
    Turn gathered intelligence into a set of task cards.
