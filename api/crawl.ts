@@ -500,8 +500,8 @@ Return ONLY valid JSON (absolutely no markdown fences, no prose before or after)
     try {
       const msg = await anthropic.messages.create({
         model:      "claude-sonnet-4-6",
-        max_tokens: 6000,
-        system:     "You are Manav Brain. Return ONLY valid JSON. No markdown fences. No text before or after the JSON. Cite specific observations from the page data.",
+        max_tokens: 12000,
+        system:     "You are Manav Brain. Return ONLY valid JSON. No markdown fences. No text before or after the JSON. Cite specific observations from the page data. Be concise: keep every list to its most important 5-6 entries so the full JSON completes within the response.",
         messages:   [{ role: "user", content: prompt }],
       });
 

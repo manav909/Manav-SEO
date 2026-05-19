@@ -227,32 +227,42 @@ export async function linkKeywordPage(
    reliably from the browser). The resulting comparison is then saved
    server-side so the Requirements tab can show it later.
    Slow — crawls live pages + two AI passes. Show a spinner. */
-export async function runCrawl(projectId: string): Promise<{
+/* Fetch the candidate crawl URLs (site + landing pages + competitors)
+   so the user can choose which to crawl before running. */
+export async function getCrawlTargets(projectId: string): Promise<{
+  success: boolean; urls?: string[]; projectContext?: string; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_crawl_targets', projectId });
+  return r || { success: false, error: 'No response' };
+}
+
+/* Run a fresh crawl + AI competitive comparison on a chosen URL list.
+   Pass the URLs the user selected. Slow — crawls live pages + AI. */
+export async function runCrawl(
+  projectId: string, urls: string[], projectContext = '',
+): Promise<{
   success: boolean; comparison?: any; crawledCount?: number;
   savedCount?: number; saveError?: string; error?: string;
 }> {
   try {
-    /* 1. Ask the server which URLs to crawl (site + landing + competitors). */
-    const t = await post(ENGINE, { action: 'pm_crawl_targets', projectId });
-    if (!t?.success || !Array.isArray(t.urls) || !t.urls.length) {
-      return { success: false, error: t?.error || 'No URLs to crawl — add the site URL, landing pages, or competitors in the Data Room.' };
+    if (!Array.isArray(urls) || !urls.length) {
+      return { success: false, error: 'No URLs selected to crawl.' };
     }
 
-    /* 2. Crawl the URLs — /api/crawl crawl_urls streams NDJSON
-          (one JSON object per line, final line type:"complete"). */
+    /* Crawl — /api/crawl crawl_urls streams NDJSON (one JSON object per
+       line, final line type:"complete"). */
     const crawlRes = await fetch('/api/crawl', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'pm-module' },
       body: JSON.stringify({
-        action: 'crawl_urls', urls: t.urls, projectId,
-        projectContext: t.projectContext || '', forceRefresh: true,
+        action: 'crawl_urls', urls, projectId,
+        projectContext, forceRefresh: true,
       }),
     });
     if (!crawlRes.ok || !crawlRes.body) {
       return { success: false, error: `Crawl service error (${crawlRes.status}).` };
     }
 
-    /* read the NDJSON stream — the final {type:"complete"} line carries results */
     const reader = crawlRes.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
@@ -261,9 +271,9 @@ export async function runCrawl(projectId: string): Promise<{
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
+      const ls = buf.split('\n');
+      buf = ls.pop() ?? '';
+      for (const line of ls) {
         if (!line.trim()) continue;
         try {
           const msg = JSON.parse(line);
@@ -271,7 +281,6 @@ export async function runCrawl(projectId: string): Promise<{
         } catch { /* skip non-JSON line */ }
       }
     }
-    /* the trailing buffer may hold the final line */
     if (buf.trim()) {
       try {
         const msg = JSON.parse(buf);
@@ -282,13 +291,12 @@ export async function runCrawl(projectId: string): Promise<{
       return { success: false, error: 'Crawl returned no results.' };
     }
 
-    /* 3. Run the AI competitive comparison. */
+    /* AI competitive comparison */
     const cmpRes = await fetch('/api/crawl', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Brain-Source': 'pm-module' },
       body: JSON.stringify({
-        action: 'compare_analysis', crawlResults,
-        projectContext: t.projectContext || '',
+        action: 'compare_analysis', crawlResults, projectContext,
       }),
     });
     const cmpText = await cmpRes.text();
@@ -300,10 +308,9 @@ export async function runCrawl(projectId: string): Promise<{
       return { success: false, error: cmp.error };
     }
 
-    /* 4. Persist the comparison server-side. */
+    /* persist the comparison */
     await post(ENGINE, { action: 'pm_save_crawl_comparison', projectId, comparison });
 
-    /* check whether any page failed to persist to crawled_pages */
     const saveErrors = (crawlResults.results || [])
       .filter((r: any) => r?.save_error)
       .map((r: any) => r.save_error);

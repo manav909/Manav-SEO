@@ -334,11 +334,45 @@ function CrawlSection({
   const [result, setResult]   = useState('');
   const [cmp, setCmp]         = useState<CrawlComparison | null>(comparison);
   const [linking, setLinking] = useState('');
+  /* URL picker — candidate URLs and which are selected */
+  const [picker, setPicker]   = useState(false);
+  const [targets, setTargets] = useState<string[]>([]);
+  const [chosen, setChosen]   = useState<Set<string>>(new Set());
+  const [pctx, setPctx]       = useState('');
+  const [loadingTargets, setLoadingTargets] = useState(false);
 
+  /* step 1 — fetch the candidate URLs and open the picker */
+  const openPicker = async () => {
+    setLoadingTargets(true);
+    setResult('');
+    const t = await pmApi.getCrawlTargets(projectId);
+    setLoadingTargets(false);
+    if (!t.success || !t.urls || !t.urls.length) {
+      setResult(t.error || 'No URLs found — add the site URL, landing pages, or competitors in the Data Room.');
+      return;
+    }
+    setTargets(t.urls);
+    setPctx(t.projectContext || '');
+    setChosen(new Set(t.urls));   // all selected by default
+    setPicker(true);
+  };
+
+  const toggleUrl = (url: string) => {
+    setChosen(prev => {
+      const next = new Set(prev);
+      if (next.has(url)) next.delete(url); else next.add(url);
+      return next;
+    });
+  };
+
+  /* step 2 — crawl the chosen URLs */
   const runCrawl = async () => {
+    const urls = targets.filter(u => chosen.has(u));
+    if (!urls.length) { setResult('Select at least one URL to crawl.'); return; }
+    setPicker(false);
     setRunning(true);
     setResult('');
-    const r = await pmApi.runCrawl(projectId);
+    const r = await pmApi.runCrawl(projectId, urls, pctx);
     setRunning(false);
     if (r.success) {
       setCmp(r.comparison || null);
@@ -376,14 +410,61 @@ function CrawlSection({
             </span>
           )}
           <button
-            onClick={runCrawl}
-            disabled={running}
+            onClick={openPicker}
+            disabled={running || loadingTargets}
             className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
-            {running ? 'Crawling live pages…' : 'Run fresh crawl'}
+            {running ? 'Crawling live pages…'
+              : loadingTargets ? 'Loading URLs…'
+              : 'Run fresh crawl'}
           </button>
         </div>
       </div>
+
+      {/* URL picker — choose which pages to crawl */}
+      {picker && (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 mb-3">
+          <div className="text-xs font-semibold text-foreground/90 mb-1">
+            Select pages to crawl
+          </div>
+          <div className="text-[11px] text-muted-foreground mb-3">
+            Fewer pages = faster crawl and a more reliable comparison.
+            5-7 pages is the sweet spot.
+          </div>
+          <div className="space-y-1 mb-3 max-h-60 overflow-y-auto">
+            {targets.map((url, i) => (
+              <label key={i} className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={chosen.has(url)}
+                  onChange={() => toggleUrl(url)}
+                  className="accent-primary"
+                />
+                <span className={chosen.has(url) ? 'text-foreground/90' : 'text-muted-foreground/60'}>
+                  {url}
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={runCrawl}
+              className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90"
+            >
+              Crawl {chosen.size} selected
+            </button>
+            <button
+              onClick={() => setPicker(false)}
+              className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <span className="text-[11px] text-muted-foreground ml-auto">
+              {chosen.size} of {targets.length} selected
+            </span>
+          </div>
+        </div>
+      )}
 
       {result && (
         <div className={`rounded-lg border p-3 text-xs mb-3 ${
@@ -438,7 +519,7 @@ function CrawlSection({
                 </div>
               </div>
               {/* manual link control — assign a crawled page to this keyword */}
-              {ourPages.length > 0 && (
+              {ourPages.length > 0 ? (
                 <div className="flex items-center gap-2 pt-1 border-t border-border/50">
                   <span className="text-[10px] text-muted-foreground">Link a page:</span>
                   <select
@@ -455,6 +536,10 @@ function CrawlSection({
                   {linking === k.keyword && (
                     <span className="text-[10px] text-muted-foreground">saving…</span>
                   )}
+                </div>
+              ) : (
+                <div className="pt-1 border-t border-border/50 text-[10px] text-muted-foreground/70">
+                  Run a crawl to enable linking a landing page to this keyword.
                 </div>
               )}
             </div>
