@@ -25,7 +25,7 @@ interface Props {
 
 // Primary tabs — filtered by staffPermissions
 const PRIMARY = [
-  { href: '/oval',       label: 'The Oval',  icon: Crown,    desc: 'Presidential suite',    perm: null },
+  { href: '/oval',       label: 'The Oval',  icon: Crown,    desc: 'Presidential suite',    perm: 'hod_only' },
   { href: '/dashboard',  label: 'Dashboard', icon: BarChart3, desc: 'Overview & metrics',   perm: 'dashboard' },
   { href: '/playground', label: 'Canvas',    icon: Layers,   desc: 'Strategy & execution',  perm: 'playground' },
   { href: '/audit',      label: 'Audit',     icon: Zap,      desc: 'SEO audit tool',        perm: 'audit_tools' },
@@ -105,7 +105,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
 
   // null staffPermissions = owner/HOD = sees everything
   const canAccess = (perm: string | null) =>
-    !staffPermissions || perm === null || staffPermissions[perm] === true;
+    !staffPermissions || (perm !== null && perm !== 'hod_only' && staffPermissions[perm] === true);
 
   const isActive = (href: string) => path === href || path.startsWith(href + '/');
   const activeEmpire = EMPIRE_SECTIONS.flatMap(s => s.items).find(l => isActive(l.href));
@@ -165,6 +165,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
               <div className="w-px h-5 bg-border mx-2 shrink-0"/>
 
               {/* Empire dropdown */}
+              {moreOpen && <div className="fixed inset-0 z-[199]" onClick={() => setMoreOpen(false)} />}
               <div className="relative">
                 <button onClick={() => setMoreOpen(o => !o)}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150 ${
@@ -189,7 +190,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                 {moreOpen && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => { setMoreOpen(false); setActiveSection(null); }}/>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[600px] max-h-[80vh] overflow-y-auto rounded-2xl border border-border bg-card/95 backdrop-blur-xl shadow-2xl z-20 p-3">
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[600px] max-h-[80vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl z-[200] p-3">
                       <div className="grid grid-cols-3 gap-2">
                         {EMPIRE_SECTIONS.map(section => {
                           const visibleItems = section.items.filter(item => canAccess(item.perm));
