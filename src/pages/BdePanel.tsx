@@ -624,6 +624,119 @@ function ConversationView({
     </div>
   );
 }
+
+// ── Built-in Fiverr response templates ──────────────────────────
+const BUILTIN_RESPONSES = [
+  {id:"g1",category:"greeting",title:"Warm Opening",body:"Hi! Thanks so much for reaching out. I've had a look at your project and I'm confident I can help.\n\nI've helped dozens of businesses in similar situations improve their search visibility significantly.\n\nCould you tell me a bit more about your main goal — are you looking to drive more traffic, rank for specific keywords, or improve your local presence?"},
+  {id:"g2",category:"greeting",title:"Quick Opener",body:"Hi! Thanks for reaching out 👋\n\nI've reviewed your brief and this is exactly the kind of project I specialise in. Could you share your website URL so I can take a quick look at where you're starting from?"},
+  {id:"p1",category:"pricing",title:"Value Justification",body:"Great question on pricing. The investment covers a full technical audit, on-page optimisation across your key pages, a targeted content strategy, and monthly progress reporting.\n\nMost clients see measurable ranking improvements within 60-90 days. Which matters most to you: rankings, traffic, or leads?"},
+  {id:"p2",category:"pricing",title:"Custom Quote Response",body:"Rather than a one-size package, I prefer to look at your site first and give you a quote that matches what needs to be done — not more, not less.\n\nCan you share your URL? I'll come back to you within a few hours with a clear breakdown."},
+  {id:"o1",category:"objection",title:"Tried SEO Before",body:"I hear this a lot — usually it comes down to one of three things: the strategy wasn't specific to your business, the work stopped too soon, or the wrong keywords were targeted.\n\nWhat did the previous approach focus on? Once I know that, I can tell you exactly what I'd do differently."},
+  {id:"o2",category:"objection",title:"Too Expensive",body:"I completely understand — budget matters. What result would make this feel like a worthwhile investment for you?\n\nOnce I know your goal, I can tell you whether a smaller scope would get you there, or whether the full approach is genuinely necessary. I'd rather be honest than oversell."},
+  {id:"o3",category:"objection",title:"Can't See Results Yet",body:"SEO does take time — that's honest. But there's a big difference between waiting and working.\n\nI send monthly reports so you can see exactly what's been done, which keywords are moving, and what's coming next. You're never left wondering. Would a 30-day check-in call help?"},
+  {id:"f1",category:"followup",title:"No Reply Follow-up",body:"Hi again — just checking in to see if you had any questions about my previous message.\n\nNo pressure at all — I know things get busy. If the timing isn't right, just let me know and I'll follow up at a better time."},
+  {id:"f2",category:"followup",title:"Post-Proposal Follow-up",body:"Hi! Wanted to check if you'd had a chance to review the proposal I sent over.\n\nHappy to adjust the scope if needed — what would be most helpful for you?"},
+  {id:"c1",category:"closing",title:"Move to Order",body:"Based on everything you've shared, I think [PACKAGE NAME] is the right fit for your goals.\n\nTo get started I'll need: your website URL, 3-5 target keywords, and your main geographic area if local SEO is relevant.\n\nReady when you are — shall I send the order link?"},
+  {id:"c2",category:"closing",title:"Confident Close",body:"I've looked at your site and I can see clear opportunities your current SEO setup is missing. The good news: these are fixable.\n\nI'd like to start with [QUICK WIN] in week one so you see movement early. Want me to send over the order?"},
+  {id:"d1",category:"delivery",title:"Work Started Update",body:"Just a quick update — I've started working on your project and completed the initial audit.\n\nI've identified [X] priority items to address first. I'll share the full report at the end of the week. Let me know if you have any questions in the meantime."},
+  {id:"d2",category:"delivery",title:"Report Delivery",body:"Your SEO report is ready.\n\nKey highlights:\n• [FINDING 1]\n• [FINDING 2]\n• [FINDING 3]\n\nThe next steps are already underway. Happy to walk you through anything in more detail — just say the word."},
+];
+
+
+function ResponsesPanel({quickResps, analysis, rawPaste, copied, copyText, post}: {quickResps:any[];analysis:any;rawPaste?:string;copied:string;copyText:(t:string,k:string)=>void;post:(a:string,b?:any)=>Promise<any>}) {
+  const [cat, setCat] = React.useState('all');
+  const [genResps, setGenResps] = React.useState<any[]>([]);
+  const [generating, setGenerating] = React.useState(false);
+  const [genError, setGenError] = React.useState('');
+
+  // Merge Supabase templates (if any) with built-ins
+  const allResps = [...BUILTIN_RESPONSES, ...quickResps.filter((r:any)=>!BUILTIN_RESPONSES.find(b=>b.id===r.id))];
+  const cats = ['all', ...Array.from(new Set(allResps.map((r:any)=>r.category)))];
+  const filtered = cat==='all' ? allResps : allResps.filter((r:any)=>r.category===cat);
+
+  const generateContextual = async () => {
+    if (!analysis && !rawPaste) { setGenError('Paste a conversation first to generate contextual responses'); return; }
+    setGenerating(true); setGenError(''); setGenResps([]);
+    const r = await post('generate_responses', {
+      analysis, conversationText: rawPaste?.slice(0,2000),
+    });
+    if ((r as any).responses?.length) {
+      setGenResps((r as any).responses);
+    } else {
+      setGenError((r as any).error || 'No responses generated — try pasting the conversation first');
+    }
+    setGenerating(false);
+  };
+
+  const S2 = {
+    card:{background:'hsl(var(--card))',border:'0.5px solid #1a1a3a',borderRadius:11,padding:14,marginBottom:10},
+    btn:(col='#a78bfa')=>({background:'transparent',border:`0.5px solid ${col}`,borderRadius:8,padding:'5px 12px',fontSize:11,color:col,cursor:'pointer',whiteSpace:'nowrap' as const}),
+    badge:(col='#6366f1')=>({background:`${col}18`,color:col,borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:700,letterSpacing:.5}),
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+        <div style={{fontSize:13,fontWeight:700}}>💬 Response Templates</div>
+        <button style={{...S2.btn(generating?'#6366f1':'#a78bfa'),display:'flex',alignItems:'center',gap:6,opacity:generating?0.7:1}}
+          onClick={generateContextual} disabled={generating}>
+          {generating&&<span style={{width:10,height:10,border:'2px solid #a78bfa',borderTopColor:'transparent',borderRadius:'50%',display:'inline-block',animation:'spin 0.8s linear infinite'}}/>}
+          {generating?'Generating…':'✍️ Generate for This Conversation'}
+        </button>
+      </div>
+
+      {genError&&<div style={{fontSize:11,color:'#ef4444',marginBottom:10,padding:'6px 10px',background:'rgba(239,68,68,.08)',borderRadius:7}}>{genError}</div>}
+
+      {/* AI-generated contextual responses */}
+      {genResps.length>0&&(
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#a78bfa',letterSpacing:1,textTransform:'uppercase',marginBottom:8}}>✨ AI — Generated for this conversation</div>
+          {genResps.map((r:any,i:number)=>(
+            <div key={'gen-'+i} style={{...S2.card,borderColor:copied==='gen-'+i?'rgba(16,185,129,.3)':'rgba(167,139,250,.2)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700}}>{r.title||r.label||'Response '+(i+1)}</div>
+                  {r.scenario&&<span style={S2.badge('#a78bfa')}>{r.scenario}</span>}
+                </div>
+                <button style={S2.btn(copied==='gen-'+i?'#10b981':'#a78bfa')} onClick={()=>copyText(r.body||r.text||'','gen-'+i)}>
+                  {copied==='gen-'+i?'✓ Copied!':'Copy'}
+                </button>
+              </div>
+              <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.6,whiteSpace:'pre-wrap' as const}}>{r.body||r.text||''}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Category filter */}
+      <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap' as const}}>
+        {cats.map(c=>(
+          <button key={c} style={S2.btn(cat===c?'#10b981':'hsl(var(--muted-foreground))')} onClick={()=>setCat(c)}>
+            {c.charAt(0).toUpperCase()+c.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Templates */}
+      {filtered.map((r:any)=>(
+        <div key={r.id} style={{...S2.card,borderColor:copied===r.id?'rgba(16,185,129,.3)':'#1a1a3a'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+            <div>
+              <div style={{fontSize:12,fontWeight:700}}>{r.title}</div>
+              <span style={S2.badge('#6366f1')}>{r.category}</span>
+            </div>
+            <button style={S2.btn(copied===r.id?'#10b981':'#a78bfa')} onClick={()=>copyText(r.body,r.id)}>
+              {copied===r.id?'✓ Copied!':'Copy'}
+            </button>
+          </div>
+          <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.6,whiteSpace:'pre-wrap' as const}}>{r.body}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function BdePanel() {
   const CTX_KEY = "bde_ctx_v3";
   const [tab,setTab]=useState<'fiverr'|'intel'|'tools'|'responses'|'leads'|'docs'|'agent'>('fiverr');
@@ -2214,25 +2327,14 @@ export default function BdePanel() {
 
         {/* ═══ RESPONSES ═══ */}
         {tab==='responses'&&(
-          <div>
-            <div style={{marginBottom:12,padding:'8px 12px',background:'rgba(99,102,241,.06)',borderRadius:8,border:'0.5px solid rgba(99,102,241,.2)'}}>
-              <div style={{fontSize:11,fontWeight:700,marginBottom:3}}>💬 Pre-saved Response Templates</div>
-              <div style={{fontSize:11,color:'hsl(var(--muted-foreground))'}}>Quick-copy templates for common Fiverr scenarios. Add templates in Supabase → <code>quick_responses</code> table. For AI-generated responses based on a specific conversation, use the <b>✍️ Generate Responses</b> button in the Fiverr Analyser tab.</div>
-            </div>
-            <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap' as const}}>
-              {cats.map(c=><button key={c} style={S.btn(respCat===c?'#10b981':'hsl(var(--muted-foreground))')} onClick={()=>setRespCat(c)}>{c.charAt(0).toUpperCase()+c.slice(1)}</button>)}
-            </div>
-            {filteredResps.map((r:any)=>(
-              <div key={r.id} style={{...S.card,borderColor:copied===r.id?'rgba(16,185,129,.3)':'#1a1a3a'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                  <div><div style={{fontSize:12,fontWeight:700}}>{r.title}</div><div style={{display:'flex',gap:6,marginTop:3}}><span style={S.badge('#6366f1')}>{r.category}</span></div></div>
-                  <button style={S.btn(copied===r.id?'#10b981':'#a78bfa')} onClick={()=>{copyText(r.body,r.id);post('increment_response_usage',{responseId:r.id});}}>{copied===r.id?'✓ Copied!':'Copy'}</button>
-                </div>
-                <div style={{fontSize:12,color:'#d0d0e8',lineHeight:1.6,whiteSpace:'pre-wrap' as const}}>{r.body}</div>
-              </div>
-            ))}
-            {!filteredResps.length&&<div style={{color:'hsl(var(--muted-foreground))',textAlign:'center' as const,padding:32}}>No responses found</div>}
-          </div>
+          <ResponsesPanel
+            quickResps={quickResps}
+            analysis={analysis}
+            rawPaste={rawPaste}
+            copied={copied}
+            copyText={copyText}
+            post={post}
+          />
         )}
 
         {/* ═══ LEADS ═══ */}
