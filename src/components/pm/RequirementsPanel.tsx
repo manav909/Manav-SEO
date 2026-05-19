@@ -342,7 +342,11 @@ function CrawlSection({
     setRunning(false);
     if (r.success) {
       setCmp(r.comparison || null);
-      setResult(`Crawl complete — ${r.crawledCount || 0} pages analysed and compared.`);
+      if (r.saveError) {
+        setResult(`Crawl ran (${r.crawledCount || 0} pages compared) but ${r.saveError}. Pages may not appear until this is resolved.`);
+      } else {
+        setResult(`Crawl complete — ${r.savedCount ?? r.crawledCount ?? 0} pages saved and compared.`);
+      }
       onLinkChanged();
     } else {
       setResult(r.error || 'Crawl failed.');

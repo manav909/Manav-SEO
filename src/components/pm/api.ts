@@ -228,7 +228,8 @@ export async function linkKeywordPage(
    server-side so the Requirements tab can show it later.
    Slow — crawls live pages + two AI passes. Show a spinner. */
 export async function runCrawl(projectId: string): Promise<{
-  success: boolean; comparison?: any; crawledCount?: number; error?: string;
+  success: boolean; comparison?: any; crawledCount?: number;
+  savedCount?: number; saveError?: string; error?: string;
 }> {
   try {
     /* 1. Ask the server which URLs to crawl (site + landing + competitors). */
@@ -302,10 +303,21 @@ export async function runCrawl(projectId: string): Promise<{
     /* 4. Persist the comparison server-side. */
     await post(ENGINE, { action: 'pm_save_crawl_comparison', projectId, comparison });
 
+    /* check whether any page failed to persist to crawled_pages */
+    const saveErrors = (crawlResults.results || [])
+      .filter((r: any) => r?.save_error)
+      .map((r: any) => r.save_error);
+    const savedCount = (crawlResults.results || [])
+      .filter((r: any) => !r?.save_error).length;
+
     return {
       success: true,
       comparison,
       crawledCount: crawlResults.results.length,
+      savedCount,
+      saveError: saveErrors.length
+        ? `${saveErrors.length} page(s) not saved: ${saveErrors[0]}`
+        : undefined,
     };
   } catch (e: any) {
     return { success: false, error: e?.message || 'Crawl failed' };

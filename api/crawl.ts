@@ -220,10 +220,10 @@ async function getCached(projectId: string, urls: string[]): Promise<Record<stri
   } catch (e) { console.error("[cache] getCached failed:", e); return {}; }
 }
 
-async function saveToCache(projectId: string, url: string, result: any) {
-  if (!projectId) return;
+async function saveToCache(projectId: string, url: string, result: any): Promise<string | null> {
+  if (!projectId) return "no projectId — page not persisted";
   try {
-    await db().from("crawled_pages").upsert({
+    const { error } = await db().from("crawled_pages").upsert({
       project_id: projectId, url,
       page_analysis:    result.page_analysis ?? null,
       knowledge_fields: result.knowledge_fields ?? [],
@@ -233,7 +233,15 @@ async function saveToCache(projectId: string, url: string, result: any) {
       crawl_status:     result.page_analysis ? "success" : result.status === 403 ? "blocked" : "failed",
       crawled_at:       new Date().toISOString(),
     }, { onConflict: "project_id,url" });
-  } catch (e) { console.error("[cache] saveToCache failed:", e); }
+    if (error) {
+      console.error("[cache] saveToCache DB error:", error.message);
+      return error.message;
+    }
+    return null;
+  } catch (e: any) {
+    console.error("[cache] saveToCache failed:", e?.message || e);
+    return e?.message || "save failed";
+  }
 }
 
 function isFresh(cachedAt: string): boolean {
@@ -304,7 +312,10 @@ async function processUrl(
     fetch_failed:     !fetched.html,
   };
 
-  if (projectId) await saveToCache(projectId, url, result);
+  if (projectId) {
+    const saveErr = await saveToCache(projectId, url, result);
+    if (saveErr) result.save_error = saveErr;
+  }
   return result;
 }
 
