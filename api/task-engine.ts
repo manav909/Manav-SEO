@@ -456,6 +456,64 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     } catch (e: any) { return ok(res, { success: false, error: e.message }); }
   }
 
+
+  if (action === "generate_sales_pack") {
+    const { auditResult, url } = body;
+    if (!auditResult) return ok(res, { error: "auditResult required" });
+    try {
+      const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const issues = (auditResult.issues || []).slice(0, 8).map((i: any) =>
+        typeof i === "string" ? i : `${i.issue || i} (${i.severity || "high"})`).join("\n");
+      const cats = (auditResult.categories || []).map((c: any) =>
+        `${c.name}: ${c.score}/100`).join(", ");
+
+      const prompt = `You are a senior SEO sales consultant creating a complete sales pack for a prospect.
+URL: ${url || auditResult.url || "their website"}
+SEO Score: ${auditResult.score}/100
+Categories: ${cats}
+Top Issues:\n${issues}
+Quick Wins: ${(auditResult.quickWins || []).join(", ")}
+
+Return ONLY raw JSON with this structure:
+{
+  "executiveSummary": "3-4 sentence compelling summary of their SEO situation and opportunity. No fluff.",
+  "caseStudy": {
+    "title": "Realistic case study title for a similar business",
+    "situation": "2 sentences — similar business, similar issues",
+    "approach": "2 sentences — what was done",
+    "result": "Specific numbers: traffic increase %, ranking improvements, timeline",
+    "relevance": "1 sentence linking this to the prospect"
+  },
+  "proposalPoints": [
+    {"heading": "string", "body": "2-3 sentences of compelling copy"}
+  ],
+  "objectionHandlers": [
+    {"objection": "string", "response": "2-3 sentence confident response"}
+  ],
+  "pitchScript": "Complete 200-word Fiverr message pitch. Mention their site, their specific issues, what you will fix, expected outcome. Sound human and confident — not a template.",
+  "followUpSequence": [
+    {"day": 1, "message": "string"},
+    {"day": 3, "message": "string"},
+    {"day": 7, "message": "string"}
+  ],
+  "quickWinPlan": "3-bullet action plan for the first 7 days after they order"
+}`;
+
+      const _r = await _ac.messages.create({
+        model: "claude-sonnet-4-6", max_tokens: 2000,
+        system: "You are a senior SEO sales consultant. Be specific, compelling, and human. No generic fluff.",
+        messages: [{ role: "user", content: prompt }]
+      });
+      const raw = (_r.content[0] as any).text || "{}";
+      let pack: any = {};
+      try { pack = JSON.parse(raw.replace(/^```[a-z]*/i,"").replace(/```/g,"").trim()); } catch {
+        const m = raw.match(/\{[\s\S]+\}/);
+        try { pack = m ? JSON.parse(m[0]) : {}; } catch {}
+      }
+      return ok(res, { success: true, pack });
+    } catch(e: any) { return ok(res, { success: false, error: e.message }); }
+  }
+
   if (action === "get_pipeline") {
     try {
       const { data: _pd } = await db().from("lead_assignments").select("*, prospects(*)").order("updated_at", { ascending: false }).limit(30);

@@ -1,153 +1,379 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef } from "react";
+import PortalNav from "@/components/PortalNav";
 
 const post = (a: string, b: any = {}) =>
   fetch("/api/task-engine", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: a, ...b }),
   }).then(r => r.json()).catch(() => ({}));
 
+const SEV_COLOR: any = {
+  critical: "#ef4444", high: "#f97316", medium: "#f59e0b", low: "#10b981"
+};
+
 export default function Intake() {
-  const [url,     setUrl]     = useState("");
-  const [email,   setEmail]   = useState("");
-  const [name,    setName]    = useState("");
-  const [result,  setResult]  = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [step,    setStep]    = useState<"url"|"email"|"done">("url");
-  const [error,   setError]   = useState("");
-  const navigate = useNavigate();
+  const [url,      setUrl]      = useState("");
+  const [email,    setEmail]    = useState("");
+  const [name,     setName]     = useState("");
+  const [audit,    setAudit]    = useState<any>(null);
+  const [pack,     setPack]     = useState<any>(null);
+  const [step,     setStep]     = useState<"url"|"audit"|"pack"|"done">("url");
+  const [loading,  setLoading]  = useState(false);
+  const [packLoad, setPackLoad] = useState(false);
+  const [error,    setError]    = useState("");
+  const auditRef = useRef<HTMLDivElement>(null);
+  const packRef  = useRef<HTMLDivElement>(null);
 
   const runAudit = async () => {
     if (!url.trim()) return;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setAudit(null); setPack(null);
     const r = await post("instant_audit_showcase", { url: url.trim() });
-    setResult(r.auditResult || r.result || r);
+    if (r.error) { setError(r.error); setLoading(false); return; }
+    setAudit(r);
     setLoading(false);
-    setStep("email");
+    setStep("audit");
+    setTimeout(() => auditRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
   };
 
-  const submit = async () => {
-    if (!email.trim()) { setError("Email is required"); return; }
+  const generatePack = async () => {
+    setPackLoad(true); setPack(null);
+    const r = await post("generate_sales_pack", { auditResult: audit, url });
+    if (r.success) {
+      setPack(r.pack);
+      setStep("pack");
+      setTimeout(() => packRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    }
+    setPackLoad(false);
+  };
+
+  const captureLead = async () => {
+    if (!email.trim()) { setError("Email required"); return; }
     setLoading(true);
-    await post("capture_lead", {
-      url, email: email.trim(), name: name.trim(),
-      source: "intake", auditResult: result,
-    });
+    await post("capture_lead", { url, email: email.trim(), name: name.trim(), source: "intake", auditResult: audit });
     setLoading(false);
     setStep("done");
   };
 
-  const issues: string[] = result?.issues || result?.missingBasics || result?.instant_audit?.missingBasics || [];
-  const score: number | null = result?.score ?? result?.instant_audit?.lead_score ?? null;
+  const downloadHTML = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: "text/html" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const auditHTML = () => {
+    if (!audit) return "";
+    const cats = (audit.categories || []).map((c: any) => `
+      <div style="margin-bottom:20px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <strong style="font-size:15px;">${c.name}</strong>
+          <span style="font-size:20px;font-weight:bold;color:${c.score>=70?"#ef4444":c.score>=50?"#f59e0b":"#10b981"}">${c.score}/100</span>
+        </div>
+        ${(c.issues||[]).map((i: any) => `
+          <div style="margin-bottom:8px;padding:10px;background:#f8fafc;border-radius:6px;border-left:3px solid ${SEV_COLOR[i.severity]||"#6366f1"}">
+            <div style="font-weight:600;font-size:13px;color:#1e293b;">${i.issue}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px;">Fix: ${i.fix}</div>
+            ${i.algorithmNote ? `<div style="font-size:11px;color:#6366f1;margin-top:3px;">⚡ ${i.algorithmNote}</div>` : ""}
+          </div>`).join("")}
+      </div>`).join("");
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>SEO Audit — ${url}</title>
+      <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1e293b;}
+      h1{color:#1B4080;}h2{color:#1B4080;margin-top:32px;}</style></head><body>
+      <h1>SEO Audit Report</h1><p><strong>URL:</strong> ${url}</p>
+      <p><strong>Date:</strong> ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</p>
+      <h2 style="font-size:32px;color:${(audit.score||0)>=70?"#ef4444":(audit.score||0)>=50?"#f59e0b":"#10b981"}">Score: ${audit.score||0}/100</h2>
+      <h2>Quick Wins</h2><ul>${(audit.quickWins||[]).map((w:string)=>`<li>${w}</li>`).join("")}</ul>
+      <h2>Full Findings</h2>${cats}
+      <h2>Algorithm Notes</h2><ul>${(audit.algorithmHighlights||[]).map((a:string)=>`<li>${a}</li>`).join("")}</ul>
+      <p style="margin-top:40px;font-size:12px;color:#94a3b8;">Generated by SEO Season · seoseason.com</p>
+      </body></html>`;
+  };
+
+  const packHTML = () => {
+    if (!pack) return "";
+    const proposal = (pack.proposalPoints||[]).map((p: any) =>
+      `<div style="margin-bottom:16px;padding:14px;background:#f8fafc;border-radius:8px;border-left:3px solid #6366f1;">
+        <strong>${p.heading}</strong><p style="margin:6px 0 0;color:#475569;font-size:14px;">${p.body}</p></div>`).join("");
+    const objections = (pack.objectionHandlers||[]).map((o: any) =>
+      `<div style="margin-bottom:14px;"><strong style="color:#ef4444;">Objection: ${o.objection}</strong>
+        <p style="color:#475569;font-size:14px;margin:4px 0 0;">${o.response}</p></div>`).join("");
+    const followup = (pack.followUpSequence||[]).map((f: any) =>
+      `<div style="margin-bottom:12px;padding:12px;background:#f1f5f9;border-radius:6px;">
+        <strong>Day ${f.day}</strong><p style="margin:4px 0 0;font-size:14px;color:#475569;">${f.message}</p></div>`).join("");
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sales Pack — ${url}</title>
+      <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1e293b;}
+      h1,h2{color:#1B4080;}pre{white-space:pre-wrap;font-family:inherit;}</style></head><body>
+      <h1>Sales Pack: ${url}</h1>
+      <p style="font-size:13px;color:#64748b;">Generated ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</p>
+      <h2>Executive Summary</h2><p>${pack.executiveSummary||""}</p>
+      <h2>Case Study</h2>
+      ${pack.caseStudy?`<div style="padding:16px;background:#f0fdf4;border-radius:8px;border-left:3px solid #10b981;">
+        <strong>${pack.caseStudy.title}</strong>
+        <p><strong>Situation:</strong> ${pack.caseStudy.situation}</p>
+        <p><strong>Approach:</strong> ${pack.caseStudy.approach}</p>
+        <p><strong>Result:</strong> ${pack.caseStudy.result}</p>
+        <p style="color:#059669;"><em>${pack.caseStudy.relevance}</em></p></div>`:""}
+      <h2>Proposal Points</h2>${proposal}
+      <h2>Pitch Script</h2>
+      <div style="padding:16px;background:#faf5ff;border-radius:8px;border-left:3px solid #6366f1;white-space:pre-wrap;font-size:14px;">${pack.pitchScript||""}</div>
+      <h2>Objection Handlers</h2>${objections}
+      <h2>Follow-up Sequence</h2>${followup}
+      <h2>Quick Win Plan (First 7 Days)</h2><p>${pack.quickWinPlan||""}</p>
+      <p style="margin-top:40px;font-size:12px;color:#94a3b8;">SEO Season · seoseason.com</p>
+      </body></html>`;
+  };
+
+  const S = {
+    card: "rounded-2xl border border-border bg-card p-5",
+    btn: (col: string) => `px-4 py-2 rounded-xl text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40`,
+  };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
-      <div className="w-full max-w-lg">
-        <div className="text-center mb-8">
-          <div className="text-4xl mb-3">🎯</div>
-          <h1 className="text-2xl font-bold mb-2">Free Instant SEO Audit</h1>
-          <p className="text-sm text-muted-foreground">
-            See exactly how ChatGPT, Perplexity, and Google find your business.
-          </p>
+    <div className="min-h-screen bg-background text-foreground">
+      <PortalNav />
+      <div className="max-w-4xl mx-auto px-6 py-8">
+
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold mb-1">Lead Intake</h1>
+          <p className="text-sm text-muted-foreground">Run a full SEO audit, generate a sales pack, and capture the lead.</p>
         </div>
 
-        {step === "url" && (
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Your website URL</label>
-              <input
-                className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary transition-colors"
-                placeholder="yourwebsite.com"
-                value={url}
-                onChange={e => setUrl(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && runAudit()}
-                autoFocus
-              />
-            </div>
-            <button
-              onClick={runAudit}
-              disabled={loading || !url.trim()}
-              className="w-full py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity">
-              {loading ? "Analysing your site…" : "Run Free Audit →"}
+        {/* URL input */}
+        <div className={`${S.card} mb-6`}>
+          <div className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Website URL</div>
+          <div className="flex gap-3">
+            <input
+              className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
+              placeholder="yourprospect.com"
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && runAudit()}
+            />
+            <button onClick={runAudit} disabled={loading || !url.trim()}
+              className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
+              {loading ? "Auditing…" : "Run Audit"}
             </button>
           </div>
-        )}
+          {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+        </div>
 
-        {step === "email" && (
-          <div className="space-y-4">
-            {/* Audit results */}
-            {(score !== null || issues.length > 0) && (
-              <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">Audit: {url}</span>
-                  {score !== null && (
-                    <span className={`text-sm font-bold ${score >= 70 ? "text-red-400" : score >= 50 ? "text-yellow-400" : "text-green-400"}`}>
-                      {score}/100 issues found
-                    </span>
-                  )}
+        {/* Audit results */}
+        {audit && (
+          <div ref={auditRef} className={`${S.card} mb-6`}>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">SEO Audit</div>
+                <div className="text-base font-semibold">{url}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-center">
+                  <div className={`text-3xl font-black ${(audit.score||0) >= 70 ? "text-red-400" : (audit.score||0) >= 50 ? "text-yellow-400" : "text-green-400"}`}>
+                    {audit.score||0}
+                  </div>
+                  <div className="text-xs text-muted-foreground">/100</div>
                 </div>
-                {issues.length > 0 && (
-                  <ul className="space-y-1.5">
-                    {issues.slice(0, 5).map((issue: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                        <span className="text-red-400 mt-0.5 shrink-0">●</span>
-                        {issue}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {issues.length === 0 && (
-                  <p className="text-xs text-green-400">No major issues detected — enter your email for the full competitive analysis.</p>
-                )}
+                <button onClick={() => downloadHTML(auditHTML(), `audit-${url.replace(/[^a-z0-9]/gi,"_")}.html`)}
+                  className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:border-primary/40">
+                  ⬇ Download Audit
+                </button>
+              </div>
+            </div>
+
+            {/* Quick wins */}
+            {(audit.quickWins||[]).length > 0 && (
+              <div className="mb-5">
+                <div className="text-xs font-bold text-green-400 uppercase tracking-wider mb-2">⚡ Quick Wins</div>
+                <div className="space-y-1.5">
+                  {audit.quickWins.map((w: string, i: number) => (
+                    <div key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                      <span className="text-green-400 shrink-0">✓</span>{w}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Your name (optional)</label>
-              <input
-                className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary transition-colors"
-                placeholder="John Smith"
-                value={name}
-                onChange={e => setName(e.target.value)}
-              />
+            {/* Categories */}
+            <div className="space-y-4">
+              {(audit.categories||[]).map((cat: any, ci: number) => (
+                <div key={ci} className="border border-border rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-semibold">{cat.name}</span>
+                    <span className={`text-sm font-bold ${cat.score >= 70 ? "text-red-400" : cat.score >= 50 ? "text-yellow-400" : "text-green-400"}`}>
+                      {cat.score}/100
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {(cat.issues||[]).map((issue: any, ii: number) => (
+                      <div key={ii} className="text-xs p-3 rounded-lg"
+                        style={{ background: `${SEV_COLOR[issue.severity] || "#6366f1"}10`, borderLeft: `2px solid ${SEV_COLOR[issue.severity] || "#6366f1"}` }}>
+                        <div className="font-semibold mb-1" style={{ color: SEV_COLOR[issue.severity] || "#6366f1" }}>
+                          [{issue.severity}] {issue.issue}
+                        </div>
+                        <div className="text-muted-foreground">Fix: {issue.fix}</div>
+                        {issue.algorithmNote && <div className="mt-1 text-primary">⚡ {issue.algorithmNote}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Email — we'll send your full report here</label>
-              <input
-                className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary transition-colors"
-                placeholder="you@yourcompany.com"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && submit()}
-                autoFocus
-              />
+
+            {/* Algorithm highlights */}
+            {(audit.algorithmHighlights||[]).length > 0 && (
+              <div className="mt-4 p-4 rounded-xl border border-primary/20 bg-primary/5">
+                <div className="text-xs font-bold text-primary uppercase tracking-wider mb-2">Algorithm Context</div>
+                <div className="space-y-1">
+                  {audit.algorithmHighlights.map((a: string, i: number) => (
+                    <div key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                      <span className="text-primary shrink-0">◆</span>{a}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Generate sales pack CTA */}
+            <div className="mt-5 pt-5 border-t border-border flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold">Generate Sales Pack</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Case study, pitch script, objection handlers, follow-up sequence</div>
+              </div>
+              <button onClick={generatePack} disabled={packLoad}
+                className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
+                {packLoad ? "Generating…" : "✨ Generate Sales Pack"}
+              </button>
             </div>
-            {error && <p className="text-xs text-red-400">{error}</p>}
-            <button
-              onClick={submit}
-              disabled={loading || !email.trim()}
-              className="w-full py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity">
-              {loading ? "Sending your report…" : "Get Full Report →"}
-            </button>
-            <button onClick={() => setStep("url")} className="w-full text-xs text-muted-foreground hover:text-foreground py-1">
-              ← Try a different URL
-            </button>
           </div>
         )}
 
-        {step === "done" && (
-          <div className="text-center space-y-4">
-            <div className="text-5xl">✅</div>
-            <h2 className="text-xl font-bold">Report on its way!</h2>
-            <p className="text-sm text-muted-foreground">
-              Check <strong>{email}</strong> — your full SEO audit and personalised recommendations will arrive shortly.
-            </p>
-            <button onClick={() => { setStep("url"); setUrl(""); setEmail(""); setName(""); setResult(null); }}
-              className="text-xs text-muted-foreground hover:text-foreground">
-              Submit another site →
-            </button>
+        {/* Sales Pack */}
+        {pack && (
+          <div ref={packRef} className={`${S.card} mb-6`}>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Sales Pack</div>
+                <div className="text-base font-semibold">{url}</div>
+              </div>
+              <button onClick={() => downloadHTML(packHTML(), `sales-pack-${url.replace(/[^a-z0-9]/gi,"_")}.html`)}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:border-primary/40">
+                ⬇ Download Pack
+              </button>
+            </div>
+
+            {/* Executive summary */}
+            <div className="mb-5 p-4 rounded-xl bg-primary/5 border border-primary/20">
+              <div className="text-xs font-bold text-primary uppercase tracking-wider mb-2">Executive Summary</div>
+              <p className="text-sm text-muted-foreground leading-relaxed">{pack.executiveSummary}</p>
+            </div>
+
+            {/* Case study */}
+            {pack.caseStudy && (
+              <div className="mb-5 p-4 rounded-xl bg-green-500/5 border border-green-500/20">
+                <div className="text-xs font-bold text-green-400 uppercase tracking-wider mb-3">📊 Case Study</div>
+                <div className="text-sm font-semibold mb-3">{pack.caseStudy.title}</div>
+                <div className="space-y-2 text-xs text-muted-foreground">
+                  <div><span className="font-semibold text-foreground">Situation: </span>{pack.caseStudy.situation}</div>
+                  <div><span className="font-semibold text-foreground">Approach: </span>{pack.caseStudy.approach}</div>
+                  <div><span className="font-semibold text-green-400">Result: </span>{pack.caseStudy.result}</div>
+                  <div className="italic text-green-400">{pack.caseStudy.relevance}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Pitch script */}
+            {pack.pitchScript && (
+              <div className="mb-5">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Pitch Script</div>
+                  <button onClick={() => navigator.clipboard.writeText(pack.pitchScript).catch(()=>{})}
+                    className="text-xs text-primary hover:underline">Copy</button>
+                </div>
+                <div className="p-4 rounded-xl bg-violet-500/5 border border-violet-500/20 text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                  {pack.pitchScript}
+                </div>
+              </div>
+            )}
+
+            {/* Proposal points */}
+            {(pack.proposalPoints||[]).length > 0 && (
+              <div className="mb-5">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Proposal Points</div>
+                <div className="space-y-3">
+                  {pack.proposalPoints.map((p: any, i: number) => (
+                    <div key={i} className="p-3 rounded-xl border border-border">
+                      <div className="text-xs font-semibold mb-1">{p.heading}</div>
+                      <div className="text-xs text-muted-foreground">{p.body}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Objection handlers */}
+            {(pack.objectionHandlers||[]).length > 0 && (
+              <div className="mb-5">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Objection Handlers</div>
+                <div className="space-y-3">
+                  {pack.objectionHandlers.map((o: any, i: number) => (
+                    <div key={i} className="p-3 rounded-xl border border-red-500/20 bg-red-500/5">
+                      <div className="text-xs font-semibold text-red-400 mb-1">"{o.objection}"</div>
+                      <div className="text-xs text-muted-foreground">{o.response}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Follow-up sequence */}
+            {(pack.followUpSequence||[]).length > 0 && (
+              <div className="mb-5">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Follow-up Sequence</div>
+                <div className="space-y-3">
+                  {pack.followUpSequence.map((f: any, i: number) => (
+                    <div key={i} className="flex gap-3 items-start">
+                      <div className="shrink-0 w-12 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
+                        Day {f.day}
+                      </div>
+                      <div className="flex-1 p-3 rounded-xl border border-border text-xs text-muted-foreground">
+                        {f.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quick win plan */}
+            {pack.quickWinPlan && (
+              <div className="p-4 rounded-xl bg-green-500/5 border border-green-500/20">
+                <div className="text-xs font-bold text-green-400 uppercase tracking-wider mb-2">First 7 Days Plan</div>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap">{pack.quickWinPlan}</p>
+              </div>
+            )}
+
+            {/* Capture lead */}
+            <div className="mt-5 pt-5 border-t border-border">
+              <div className="text-sm font-semibold mb-3">Capture This Lead</div>
+              {step !== "done" ? (
+                <div className="flex gap-3">
+                  <input className="flex-1 px-3 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
+                    placeholder="Name (optional)" value={name} onChange={e => setName(e.target.value)} />
+                  <input className="flex-1 px-3 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
+                    placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && captureLead()} />
+                  <button onClick={captureLead} disabled={loading || !email.trim()}
+                    className="px-5 py-2 rounded-xl bg-green-500 text-white text-sm font-semibold hover:opacity-90 disabled:opacity-50">
+                    {loading ? "Saving…" : "💾 Save Lead"}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-sm text-green-400 font-medium">✓ Lead captured — {email}</div>
+              )}
+            </div>
           </div>
         )}
       </div>
