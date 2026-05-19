@@ -779,6 +779,7 @@ export default function BdePanel() {
   const [respCat,setRespCat]=useState('all');
   const [copied,setCopied]=useState<string|null>(null);
   const [assignments,setAssignments]=useState<any[]>([]);
+  const [leadSearch,setLeadSearch]=useState('');
   // Lead state
   const [leadNameInput,setLeadNameInput]=useState('');
   const [leadSaved,setLeadSaved]=useState(false);
@@ -1421,7 +1422,7 @@ export default function BdePanel() {
                     <div style={{display:'flex',flexDirection:'column' as const,gap:4,maxHeight:220,overflowY:'auto' as const}}>
                       {loadingPros&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',padding:'12px',textAlign:'center' as const}}>Loading saved leads...</div>}
                       {!loadingPros&&prospects.length===0&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',padding:'12px',textAlign:'center' as const}}>No saved leads yet — analyse a conversation and save it first</div>}
-                      {prospects.map((p:any)=>{
+                      {prospects.filter((p:any)=>{if(!leadSearch)return true;const q=leadSearch.toLowerCase();return(p.name||'').toLowerCase().includes(q)||(p.url||'').toLowerCase().includes(q)||(p.latestAnalysis?.main_need||'').toLowerCase().includes(q)||(p.industry||'').toLowerCase().includes(q);}).map((p:any)=>{
                         const prob=p.latestAnalysis?.fiverr_specific?.order_probability;
                         return(
                           <div key={p.name} onClick={()=>loadLeadIntoAnalyser(p)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',borderRadius:8,cursor:'pointer',background:'rgba(99,102,241,.05)',border:'0.5px solid rgba(99,102,241,.15)'}}>
@@ -2341,12 +2342,22 @@ export default function BdePanel() {
         {/* ═══ LEADS ═══ */}
         {tab==='leads'&&(
           <div>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:700}}>All Leads ({prospects.length})</div>
+            <div style={{display:'flex',gap:8,marginBottom:12}}>
+              <input
+                value={leadSearch}
+                onChange={e=>setLeadSearch(e.target.value)}
+                placeholder="Search leads by name, URL, need…"
+                style={{flex:1,background:'hsl(var(--background))',border:'0.5px solid #1a1a3a',borderRadius:8,padding:'7px 12px',fontSize:12,color:'hsl(var(--foreground))',outline:'none'}}
+                onFocus={e=>(e.target.style.borderColor='#6366f1')}
+                onBlur={e=>(e.target.style.borderColor='#1a1a3a')}
+              />
               <button style={S.btn('#6366f1')} onClick={()=>{setLoadingPros(true);post('get_lead_prospects',{}).then(r=>{setProspects((r as any).prospects||[]);setLoadingPros(false);});}}>
-                {loadingPros?'Loading…':'↺ Refresh'}
+                {loadingPros?'…':'↺'}
               </button>
             </div>
+            {leadSearch&&<div style={{fontSize:11,color:'hsl(var(--muted-foreground))',marginBottom:8}}>
+              {prospects.filter((p:any)=>{const q=leadSearch.toLowerCase();return(p.name||'').toLowerCase().includes(q)||(p.url||'').toLowerCase().includes(q)||(p.latestAnalysis?.main_need||'').toLowerCase().includes(q)||(p.industry||'').toLowerCase().includes(q);}).length} results for "{leadSearch}"
+            </div>}
             {loadingPros&&<div style={{textAlign:'center' as const,padding:32,color:'hsl(var(--muted-foreground))',fontSize:12}}>Loading leads…</div>}
             {!loadingPros&&prospects.length===0&&(
               <div style={{...S.card,textAlign:'center' as const,padding:32}}>
