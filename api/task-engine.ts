@@ -491,8 +491,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         "",
         'Return ONLY raw JSON array: [{"label":"<short label>","text":"<the actual context instruction, under 100 chars>","category":"emphasis|omit|tone|focus|strategy"}]',
         "Generate exactly 6 suggestions that are specific to THIS site and its findings.",
-      ].filter(Boolean).join("
-");
+      ].filter(Boolean).join("\n");
       const _r = await _ac.messages.create({
         model: "claude-sonnet-4-6", max_tokens: 1000,
         system: "You are a JSON API. Return ONLY raw JSON array. No markdown.",
