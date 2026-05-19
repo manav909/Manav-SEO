@@ -24,13 +24,14 @@ import {
   Eye, Layers, BookOpen, Database,
 } from 'lucide-react';
 
-const greet = () => {
+const greet = (name: string) => {
   const h = new Date().getHours();
-  return h < 5  ? 'Still at it, President Manav.' :
-         h < 12 ? 'Good morning, President Manav.' :
-         h < 17 ? 'Good afternoon, President Manav.' :
-         h < 21 ? 'Good evening, President Manav.' :
-                  'Good night, President Manav.';
+  const n = name || 'President';
+  return h < 5  ? `Still at it, ${n}.` :
+         h < 12 ? `Good morning, ${n}.` :
+         h < 17 ? `Good afternoon, ${n}.` :
+         h < 21 ? `Good evening, ${n}.` :
+                  `Good night, ${n}.`;
 };
 
 const scColor = (s: number) => s>=80?'text-emerald-400':s>=60?'text-sky-400':s>=40?'text-amber-400':'text-red-400';
@@ -208,6 +209,8 @@ Run a strategic simulation. Predict: traffic impact, timeline, risks, and the on
    THE OVAL
 ════════════════════════════════════════════════════════ */
 export default function Oval() {
+  const { profile } = useAuth();
+  const displayName = profile?.name || profile?.email?.split('@')[0] || 'President';
   const navigate  = useNavigate();
   const { user, clients, projects, refreshData } = useAuth();
   const { selectedProjectId, setSelectedProjectId, selectedProject } = useProject();
@@ -307,7 +310,7 @@ export default function Oval() {
               </div>
             </div>
             <div>
-              <div className="text-amber-300 font-bold text-sm">{greet()}</div>
+              <div className="text-amber-300 font-bold text-sm">{greet(displayName)}</div>
               <div className="text-[10px] text-muted-foreground/35 font-mono">{dateStr}</div>
             </div>
           </div>

@@ -39,6 +39,7 @@ interface AuthState {
   authChecked: boolean;
   isApproved:      boolean;
   staffPermissions: Record<string,boolean> | null;
+  staffRole:        string | null;
   hasClient:   boolean;
   signOut:     () => Promise<void>;
   refreshData: () => Promise<void>;
@@ -48,7 +49,7 @@ const AuthContext = createContext<AuthState>({
   user: null, session: null, profile: null,
   clients: [], projects: [],
   loading: true, authChecked: false,
-  isApproved: false, hasClient: false, staffPermissions: null,
+  isApproved: false, hasClient: false, staffPermissions: null, staffRole: null,
   signOut: async () => {}, refreshData: async () => {},
 });
 
@@ -59,6 +60,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session,     setSession]     = useState<Session | null>(null);
   const [profile,     setProfile]     = useState<Profile | null>(null);
   const [staffPermissions, setStaffPermissions] = useState<Record<string,boolean>|null>(null);
+  const [staffRole, setStaffRole] = useState<string|null>(null);
   const [clients,     setClients]     = useState<any[]>([]);
   const [projects,    setProjects]    = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -110,6 +112,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             .limit(1);
           const staffRow = staffRows?.[0];
           if (staffRow?.permissions) setStaffPermissions(staffRow.permissions);
+          if (staffRow?.role) setStaffRole(staffRow.role);
         }
       } catch { /* staff lookup failure must never block sign-in */ }
 
@@ -262,6 +265,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       loading, authChecked,
       isApproved: profile?.approved === true,
       staffPermissions,
+      staffRole,
       hasClient:  clients.length > 0,
       signOut, refreshData,
     }}>

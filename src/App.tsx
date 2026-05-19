@@ -77,6 +77,17 @@ const ApprovedRequired = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Guards a route by permission key — staff without that perm go to their home page
+const StaffGuard = ({ children, perm }: { children: React.ReactNode; perm: string }) => {
+  const { user, authChecked, loading, isApproved, staffPermissions } = useAuth();
+  if (!authChecked || loading) return <Spinner label="Loading portal..." />;
+  if (!user || !isApproved)    return <Navigate to="/" replace />;
+  // null staffPermissions = owner/HOD = always allowed
+  if (perm === '__hod_only__' && staffPermissions) return <Navigate to="/bde-panel" replace />;
+  if (staffPermissions && !staffPermissions[perm]) return <Navigate to="/bde-panel" replace />;
+  return <>{children}</>;
+};
+
 function B({ children, name }: { children: React.ReactNode; name: string }) {
   return <BrainErrorBoundary routeName={name}>{children}</BrainErrorBoundary>;
 }
@@ -95,18 +106,18 @@ const AppRoutes = () => {
         <Route path="/build"          element={<B name="build">         <Build />                                          </B>} />
 
         {/* Protected routes */}
-        <Route path="/data-room"      element={<B name="data-room">     <ApprovedRequired><DataRoom /></ApprovedRequired>       </B>} />
-        <Route path="/dashboard"      element={<B name="dashboard">     <ApprovedRequired><Dashboard /></ApprovedRequired>     </B>} />
-        <Route path="/launchpad"      element={<B name="launchpad">     <ApprovedRequired><Launchpad /></ApprovedRequired>     </B>} />
-        <Route path="/audit"          element={<B name="audit">         <ApprovedRequired><Audit /></ApprovedRequired>         </B>} />
-        <Route path="/playground"     element={<B name="playground">    <ApprovedRequired><Playground /></ApprovedRequired>    </B>} />
-        <Route path="/system-control" element={<B name="system-control"><ApprovedRequired><SystemControl /></ApprovedRequired> </B>} />
-        <Route path="/algorithm-intel"element={<B name="algo-intel">    <ApprovedRequired><AlgorithmIntel /></ApprovedRequired></B>} />
-        <Route path="/brain-learning" element={<B name="brain-learning"><ApprovedRequired><BrainLearning /></ApprovedRequired> </B>} />
-        <Route path="/desk"          element={<B name="desk">         <ApprovedRequired><Desk /></ApprovedRequired>          </B>} />
-        <Route path="/brain-command"  element={<B name="brain-command"><ApprovedRequired><BrainCommand /></ApprovedRequired></B>} />
-        <Route path="/mission-control" element={<B name="mission-control"><ApprovedRequired><MissionControl /></ApprovedRequired></B>} />
-        <Route path="/oval"           element={<B name="oval"><ApprovedRequired><Oval /></ApprovedRequired></B>} />
+        <Route path="/data-room"      element={<B name="data-room">     <StaffGuard perm="dashboard"><DataRoom /></StaffGuard>       </B>} />
+        <Route path="/dashboard"      element={<B name="dashboard">     <StaffGuard perm="dashboard"><Dashboard /></StaffGuard>     </B>} />
+        <Route path="/launchpad"      element={<B name="launchpad">     <StaffGuard perm="dashboard"><Launchpad /></StaffGuard>     </B>} />
+        <Route path="/audit"          element={<B name="audit">         <StaffGuard perm="dashboard"><Audit /></StaffGuard>         </B>} />
+        <Route path="/playground"     element={<B name="playground">    <StaffGuard perm="dashboard"><Playground /></StaffGuard>    </B>} />
+        <Route path="/system-control" element={<B name="system-control"><StaffGuard perm="dashboard"><SystemControl /></StaffGuard> </B>} />
+        <Route path="/algorithm-intel"element={<B name="algo-intel">    <StaffGuard perm="dashboard"><AlgorithmIntel /></StaffGuard></B>} />
+        <Route path="/brain-learning" element={<B name="brain-learning"><StaffGuard perm="dashboard"><BrainLearning /></StaffGuard> </B>} />
+        <Route path="/desk"          element={<B name="desk">         <StaffGuard perm="dashboard"><Desk /></StaffGuard>          </B>} />
+        <Route path="/brain-command"  element={<B name="brain-command"><StaffGuard perm="dashboard"><BrainCommand /></StaffGuard></B>} />
+        <Route path="/mission-control" element={<B name="mission-control"><StaffGuard perm="dashboard"><MissionControl /></StaffGuard></B>} />
+        <Route path="/oval"           element={<B name="oval"><StaffGuard perm="dashboard"><Oval /></StaffGuard></B>} />
         <Route path="/client-portal" element={<ClientPortal />} />
           <Route path="/revenue-proof" element={<RevenueProof />} />
           <Route path="/scale-control" element={<ScaleControl />} />
