@@ -342,7 +342,7 @@ export default function Intake() {
         </div>
 
         {/* Sales Context panel — always visible once URL entered */}
-        {url.trim().length > 5 && {contextPanelJSX}}
+        {url.trim().length > 5 && contextPanelJSX}
 
         {/* Audit results */}
         {audit && (
