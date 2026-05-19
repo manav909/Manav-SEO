@@ -17,7 +17,8 @@
       "maxDuration": 300,
       "regions": [
         "iad1"
-      ]
+      ],
+      "includeFiles": "api/lib/**"
     },
     "api/run-analysis.ts": {
       "maxDuration": 300,
