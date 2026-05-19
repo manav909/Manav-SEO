@@ -139,22 +139,24 @@ async function pmDeleteCard(cardId: string) {
 async function pmGatherRequirements(projectId: string) {
   if (!projectId) return { success: false, error: "projectId required" };
   try {
-    /* All queries are independent and fail-soft. A single table or
-       column problem must never blank the whole tab. */
+    /* Every query is independent and fail-soft. Audits are selected with
+       "*" because the score column is named differently depending on
+       which tool saved the audit (score vs overall_score) — selecting an
+       explicit list would reject the whole query on the missing name. */
     const [projR, auditR, algoR, brainR, knowledgeR] =
       await Promise.allSettled([
         db().from("projects")
-          .select("id,name,url,industry,goals,keywords,competitors,client_id")
+          .select("id,name,url,industry,goals,keywords,competitors,client_id,last_analysis,last_analysis_at")
           .eq("id", projectId).maybeSingle(),
         db().from("audit_reports")
-          .select("id,created_at,score,sections")
-          .eq("project_id", projectId).order("created_at", { ascending: false }).limit(3),
+          .select("*")
+          .eq("project_id", projectId).order("created_at", { ascending: false }).limit(5),
         db().from("algorithm_knowledge")
-          .select("id,topic,summary,freshness_score")
+          .select("id,topic,summary,freshness_score,updated_at")
           .order("freshness_score", { ascending: false }).limit(8),
         db().from("brain_learnings")
-          .select("id,card_type,card_title,improvement")
-          .eq("status", "active").order("applied_count", { ascending: false }).limit(12),
+          .select("id,card_type,card_title,improvement,project_id")
+          .eq("status", "active").order("applied_count", { ascending: false }).limit(40),
         db().from("project_knowledge")
           .select("category,field_key,field_value")
           .eq("project_id", projectId),
@@ -166,8 +168,12 @@ async function pmGatherRequirements(projectId: string) {
     const proj      = val(projR) || {};
     const audits    = Array.isArray(val(auditR))     ? val(auditR)     : [];
     const algo      = Array.isArray(val(algoR))      ? val(algoR)      : [];
-    const brain     = Array.isArray(val(brainR))     ? val(brainR)     : [];
+    const brainAll  = Array.isArray(val(brainR))     ? val(brainR)     : [];
     const knowledge = Array.isArray(val(knowledgeR)) ? val(knowledgeR) : [];
+
+    /* Brain learnings: prefer this project's own, fall back to global. */
+    const brainOwn = brainAll.filter((b: any) => b && b.project_id === projectId);
+    const brain    = (brainOwn.length ? brainOwn : brainAll).slice(0, 12);
 
     /* knowledge -> category map (defensive against null rows) */
     const km: Record<string, Record<string, string>> = {};
@@ -177,30 +183,30 @@ async function pmGatherRequirements(projectId: string) {
       km[k.category][k.field_key] = k.field_value || "";
     }
 
-    /* competitors may be an array, a JSON string, or null — normalise */
-    let competitors: string[] = [];
-    const rawComp = (proj as any).competitors;
-    if (Array.isArray(rawComp)) competitors = rawComp.filter(Boolean);
-    else if (typeof rawComp === "string" && rawComp.trim()) {
-      try {
-        const parsed = JSON.parse(rawComp);
-        competitors = Array.isArray(parsed) ? parsed.filter(Boolean)
-                    : rawComp.split(",").map((s) => s.trim()).filter(Boolean);
-      } catch {
-        competitors = rawComp.split(",").map((s) => s.trim()).filter(Boolean);
+    /* competitors / keywords may be array, JSON string, or null */
+    const toList = (raw: any): string[] => {
+      if (Array.isArray(raw)) return raw.filter(Boolean);
+      if (typeof raw === "string" && raw.trim()) {
+        try {
+          const p = JSON.parse(raw);
+          if (Array.isArray(p)) return p.filter(Boolean);
+        } catch { /* not json */ }
+        return raw.split(",").map((s) => s.trim()).filter(Boolean);
       }
-    }
+      return [];
+    };
+    const competitors = toList((proj as any).competitors);
+    const keywords    = toList((proj as any).keywords);
 
-    /* keywords may likewise be array / string / null */
-    const rawKw = (proj as any).keywords;
-    const hasKeywords = Array.isArray(rawKw) ? rawKw.length > 0 : !!rawKw;
+    /* an audit row's score may be `score` or `overall_score` */
+    const auditScore = (a: any) =>
+      a?.score ?? a?.overall_score ?? a?.overall_confidence ?? null;
 
     const gaps: string[] = [];
     if (!(proj as any).goals)   gaps.push("No campaign goal — card priorities will be generic");
     if (!competitors.length)    gaps.push("No competitors recorded — competitive cards limited");
     if (!audits.length)         gaps.push("No audit run yet — technical cards based on estimate only");
-    if (!km["analytics"])       gaps.push("No analytics baseline — impact cannot be forecast");
-    if (!hasKeywords)           gaps.push("No target keywords — content/GEO cards will be vague");
+    if (!keywords.length)       gaps.push("No target keywords — content/GEO cards will be vague");
 
     const context = {
       projectId,
@@ -208,9 +214,10 @@ async function pmGatherRequirements(projectId: string) {
       url:         (proj as any).url  || "",
       goal:        (proj as any).goals || "",
       scope:       km["goal"]?.["scope"] || km["scope"]?.["description"] || "",
+      hasAnalysis: !!(proj as any).last_analysis,
       audits: audits.map((a: any) => ({
         kind: "audit", refId: a?.id,
-        label: `Audit ${(a?.created_at || "").split("T")[0] || "recent"} — score ${a?.score ?? "n/a"}`,
+        label: `Audit ${(a?.created_at || "").split("T")[0] || "recent"} — score ${auditScore(a) ?? "n/a"}`,
       })),
       algorithm: algo.map((a: any) => ({
         kind: "algorithm", refId: a?.id, label: a?.topic || "Algorithm topic",
@@ -219,6 +226,7 @@ async function pmGatherRequirements(projectId: string) {
         kind: "brain_learning", refId: b?.id, label: b?.card_title || "Learning",
       })),
       competitors: competitors.map((c: string) => ({ kind: "competitor", label: c })),
+      keywords,
       sales:       [] as any[],
       clientNotes: [] as any[],
       gaps,
@@ -227,8 +235,7 @@ async function pmGatherRequirements(projectId: string) {
   } catch (e: any) {
     return { success: false, error: e?.message || "unknown" };
   }
-}
-/* ════════════════════════════════════════════════════
+}/* ════════════════════════════════════════════════════
    3. AI CARD GENERATION
    Turn gathered intelligence into a set of task cards.
 ════════════════════════════════════════════════════ */
