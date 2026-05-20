@@ -7,7 +7,7 @@ import { useProjectSync } from '@/hooks/useProjectSync';
 import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
-import { seedV2DataRoom, type SeedSummary } from '@/components/pm/api';
+import { seedV2DataRoom, aiFillPreview as apiAiFillPreview, aiFillApply as apiAiFillApply, type SeedSummary, type AIFillPreview, type AIFieldProposal } from '@/components/pm/api';
 import {
   Layers,
   Upload,
@@ -604,6 +604,12 @@ export default function DataRoom() {
   const [seedRunning, setSeedRunning] = useState(false);
   const [seedResult,  setSeedResult]  = useState<SeedSummary | null>(null);
   const [seedScope,   setSeedScope]   = useState<'this' | 'all'>('this');
+  /* V2 Data Room AI Fill UI state — preview modal + apply */
+  const [aiFillRunning,   setAiFillRunning]   = useState(false);
+  const [aiFillApplying,  setAiFillApplying]  = useState(false);
+  const [aiFillPreview,   setAiFillPreview]   = useState<AIFillPreview | null>(null);
+  const [aiFillSelected,  setAiFillSelected]  = useState<Record<string, boolean>>({});
+  const [aiFillModalOpen, setAiFillModalOpen] = useState(false);
   const handleProjectChange = useProjectSync(selProjId, setSelProjId);
   const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'|'crawl'|'identity'|'audience'|'content'|'backlinks'|'commercial'|'history'>('overview');
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
@@ -1497,7 +1503,86 @@ Evidence: ${c.data_basis}` : ''}`,
     });
   };
 
-  /* ── Completeness score ── */
+  /* ── V2 Data Room AI Fill ──
+     Honest AI-generated proposals for Tier 1+2 fields, drawn from
+     website crawl, competitors, existing knowledge and audit data.
+     Two-step PM-in-the-loop flow: preview → review → apply selected.
+     Tier 3 fields stay empty but produce ready-to-send client questions. */
+  const runAiFillPreview = async () => {
+    if (!selProjId) {
+      toast({ title: 'Pick a project first', description: 'AI Fill works on one project at a time.', variant: 'destructive' });
+      return;
+    }
+    if (aiFillRunning) return;
+    setAiFillRunning(true);
+    setAiFillPreview(null);
+    setAiFillModalOpen(true);
+    const { preview, error } = await apiAiFillPreview(selProjId);
+    setAiFillRunning(false);
+    if (error || !preview) {
+      toast({ title: 'AI Fill preview failed', description: error || 'Try again later.', variant: 'destructive' });
+      setAiFillModalOpen(false);
+      return;
+    }
+    setAiFillPreview(preview);
+    /* default: select every NOT-already-filled proposal at high or medium confidence.
+       PM can adjust before applying. */
+    const defaults: Record<string, boolean> = {};
+    for (const p of preview.proposals) {
+      const key = `${p.category}.${p.field_key}`;
+      defaults[key] = !p.already_filled && (p.proposal.confidence === 'high' || p.proposal.confidence === 'medium');
+    }
+    setAiFillSelected(defaults);
+  };
+
+  const runAiFillApply = async () => {
+    if (!selProjId || !aiFillPreview || aiFillApplying) return;
+    const selected = aiFillPreview.proposals
+      .filter((p) => aiFillSelected[`${p.category}.${p.field_key}`] && !p.already_filled)
+      .map((p) => ({
+        category:   p.category,
+        field_key:  p.field_key,
+        value:      p.proposal.value,
+        confidence: p.proposal.confidence,
+        reasoning:  p.proposal.reasoning,
+        sources:    p.proposal.sources,
+      }));
+    if (!selected.length) {
+      toast({ title: 'Nothing selected', description: 'Tick at least one proposal to apply.' });
+      return;
+    }
+    setAiFillApplying(true);
+    const { success, applied, skipped_existing, error } = await apiAiFillApply({
+      projectId:      selProjId,
+      selectedFields: selected,
+    });
+    setAiFillApplying(false);
+    if (!success) {
+      toast({ title: 'AI Fill apply failed', description: error || 'Try again.', variant: 'destructive' });
+      return;
+    }
+    toast({
+      title: 'AI Fill applied',
+      description: `${applied || 0} field${(applied || 0) === 1 ? '' : 's'} written${skipped_existing ? ` · ${skipped_existing} skipped (already filled)` : ''}.`,
+    });
+    /* refresh knowledge so AI-inferred values appear with their badge */
+    const { data } = await supabase.from('project_knowledge')
+      .select('*').eq('project_id', selProjId);
+    const grouped: Record<string, Record<string, KField>> = {};
+    for (const row of (data || [])) {
+      const k = row as KField;
+      (grouped[k.category] ||= {})[k.field_key] = k;
+    }
+    setKnowledge(grouped);
+    setAiFillModalOpen(false);
+    setAiFillPreview(null);
+  };
+
+  const toggleAiFillSelection = (category: string, fieldKey: string) => {
+    const key = `${category}.${fieldKey}`;
+    setAiFillSelected((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const completeness = (() => {
     const required = DATA_REQUIREMENTS.flatMap(cat => cat.fields.filter(f => f.required).map(f => `${cat.category}.${f.key}`));
     const filled   = required.filter(k => {
@@ -1538,6 +1623,23 @@ Evidence: ${c.data_basis}` : ''}`,
     const overriding   = !!editOverrides[overrideKey];
     const inputLocked  = isAutoSynced && !overriding && !dirty;
 
+    /* AI-inferred state — purple badge with the confidence + reasoning
+       on click. Distinct from manual entry, distinct from GSC/GA4 sync.
+       The PM can edit freely; once they save, source becomes 'manual'. */
+    const isAiInferred = knData?.source === 'ai_inferred';
+    let aiNotes: { confidence?: string; reasoning?: string; sources_used?: string[]; inferred_at?: string } | null = null;
+    if (isAiInferred && knData?.notes) {
+      try { aiNotes = JSON.parse(knData.notes); } catch { aiNotes = null; }
+    }
+    const aiConfidence = aiNotes?.confidence || 'medium';
+    const aiBadgeTone =
+      aiConfidence === 'high'   ? 'bg-purple-500/15 text-purple-300' :
+      aiConfidence === 'medium' ? 'bg-purple-500/10 text-purple-400' :
+                                   'bg-purple-500/8 text-purple-400/80';
+    /* "stale" if AI-inferred and older than 60 days — prompt PM to verify */
+    const isAiStale = isAiInferred && aiNotes?.inferred_at &&
+      (Date.now() - new Date(aiNotes.inferred_at).getTime()) / 86_400_000 > 60;
+
     return (
       <div key={field.key} className="space-y-1">
         <div className="flex items-center gap-2">
@@ -1551,7 +1653,13 @@ Evidence: ${c.data_basis}` : ''}`,
               {dDate && <span className="text-green-400/70 font-mono ml-1">{dDate}</span>}
             </span>
           )}
-          {!isAutoSynced && val && !dirty && (
+          {isAiInferred && !isAutoSynced && !dirty && (
+            <span className={`ml-auto flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${aiBadgeTone}`} title={aiNotes?.reasoning || 'AI-inferred from sources'}>
+              <Sparkles size={10}/> AI inferred · {aiConfidence}
+              {isAiStale && <span className="text-amber-400 ml-1">· verify</span>}
+            </span>
+          )}
+          {!isAutoSynced && !isAiInferred && val && !dirty && (
             <div className="flex items-center gap-1 ml-auto">
               {source && <span className="text-xs text-muted-foreground font-mono">{source}</span>}
               {dDate  && <span className="text-xs text-muted-foreground font-mono">· {dDate}</span>}
@@ -1560,6 +1668,26 @@ Evidence: ${c.data_basis}` : ''}`,
           )}
           {dirty && <span className="text-xs text-yellow-400 ml-auto">unsaved</span>}
         </div>
+
+        {/* AI-inferred reasoning panel — collapsible, shows evidence */}
+        {isAiInferred && aiNotes?.reasoning && !dirty && (
+          <details className="text-[10px] pl-1">
+            <summary className="cursor-pointer text-purple-400/70 hover:text-purple-400">Why this value?</summary>
+            <div className="mt-1 pl-2 border-l-2 border-purple-500/30 space-y-0.5">
+              <div className="text-foreground/80 italic">{aiNotes.reasoning}</div>
+              {aiNotes.sources_used && aiNotes.sources_used.length > 0 && (
+                <div className="text-muted-foreground">
+                  <span className="font-semibold">Sources: </span>{aiNotes.sources_used.join(', ')}
+                </div>
+              )}
+              {aiNotes.inferred_at && (
+                <div className="text-muted-foreground/70">
+                  Inferred {new Date(aiNotes.inferred_at).toLocaleDateString('en-GB')}{isAiStale ? ' (stale — verify with client)' : ''}
+                </div>
+              )}
+            </div>
+          </details>
+        )}
 
         {field.type === 'select' ? (
           <select
@@ -1847,6 +1975,45 @@ Evidence: ${c.data_basis}` : ''}`,
                           )}
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── V2 Data Room AI Fill ──
+                    Honest AI inference from website + competitors + existing data.
+                    Tier 1+2 fields only (Tier 3 = client-only knowledge → questions). */}
+                <div className="rounded-2xl border border-purple-500/30 bg-purple-500/[0.04] p-5">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="h-5 w-5 text-purple-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-foreground">
+                        AI Fill — propose values from website + existing data
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                        Reads your crawled pages, competitors, and existing knowledge to propose honest values for fields the client hasn't filled. Every proposal carries a confidence level and the evidence behind it. PM reviews each one before anything is written. Fields only the client can answer (history, anti-goals, conversion economics, prohibited topics) stay empty — you get a ready-to-send list of questions instead.
+                      </div>
+                      <div className="flex items-center gap-2 mt-3 flex-wrap">
+                        <button
+                          onClick={runAiFillPreview}
+                          disabled={aiFillRunning || !selProjId}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-purple-500 text-white hover:bg-purple-500/90 font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          {aiFillRunning ? (
+                            <>
+                              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                              Analyzing…
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-3 w-3" />
+                              AI Fill this project
+                            </>
+                          )}
+                        </button>
+                        <span className="text-[10px] text-muted-foreground">
+                          Works on the currently-selected project · runs ~10-20 seconds
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2867,6 +3034,217 @@ Evidence: ${c.data_basis}` : ''}`,
                   className="px-4 py-2 rounded-xl bg-primary/15 border border-primary/30 text-primary text-xs font-semibold hover:bg-primary/25"
                 >
                   Got it
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════
+          AI Fill Preview Modal — full-screen overlay
+          Shows every AI-proposed value with confidence + reasoning.
+          PM ticks which ones to apply. Tier 3 fields appear as client
+          questions ready to copy-paste into an email.
+      ═══════════════════════════════════════════════════════════════ */}
+      {aiFillModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Sparkles className="h-5 w-5 text-purple-400 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm font-bold">AI Fill Preview</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    Review every proposal. Tick the ones to apply, untick anything that doesn't ring true.
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => { setAiFillModalOpen(false); setAiFillPreview(null); }}
+                disabled={aiFillApplying}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {aiFillRunning && (
+                <div className="py-12 text-center">
+                  <svg className="animate-spin h-6 w-6 mx-auto mb-3 text-purple-400" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  <div className="text-sm text-muted-foreground">Reading website pages, competitors, and existing data…</div>
+                  <div className="text-[10px] text-muted-foreground/70 mt-1">This usually takes 10-20 seconds.</div>
+                </div>
+              )}
+
+              {!aiFillRunning && aiFillPreview && (
+                <>
+                  {/* Source summary */}
+                  <div className="rounded-xl border border-border bg-background/40 p-3 text-[11px] text-muted-foreground flex items-center gap-3 flex-wrap">
+                    <span><strong className="text-foreground/90">Sources analyzed:</strong></span>
+                    <span>{aiFillPreview.source_summary.pages} pages crawled</span>
+                    <span>·</span>
+                    <span>{aiFillPreview.source_summary.competitors} competitor{aiFillPreview.source_summary.competitors === 1 ? '' : 's'}</span>
+                    {aiFillPreview.source_summary.has_audit && (<><span>·</span><span>latest audit synthesis</span></>)}
+                  </div>
+
+                  {aiFillPreview.proposals.length === 0 && (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4 text-sm text-foreground/90">
+                      <div className="font-semibold mb-1">No proposals generated</div>
+                      <div className="text-xs text-muted-foreground">
+                        Likely cause: no website pages have been crawled for this project yet. Run a site crawl from the URL Crawler tab, then come back. The AI needs actual website content to ground its inferences.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Proposals grouped by category */}
+                  {aiFillPreview.proposals.length > 0 && (() => {
+                    const byCategory: Record<string, AIFieldProposal[]> = {};
+                    for (const p of aiFillPreview.proposals) {
+                      (byCategory[p.category] ||= []).push(p);
+                    }
+                    return Object.entries(byCategory).map(([cat, items]) => (
+                      <div key={cat}>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+                          {cat}
+                        </div>
+                        <div className="space-y-2">
+                          {items.map((p) => {
+                            const sel = `${p.category}.${p.field_key}`;
+                            const isSelected = !!aiFillSelected[sel];
+                            const confTone =
+                              p.proposal.confidence === 'high'   ? 'border-green-500/30 bg-green-500/[0.04]' :
+                              p.proposal.confidence === 'medium' ? 'border-amber-500/30 bg-amber-500/[0.04]' :
+                                                                    'border-orange-500/30 bg-orange-500/[0.04]';
+                            const confLabel = p.proposal.confidence === 'high' ? 'High confidence'
+                                            : p.proposal.confidence === 'medium' ? 'Medium confidence'
+                                            : 'Low confidence';
+                            return (
+                              <div key={sel} className={`rounded-xl border ${confTone} p-3 ${p.already_filled ? 'opacity-50' : ''}`}>
+                                <div className="flex items-start gap-2.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleAiFillSelection(p.category, p.field_key)}
+                                    disabled={p.already_filled || aiFillApplying}
+                                    className="mt-0.5 shrink-0"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-semibold text-foreground/90 font-mono">{p.field_key}</span>
+                                      <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-bold ${
+                                        p.proposal.confidence === 'high' ? 'bg-green-500/15 text-green-400'
+                                        : p.proposal.confidence === 'medium' ? 'bg-amber-500/15 text-amber-400'
+                                        : 'bg-orange-500/15 text-orange-400'
+                                      }`}>{confLabel}</span>
+                                      {p.already_filled && (
+                                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-bold">
+                                          Already filled ({p.existing_source || 'manual'})
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-sm text-foreground mt-1 leading-relaxed">{p.proposal.value}</div>
+                                    <details className="mt-1.5">
+                                      <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
+                                        Why this value?
+                                      </summary>
+                                      <div className="mt-1.5 pl-2 border-l-2 border-border space-y-1">
+                                        <div className="text-[10px] text-foreground/85 italic">{p.proposal.reasoning}</div>
+                                        {p.proposal.sources.length > 0 && (
+                                          <div className="text-[10px] text-muted-foreground">
+                                            <span className="font-semibold">Sources: </span>{p.proposal.sources.join(', ')}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </details>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ));
+                  })()}
+
+                  {/* Client questions section */}
+                  {aiFillPreview.client_questions.length > 0 && (
+                    <div className="mt-6">
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 flex items-center gap-1.5">
+                        <AlertTriangle className="h-3 w-3 text-blue-400" />
+                        Questions for the client — copy-paste ready
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mb-2">
+                        These fields can only be answered by the client. The AI hasn't generated values — instead it's prepared questions you can send.
+                      </div>
+                      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-3 space-y-3">
+                        {aiFillPreview.client_questions.map((q, i) => (
+                          <div key={i} className="border-l-2 border-blue-500/30 pl-3">
+                            <div className="text-[10px] text-muted-foreground font-mono mb-0.5">{q.field_path}</div>
+                            <div className="text-xs text-foreground/90 leading-relaxed">{q.question}</div>
+                            {q.why_we_need_it && (
+                              <div className="text-[10px] text-muted-foreground/80 mt-0.5 italic">Why: {q.why_we_need_it}</div>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => {
+                            const text = aiFillPreview.client_questions
+                              .map((q, i) => `${i + 1}. ${q.question}`).join('\n\n');
+                            navigator.clipboard.writeText(text);
+                            toast({ title: 'Copied questions', description: 'Paste into an email to the client.' });
+                          }}
+                          className="text-[10px] px-2.5 py-1 rounded-lg border border-blue-500/30 text-blue-400 hover:bg-blue-500/5 font-semibold"
+                        >
+                          Copy all questions
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-border bg-background/40 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-[11px] text-muted-foreground">
+                {aiFillPreview ? (() => {
+                  const eligible = aiFillPreview.proposals.filter((p) => !p.already_filled);
+                  const selectedCount = eligible.filter((p) => aiFillSelected[`${p.category}.${p.field_key}`]).length;
+                  return `${selectedCount} of ${eligible.length} eligible proposal${eligible.length === 1 ? '' : 's'} selected`;
+                })() : ''}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setAiFillModalOpen(false); setAiFillPreview(null); }}
+                  disabled={aiFillApplying}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={runAiFillApply}
+                  disabled={aiFillApplying || aiFillRunning || !aiFillPreview || aiFillPreview.proposals.length === 0}
+                  className="text-xs px-4 py-1.5 rounded-lg bg-purple-500 text-white hover:bg-purple-500/90 font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {aiFillApplying ? (
+                    <>
+                      <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                      Applying…
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Apply selected
+                    </>
+                  )}
                 </button>
               </div>
             </div>

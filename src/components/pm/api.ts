@@ -902,3 +902,63 @@ export async function seedV2DataRoom(projectId?: string): Promise<{
     },
   };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Data Room AI Fill (Tier 1+2 honest inference)
+═══════════════════════════════════════════════════════════ */
+
+export interface AIFieldProposal {
+  category:        string;
+  field_key:       string;
+  field_label:     string;
+  field_type:      'text' | 'select';
+  options?:        readonly string[];
+  already_filled:  boolean;
+  existing_source?: string;
+  proposal: {
+    value:      string;
+    confidence: 'high' | 'medium' | 'low';
+    reasoning:  string;
+    sources:    string[];
+  };
+}
+
+export interface AIClientQuestion {
+  field_path:      string;
+  question:        string;
+  why_we_need_it:  string;
+}
+
+export interface AIFillPreview {
+  proposals:        AIFieldProposal[];
+  client_questions: AIClientQuestion[];
+  source_summary:   { pages: number; competitors: number; has_audit: boolean };
+}
+
+export async function aiFillPreview(projectId: string): Promise<{
+  preview?: AIFillPreview; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_ai_fill_preview', projectId });
+  if (!r?.success) return { error: r?.error || 'AI Fill preview failed.' };
+  return {
+    preview: {
+      proposals:        Array.isArray(r.proposals) ? r.proposals : [],
+      client_questions: Array.isArray(r.client_questions) ? r.client_questions : [],
+      source_summary:   r.source_summary || { pages: 0, competitors: 0, has_audit: false },
+    },
+  };
+}
+
+export async function aiFillApply(opts: {
+  projectId: string;
+  selectedFields: Array<{
+    category: string; field_key: string;
+    value: string; confidence: string; reasoning: string; sources: string[];
+  }>;
+}): Promise<{
+  success: boolean; applied?: number; skipped_existing?: number; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_ai_fill_apply', ...opts });
+  if (!r?.success) return { success: false, error: r?.error || 'AI Fill apply failed.' };
+  return { success: true, applied: r.applied, skipped_existing: r.skipped_existing };
+}

@@ -394,6 +394,17 @@ const PAGES: Record<string, {
         'Auto-synced fields in the Data Room show an "Auto-synced from GSC" or "from GA4" pill. To override (rare — e.g. during a GA outage), click "Edit anyway" — a deliberate action that protects live data from accidental overwrites.',
         'Reports calibrate their language to data source health: confident claims when GSC + GA4 are live, hedged claims when stale, and a recommendation to connect when not connected.',
       ]},
+      { title: 'AI Fill — when the client hasn\'t given you everything', icon: '✨', items: [
+        'On the Overview tab there are two helper buttons: the blue "Seed V2 fields" (copies data already in your database into the V2 slots), and the purple "AI Fill" (proposes values for fields the client hasn\'t given you, drawn from real evidence).',
+        'AI Fill reads your crawled website pages, competitors, existing knowledge, and audit findings. It proposes values ONLY for fields where honest evidence exists.',
+        'Every proposal carries a confidence level (high / medium / low) and the reasoning behind it. Click "Why this value?" on any field to see exactly which pages or sources the AI drew from.',
+        'PM is always in the loop. Click AI Fill → preview modal opens → tick the proposals you trust → click Apply. Nothing is written without your approval.',
+        'The AI is disciplined: it returns null for any field where evidence is too thin. It NEVER fabricates revenue figures, employee counts, prohibited topics, or anything else that should come from the client.',
+        'Tier 3 fields (client-only knowledge — engagement terms, history, anti-goals, conversion economics) get a "Questions for client" list at the bottom of the modal. Copy-paste into an email to the client.',
+        'Applied AI fields show a purple "AI inferred · high|medium|low" badge in the per-category forms. Click "Why this value?" under any field to see the reasoning. The badge turns amber after 60 days as a verify-with-client reminder.',
+        'When you edit an AI-inferred field manually and save, it stops being "AI inferred" — it becomes your truth. Re-running AI Fill won\'t touch fields you\'ve confirmed.',
+        'Best practice: run a website crawl first (URL Crawler tab) so AI Fill has rich evidence to ground in. Empty crawl = many null proposals.',
+      ]},
       { title: 'Auto-pilot — rules, suggestions, alerts', icon: '⚡', items: [
         'Open the PM module → Auto-pilot tab. Three sub-tabs: Suggestions (cards the system thinks should exist), Alerts (anomalies detected), Rules (enable/disable per project).',
         'Six rule types: Monthly audit, Quarterly crawl, Weekly report draft, Monthly report draft, Rank drop alert, Click drop alert, Audit score drop alert.',

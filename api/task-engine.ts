@@ -441,6 +441,10 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handlePmSeed } = await import("./lib/pm-dataroom-seed.js");
     const seedResult = await handlePmSeed(action, body);
     if (seedResult !== null) return ok(res, seedResult);
+    /* fall through to the AI Data Room fill handler — pm_ai_fill_* */
+    const { handlePmAiFill } = await import("./lib/pm-dataroom-ai-fill.js");
+    const aiFillResult = await handlePmAiFill(action, body);
+    if (aiFillResult !== null) return ok(res, aiFillResult);
   }
 
   /* ═══ GSC INTEGRATION (Phase D) — gsc_* actions ═══ */
