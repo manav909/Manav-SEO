@@ -12,6 +12,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth }     from "@/contexts/AuthContext";
 import { ProjectProvider }             from "@/contexts/ProjectContext";
 import MissionControl                  from "./pages/MissionControl";
+import BrandStudio                     from "./pages/BrandStudio";
 import Oval                            from "./pages/Oval";
 import { DemoProvider }          from "@/contexts/DemoContext";
 import { ErrorBoundary }         from "@/components/ErrorBoundary";
@@ -121,6 +122,7 @@ const AppRoutes = () => {
         <Route path="/desk"            element={<B name="desk">           <StaffGuard perm="brain_learning"> <Desk />           </StaffGuard></B>} />
         <Route path="/brain-command"   element={<B name="brain-command">  <StaffGuard perm="brain_learning"> <BrainCommand />   </StaffGuard></B>} />
         <Route path="/mission-control" element={<B name="mission-control"><StaffGuard perm="dashboard">      <MissionControl /> </StaffGuard></B>} />
+        <Route path="/brand-studio"    element={<B name="brand-studio">   <StaffGuard perm="dashboard">      <BrandStudio />    </StaffGuard></B>} />
         <Route path="/oval"            element={<B name="oval">           <StaffGuard perm="hod_only">       <Oval />           </StaffGuard></B>} />
         <Route path="/bde-panel"       element={<B name="bde-panel">      <StaffGuard perm="bde_panel">      <BdePanel />       </StaffGuard></B>} />
         <Route path="/staff-command"   element={<B name="staff-command">  <StaffGuard perm="staff_command">  <StaffCommand />   </StaffGuard></B>} />

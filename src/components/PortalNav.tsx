@@ -63,6 +63,7 @@ const EMPIRE_SECTIONS = [
     items: [
       { href: '/kanban',          label: 'Kanban Board',    icon: Kanban,       desc: 'Task delivery',      perm: 'playground' },
       { href: '/pm',              label: 'Project Manager', icon: Layers,       desc: 'Plan, run & verify', perm: 'playground' },
+      { href: '/brand-studio',    label: 'Brand Studio',    icon: Palette,      desc: 'Brand intelligence', perm: 'playground' },
       { href: '/content-hub',     label: 'Content Hub',     icon: FileText,     desc: 'Content briefs',     perm: 'playground' },
       { href: '/content-writer',  label: 'Content Writer',  icon: FileText,     desc: 'Writer dashboard',   perm: 'playground' },
       { href: '/launchpad',       label: 'Launchpad',       icon: Sparkles,     desc: 'Project launchpad',  perm: 'playground' },

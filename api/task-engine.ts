@@ -468,6 +468,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (mcResult !== null) return ok(res, mcResult);
   }
 
+  /* ═══ BRAND STUDIO (Phase H foundation) — bs_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("bs_")) {
+    const { handleBrandStudio } = await import("./lib/brand-studio.js");
+    const bsResult = await handleBrandStudio(action, body);
+    if (bsResult !== null) return ok(res, bsResult);
+  }
+
 
   // ═══ INLINE BDE ACTIONS (override dynamic-import versions below) ═══
 

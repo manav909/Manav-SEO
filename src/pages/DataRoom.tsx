@@ -48,7 +48,9 @@ import {
 /* ─── types ─── */
 type KCategory = 'goal'|'cms'|'access'|'technical'|'competitor'|'content'|'analytics'|'manual'|'crawl'
   /* Data Room V2 additions — see strategic doc in DATA_REQUIREMENTS comments below */
-  |'identity'|'audience'|'backlinks'|'commercial'|'history';
+  |'identity'|'audience'|'backlinks'|'commercial'|'history'
+  /* Brand Studio H.0 — brand narrative anchors */
+  |'brand_narrative';
 interface KField { id?: string; category: KCategory; field_key: string; field_value: string; source: string; source_name?: string; data_date?: string; notes?: string; }
 interface DocRecord { id?: string; name: string; doc_type: string; raw_content?: string; extracted_data?: any; source_date?: string; file_size_kb?: number; created_at?: string; }
 
@@ -288,6 +290,24 @@ const DATA_REQUIREMENTS = [
       {key:'recent_redesigns',     label:'Recent Site Redesigns',        type:'text',   placeholder:'e.g. "Q3 2024 full redesign — URL structure changed"'},
       {key:'algorithm_impacts',    label:'Notable Algorithm Update Impacts', type:'text', placeholder:'e.g. "Lost 25% from Sept 2023 Helpful Content; recovered Jan 2024"'},
       {key:'business_changes',     label:'Business Changes That Affect SEO', type:'text', placeholder:'e.g. "New product line in Q1 2025 — need new keyword cluster"'},
+    ]
+  },
+  /* ── Brand Studio H.0 — brand narrative anchors ──
+     The story-arc, mission, vision, and verbal anchors that feed
+     every generated brand asset (statements, taglines, positioning).
+     Lives in Data Room because it's source-of-truth context; the
+     Brand Studio "Brand" tab reads from here. */
+  {
+    category: 'brand_narrative' as KCategory, label: 'Brand Narrative', icon: Sparkles, color: '#c084fc',
+    fields: [
+      {key:'origin_story',                label:'Origin Story',                  type:'text', placeholder:'Why the company exists. Founding moment, the problem the founder saw, the conviction that started it.'},
+      {key:'mission_statement',           label:'Mission Statement',             type:'text', placeholder:'One sentence — what we do, for whom, to what end.'},
+      {key:'vision_statement',            label:'Vision Statement',              type:'text', placeholder:'One sentence — the future state the company is working toward.'},
+      {key:'values',                      label:'Core Values',                   type:'text', placeholder:'3-5 values that guide decisions, in priority order. Comma-separated.'},
+      {key:'brand_personality_archetype', label:'Brand Personality / Archetype', type:'select', options:['Sage','Hero','Outlaw','Caregiver','Creator','Ruler','Magician','Innocent','Explorer','Jester','Lover','Everyman','Mixed']},
+      {key:'story_arc',                   label:'Story Arc',                     type:'text', placeholder:'Where the brand has been, where it is now, where it\'s heading. The narrative thread.'},
+      {key:'primary_tagline',             label:'Primary Tagline',               type:'text', placeholder:'The one tagline the brand leads with. Also shown in the Brand Studio Brand Bar.'},
+      {key:'secondary_taglines',          label:'Secondary Taglines',            type:'text', placeholder:'Alternate taglines for specific contexts. Comma-separated.'},
     ]
   },
 ];
@@ -611,7 +631,7 @@ export default function DataRoom() {
   const [aiFillSelected,  setAiFillSelected]  = useState<Record<string, boolean>>({});
   const [aiFillModalOpen, setAiFillModalOpen] = useState(false);
   const handleProjectChange = useProjectSync(selProjId, setSelProjId);
-  const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'|'crawl'|'identity'|'audience'|'content'|'backlinks'|'commercial'|'history'>('overview');
+  const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'|'crawl'|'identity'|'audience'|'content'|'backlinks'|'commercial'|'history'|'brand_narrative'>('overview');
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [saving,    setSaving]    = useState(false);
@@ -1832,6 +1852,7 @@ Evidence: ${c.data_basis}` : ''}`,
                 {id:'access',      label:'Tool Access',   icon:Shield     },
                 {id:'commercial',  label:'Commercial',    icon:Briefcase  },
                 {id:'history',     label:'History',       icon:History    },
+                {id:'brand_narrative', label:'Brand Narrative', icon:Sparkles},
                 {id:'documents',   label:'Documents',     icon:FileText   },
                 {id:'crawl',       label:'URL Crawler',   icon:Globe      },
               ].map(({id,label,icon:Icon})=>{
@@ -2125,6 +2146,7 @@ Evidence: ${c.data_basis}` : ''}`,
             {tab === 'backlinks'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="backlinks"/></div>}
             {tab === 'commercial'  && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="commercial"/></div>}
             {tab === 'history'     && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="history"/></div>}
+            {tab === 'brand_narrative' && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="brand_narrative"/></div>}
 
             {/* ── CRAWL TAB ── */}
             {tab === 'crawl' && (
