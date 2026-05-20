@@ -283,6 +283,32 @@ function safeParseJSON(raw: string): any {
 }
 
 async function _run(req: VercelRequest, res: VercelResponse) {
+  /* ── Google OAuth callback (Phase D) — GET with ?action=gsc_oauth_callback ──
+     Must be handled BEFORE cron detection (which also triggers on GET). */
+  if (req.method === "GET" && String((req.query as any)?.action || "") === "gsc_oauth_callback") {
+    const code  = String((req.query as any)?.code || "");
+    const state = String((req.query as any)?.state || "");
+    try {
+      const { gscOauthCallback } = await import("./lib/pm-gsc.js");
+      const r = await gscOauthCallback({ code, state });
+      if (r.success && r.html) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        return res.status(200).send(r.html);
+      }
+      /* error HTML — keep simple */
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(400).send(
+        `<!doctype html><html><body style="font-family:sans-serif;padding:40px;background:#0a0a0a;color:#e5e5e5">
+        <h2>Connection failed</h2>
+        <p>${(r.error || "Unknown error").replace(/[<>]/g, "")}</p>
+        <p><a href="/data-room" style="color:#818cf8">Back to Data Room</a></p>
+        </body></html>`);
+    } catch (e: any) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(500).send(`<pre>${(e?.message || "callback failed").replace(/[<>]/g, "")}</pre>`);
+    }
+  }
+
   /* Vercel cron trigger (GET or x-vercel-cron header) — auto-routes to verification runner */
   const isCron = req.method === "GET" || req.headers["x-vercel-cron"] === "1";
 
@@ -384,6 +410,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handlePmLifecycle } = await import("./lib/pm-lifecycle.js");
     const lcResult = await handlePmLifecycle(action, body);
     if (lcResult !== null) return ok(res, lcResult);
+  }
+
+  /* ═══ GSC INTEGRATION (Phase D) — gsc_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("gsc_")) {
+    const { handlePmGsc } = await import("./lib/pm-gsc.js");
+    const gscResult = await handlePmGsc(action, body, req, res);
+    if (gscResult !== null) return ok(res, gscResult);
   }
 
 
@@ -2396,6 +2429,15 @@ Return ONLY raw JSON:
       pmCronSummary = { success: false, error: e?.message || "pmCronTick failed" };
     }
 
+    /* ── GSC daily pull (Phase D) — pull metrics for every connected project ── */
+    let gscCronSummary: any = null;
+    try {
+      const { gscCronPullAll } = await import("./lib/pm-gsc.js");
+      gscCronSummary = await gscCronPullAll();
+    } catch (e: any) {
+      gscCronSummary = { error: e?.message || "gscCronPullAll failed" };
+    }
+
     const now = new Date().toISOString();
 
     /* Get all pending verifications due now */
@@ -2407,7 +2449,7 @@ Return ONLY raw JSON:
       .limit(10);
 
     if (!due || due.length === 0) {
-      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary });
+      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary });
     }
 
     const results: any[] = [];
@@ -2543,6 +2585,7 @@ Respond with JSON only:
       processed: results.length,
       results,
       pmCron:    pmCronSummary,
+      gscCron:   gscCronSummary,
       timestamp: new Date().toISOString(),
     });
   }

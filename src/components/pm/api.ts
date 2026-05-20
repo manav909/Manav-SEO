@@ -562,3 +562,78 @@ export async function measureCard(opts: {
   if (!r?.success) return { error: r?.error || 'Measure failed.' };
   return { shipment: r.shipment, lift: r.lift };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   GSC integration API (Phase D)
+═══════════════════════════════════════════════════════════ */
+
+interface GscStatus {
+  connected:     boolean;
+  resourceId?:   string;
+  resourceLabel?: string;
+  lastPullAt?:   string;
+  lastPullStatus?: string;
+  lastPullError?: string;
+  connectedAt?:  string;
+}
+
+/* Get current GSC connection status for a project. */
+export async function gscStatus(projectId: string): Promise<{
+  status?: GscStatus; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'gsc_status', projectId });
+  if (!r?.success) return { error: r?.error || 'Could not load status.' };
+  return {
+    status: {
+      connected:      !!r.connected,
+      resourceId:     r.resourceId,
+      resourceLabel:  r.resourceLabel,
+      lastPullAt:     r.lastPullAt,
+      lastPullStatus: r.lastPullStatus,
+      lastPullError:  r.lastPullError,
+      connectedAt:    r.connectedAt,
+    },
+  };
+}
+
+/* Start the GSC OAuth flow — returns a URL to open in a popup. */
+export async function gscOauthStart(projectId: string): Promise<{
+  url?: string; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'gsc_oauth_start', projectId });
+  if (!r?.success) return { error: r?.error || 'OAuth start failed.' };
+  return { url: r.url };
+}
+
+/* List the Search Console properties the connected account can read. */
+export async function gscListProperties(projectId: string): Promise<{
+  sites: { url: string; perm: string }[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'gsc_list_properties', projectId });
+  if (!r?.success) return { sites: [], error: r?.error || 'List failed.' };
+  return { sites: Array.isArray(r.sites) ? r.sites : [] };
+}
+
+/* Save the chosen GSC property for this project. */
+export async function gscSelectProperty(opts: {
+  projectId: string; siteUrl: string; label?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'gsc_select_property', ...opts });
+  if (!r?.success) return { success: false, error: r?.error || 'Select failed.' };
+  return { success: true };
+}
+
+/* Pull metrics now (manual). */
+export async function gscPull(opts: {
+  projectId: string; days?: number;
+}): Promise<{ totals?: { clicks: number; impressions: number; position: number; ctr: number }; error?: string }> {
+  const r = await post(ENGINE, { action: 'gsc_pull', ...opts });
+  if (!r?.success) return { error: r?.error || 'Pull failed.' };
+  return { totals: r.totals };
+}
+
+export async function gscDisconnect(projectId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'gsc_disconnect', projectId });
+  if (!r?.success) return { success: false, error: r?.error || 'Disconnect failed.' };
+  return { success: true };
+}

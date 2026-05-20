@@ -14,6 +14,7 @@ import type {
   CrawlComparison, CrawlPage,
 } from './types';
 import * as pmApi from './api';
+import IntegrationsPanel from './IntegrationsPanel';
 
 export default function RequirementsPanel({
   projectId, project, onCardsGenerated,
@@ -143,6 +144,9 @@ export default function RequirementsPanel({
           </div>
         )}
       </div>
+
+      {/* Integrations — Google Search Console live connection (Phase D) */}
+      <IntegrationsPanel projectId={projectId} />
 
       {/* Data Room — the project's structured definition */}
       {ctx.dataRoom && <DataRoomSection dr={ctx.dataRoom} />}

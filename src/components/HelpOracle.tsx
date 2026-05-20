@@ -378,6 +378,13 @@ const PAGES: Record<string, {
         'After ~14-30 days, click "Measure now" on the shipment to capture post-ship metrics. The card carries its before/after, and reports use this as real attribution.',
         'The Reports tab adds a "Measured impact" block: every shipped card with its target URL, click delta, and position delta. This is the data clients actually want to see.',
       ]},
+      { title: 'Integrations — Search Console & friends', icon: '🔌', items: [
+        'Connect Google Search Console on the Requirements page → Integrations section. The PM authorizes their Google account once per project.',
+        'After connecting, pick which Search Console property applies to this project (one Google account can manage many sites).',
+        'Once connected, GSC metrics (clicks, impressions, average position) pull automatically every day. No more typing numbers into the Data Room.',
+        'Manual pull is available any time with the "Pull now" button — useful when you want fresh data before generating a report.',
+        'The pulled data feeds every trend chart, every KPI tile, and the report\'s performance narrative — without manual snapshotting.',
+      ]},
     ],
     tips: [
       'A weak project brief = generic cards. Spend 10 minutes on the Data Room and your cards will be 3× sharper.',
