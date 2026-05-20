@@ -12,8 +12,9 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
-import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff } from 'lucide-react';
-import { listDocuments } from './api';
+import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { listDocuments, publishDocument } from './api';
+import { toast } from '@/hooks/use-toast';
 import type { BrandStudioDocument, BrandStudioCatalogs } from './types';
 
 interface Props {
@@ -131,17 +132,47 @@ export default function Library({ projectId, catalogs }: Props) {
 
       <div className="space-y-2">
         {docs.map((doc) => (
-          <DocumentRow key={doc.id} doc={doc} catalogs={catalogs} />
+          <DocumentRow
+            key={doc.id}
+            doc={doc}
+            catalogs={catalogs}
+            onPublishChange={(id, published) => {
+              setDocs((prev) => prev.map((d) => d.id === id ? { ...d, published_to_client: published, published_at: published ? new Date().toISOString() : undefined } : d));
+            }}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function DocumentRow({ doc, catalogs }: { doc: BrandStudioDocument; catalogs: BrandStudioCatalogs | null }) {
+function DocumentRow({
+  doc, catalogs, onPublishChange,
+}: {
+  doc: BrandStudioDocument;
+  catalogs: BrandStudioCatalogs | null;
+  onPublishChange: (id: string, published: boolean) => void;
+}) {
   const isGenerated = doc.kind === 'generated';
   const stakeholderLabel = catalogs?.stakeholder_roles.find((r) => r.key === doc.stakeholder_role)?.label;
   const audienceLabel    = catalogs?.audience_roles.find((r) => r.key === doc.audience_role)?.label;
+  const [publishing, setPublishing] = useState(false);
+
+  const togglePublish = async () => {
+    setPublishing(true);
+    const next = !doc.published_to_client;
+    const { success, error } = await publishDocument({ documentId: doc.id, publish: next });
+    setPublishing(false);
+    if (!success) {
+      toast({ title: 'Publish failed', description: error, variant: 'destructive' });
+      return;
+    }
+    onPublishChange(doc.id, next);
+    toast({
+      title: next ? 'Published to client' : 'Unpublished',
+      description: next ? 'Client can now see this in their workspace.' : 'No longer visible in the client portal.',
+    });
+  };
 
   return (
     <div className="rounded-xl border border-border bg-card/60 px-4 py-3 hover:bg-card/80 transition-colors">
@@ -164,15 +195,6 @@ function DocumentRow({ doc, catalogs }: { doc: BrandStudioDocument; catalogs: Br
             )}
             {doc.version && doc.version > 1 && (
               <span className="text-[9px] text-muted-foreground font-mono">v{doc.version}</span>
-            )}
-            {doc.published_to_client ? (
-              <span title="Visible in client portal" className="text-green-400">
-                <Eye className="h-3 w-3" />
-              </span>
-            ) : (
-              <span title="Internal only" className="text-muted-foreground/40">
-                <EyeOff className="h-3 w-3" />
-              </span>
             )}
           </div>
 
@@ -215,6 +237,26 @@ function DocumentRow({ doc, catalogs }: { doc: BrandStudioDocument; catalogs: Br
             )}
           </div>
         </div>
+
+        {/* Publish toggle (PM-only) */}
+        <button
+          onClick={togglePublish}
+          disabled={publishing}
+          title={doc.published_to_client ? 'Click to unpublish — client will no longer see this' : 'Click to publish — client can see this in their workspace'}
+          className={`text-[10px] px-2 py-1 rounded-lg font-bold flex items-center gap-1 shrink-0 disabled:opacity-50 ${
+            doc.published_to_client
+              ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+              : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/20'
+          }`}
+        >
+          {publishing ? (
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+          ) : doc.published_to_client ? (
+            <><Eye className="h-2.5 w-2.5" /> Published</>
+          ) : (
+            <><EyeOff className="h-2.5 w-2.5" /> Internal</>
+          )}
+        </button>
       </div>
     </div>
   );

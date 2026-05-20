@@ -247,3 +247,125 @@ export async function getFieldProvenance(opts: {
   if (!r?.success) return { sources: [], error: r?.error };
   return { sources: Array.isArray(r.sources) ? r.sources : [] };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   H.1.5 — Client portal
+═══════════════════════════════════════════════════════════ */
+
+export interface ClientPortalToken {
+  id:               string;
+  label?:           string;
+  client_id?:       string;
+  created_at:       string;
+  created_by?:      string;
+  expires_at?:      string;
+  revoked:          boolean;
+  revoked_at?:      string;
+  revoked_reason?:  string;
+  last_accessed_at?: string;
+  access_count:     number;
+  token?:           string;       // only returned on creation
+}
+
+export interface ClientPortalContext {
+  project: { id: string; name: string; url?: string };
+  client?: { name?: string; company?: string };
+  tier:    string;
+  client_visible_features: Record<string, boolean>;
+  brand_assets: BrandAssets | null;
+}
+
+/* ── PM-side: token management ── */
+
+export async function createClientToken(opts: {
+  projectId: string;
+  clientId?: string;
+  label?:    string;
+  expiresInDays?: number;
+  createdBy?: string;
+}): Promise<{ token?: ClientPortalToken; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_create_client_token', ...opts });
+  if (!r?.success) return { error: r?.error || 'Token creation failed.' };
+  return { token: r.token };
+}
+
+export async function listClientTokens(projectId: string): Promise<{
+  tokens: ClientPortalToken[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_client_tokens', projectId });
+  if (!r?.success) return { tokens: [], error: r?.error };
+  return { tokens: Array.isArray(r.tokens) ? r.tokens : [] };
+}
+
+export async function getTokenById(tokenId: string): Promise<{ token?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_token_by_id', tokenId });
+  if (!r?.success) return { error: r?.error || 'Token not found.' };
+  return { token: r.token };
+}
+
+export async function revokeClientToken(opts: { tokenId: string; reason?: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_revoke_client_token', ...opts });
+  if (!r?.success) return { success: false, error: r?.error || 'Revoke failed.' };
+  return { success: true };
+}
+
+/* ── PM-side: publishing ── */
+
+export async function publishDocument(opts: {
+  documentId: string; publish: boolean;
+}): Promise<{ success: boolean; published?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_publish_document', ...opts });
+  if (!r?.success) return { success: false, error: r?.error || 'Publish failed.' };
+  return { success: true, published: r.published };
+}
+
+export async function publishDocumentsBulk(opts: {
+  documentIds: string[]; publish: boolean;
+}): Promise<{ success: boolean; count?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_publish_bulk', ...opts });
+  if (!r?.success) return { success: false, error: r?.error || 'Bulk publish failed.' };
+  return { success: true, count: r.count };
+}
+
+/* ── PM-side: update entitlements convenience ── */
+
+export async function setClientPortalEnabled(opts: {
+  projectId: string; enabled: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  /* Reuse the existing entitlement update endpoint */
+  const r = await post(ENGINE, {
+    action: 'bs_update_entitlements',
+    projectId: opts.projectId,
+    clientPortalEnabled: opts.enabled,
+  });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+/* ── Client-side: token-gated calls ── */
+
+export async function clientResolve(token: string): Promise<{
+  context?: ClientPortalContext; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_resolve', token });
+  if (!r?.success) return { error: r?.error || 'Invalid or expired access link' };
+  return { context: r.context };
+}
+
+export async function clientListDocuments(token: string): Promise<{
+  documents: BrandStudioDocument[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_list_documents', token });
+  if (!r?.success) return { documents: [], error: r?.error };
+  return { documents: Array.isArray(r.documents) ? r.documents : [] };
+}
+
+export async function clientGetDocument(opts: { token: string; documentId: string }): Promise<{
+  document?: BrandStudioDocument & { raw_content?: string }; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_get_document', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { document: r.document };
+}

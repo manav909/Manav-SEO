@@ -26,12 +26,13 @@ import { supabase } from '@/lib/supabase';
 import type { LucideIcon } from 'lucide-react';
 import {
   Library as LibraryIcon, Upload, Sparkles, Palette as PaletteIcon,
-  TrendingUp, Globe, Bell, Loader2, Save, Lock,
+  TrendingUp, Globe, Bell, Loader2, Save, Lock, KeyRound,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import BrandBar from '@/components/brand-studio/BrandBar';
 import Library from '@/components/brand-studio/Library';
 import Ingest from '@/components/brand-studio/Ingest';
+import ClientAccess from '@/components/brand-studio/ClientAccess';
 import EntitlementGate from '@/components/brand-studio/EntitlementGate';
 import {
   getEntitlements, getBrandAssets, updateBrandAssets, getCatalogs,
@@ -40,7 +41,7 @@ import type {
   EntitlementResolution, BrandAssets, BrandStudioCatalogs,
 } from '@/components/brand-studio/types';
 
-type Tab = 'library' | 'ingest' | 'generate' | 'brand' | 'investor' | 'market' | 'triggers';
+type Tab = 'library' | 'ingest' | 'generate' | 'brand' | 'investor' | 'market' | 'triggers' | 'client_access';
 
 interface TabDef {
   id:      Tab;
@@ -50,13 +51,17 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { id: 'library',   label: 'Library',   icon: LibraryIcon, feature: 'brand_studio.library'  },
-  { id: 'ingest',    label: 'Ingest',    icon: Upload,      feature: 'brand_studio.ingest'   },
-  { id: 'generate',  label: 'Generate',  icon: Sparkles,    feature: 'brand_studio.generate' },
-  { id: 'brand',     label: 'Brand',     icon: PaletteIcon, feature: 'brand_studio.brand'    },
-  { id: 'investor',  label: 'Investor',  icon: TrendingUp,  feature: 'brand_studio.investor' },
-  { id: 'market',    label: 'Market',    icon: Globe,       feature: 'brand_studio.market'   },
-  { id: 'triggers',  label: 'Triggers',  icon: Bell,        feature: 'brand_studio.triggers' },
+  { id: 'library',       label: 'Library',       icon: LibraryIcon, feature: 'brand_studio.library'  },
+  { id: 'ingest',        label: 'Ingest',        icon: Upload,      feature: 'brand_studio.ingest'   },
+  { id: 'generate',      label: 'Generate',      icon: Sparkles,    feature: 'brand_studio.generate' },
+  { id: 'brand',         label: 'Brand',         icon: PaletteIcon, feature: 'brand_studio.brand'    },
+  { id: 'investor',      label: 'Investor',      icon: TrendingUp,  feature: 'brand_studio.investor' },
+  { id: 'market',        label: 'Market',        icon: Globe,       feature: 'brand_studio.market'   },
+  { id: 'triggers',      label: 'Triggers',      icon: Bell,        feature: 'brand_studio.triggers' },
+  /* Client Access is gated on the master Brand Studio access flag,
+     not on a specific feature — every tier that has Brand Studio access
+     gets the ability to configure client access. */
+  { id: 'client_access', label: 'Client Access', icon: KeyRound,    feature: 'brand_studio.access'   },
 ];
 
 export default function BrandStudio() {
@@ -306,6 +311,14 @@ export default function BrandStudio() {
               ]}
             />
           </EntitlementGate>
+        )}
+
+        {entitlements && tab === 'client_access' && (
+          <ClientAccess
+            projectId={projectId}
+            entitlements={entitlements}
+            onEntitlementsChange={(e) => setEntitlements(e)}
+          />
         )}
       </div>
     </div>

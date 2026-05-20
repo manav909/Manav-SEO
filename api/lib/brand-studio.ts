@@ -398,6 +398,20 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return handleBrandStudioIngest(action, body);
     }
 
+    /* H.1.5 — Client portal handlers ── */
+    case "bs_create_client_token":
+    case "bs_list_client_tokens":
+    case "bs_get_token_by_id":
+    case "bs_revoke_client_token":
+    case "bs_publish_document":
+    case "bs_publish_bulk":
+    case "bs_client_resolve":
+    case "bs_client_list_documents":
+    case "bs_client_get_document": {
+      const { handleBrandStudioClient } = await import("./brand-studio-client.js");
+      return handleBrandStudioClient(action, body);
+    }
+
     /* H.2+ handlers will plug in here:
        case "bs_generate_preview": return bsGeneratePreview(body);
        case "bs_generate_apply": return bsGenerateApply(body);

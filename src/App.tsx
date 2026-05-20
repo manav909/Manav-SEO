@@ -13,6 +13,7 @@ import { AuthProvider, useAuth }     from "@/contexts/AuthContext";
 import { ProjectProvider }             from "@/contexts/ProjectContext";
 import MissionControl                  from "./pages/MissionControl";
 import BrandStudio                     from "./pages/BrandStudio";
+import ClientWorkspace                 from "./pages/ClientWorkspace";
 import Oval                            from "./pages/Oval";
 import { DemoProvider }          from "@/contexts/DemoContext";
 import { ErrorBoundary }         from "@/components/ErrorBoundary";
@@ -106,6 +107,7 @@ const AppRoutes = () => {
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
         <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />
         <Route path="/r/:token"       element={<B name="client-report"> <ClientReportView />                              </B>} />
+        <Route path="/c/:token"       element={<B name="client-workspace"><ClientWorkspace />                            </B>} />
         <Route path="/admin"          element={<B name="admin">         <Admin />                                          </B>} />
         <Route path="/build"          element={<B name="build">         <Build />                                          </B>} />
 
