@@ -710,3 +710,89 @@ export async function ga4Disconnect(projectId: string): Promise<{ success: boole
   if (!r?.success) return { success: false, error: r?.error || 'Disconnect failed.' };
   return { success: true };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Auto-pilot API (Phase F)
+═══════════════════════════════════════════════════════════ */
+
+import type {
+  RuleType, ProjectRule, CardSuggestion, ProjectAlert,
+} from './types';
+
+/* Rules */
+export async function rulesList(projectId: string): Promise<{
+  rules: ProjectRule[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_rules_list', projectId });
+  if (!r?.success) return { rules: [], error: r?.error || 'List failed.' };
+  return { rules: Array.isArray(r.rules) ? r.rules : [] };
+}
+
+export async function ruleUpsert(opts: {
+  projectId: string; ruleType: RuleType; enabled?: boolean;
+  schedule?: any; config?: any;
+}): Promise<{ rule?: ProjectRule; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_rule_upsert', ...opts });
+  if (!r?.success) return { error: r?.error || 'Upsert failed.' };
+  return { rule: r.rule };
+}
+
+export async function ruleSetEnabled(ruleId: string, enabled: boolean): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_rule_set_enabled', ruleId, enabled });
+  if (!r?.success) return { success: false, error: r?.error || 'Toggle failed.' };
+  return { success: true };
+}
+
+export async function ruleDelete(ruleId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_rule_delete', ruleId });
+  if (!r?.success) return { success: false, error: r?.error || 'Delete failed.' };
+  return { success: true };
+}
+
+export async function ruleRunNow(ruleId: string): Promise<{ success: boolean; result?: any; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_rule_run_now', ruleId });
+  if (!r?.success) return { success: false, error: r?.error || 'Run failed.' };
+  return { success: true, result: r.result };
+}
+
+/* Suggestions */
+export async function suggestionsList(projectId: string, status?: string): Promise<{
+  suggestions: CardSuggestion[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_suggestions_list', projectId, status });
+  if (!r?.success) return { suggestions: [], error: r?.error || 'List failed.' };
+  return { suggestions: Array.isArray(r.suggestions) ? r.suggestions : [] };
+}
+
+export async function suggestionAccept(suggestionId: string): Promise<{ success: boolean; cardId?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_suggestion_accept', suggestionId });
+  if (!r?.success) return { success: false, error: r?.error || 'Accept failed.' };
+  return { success: true, cardId: r.card?.id };
+}
+
+export async function suggestionDismiss(suggestionId: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_suggestion_dismiss', suggestionId, reason });
+  if (!r?.success) return { success: false, error: r?.error || 'Dismiss failed.' };
+  return { success: true };
+}
+
+/* Alerts */
+export async function alertsList(projectId: string, status?: string): Promise<{
+  alerts: ProjectAlert[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_alerts_list', projectId, status });
+  if (!r?.success) return { alerts: [], error: r?.error || 'List failed.' };
+  return { alerts: Array.isArray(r.alerts) ? r.alerts : [] };
+}
+
+export async function alertAcknowledge(alertId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_alert_acknowledge', alertId });
+  if (!r?.success) return { success: false, error: r?.error || 'Acknowledge failed.' };
+  return { success: true };
+}
+
+export async function alertResolve(alertId: string, note?: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_alert_resolve', alertId, note });
+  if (!r?.success) return { success: false, error: r?.error || 'Resolve failed.' };
+  return { success: true };
+}

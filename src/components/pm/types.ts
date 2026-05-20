@@ -420,3 +420,66 @@ export interface LifecycleMap {
   blockedByCard:        Record<string, { blockers: CardBlocker[] }>;
   shipmentCountsByCard: Record<string, number>;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Auto-pilot (Phase F) — rules, suggestions, alerts
+═══════════════════════════════════════════════════════════ */
+
+export type RuleType =
+  | 'monthly_audit'
+  | 'quarterly_crawl'
+  | 'weekly_report_draft'
+  | 'monthly_report_draft'
+  | 'rank_drop_alert'
+  | 'click_drop_alert'
+  | 'audit_score_drop_alert';
+
+export interface ProjectRule {
+  id:                string;
+  project_id:        string;
+  rule_type:         RuleType;
+  enabled:           boolean;
+  schedule:          any;
+  config:            any;
+  last_fired_at:     string | null;
+  last_fire_status:  string | null;
+  last_fire_error:   string | null;
+  last_fire_summary: any;
+  created_at:        string;
+  updated_at:        string;
+}
+
+export interface CardSuggestion {
+  id:                string;
+  project_id:        string;
+  source_rule_id:    string | null;
+  source_kind:       string;
+  card_type:         string | null;
+  priority:          string | null;
+  title:             string;
+  description:       string | null;
+  requirements:      any;
+  source_refs:       any[];
+  estimated_hours:   number | null;
+  status:            'pending' | 'accepted' | 'dismissed';
+  accepted_card_id:  string | null;
+  dismiss_reason:    string | null;
+  created_at:        string;
+}
+
+export interface ProjectAlert {
+  id:               string;
+  project_id:       string;
+  source_rule_id:   string | null;
+  alert_type:       string;
+  severity:         'info' | 'warn' | 'critical';
+  title:            string;
+  detail:           any;
+  dedupe_key:       string;
+  status:           'open' | 'acknowledged' | 'resolved';
+  acknowledged_by:  string | null;
+  acknowledged_at:  string | null;
+  resolved_at:      string | null;
+  resolution_note:  string | null;
+  created_at:       string;
+}

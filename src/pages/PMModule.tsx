@@ -19,8 +19,9 @@ import * as pmApi from '@/components/pm/api';
 import RequirementsPanel from '@/components/pm/RequirementsPanel';
 import CardBoard from '@/components/pm/CardBoard';
 import ReportsPanel from '@/components/pm/ReportsPanel';
+import AutopilotPanel from '@/components/pm/AutopilotPanel';
 
-type Tab = 'requirements' | 'board' | 'reports';
+type Tab = 'requirements' | 'board' | 'reports' | 'autopilot';
 
 export default function PMModule() {
   const { selectedProject, selectedProjectId } = useProject();
@@ -54,6 +55,7 @@ export default function PMModule() {
     { id: 'requirements', label: 'Requirements' },
     { id: 'board',        label: 'Board', badge: cards.length || undefined },
     { id: 'reports',      label: 'Reports', badge: doneCount || undefined },
+    { id: 'autopilot',    label: 'Auto-pilot' },
   ];
 
   return (
@@ -144,6 +146,9 @@ export default function PMModule() {
                 projectId={selectedProjectId}
                 projectName={selectedProject?.name || ''}
               />
+            )}
+            {tab === 'autopilot' && (
+              <AutopilotPanel projectId={selectedProjectId} />
             )}
           </>
         )}

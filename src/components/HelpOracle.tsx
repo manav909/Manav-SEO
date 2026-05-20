@@ -399,6 +399,16 @@ const PAGES: Record<string, {
         'Auto-synced fields in the Data Room show an "Auto-synced from GSC" or "from GA4" pill. To override (rare — e.g. during a GA outage), click "Edit anyway" — a deliberate action that protects live data from accidental overwrites.',
         'Reports calibrate their language to data source health: confident claims when GSC + GA4 are live, hedged claims when stale, and a recommendation to connect when not connected.',
       ]},
+      { title: 'Auto-pilot — rules, suggestions, alerts', icon: '⚡', items: [
+        'Open the PM module → Auto-pilot tab. Three sub-tabs: Suggestions (cards the system thinks should exist), Alerts (anomalies detected), Rules (enable/disable per project).',
+        'Six rule types: Monthly audit, Quarterly crawl, Weekly report draft, Monthly report draft, Rank drop alert, Click drop alert, Audit score drop alert.',
+        'PM is always in the loop. The system NEVER creates a kanban card or sends a client report directly — it suggests, you accept.',
+        'Suggestions inbox: review the title/description, then Accept (creates a real card in the Library) or Dismiss (with optional reason for audit trail).',
+        'Alerts inbox: anomalies only fire when high-confidence (5+ position drop, 30%+ click drop, 10+ audit score drop). Acknowledge to mark as seen, Resolve when handled.',
+        'Alerts deduplicate — the same condition won\'t pile up multiple open alerts. Once resolved, kept forever for history.',
+        'Run now button on any rule fires it immediately, bypassing the schedule. Useful for testing or when you want fresh anomaly checks before a client call.',
+        'Cron runs daily at 06:00 UTC: pulls fresh GSC/GA4 data, then walks every enabled rule across every project. Last fire status appears on each rule.',
+      ]},
     ],
     tips: [
       'A weak project brief = generic cards. Spend 10 minutes on the Data Room and your cards will be 3× sharper.',

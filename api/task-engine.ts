@@ -433,6 +433,10 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handlePmLifecycle } = await import("./lib/pm-lifecycle.js");
     const lcResult = await handlePmLifecycle(action, body);
     if (lcResult !== null) return ok(res, lcResult);
+    /* fall through to the rules engine for pm_rule* / pm_suggestion* / pm_alert* */
+    const { handlePmRules } = await import("./lib/pm-rules.js");
+    const rulesResult = await handlePmRules(action, body);
+    if (rulesResult !== null) return ok(res, rulesResult);
   }
 
   /* ═══ GSC INTEGRATION (Phase D) — gsc_* actions ═══ */
@@ -2477,6 +2481,16 @@ Return ONLY raw JSON:
       ga4CronSummary = { error: e?.message || "ga4CronPullAll failed" };
     }
 
+    /* ── Auto-pilot rule engine (Phase F) — runs AFTER data pulls so
+       rules evaluate against fresh snapshots. Best-effort. */
+    let rulesCronSummary: any = null;
+    try {
+      const { ruleEngineTick } = await import("./lib/pm-rules.js");
+      rulesCronSummary = await ruleEngineTick();
+    } catch (e: any) {
+      rulesCronSummary = { error: e?.message || "ruleEngineTick failed" };
+    }
+
     const now = new Date().toISOString();
 
     /* Get all pending verifications due now */
@@ -2488,7 +2502,7 @@ Return ONLY raw JSON:
       .limit(10);
 
     if (!due || due.length === 0) {
-      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary });
+      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary, rulesCron: rulesCronSummary });
     }
 
     const results: any[] = [];
@@ -2626,6 +2640,7 @@ Respond with JSON only:
       pmCron:    pmCronSummary,
       gscCron:   gscCronSummary,
       ga4Cron:   ga4CronSummary,
+      rulesCron: rulesCronSummary,
       timestamp: new Date().toISOString(),
     });
   }
