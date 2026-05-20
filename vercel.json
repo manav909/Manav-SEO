@@ -34,7 +34,8 @@
       "regions": [
         "iad1"
       ],
-      "runtime": "@vercel/node@5.1.14"
+      "runtime": "@vercel/node@5.1.14",
+      "includeFiles": "api/lib/**"
     },
     "api/seo-agent.ts": {
       "maxDuration": 300,
