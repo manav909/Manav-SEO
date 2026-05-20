@@ -129,7 +129,7 @@ export async function buildReportCatalog(
 ): Promise<{ catalog: ReportBlock[]; rawData: any }> {
   /* Pull every source that could feed a block */
   const [{ data: proj }, { data: kn }, { data: cards }, { data: audits },
-         { data: snaps }, { data: crawled }] = await Promise.all([
+         { data: snaps }, { data: crawled }, { data: integrations }] = await Promise.all([
     db().from("projects").select("*").eq("id", projectId).maybeSingle(),
     db().from("project_knowledge").select("category,field_key,field_value").eq("project_id", projectId),
     db().from("kanban_tasks").select("*").eq("project_id", projectId)
@@ -140,7 +140,22 @@ export async function buildReportCatalog(
       .order("captured_at", { ascending: true }).limit(200),
     db().from("crawled_pages").select("url,page_analysis,crawled_at").eq("project_id", projectId)
       .order("crawled_at", { ascending: false }).limit(40),
+    db().from("project_integrations").select("provider,resource_id,last_pull_at,last_pull_status")
+      .eq("project_id", projectId),
   ]);
+
+  /* GSC freshness signal — used to calibrate the AI narrative's confidence */
+  const gscIntegration = (integrations || []).find((i: any) => i.provider === "gsc") as any;
+  let gscStatus: "live" | "stale" | "not_connected" = "not_connected";
+  let gscDaysSincePull: number | null = null;
+  if (gscIntegration?.resource_id) {
+    if (gscIntegration.last_pull_at) {
+      gscDaysSincePull = Math.floor((Date.now() - new Date(gscIntegration.last_pull_at).getTime()) / 86_400_000);
+      gscStatus = gscDaysSincePull <= 3 ? "live" : "stale";
+    } else {
+      gscStatus = "stale";
+    }
+  }
 
   /* group Data Room values by category */
   const km: Record<string, Record<string, string>> = {};
@@ -372,6 +387,7 @@ export async function buildReportCatalog(
       cardsDelivered, cardsInProgress, cardsPlanned,
       latestAudit, prevAudit, lastSnap, prevSnap, crawled,
       shippedRows,
+      gscStatus, gscDaysSincePull,
     },
   };
 }
@@ -466,12 +482,22 @@ function performanceFacts(rawData: any): string {
   const ships = rawData.shippedRows || [];
   const measuredShips = ships.filter((s: any) => s.measured);
 
+  /* data-source calibration — tells the narrative how confident to be */
+  const sourceLine: string =
+    rawData.gscStatus === "live"
+      ? `DATA SOURCE: Google Search Console is connected and pulled within the last 3 days. Numbers are LIVE — write with confidence about the metrics. You may state movements as fact.`
+    : rawData.gscStatus === "stale"
+      ? `DATA SOURCE: Google Search Console is connected but the last pull is ${rawData.gscDaysSincePull} days old. Hedge claims about recent movement — use phrases like "based on the latest available data".`
+      : `DATA SOURCE: Google Search Console is NOT connected. Performance numbers come from manual Data Room entries. Hedge all claims about movement — use phrases like "according to the last reported figures" — and recommend connecting GSC for live tracking.`;
+
   const cmp = (cur: any, p: any, label: string) =>
     (cur == null && p == null) ? "" :
     cur != null && p != null ? `${label}: ${cur} (was ${p}, ${(cur - p >= 0 ? "+" : "")}${(cur - p).toFixed(1)})` :
     cur != null ? `${label}: ${cur} (no prior point)` : "";
 
   const lines: string[] = [
+    sourceLine,
+    "",
     cmp(last.organic_sessions, prev.organic_sessions, "Organic sessions"),
     cmp(last.gsc_clicks,       prev.gsc_clicks,       "GSC clicks"),
     cmp(last.gsc_impressions,  prev.gsc_impressions,  "GSC impressions"),

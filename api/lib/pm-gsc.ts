@@ -316,6 +316,37 @@ export async function gscPull(opts: {
       extras:            { gsc_window_days: days, gsc_ctr: totals.ctr, gsc_property: i.resource_id },
     });
 
+    /* ── Piece 1: mirror into the Data Room ──
+       Make the Data Room the single source of truth: every successful
+       pull updates project_knowledge.analytics with source='gsc_auto'
+       and data_date=today. PM never sees stale numbers in the brief. */
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const rows = [
+        { key: "gsc_total_clicks",      value: String(totals.clicks) },
+        { key: "gsc_total_impressions", value: String(totals.impressions) },
+        { key: "gsc_avg_position",      value: totals.position.toFixed(2) },
+        { key: "gsc_ctr",               value: (totals.ctr * 100).toFixed(2) + "%" },
+      ];
+      for (const r of rows) {
+        await db().from("project_knowledge").upsert({
+          project_id:  opts.projectId,
+          category:    "analytics",
+          field_key:   r.key,
+          field_value: r.value,
+          source:      "gsc_auto",
+          source_name: i.resource_id,
+          data_date:   today,
+          notes:       `Auto-synced from Google Search Console — last ${days}-day window.`,
+          updated_at:  new Date().toISOString(),
+        }, { onConflict: "project_id,category,field_key" });
+      }
+    } catch (e: any) {
+      /* mirror is best-effort — the snapshot already landed, so charts
+         and reports still see the data. Surface the error in last_pull_error. */
+      console.error("[pm-gsc] data-room mirror failed:", e?.message || e);
+    }
+
     /* update last pull status */
     await db().from("project_integrations").update({
       last_pull_at: new Date().toISOString(),

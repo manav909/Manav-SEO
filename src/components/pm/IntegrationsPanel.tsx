@@ -139,6 +139,7 @@ export default function IntegrationsPanel({ projectId }: { projectId: string }) 
 
   const lastPullDate = status?.lastPullAt ? new Date(status.lastPullAt) : null;
   const lastPullAgo = lastPullDate ? Math.floor((Date.now() - lastPullDate.getTime()) / 86_400_000) : null;
+  const isStale = status?.connected && status.resourceId && (lastPullAgo == null || lastPullAgo > 3);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
@@ -155,8 +156,10 @@ export default function IntegrationsPanel({ projectId }: { projectId: string }) 
             <div className="flex items-center gap-2 mb-1">
               <span className="text-sm font-semibold">Google Search Console</span>
               {status?.connected && status.resourceId && (
-                <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 font-semibold">
-                  <Check className="h-3 w-3" /> Live
+                <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full font-semibold ${
+                  isStale ? 'bg-amber-500/15 text-amber-400' : 'bg-green-500/15 text-green-400'
+                }`}>
+                  {isStale ? <><AlertCircle className="h-3 w-3" /> Stale</> : <><Check className="h-3 w-3" /> Live</>}
                 </span>
               )}
               {status?.connected && !status.resourceId && (
@@ -178,9 +181,11 @@ export default function IntegrationsPanel({ projectId }: { projectId: string }) 
                 : 'Pull clicks, impressions, and average position directly from Search Console — feeds the trend charts and report attribution automatically.'}
             </div>
             {status?.connected && lastPullDate && (
-              <div className="text-[10px] text-muted-foreground mt-1">
+              <div className={`text-[10px] mt-1 ${isStale ? 'text-amber-400' : 'text-muted-foreground'}`}>
+                {isStale && <AlertCircle className="h-3 w-3 inline mr-1" />}
                 Last pull: {lastPullDate.toLocaleString('en-GB')}
                 {lastPullAgo != null && lastPullAgo > 0 && ` (${lastPullAgo} day${lastPullAgo === 1 ? '' : 's'} ago)`}
+                {isStale && <span className="ml-1 font-semibold">— refresh recommended</span>}
                 {status.lastPullStatus === 'error' && status.lastPullError && (
                   <span className="text-amber-400 ml-2 inline-flex items-center gap-1">
                     <AlertCircle className="h-3 w-3" /> {status.lastPullError.slice(0, 80)}

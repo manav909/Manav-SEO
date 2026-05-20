@@ -192,6 +192,47 @@ async function pmGatherRequirements(projectId: string) {
     }
     const dr = (cat: string, key: string) => km[cat]?.[key] || "";
 
+    /* ── Piece 4: prefer fresh GSC snapshot over project_knowledge ──
+       If GSC is connected and the latest snapshot is < 7 days old,
+       use those numbers — they're the live source of truth. The
+       mirror keeps project_knowledge in sync but a race or a stale
+       pull could still leave Data Room behind; this guarantees the
+       gather is always fresh. */
+    let gscFresh: { clicks: string; impressions: string; position: string; ctr: string; capturedAt: string } | null = null;
+    let gscStaleDays: number | null = null;
+    try {
+      const { data: latestGsc } = await db().from("metrics_snapshots")
+        .select("gsc_clicks,gsc_impressions,gsc_avg_position,extras,captured_at")
+        .eq("project_id", projectId)
+        .not("gsc_clicks", "is", null)
+        .order("captured_at", { ascending: false }).limit(1).maybeSingle();
+      if (latestGsc) {
+        const ageDays = (Date.now() - new Date((latestGsc as any).captured_at).getTime()) / 86_400_000;
+        gscStaleDays = Math.floor(ageDays);
+        if (ageDays <= 7) {
+          gscFresh = {
+            clicks:      String((latestGsc as any).gsc_clicks ?? ""),
+            impressions: String((latestGsc as any).gsc_impressions ?? ""),
+            position:    Number((latestGsc as any).gsc_avg_position ?? 0).toFixed(2),
+            ctr:         (latestGsc as any).extras?.gsc_ctr != null
+                          ? (Number((latestGsc as any).extras.gsc_ctr) * 100).toFixed(2) + "%"
+                          : "",
+            capturedAt:  (latestGsc as any).captured_at,
+          };
+        }
+      }
+    } catch { /* non-fatal */ }
+    /* helper: prefer fresh GSC for analytics fields when available */
+    const analyticsField = (key: string): string => {
+      if (gscFresh) {
+        if (key === "gsc_total_clicks")      return gscFresh.clicks;
+        if (key === "gsc_total_impressions") return gscFresh.impressions;
+        if (key === "gsc_avg_position")      return gscFresh.position;
+        if (key === "gsc_ctr")               return gscFresh.ctr;
+      }
+      return dr("analytics", key);
+    };
+
     const toList = (raw: any): string[] => {
       if (Array.isArray(raw)) return raw.filter(Boolean);
       if (typeof raw === "string" && raw.trim()) {
@@ -397,6 +438,14 @@ async function pmGatherRequirements(projectId: string) {
       baselineDate: (proj as any)?.baseline_date || "",
       currentPhase: (proj as any)?.current_phase ?? null,
 
+      /* GSC freshness signal for the UI + narrative calibration */
+      gsc: {
+        connected:     !!gscFresh || gscStaleDays != null,
+        fresh:         !!gscFresh,
+        capturedAt:    gscFresh?.capturedAt || null,
+        staleDays:     gscStaleDays,
+      },
+
       /* full Data Room, grouped by category for the UI */
       dataRoom: {
         goal: {
@@ -429,9 +478,9 @@ async function pmGatherRequirements(projectId: string) {
           topLandingPages: dr("analytics", "top_landing_pages"),
           bounceRate:      dr("analytics", "bounce_rate"),
           conversions:     dr("analytics", "conversions_monthly"),
-          gscImpressions:  dr("analytics", "gsc_total_impressions"),
-          gscClicks:       dr("analytics", "gsc_total_clicks"),
-          gscPosition:     dr("analytics", "gsc_avg_position"),
+          gscImpressions:  analyticsField("gsc_total_impressions"),
+          gscClicks:       analyticsField("gsc_total_clicks"),
+          gscPosition:     analyticsField("gsc_avg_position"),
         },
         technical: {
           pagesIndexed:   dr("technical", "pages_indexed"),
