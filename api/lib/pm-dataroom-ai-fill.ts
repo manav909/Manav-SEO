@@ -368,7 +368,7 @@ function buildSystemPrompt(): string {
      the AI knows exactly the structure expected and which select
      options are valid. */
   const fieldSchemaText = FIELDS.map((f) => {
-    const opts = f.options ? `\n      options: ${JSON.stringify(f.options)}` : "";
+    const opts = f.options ? `\n      options (use one EXACTLY): ${JSON.stringify(f.options)}` : "";
     return `  ${f.category}.${f.key}  (${f.type}, tier ${f.tier})\n    hint: ${f.hint}${opts}`;
   }).join("\n");
 
@@ -383,40 +383,28 @@ function buildSystemPrompt(): string {
     "",
     "Your task: PROPOSE values for specific Data Room fields. For each, provide an explicit CONFIDENCE LEVEL and REASONING citing the evidence you used.",
     "",
+    "You MUST call the `submit_proposals` tool with your full output. Do not write any prose outside the tool call.",
+    "",
     "HARD RULES:",
-    "1. Generate ONLY the fields listed in the FIELD SCHEMA below. Never invent new fields.",
-    "2. For each field, provide either a non-null proposal OR return null. NEVER guess to fill space.",
+    "1. Only propose fields listed in the FIELD SCHEMA below. Use the exact `category.field_key` format for `field_path`.",
+    "2. OMIT any field where evidence is insufficient. Do NOT include null entries or guess to fill space — just leave the field out of your proposals array.",
     "3. CONFIDENCE LEVELS:",
     "   - 'high': directly observable in the evidence (e.g. UVP from homepage hero, language from page detection)",
     "   - 'medium': reasonable inference from the evidence (e.g. persona from website language patterns)",
-    "   - 'low': educated guess with limited evidence (rare — usually return null instead)",
-    "4. NEVER fabricate specific numbers (employee counts, revenue figures, percentages). Return null.",
+    "   - 'low': educated guess with limited evidence (rare — usually omit instead)",
+    "4. NEVER fabricate specific numbers (employee counts, revenue figures, percentages). Omit those fields.",
     "5. For brand voice / tone, analyse actual word patterns and sentence structures in the supplied copy.",
     "6. For audience inference, ground in the actual language used on the website — who they're addressing, what pain points they highlight, what CTAs they use.",
-    "7. For SELECT fields, the value MUST exactly match one of the listed options.",
+    "7. For SELECT fields, the value MUST exactly match one of the listed options. If none fit, omit the field.",
     "8. NEVER propose values that contradict the EXISTING KNOWLEDGE section.",
-    "9. If website pages are empty/missing, return null for any field that requires website evidence.",
-    "10. CLIENT QUESTIONS: for the listed Tier-3 fields (only the client knows), produce a 'client_questions' array with well-phrased questions ready to send.",
+    "9. If website pages are empty/missing, omit any field that requires website evidence — return only what existing knowledge supports.",
+    "10. CLIENT QUESTIONS: include well-phrased questions for the listed Tier-3 fields (only the client knows). Include all of them — the PM will pick which to send.",
     "",
-    "FIELD SCHEMA (what to generate):",
+    "FIELD SCHEMA (eligible fields to propose):",
     fieldSchemaText,
     "",
-    "CLIENT QUESTIONS (Tier 3 — generate these as questions, NOT values):",
+    "CLIENT QUESTIONS (Tier 3 — include as questions, NOT values):",
     clientQText,
-    "",
-    "OUTPUT FORMAT (strict JSON, no prose, no markdown):",
-    "{",
-    '  "fields": {',
-    '    "<category>.<key>": { "value": <string>, "confidence": "high"|"medium"|"low", "reasoning": "<1-2 sentences>", "sources": ["<source_id>", ...] } | null,',
-    "    ...",
-    "  },",
-    '  "client_questions": [',
-    '    { "field_path": "<category>.<key>", "question": "<rephrased question>", "why_we_need_it": "<1 sentence>" },',
-    "    ...",
-    "  ]",
-    "}",
-    "",
-    "Return ONLY the JSON. No preamble. No explanation outside the JSON.",
   ].join("\n");
 }
 
@@ -442,15 +430,101 @@ interface AIFillResult {
 
 function parseJson(raw: string): any {
   if (!raw) return null;
-  const clean = raw.replace(/^\s*```[a-z]*\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  /* try plain parse first */
+  try { return JSON.parse(raw); } catch { /* fall through */ }
+  /* strip common LLM wrappers: markdown fences, leading prose */
+  let clean = raw.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
   try { return JSON.parse(clean); } catch { /* fall through */ }
+  /* locate the first {...} block — handles preamble like "Here is the JSON:" */
   const obj = clean.match(/\{[\s\S]*\}/);
   if (obj) { try { return JSON.parse(obj[0]); } catch { /* fall through */ } }
+  /* aggressive repair — drop trailing prose after the last balanced } */
+  const lastBrace = clean.lastIndexOf("}");
+  if (lastBrace > 0) {
+    try { return JSON.parse(clean.slice(0, lastBrace + 1)); } catch { /* fall through */ }
+  }
   return null;
 }
 
+/* ── AI generation ────────────────────────────────────────── */
+
+interface FieldProposal {
+  value:      string;
+  confidence: "high" | "medium" | "low";
+  reasoning:  string;
+  sources:    string[];
+}
+
+interface ClientQuestion {
+  field_path:      string;
+  question:        string;
+  why_we_need_it:  string;
+}
+
+interface AIFillResult {
+  fields:           Record<string, FieldProposal | null>;
+  client_questions: ClientQuestion[];
+}
+
+/* Schema for the submit_proposals tool. Defining the tool's input as
+   JSON Schema forces the AI to produce structured output that the SDK
+   parses for us — no manual JSON parsing required. */
+function buildToolSchema() {
+  return {
+    type: "object" as const,
+    properties: {
+      proposals: {
+        type: "array",
+        description: "One entry per Data Room field you can credibly propose. Omit any field where evidence is insufficient — DO NOT include null entries.",
+        items: {
+          type: "object",
+          properties: {
+            field_path: {
+              type: "string",
+              description: "category.field_key — must match one of the fields listed in the system prompt's FIELD SCHEMA exactly.",
+            },
+            value: {
+              type: "string",
+              description: "Your proposed value. For select fields, must exactly match one of the listed options.",
+            },
+            confidence: {
+              type: "string",
+              enum: ["high", "medium", "low"],
+              description: "high = directly observable; medium = reasoned inference; low = educated guess (rare).",
+            },
+            reasoning: {
+              type: "string",
+              description: "1-2 sentences citing specific evidence.",
+            },
+            sources: {
+              type: "array",
+              items: { type: "string" },
+              description: "Source identifiers used (e.g. 'page:ours:1_homepage', 'competitor_1', 'existing:goal.primary_goal').",
+            },
+          },
+          required: ["field_path", "value", "confidence", "reasoning", "sources"],
+        },
+      },
+      client_questions: {
+        type: "array",
+        description: "Well-phrased questions for Tier 3 fields the client must answer. Include the Tier 3 fields listed in the system prompt.",
+        items: {
+          type: "object",
+          properties: {
+            field_path:     { type: "string", description: "category.field_key being asked about." },
+            question:       { type: "string", description: "The question to send to the client." },
+            why_we_need_it: { type: "string", description: "Short rationale, 1 sentence." },
+          },
+          required: ["field_path", "question", "why_we_need_it"],
+        },
+      },
+    },
+    required: ["proposals", "client_questions"],
+  };
+}
+
 async function generateProposals(bundle: SourceBundle): Promise<{
-  result?: AIFillResult; error?: string; tokensUsed?: any;
+  result?: AIFillResult; error?: string; tokensUsed?: any; rawDebug?: string;
 }> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const system    = buildSystemPrompt();
@@ -459,64 +533,85 @@ async function generateProposals(bundle: SourceBundle): Promise<{
   try {
     const resp = await anthropic.messages.create({
       model:      MODEL,
-      max_tokens: 4000,
+      max_tokens: 8000,
       system,
       messages: [{ role: "user", content: userMsg }],
+      tools: [{
+        name: "submit_proposals",
+        description: "Submit your Data Room field proposals and client questions. Call this tool exactly once with your full output.",
+        input_schema: buildToolSchema() as any,
+      }],
+      tool_choice: { type: "tool", name: "submit_proposals" },
     });
 
-    const raw = resp.content?.[0]?.type === "text" ? (resp.content[0] as any).text : "";
-    const parsed = parseJson(raw);
-    if (!parsed || typeof parsed !== "object") {
-      return { error: "AI response could not be parsed as JSON" };
+    /* find the tool_use block — that's where the structured JSON lives */
+    let toolInput: any = null;
+    let textFallback = "";
+    for (const block of (resp.content || [])) {
+      if ((block as any).type === "tool_use" && (block as any).name === "submit_proposals") {
+        toolInput = (block as any).input;
+        break;
+      }
+      if ((block as any).type === "text") {
+        textFallback += (block as any).text || "";
+      }
     }
 
-    /* validate shape — accept only known fields, drop the rest */
-    const validated: AIFillResult = {
-      fields: {},
-      client_questions: [],
-    };
-    const validKeys = new Set(FIELDS.map((f) => `${f.category}.${f.key}`));
-    const fieldsIn  = parsed.fields || {};
-    for (const [key, value] of Object.entries(fieldsIn)) {
-      if (!validKeys.has(key)) continue;            /* drop unknown fields */
-      if (value === null) {
-        validated.fields[key] = null;
-        continue;
-      }
-      const v = value as any;
-      if (typeof v?.value !== "string" || !v.value.trim()) {
-        validated.fields[key] = null;
-        continue;
-      }
-      /* select-type validation — value must match one of the options */
-      const spec = FIELDS.find((f) => `${f.category}.${f.key}` === key);
-      if (spec?.type === "select" && spec.options) {
-        if (!spec.options.includes(v.value.trim() as any)) {
-          validated.fields[key] = null;
-          continue;
-        }
-      }
-      const conf = String(v.confidence || "").toLowerCase();
-      validated.fields[key] = {
-        value:      v.value.trim(),
-        confidence: (conf === "high" || conf === "medium" || conf === "low") ? conf : "medium",
-        reasoning:  String(v.reasoning || "").slice(0, 600),
-        sources:    Array.isArray(v.sources) ? v.sources.slice(0, 8).map((s: any) => String(s)) : [],
+    /* fallback: if for any reason the tool wasn't called, attempt to
+       parse JSON out of any text block the model returned. */
+    if (!toolInput && textFallback) {
+      toolInput = parseJson(textFallback);
+    }
+
+    if (!toolInput || typeof toolInput !== "object") {
+      return {
+        error: "AI did not return structured output",
+        rawDebug: textFallback.slice(0, 500),
       };
     }
-    if (Array.isArray(parsed.client_questions)) {
-      for (const q of parsed.client_questions) {
-        if (typeof q?.field_path === "string" && typeof q?.question === "string") {
-          validated.client_questions.push({
-            field_path:      q.field_path,
-            question:        q.question,
-            why_we_need_it:  String(q.why_we_need_it || "").slice(0, 400),
-          });
-        }
+
+    /* normalize: tool output uses arrays; convert to the {fields, client_questions} shape */
+    const fields: Record<string, FieldProposal | null> = {};
+    const validKeys = new Set(FIELDS.map((f) => `${f.category}.${f.key}`));
+
+    const proposalsIn = Array.isArray(toolInput.proposals) ? toolInput.proposals : [];
+    for (const p of proposalsIn) {
+      if (!p || typeof p !== "object") continue;
+      const fieldPath = String(p.field_path || "").trim();
+      if (!validKeys.has(fieldPath)) continue;
+      if (typeof p.value !== "string" || !p.value.trim()) continue;
+
+      /* select-type validation */
+      const spec = FIELDS.find((f) => `${f.category}.${f.key}` === fieldPath);
+      if (spec?.type === "select" && spec.options) {
+        if (!spec.options.includes(p.value.trim() as any)) continue;
+      }
+
+      const conf = String(p.confidence || "").toLowerCase();
+      fields[fieldPath] = {
+        value:      p.value.trim(),
+        confidence: (conf === "high" || conf === "medium" || conf === "low") ? conf : "medium",
+        reasoning:  String(p.reasoning || "").slice(0, 600),
+        sources:    Array.isArray(p.sources) ? p.sources.slice(0, 8).map((s: any) => String(s)) : [],
+      };
+    }
+
+    const clientQuestions: ClientQuestion[] = [];
+    const qsIn = Array.isArray(toolInput.client_questions) ? toolInput.client_questions : [];
+    for (const q of qsIn) {
+      if (typeof q?.field_path === "string" && typeof q?.question === "string") {
+        clientQuestions.push({
+          field_path:      q.field_path,
+          question:        q.question,
+          why_we_need_it:  String(q.why_we_need_it || "").slice(0, 400),
+        });
       }
     }
 
-    return { result: validated, tokensUsed: resp.usage };
+    return {
+      result: { fields, client_questions: clientQuestions },
+      tokensUsed: resp.usage,
+    };
   } catch (e: any) {
     return { error: e?.message || "AI generation failed" };
   }
@@ -544,8 +639,15 @@ export async function aiFillPreview(projectId: string): Promise<{
   const bundle = await gatherSources(projectId);
   if (!bundle) return { success: false, error: "project not found" };
 
-  const { result, error, tokensUsed } = await generateProposals(bundle);
-  if (error || !result) return { success: false, error: error || "generation failed" };
+  const { result, error, tokensUsed, rawDebug } = await generateProposals(bundle);
+  if (error || !result) {
+    return {
+      success: false,
+      error: rawDebug
+        ? `${error || "generation failed"} (raw: ${rawDebug.slice(0, 200)})`
+        : (error || "generation failed"),
+    };
+  }
 
   /* map field keys → display info, mark already-filled fields */
   const proposals: any[] = [];
