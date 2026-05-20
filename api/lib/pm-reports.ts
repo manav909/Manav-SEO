@@ -449,12 +449,74 @@ function styleBlock(sl: Sliders, ctx: PmContext): string {
 function projectContextBlock(rawData: any, periodStart: string, periodEnd: string): string {
   const p = rawData.project || {};
   const km = rawData.projectKnowledge || {};
+
+  /* compact line helper — emits only when value exists */
+  const ln = (label: string, value?: string): string =>
+    value && String(value).trim() ? `${label}: ${String(value).trim()}` : "";
+
+  /* Data Room V2 — feed identity, audience, content, history, commercial
+     into the narrative builder. Every line is conditional on data being
+     present, so an empty Data Room produces a minimal prompt and a full
+     one produces a deeply calibrated prompt. */
+  const identityBlock = [
+    ln("CLIENT", km.identity?.client_name),
+    ln("INDUSTRY", [km.identity?.industry, km.identity?.industry_specific].filter(Boolean).join(" — ") || undefined),
+    ln("MODEL", [km.identity?.business_model, km.identity?.lifecycle_stage].filter(Boolean).join(", ") || undefined),
+    ln("OFFERING", km.identity?.primary_offering),
+    ln("UVP", km.identity?.unique_value_prop),
+    ln("MARKETS", km.identity?.geographic_markets),
+  ].filter(Boolean);
+
+  const audienceBlock = [
+    ln("ICP", km.audience?.ideal_customer_profile),
+    ln("PRIMARY PERSONA", km.audience?.persona_1_name),
+    ln("FUNNEL FOCUS", km.audience?.funnel_focus),
+    ln("POSITIONING", km.audience?.positioning_statement),
+  ].filter(Boolean);
+
+  const contentBlock = [
+    ln("BRAND VOICE", km.content?.brand_voice),
+    ln("TONE WORDS", km.content?.brand_tone_words),
+    ln("READING LEVEL", km.content?.reading_level),
+    ln("PROHIBITED TOPICS", km.content?.prohibited_topics),
+    ln("REQUIRED DISCLAIMERS", km.content?.required_disclaimers),
+  ].filter(Boolean);
+
+  const economicsBlock = [
+    ln("VALUE PER LEAD", km.analytics?.value_per_lead),
+    ln("VALUE PER CUSTOMER (LTV)", km.analytics?.value_per_customer),
+  ].filter(Boolean);
+
+  const commercialBlock = [
+    ln("REPORT AUDIENCE", km.goal?.report_audience),
+    ln("DECISION MAKER", km.commercial?.decision_maker_role),
+    ln("DELIVERABLES EXPECTED", km.commercial?.deliverables_expected),
+    ln("ANTI-GOALS (respect)", km.goal?.anti_goals),
+  ].filter(Boolean);
+
+  const historyBlock = [
+    ln("WHAT WORKED BEFORE", km.history?.what_worked),
+    ln("WHAT DID NOT WORK", km.history?.what_didnt_work),
+    ln("ACTIVE PENALTIES", km.history?.active_penalties),
+    ln("RECENT MIGRATIONS", km.history?.recent_migrations),
+    ln("ALGORITHM IMPACTS", km.history?.algorithm_impacts),
+  ].filter(Boolean);
+
   return [
     `PROJECT: ${p.name || ""} | URL: ${p.url || ""}`,
     `PERIOD: ${periodStart || "(open start)"} → ${periodEnd || "(open end)"}`,
     `GOAL: ${km.goal?.primary_goal || ""}`,
+    km.goal?.primary_goal_narrative ? `GOAL DETAIL: ${km.goal.primary_goal_narrative}` : "",
     `TIMELINE: ${km.goal?.target_timeline || ""}`,
     `SUCCESS METRIC: ${km.goal?.success_metric || ""}`,
+
+    /* V2 sections — emitted only when filled */
+    identityBlock.length ? "\n── CLIENT IDENTITY ──\n" + identityBlock.join("\n") : "",
+    audienceBlock.length ? "\n── AUDIENCE ──\n" + audienceBlock.join("\n") : "",
+    contentBlock.length ? "\n── BRAND VOICE & CONSTRAINTS (calibrate tone; respect prohibitions) ──\n" + contentBlock.join("\n") : "",
+    economicsBlock.length ? "\n── CONVERSION ECONOMICS (use for ROI claims) ──\n" + economicsBlock.join("\n") : "",
+    commercialBlock.length ? "\n── REPORT CONTEXT ──\n" + commercialBlock.join("\n") : "",
+    historyBlock.length ? "\n── HISTORY & CONSTRAINTS (do not repeat past mistakes; acknowledge wins) ──\n" + historyBlock.join("\n") : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -549,7 +611,31 @@ function performanceFacts(rawData: any): string {
 async function generateOne(prompt: string, max = 800): Promise<string> {
   const resp = await ai().messages.create({
     model: MODEL, max_tokens: max,
-    system: "You write client-facing SEO progress reports for a senior project manager. Be specific to the data given. Never invent figures. Plain text only — no JSON, no markdown headings (the report frame supplies headings).",
+    system: [
+      "You write client-facing SEO progress reports for a senior project manager.",
+      "Be specific to the data given. Never invent figures. Plain text only — no JSON,",
+      "no markdown headings (the report frame supplies headings).",
+      "",
+      "WHEN THE PROMPT CONTAINS V2 CONTEXT SECTIONS, USE THEM:",
+      "- BRAND VOICE + TONE WORDS: match this voice. If 'plain-spoken' is in tone, drop",
+      "  any jargon. If 'warm' is there, use a conversational register. If 'evidence-based',",
+      "  ground every claim in a number from the data.",
+      "- PROHIBITED TOPICS: treat as hard constraints. Do not write about these.",
+      "- REQUIRED DISCLAIMERS: include them where contextually appropriate.",
+      "- READING LEVEL: respect it. 'Plain English Grade 6-8' = no industry shorthand.",
+      "- CONVERSION ECONOMICS: when value-per-lead or LTV is provided, translate",
+      "  traffic/conversion gains into revenue terms (a CMO/founder reads in £/$, not clicks).",
+      "- REPORT AUDIENCE: a CMO wants strategic synthesis and decisions. A Founder wants ROI",
+      "  and risk. A Marketing Manager wants tactical detail. Calibrate accordingly.",
+      "- ANTI-GOALS: never propose work that violates these.",
+      "- HISTORY: never frame current work as solving a problem the previous agency caused",
+      "  (it reads as blame-shifting). When recent migrations or algorithm impacts are",
+      "  documented, acknowledge them — they explain trends the data shows.",
+      "- ACTIVE PENALTIES: write with extra care; never claim recovery before measurement proves it.",
+      "",
+      "WHEN V2 CONTEXT IS ABSENT: write competently in a professional default voice — neutral,",
+      "evidence-based, neither over-formal nor casual. Do NOT invent context to compensate.",
+    ].join("\n"),
     messages: [{ role: "user", content: prompt }],
   });
   return (resp.content[0] as any)?.text || "";

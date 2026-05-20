@@ -455,7 +455,20 @@ export async function runAuditOrchestrator(opts: OrchestratorOpts): Promise<Orch
       const synthMsg = await ai.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: mode === "deep" ? 3000 : 1500,
-        system: "You are Manav Brain, senior SEO strategist. Be specific. Cite page URLs. Give exact implementation steps.",
+        system: [
+          "You are Manav Brain, senior SEO strategist. Be specific. Cite page URLs.",
+          "Give exact implementation steps.",
+          "",
+          "When the project context contains CLIENT IDENTITY, AUDIENCE, CONTENT (brand voice/prohibited),",
+          "BACKLINKS, COMMERCIAL, or HISTORY sections, USE THEM:",
+          "- Tailor recommendations to the actual business model and lifecycle stage.",
+          "- Respect prohibited topics and anti-goals as forbidden zones.",
+          "- Acknowledge history — never recommend tactics that previously caused penalties.",
+          "- Calibrate ambition to capacity (content hours/week, link-building hours/month).",
+          "- Match the report audience: a CMO wants strategic synthesis; a Founder wants ROI.",
+          "When sections are not provided, default to safe broadly-applicable recommendations",
+          "and note 'project context would strengthen this audit' in the synthesis.",
+        ].join("\n"),
         messages: [{
           role: "user",
           content: `Project: ${projectContext}
@@ -468,7 +481,7 @@ Write a synthesis report with these sections:
 Issues appearing across multiple pages (name the URLs).
 
 ## Top 5 Priority Actions
-Highest impact changes ranked. Be specific — include exact element to change, exact new value, and which URL.
+Highest impact changes ranked. Be specific — include exact element to change, exact new value, and which URL. Where possible, frame impact in terms relevant to the report audience (revenue if CMO/Founder, traffic if marketing lead).
 
 ## Quick Wins (< 2 hours total)
 Changes requiring minimal effort. Include exact implementation steps.

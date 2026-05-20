@@ -181,6 +181,9 @@ export interface DataRoomContext {
   goal: {
     primaryGoal: string; timeline: string; successMetric: string;
     baseline: string; budget: string; reportingCadence: string;
+    /* V2 additions on existing section — all optional for backwards compat */
+    primaryGoalNarrative?: string; secondaryGoals?: string;
+    antiGoals?: string; reportAudience?: string;
   };
   tech: {
     cms: string; cmsVersion: string; theme: string; seoPlugin: string;
@@ -188,15 +191,74 @@ export interface DataRoomContext {
   };
   access: {
     gsc: string; ga4: string; ahrefs: string; cmsAdmin: string; hosting: string;
+    /* V2 additions */
+    dns?: string; schemaEdit?: string; robotsEdit?: string;
+    sitemapRegeneration?: string; deploy?: string; notes?: string;
   };
   analytics: {
     organicSessions: string; topLandingPages: string; bounceRate: string;
     conversions: string; gscImpressions: string; gscClicks: string; gscPosition: string;
+    /* V2 additions */
+    gscCtr?: string; ga4ConversionEvents?: string;
+    valuePerLead?: string; valuePerCustomer?: string;
+    rankTrackerSource?: string; lastManualRankCheck?: string; lastManualRankNotes?: string;
   };
   technical: {
     pagesIndexed: string; pagesSubmitted: string; crawlErrors: string;
     brokenLinks: string; duplicateContent: string; schemaMarkup: string;
     robotsTxt: string; canonicalIssues: string;
+    /* V2 additions */
+    cwvLcp?: string; cwvInp?: string; cwvCls?: string;
+    mobileUsability?: string; hreflangSetup?: string;
+    httpsStatus?: string; jsRendering?: string;
+  };
+
+  /* ── V2 sections (entirely new; all optional to keep gather backwards-compatible) ── */
+  identity?: {
+    clientName?: string; legalEntity?: string;
+    industry?: string; industrySpecific?: string;
+    businessModel?: string; lifecycleStage?: string;
+    primaryOffering?: string; uniqueValueProp?: string;
+    annualRevenue?: string; geographicMarkets?: string;
+    languages?: string; yearFounded?: string;
+    headcount?: string; publicOrPrivate?: string;
+  };
+  audience?: {
+    icp?: string;
+    persona1Name?: string; persona1Motivations?: string; persona1Objections?: string;
+    persona2Name?: string; persona2Motivations?: string;
+    persona3Name?: string;
+    searchIntentSplit?: string; funnelFocus?: string;
+    positioningStatement?: string;
+  };
+  content?: {
+    brandVoice?: string; brandToneWords?: string; readingLevel?: string;
+    prohibitedTopics?: string; requiredDisclaimers?: string;
+    contentThemes?: string; contentGapsKnown?: string;
+    contentCapacity?: string; contentHoursWeekly?: string;
+    editorialCalendar?: string; publishingWorkflow?: string;
+  };
+  backlinks?: {
+    drAhrefs?: string; daMoz?: string; trustFlowMajestic?: string;
+    referringDomains?: string; highQualityLinks?: string;
+    anchorTextHealth?: string; linkBuildingApproach?: string;
+    linkBuildingCapacity?: string; backlinkAuditDate?: string;
+    toxicLinks?: string;
+  };
+  commercial?: {
+    engagementType?: string; monthlyHours?: string;
+    contractStart?: string; contractRenewal?: string;
+    pointOfContactRole?: string; decisionMakerRole?: string;
+    communicationChannel?: string; commsResponseSla?: string;
+    deliverablesExpected?: string; escalationPath?: string;
+    invoiceTerms?: string;
+  };
+  history?: {
+    priorSeoWork?: string; priorAgencyName?: string;
+    whatWorked?: string; whatDidntWork?: string;
+    activePenalties?: string; penaltyNotes?: string;
+    recentMigrations?: string; recentRedesigns?: string;
+    algorithmImpacts?: string; businessChanges?: string;
   };
 }
 

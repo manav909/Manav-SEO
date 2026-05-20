@@ -42,10 +42,12 @@ import {
   TrendingDown,
   Minus,
   Eye,
-  Zap, Database} from 'lucide-react';
+  Zap, Database, Users, Briefcase, History, FileEdit, Building2} from 'lucide-react';
 
 /* ─── types ─── */
-type KCategory = 'goal'|'cms'|'access'|'technical'|'competitor'|'content'|'analytics'|'manual'|'crawl';
+type KCategory = 'goal'|'cms'|'access'|'technical'|'competitor'|'content'|'analytics'|'manual'|'crawl'
+  /* Data Room V2 additions — see strategic doc in DATA_REQUIREMENTS comments below */
+  |'identity'|'audience'|'backlinks'|'commercial'|'history';
 interface KField { id?: string; category: KCategory; field_key: string; field_value: string; source: string; source_name?: string; data_date?: string; notes?: string; }
 interface DocRecord { id?: string; name: string; doc_type: string; raw_content?: string; extracted_data?: any; source_date?: string; file_size_kb?: number; created_at?: string; }
 
@@ -55,12 +57,16 @@ const DATA_REQUIREMENTS = [
     category: 'goal' as KCategory, label: 'Campaign Goals', icon: Target, color: '#a78bfa',
     fields: [
       {key:'primary_goal',      label:'Primary Business Goal',      type:'select',  options:['Organic Traffic Growth','Conversion Rate Increase','Brand Visibility','AI/GEO Citations','Local SEO','E-commerce Revenue','Lead Generation'],  required:true},
+      {key:'primary_goal_narrative', label:'Goal in Plain Language', type:'text', placeholder:'e.g. "Double SaaS trial signups from organic by end of Q4 — we are currently at 47/mo, target is 95/mo"', required:true},
       {key:'target_timeline',   label:'Target Timeline',            type:'select',  options:['3 months','6 months','12 months','Ongoing'],  required:true},
       {key:'success_metric',    label:'What Does Success Look Like?',type:'text',   placeholder:'e.g. 50% increase in organic traffic, ranking #3 for "best seo agency london"', required:true},
       {key:'current_baseline',  label:'Current Baseline Metric',    type:'text',   placeholder:'e.g. 2,400 organic sessions/month as of Jan 2024'},
       {key:'target_keywords',   label:'Top 3 Target Keywords',      type:'text',   placeholder:'keyword1, keyword2, keyword3'},
+      {key:'secondary_goals',   label:'Secondary Goals (up to 3)',  type:'text',   placeholder:'e.g. Build authority in topic X / improve mobile UX / capture more featured snippets'},
+      {key:'anti_goals',        label:'Anti-Goals (what NOT to do)',type:'text',   placeholder:'e.g. "Do not mention competitors by name", "Avoid claims that imply regulatory advice"'},
       {key:'budget_monthly',    label:'Monthly Retainer Budget',    type:'text',   placeholder:'e.g. £2,500/month'},
       {key:'reporting_cadence', label:'Client Reporting Frequency', type:'select', options:['Weekly','Bi-weekly','Monthly','Quarterly']},
+      {key:'report_audience',   label:'Who Reads The Reports?',     type:'text',   placeholder:'e.g. "CMO + VP Growth"; titles not names — calibrates tone & depth'},
     ]
   },
   {
@@ -81,26 +87,39 @@ const DATA_REQUIREMENTS = [
   {
     category: 'access' as KCategory, label: 'Tool Access', icon: Shield, color: '#4ade80',
     fields: [
-      {key:'gsc_access',        label:'Google Search Console Access',  type:'select', options:['Full Owner','View Only','Need to Request','Client will share data'], required:true},
-      {key:'ga4_access',        label:'Google Analytics 4 Access',     type:'select', options:['Full Admin','View Only','Need to Request','Using UA only','None']},
+      {key:'gsc_access',        label:'Google Search Console Access',  type:'select', options:['Full Owner','View Only','Need to Request','Client will share data','Connected via OAuth'], required:true},
+      {key:'ga4_access',        label:'Google Analytics 4 Access',     type:'select', options:['Full Admin','View Only','Need to Request','Using UA only','None','Connected via OAuth'], required:true},
       {key:'ahrefs_access',     label:'Ahrefs / Semrush Access',       type:'select', options:['Full Agency Access','Limited','Client Account','No Access']},
       {key:'screaming_frog',    label:'Screaming Frog Available',      type:'select', options:['Yes — licensed','Yes — free (500 limit)','No']},
-      {key:'cms_admin',         label:'CMS Admin Access',              type:'select', options:['Full Admin','Editor Only','Need to Request','Via Client']},
+      {key:'cms_admin',         label:'CMS Admin Access',              type:'select', options:['Full Admin','Editor Only','Need to Request','Via Client'], required:true},
       {key:'hosting_access',    label:'Hosting/Server Access',         type:'select', options:['Full cPanel/SSH','Via Plugin','Client only','Not needed']},
+      {key:'dns_access',        label:'DNS Edit Access',               type:'select', options:['Yes — direct','Via client','Need to Request','Not needed for this work']},
+      {key:'schema_edit_ability', label:'Can We Edit Structured Data?',type:'select', options:['Yes — directly via CMS','Via plugin','Dev team only','No']},
+      {key:'robots_edit_ability', label:'Can We Edit robots.txt?',     type:'select', options:['Yes — directly','Via dev request','No']},
+      {key:'sitemap_regeneration', label:'Sitemap Regeneration',       type:'select', options:['Automatic on publish','Manual rebuild needed','Unknown']},
+      {key:'deploy_access',     label:'Deploy Access',                 type:'select', options:['Yes — we can deploy','Via dev gatekeeper','Client only']},
+      {key:'access_notes',      label:'Other Tool Access Notes',       type:'text',   placeholder:'e.g. "GA4 client manages — they send monthly screenshots"'},
     ]
   },
   {
     category: 'analytics' as KCategory, label: 'Analytics Baseline', icon: BarChart3, color: '#facc15',
     fields: [
-      {key:'organic_sessions_monthly',  label:'Monthly Organic Sessions (current)',  type:'text', placeholder:'e.g. 2,400', required:true},
+      {key:'organic_sessions_monthly',  label:'Monthly Organic Sessions (current)',  type:'text', placeholder:'e.g. 2,400 — auto-filled if GA4 connected', required:true},
       {key:'organic_sessions_baseline_date', label:'Baseline Date',                 type:'date', placeholder:''},
       {key:'top_landing_pages',         label:'Top 5 Landing Pages',                type:'text', placeholder:'URL1, URL2, URL3, URL4, URL5'},
-      {key:'bounce_rate',               label:'Organic Bounce Rate',                type:'text', placeholder:'e.g. 68%'},
+      {key:'bounce_rate',               label:'Organic Bounce Rate',                type:'text', placeholder:'e.g. 68% — auto-filled if GA4 connected'},
       {key:'avg_session_duration',      label:'Avg Session Duration (Organic)',     type:'text', placeholder:'e.g. 2m 14s'},
-      {key:'conversions_monthly',       label:'Monthly Conversions (Goal)',         type:'text', placeholder:'e.g. 47 leads, 12 sales'},
-      {key:'gsc_total_impressions',     label:'GSC Monthly Impressions',            type:'text', placeholder:'e.g. 84,000'},
-      {key:'gsc_total_clicks',          label:'GSC Monthly Clicks',                 type:'text', placeholder:'e.g. 2,100'},
-      {key:'gsc_avg_position',          label:'GSC Average Position',               type:'text', placeholder:'e.g. 18.4'},
+      {key:'conversions_monthly',       label:'Monthly Conversions (Goal)',         type:'text', placeholder:'e.g. 47 leads — auto-filled if GA4 connected'},
+      {key:'ga4_conversion_events',     label:'GA4 Conversion Event Names',         type:'text', placeholder:'e.g. "purchase, generate_lead, contact_form_submit" — what GA4 calls a conversion here'},
+      {key:'value_per_lead',            label:'Value Per Lead (£/$)',               type:'text', placeholder:'e.g. £125 average — enables ROI claims in reports'},
+      {key:'value_per_customer',        label:'Value Per Customer (LTV)',           type:'text', placeholder:'e.g. £1,800 lifetime — enables ROI claims'},
+      {key:'gsc_total_impressions',     label:'GSC Monthly Impressions',            type:'text', placeholder:'e.g. 84,000 — auto-filled if GSC connected'},
+      {key:'gsc_total_clicks',          label:'GSC Monthly Clicks',                 type:'text', placeholder:'e.g. 2,100 — auto-filled if GSC connected'},
+      {key:'gsc_avg_position',          label:'GSC Average Position',               type:'text', placeholder:'e.g. 18.4 — auto-filled if GSC connected'},
+      {key:'gsc_ctr',                   label:'GSC Click-Through Rate',             type:'text', placeholder:'e.g. 2.5% — auto-filled if GSC connected'},
+      {key:'rank_tracker_source',       label:'Rank Tracker Source',                type:'select', options:['Ahrefs','SEMrush','Moz','Serpstat','SE Ranking','Manual Check','None']},
+      {key:'last_manual_rank_check',    label:'Last Manual Rank Check Date',        type:'date', placeholder:'Helpful when no rank tracker is connected'},
+      {key:'last_manual_rank_notes',    label:'Manual Rank Check Notes',            type:'text', placeholder:'e.g. "Target keyword 1: pos 8 → 5 over last week"'},
     ]
   },
   {
@@ -109,12 +128,19 @@ const DATA_REQUIREMENTS = [
       {key:'pages_indexed',        label:'Pages Indexed (GSC)',      type:'text', placeholder:'e.g. 847 from GSC Coverage report'},
       {key:'pages_submitted',      label:'Pages Submitted (Sitemap)',type:'text', placeholder:'e.g. 1,200'},
       {key:'crawl_errors',         label:'Known Crawl Errors',       type:'text', placeholder:'e.g. 23 404s, 5 redirect chains'},
-      {key:'broken_links',         label:'Broken Internal Globes',    type:'text', placeholder:'e.g. 12 broken links (from Screaming Frog)'},
+      {key:'broken_links',         label:'Broken Internal Links',    type:'text', placeholder:'e.g. 12 broken links (from Screaming Frog)'},
       {key:'duplicate_content',    label:'Duplicate Content Issues', type:'text', placeholder:'e.g. 8 duplicate title tags'},
       {key:'schema_markup',        label:'Schema Markup Present',    type:'select', options:['Yes — comprehensive','Partial','None','Unknown']},
       {key:'sitemap_url',          label:'Sitemap URL',              type:'text', placeholder:'e.g. https://domain.com/sitemap.xml'},
       {key:'robots_txt',           label:'Robots.txt Status',        type:'select', options:['OK','Blocking important pages','Missing','Not checked']},
       {key:'canonical_issues',     label:'Canonical Tag Issues',     type:'text', placeholder:'e.g. None / 4 self-referencing / 12 missing'},
+      {key:'cwv_lcp',              label:'Core Web Vitals — LCP',    type:'text', placeholder:'e.g. 2.4s (good <2.5s)'},
+      {key:'cwv_inp',              label:'Core Web Vitals — INP',    type:'text', placeholder:'e.g. 180ms (good <200ms) — INP replaced FID in March 2024'},
+      {key:'cwv_cls',              label:'Core Web Vitals — CLS',    type:'text', placeholder:'e.g. 0.08 (good <0.1)'},
+      {key:'mobile_usability',     label:'Mobile Usability Issues',  type:'text', placeholder:'e.g. 0 issues from GSC Mobile Usability report'},
+      {key:'hreflang_setup',       label:'Hreflang Setup',           type:'select', options:['Not needed (single market)','Implemented correctly','Implemented with errors','Missing']},
+      {key:'https_status',         label:'HTTPS / SSL Status',       type:'select', options:['Active everywhere','Mixed content warnings','Not active','Unknown']},
+      {key:'js_rendering',         label:'JavaScript Rendering',     type:'select', options:['Server-rendered (good for SEO)','Hybrid SSR/CSR','Client-only (SPA — needs careful config)','Unknown']},
     ]
   },
   {
@@ -122,12 +148,145 @@ const DATA_REQUIREMENTS = [
     fields: [
       {key:'competitor_1',       label:'Main Competitor #1',           type:'text', placeholder:'domain.com'},
       {key:'competitor_1_dr',    label:'Competitor 1 Domain Rating',   type:'text', placeholder:'e.g. DR 45 (Ahrefs)'},
+      {key:'competitor_1_position', label:'Competitor 1 — Where They Win', type:'text', placeholder:'e.g. "Strong on transactional keywords; weak on educational TOFU"'},
       {key:'competitor_2',       label:'Main Competitor #2',           type:'text', placeholder:'domain.com'},
       {key:'competitor_2_dr',    label:'Competitor 2 Domain Rating',   type:'text', placeholder:'e.g. DR 38'},
+      {key:'competitor_2_position', label:'Competitor 2 — Where They Win', type:'text', placeholder:'e.g. "Owns informational SERPs with deep guides"'},
       {key:'competitor_3',       label:'Main Competitor #3',           type:'text', placeholder:'domain.com'},
+      {key:'competitor_3_dr',    label:'Competitor 3 Domain Rating',   type:'text', placeholder:'e.g. DR 28'},
+      {key:'aspirational_competitor',  label:'Aspirational Competitor',type:'text', placeholder:'e.g. "stripe.com — who we want to look like in 18 months"'},
       {key:'our_domain_rating',  label:'Our Domain Rating',            type:'text', placeholder:'e.g. DR 22 (Ahrefs)'},
       {key:'our_referring_domains',label:'Our Referring Domains',      type:'text', placeholder:'e.g. 184 (Ahrefs)'},
       {key:'content_gap_keywords',label:'Key Competitor Content Gaps', type:'text', placeholder:'Keywords they rank for that we do not'},
+      {key:'differentiation',    label:'Our Differentiation in One Sentence', type:'text', placeholder:'e.g. "Only platform built for SEO consultants, not in-house teams"', required:true},
+    ]
+  },
+
+  /* ═══════════════════════════════════════════════════════════════════
+     Data Room V2 — additional categories added during the integration
+     foundation work. These do not replace any existing categories;
+     they expand the Data Room's coverage so reports, audits, card
+     generation, and the AI narrative have richer human-supplied
+     context to work with.
+
+     STRATEGIC NOTES (as digital marketing specialist):
+     - identity: who the client is at the business level. Required
+       because every AI output should feel client-specific, not generic.
+     - audience: who we are writing for. Without this, content strategy
+       is guesswork.
+     - content: brand voice, prohibited topics, capacity. Calibrates
+       every piece of generated text.
+     - backlinks: authority context. Mostly manual since most backlink
+       tools have no free API; treat as periodic manual updates.
+     - commercial: retainer terms + stakeholders. Shapes report style
+       and what cards we can realistically execute.
+     - history: institutional memory. Stops the AI repeating mistakes
+       and lets it acknowledge prior wins.
+
+     Required-vs-optional discipline: required only when the field's
+     absence genuinely degrades downstream output. Everything else is
+     optional with helpful placeholders.
+  ═══════════════════════════════════════════════════════════════════ */
+
+  {
+    category: 'identity' as KCategory, label: 'Client & Project Identity', icon: Building2, color: '#60a5fa',
+    fields: [
+      {key:'client_name',       label:'Client / Brand Name',         type:'text',   placeholder:'The trading name', required:true},
+      {key:'legal_entity',      label:'Legal Entity (if different)', type:'text',   placeholder:'e.g. Acme Limited (UK) — used in contracts/disclaimers'},
+      {key:'industry',          label:'Industry',                    type:'select', options:['SaaS','E-commerce','Professional Services','Healthcare','Finance/Fintech','Education','Travel/Hospitality','Real Estate','Manufacturing','Marketplace','Media/Publishing','Nonprofit','Retail','Legal','Other'], required:true},
+      {key:'industry_specific', label:'Industry — Specific',         type:'text',   placeholder:'e.g. "B2B SaaS for SEO agencies", "DTC men\'s skincare", "RIA financial advisor"'},
+      {key:'business_model',    label:'Business Model',              type:'select', options:['B2B','B2C','B2B2C','Marketplace','DTC','Agency','Nonprofit','Government'], required:true},
+      {key:'lifecycle_stage',   label:'Company Lifecycle Stage',     type:'select', options:['Pre-launch','Early traction','Growth','Mature','Pivoting','Acquired/being acquired'], required:true},
+      {key:'primary_offering',  label:'Primary Product / Service',   type:'text',   placeholder:'One-paragraph description of what they sell and to whom', required:true},
+      {key:'unique_value_prop', label:'Unique Value Proposition',    type:'text',   placeholder:'One sentence — what makes them different/better', required:true},
+      {key:'annual_revenue',    label:'Annual Revenue Range',        type:'select', options:['Under £100k','£100k-£1M','£1M-£10M','£10M-£100M','£100M+','Public company','Prefer not to say']},
+      {key:'geographic_markets',label:'Geographic Markets',          type:'text',   placeholder:'e.g. "UK + Ireland primary, EU secondary"', required:true},
+      {key:'languages',         label:'Languages Targeted',          type:'text',   placeholder:'e.g. "English (UK), French, German"', required:true},
+      {key:'year_founded',      label:'Year Founded',                type:'text',   placeholder:'e.g. 2018'},
+      {key:'headcount',         label:'Headcount Range',             type:'select', options:['Solo founder','2-10','11-50','51-200','201-1000','1000+']},
+      {key:'public_or_private', label:'Public or Private',           type:'select', options:['Private','Public (listed)','Private equity backed','VC-backed','Bootstrapped']},
+    ]
+  },
+
+  {
+    category: 'audience' as KCategory, label: 'Audience & Positioning', icon: Users, color: '#22d3ee',
+    fields: [
+      {key:'ideal_customer_profile', label:'Ideal Customer Profile (ICP)', type:'text', placeholder:'B2B: firmographics — industry, size, role, geography. B2C: demographics — age, income, life stage, interests', required:true},
+      {key:'persona_1_name',         label:'Buyer Persona #1 — Title/Role', type:'text', placeholder:'e.g. "Marketing Director at mid-market SaaS"', required:true},
+      {key:'persona_1_motivations',  label:'Persona #1 — Motivations',      type:'text', placeholder:'What pain are they solving / what outcome do they want'},
+      {key:'persona_1_objections',   label:'Persona #1 — Objections',       type:'text', placeholder:'Common reasons they hesitate — price, fit, switching cost, etc.'},
+      {key:'persona_2_name',         label:'Buyer Persona #2 — Title/Role', type:'text', placeholder:'Optional — second persona if there is one'},
+      {key:'persona_2_motivations',  label:'Persona #2 — Motivations',      type:'text', placeholder:''},
+      {key:'persona_3_name',         label:'Buyer Persona #3 — Title/Role', type:'text', placeholder:'Optional'},
+      {key:'search_intent_split',    label:'Search Intent Priority',        type:'select', options:['Mostly informational (TOFU)','Mostly commercial/transactional (BOFU)','Balanced TOFU + BOFU','Mostly navigational (brand)','Mixed — depends on persona']},
+      {key:'funnel_focus',           label:'Funnel Stage Focus',            type:'select', options:['TOFU — awareness/education','MOFU — consideration','BOFU — decision/conversion','Full-funnel'], required:true},
+      {key:'positioning_statement',  label:'Positioning Statement',         type:'text', placeholder:'e.g. "For [audience] who [need], [brand] is the [category] that [unique benefit]"'},
+    ]
+  },
+
+  {
+    category: 'content' as KCategory, label: 'Content & Editorial', icon: FileEdit, color: '#a3e635',
+    fields: [
+      {key:'brand_voice',          label:'Brand Voice (1-2 sentences)',  type:'text', placeholder:'e.g. "Confident, plain-spoken, never jargon-y. Treats the reader as smart and busy."', required:true},
+      {key:'brand_tone_words',     label:'Brand Tone Words (3-5)',       type:'text', placeholder:'e.g. "warm, direct, evidence-based, occasionally witty"', required:true},
+      {key:'reading_level',        label:'Target Reading Level',         type:'select', options:['Plain English (Grade 6-8)','Professional (Grade 9-12)','Specialist (industry-aware)','Academic/technical (postgrad)']},
+      {key:'prohibited_topics',    label:'Prohibited Claims / Topics',   type:'text', placeholder:'e.g. "No medical advice; no comparisons by competitor name; no claims about regulatory approval"'},
+      {key:'required_disclaimers', label:'Required Legal Disclaimers',   type:'text', placeholder:'e.g. "All financial figures are illustrative" / GDPR notes'},
+      {key:'content_themes',       label:'Top 3-5 Content Themes',       type:'text', placeholder:'e.g. "Technical SEO, AI search, agency operations, case studies, industry commentary"', required:true},
+      {key:'content_gaps_known',   label:'Acknowledged Content Gaps',    type:'text', placeholder:'e.g. "We know we should cover [topic] but have not — would be priority for next quarter"'},
+      {key:'content_capacity',     label:'Content Production Capacity',  type:'select', options:['In-house writer(s) — full-time','In-house — part-time','Freelance pool','Agency-written','AI-assisted with editor','Mixed']},
+      {key:'content_hours_weekly', label:'Content Hours / Week',         type:'text', placeholder:'e.g. "8-10 hours of writing + 2 of editing"'},
+      {key:'editorial_calendar',   label:'Editorial Calendar System',    type:'select', options:['Notion','Airtable','Asana','Trello','Spreadsheet','None — ad hoc','Other']},
+      {key:'publishing_workflow',  label:'Publishing Workflow',          type:'text', placeholder:'e.g. "Draft → editor review → SEO check → publish → distribute"'},
+    ]
+  },
+
+  {
+    category: 'backlinks' as KCategory, label: 'Backlinks & Authority', icon: Link2, color: '#c084fc',
+    fields: [
+      {key:'domain_rating_ahrefs', label:'Ahrefs Domain Rating (DR)',    type:'text', placeholder:'e.g. 22 — refreshed quarterly is fine'},
+      {key:'domain_authority_moz', label:'Moz Domain Authority (DA)',    type:'text', placeholder:'e.g. 28 — if Moz is used instead'},
+      {key:'trust_flow_majestic',  label:'Majestic Trust Flow',          type:'text', placeholder:'Optional — if Majestic is the tool of choice'},
+      {key:'referring_domains',    label:'Total Referring Domains',      type:'text', placeholder:'e.g. 184 — from Ahrefs/Semrush'},
+      {key:'high_quality_links',   label:'Notable Quality Links (top 5)',type:'text', placeholder:'List the 5 best — from publications, .edu, .gov, industry sites'},
+      {key:'anchor_text_health',   label:'Anchor Text Distribution',     type:'select', options:['Healthy mix','Over-optimized (penalty risk)','Mostly branded','Mostly naked URLs','Unknown']},
+      {key:'link_building_approach', label:'Link Building Approach',     type:'select', options:['Digital PR','Manual outreach','Guest posting','HARO/Qwoted/Connectively','Broken link building','None active','Mixed']},
+      {key:'link_building_capacity', label:'Link Building Hours / Month',type:'text', placeholder:'e.g. "10-15 hours/mo via freelance specialist"'},
+      {key:'backlink_audit_date',  label:'Last Backlink Audit Date',     type:'date', placeholder:''},
+      {key:'toxic_links',          label:'Known Toxic Links',            type:'text', placeholder:'e.g. "12 disavowed in March 2024" or "None known"'},
+    ]
+  },
+
+  {
+    category: 'commercial' as KCategory, label: 'Commercial & Engagement', icon: Briefcase, color: '#fbbf24',
+    fields: [
+      {key:'engagement_type',      label:'Engagement Type',              type:'select', options:['Monthly retainer','Project-based','Hybrid retainer + project','Performance/results-based','One-off audit','Consulting hours'], required:true},
+      {key:'monthly_hours',        label:'Monthly Hours (if retainer)',  type:'text',   placeholder:'e.g. "20 hours/month" or "5 days strategic + ad hoc"'},
+      {key:'contract_start',       label:'Contract Start Date',          type:'date', placeholder:''},
+      {key:'contract_renewal',     label:'Contract Renewal Date',        type:'date', placeholder:''},
+      {key:'point_of_contact_role',label:'Primary Point of Contact (Role)', type:'text', placeholder:'e.g. "Head of Marketing" — titles, not names', required:true},
+      {key:'decision_maker_role',  label:'Final Decision Maker (Role)',  type:'text',   placeholder:'e.g. "CMO" or "Founder/CEO"'},
+      {key:'communication_channel',label:'Communication Channel',        type:'select', options:['Slack Connect','Email only','Microsoft Teams','Weekly calls + email','Daily Slack + monthly calls','Other'], required:true},
+      {key:'comms_response_sla',   label:'Expected Response SLA',        type:'select', options:['Same day','Within 24h','Within 48h','Within a week','No formal SLA']},
+      {key:'deliverables_expected',label:'Reporting Deliverables Expected', type:'text', placeholder:'e.g. "Monthly PDF report + quarterly strategic review"', required:true},
+      {key:'escalation_path',      label:'Escalation Path',              type:'text',   placeholder:'e.g. "If contact unresponsive → CMO (with notice)"'},
+      {key:'invoice_terms',        label:'Invoice / Payment Terms',      type:'select', options:['Net 7','Net 14','Net 30','Net 45','Net 60','Prepaid quarterly','Prepaid annually']},
+    ]
+  },
+
+  {
+    category: 'history' as KCategory, label: 'History & Context', icon: History, color: '#94a3b8',
+    fields: [
+      {key:'prior_seo_work',       label:'Previous SEO Work',            type:'select', options:['None — we are first','In-house team','Previous agency','Freelance consultant','Mixed history'], required:true},
+      {key:'prior_agency_name',    label:'Previous Agency / Consultant', type:'text',   placeholder:'Optional — useful for context, not for blame'},
+      {key:'what_worked',          label:'What Worked Previously',       type:'text',   placeholder:'e.g. "Technical fixes lifted indexed pages 40%" — informs what to double down on'},
+      {key:'what_didnt_work',      label:'What Did Not Work',            type:'text',   placeholder:'e.g. "Generic link building from PBNs caused manual action" — informs what to avoid'},
+      {key:'active_penalties',     label:'Active Penalties / Manual Actions', type:'select', options:['None','Manual action (lifted)','Manual action (active)','Algorithmic suspected','Unknown']},
+      {key:'penalty_notes',        label:'Penalty Notes',                type:'text',   placeholder:'Date, type, status, recovery plan if applicable'},
+      {key:'recent_migrations',    label:'Recent Migrations / Replatforms', type:'text', placeholder:'e.g. "Moved from WordPress to Webflow in Aug 2024 — 18% traffic drop"'},
+      {key:'recent_redesigns',     label:'Recent Site Redesigns',        type:'text',   placeholder:'e.g. "Q3 2024 full redesign — URL structure changed"'},
+      {key:'algorithm_impacts',    label:'Notable Algorithm Update Impacts', type:'text', placeholder:'e.g. "Lost 25% from Sept 2023 Helpful Content; recovered Jan 2024"'},
+      {key:'business_changes',     label:'Business Changes That Affect SEO', type:'text', placeholder:'e.g. "New product line in Q1 2025 — need new keyword cluster"'},
     ]
   },
 ];
@@ -441,7 +600,7 @@ export default function DataRoom() {
   const { clients, projects } = useAuth();
   const [selProjId, setSelProjId] = useState('');
   const handleProjectChange = useProjectSync(selProjId, setSelProjId);
-  const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'>('overview');
+  const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'|'crawl'|'identity'|'audience'|'content'|'backlinks'|'commercial'|'history'>('overview');
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [saving,    setSaving]    = useState(false);
@@ -1491,17 +1650,23 @@ Evidence: ${c.data_basis}` : ''}`,
             {/* Tab nav */}
             <div className="flex gap-1 border-b border-border overflow-x-auto">
               {[
-                {id:'overview',    label:'Overview',      icon:Layers   },
+                {id:'overview',    label:'Overview',      icon:Layers     },
+                {id:'identity',    label:'Identity',      icon:Building2  },
                 {id:'goals',       label:'Goals',         icon:Target     },
-                {id:'cms',         label:'CMS & Tech',    icon:Settings       },
-                {id:'access',      label:'Tool Access',   icon:Shield     },
+                {id:'audience',    label:'Audience',      icon:Users      },
+                {id:'competitors', label:'Competitors',   icon:Star       },
                 {id:'analytics',   label:'Analytics',     icon:BarChart3  },
                 {id:'technical',   label:'Technical',     icon:Settings   },
-                {id:'competitors', label:'Competitors',   icon:Star       },
+                {id:'backlinks',   label:'Backlinks',     icon:Link2      },
+                {id:'content',     label:'Content',       icon:FileEdit   },
+                {id:'cms',         label:'CMS & Tech',    icon:Settings   },
+                {id:'access',      label:'Tool Access',   icon:Shield     },
+                {id:'commercial',  label:'Commercial',    icon:Briefcase  },
+                {id:'history',     label:'History',       icon:History    },
                 {id:'documents',   label:'Documents',     icon:FileText   },
                 {id:'crawl',       label:'URL Crawler',   icon:Globe      },
               ].map(({id,label,icon:Icon})=>{
-                const catKey = id === 'overview' || id === 'documents' ? null :
+                const catKey = id === 'overview' || id === 'documents' || id === 'crawl' ? null :
                                id === 'goals' ? 'goal' : id === 'competitors' ? 'competitor' : id as KCategory;
                 const health = catKey ? catHealth(catKey) : null;
                 return (
@@ -1546,12 +1711,13 @@ Evidence: ${c.data_basis}` : ''}`,
                       return (
                         <button key={cat.category}
                           onClick={()=>{
-                            if (cat.category==='goal') setTab('goals');
-                            else if (cat.category==='cms') setTab('cms');
-                            else if (cat.category==='access') setTab('access');
-                            else if (cat.category==='analytics') setTab('analytics');
-                            else if (cat.category==='technical') setTab('technical');
-                            else if (cat.category==='competitor') setTab('competitors');
+                            /* Category → tab id. Most are 1:1 but 'goal' and 'competitor'
+                               historically have plural tab ids ('goals', 'competitors'). */
+                            const tabId =
+                              cat.category === 'goal'       ? 'goals' :
+                              cat.category === 'competitor' ? 'competitors' :
+                              cat.category;
+                            setTab(tabId as any);
                           }}
                           className="rounded-xl border border-border bg-background/60 p-3 text-left hover:border-primary/30 transition-colors">
                           <div className="flex items-center gap-2 mb-1.5">
@@ -1602,12 +1768,11 @@ Evidence: ${c.data_basis}` : ''}`,
                             <span className="text-muted-foreground">{cat.label} →</span>
                             <span className="font-medium">{f.label}</span>
                             <button onClick={()=>{
-                              if (cat.category==='goal') setTab('goals');
-                              else if (cat.category==='cms') setTab('cms');
-                              else if (cat.category==='access') setTab('access');
-                              else if (cat.category==='analytics') setTab('analytics');
-                              else if (cat.category==='technical') setTab('technical');
-                              else if (cat.category==='competitor') setTab('competitors');
+                              const tabId =
+                                cat.category === 'goal'       ? 'goals' :
+                                cat.category === 'competitor' ? 'competitors' :
+                                cat.category;
+                              setTab(tabId as any);
                             }} className="ml-auto text-xs text-primary hover:underline">Fill now →</button>
                           </div>
                         ))
@@ -1625,6 +1790,13 @@ Evidence: ${c.data_basis}` : ''}`,
             {tab === 'analytics'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="analytics"/></div>}
             {tab === 'technical'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="technical"/></div>}
             {tab === 'competitors' && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="competitor"/></div>}
+            {/* Data Room V2 sections — added during integration foundation work */}
+            {tab === 'identity'    && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="identity"/></div>}
+            {tab === 'audience'    && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="audience"/></div>}
+            {tab === 'content'     && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="content"/></div>}
+            {tab === 'backlinks'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="backlinks"/></div>}
+            {tab === 'commercial'  && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="commercial"/></div>}
+            {tab === 'history'     && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="history"/></div>}
 
             {/* ── CRAWL TAB ── */}
             {tab === 'crawl' && (

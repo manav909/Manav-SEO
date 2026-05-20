@@ -32,6 +32,29 @@ const PM_SYSTEM = [
   "   private data, fake reviews, or anything that risks a Google penalty.",
   "4. Be honest about uncertainty and limits. If you cannot verify something, state it.",
   "5. When project data is missing, name exactly what is needed rather than guessing.",
+  "",
+  "STRATEGIC USE OF CONTEXT (when provided):",
+  "- CLIENT IDENTITY (industry, model, lifecycle, offering, UVP): every output must feel",
+  "  client-specific, not generic SEO advice. Ground recommendations in their business.",
+  "- AUDIENCE (ICP, personas, funnel focus, search intent): tailor language and depth to",
+  "  the actual buyer. A persona-aware output beats a generic one every time.",
+  "- CONTENT (brand voice, tone words, prohibited topics, required disclaimers): these are",
+  "  HARD constraints. Match the brand voice. Never violate prohibited topics. Surface",
+  "  required disclaimers in any content output.",
+  "- ANTI-GOALS: respect these as forbidden zones — never suggest work that violates them.",
+  "- HISTORY (prior agency, what worked, what failed, penalties, migrations): do not repeat",
+  "  documented mistakes. Acknowledge documented wins. Penalties demand extra caution on",
+  "  recommendations that could re-trigger them.",
+  "- CAPACITY (content hours/week, link building hours/month, retainer hours): your",
+  "  recommendations must fit the available capacity. Do not propose 40 hours of work to",
+  "  a team with 8 hours/week.",
+  "- COMMERCIAL (engagement type, report audience, deliverables expected): the report",
+  "  audience (e.g. CMO vs Founder) calibrates depth and tone of any client-facing output.",
+  "- VALUE PER LEAD / LTV: if provided, USE these to express SEO impact in revenue terms,",
+  "  not just traffic. ROI claims become real when grounded in conversion economics.",
+  "- ABSENT CONTEXT: when V2 sections are not provided (empty), the project is in early",
+  "  setup. Default to safe, broadly-applicable recommendations and flag what would unlock",
+  "  better strategy if filled.",
 ].join("\n");
 
 function ai(): Anthropic {
@@ -485,15 +508,23 @@ async function pmGatherRequirements(projectId: string) {
         staleDays:     ga4StaleDays,
       },
 
-      /* full Data Room, grouped by category for the UI */
+      /* full Data Room, grouped by category for the UI.
+         Existing keys preserved verbatim — any module already reading
+         them keeps working. V2 sections (identity, audience, content,
+         backlinks, commercial, history) are additive. */
       dataRoom: {
         goal: {
           primaryGoal:    dr("goal", "primary_goal"),
+          /* V2 additions on existing goal section */
+          primaryGoalNarrative: dr("goal", "primary_goal_narrative"),
           timeline:       dr("goal", "target_timeline"),
           successMetric:  dr("goal", "success_metric"),
           baseline:       dr("goal", "current_baseline"),
           budget:         dr("goal", "budget_monthly"),
           reportingCadence: dr("goal", "reporting_cadence"),
+          secondaryGoals: dr("goal", "secondary_goals"),
+          antiGoals:      dr("goal", "anti_goals"),
+          reportAudience: dr("goal", "report_audience"),
         },
         tech: {
           cms:        dr("cms", "cms"),
@@ -511,6 +542,13 @@ async function pmGatherRequirements(projectId: string) {
           ahrefs: dr("access", "ahrefs_access"),
           cmsAdmin: dr("access", "cms_admin"),
           hosting:  dr("access", "hosting_access"),
+          /* V2 additions */
+          dns:                dr("access", "dns_access"),
+          schemaEdit:         dr("access", "schema_edit_ability"),
+          robotsEdit:         dr("access", "robots_edit_ability"),
+          sitemapRegeneration: dr("access", "sitemap_regeneration"),
+          deploy:             dr("access", "deploy_access"),
+          notes:              dr("access", "access_notes"),
         },
         analytics: {
           organicSessions: analyticsField("organic_sessions_monthly"),
@@ -520,6 +558,14 @@ async function pmGatherRequirements(projectId: string) {
           gscImpressions:  analyticsField("gsc_total_impressions"),
           gscClicks:       analyticsField("gsc_total_clicks"),
           gscPosition:     analyticsField("gsc_avg_position"),
+          /* V2 additions — these enable real ROI claims in reports */
+          gscCtr:               analyticsField("gsc_ctr"),
+          ga4ConversionEvents:  dr("analytics", "ga4_conversion_events"),
+          valuePerLead:         dr("analytics", "value_per_lead"),
+          valuePerCustomer:     dr("analytics", "value_per_customer"),
+          rankTrackerSource:    dr("analytics", "rank_tracker_source"),
+          lastManualRankCheck:  dr("analytics", "last_manual_rank_check"),
+          lastManualRankNotes:  dr("analytics", "last_manual_rank_notes"),
         },
         technical: {
           pagesIndexed:   dr("technical", "pages_indexed"),
@@ -530,6 +576,94 @@ async function pmGatherRequirements(projectId: string) {
           schemaMarkup:   dr("technical", "schema_markup"),
           robotsTxt:      dr("technical", "robots_txt"),
           canonicalIssues: dr("technical", "canonical_issues"),
+          /* V2 additions */
+          cwvLcp:          dr("technical", "cwv_lcp"),
+          cwvInp:          dr("technical", "cwv_inp"),
+          cwvCls:          dr("technical", "cwv_cls"),
+          mobileUsability: dr("technical", "mobile_usability"),
+          hreflangSetup:   dr("technical", "hreflang_setup"),
+          httpsStatus:     dr("technical", "https_status"),
+          jsRendering:     dr("technical", "js_rendering"),
+        },
+
+        /* ── V2 sections (added during integration foundation work) ── */
+        identity: {
+          clientName:        dr("identity", "client_name"),
+          legalEntity:       dr("identity", "legal_entity"),
+          industry:          dr("identity", "industry"),
+          industrySpecific:  dr("identity", "industry_specific"),
+          businessModel:     dr("identity", "business_model"),
+          lifecycleStage:    dr("identity", "lifecycle_stage"),
+          primaryOffering:   dr("identity", "primary_offering"),
+          uniqueValueProp:   dr("identity", "unique_value_prop"),
+          annualRevenue:     dr("identity", "annual_revenue"),
+          geographicMarkets: dr("identity", "geographic_markets"),
+          languages:         dr("identity", "languages"),
+          yearFounded:       dr("identity", "year_founded"),
+          headcount:         dr("identity", "headcount"),
+          publicOrPrivate:   dr("identity", "public_or_private"),
+        },
+        audience: {
+          icp:                dr("audience", "ideal_customer_profile"),
+          persona1Name:       dr("audience", "persona_1_name"),
+          persona1Motivations: dr("audience", "persona_1_motivations"),
+          persona1Objections: dr("audience", "persona_1_objections"),
+          persona2Name:       dr("audience", "persona_2_name"),
+          persona2Motivations: dr("audience", "persona_2_motivations"),
+          persona3Name:       dr("audience", "persona_3_name"),
+          searchIntentSplit:  dr("audience", "search_intent_split"),
+          funnelFocus:        dr("audience", "funnel_focus"),
+          positioningStatement: dr("audience", "positioning_statement"),
+        },
+        content: {
+          brandVoice:         dr("content", "brand_voice"),
+          brandToneWords:     dr("content", "brand_tone_words"),
+          readingLevel:       dr("content", "reading_level"),
+          prohibitedTopics:   dr("content", "prohibited_topics"),
+          requiredDisclaimers: dr("content", "required_disclaimers"),
+          contentThemes:      dr("content", "content_themes"),
+          contentGapsKnown:   dr("content", "content_gaps_known"),
+          contentCapacity:    dr("content", "content_capacity"),
+          contentHoursWeekly: dr("content", "content_hours_weekly"),
+          editorialCalendar:  dr("content", "editorial_calendar"),
+          publishingWorkflow: dr("content", "publishing_workflow"),
+        },
+        backlinks: {
+          drAhrefs:             dr("backlinks", "domain_rating_ahrefs"),
+          daMoz:                dr("backlinks", "domain_authority_moz"),
+          trustFlowMajestic:    dr("backlinks", "trust_flow_majestic"),
+          referringDomains:     dr("backlinks", "referring_domains"),
+          highQualityLinks:     dr("backlinks", "high_quality_links"),
+          anchorTextHealth:     dr("backlinks", "anchor_text_health"),
+          linkBuildingApproach: dr("backlinks", "link_building_approach"),
+          linkBuildingCapacity: dr("backlinks", "link_building_capacity"),
+          backlinkAuditDate:    dr("backlinks", "backlink_audit_date"),
+          toxicLinks:           dr("backlinks", "toxic_links"),
+        },
+        commercial: {
+          engagementType:      dr("commercial", "engagement_type"),
+          monthlyHours:        dr("commercial", "monthly_hours"),
+          contractStart:       dr("commercial", "contract_start"),
+          contractRenewal:     dr("commercial", "contract_renewal"),
+          pointOfContactRole:  dr("commercial", "point_of_contact_role"),
+          decisionMakerRole:   dr("commercial", "decision_maker_role"),
+          communicationChannel: dr("commercial", "communication_channel"),
+          commsResponseSla:    dr("commercial", "comms_response_sla"),
+          deliverablesExpected: dr("commercial", "deliverables_expected"),
+          escalationPath:      dr("commercial", "escalation_path"),
+          invoiceTerms:        dr("commercial", "invoice_terms"),
+        },
+        history: {
+          priorSeoWork:        dr("history", "prior_seo_work"),
+          priorAgencyName:     dr("history", "prior_agency_name"),
+          whatWorked:          dr("history", "what_worked"),
+          whatDidntWork:       dr("history", "what_didnt_work"),
+          activePenalties:     dr("history", "active_penalties"),
+          penaltyNotes:        dr("history", "penalty_notes"),
+          recentMigrations:    dr("history", "recent_migrations"),
+          recentRedesigns:     dr("history", "recent_redesigns"),
+          algorithmImpacts:    dr("history", "algorithm_impacts"),
+          businessChanges:     dr("history", "business_changes"),
         },
       },
 
@@ -698,16 +832,143 @@ async function pmGenerateCards(projectId: string) {
   }
 
   /* concise context block reused by both stages — full picture but
-     compact so the AI can spend its tokens on the actual output */
+     compact so the AI can spend its tokens on the actual output.
+     Data Room V2: identity / audience / content / backlinks / commercial
+     / history sections are surfaced ONLY when filled. Empty fields
+     emit nothing — they are noise to the AI and hurt the output.
+     The principle is: rich data → confident, specific cards; thin
+     data → cards that acknowledge the gap and still help. */
   const dr = ctx.dataRoom || {};
+
+  /* tiny helper: emit a labelled line if the value is non-empty */
+  const ln = (label: string, value?: string): string =>
+    value && String(value).trim() ? `${label}: ${String(value).trim()}` : "";
+
+  /* identity block — who this client actually is */
+  const identityLines = [
+    ln("CLIENT", dr.identity?.clientName),
+    ln("INDUSTRY", [dr.identity?.industry, dr.identity?.industrySpecific].filter(Boolean).join(" — ") || undefined),
+    ln("MODEL", [dr.identity?.businessModel, dr.identity?.lifecycleStage].filter(Boolean).join(", ") || undefined),
+    ln("OFFERING", dr.identity?.primaryOffering),
+    ln("UVP", dr.identity?.uniqueValueProp),
+    ln("MARKETS", dr.identity?.geographicMarkets),
+    ln("LANGUAGES", dr.identity?.languages),
+    ln("REVENUE", dr.identity?.annualRevenue),
+    ln("HEADCOUNT", dr.identity?.headcount),
+  ].filter(Boolean);
+
+  /* audience block — who we are writing for */
+  const audienceLines = [
+    ln("ICP", dr.audience?.icp),
+    ln("PRIMARY PERSONA", dr.audience?.persona1Name),
+    ln("PERSONA MOTIVATIONS", dr.audience?.persona1Motivations),
+    ln("PERSONA OBJECTIONS", dr.audience?.persona1Objections),
+    dr.audience?.persona2Name ? ln("PERSONA 2", `${dr.audience.persona2Name}${dr.audience.persona2Motivations ? ` (${dr.audience.persona2Motivations})` : ""}`) : "",
+    ln("FUNNEL FOCUS", dr.audience?.funnelFocus),
+    ln("SEARCH INTENT MIX", dr.audience?.searchIntentSplit),
+    ln("POSITIONING", dr.audience?.positioningStatement),
+  ].filter(Boolean);
+
+  /* content / editorial block — calibrates the voice of every output */
+  const contentLines = [
+    ln("BRAND VOICE", dr.content?.brandVoice),
+    ln("TONE WORDS", dr.content?.brandToneWords),
+    ln("READING LEVEL", dr.content?.readingLevel),
+    ln("CONTENT THEMES", dr.content?.contentThemes),
+    ln("PROHIBITED TOPICS", dr.content?.prohibitedTopics),
+    ln("REQUIRED DISCLAIMERS", dr.content?.requiredDisclaimers),
+    ln("CONTENT CAPACITY", [dr.content?.contentCapacity, dr.content?.contentHoursWeekly].filter(Boolean).join(", ") || undefined),
+    ln("ACKNOWLEDGED CONTENT GAPS", dr.content?.contentGapsKnown),
+  ].filter(Boolean);
+
+  /* backlinks / authority block */
+  const backlinkLines = [
+    ln("DOMAIN RATING", [
+      dr.backlinks?.drAhrefs ? `Ahrefs DR ${dr.backlinks.drAhrefs}` : "",
+      dr.backlinks?.daMoz ? `Moz DA ${dr.backlinks.daMoz}` : "",
+    ].filter(Boolean).join(", ") || undefined),
+    ln("REFERRING DOMAINS", dr.backlinks?.referringDomains),
+    ln("LINK BUILDING APPROACH", dr.backlinks?.linkBuildingApproach),
+    ln("LINK CAPACITY", dr.backlinks?.linkBuildingCapacity),
+    ln("ANCHOR TEXT HEALTH", dr.backlinks?.anchorTextHealth),
+    ln("TOXIC LINKS", dr.backlinks?.toxicLinks),
+  ].filter(Boolean);
+
+  /* commercial block — shapes what cards we can realistically execute */
+  const commercialLines = [
+    ln("ENGAGEMENT", [dr.commercial?.engagementType, dr.commercial?.monthlyHours].filter(Boolean).join(", ") || undefined),
+    ln("REPORT AUDIENCE", dr.goal?.reportAudience),
+    ln("CONTACT ROLE", dr.commercial?.pointOfContactRole),
+    ln("DECISION MAKER", dr.commercial?.decisionMakerRole),
+    ln("DELIVERABLES EXPECTED", dr.commercial?.deliverablesExpected),
+    ln("COMMS CHANNEL", dr.commercial?.communicationChannel),
+  ].filter(Boolean);
+
+  /* history block — institutional memory; stops the AI repeating mistakes */
+  const historyLines = [
+    ln("PRIOR SEO WORK", [dr.history?.priorSeoWork, dr.history?.priorAgencyName].filter(Boolean).join(" — ") || undefined),
+    ln("WHAT WORKED BEFORE", dr.history?.whatWorked),
+    ln("WHAT DID NOT WORK", dr.history?.whatDidntWork),
+    ln("ACTIVE PENALTIES", [dr.history?.activePenalties, dr.history?.penaltyNotes].filter(Boolean).join(" — ") || undefined),
+    ln("RECENT MIGRATIONS", dr.history?.recentMigrations),
+    ln("RECENT REDESIGNS", dr.history?.recentRedesigns),
+    ln("ALGORITHM IMPACTS", dr.history?.algorithmImpacts),
+    ln("BUSINESS CHANGES TO REFLECT", dr.history?.businessChanges),
+  ].filter(Boolean);
+
+  /* enhanced existing blocks pull in the V2 fields without breaking the
+     existing line shape — the AI sees richer context where filled */
+  const goalLine = [
+    `GOAL: ${ctx.goal || "not set"}`,
+    dr.goal?.primaryGoalNarrative ? `— ${dr.goal.primaryGoalNarrative}` : "",
+    dr.goal?.timeline ? `| Timeline: ${dr.goal.timeline}` : "",
+    dr.goal?.successMetric ? `| Success: ${dr.goal.successMetric}` : "",
+    dr.goal?.secondaryGoals ? `\n  Secondary goals: ${dr.goal.secondaryGoals}` : "",
+    dr.goal?.antiGoals ? `\n  ANTI-GOALS (must respect): ${dr.goal.antiGoals}` : "",
+  ].filter(Boolean).join(" ");
+
+  const technicalLine = [
+    `TECHNICAL: ${dr.technical?.pagesIndexed || "?"} indexed`,
+    dr.technical?.crawlErrors ? `| crawl errors: ${dr.technical.crawlErrors}` : "",
+    dr.technical?.schemaMarkup ? `| schema: ${dr.technical.schemaMarkup}` : "",
+    dr.technical?.cwvLcp ? `| CWV LCP ${dr.technical.cwvLcp}` : "",
+    dr.technical?.cwvInp ? `INP ${dr.technical.cwvInp}` : "",
+    dr.technical?.cwvCls ? `CLS ${dr.technical.cwvCls}` : "",
+    dr.technical?.hreflangSetup && dr.technical.hreflangSetup !== "Not needed (single market)" ? `| hreflang: ${dr.technical.hreflangSetup}` : "",
+    dr.technical?.jsRendering ? `| JS: ${dr.technical.jsRendering}` : "",
+  ].filter(Boolean).join(" ");
+
+  const analyticsLine = [
+    `ANALYTICS: ${dr.analytics?.organicSessions || "?"} sessions/mo`,
+    `| GSC ${dr.analytics?.gscClicks || "?"} clicks pos ${dr.analytics?.gscPosition || "?"}`,
+    dr.analytics?.gscCtr ? `CTR ${dr.analytics.gscCtr}` : "",
+    dr.analytics?.conversions ? `| conv ${dr.analytics.conversions}/mo` : "",
+    dr.analytics?.valuePerLead ? `| £/lead ${dr.analytics.valuePerLead}` : "",
+    dr.analytics?.valuePerCustomer ? `LTV ${dr.analytics.valuePerCustomer}` : "",
+  ].filter(Boolean).join(" ");
+
   const contextBlock = [
     `PROJECT: ${ctx.projectName} | URL: ${ctx.url || "not set"}`,
-    `GOAL: ${ctx.goal || "not set"} | Timeline: ${dr.goal?.timeline || "n/a"} | Success: ${dr.goal?.successMetric || "n/a"}`,
+    goalLine,
     `TARGET KEYWORDS: ${(ctx.keywords || []).join(", ") || "none"}`,
-    `TECH: CMS ${dr.tech?.cms || "?"} | plugin ${dr.tech?.seoPlugin || "?"} | hosting ${dr.tech?.hosting || "?"}`,
+
+    /* V2 section — emitted only when filled */
+    identityLines.length ? "\n── CLIENT IDENTITY ──\n" + identityLines.join("\n") : "",
+    audienceLines.length ? "\n── AUDIENCE & POSITIONING ──\n" + audienceLines.join("\n") : "",
+    contentLines.length ? "\n── CONTENT & EDITORIAL (mandatory voice/constraint context) ──\n" + contentLines.join("\n") : "",
+
+    `\nTECH: CMS ${dr.tech?.cms || "?"} | plugin ${dr.tech?.seoPlugin || "?"} | hosting ${dr.tech?.hosting || "?"}`,
     `ACCESS: GSC ${dr.access?.gsc || "?"} | GA4 ${dr.access?.ga4 || "?"} | Ahrefs ${dr.access?.ahrefs || "?"} | CMS admin ${dr.access?.cmsAdmin || "?"}`,
-    `ANALYTICS: ${dr.analytics?.organicSessions || "?"} sessions/mo | GSC ${dr.analytics?.gscClicks || "?"} clicks pos ${dr.analytics?.gscPosition || "?"}`,
-    `TECHNICAL: ${dr.technical?.pagesIndexed || "?"} indexed | crawl errors: ${dr.technical?.crawlErrors || "none"} | schema: ${dr.technical?.schemaMarkup || "?"}`,
+    dr.access?.schemaEdit || dr.access?.robotsEdit || dr.access?.deploy
+      ? `EDIT ABILITY: schema ${dr.access?.schemaEdit || "?"} | robots ${dr.access?.robotsEdit || "?"} | deploy ${dr.access?.deploy || "?"}`
+      : "",
+    analyticsLine,
+    technicalLine,
+
+    backlinkLines.length ? "\n── BACKLINKS & AUTHORITY ──\n" + backlinkLines.join("\n") : "",
+    commercialLines.length ? "\n── COMMERCIAL & ENGAGEMENT ──\n" + commercialLines.join("\n") : "",
+    historyLines.length ? "\n── HISTORY & CONTEXT (avoid repeating past mistakes; acknowledge prior wins) ──\n" + historyLines.join("\n") : "",
+
     "",
     (ctx.competitors || []).length
       ? "COMPETITORS: " + ctx.competitors.map((c: any) => c.label).join(", ") : "COMPETITORS: none recorded.",
