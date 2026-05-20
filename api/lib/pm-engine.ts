@@ -536,52 +536,18 @@ async function pmGenerateCards(projectId: string) {
   if (!gathered.success) return gathered;
   const ctx = (gathered as any).context;
 
-  const auditSections = (ctx.audits || [])
-    .map((a: any) => `- ${a.label}: ${a.overview || "(no summary)"}`).join("\n") || "- No audits.";
-
-  const dr = ctx.dataRoom || {};
-  const drBlock = [
-    "DATA ROOM — PROJECT DEFINITION:",
-    `  Goal: ${dr.goal?.primaryGoal || "not set"} | Timeline: ${dr.goal?.timeline || "n/a"} | Success: ${dr.goal?.successMetric || "n/a"}`,
-    `  Budget: ${dr.goal?.budget || "n/a"} | Reporting: ${dr.goal?.reportingCadence || "n/a"}`,
-    `  Tech: CMS ${dr.tech?.cms || "?"} ${dr.tech?.cmsVersion || ""} | SEO plugin ${dr.tech?.seoPlugin || "?"} | Hosting ${dr.tech?.hosting || "?"} | SSL ${dr.tech?.ssl || "?"}`,
-    `  Tool access: GSC ${dr.access?.gsc || "?"} | GA4 ${dr.access?.ga4 || "?"} | Ahrefs ${dr.access?.ahrefs || "?"} | CMS admin ${dr.access?.cmsAdmin || "?"}`,
-    `  Analytics: ${dr.analytics?.organicSessions || "?"} organic sessions/mo | GSC ${dr.analytics?.gscClicks || "?"} clicks, pos ${dr.analytics?.gscPosition || "?"}`,
-    `  Technical: ${dr.technical?.pagesIndexed || "?"} indexed | crawl errors: ${dr.technical?.crawlErrors || "none recorded"} | broken links: ${dr.technical?.brokenLinks || "none"} | schema: ${dr.technical?.schemaMarkup || "?"} | robots: ${dr.technical?.robotsTxt || "?"}`,
-  ].join("\n");
-
-  const compBlock = (ctx.competitors || []).length
-    ? "COMPETITORS: " + ctx.competitors.map((c: any) => c.label).join(", ")
-      + (ctx.contentGapKeywords?.length ? `\n  Content-gap keywords: ${ctx.contentGapKeywords.join(", ")}` : "")
-    : "COMPETITORS: none recorded.";
-
-  /* keyword -> landing page comparison from the live crawl */
-  const kwBlock = (ctx.keywordMap || []).length
-    ? "KEYWORD -> LANDING PAGE (from live crawl):\n" + ctx.keywordMap.map((k: any) => {
-        const our = k.ourPage ? `our page ${k.ourPage.url} (${k.ourPage.contentType}, ${k.ourPage.titleIssues || "title ok"})` : "NO own page targeting this";
-        const comp = k.competitorPages?.length
-          ? k.competitorPages.map((p: any) => p.url).join(", ") : "no competitor page seen";
-        return `  "${k.keyword}": ${our} | competitor: ${comp}${k.anyInferred ? " [keyword match inferred]" : ""}`;
-      }).join("\n")
-    : "KEYWORD -> LANDING PAGE: no crawl data — recommend running a crawl.";
-
-  const brainBlock = (ctx.brain || []).length
-    ? "BRAIN LEARNINGS — APPLY THESE:\n" + ctx.brain.slice(0, 8)
-        .map((b: any) => `- ${b.label}: ${b.overview || ""}`).join("\n")
-    : "BRAIN LEARNINGS: none yet.";
-
-  /* ── Algorithm intelligence — stage 1: pick relevant topics ──
-     Show the AI the catalog and let it choose the topics that
-     actually matter for this project, rather than dumping all 37.
-     Hard-bounded to 90s so card generation cannot hang on this stage. */
-  let algoDepthBlock = "ALGORITHM INTELLIGENCE: none selected.";
+  /* ──────────────────────────────────────────────────────────────
+     Stage 0 — algorithm intelligence: pick relevant topics, fetch
+     their depth (Library or generated). Bounded so it can never
+     hang generation. The output is a map of topic -> depth that
+     stage-B expansion can draw from per card.
+  ────────────────────────────────────────────────────────────── */
   let algoDepths: any[] = [];
   let algoStageNote = "";
   try {
-    const stagePromise = (async () => {
+    const stage = (async () => {
       const catalogList = TOPIC_CATALOG
-        .map((t) => `${t.id} | ${t.label} (${t.engine}/${t.category})`)
-        .join("\n");
+        .map((t) => `${t.id} | ${t.label} (${t.engine}/${t.category})`).join("\n");
       const pickResp = await ai().messages.create({
         model: MODEL, max_tokens: 400,
         system: "You select which SEO algorithm topics are relevant to a project. Return ONLY a raw JSON array of topic id strings.",
@@ -591,160 +557,260 @@ async function pmGenerateCards(projectId: string) {
             `Project: ${ctx.projectName} | Goal: ${ctx.goal || "n/a"}\n` +
             `Keywords: ${(ctx.keywords || []).join(", ") || "none"}\n\n` +
             `Pick the 6-8 most relevant algorithm topics for this project's SEO work ` +
-            `from the catalog below. Return ONLY their ids as a JSON array, e.g. ["g_eeat","g_ai_overviews"].\n\n` +
+            `from the catalog below. Return ONLY their ids as a JSON array.\n\n` +
             catalogList,
         }],
       });
       const pickRaw = (pickResp.content[0] as any)?.text || "[]";
-      const pickedIds: string[] = (() => {
-        const p = parseJSON(pickRaw);
-        return Array.isArray(p) ? p.filter((x) => typeof x === "string") : [];
-      })();
-      const pickedTopics = TOPIC_CATALOG
-        .filter((t) => pickedIds.includes(t.id))
-        .slice(0, 8);
-      if (!pickedTopics.length) return [];
-      return getTopicsDepth(pickedTopics);
+      const p = parseJSON(pickRaw);
+      const pickedIds: string[] = Array.isArray(p) ? p.filter((x) => typeof x === "string") : [];
+      const picked = TOPIC_CATALOG.filter((t) => pickedIds.includes(t.id)).slice(0, 8);
+      return picked.length ? getTopicsDepth(picked) : [];
     })();
-    const timeoutPromise = new Promise<any[]>((_, reject) =>
-      setTimeout(() => reject(new Error("algorithm depth stage timeout (90s)")), 90_000));
-    algoDepths = await Promise.race([stagePromise, timeoutPromise]);
-    if (algoDepths.length) {
-      algoDepthBlock = "ALGORITHM INTELLIGENCE — apply these practices and checklists:\n" +
-        algoDepths.map((d: any) => {
-          const practices = (d.best_practices || []).slice(0, 4)
-            .map((p: any) => `    • ${p.practice}: ${p.description}`).join("\n");
-          const checks = (d.checklist_items || []).slice(0, 5)
-            .map((c: any) => `    ☐ ${c.item} (pass: ${c.pass_criteria || "n/a"})`).join("\n");
-          return `\n  [${d.title}] — impact: ${d.impact_level}\n` +
-            `  ${d.summary}\n` +
-            (practices ? `  Best practices:\n${practices}\n` : "") +
-            (checks ? `  Checklist:\n${checks}` : "");
-        }).join("\n");
-    }
+    algoDepths = await Promise.race([
+      stage,
+      new Promise<any[]>((_, rej) => setTimeout(() => rej(new Error("algorithm stage timed out")), 120_000)),
+    ]);
   } catch (e: any) {
     algoStageNote = e?.message || "algorithm depth stage failed";
-    console.error("[pm] algorithm depth stage failed:", algoStageNote);
-    /* card generation continues without algorithm depth rather than failing */
+    console.error("[pm] algorithm depth stage:", algoStageNote);
   }
 
-  const prompt = [
-    "Create a set of SEO project task cards for this project. You are a senior digital",
-    "marketing strategist. Use ALL the intelligence below — every card must be grounded",
-    "in this project's real data, not generic advice.",
-    "",
+  /* concise context block reused by both stages — full picture but
+     compact so the AI can spend its tokens on the actual output */
+  const dr = ctx.dataRoom || {};
+  const contextBlock = [
     `PROJECT: ${ctx.projectName} | URL: ${ctx.url || "not set"}`,
-    `TARGET KEYWORDS: ${(ctx.keywords || []).join(", ") || "none set"}`,
+    `GOAL: ${ctx.goal || "not set"} | Timeline: ${dr.goal?.timeline || "n/a"} | Success: ${dr.goal?.successMetric || "n/a"}`,
+    `TARGET KEYWORDS: ${(ctx.keywords || []).join(", ") || "none"}`,
+    `TECH: CMS ${dr.tech?.cms || "?"} | plugin ${dr.tech?.seoPlugin || "?"} | hosting ${dr.tech?.hosting || "?"}`,
+    `ACCESS: GSC ${dr.access?.gsc || "?"} | GA4 ${dr.access?.ga4 || "?"} | Ahrefs ${dr.access?.ahrefs || "?"} | CMS admin ${dr.access?.cmsAdmin || "?"}`,
+    `ANALYTICS: ${dr.analytics?.organicSessions || "?"} sessions/mo | GSC ${dr.analytics?.gscClicks || "?"} clicks pos ${dr.analytics?.gscPosition || "?"}`,
+    `TECHNICAL: ${dr.technical?.pagesIndexed || "?"} indexed | crawl errors: ${dr.technical?.crawlErrors || "none"} | schema: ${dr.technical?.schemaMarkup || "?"}`,
     "",
-    drBlock,
+    (ctx.competitors || []).length
+      ? "COMPETITORS: " + ctx.competitors.map((c: any) => c.label).join(", ") : "COMPETITORS: none recorded.",
+    ctx.contentGapKeywords?.length ? `CONTENT-GAP KEYWORDS: ${ctx.contentGapKeywords.join(", ")}` : "",
     "",
-    compBlock,
+    (ctx.keywordMap || []).length
+      ? "KEYWORD -> LANDING PAGE (from crawl):\n" + ctx.keywordMap.map((k: any) => {
+          const our = k.ourPage ? `our: ${k.ourPage.url}` : "NO own page";
+          const comp = k.competitorPages?.length ? k.competitorPages.map((p: any) => p.url).join(", ") : "no competitor crawled";
+          return `  "${k.keyword}": ${our} | ${comp}`;
+        }).join("\n")
+      : "KEYWORD -> LANDING PAGE: no crawl data yet.",
     "",
-    kwBlock,
+    (ctx.audits || []).length
+      ? "AUDIT FINDINGS:\n" + ctx.audits.slice(0, 2).map((a: any) =>
+          `  - ${a.label}: ${a.detail?.verdict || a.overview || "(no detail)"}\n` +
+          (a.detail?.urgentGap ? `    Urgent: ${a.detail.urgentGap}\n` : "") +
+          (a.detail?.biggestWin ? `    Win: ${a.detail.biggestWin}\n` : "") +
+          (a.detail?.competitive ? `    Competitive: ${a.detail.competitive.slice(0, 200)}` : "")
+        ).join("\n")
+      : "AUDIT FINDINGS: none.",
     "",
-    "AUDIT FINDINGS:",
-    auditSections,
+    (ctx.brain || []).length
+      ? "BRAIN LEARNINGS:\n" + ctx.brain.slice(0, 6).map((b: any) => `  - ${b.label}: ${b.overview || ""}`).join("\n")
+      : "",
     "",
-    brainBlock,
-    "",
-    algoDepthBlock,
-    "",
-    ctx.gaps?.length ? `KNOWN DATA GAPS: ${ctx.gaps.join("; ")}` : "",
-    "",
-    "RULES FOR THE CARDS:",
-    "- Produce 8-14 concrete task cards covering technical, content, GEO, competitive work.",
-    "- Content & competitive cards must target a SPECIFIC landing page for a SPECIFIC keyword,",
-    "  citing the competitor's page from the crawl where relevant.",
-    "- Technical cards must reflect the actual CMS and recorded technical issues.",
-    "- Each card's requirements must reflect real tool access — if GSC is 'view only' or",
-    "  CMS admin must be requested, list that as a prerequisite.",
-    "- Apply the ALGORITHM INTELLIGENCE: where a card relates to a topic above, copy its",
-    "  relevant checklist items into the card's \"checklist\" so execution is measured against",
-    "  real algorithm criteria. Reference the practice in the card content.",
-    "- Never invent data. If a card rests on an assumption, say so in its content.",
-    "",
-    'Return ONLY a raw JSON array, no markdown:',
-    '[{',
-    '  "type": "quick-win|technical|content|geo|competitive|insight|weekly|kpi",',
-    '  "title": "concise action title",',
-    '  "content": "what to do and why — specific, references the data above",',
-    '  "priority": "high|medium|low",',
-    '  "week": 1-5,',
-    '  "requirements": ["prerequisites incl. any tool access needed"],',
-    '  "checklist": ["algorithm checklist items this card must satisfy, from the intelligence above"],',
-    '  "target_url": "the landing page this card is about, if applicable",',
-    '  "target_keyword": "the keyword this card targets, if applicable",',
-    '  "algorithm_basis": "which algorithm topic(s) inform this card, if any",',
-    '  "source_label": "which finding/data this card came from"',
-    "}]",
+    algoDepths.length
+      ? "ALGORITHM TOPICS IN SCOPE (full practices & checklists supplied per card in stage B):\n" +
+        algoDepths.map((d: any) => `  - ${d.title} (impact: ${d.impact_level})`).join("\n")
+      : "ALGORITHM TOPICS: none selected.",
+    ctx.gaps?.length ? `\nKNOWN DATA GAPS: ${ctx.gaps.join("; ")}` : "",
   ].filter(Boolean).join("\n");
 
+  /* ──────────────────────────────────────────────────────────────
+     Stage A — PLAN: get the list of cards as titles + metadata only.
+     Small budget so this never truncates. The plan tells stage B
+     what to build, including which algorithm topics each card uses.
+  ────────────────────────────────────────────────────────────── */
+  let planRaw = "";
   try {
-    const resp = await ai().messages.create({
-      model: MODEL, max_tokens: 8000, system: PM_SYSTEM,
-      messages: [{ role: "user", content: prompt }],
+    const planResp = await ai().messages.create({
+      model: MODEL, max_tokens: 2500, system: PM_SYSTEM,
+      messages: [{
+        role: "user",
+        content: [
+          "You are a senior SEO project strategist. Plan a set of task cards for this project.",
+          "Return a STRUCTURED PLAN — short titles and metadata only. Card details are written in a second pass.",
+          "",
+          contextBlock,
+          "",
+          "Produce 8-14 cards covering technical / content / GEO / competitive / quick-win work.",
+          "Each card must target real project data: a specific landing page for a specific keyword,",
+          "an actual technical issue from the audit, an algorithm topic above, or a competitor gap.",
+          "",
+          'Return ONLY a raw JSON array, no markdown:',
+          '[{',
+          '  "id": "c1",',
+          '  "title": "concise action title (max 12 words)",',
+          '  "type": "quick-win|technical|content|geo|competitive|insight|weekly|kpi",',
+          '  "priority": "high|medium|low",',
+          '  "week": 1-5,',
+          '  "target_url": "the landing page this card is about, or \"\"",',
+          '  "target_keyword": "the keyword this card targets, or \"\"",',
+          '  "algorithm_topics": ["exact titles of relevant algorithm topics from the list above, max 2"],',
+          '  "data_basis": "one sentence: which finding/data this card came from",',
+          '  "rationale_hint": "one sentence: why this card matters for this project"',
+          "}]",
+        ].join("\n"),
+      }],
     });
-    const raw = (resp.content[0] as any)?.text || "";
-    /* token-limit detection — if generation was truncated the JSON cannot parse */
-    const truncated = (resp as any)?.stop_reason === "max_tokens";
-    if (!raw) {
-      return { success: false, cards: [],
-        error: `The AI returned an empty response${algoStageNote ? ` (algorithm stage: ${algoStageNote})` : ""}.` };
+    planRaw = (planResp.content[0] as any)?.text || "";
+    if ((planResp as any)?.stop_reason === "max_tokens") {
+      console.warn("[pm] plan stage hit max_tokens — list may be truncated");
     }
-    const parsed = parseJSON(raw);
-    if (!Array.isArray(parsed)) {
-      const preview = raw.slice(0, 160).replace(/\s+/g, " ").trim();
-      return { success: false, cards: [],
-        error: truncated
-          ? `The AI ran out of tokens before completing the card list. Try generating again — the prompt may be too long given the project's data.`
-          : `The AI did not return a card list. It returned: "${preview}${raw.length > 160 ? "…" : ""}"${algoStageNote ? ` (algorithm stage: ${algoStageNote})` : ""}` };
-    }
-    if (!parsed.length) {
-      return { success: false, cards: [],
-        error: "The AI returned an empty card list. The project may not have enough data — check that it has keywords, a goal, and an audit or crawl." };
-    }
-
-    const saved: any[] = [];
-    for (const c of parsed.slice(0, 14)) {
-      const reqs = Array.isArray(c.requirements)
-        ? c.requirements.map((label: string, i: number) => ({
-            id: `r${i}`, label, category: "general", met: false,
-          }))
-        : [];
-      /* algorithm checklist items become verifiable requirements —
-         the card executor checks the card against real algo criteria */
-      if (Array.isArray(c.checklist)) {
-        c.checklist.forEach((label: string, i: number) => {
-          if (label && typeof label === "string") {
-            reqs.push({ id: `a${i}`, label, category: "algorithm", met: false });
-          }
-        });
-      }
-      const refs: any[] = [];
-      if (c.source_label)    refs.push({ kind: "scope", label: String(c.source_label) });
-      if (c.target_url)      refs.push({ kind: "metric", label: `Page: ${c.target_url}` });
-      if (c.target_keyword)  refs.push({ kind: "metric", label: `Keyword: ${c.target_keyword}` });
-      if (c.algorithm_basis) refs.push({ kind: "algorithm", label: String(c.algorithm_basis) });
-      const r = await pmSaveCard({
-        projectId,
-        title:        String(c.title || "Untitled task").slice(0, 200),
-        description:  String(c.content || ""),
-        card_type:    c.type || "custom",
-        priority:     ["high", "medium", "low"].includes(c.priority) ? c.priority : "medium",
-        status:       "todo",
-        week:         Number(c.week) >= 1 && Number(c.week) <= 5 ? Number(c.week) : 5,
-        placed:       false,
-        requirements: reqs,
-        source:       "ai_generated",
-        source_refs:  refs,
-        tags:         ["ai-generated"],
-      });
-      if (r.success && r.card) saved.push(r.card);
-    }
-    return { success: true, cards: saved, generated: saved.length };
   } catch (e: any) {
-    return { success: false, error: e?.message || "AI generation failed", cards: [] };
+    return { success: false, cards: [],
+      error: `Card planning failed: ${e?.message || "unknown"}` };
   }
+  const plan = parseJSON(planRaw);
+  if (!Array.isArray(plan) || !plan.length) {
+    const preview = planRaw.slice(0, 160).replace(/\s+/g, " ").trim();
+    return { success: false, cards: [],
+      error: plan === null || plan === undefined
+        ? `Card planner did not return a list. It returned: "${preview}${planRaw.length > 160 ? "…" : ""}"${algoStageNote ? ` (algo stage: ${algoStageNote})` : ""}`
+        : "Card planner returned an empty list — the project may not have enough data to plan cards. Check that it has keywords, a goal, and either an audit or a crawl." };
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     Stage B — EXPAND each planned card into a full executable card.
+     Per-card AI call so each gets full token room. Parallel with
+     bounded concurrency to keep latency reasonable without
+     fan-out hammering rate limits.
+  ────────────────────────────────────────────────────────────── */
+  const algoByTitle = new Map<string, any>();
+  for (const d of algoDepths) {
+    if (d?.title) algoByTitle.set(d.title.toLowerCase().trim(), d);
+  }
+  const depthBlockFor = (topics: string[]): string => {
+    const matched = (topics || [])
+      .map((t) => algoByTitle.get(String(t).toLowerCase().trim()))
+      .filter(Boolean);
+    if (!matched.length) return "";
+    return "ALGORITHM PRACTICES & CHECKLIST TO APPLY:\n" + matched.map((d: any) => {
+      const practices = (d.best_practices || []).slice(0, 5)
+        .map((p: any) => `  • ${p.practice}: ${p.description}`).join("\n");
+      const checks = (d.checklist_items || []).slice(0, 6)
+        .map((c: any) => `  ☐ ${c.item}${c.pass_criteria ? ` — pass: ${c.pass_criteria}` : ""}${c.tool ? ` [${c.tool}]` : ""}`).join("\n");
+      return `[${d.title}]\n${d.summary || ""}\n` +
+        (practices ? `Best practices:\n${practices}\n` : "") +
+        (checks ? `Checklist:\n${checks}` : "");
+    }).join("\n\n");
+  };
+
+  const expandOne = async (p: any): Promise<any | null> => {
+    try {
+      const depthBlock = depthBlockFor(p.algorithm_topics || []);
+      const expandPrompt = [
+        "You are a senior SEO strategist writing one detailed, executable task card.",
+        "Use the project context and the algorithm practices below to write content that is",
+        "specific to THIS project, references real data, and lists concrete prerequisites.",
+        "Never invent data. If something must be assumed, flag it with [ASSUMPTION] in the content.",
+        "",
+        "PROJECT CONTEXT:",
+        contextBlock,
+        "",
+        depthBlock,
+        "",
+        "THE CARD TO WRITE:",
+        `Title: ${p.title}`,
+        `Type: ${p.type} | Priority: ${p.priority} | Week: ${p.week}`,
+        p.target_url ? `Target page: ${p.target_url}` : "",
+        p.target_keyword ? `Target keyword: ${p.target_keyword}` : "",
+        p.data_basis ? `Source data: ${p.data_basis}` : "",
+        p.rationale_hint ? `Strategic rationale: ${p.rationale_hint}` : "",
+        "",
+        'Return ONLY a raw JSON object, no markdown:',
+        '{',
+        '  "content": "3-6 sentence detailed description of what to do, why, and how it ties to the project data + algorithm practices above. Be concrete. Reference the actual page, keyword, finding.",',
+        '  "requirements": ["each prerequisite the executor needs — tool access, asset, approval, data. Be specific to this project."],',
+        '  "checklist": ["specific algorithm checklist items copied/adapted from the practices above that this card must satisfy. Each item should be verifiable."],',
+        '  "expected_outcome": "what success looks like — measurable if possible"',
+        "}",
+      ].filter(Boolean).join("\n");
+
+      const resp = await ai().messages.create({
+        model: MODEL, max_tokens: 2500, system: PM_SYSTEM,
+        messages: [{ role: "user", content: expandPrompt }],
+      });
+      const raw = (resp.content[0] as any)?.text || "";
+      const parsed = parseJSON(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      return { plan: p, expanded: parsed };
+    } catch (e: any) {
+      console.error("[pm] card expansion failed for", p?.title, e?.message || e);
+      return null;
+    }
+  };
+
+  /* bounded concurrency — at most 4 expansions in flight at once,
+     so a project with 14 cards completes in ~4 rounds, not 14 serial */
+  const planSlice = plan.slice(0, 14);
+  const expansions: any[] = [];
+  const CONCURRENCY = 4;
+  for (let i = 0; i < planSlice.length; i += CONCURRENCY) {
+    const chunk = planSlice.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(chunk.map(expandOne));
+    for (const r of results) if (r) expansions.push(r);
+  }
+
+  /* ──────────────────────────────────────────────────────────────
+     Persist each expanded card to kanban_tasks.
+  ────────────────────────────────────────────────────────────── */
+  const saved: any[] = [];
+  for (const { plan: p, expanded: e } of expansions) {
+    const reqs: any[] = [];
+    if (Array.isArray(e.requirements)) {
+      e.requirements.forEach((label: any, i: number) => {
+        if (label && typeof label === "string") {
+          reqs.push({ id: `r${i}`, label, category: "general", met: false });
+        }
+      });
+    }
+    if (Array.isArray(e.checklist)) {
+      e.checklist.forEach((label: any, i: number) => {
+        if (label && typeof label === "string") {
+          reqs.push({ id: `a${i}`, label, category: "algorithm", met: false });
+        }
+      });
+    }
+    const refs: any[] = [];
+    if (p.data_basis)       refs.push({ kind: "scope", label: String(p.data_basis) });
+    if (p.target_url)       refs.push({ kind: "metric", label: `Page: ${p.target_url}` });
+    if (p.target_keyword)   refs.push({ kind: "metric", label: `Keyword: ${p.target_keyword}` });
+    if (Array.isArray(p.algorithm_topics) && p.algorithm_topics.length) {
+      refs.push({ kind: "algorithm", label: p.algorithm_topics.join(", ") });
+    }
+    if (e.expected_outcome) refs.push({ kind: "scope", label: `Outcome: ${e.expected_outcome}` });
+
+    const r = await pmSaveCard({
+      projectId,
+      title:        String(p.title || "Untitled task").slice(0, 200),
+      description:  String(e.content || p.rationale_hint || ""),
+      card_type:    p.type || "custom",
+      priority:     ["high", "medium", "low"].includes(p.priority) ? p.priority : "medium",
+      status:       "todo",
+      week:         Number(p.week) >= 1 && Number(p.week) <= 5 ? Number(p.week) : 5,
+      placed:       false,
+      requirements: reqs,
+      source:       "ai_generated",
+      source_refs:  refs,
+      tags:         ["ai-generated"],
+    });
+    if (r.success && r.card) saved.push(r.card);
+  }
+
+  if (!saved.length) {
+    return { success: false, cards: [],
+      error: `Cards were planned but none could be expanded successfully${algoStageNote ? ` (algo stage: ${algoStageNote})` : ""}. Try again — the per-card AI calls may have timed out.` };
+  }
+  return {
+    success: true, cards: saved, generated: saved.length,
+    planned: plan.length, expanded: expansions.length,
+    algoTopics: algoDepths.length,
+  };
 }
 
 /* ════════════════════════════════════════════════════

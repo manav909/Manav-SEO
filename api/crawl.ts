@@ -314,7 +314,7 @@ async function processUrl(
 
   if (projectId) {
     const saveErr = await saveToCache(projectId, url, result);
-    if (saveErr) result.save_error = saveErr;
+    if (saveErr) (result as any).save_error = saveErr;
   }
   return result;
 }
@@ -402,6 +402,10 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── compare_analysis ──────────────────────────────────────────────
+  // Three focused parallel calls (matrix+errors, opportunities+gaps,
+  // advantages+GEO+card-proposals) so each section gets full token
+  // room. Output is merged. This avoids the single-call overpacking
+  // that truncated 7-page comparisons.
   if (action === "compare_analysis") {
     const { crawlResults, projectContext = "", existingBlocks = [], taskHints = [], compareCriteria = [] } = req.body;
     if (!crawlResults?.results?.length) return res.status(200).json({ error: "No crawl results" });
@@ -414,9 +418,9 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const summaries = results.map((r: any) => {
+    const summaries = results.map(r => {
       const p = r.page_analysis;
-      const cached = r.from_cache ? ` [cached ${r.cached_at?.split("T")[0]}]` : "";
+      const cached = r.from_cache ? " [cached]" : "";
       if (!p) return `URL: ${r.url}${cached}\nStatus: ${r.error || "fetch failed"}\n`;
       const lines = [
         `URL: ${r.url}${cached}`,
@@ -442,91 +446,129 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
     const cardsCtx = (existingBlocks as any[]).filter(b => b.placed && b.status !== "done")
       .map(b => `[${b.type}|W${b.week}] "${b.title}"`).slice(0, 12).join("\n");
 
-    const prompt = `You are Manav Brain — an expert SEO strategist. Analyse the crawled page data below and produce a comprehensive, actionable comparison.
+    const baseHeader = `Project: ${projectContext}${criteriaCtx}${taskCtx}\n\nCRAWLED PAGES:\n${summaries}\n\n${cardsCtx ? `EXISTING CANVAS CARDS:\n${cardsCtx}\n\n` : ""}`;
+    const urlList = results.map((r: any) => r.url.replace(/https?:\/\//, "").split("/")[0]).join('", "');
 
-Project: ${projectContext}${criteriaCtx}${taskCtx}
+    const matrixPrompt = baseHeader +
+`You are Manav Brain — an expert SEO strategist. From the page data above, produce the comparison matrix and the critical errors. Be specific and cite page data.
 
-CRAWLED PAGES:
-${summaries}
-
-${cardsCtx ? `EXISTING CANVAS CARDS:\n${cardsCtx}` : ""}
-
-Return ONLY valid JSON (absolutely no markdown fences, no prose before or after):
+Return ONLY valid JSON (no markdown, no prose):
 {
-  "executive_summary": "2-3 sentences with the most important specific findings from the data above",
+  "executive_summary": "3-4 sentences with the most important findings from the data above",
   "overall_score": 65,
   "comparison_matrix": {
-    "headers": ["Signal", "${results.map((r: any) => r.url.replace(/https?:\/\//, "").split("/")[0]).join('", "')}"],
+    "headers": ["Signal", "${urlList}"],
     "rows": [
       {"signal": "Title tag", "values": ["one status per URL"], "verdict": "best or worst or mixed"},
-      {"signal": "H1", "values": ["one status per URL"], "verdict": "best or worst or mixed"},
-      {"signal": "Meta description", "values": ["one status per URL"], "verdict": "best or worst or mixed"},
-      {"signal": "Schema markup", "values": ["one status per URL"], "verdict": "best or worst or mixed"},
-      {"signal": "Word count", "values": ["number or status per URL"], "verdict": "best or worst or mixed"},
-      {"signal": "FAQs", "values": ["count or none per URL"], "verdict": "best or worst or mixed"},
-      {"signal": "GEO readiness", "values": ["rating per URL"], "verdict": "best or worst or mixed"}
+      {"signal": "H1", "values": ["..."], "verdict": "..."},
+      {"signal": "Meta description", "values": ["..."], "verdict": "..."},
+      {"signal": "Schema markup", "values": ["..."], "verdict": "..."},
+      {"signal": "Word count", "values": ["..."], "verdict": "..."},
+      {"signal": "FAQs", "values": ["..."], "verdict": "..."},
+      {"signal": "GEO readiness", "values": ["..."], "verdict": "..."}
     ]
   },
   "errors": [
-    {"severity": "critical", "issue": "specific issue with exact details", "affected_urls": ["url"], "fix": "exact fix step", "quick_fix": true}
-  ],
+    {"severity": "critical|high|medium", "issue": "specific issue with details", "affected_urls": ["url"], "fix": "exact fix step", "quick_fix": true}
+  ]
+}`;
+
+    const oppPrompt = baseHeader +
+`You are Manav Brain. From the page data above, produce the ranked opportunities and the competitive gaps. Be specific — every item must cite a real observation from the data.
+
+Return ONLY valid JSON:
+{
   "opportunities": [
-    {"rank": 1, "title": "opportunity title", "description": "specific what and why citing page data", "affected_urls": ["url"], "effort": "low", "impact": "high", "data_basis": "exact observation from the crawled data"}
+    {"rank": 1, "title": "opportunity title", "description": "specific what and why citing page data", "affected_urls": ["url"], "effort": "low|medium|high", "impact": "low|medium|high", "data_basis": "exact observation from the data"}
   ],
   "competitive_gaps": [
-    {"gap": "what is missing", "evidence": "which signals show this", "action": "specific step to close the gap", "priority": "high"}
-  ],
+    {"gap": "what is missing for us vs competitors", "evidence": "which signals show this", "action": "specific step to close the gap", "priority": "high|medium|low"}
+  ]
+}`;
+
+    const advPrompt = baseHeader +
+`You are Manav Brain. From the page data above, produce our advantages, the GEO analysis (AI search readiness), and any task cards worth proposing. Be specific.
+
+Return ONLY valid JSON:
+{
   "advantages": [
     {"advantage": "what is done well", "urls": ["url"], "how_to_leverage": "specific suggestion"}
   ],
   "geo_analysis": {
     "overall_geo_score": "0-100",
-    "pages_ready_for_ai_citation": ["urls with high readiness"],
-    "faq_opportunities": ["specific page or topic needing FAQ"],
+    "pages_ready_for_ai_citation": ["urls"],
+    "faq_opportunities": ["specific topic needing FAQ"],
     "direct_answer_gaps": ["questions these pages should answer directly"],
     "entity_coverage": "assessment of entity markup",
     "recommendations": ["specific prioritised steps"]
   },
-  "confidence_boosters": [
-    {"card_title": "existing card title", "confidence_increase": "60% to 85%", "new_data_available": "what the crawl found", "action": "how to use it"}
-  ],
   "card_proposals": [
-    {"title": "max 8 words", "type": "technical", "week": 1, "priority": "high", "content": "specific actionable detail citing page data", "data_basis": "exact observation", "affected_urls": ["url"], "confidence": 80, "confidence_reason": "why this confidence", "merge_candidate": null, "merge_reason": null}
-  ],
-  "data_gaps": ["what could not be determined from the HTML alone"],
-  "next_crawl_suggestions": ["specific URLs that would improve the analysis"]
+    {"title": "max 10 words", "type": "technical|content|geo|competitive|quick-win", "week": 1, "priority": "high|medium|low", "content": "specific actionable detail citing page data", "data_basis": "exact observation", "affected_urls": ["url"], "confidence": 80}
+  ]
 }`;
 
-    try {
-      const msg = await anthropic.messages.create({
-        model:      "claude-sonnet-4-6",
-        max_tokens: 12000,
-        system:     "You are Manav Brain. Return ONLY valid JSON. No markdown fences. No text before or after the JSON. Cite specific observations from the page data. Be concise: keep every list to its most important 5-6 entries so the full JSON completes within the response.",
-        messages:   [{ role: "user", content: prompt }],
-      });
-
-      if (msg.stop_reason === "max_tokens") {
-        console.warn("[compare] Response was truncated — attempting partial parse");
+    const runFocused = async (prompt: string, label: string) => {
+      try {
+        const msg = await anthropic.messages.create({
+          model:      "claude-sonnet-4-6",
+          max_tokens: 8000,
+          system:     "You are Manav Brain. Return ONLY valid JSON. No markdown fences. No text before or after the JSON. Cite specific observations from the page data.",
+          messages:   [{ role: "user", content: prompt }],
+        });
+        if (msg.stop_reason === "max_tokens") {
+          console.warn(`[compare] ${label} hit max_tokens`);
+        }
+        const raw = (msg.content[0] as any).text || "";
+        const parsed = parseJson(raw);
+        if (!parsed) console.warn(`[compare] ${label} parse failed. Raw (first 200):`, raw.slice(0, 200));
+        return parsed || {};
+      } catch (err: any) {
+        console.error(`[compare] ${label} call failed:`, err?.message || err);
+        return { _error: err?.message || "call failed" };
       }
+    };
 
-      const raw   = (msg.content[0] as any).text || "";
-      const analysis = parseJson(raw);
+    try {
+      const [matrix, opps, adv] = await Promise.all([
+        runFocused(matrixPrompt, "matrix+errors"),
+        runFocused(oppPrompt,    "opportunities+gaps"),
+        runFocused(advPrompt,    "advantages+geo"),
+      ]);
 
-      if (!analysis || Object.keys(analysis).length < 3) {
-        console.error("[compare] JSON parse failed. Raw response (first 300):", raw.slice(0, 300));
+      /* merge — any single-section failure does not lose the others */
+      const analysis: any = {
+        executive_summary: matrix.executive_summary || "",
+        overall_score:     matrix.overall_score ?? null,
+        comparison_matrix: matrix.comparison_matrix || null,
+        errors:            Array.isArray(matrix.errors) ? matrix.errors : [],
+        opportunities:     Array.isArray(opps.opportunities) ? opps.opportunities : [],
+        competitive_gaps:  Array.isArray(opps.competitive_gaps) ? opps.competitive_gaps : [],
+        advantages:        Array.isArray(adv.advantages) ? adv.advantages : [],
+        geo_analysis:      adv.geo_analysis || null,
+        card_proposals:    Array.isArray(adv.card_proposals) ? adv.card_proposals : [],
+      };
+
+      const sectionErrors = [matrix._error, opps._error, adv._error].filter(Boolean);
+      const hasAnyContent =
+        analysis.executive_summary || analysis.comparison_matrix ||
+        analysis.opportunities.length || analysis.advantages.length;
+
+      if (!hasAnyContent) {
         return res.status(200).json({
           success: false,
-          error: "Analysis could not be parsed. The model may have returned an incomplete response. Try again — if it persists, reduce the number of URLs.",
-          raw_preview: raw.slice(0, 200),
+          error: "All three comparison sections failed. " +
+            (sectionErrors.length ? `Errors: ${sectionErrors.join("; ")}` : "Try again — model may have been overloaded."),
         });
       }
-
-      return res.status(200).json({ success: true, analysis });
+      return res.status(200).json({
+        success: true, analysis,
+        ...(sectionErrors.length ? { partial: true, partial_errors: sectionErrors } : {}),
+      });
     } catch (err: any) {
-      console.error("[compare] Claude API error:", err.message);
       return res.status(200).json({ success: false, error: err.message });
     }
   }
+
 
   // ── preview_url ───────────────────────────────────────────────────
   if (action === "preview_url") {
