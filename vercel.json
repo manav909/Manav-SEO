@@ -30,8 +30,7 @@
       "maxDuration": 300,
       "regions": [
         "iad1"
-      ],
-      "includeFiles": "api/lib/**"
+      ]
     },
     "api/seo-agent.ts": {
       "maxDuration": 300,
