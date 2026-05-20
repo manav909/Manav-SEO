@@ -860,3 +860,45 @@ export async function missionControlSummary(): Promise<{
     },
   };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   V2 Data Room seed migration (one-shot, idempotent)
+═══════════════════════════════════════════════════════════ */
+
+export interface SeedReport {
+  project_id:    string;
+  project_name?: string;
+  client_name?:  string;
+  fields_seeded: string[];
+  fields_skipped_existing: string[];
+  fields_skipped_no_source: string[];
+}
+
+export interface SeedSummary {
+  reports: SeedReport[];
+  totals: {
+    projects:                 number;
+    fields_seeded_total:      number;
+    fields_skipped_existing:  number;
+    fields_skipped_no_source: number;
+  };
+}
+
+/** Run the V2 Data Room seed. Pass projectId to seed a single project,
+ *  omit it to seed every active project. Idempotent — re-runs are safe.
+ *  Returns per-project reports + totals. */
+export async function seedV2DataRoom(projectId?: string): Promise<{
+  summary?: SeedSummary; error?: string;
+}> {
+  const r = await post(ENGINE, {
+    action: 'pm_seed_v2_dataroom',
+    ...(projectId ? { projectId } : {}),
+  });
+  if (!r?.success) return { error: r?.error || 'Seed failed.' };
+  return {
+    summary: {
+      reports: Array.isArray(r.reports) ? r.reports : [],
+      totals:  r.totals || { projects: 0, fields_seeded_total: 0, fields_skipped_existing: 0, fields_skipped_no_source: 0 },
+    },
+  };
+}

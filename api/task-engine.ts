@@ -437,6 +437,10 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handlePmRules } = await import("./lib/pm-rules.js");
     const rulesResult = await handlePmRules(action, body);
     if (rulesResult !== null) return ok(res, rulesResult);
+    /* fall through to the V2 seed migration handler — pm_seed_v2_dataroom */
+    const { handlePmSeed } = await import("./lib/pm-dataroom-seed.js");
+    const seedResult = await handlePmSeed(action, body);
+    if (seedResult !== null) return ok(res, seedResult);
   }
 
   /* ═══ GSC INTEGRATION (Phase D) — gsc_* actions ═══ */

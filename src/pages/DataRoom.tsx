@@ -7,6 +7,7 @@ import { useProjectSync } from '@/hooks/useProjectSync';
 import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
+import { seedV2DataRoom, type SeedSummary } from '@/components/pm/api';
 import {
   Layers,
   Upload,
@@ -599,6 +600,10 @@ function PageResultCard({ r, isOwn, isComp, onSelectOwn, onSelectComp, selectedO
 export default function DataRoom() {
   const { clients, projects } = useAuth();
   const [selProjId, setSelProjId] = useState('');
+  /* V2 Data Room seed migration UI state — one-shot from Overview tab */
+  const [seedRunning, setSeedRunning] = useState(false);
+  const [seedResult,  setSeedResult]  = useState<SeedSummary | null>(null);
+  const [seedScope,   setSeedScope]   = useState<'this' | 'all'>('this');
   const handleProjectChange = useProjectSync(selProjId, setSelProjId);
   const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'|'crawl'|'identity'|'audience'|'content'|'backlinks'|'commercial'|'history'>('overview');
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
@@ -1456,6 +1461,42 @@ Evidence: ${c.data_basis}` : ''}`,
     toast({ title: 'Document deleted' });
   };
 
+  /* ── V2 Data Room seed migration trigger ──
+     Pulls honest data from clients, projects, project_integrations
+     and existing project_knowledge into the new V2 fields. Never
+     overwrites existing values. Idempotent: safe to re-run. */
+  const runSeed = async () => {
+    if (seedRunning) return;
+    setSeedRunning(true);
+    setSeedResult(null);
+    const { summary, error } = await seedV2DataRoom(
+      seedScope === 'this' && selProjId ? selProjId : undefined
+    );
+    setSeedRunning(false);
+    if (error) {
+      toast({ title: 'Seed failed', description: error, variant: 'destructive' });
+      return;
+    }
+    setSeedResult(summary || null);
+    /* refresh the knowledge view so newly-seeded values show up immediately */
+    if (selProjId) {
+      const { data } = await supabase.from('project_knowledge')
+        .select('*').eq('project_id', selProjId);
+      const grouped: Record<string, Record<string, KField>> = {};
+      for (const row of (data || [])) {
+        const k = row as KField;
+        (grouped[k.category] ||= {})[k.field_key] = k;
+      }
+      setKnowledge(grouped);
+    }
+    toast({
+      title: 'Seed complete',
+      description: summary
+        ? `${summary.totals.fields_seeded_total} field${summary.totals.fields_seeded_total === 1 ? '' : 's'} populated across ${summary.totals.projects} project${summary.totals.projects === 1 ? '' : 's'}.`
+        : 'Done.',
+    });
+  };
+
   /* ── Completeness score ── */
   const completeness = (() => {
     const required = DATA_REQUIREMENTS.flatMap(cat => cat.fields.filter(f => f.required).map(f => `${cat.category}.${f.key}`));
@@ -1690,6 +1731,126 @@ Evidence: ${c.data_basis}` : ''}`,
             {/* ── OVERVIEW ── */}
             {tab === 'overview' && (
               <div className="space-y-5">
+                {/* ── V2 Data Room seed migration ──
+                    One-shot tool to populate new V2 fields (identity, access
+                    status, goal narrative draft) from data that already
+                    exists elsewhere in the database. Idempotent — never
+                    overwrites manually-entered values. */}
+                <div className="rounded-2xl border border-blue-500/30 bg-blue-500/[0.04] p-5">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-foreground">
+                        Seed V2 fields from existing data
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                        One-time helper to populate new V2 fields (Identity, Access status, Goal narrative) using data already in your database — client name, industry, GSC/GA4 connections, existing goal + success metric. Never overwrites anything you've typed manually. Safe to re-run.
+                      </div>
+                      <div className="flex items-center gap-2 mt-3 flex-wrap">
+                        <div className="flex items-center gap-1 text-[10px]">
+                          <span className="text-muted-foreground mr-1">Scope:</span>
+                          <button
+                            onClick={() => setSeedScope('this')}
+                            disabled={seedRunning || !selProjId}
+                            className={`px-2 py-1 rounded font-semibold uppercase tracking-wider ${
+                              seedScope === 'this' ? 'bg-blue-500/15 text-blue-400' : 'text-muted-foreground hover:text-foreground'
+                            } disabled:opacity-40`}
+                          >
+                            This project
+                          </button>
+                          <button
+                            onClick={() => setSeedScope('all')}
+                            disabled={seedRunning}
+                            className={`px-2 py-1 rounded font-semibold uppercase tracking-wider ${
+                              seedScope === 'all' ? 'bg-blue-500/15 text-blue-400' : 'text-muted-foreground hover:text-foreground'
+                            } disabled:opacity-40`}
+                          >
+                            All projects
+                          </button>
+                        </div>
+                        <button
+                          onClick={runSeed}
+                          disabled={seedRunning || (seedScope === 'this' && !selProjId)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-blue-500 text-white hover:bg-blue-500/90 font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          {seedRunning ? (
+                            <>
+                              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                              Running…
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-3 w-3" />
+                              Run seed
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Results panel — shown after a run completes */}
+                      {seedResult && (
+                        <div className="mt-4 rounded-xl border border-border bg-background/60 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-xs font-semibold text-foreground">Seed results</div>
+                            <button
+                              onClick={() => setSeedResult(null)}
+                              className="text-[10px] text-muted-foreground hover:text-foreground"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 mb-3">
+                            <div className="rounded-lg bg-green-500/10 border border-green-500/30 p-2">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Seeded</div>
+                              <div className="text-lg font-bold font-mono text-green-400">{seedResult.totals.fields_seeded_total}</div>
+                            </div>
+                            <div className="rounded-lg bg-muted/40 border border-border p-2">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Already filled</div>
+                              <div className="text-lg font-bold font-mono text-foreground/70">{seedResult.totals.fields_skipped_existing}</div>
+                            </div>
+                            <div className="rounded-lg bg-muted/20 border border-border p-2">
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">No source</div>
+                              <div className="text-lg font-bold font-mono text-muted-foreground">{seedResult.totals.fields_skipped_no_source}</div>
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mb-2">
+                            {seedResult.totals.projects} project{seedResult.totals.projects === 1 ? '' : 's'} processed.
+                          </div>
+                          {/* Per-project details (collapsible) */}
+                          {seedResult.reports.length > 0 && (
+                            <details className="text-[11px]">
+                              <summary className="cursor-pointer text-muted-foreground hover:text-foreground font-semibold">
+                                Per-project detail
+                              </summary>
+                              <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                                {seedResult.reports.map((r) => (
+                                  <div key={r.project_id} className="rounded-lg border border-border/60 bg-background/40 p-2">
+                                    <div className="text-xs font-semibold text-foreground/90">
+                                      {r.client_name || r.project_name || r.project_id.slice(0, 8)}
+                                    </div>
+                                    {r.fields_seeded.length > 0 && (
+                                      <div className="mt-1">
+                                        <span className="text-[10px] text-green-400 font-semibold">Seeded {r.fields_seeded.length}: </span>
+                                        <span className="text-[10px] text-muted-foreground">{r.fields_seeded.join(', ')}</span>
+                                      </div>
+                                    )}
+                                    {r.fields_skipped_existing.length > 0 && (
+                                      <div className="mt-0.5">
+                                        <span className="text-[10px] text-foreground/60 font-semibold">Already filled {r.fields_skipped_existing.length}: </span>
+                                        <span className="text-[10px] text-muted-foreground">{r.fields_skipped_existing.join(', ')}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Completeness */}
                 <div className="rounded-2xl border border-border bg-card/60 p-5">
                   <div className="flex items-center justify-between mb-3">
