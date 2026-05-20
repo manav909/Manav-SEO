@@ -283,9 +283,137 @@ const OPPORTUNITY_VERDICT: TemplateSpec = {
   ],
 };
 
+/* ─── Performance Prediction Memo ─────────────────────────────── */
+const PERFORMANCE_PREDICTION: TemplateSpec = {
+  id: "performance_prediction",
+  label: "Performance Prediction Memo",
+  description:
+    "Forward-looking: based on current signals, here's what we expect over the next 30 / 60 / 90 days. Every prediction carries explicit confidence and the assumptions it depends on. Investor-grade rigor — predictions you can defend.",
+  category: "forward_looking",
+  required_categories: ["goal", "analytics"],
+  optional_categories: ["identity", "audience", "history", "technical", "competitor", "content"],
+  useful_doc_types: ["gsc_export", "ga4_export", "ahrefs_export", "semrush_export", "audit_report", "internal_memo"],
+  default_audience_role: "client_executive",
+  verification_strictness: "investor_grade",
+  voice_hint: "Confident where evidence supports it, explicit about uncertainty where it doesn't. A prediction the writer would stake their reputation on.",
+  sections: [
+    { key: "executive_takeaway",     title: "Executive Takeaway",     description: "Two sentences: where this project is heading over the next 90 days, and with what confidence. The 'if you only read one line' summary." },
+    { key: "current_trajectory",     title: "Current Trajectory",     description: "Where we are now, with specific numbers cited from GSC/GA4/Ahrefs data. Direction of travel over the trailing 90 days." },
+    { key: "30_day_prediction",      title: "Next 30 Days",            description: "Specific predictions for the next 30 days. Each prediction must have a confidence level and the evidence backing it." },
+    { key: "60_day_prediction",      title: "30-60 Days Out",          description: "Predictions for the 30-60 day window. Less certain than 30-day; flag the increased uncertainty." },
+    { key: "90_day_prediction",      title: "60-90 Days Out",          description: "Predictions for the 60-90 day window. The widest uncertainty band; describe directionally where specific numbers can't be supported." },
+    { key: "assumptions_baked_in",   title: "Assumptions This Depends On",  description: "EXPLICIT list of assumptions: 'Predictions assume (a) Google does not deploy a major algorithm update in this window, (b) the migration completes by date X, (c) competitor Y does not launch their announced product...' Every prediction depends on these." },
+    { key: "what_would_invalidate",  title: "What Would Invalidate This",   description: "Specific events or signals that would force us to revise the predictions. Be concrete — 'if X happens by Y date, we revisit.'" },
+    { key: "confidence_calibration", title: "Confidence Calibration",       description: "Honest assessment per prediction: how confident we are, why, and what would shift the confidence up or down. Investor reader needs to know the strength of each claim." },
+  ],
+};
+
+/* ─── Recovery Plan ───────────────────────────────────────────── */
+const RECOVERY_PLAN: TemplateSpec = {
+  id: "recovery_plan",
+  label: "Recovery Plan",
+  description:
+    "Structured turnaround document for post-penalty, post-migration, post-redesign, or post-incident situations. Honest situation assessment, root-cause analysis, phased recovery path with timelines and success metrics.",
+  category: "performance",
+  required_categories: ["history", "technical"],
+  optional_categories: ["goal", "audience", "content", "analytics", "identity"],
+  useful_doc_types: ["audit_report", "screaming_frog", "gsc_export", "internal_memo", "strategy_deck"],
+  default_audience_role: "client_executive",
+  verification_strictness: "standard",
+  voice_hint: "Honest about the problem, structured about the solution, action-oriented. No sugarcoating, no panic. Senior consultant briefing the C-suite through a difficult moment.",
+  sections: [
+    { key: "situation_assessment",   title: "Where We Stand",         description: "Honest description of the current state — what happened, current scale of impact (cite specific numbers from history + analytics data), how long this has been the state." },
+    { key: "root_cause_analysis",    title: "Root Cause",              description: "Evidence-led analysis of WHY this happened. Cite the specific signals — algorithm update timing, migration deltas, technical findings, content changes. If root cause is uncertain, say so." },
+    { key: "recovery_phases",        title: "Three-Phase Recovery",   description: "Phase 1 (Stabilize, 0-30 days): stop the bleeding. Phase 2 (Rebuild, 30-90 days): foundational repair. Phase 3 (Grow, 90+ days): return to growth. Each phase with specific actions and intended outcomes." },
+    { key: "immediate_priorities",   title: "Next 30 Days — Stabilize",description: "Concrete actions for the first 30 days. Each action with owner (PM / client / external), expected outcome, success indicator." },
+    { key: "rebuilding_priorities",  title: "30-90 Days — Rebuild",   description: "Concrete actions for the rebuild phase. Each tied to a root cause we identified above." },
+    { key: "what_we_need_from_you",  title: "What We Need From You",  description: "Specific asks of the client to execute the plan: budget approval, content sign-offs, technical access, internal decision-makers' time, escalation paths." },
+    { key: "success_metrics",        title: "How We'll Know It's Working", description: "Specific metrics with target values + timeframes. Honest about lead times — SEO recovery is not 30 days. Calibrate expectations." },
+    { key: "what_could_go_wrong",    title: "What Could Slow This Down",  description: "Realistic risks to the plan and mitigations. Honest about external factors we don't control." },
+  ],
+};
+
+/* ─── Press Release Draft ─────────────────────────────────────── */
+const PRESS_RELEASE: TemplateSpec = {
+  id: "press_release",
+  label: "Press Release Draft",
+  description:
+    "Newsroom-style draft ready for editorial review and distribution. Lead-with-the-angle structure, attributed quotes (marked as TO BE CONFIRMED if not directly sourced), boilerplate composed from identity data, and distribution notes for the comms team.",
+  category: "strategic",
+  required_categories: ["identity"],
+  optional_categories: ["history", "competitor", "goal", "audience", "brand_narrative"],
+  useful_doc_types: ["internal_memo", "strategy_deck", "case_study", "press_coverage"],
+  default_audience_role: "press",
+  verification_strictness: "standard",
+  voice_hint: "Newsroom style. Lead with the angle. Short paragraphs. Quotable sentences. No hype — concrete claims with evidence behind them.",
+  sections: [
+    { key: "headline",                title: "Headline",                description: "8-12 words. Newsworthy. Specific. Active voice. Not 'Company announces' but the actual news (what changed)." },
+    { key: "subhead",                 title: "Subhead",                 description: "One sentence below the headline. Reinforces the angle with the most important supporting detail." },
+    { key: "lead_paragraph",          title: "Lead Paragraph",          description: "5W summary — who, what, when, where, why. Inverted-pyramid: most important fact first, supporting detail after. Under 60 words." },
+    { key: "supporting_paragraph_1",  title: "Supporting Paragraph 1",  description: "Concrete details that support the lead. Specific numbers, names, dates — only if cited in source material. No fluff." },
+    { key: "executive_quote",         title: "Quote — Leadership",      description: "Attributed quote from a leader at the company. Mark as '[TO BE CONFIRMED BY <ROLE>]' — do NOT fabricate exact wording. Provide 2-3 quotable sentence options the spokesperson can pick from." },
+    { key: "supporting_paragraph_2",  title: "Supporting Paragraph 2",  description: "Context, competitive landscape framing, or customer impact angle. Concrete." },
+    { key: "customer_or_partner_quote", title: "Quote — Customer / Partner (Optional)", description: "If the source material supports it, include an attributed quote from a customer or partner. Mark as '[TO BE CONFIRMED]'. If no source supports such a quote, write 'No customer quote sourced — request from client if desired.'" },
+    { key: "boilerplate",             title: "About <Company> — Boilerplate", description: "Standard 'About' paragraph composed from identity fields: primary offering, target market, year founded, lifecycle stage. Concrete, no marketing fluff." },
+    { key: "press_contact",           title: "Press Contact",           description: "Template fields: '[Name], [Title], [Email], [Phone].' Mark all as [TO BE FILLED IN] — never fabricate contact information." },
+    { key: "distribution_notes",      title: "Distribution Notes (Internal)", description: "Brief notes for the comms team: suggested distribution channels (trade press / general business / tech / vertical), embargo timing recommendation, story angle pitches per outlet type. Internal use — not part of the actual release." },
+  ],
+};
+
+/* ─── Case Study ──────────────────────────────────────────────── */
+const CASE_STUDY: TemplateSpec = {
+  id: "case_study",
+  label: "Case Study",
+  description:
+    "Customer success story in publishable form. Narrative arc: customer + challenge + journey + results + lesson. Customer-centered (their words where possible), evidence-led (cite specific outcomes), publishable on the client's marketing site.",
+  category: "strategic",
+  required_categories: ["identity", "audience"],
+  optional_categories: ["history", "competitor", "content", "analytics"],
+  useful_doc_types: ["customer_feedback", "case_study", "sales_call_notes", "internal_memo"],
+  default_audience_role: "client_marketing",
+  verification_strictness: "standard",
+  voice_hint: "Narrative, customer-centered, evidence-led. The customer is the hero. Avoid marketing-speak — concrete details outperform adjectives. Quotes must be attributed or marked as needing confirmation.",
+  sections: [
+    { key: "hero_line",              title: "Hero Line",                description: "One sentence headline result. The single most compelling outcome, stated concretely. 'X achieved Y in Z time' or 'How X solved Y.'" },
+    { key: "customer_overview",      title: "About the Customer",       description: "1 paragraph: who they are, what they do, why this case study matters. Concrete — industry, scale indicator, audience served." },
+    { key: "the_challenge",          title: "The Challenge",            description: "1-2 paragraphs: the problem the customer came in with. Specific, not generic. Use their language patterns from the source material where possible." },
+    { key: "the_journey",            title: "The Journey",              description: "2-3 paragraphs in narrative form (NOT bullet-point dump). What was done, in what order, with what reasoning. The reader should understand the thought process — this is what makes a case study compelling vs a glorified feature list." },
+    { key: "the_results",            title: "The Results",              description: "Specific outcomes. Cite numbers ONLY if they appear in source material. If a number is implied but not stated, describe directionally and flag it. NEVER fabricate metrics for case studies — this is publishable content; fabricated metrics are existential reputation risk." },
+    { key: "customer_quote",         title: "Customer Quote",           description: "Attributed quote from the customer. Mark as '[TO BE CONFIRMED — exact wording requires customer review]' if no direct quote is in source material. Provide 2-3 quotable options drawn from the customer's own language patterns in the source." },
+    { key: "why_this_matters",       title: "Why This Matters",         description: "1 paragraph: the broader lesson. What other companies in similar positions can take from this story. NOT 'and that's why our product is great' — the lesson is about the customer's industry / situation / approach." },
+    { key: "what_made_it_work",      title: "What Made It Work",        description: "3-5 bullet points: the specific factors that drove the outcome. Useful for prospects to recognize their own situation. Honest — include factors specific to this customer that wouldn't apply universally." },
+  ],
+};
+
+/* ─── Sales Battlecard ────────────────────────────────────────── */
+const SALES_BATTLECARD: TemplateSpec = {
+  id: "sales_battlecard",
+  label: "Sales Battlecard",
+  description:
+    "Tactical asset for the sales team. Persona profile + value prop + proof points + objection handling + traps to avoid. Designed for a salesperson to read 5 minutes before a call and walk in confident.",
+  category: "competitive",
+  required_categories: ["identity", "audience"],
+  optional_categories: ["competitor", "content", "history", "commercial", "analytics"],
+  useful_doc_types: ["sales_call_notes", "persona_research", "customer_feedback", "case_study", "strategy_deck"],
+  default_audience_role: "sales_team",
+  verification_strictness: "standard",
+  voice_hint: "Tactical, specific, action-ready. Bullet-friendly. A salesperson 5 minutes before a call should walk in with concrete things to say and concrete things to avoid. No theory — operational guidance only.",
+  sections: [
+    { key: "target_persona",            title: "Target Persona",                description: "Compact persona profile: role, motivations, what they care about most, who else gets involved in the decision. Brief — salesperson already knows their patch, this is calibration." },
+    { key: "pain_points_to_probe",      title: "Pain Points to Probe",          description: "3-5 specific discovery questions designed to surface pain. Each tied to a pain the persona likely has based on the audience research and sales call notes." },
+    { key: "our_value_proposition",     title: "Our Value Prop — Calibrated for This Persona", description: "How we position our offering specifically for this persona. Not generic — the part of our story that matters MOST to their role and their stage." },
+    { key: "proof_points",              title: "Proof Points to Reach For",     description: "Specific evidence: customer wins, metrics, certifications, partnerships, awards. Each proof point with a one-line context for when to deploy it ('use when prospect is concerned about scale / risk / fit')." },
+    { key: "common_objections",         title: "Top 5 Objections + Responses",  description: "The 5 most common objections from this persona based on sales notes and audience research. Each with a recommended response framing (not a script — a directional response that the salesperson adapts)." },
+    { key: "traps_to_avoid",            title: "Traps to Avoid",                description: "What NOT to say. Claims we shouldn't make (accuracy / legal / tonal reasons). Topics that go badly with this persona. Comparison language to avoid. Be specific." },
+    { key: "next_step_to_drive",        title: "Drive Them to This Next Step",  description: "The single action this call should produce — demo, technical review, trial signup, executive intro. Calibrated to the persona and the deal stage. Don't try to close in one call." },
+    { key: "useful_questions_to_close", title: "Closing Questions",             description: "2-3 questions that surface the prospect's buying intent + remaining concerns. 'What would have to be true for you to move forward?' patterns." },
+  ],
+};
+
 /* ─── Master template registry ────────────────────────────────── */
 
 export const TEMPLATES: TemplateSpec[] = [
+  /* H.2 — original 10 strategic templates */
   BRAND_STATEMENT,
   POSITIONING_MEMO,
   AUDIENCE_PERSONA,
@@ -296,6 +424,12 @@ export const TEMPLATES: TemplateSpec[] = [
   MARKET_PROMINENCE,
   CONTENT_GAP_PLAN,
   OPPORTUNITY_VERDICT,
+  /* H.2.1 — 5 additional strategic templates */
+  PERFORMANCE_PREDICTION,
+  RECOVERY_PLAN,
+  PRESS_RELEASE,
+  CASE_STUDY,
+  SALES_BATTLECARD,
 ];
 
 export function getTemplate(id: string): TemplateSpec | null {
