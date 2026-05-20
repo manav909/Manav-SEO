@@ -11,74 +11,86 @@
       "maxDuration": 300,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/task-engine.ts": {
       "maxDuration": 300,
       "regions": [
         "iad1"
       ],
-      "includeFiles": "api/lib/**"
+      "includeFiles": "api/lib/**",
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/run-analysis.ts": {
       "maxDuration": 300,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/crawl.ts": {
       "maxDuration": 300,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/seo-agent.ts": {
       "maxDuration": 300,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/analysis.ts": {
       "maxDuration": 300,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/playground-analysis.ts": {
       "maxDuration": 300,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/algorithm-intel.ts": {
       "maxDuration": 180,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/launchpad.ts": {
       "maxDuration": 120,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/auto-metrics.ts": {
       "maxDuration": 120,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/fetch-site-metrics.ts": {
       "maxDuration": 120,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     },
     "api/control.ts": {
       "maxDuration": 60,
       "regions": [
         "iad1"
-      ]
+      ],
+      "runtime": "@vercel/node@5.1.14"
     }
   },
   "rewrites": [
