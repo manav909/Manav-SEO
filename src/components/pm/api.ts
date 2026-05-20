@@ -637,3 +637,76 @@ export async function gscDisconnect(projectId: string): Promise<{ success: boole
   if (!r?.success) return { success: false, error: r?.error || 'Disconnect failed.' };
   return { success: true };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   GA4 integration API (Phase E)
+═══════════════════════════════════════════════════════════ */
+
+interface Ga4Status {
+  connected:     boolean;
+  resourceId?:   string;
+  resourceLabel?: string;
+  lastPullAt?:   string;
+  lastPullStatus?: string;
+  lastPullError?: string;
+  connectedAt?:  string;
+}
+
+export async function ga4Status(projectId: string): Promise<{
+  status?: Ga4Status; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'ga4_status', projectId });
+  if (!r?.success) return { error: r?.error || 'Could not load status.' };
+  return {
+    status: {
+      connected:      !!r.connected,
+      resourceId:     r.resourceId,
+      resourceLabel:  r.resourceLabel,
+      lastPullAt:     r.lastPullAt,
+      lastPullStatus: r.lastPullStatus,
+      lastPullError:  r.lastPullError,
+      connectedAt:    r.connectedAt,
+    },
+  };
+}
+
+export async function ga4OauthStart(projectId: string): Promise<{
+  url?: string; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'ga4_oauth_start', projectId });
+  if (!r?.success) return { error: r?.error || 'OAuth start failed.' };
+  return { url: r.url };
+}
+
+export async function ga4ListProperties(projectId: string): Promise<{
+  properties: { id: string; name: string; account: string }[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'ga4_list_properties', projectId });
+  if (!r?.success) return { properties: [], error: r?.error || 'List failed.' };
+  return { properties: Array.isArray(r.properties) ? r.properties : [] };
+}
+
+export async function ga4SelectProperty(opts: {
+  projectId: string; propertyId: string; label?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'ga4_select_property', ...opts });
+  if (!r?.success) return { success: false, error: r?.error || 'Select failed.' };
+  return { success: true };
+}
+
+export async function ga4Pull(opts: {
+  projectId: string; days?: number;
+}): Promise<{
+  totals?: { sessions: number; users: number; conversions: number; bounceRate: number; engagedSessions: number; avgSessionSec: number };
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'ga4_pull', ...opts });
+  if (!r?.success) return { error: r?.error || 'Pull failed.' };
+  return { totals: r.totals };
+}
+
+export async function ga4Disconnect(projectId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'ga4_disconnect', projectId });
+  if (!r?.success) return { success: false, error: r?.error || 'Disconnect failed.' };
+  return { success: true };
+}

@@ -1326,13 +1326,17 @@ Evidence: ${c.data_basis}` : ''}`,
     const knData  = knowledge[category]?.[field.key];
     const source  = knData?.source_name || knData?.source;
     const dDate   = knData?.data_date;
-    /* Piece 2: GSC-auto-synced fields get a distinct badge + edit lock.
-       The PM must click "Edit anyway" to override an auto-synced value,
-       which prevents accidental overwrites of live data. */
-    const isGscAuto    = knData?.source === 'gsc_auto';
+    /* Piece 2: auto-synced fields (gsc_auto, ga4_auto) get a distinct badge
+       + edit lock. The PM must click "Edit anyway" to override an auto-
+       synced value, which prevents accidental overwrites of live data. */
+    const autoSource: string | null =
+      knData?.source === 'gsc_auto' ? 'GSC' :
+      knData?.source === 'ga4_auto' ? 'GA4' :
+      null;
+    const isAutoSynced = !!autoSource;
     const overrideKey  = `${category}.${field.key}`;
     const overriding   = !!editOverrides[overrideKey];
-    const inputLocked  = isGscAuto && !overriding && !dirty;
+    const inputLocked  = isAutoSynced && !overriding && !dirty;
 
     return (
       <div key={field.key} className="space-y-1">
@@ -1341,13 +1345,13 @@ Evidence: ${c.data_basis}` : ''}`,
             {field.label}
             {field.required && <span className="text-red-400 ml-0.5">*</span>}
           </label>
-          {isGscAuto && !dirty && (
+          {isAutoSynced && !dirty && (
             <span className="ml-auto flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400">
-              <CheckCircle2 size={10}/> Auto-synced from GSC
+              <CheckCircle2 size={10}/> Auto-synced from {autoSource}
               {dDate && <span className="text-green-400/70 font-mono ml-1">{dDate}</span>}
             </span>
           )}
-          {!isGscAuto && val && !dirty && (
+          {!isAutoSynced && val && !dirty && (
             <div className="flex items-center gap-1 ml-auto">
               {source && <span className="text-xs text-muted-foreground font-mono">{source}</span>}
               {dDate  && <span className="text-xs text-muted-foreground font-mono">· {dDate}</span>}
@@ -1385,19 +1389,19 @@ Evidence: ${c.data_basis}` : ''}`,
             className={`w-full h-9 text-sm px-3 rounded-xl border ${inputLocked ? 'border-green-500/20 bg-green-500/5 cursor-not-allowed' : 'border-border bg-background/60'} outline-none focus:border-primary/50`}
           />
         )}
-        {isGscAuto && !overriding && !dirty && (
+        {isAutoSynced && !overriding && !dirty && (
           <button
             type="button"
             onClick={() => setEditOverrides(prev => ({ ...prev, [overrideKey]: true }))}
             className="text-[10px] text-muted-foreground hover:text-foreground underline"
-          >Edit anyway (overrides live GSC value)</button>
+          >Edit anyway (overrides live {autoSource} value)</button>
         )}
-        {isGscAuto && overriding && !dirty && (
+        {isAutoSynced && overriding && !dirty && (
           <button
             type="button"
             onClick={() => setEditOverrides(prev => { const n = { ...prev }; delete n[overrideKey]; return n; })}
             className="text-[10px] text-muted-foreground hover:text-foreground underline"
-          >Cancel override — keep live GSC value</button>
+          >Cancel override — keep live {autoSource} value</button>
         )}
       </div>
     );

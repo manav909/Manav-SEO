@@ -309,6 +309,29 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  /* ── GA4 OAuth callback (Phase E) — same shape, different provider ── */
+  if (req.method === "GET" && String((req.query as any)?.action || "") === "ga4_oauth_callback") {
+    const code  = String((req.query as any)?.code || "");
+    const state = String((req.query as any)?.state || "");
+    try {
+      const { ga4OauthCallback } = await import("./lib/pm-ga4.js");
+      const r = await ga4OauthCallback({ code, state });
+      if (r.success && r.html) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        return res.status(200).send(r.html);
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(400).send(
+        `<!doctype html><html><body style="font-family:sans-serif;padding:40px;background:#0a0a0a;color:#e5e5e5">
+        <h2>GA4 connection failed</h2>
+        <p>${(r.error || "Unknown error").replace(/[<>]/g, "")}</p>
+        <p><a href="/pm" style="color:#818cf8">Back to PM module</a></p>
+        </body></html>`);
+    } catch (e: any) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(500).send(`<pre>${(e?.message || "callback failed").replace(/[<>]/g, "")}</pre>`);
+    }
+  }
   /* Vercel cron trigger (GET or x-vercel-cron header) — auto-routes to verification runner */
   const isCron = req.method === "GET" || req.headers["x-vercel-cron"] === "1";
 
@@ -417,6 +440,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handlePmGsc } = await import("./lib/pm-gsc.js");
     const gscResult = await handlePmGsc(action, body, req, res);
     if (gscResult !== null) return ok(res, gscResult);
+  }
+
+  /* ═══ GA4 INTEGRATION (Phase E) — ga4_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("ga4_")) {
+    const { handlePmGa4 } = await import("./lib/pm-ga4.js");
+    const ga4Result = await handlePmGa4(action, body, req, res);
+    if (ga4Result !== null) return ok(res, ga4Result);
   }
 
 
@@ -2438,6 +2468,15 @@ Return ONLY raw JSON:
       gscCronSummary = { error: e?.message || "gscCronPullAll failed" };
     }
 
+    /* ── GA4 daily pull (Phase E) — same pattern ── */
+    let ga4CronSummary: any = null;
+    try {
+      const { ga4CronPullAll } = await import("./lib/pm-ga4.js");
+      ga4CronSummary = await ga4CronPullAll();
+    } catch (e: any) {
+      ga4CronSummary = { error: e?.message || "ga4CronPullAll failed" };
+    }
+
     const now = new Date().toISOString();
 
     /* Get all pending verifications due now */
@@ -2449,7 +2488,7 @@ Return ONLY raw JSON:
       .limit(10);
 
     if (!due || due.length === 0) {
-      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary });
+      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary });
     }
 
     const results: any[] = [];
@@ -2586,6 +2625,7 @@ Respond with JSON only:
       results,
       pmCron:    pmCronSummary,
       gscCron:   gscCronSummary,
+      ga4Cron:   ga4CronSummary,
       timestamp: new Date().toISOString(),
     });
   }

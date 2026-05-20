@@ -144,7 +144,7 @@ export async function buildReportCatalog(
       .eq("project_id", projectId),
   ]);
 
-  /* GSC freshness signal — used to calibrate the AI narrative's confidence */
+  /* GSC + GA4 freshness signals — calibrate the AI narrative's confidence */
   const gscIntegration = (integrations || []).find((i: any) => i.provider === "gsc") as any;
   let gscStatus: "live" | "stale" | "not_connected" = "not_connected";
   let gscDaysSincePull: number | null = null;
@@ -154,6 +154,18 @@ export async function buildReportCatalog(
       gscStatus = gscDaysSincePull <= 3 ? "live" : "stale";
     } else {
       gscStatus = "stale";
+    }
+  }
+
+  const ga4Integration = (integrations || []).find((i: any) => i.provider === "ga4") as any;
+  let ga4Status: "live" | "stale" | "not_connected" = "not_connected";
+  let ga4DaysSincePull: number | null = null;
+  if (ga4Integration?.resource_id) {
+    if (ga4Integration.last_pull_at) {
+      ga4DaysSincePull = Math.floor((Date.now() - new Date(ga4Integration.last_pull_at).getTime()) / 86_400_000);
+      ga4Status = ga4DaysSincePull <= 3 ? "live" : "stale";
+    } else {
+      ga4Status = "stale";
     }
   }
 
@@ -388,6 +400,7 @@ export async function buildReportCatalog(
       latestAudit, prevAudit, lastSnap, prevSnap, crawled,
       shippedRows,
       gscStatus, gscDaysSincePull,
+      ga4Status, ga4DaysSincePull,
     },
   };
 }
@@ -482,13 +495,24 @@ function performanceFacts(rawData: any): string {
   const ships = rawData.shippedRows || [];
   const measuredShips = ships.filter((s: any) => s.measured);
 
-  /* data-source calibration — tells the narrative how confident to be */
-  const sourceLine: string =
-    rawData.gscStatus === "live"
-      ? `DATA SOURCE: Google Search Console is connected and pulled within the last 3 days. Numbers are LIVE — write with confidence about the metrics. You may state movements as fact.`
-    : rawData.gscStatus === "stale"
-      ? `DATA SOURCE: Google Search Console is connected but the last pull is ${rawData.gscDaysSincePull} days old. Hedge claims about recent movement — use phrases like "based on the latest available data".`
-      : `DATA SOURCE: Google Search Console is NOT connected. Performance numbers come from manual Data Room entries. Hedge all claims about movement — use phrases like "according to the last reported figures" — and recommend connecting GSC for live tracking.`;
+  /* data-source calibration — tells the narrative how confident to be.
+     Covers both GSC (search performance) and GA4 (engagement / sessions). */
+  const sourceParts: string[] = [];
+  if (rawData.gscStatus === "live") {
+    sourceParts.push("Search Console is LIVE (pulled within 3 days). Write confidently about clicks, impressions, position.");
+  } else if (rawData.gscStatus === "stale") {
+    sourceParts.push(`Search Console pull is ${rawData.gscDaysSincePull} days old — hedge claims about search movement.`);
+  } else {
+    sourceParts.push("Search Console is NOT connected — hedge all search performance claims and recommend connecting GSC.");
+  }
+  if (rawData.ga4Status === "live") {
+    sourceParts.push("Google Analytics 4 is LIVE (pulled within 3 days). Write confidently about organic sessions, conversions, bounce rate.");
+  } else if (rawData.ga4Status === "stale") {
+    sourceParts.push(`GA4 pull is ${rawData.ga4DaysSincePull} days old — hedge claims about session/conversion movement.`);
+  } else {
+    sourceParts.push("GA4 is NOT connected — hedge engagement/conversion claims and recommend connecting GA4.");
+  }
+  const sourceLine = "DATA SOURCES: " + sourceParts.join(" ");
 
   const cmp = (cur: any, p: any, label: string) =>
     (cur == null && p == null) ? "" :

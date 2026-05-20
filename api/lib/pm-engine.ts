@@ -222,13 +222,44 @@ async function pmGatherRequirements(projectId: string) {
         }
       }
     } catch { /* non-fatal */ }
-    /* helper: prefer fresh GSC for analytics fields when available */
+
+    /* ── Same logic for GA4 (Phase E): if fresh, use it for analytics fields. */
+    let ga4Fresh: { sessions: string; conversions: string; bounceRate: string; capturedAt: string } | null = null;
+    let ga4StaleDays: number | null = null;
+    try {
+      const { data: latestGa4 } = await db().from("metrics_snapshots")
+        .select("organic_sessions,conversions,bounce_rate,extras,captured_at")
+        .eq("project_id", projectId)
+        .not("organic_sessions", "is", null)
+        .order("captured_at", { ascending: false }).limit(1).maybeSingle();
+      if (latestGa4) {
+        const ageDays = (Date.now() - new Date((latestGa4 as any).captured_at).getTime()) / 86_400_000;
+        ga4StaleDays = Math.floor(ageDays);
+        if (ageDays <= 7) {
+          ga4Fresh = {
+            sessions:    String((latestGa4 as any).organic_sessions ?? ""),
+            conversions: String((latestGa4 as any).conversions ?? ""),
+            bounceRate:  (latestGa4 as any).bounce_rate != null
+                          ? Number((latestGa4 as any).bounce_rate).toFixed(2) + "%"
+                          : "",
+            capturedAt:  (latestGa4 as any).captured_at,
+          };
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    /* helper: prefer fresh GSC + GA4 for analytics fields when available */
     const analyticsField = (key: string): string => {
       if (gscFresh) {
         if (key === "gsc_total_clicks")      return gscFresh.clicks;
         if (key === "gsc_total_impressions") return gscFresh.impressions;
         if (key === "gsc_avg_position")      return gscFresh.position;
         if (key === "gsc_ctr")               return gscFresh.ctr;
+      }
+      if (ga4Fresh) {
+        if (key === "organic_sessions_monthly") return ga4Fresh.sessions;
+        if (key === "conversions_monthly")      return ga4Fresh.conversions;
+        if (key === "bounce_rate")              return ga4Fresh.bounceRate;
       }
       return dr("analytics", key);
     };
@@ -446,6 +477,14 @@ async function pmGatherRequirements(projectId: string) {
         staleDays:     gscStaleDays,
       },
 
+      /* GA4 freshness signal */
+      ga4: {
+        connected:     !!ga4Fresh || ga4StaleDays != null,
+        fresh:         !!ga4Fresh,
+        capturedAt:    ga4Fresh?.capturedAt || null,
+        staleDays:     ga4StaleDays,
+      },
+
       /* full Data Room, grouped by category for the UI */
       dataRoom: {
         goal: {
@@ -474,10 +513,10 @@ async function pmGatherRequirements(projectId: string) {
           hosting:  dr("access", "hosting_access"),
         },
         analytics: {
-          organicSessions: dr("analytics", "organic_sessions_monthly"),
+          organicSessions: analyticsField("organic_sessions_monthly"),
           topLandingPages: dr("analytics", "top_landing_pages"),
-          bounceRate:      dr("analytics", "bounce_rate"),
-          conversions:     dr("analytics", "conversions_monthly"),
+          bounceRate:      analyticsField("bounce_rate"),
+          conversions:     analyticsField("conversions_monthly"),
           gscImpressions:  analyticsField("gsc_total_impressions"),
           gscClicks:       analyticsField("gsc_total_clicks"),
           gscPosition:     analyticsField("gsc_avg_position"),
