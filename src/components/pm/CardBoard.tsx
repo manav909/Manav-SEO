@@ -9,8 +9,9 @@
    - Click a card → open TaskRunner (execute) or VerifyPanel (verify)
 ════════════════════════════════════════════════════════════════ */
 
-import { useState, useMemo } from 'react';
-import type { TaskCard } from './types';
+import { useState, useMemo, useEffect } from 'react';
+import { Lock, Ship } from 'lucide-react';
+import type { TaskCard, LifecycleMap } from './types';
 import {
   WEEK_COLUMNS, getSuggestion, getNextRecommendation,
   estimateHours, formatHours, columnHours, workloadLabel,
@@ -19,6 +20,7 @@ import {
 import * as pmApi from './api';
 import TaskRunner from './TaskRunner';
 import VerifyPanel from './VerifyPanel';
+import CardLifecycleDrawer from './CardLifecycleDrawer';
 
 export default function CardBoard({
   projectId, project, cards, loading, onChange,
@@ -33,6 +35,18 @@ export default function CardBoard({
   const [dragOverWeek, setOverWk] = useState<number | null>(null);
   const [runnerCard, setRunner]   = useState<TaskCard | null>(null);
   const [verifyCard, setVerify]   = useState<TaskCard | null>(null);
+  const [lifecycleCardId, setLifecycleCardId] = useState<string | null>(null);
+  const [lcMap, setLcMap] = useState<LifecycleMap>({ blockedByCard: {}, shipmentCountsByCard: {} });
+
+  /* load lifecycle map (blockers + shipment counts) — refresh on card changes */
+  const loadLifecycle = async () => {
+    const { map } = await pmApi.lifecycleMap(projectId);
+    if (map) setLcMap(map);
+  };
+  useEffect(() => {
+    if (projectId) loadLifecycle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, cards.length]);
 
   const library = useMemo(() => cards.filter(c => !c.placed), [cards]);
   const placed  = useMemo(() => cards.filter(c => c.placed),  [cards]);
@@ -160,10 +174,13 @@ export default function CardBoard({
                   <BoardCard
                     key={card.id}
                     card={card}
+                    blockers={lcMap.blockedByCard[card.id]?.blockers || []}
+                    shipmentCount={lcMap.shipmentCountsByCard[card.id] || 0}
                     onDragStart={() => setDragId(card.id)}
                     onOpen={() => setRunner(card)}
                     onVerify={() => setVerify(card)}
                     onUnplace={() => place(card, null)}
+                    onLifecycle={() => setLifecycleCardId(card.id)}
                   />
                 ))}
               </div>
@@ -191,6 +208,14 @@ export default function CardBoard({
           onVerified={() => { setVerify(null); onChange(); }}
         />
       )}
+
+      {/* Lifecycle drawer — ship, measure, transition, activity */}
+      <CardLifecycleDrawer
+        cardId={lifecycleCardId}
+        open={!!lifecycleCardId}
+        onClose={() => setLifecycleCardId(null)}
+        onChanged={() => { loadLifecycle(); onChange(); }}
+      />
     </div>
   );
 }
@@ -220,24 +245,46 @@ function LibraryCard({ card, onDragStart, onClick }: {
 }
 
 /* ── A card placed on the board ── */
-function BoardCard({ card, onDragStart, onOpen, onVerify, onUnplace }: {
-  card: TaskCard; onDragStart: () => void;
+function BoardCard({ card, blockers, shipmentCount, onDragStart, onOpen, onVerify, onUnplace, onLifecycle }: {
+  card: TaskCard;
+  blockers: { id: string; title: string; status: string }[];
+  shipmentCount: number;
+  onDragStart: () => void;
   onOpen: () => void; onVerify: () => void; onUnplace: () => void;
+  onLifecycle: () => void;
 }) {
   const color = TYPE_COLOR[card.type];
   const statusColor: Record<string, string> = {
     todo: '#6366f1', doing: '#f59e0b', review: '#a78bfa',
     waiting: '#fb923c', verified: '#10b981', done: '#10b981',
+    planned: '#6366f1', in_progress: '#f59e0b', executed: '#a78bfa',
+    reviewed: '#a78bfa', shipped: '#10b981', measured: '#34d399',
+    archived: '#64748b',
   };
+  const isBlocked = blockers.length > 0;
   return (
     <div
       draggable
       onDragStart={onDragStart}
-      className="rounded-lg border border-border bg-background/60 p-2.5 hover:border-primary/40 transition-colors"
+      className={`rounded-lg border bg-background/60 p-2.5 transition-colors ${
+        isBlocked ? 'border-amber-500/40 bg-amber-500/5' : 'border-border hover:border-primary/40'
+      }`}
     >
       <div className="flex items-center gap-1.5 mb-1">
         <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
         <span className="text-[10px] text-muted-foreground">{TYPE_LABEL[card.type]}</span>
+        {isBlocked && (
+          <span title={`Blocked by: ${blockers.map(b => b.title).join(', ')}`}
+            className="flex items-center gap-0.5 text-[10px] text-amber-400">
+            <Lock className="h-2.5 w-2.5" /> blocked
+          </span>
+        )}
+        {shipmentCount > 0 && (
+          <span title={`${shipmentCount} shipment${shipmentCount === 1 ? '' : 's'}`}
+            className="flex items-center gap-0.5 text-[10px] text-green-400">
+            <Ship className="h-2.5 w-2.5" /> {shipmentCount}
+          </span>
+        )}
         <span className="text-[10px] ml-auto" style={{ color: statusColor[card.status] || '#94a3b8' }}>
           {card.status}
         </span>
@@ -250,12 +297,18 @@ function BoardCard({ card, onDragStart, onOpen, onVerify, onUnplace }: {
           className="text-[10px] px-2 py-0.5 rounded bg-primary/15 text-primary font-semibold hover:bg-primary/25 transition-colors">
           {card.output ? 'Re-run' : 'Run'}
         </button>
-        {(card.status === 'review' || card.status === 'done') && (
+        {(card.status === 'review' || card.status === 'done' || card.status === 'executed') && (
           <button onClick={onVerify}
             className="text-[10px] px-2 py-0.5 rounded bg-green-500/15 text-green-400 font-semibold hover:bg-green-500/25 transition-colors">
             Verify
           </button>
         )}
+        <button onClick={onLifecycle}
+          className="text-[10px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 font-semibold hover:bg-blue-500/25 transition-colors"
+          title="Open card lifecycle — ship, measure, view activity"
+        >
+          Lifecycle
+        </button>
         <button onClick={onUnplace}
           className="text-[10px] text-muted-foreground hover:text-foreground ml-auto transition-colors">
           ↩ Library

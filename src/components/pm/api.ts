@@ -490,3 +490,75 @@ export async function takeMetricsSnapshot(projectId: string): Promise<{
   if (!r?.success) return { success: false, error: r?.error || 'Snapshot failed.' };
   return { success: true };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Lifecycle API (Phase B — execution loop)
+═══════════════════════════════════════════════════════════ */
+
+import type {
+  LifecycleState, CardDetail, LifecycleMap, CardShipment,
+} from './types';
+
+/* Get a card with its full lifecycle context — blockers, shipments, activity. */
+export async function cardDetail(cardId: string): Promise<{
+  detail?: CardDetail; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_card_detail', cardId });
+  if (!r?.success) return { error: r?.error || 'Could not load card.' };
+  return {
+    detail: {
+      card:      r.card,
+      blockers:  Array.isArray(r.blockers) ? r.blockers : [],
+      isBlocked: !!r.isBlocked,
+      shipments: Array.isArray(r.shipments) ? r.shipments : [],
+      activity:  Array.isArray(r.activity) ? r.activity : [],
+    },
+  };
+}
+
+/* Map of cards with blockers / shipment counts — used by the board to render
+   blocked-state styling and shipment badges. */
+export async function lifecycleMap(projectId: string): Promise<{
+  map?: LifecycleMap; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_card_lifecycle_map', projectId });
+  if (!r?.success) return { error: r?.error || 'Could not load lifecycle map.' };
+  return {
+    map: {
+      blockedByCard:        r.blockedByCard || {},
+      shipmentCountsByCard: r.shipmentCountsByCard || {},
+    },
+  };
+}
+
+/* Non-shipping lifecycle transition. */
+export async function transitionCard(opts: {
+  cardId: string; toState: LifecycleState; note?: string; archiveReason?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_card_transition', ...opts });
+  if (!r?.success) return { success: false, error: r?.error || 'Transition failed.' };
+  return { success: true };
+}
+
+/* Ship a card. Captures baseline metrics + writes shipment + activity. */
+export async function shipCard(opts: {
+  cardId: string;
+  affectedUrls?: string[];
+  actualShippedUrl?: string;
+  changesSummary: string;
+  evidenceUrl?: string;
+  forceShipReason?: string;
+}): Promise<{ shipment?: CardShipment; error?: string; wasBlocked?: boolean }> {
+  const r = await post(ENGINE, { action: 'pm_card_ship', ...opts });
+  if (!r?.success) return { error: r?.error || 'Ship failed.', wasBlocked: !!r?.wasBlocked };
+  return { shipment: r.shipment };
+}
+
+/* Take a post-ship measurement (manual now; cron-driven later). */
+export async function measureCard(opts: {
+  cardId: string; shipmentId?: string;
+}): Promise<{ shipment?: CardShipment; lift?: any; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_card_measure', ...opts });
+  if (!r?.success) return { error: r?.error || 'Measure failed.' };
+  return { shipment: r.shipment, lift: r.lift };
+}

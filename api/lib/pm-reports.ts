@@ -328,12 +328,50 @@ export async function buildReportCatalog(
     },
   ];
 
+  /* ── Measured impact (Phase B — execution loop) ──
+     Async block: built outside the array literal so all promises are
+     resolved cleanly. Lists shipped cards in the period with their
+     ship-time vs post-ship metrics, plus measured/unmeasured status. */
+  let shippedRows: any[] = [];
+  try {
+    const { pmShippedInPeriod } = await import("./pm-lifecycle.js");
+    const r = await pmShippedInPeriod(projectId, periodStart, periodEnd);
+    shippedRows = (r.success && r.rows) ? r.rows : [];
+    const measuredCount = shippedRows.filter((x: any) => x.measured).length;
+    catalog.push({
+      id: "table:measured_impact", type: "table",
+      title: "Measured impact — shipped this period",
+      category: "delivery",
+      available: shippedRows.length > 0,
+      data: {
+        columns: ["Shipped", "Card", "Type", "URL", "Δ clicks", "Δ position", "Evidence"],
+        rows: shippedRows.map((x: any) => ({
+          shipped:    new Date(x.shipped_at).toLocaleDateString("en-GB"),
+          title:      x.card_title + (x.force_shipped ? " (force-shipped)" : ""),
+          type:       x.card_type,
+          url:        x.url || "—",
+          d_clicks:   x.lift_clicks != null ? (x.lift_clicks > 0 ? `+${x.lift_clicks}` : String(x.lift_clicks)) : (x.measured ? "0" : "—"),
+          d_position: x.lift_position != null ? (x.lift_position < 0 ? x.lift_position.toFixed(1) : `+${x.lift_position.toFixed(1)}`) : (x.measured ? "0" : "—"),
+          evidence:   x.evidence_url || "",
+        })),
+        summary: shippedRows.length
+          ? `${shippedRows.length} card${shippedRows.length === 1 ? "" : "s"} shipped, ${measuredCount} with measurements`
+          : "",
+      },
+      hint: "Each row is a real shipment with baseline & post-ship metrics. — means measurement pending.",
+    });
+  } catch (e) {
+    /* lifecycle data is best-effort — skipping the block is fine if it fails */
+    console.error("[pm-reports] measured_impact block failed:", (e as any)?.message || e);
+  }
+
   return {
     catalog,
     rawData: {
       project: proj, projectKnowledge: km,
       cardsDelivered, cardsInProgress, cardsPlanned,
       latestAudit, prevAudit, lastSnap, prevSnap, crawled,
+      shippedRows,
     },
   };
 }
@@ -395,19 +433,29 @@ function deliveryFacts(rawData: any): string {
   const done = rawData.cardsDelivered || [];
   const progress = rawData.cardsInProgress || [];
   const planned = rawData.cardsPlanned || [];
+  const ships = rawData.shippedRows || [];
   const lines: string[] = [
     `CARDS COMPLETED THIS PERIOD (${done.length}):`,
     ...done.slice(0, 12).map((c: any) =>
       `- [${c.card_type}/${c.priority}] ${c.title}${c.output ? ` — outcome: ${String(c.output).slice(0, 160)}` : ""}`),
     done.length > 12 ? `... and ${done.length - 12} more.` : "",
     "",
+  ];
+  if (ships.length) {
+    lines.push(`SHIPMENTS IN PERIOD (${ships.length}) — these are the live changes:`);
+    for (const s of ships.slice(0, 10)) {
+      lines.push(`- ${new Date(s.shipped_at).toLocaleDateString("en-GB")} | ${s.card_title} | ${s.url || ""} | ${s.changes.slice(0, 120)}`);
+    }
+    lines.push("");
+  }
+  lines.push(
     `CARDS IN PROGRESS (${progress.length}):`,
     ...progress.slice(0, 8).map((c: any) => `- [${c.card_type}] ${c.title}`),
     "",
     `PLANNED NEXT (${planned.length}):`,
     ...planned.slice(0, 8).map((c: any) => `- [${c.card_type}] ${c.title}`),
-  ].filter(Boolean);
-  return lines.join("\n");
+  );
+  return lines.filter(Boolean).join("\n");
 }
 
 function performanceFacts(rawData: any): string {
@@ -415,11 +463,15 @@ function performanceFacts(rawData: any): string {
   const prev = rawData.prevSnap || {};
   const audit = rawData.latestAudit || {};
   const prevAudit = rawData.prevAudit || {};
+  const ships = rawData.shippedRows || [];
+  const measuredShips = ships.filter((s: any) => s.measured);
+
   const cmp = (cur: any, p: any, label: string) =>
     (cur == null && p == null) ? "" :
     cur != null && p != null ? `${label}: ${cur} (was ${p}, ${(cur - p >= 0 ? "+" : "")}${(cur - p).toFixed(1)})` :
     cur != null ? `${label}: ${cur} (no prior point)` : "";
-  return [
+
+  const lines: string[] = [
     cmp(last.organic_sessions, prev.organic_sessions, "Organic sessions"),
     cmp(last.gsc_clicks,       prev.gsc_clicks,       "GSC clicks"),
     cmp(last.gsc_impressions,  prev.gsc_impressions,  "GSC impressions"),
@@ -428,7 +480,20 @@ function performanceFacts(rawData: any): string {
     audit.overall_score != null
       ? `Audit score: ${audit.overall_score}${prevAudit.overall_score != null ? ` (prev ${prevAudit.overall_score})` : ""}`
       : "",
-  ].filter(Boolean).join("\n") || "No performance metrics captured yet — recommend running a fresh snapshot.";
+  ];
+
+  if (measuredShips.length) {
+    lines.push("", "MEASURED CARD-LEVEL IMPACT (attribute these confidently — they have before/after data):");
+    for (const s of measuredShips.slice(0, 6)) {
+      const liftBits: string[] = [];
+      if (s.lift_clicks != null)   liftBits.push(`clicks ${s.lift_clicks > 0 ? "+" : ""}${s.lift_clicks}`);
+      if (s.lift_position != null) liftBits.push(`position ${s.lift_position < 0 ? s.lift_position.toFixed(1) : `+${s.lift_position.toFixed(1)}`}`);
+      lines.push(`- ${s.card_title} (${s.url || "n/a"}): ${liftBits.join(", ") || "no measurable change"}`);
+    }
+  }
+
+  const out = lines.filter(Boolean).join("\n");
+  return out || "No performance metrics captured yet — recommend running a fresh snapshot.";
 }
 
 async function generateOne(prompt: string, max = 800): Promise<string> {

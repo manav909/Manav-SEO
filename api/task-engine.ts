@@ -380,6 +380,10 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handlePmReport } = await import("./lib/pm-reports.js");
     const rptResult = await handlePmReport(action, body);
     if (rptResult !== null) return ok(res, rptResult);
+    /* fall through to the lifecycle engine for pm_card_* + pm_shipped_in_period */
+    const { handlePmLifecycle } = await import("./lib/pm-lifecycle.js");
+    const lcResult = await handlePmLifecycle(action, body);
+    if (lcResult !== null) return ok(res, lcResult);
   }
 
 

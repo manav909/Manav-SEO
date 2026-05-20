@@ -17,7 +17,10 @@ export type Priority = 'high' | 'medium' | 'low';
 /* Lifecycle status of a card.
    todo → doing → review → waiting (on verification window) → verified → done */
 export type CardStatus =
-  | 'todo' | 'doing' | 'review' | 'waiting' | 'verified' | 'done';
+  | 'todo' | 'doing' | 'review' | 'waiting' | 'verified' | 'done'
+  /* Phase B lifecycle states */
+  | 'planned' | 'in_progress' | 'executed' | 'reviewed'
+  | 'shipped' | 'measured' | 'archived';
 
 /* Placement quality returned by the expert engine when a card is
    dropped into a given week column. */
@@ -295,4 +298,63 @@ export interface SharedReport {
   shared_at:    string;
   project_name: string;
   client:       string;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Lifecycle types (Phase B — execution loop)
+═══════════════════════════════════════════════════════════ */
+
+export type LifecycleState =
+  | 'planned' | 'in_progress' | 'executed' | 'reviewed'
+  | 'shipped' | 'measured' | 'blocked' | 'archived'
+  /* legacy still seen on old rows */
+  | 'todo'    | 'doing'      | 'done';
+
+export interface CardBlocker {
+  id:     string;
+  title:  string;
+  status: string;
+}
+
+export interface CardShipment {
+  id:                 string;
+  card_id:            string;
+  project_id:         string;
+  shipped_at:         string;
+  shipped_by:         string | null;
+  affected_urls:      string[];
+  actual_shipped_url: string | null;
+  changes_summary:    string;
+  evidence_url:       string | null;
+  baseline_metrics:   Record<string, any>;
+  baseline_captured_at: string | null;
+  post_metrics:       Record<string, any>;
+  post_captured_at:   string | null;
+  force_ship_reason:  string | null;
+}
+
+export interface CardActivity {
+  id:         string;
+  card_id:    string;
+  project_id: string;
+  kind:       string;
+  from_state: string | null;
+  to_state:   string | null;
+  detail:     any;
+  message:    string;
+  actor:      string | null;
+  created_at: string;
+}
+
+export interface CardDetail {
+  card:       any;
+  blockers:   CardBlocker[];
+  isBlocked:  boolean;
+  shipments:  CardShipment[];
+  activity:   CardActivity[];
+}
+
+export interface LifecycleMap {
+  blockedByCard:        Record<string, { blockers: CardBlocker[] }>;
+  shipmentCountsByCard: Record<string, number>;
 }

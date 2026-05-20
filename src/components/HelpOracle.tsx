@@ -370,6 +370,14 @@ const PAGES: Record<string, {
         'Generate, then edit/reorder/regenerate individual blocks. Save as draft, finalize, or share with an unguessable link.',
         'Trend charts need history. Take a snapshot any time you want a data point captured. Each report generation also captures one automatically.',
       ]},
+      { title: 'The execution loop — ship & measure', icon: '🚢', items: [
+        'Every card has a lifecycle: planned → in progress → executed → reviewed → shipped → measured. Open the Lifecycle drawer on any board card to move it through.',
+        'Shipping requires what changed (a short summary) and which URL it landed on. The system captures a metrics baseline at ship-time automatically.',
+        'Dependencies are real: a card cannot ship if it depends on another card that has not shipped yet. The board shows blocked cards with a lock icon.',
+        'Force-shipping is allowed but requires a written reason — logged forever in the card activity so the team has accountability.',
+        'After ~14-30 days, click "Measure now" on the shipment to capture post-ship metrics. The card carries its before/after, and reports use this as real attribution.',
+        'The Reports tab adds a "Measured impact" block: every shipped card with its target URL, click delta, and position delta. This is the data clients actually want to see.',
+      ]},
     ],
     tips: [
       'A weak project brief = generic cards. Spend 10 minutes on the Data Room and your cards will be 3× sharper.',
