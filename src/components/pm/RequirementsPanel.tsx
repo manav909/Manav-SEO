@@ -8,6 +8,7 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type {
   RequirementContext, SourceRef, DataRoomContext, KeywordPageMapping,
   CrawlComparison, CrawlPage,
@@ -21,6 +22,7 @@ export default function RequirementsPanel({
   project: any;
   onCardsGenerated: () => void;
 }) {
+  const navigate = useNavigate();
   const [ctx, setCtx]           = useState<RequirementContext | null>(null);
   const [loading, setLoading]   = useState(false);
   const [generating, setGen]    = useState(false);
@@ -115,17 +117,24 @@ export default function RequirementsPanel({
         </button>
       </div>
 
-      {/* Project summary — uses the project record the app already loaded,
-          falling back to the gathered context. */}
+      {/* Project brief — full strategist overview, not just name/url. */}
       <div className="rounded-2xl border border-border bg-card p-5">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          Project
+          Project brief
         </div>
         <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-          <Row label="Name"  value={project?.name || ctx.projectName || 'Unnamed'} />
-          <Row label="URL"   value={project?.url || ctx.url || 'Not set'} />
-          <Row label="Goal"  value={ctx.goal || ctx.dataRoom?.goal?.primaryGoal || 'Not set'} />
-          <Row label="Scope" value={ctx.scope || 'Not set'} />
+          <Row label="Name"     value={project?.name || ctx.projectName || 'Unnamed'} />
+          <Row label="URL"      value={project?.url || ctx.url || 'Not set'} />
+          <Row label="Client"   value={[ctx.client?.name, ctx.client?.company].filter(Boolean).join(' / ') || 'Not linked'} />
+          <Row label="Industry" value={ctx.client?.industry || 'Not set'} />
+          <Row label="Goal"     value={ctx.goal || ctx.dataRoom?.goal?.primaryGoal || 'Not set'} />
+          <Row label="Success metric" value={ctx.dataRoom?.goal?.successMetric || ctx.scope || 'Not set'} />
+          <Row label="Timeline" value={ctx.dataRoom?.goal?.timeline || 'Not set'} />
+          <Row label="Budget"   value={ctx.dataRoom?.goal?.budget || 'Not set'} />
+          <Row label="Reporting cadence" value={ctx.dataRoom?.goal?.reportingCadence || 'Not set'} />
+          <Row label="Phase"    value={ctx.currentPhase != null ? `Phase ${ctx.currentPhase}` : 'Not set'} />
+          <Row label="Baseline" value={ctx.baselineDate ? new Date(ctx.baselineDate).toLocaleDateString('en-GB') : 'Not set'} />
+          <Row label="Target keywords" value={(ctx.keywords && ctx.keywords.length) ? ctx.keywords.join(', ') : 'Not set'} />
         </div>
         {ctx.projError && (
           <div className="mt-3 text-xs text-amber-400">
@@ -139,10 +148,20 @@ export default function RequirementsPanel({
       {ctx.dataRoom && <DataRoomSection dr={ctx.dataRoom} />}
 
       {/* Audit findings — the real detail, not just a score */}
-      {ctx.audits && ctx.audits.length > 0 && <AuditSection audits={ctx.audits} />}
+      {/* Audit findings — always shown so the Run-Audit action is available */}
+      <AuditSection
+        audits={ctx.audits || []}
+        projectId={projectId}
+        url={project?.url || ctx.url || ''}
+        keywords={ctx.keywords || []}
+        competitors={(ctx.competitors || []).map((c: any) => c.label.split(' (')[0])}
+        onAuditRun={gather}
+      />
 
       {/* Algorithm intelligence — practices & checklists, not just names */}
-      {ctx.algorithm && ctx.algorithm.length > 0 && <AlgorithmSection topics={ctx.algorithm} />}
+      {ctx.algorithm && ctx.algorithm.length > 0 && (
+        <AlgorithmSection topics={ctx.algorithm} onEnriched={gather} />
+      )}
 
       {/* Crawl & competitive pages — keyword -> landing page + AI comparison */}
       <CrawlSection
@@ -180,7 +199,14 @@ export default function RequirementsPanel({
                 <ul className="space-y-2">
                   {g.refs.slice(0, 4).map((r, i) => (
                     <li key={i} className="text-xs">
-                      <div className="font-medium text-foreground/90">{r.label}</div>
+                      <div className="font-medium text-foreground/90 flex items-center gap-1.5 flex-wrap">
+                        <span>{r.label}</span>
+                        {r.cardType && (
+                          <span className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-muted text-muted-foreground/80">
+                            for {r.cardType}
+                          </span>
+                        )}
+                      </div>
                       {r.overview && (
                         <div className="text-muted-foreground mt-0.5 leading-snug">{r.overview}</div>
                       )}
@@ -205,16 +231,52 @@ export default function RequirementsPanel({
         </div>
       </div>
 
-      {/* Data gaps — honest about what's missing */}
+      {/* Data gaps — honest about what's missing AND where to fix each one */}
       {ctx.gaps.length > 0 && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-          <div className="text-xs font-semibold text-amber-400 mb-2 uppercase tracking-wider">
+          <div className="text-xs font-semibold text-amber-400 mb-3 uppercase tracking-wider">
             Data gaps — fill these for higher-quality cards
           </div>
-          <ul className="space-y-1">
-            {ctx.gaps.map((g, i) => (
-              <li key={i} className="text-xs text-amber-200/80">• {g}</li>
-            ))}
+          <ul className="space-y-2">
+            {ctx.gaps.map((g, i) => {
+              /* map gap text to its fix destination */
+              const lower = g.toLowerCase();
+              const isDataRoom =
+                lower.includes('goal') || lower.includes('keyword') ||
+                lower.includes('competitor') || lower.includes('tool access');
+              const isAudit = lower.includes('audit');
+              const isCrawl = lower.includes('crawl');
+              return (
+                <li key={i} className="flex items-start justify-between gap-3 text-xs">
+                  <span className="text-amber-200/80 flex-1">• {g}</span>
+                  {isDataRoom && (
+                    <button
+                      onClick={() => navigate('/data-room')}
+                      className="text-[11px] px-2 py-1 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 shrink-0"
+                    >Open Data Room →</button>
+                  )}
+                  {isAudit && (
+                    <button
+                      onClick={() => {
+                        const btn = document.querySelector<HTMLButtonElement>('[data-pm-action="run-audit"]');
+                        btn?.click();
+                        btn?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }}
+                      className="text-[11px] px-2 py-1 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 shrink-0"
+                    >Run audit →</button>
+                  )}
+                  {isCrawl && (
+                    <button
+                      onClick={() => {
+                        document.querySelector('[data-pm-section="crawl"]')
+                          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                      className="text-[11px] px-2 py-1 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 shrink-0"
+                    >Open Crawl →</button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -400,7 +462,7 @@ function CrawlSection({
   const ourPages = crawlPages.filter(p => p.owner === 'ours');
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <div className="rounded-2xl border border-border bg-card p-5" data-pm-section="crawl">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Crawl & competitive comparison
@@ -656,20 +718,108 @@ function CrawlSection({
   );
 }
 
-function AuditSection({ audits }: { audits: SourceRef[] }) {
+function AuditSection({
+  audits, projectId, url, keywords, competitors, onAuditRun,
+}: {
+  audits: SourceRef[];
+  projectId: string;
+  url: string;
+  keywords: string[];
+  competitors: string[];
+  onAuditRun: () => void;
+}) {
   const [open, setOpen] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState('');
+
+  const runFull = async () => {
+    if (!url) { setRunResult("Set the project's URL in the Data Room before running an audit."); return; }
+    setRunning(true);
+    setRunResult('');
+    const r = await pmApi.runFullAudit({ projectId, url, keywords, competitors });
+    setRunning(false);
+    if (r.success) {
+      setRunResult(`Audit complete — overall confidence ${r.overall_confidence}%.`);
+      onAuditRun();
+    } else {
+      setRunResult(r.error || 'Audit failed.');
+    }
+  };
+
+  /* progress between the latest and the previous audit, when both exist */
+  const scoreOf = (a: any): number | null => {
+    const lbl = a?.label || '';
+    const m = lbl.match(/score\s+(\d+)/i);
+    return m ? Number(m[1]) : null;
+  };
+  const latest = audits[0];
+  const prev   = audits[1];
+  const latestScore = latest ? scoreOf(latest) : null;
+  const prevScore   = prev   ? scoreOf(prev)   : null;
+  const delta = (latestScore != null && prevScore != null) ? latestScore - prevScore : null;
+
+  if (!audits.length) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Audit findings
+          </div>
+          <button
+            onClick={runFull}
+            disabled={running}
+            data-pm-action="run-audit"
+            className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50"
+          >
+            {running ? 'Running audit…' : 'Run full audit'}
+          </button>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          No audit yet. Run one to ground every technical, content, and competitive card in real findings —
+          the strategist's most important input.
+        </div>
+        {runResult && (
+          <div className={`mt-3 rounded-lg border p-3 text-xs ${
+            runResult.startsWith('Audit complete')
+              ? 'border-green-500/30 bg-green-500/5 text-green-400'
+              : 'border-amber-500/30 bg-amber-500/5 text-amber-300'
+          }`}>{runResult}</div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Audit findings
         </div>
-        <span className="text-[10px] text-muted-foreground/60 font-mono">
-          source: audit_reports
-        </span>
+        <div className="flex items-center gap-2">
+          {delta != null && (
+            <span className={`text-xs font-mono ${delta > 0 ? 'text-green-400' : delta < 0 ? 'text-amber-400' : 'text-muted-foreground'}`}>
+              {delta > 0 ? '+' : ''}{delta} pts vs previous
+            </span>
+          )}
+          <button
+            onClick={runFull}
+            disabled={running}
+            data-pm-action="run-audit"
+            className="text-xs px-3 py-1.5 rounded-lg border border-primary/40 text-primary hover:bg-primary/5 disabled:opacity-50"
+          >
+            {running ? 'Running audit…' : 'Run full audit'}
+          </button>
+        </div>
       </div>
 
-      {/* audit selector when there's more than one */}
+      {runResult && (
+        <div className={`mb-3 rounded-lg border p-3 text-xs ${
+          runResult.startsWith('Audit complete')
+            ? 'border-green-500/30 bg-green-500/5 text-green-400'
+            : 'border-amber-500/30 bg-amber-500/5 text-amber-300'
+        }`}>{runResult}</div>
+      )}
+
       {audits.length > 1 && (
         <div className="flex gap-1 mb-3 flex-wrap">
           {audits.map((a, i) => (
@@ -681,9 +831,7 @@ function AuditSection({ audits }: { audits: SourceRef[] }) {
                   ? 'border-primary/50 bg-primary/10 text-primary'
                   : 'border-border text-muted-foreground hover:text-foreground'
               }`}
-            >
-              {a.label}
-            </button>
+            >{a.label}</button>
           ))}
         </div>
       )}
@@ -691,6 +839,10 @@ function AuditSection({ audits }: { audits: SourceRef[] }) {
       {(() => {
         const a = audits[open] || audits[0];
         const d = a.detail;
+        const hasDetail =
+          !!(d && (d.verdict || d.technical || d.content || d.visibility || d.competitive
+                || d.biggestWin || d.urgentGap || d.opportunities?.length));
+
         return (
           <div className="space-y-3">
             <div className="text-sm font-semibold text-foreground/90">{a.label}</div>
@@ -712,31 +864,26 @@ function AuditSection({ audits }: { audits: SourceRef[] }) {
             {d?.verdict && (
               <div className="rounded-lg border border-border bg-background/50 p-3">
                 <div className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Verdict</div>
-                <div className="text-xs text-foreground/90 leading-relaxed">{d.verdict}</div>
+                <div className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">{d.verdict}</div>
               </div>
             )}
 
             <div className="grid sm:grid-cols-2 gap-2">
-              {d?.biggestWin && (
-                <AuditBox label="Biggest verified win" tone="green" text={d.biggestWin} />
-              )}
-              {d?.urgentGap && (
-                <AuditBox label="Most urgent gap" tone="amber" text={d.urgentGap} />
-              )}
+              {d?.biggestWin && <AuditBox label="Biggest verified win" tone="green" text={d.biggestWin} />}
+              {d?.urgentGap   && <AuditBox label="Most urgent gap"     tone="amber" text={d.urgentGap} />}
             </div>
 
             {d?.competitive && (
               <AuditBox label="Competitive intelligence" tone="blue" text={d.competitive} />
             )}
 
-            {/* the four audit agents' findings */}
             <div className="grid sm:grid-cols-2 gap-2">
-              {d?.technical  && <AuditBox label="Technical findings"   tone="plain" text={d.technical} />}
-              {d?.content    && <AuditBox label="Content & E-E-A-T"     tone="plain" text={d.content} />}
-              {d?.visibility && <AuditBox label="AI visibility"         tone="plain" text={d.visibility} />}
+              {d?.technical  && <AuditBox label="Technical findings" tone="plain" text={d.technical} />}
+              {d?.content    && <AuditBox label="Content & E-E-A-T"  tone="plain" text={d.content} />}
+              {d?.visibility && <AuditBox label="AI visibility"      tone="plain" text={d.visibility} />}
             </div>
 
-            {d && d.opportunities.length > 0 && (
+            {d && d.opportunities?.length > 0 && (
               <div>
                 <div className="text-[10px] font-semibold text-green-400 uppercase tracking-wider mb-1">
                   Growth opportunities
@@ -749,10 +896,16 @@ function AuditSection({ audits }: { audits: SourceRef[] }) {
               </div>
             )}
 
-            {(!d || (!d.verdict && !d.technical && !d.competitive)) && (
-              <div className="text-xs text-amber-400/70">
-                This audit recorded a score but no detailed sections — re-run the audit
-                to capture full findings for card generation.
+            {!hasDetail && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                <div className="text-xs text-amber-300 mb-2">
+                  This audit row carries only a score — no detailed findings were saved.
+                  Click <span className="font-semibold">Run full audit</span> above to capture the technical,
+                  content, AI-visibility, and competitive detail card generation depends on.
+                </div>
+                {a.overview && (
+                  <div className="text-xs text-foreground/70 whitespace-pre-wrap">{a.overview}</div>
+                )}
               </div>
             )}
           </div>
@@ -761,6 +914,7 @@ function AuditSection({ audits }: { audits: SourceRef[] }) {
     </div>
   );
 }
+
 
 function AuditBox({ label, text, tone }: { label: string; text: string; tone: string }) {
   const tones: Record<string, string> = {
@@ -780,12 +934,23 @@ function AuditBox({ label, text, tone }: { label: string; text: string; tone: st
 }
 
 /* ── Algorithm intelligence — real practices & checklists ── */
-function AlgorithmSection({ topics }: { topics: SourceRef[] }) {
+function AlgorithmSection({ topics, onEnriched }: {
+  topics: SourceRef[];
+  onEnriched: () => void;
+}) {
   const [open, setOpen] = useState<number | null>(null);
+  const [enriching, setEnriching] = useState<string>('');
   /* topics with real saved depth first — they carry practices/checklists */
   const ordered = [...topics].sort((a, b) =>
     (b.saved ? 1 : 0) - (a.saved ? 1 : 0));
   const enrichedCount = topics.filter(t => t.saved).length;
+
+  const enrich = async (topicId: string) => {
+    setEnriching(topicId);
+    await pmApi.enrichAlgorithmTopic(topicId);
+    setEnriching('');
+    onEnriched();
+  };
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
@@ -828,7 +993,15 @@ function AlgorithmSection({ topics }: { topics: SourceRef[] }) {
                 )}
                 {t.saved
                   ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400">enriched</span>
-                  : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground/70">on-demand</span>}
+                  : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); enrich(t.refId || ''); }}
+                      disabled={enriching === t.refId}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-50"
+                    >
+                      {enriching === t.refId ? 'enriching…' : 'enrich'}
+                    </button>
+                  )}
                 <span className="ml-auto text-muted-foreground text-xs">{isOpen ? '−' : '+'}</span>
               </button>
 

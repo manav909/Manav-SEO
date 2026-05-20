@@ -332,6 +332,44 @@ const PAGES: Record<string, {
     ],
     brainPrompt: 'I just created a new project. Walk me through the optimal setup sequence to get Brain performing at full intelligence as quickly as possible.',
   },
+  '/pm': {
+    title: 'Project Manager', icon: Layers,
+    tagline: "Turn the project's data into executable cards — grounded in audits, the crawl, algorithm practices, and your Data Room.",
+    sections: [
+      { title: 'What this page does', icon: '🎯', items: [
+        'Gathers every signal the project has — Data Room, audits, crawled pages, brain learnings, documents — and presents it as a strategist would brief a team.',
+        'Lets you cross-verify the gathered intelligence against live data: run a fresh crawl to see how your pages compare to competitors right now.',
+        'Generates executable task cards in two stages — a plan first, then each card expanded with its own algorithm practices, checklist, and prerequisites.',
+        'Every card carries the algorithm checklist items it must satisfy, so execution is measured against real ranking criteria, not generic advice.',
+      ]},
+      { title: 'Get the most out of card generation', icon: '⚡', items: [
+        'Fill the Data Room first — goal, tool access, baseline metrics, and competitors. Cards quality scales directly with this.',
+        'Run a full audit before generating cards. Audit detail (technical, content, competitive) is what makes cards specific.',
+        'Run a fresh crawl on 5-7 important URLs (your landing pages + top 2-3 competitors). The keyword→page mapping and AI comparison both depend on this.',
+        'Enrich the algorithm topics that matter for this project — click Enrich on each. Card generation will use the practices and checklists from enriched topics directly.',
+        'After a crawl, manually link each target keyword to its landing page in the Crawl section — this makes content and competitive cards much sharper.',
+      ]},
+      { title: 'Reading the page', icon: '📊', items: [
+        'Project brief at the top is your overview for client conversations — goal, timeline, success metric, baseline.',
+        'Audit findings: verdict + biggest win + urgent gap + technical / content / AI-visibility / competitive sections. If you see only a score, click Run full audit.',
+        'Algorithm intelligence: expand a topic to see best practices, the verifiable checklist, and ranking factors that should shape work in this area.',
+        'Crawl & competitive comparison: the AI comparison includes the matrix, gaps your pages have, and ranked opportunities — these flow directly into card generation.',
+        'Data gaps at the bottom: each gap is something to fix that would meaningfully raise card quality.',
+      ]},
+      { title: 'After cards are generated', icon: '🚀', items: [
+        'Cards land on the Board (next tab). Each card carries its content, prerequisites, and algorithm checklist items.',
+        'Open a card to execute it: the checklist items become the criteria — work is measured against real algorithm requirements.',
+        'Verify cards once executed; verified work feeds Brain learnings for future projects.',
+        'The Reports tab summarises everything done for client updates.',
+      ]},
+    ],
+    tips: [
+      'A weak project brief = generic cards. Spend 10 minutes on the Data Room and your cards will be 3× sharper.',
+      'If a crawl fails or the comparison is thin, reduce the URL list to 5-6 most important pages — quality over coverage.',
+      'Ask Brain "what is missing in this project to generate better cards?" — it reads the same context the generator does.',
+    ],
+    brainPrompt: "Look at this project's gathered context — Data Room, audits, crawl, algorithm intelligence — and tell me: what is the strongest 3-card week-one plan I should generate, and what data am I missing that would make these cards even sharper?",
+  },
 };
 
 /* ─── Activity tracker ─── */

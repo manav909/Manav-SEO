@@ -356,6 +356,21 @@ async function pmGatherRequirements(projectId: string) {
       ]).filter(Boolean));
     const unmatchedPages = crawlPages.filter((p) => !matchedUrls.has(p.url));
 
+    /* ── client lookup (industry, company) — not on the projects table ── */
+    let clientName  = "";
+    let clientCompany = "";
+    let clientIndustry = "";
+    const clientId = (proj as any)?.client_id;
+    if (clientId) {
+      try {
+        const { data: c } = await db().from("clients")
+          .select("name,company,industry").eq("id", clientId).maybeSingle();
+        clientName     = (c as any)?.name || "";
+        clientCompany  = (c as any)?.company || "";
+        clientIndustry = (c as any)?.industry || "";
+      } catch { /* missing client is non-fatal */ }
+    }
+
     /* ── data gaps ── */
     const gaps: string[] = [];
     if (!dr("goal", "primary_goal"))
@@ -377,6 +392,10 @@ async function pmGatherRequirements(projectId: string) {
       scope:       dr("goal", "success_metric") || "",
       projError,
       keywords,
+      /* the project brief — for the strategist's overview block */
+      client: { name: clientName, company: clientCompany, industry: clientIndustry },
+      baselineDate: (proj as any)?.baseline_date || "",
+      currentPhase: (proj as any)?.current_phase ?? null,
 
       /* full Data Room, grouped by category for the UI */
       dataRoom: {
@@ -433,18 +452,31 @@ async function pmGatherRequirements(projectId: string) {
 
       documents: docs.map((d: any) => {
         /* project_documents real columns: name, doc_type, extracted_data,
-           source_date, file_size_kb. The doc's findings live in
-           extracted_data (jsonb) — surface a count of what was extracted. */
+           source_date, file_size_kb. extracted_data is jsonb — pull out
+           the actual key names and a short value snippet so the
+           strategist sees WHAT was extracted, not just a count. */
         const ex = d?.extracted_data;
-        const exCount = ex && typeof ex === "object" ? Object.keys(ex).length : 0;
+        const keys = ex && typeof ex === "object" ? Object.keys(ex) : [];
+        const snippetOf = (v: any): string => {
+          if (v == null) return "";
+          if (typeof v === "string") return v.slice(0, 60);
+          if (Array.isArray(v)) return `${v.length} item${v.length === 1 ? "" : "s"}`;
+          if (typeof v === "object") return `${Object.keys(v).length} fields`;
+          return String(v).slice(0, 60);
+        };
+        const highlights = keys.slice(0, 4).map((k) => {
+          const snip = snippetOf(ex[k]);
+          return snip ? `${k}: ${snip}` : k;
+        });
         return {
           kind: "document", refId: d?.id,
           label: d?.name || "Document",
           overview: [
             d?.doc_type ? `Type: ${d.doc_type}` : "",
-            exCount ? `${exCount} data point${exCount === 1 ? "" : "s"} extracted` : "",
             d?.source_date ? `Dated ${d.source_date}` : "",
+            keys.length ? `${keys.length} field${keys.length === 1 ? "" : "s"} extracted` : "No data extracted",
           ].filter(Boolean).join(" — "),
+          highlights,
         };
       }),
 
@@ -501,6 +533,7 @@ async function pmGatherRequirements(projectId: string) {
       brain: brain.map((b: any) => ({
         kind: "brain_learning", refId: b?.id, label: b?.card_title || "Learning",
         overview: b?.improvement || "",
+        cardType: b?.card_type || "general",
       })),
 
       /* crawl & competitive pages — keyword -> landing-page grain */

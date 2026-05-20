@@ -227,8 +227,61 @@ export async function generateTaskReport(projectId: string, range: 'daily' | 'on
   return r?.success ? r.report : null;
 }
 
-/* Manually link a target keyword to a crawled landing-page URL.
-   Pass url='' to remove the link. Overrides inferred matching. */
+/* Re-run the full rich audit via /api/run-analysis — replaces a thin
+   orchestrated audit with one that carries detailed sections. */
+export async function runFullAudit(opts: {
+  projectId: string; url: string; keywords: string[]; competitors: string[];
+  brandName?: string;
+}): Promise<{ success: boolean; overall_confidence?: number; error?: string }> {
+  try {
+    const res = await fetch('/api/run-analysis', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url:         opts.url,
+        keywords:    opts.keywords,
+        competitors: opts.competitors,
+        brand_name:  opts.brandName || '',
+        project_id:  opts.projectId,
+      }),
+    });
+    const data = await res.json();
+    if (!data?.success) return { success: false, error: data?.error || 'Audit failed' };
+    return { success: true, overall_confidence: data.overall_confidence };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Audit failed' };
+  }
+}
+
+/* Enrich a single algorithm topic on demand (writes a full
+   algorithm_knowledge row with practices, ranking factors, checklist).
+   Used by the Algorithm Intelligence section's per-topic Enrich button. */
+export async function enrichAlgorithmTopic(topicId: string): Promise<{
+  success: boolean; error?: string;
+}> {
+  try {
+    const res = await fetch('/api/algorithm-intel', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'fetch_topic', topic_id: topicId, project_id: '' }),
+    });
+    const data = await res.json();
+    if (!data?.success && !data?.title) {
+      return { success: false, error: data?.error || 'Enrichment failed' };
+    }
+    /* fetch_topic generates and returns the topic; save_item persists it */
+    if (data?.title) {
+      await fetch('/api/algorithm-intel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_item', item: data, topic_id: topicId }),
+      });
+    }
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Enrichment failed' };
+  }
+}
 export async function linkKeywordPage(
   projectId: string, keyword: string, url: string,
 ): Promise<{ success: boolean; linked?: boolean; error?: string }> {

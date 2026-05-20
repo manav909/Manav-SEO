@@ -499,23 +499,66 @@ Most critical algorithm failures across all pages. Group by topic.`,
 
   let savedAuditId = auditId;
   try {
-    const { data } = await db().from("audit_reports").insert({
-      project_id:  projectId,
-      score:       avgScore,
-      status:      "complete",
-      url:         pages[0]?.url || "",
-      type:        "orchestrated",
-      sections:    { synthesis: synthesis.slice(0, 500) },
-      metadata: {
-        pages_audited:    successPages.length,
-        pages_failed:     pageResults.filter(r => r.status === "failed").length,
-        mode,
-        algo_topics_used: algoTopics.length,
+    /* Build proper sections — not a 500-char blob. Each section
+       carries the data a strategist needs: scores, per-page detail,
+       the full synthesis, the algorithm topics applied. The synthesis
+       block itself uses the same shape as run-analysis so the reader
+       code is uniform across audit sources. */
+    const perPage = successPages.map((p: any) => ({
+      url:        p.url,
+      score:      p.score ?? p.signals?.confidence ?? null,
+      signals:    p.signals || {},
+      issues:     p.signals?.issues || [],
+      strengths:  p.signals?.strengths || [],
+      opportunities: p.signals?.opportunities || [],
+    }));
+
+    /* Try to parse the synthesis text for the structured pieces the
+       UI surfaces — verdict, biggest win, urgent gap, opportunities.
+       The synthesis is markdown-ish text; we extract what we can. */
+    const synthLower = (synthesis || "").toLowerCase();
+    const extractAfter = (heading: string): string => {
+      const idx = synthLower.indexOf(heading.toLowerCase());
+      if (idx < 0) return "";
+      const after = synthesis.slice(idx + heading.length);
+      const next = after.search(/\n#{1,3}\s|\n\*\*[A-Z]/);
+      return (next > 0 ? after.slice(0, next) : after).trim().slice(0, 600);
+    };
+    const sectionsRich = {
+      synthesis: {
+        overall_verdict:       extractAfter("Overall verdict")
+                            || extractAfter("Verdict")
+                            || (synthesis || "").slice(0, 600),
+        biggest_verified_win:  extractAfter("Biggest verified win")
+                            || extractAfter("Biggest win"),
+        most_urgent_gap:       extractAfter("Most urgent gap")
+                            || extractAfter("Urgent gap"),
+        verified_strengths:    [],
+        growth_opportunities:  [],
+        full_text:             synthesis || "",
       },
-      created_at: new Date().toISOString(),
+      technical:  { data: { summary: perPage.map(p => `${p.url}: ${p.issues?.length || 0} issues, ${p.strengths?.length || 0} strengths`).join("; ") }},
+      content:    { data: { summary: "" }},
+      visibility: { data: { summary: "" }},
+      ranking:    { data: { competitor_comparison: "" }},
+      per_page:   perPage,
+    };
+
+    const { data } = await db().from("audit_reports").insert({
+      project_id:    projectId,
+      url:           pages[0]?.url || "",
+      keywords:      Array.from(new Set(pages.flatMap(p => p.targetKeywords || []))).slice(0, 20),
+      competitors:   [],   // orchestrator gets competitors via projectContext string, not structured per-page
+      sections:      sectionsRich,
+      overall_score: avgScore,
+      data_sources:  { mode, algo_topics_used: algoTopics.length, pages_audited: successPages.length, pages_failed: pageResults.filter(r => r.status === "failed").length },
+      saved_by:      "orchestrator",
+      created_at:    new Date().toISOString(),
     }).select("id").single();
     if (data) savedAuditId = (data as any).id;
-  } catch (_e) {}
+  } catch (e: any) {
+    console.error("[orchestrator] audit_reports insert failed:", e?.message || e);
+  }
 
   await runPostAuditPipeline({
     projectId,

@@ -105,6 +105,7 @@ export interface SourceRef {
   practices?:   string[];    // algorithm: best practices (when saved)
   checklist?:   string[];    // algorithm: checklist items (when saved)
   rankingFactors?: string[]; // algorithm: ranking factors (when saved)
+  cardType?:    string;      // brain_learning: the card type this learning applies to
 }
 
 /* ── Expert engine output ── */
@@ -142,6 +143,10 @@ export interface RequirementContext {
   keywords?:    string[];
   hasAnalysis?: boolean;
   projError?:   string;
+  /* the project brief — for the strategist's overview block */
+  client?:      { name: string; company: string; industry: string };
+  baselineDate?: string;
+  currentPhase?: number | null;
   documents?:           SourceRef[];
   contentGapKeywords?:  string[];
   dataRoom?:            DataRoomContext;
