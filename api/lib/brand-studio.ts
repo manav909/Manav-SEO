@@ -412,6 +412,16 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return handleBrandStudioClient(action, body);
     }
 
+    /* H.2 — Generation engine handlers ── */
+    case "bs_get_templates":
+    case "bs_check_readiness":
+    case "bs_generate_preview":
+    case "bs_generate_apply":
+    case "bs_list_generated": {
+      const { handleBrandStudioGenerate } = await import("./brand-studio-generate.js");
+      return handleBrandStudioGenerate(action, body);
+    }
+
     /* H.2+ handlers will plug in here:
        case "bs_generate_preview": return bsGeneratePreview(body);
        case "bs_generate_apply": return bsGenerateApply(body);

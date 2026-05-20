@@ -32,6 +32,7 @@ import { toast } from '@/hooks/use-toast';
 import BrandBar from '@/components/brand-studio/BrandBar';
 import Library from '@/components/brand-studio/Library';
 import Ingest from '@/components/brand-studio/Ingest';
+import Generate from '@/components/brand-studio/Generate';
 import ClientAccess from '@/components/brand-studio/ClientAccess';
 import EntitlementGate from '@/components/brand-studio/EntitlementGate';
 import {
@@ -245,15 +246,10 @@ export default function BrandStudio() {
 
         {entitlements && tab === 'generate' && (
           <EntitlementGate entitlements={entitlements} feature="brand_studio.generate" showLockedState>
-            <PlaceholderCard
-              title="Document Generation Library — coming in H.2"
-              description={[
-                'Template library: brand statement, positioning memo, audience persona, content style guide, executive summary, quarterly business review, market prominence report, competitor battlecard, content gap action plan, performance prediction, opportunity verdict, recovery plan, press release, case study, sales battlecard — plus 5 investor templates.',
-                'Tool_use-based generation with strict source citation: every claim tied to a Data Room field, source document, or web URL.',
-                'PM writes a vision/context per generation; AI calibrates voice, depth, and focus to the audience.',
-                'Confidence per section. "What would invalidate this" addendum on every prediction.',
-                'Versioning, edit history, regeneration on input changes. Saved as permanent project artifacts.',
-              ]}
+            <Generate
+              projectId={projectId}
+              catalogs={catalogs}
+              onSaved={() => setLibraryRefreshKey((k) => k + 1)}
             />
           </EntitlementGate>
         )}

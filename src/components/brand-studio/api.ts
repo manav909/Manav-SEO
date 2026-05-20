@@ -369,3 +369,111 @@ export async function clientGetDocument(opts: { token: string; documentId: strin
   if (!r?.success) return { error: r?.error };
   return { document: r.document };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   H.2 — Generation engine
+═══════════════════════════════════════════════════════════ */
+
+export type TemplateCategory = 'strategic' | 'performance' | 'competitive' | 'forward_looking';
+
+export interface PublicSectionSpec {
+  key:         string;
+  title:       string;
+  description: string;
+}
+
+export interface PublicTemplate {
+  id:                    string;
+  label:                 string;
+  description:           string;
+  category:              TemplateCategory;
+  required_categories:   string[];
+  optional_categories:   string[];
+  useful_doc_types:      string[];
+  default_audience_role: string;
+  verification_strictness: 'standard' | 'investor_grade';
+  section_count:         number;
+  section_outline:       PublicSectionSpec[];
+}
+
+export interface ReadinessReport {
+  ready:                  boolean;
+  missing_categories:     string[];
+  populated_categories:   string[];
+  populated_field_count:  number;
+  document_count:         number;
+  warning?:               string;
+}
+
+export interface GeneratedSection {
+  key:           string;
+  title:         string;
+  content:       string;
+  confidence:    'high' | 'medium' | 'low';
+  sources_cited: string[];
+  flagged?:      'uncited_strict' | null;
+}
+
+export interface GenerationPreview {
+  template_id:        string;
+  template_label:     string;
+  audience_role:      string;
+  pm_vision:          string | null;
+  overall_summary:    string;
+  overall_confidence: 'high' | 'medium' | 'low';
+  sections:           GeneratedSection[];
+  open_questions:     string[];
+  readiness:          ReadinessReport;
+}
+
+export async function getTemplates(): Promise<{ templates: PublicTemplate[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_templates' });
+  if (!r?.success) return { templates: [], error: r?.error };
+  return { templates: Array.isArray(r.templates) ? r.templates : [] };
+}
+
+export async function checkReadiness(opts: { projectId: string; templateId: string }): Promise<{
+  readiness?: ReadinessReport; template_label?: string; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_check_readiness', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { readiness: r.readiness, template_label: r.template_label };
+}
+
+export async function generatePreview(opts: {
+  projectId:        string;
+  templateId:       string;
+  audienceRole?:    string;
+  pmVision?:        string;
+  specificDocIds?:  string[];
+}): Promise<{ preview?: GenerationPreview; readiness?: ReadinessReport; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_generate_preview', ...opts });
+  if (!r?.success) return { error: r?.error || 'Generation failed', readiness: r?.readiness };
+  return { preview: r.preview };
+}
+
+export async function generateApply(opts: {
+  projectId:          string;
+  templateId:         string;
+  audienceRole:       string;
+  pmVision?:          string;
+  sections:           Array<{
+    key: string; content: string; confidence: string; sources_cited: string[]; flagged?: string | null;
+  }>;
+  overallSummary:     string;
+  overallConfidence:  string;
+  openQuestions?:     string[];
+  parentDocumentId?:  string;
+}): Promise<{ documentId?: string; version?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_generate_apply', ...opts });
+  if (!r?.success) return { error: r?.error || 'Save failed' };
+  return { documentId: r.document_id, version: r.version };
+}
+
+export async function listGenerated(projectId: string): Promise<{
+  documents: BrandStudioDocument[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_generated', projectId });
+  if (!r?.success) return { documents: [], error: r?.error };
+  return { documents: Array.isArray(r.documents) ? r.documents : [] };
+}
