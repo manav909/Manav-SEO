@@ -572,39 +572,43 @@ async function pmGenerateCards(projectId: string) {
 
   /* ── Algorithm intelligence — stage 1: pick relevant topics ──
      Show the AI the catalog and let it choose the topics that
-     actually matter for this project, rather than dumping all 37. */
+     actually matter for this project, rather than dumping all 37.
+     Hard-bounded to 90s so card generation cannot hang on this stage. */
   let algoDepthBlock = "ALGORITHM INTELLIGENCE: none selected.";
   let algoDepths: any[] = [];
+  let algoStageNote = "";
   try {
-    const catalogList = TOPIC_CATALOG
-      .map((t) => `${t.id} | ${t.label} (${t.engine}/${t.category})`)
-      .join("\n");
-    const pickResp = await ai().messages.create({
-      model: MODEL, max_tokens: 400,
-      system: "You select which SEO algorithm topics are relevant to a project. Return ONLY a raw JSON array of topic id strings.",
-      messages: [{
-        role: "user",
-        content:
-          `Project: ${ctx.projectName} | Goal: ${ctx.goal || "n/a"}\n` +
-          `Keywords: ${(ctx.keywords || []).join(", ") || "none"}\n\n` +
-          `Pick the 6-8 most relevant algorithm topics for this project's SEO work ` +
-          `from the catalog below. Return ONLY their ids as a JSON array, e.g. ["g_eeat","g_ai_overviews"].\n\n` +
-          catalogList,
-      }],
-    });
-    const pickRaw = (pickResp.content[0] as any)?.text || "[]";
-    const pickedIds: string[] = (() => {
-      const p = parseJSON(pickRaw);
-      return Array.isArray(p) ? p.filter((x) => typeof x === "string") : [];
+    const stagePromise = (async () => {
+      const catalogList = TOPIC_CATALOG
+        .map((t) => `${t.id} | ${t.label} (${t.engine}/${t.category})`)
+        .join("\n");
+      const pickResp = await ai().messages.create({
+        model: MODEL, max_tokens: 400,
+        system: "You select which SEO algorithm topics are relevant to a project. Return ONLY a raw JSON array of topic id strings.",
+        messages: [{
+          role: "user",
+          content:
+            `Project: ${ctx.projectName} | Goal: ${ctx.goal || "n/a"}\n` +
+            `Keywords: ${(ctx.keywords || []).join(", ") || "none"}\n\n` +
+            `Pick the 6-8 most relevant algorithm topics for this project's SEO work ` +
+            `from the catalog below. Return ONLY their ids as a JSON array, e.g. ["g_eeat","g_ai_overviews"].\n\n` +
+            catalogList,
+        }],
+      });
+      const pickRaw = (pickResp.content[0] as any)?.text || "[]";
+      const pickedIds: string[] = (() => {
+        const p = parseJSON(pickRaw);
+        return Array.isArray(p) ? p.filter((x) => typeof x === "string") : [];
+      })();
+      const pickedTopics = TOPIC_CATALOG
+        .filter((t) => pickedIds.includes(t.id))
+        .slice(0, 8);
+      if (!pickedTopics.length) return [];
+      return getTopicsDepth(pickedTopics);
     })();
-    /* stage 2: fetch full depth for the picked topics (library or AI),
-       bounded to 8 to keep latency and cost in check */
-    const pickedTopics = TOPIC_CATALOG
-      .filter((t) => pickedIds.includes(t.id))
-      .slice(0, 8);
-    if (pickedTopics.length) {
-      algoDepths = await getTopicsDepth(pickedTopics);
-    }
+    const timeoutPromise = new Promise<any[]>((_, reject) =>
+      setTimeout(() => reject(new Error("algorithm depth stage timeout (90s)")), 90_000));
+    algoDepths = await Promise.race([stagePromise, timeoutPromise]);
     if (algoDepths.length) {
       algoDepthBlock = "ALGORITHM INTELLIGENCE — apply these practices and checklists:\n" +
         algoDepths.map((d: any) => {
@@ -619,7 +623,8 @@ async function pmGenerateCards(projectId: string) {
         }).join("\n");
     }
   } catch (e: any) {
-    console.error("[pm] algorithm depth stage failed:", e?.message || e);
+    algoStageNote = e?.message || "algorithm depth stage failed";
+    console.error("[pm] algorithm depth stage failed:", algoStageNote);
     /* card generation continues without algorithm depth rather than failing */
   }
 
@@ -676,12 +681,28 @@ async function pmGenerateCards(projectId: string) {
 
   try {
     const resp = await ai().messages.create({
-      model: MODEL, max_tokens: 4500, system: PM_SYSTEM,
+      model: MODEL, max_tokens: 8000, system: PM_SYSTEM,
       messages: [{ role: "user", content: prompt }],
     });
-    const raw = (resp.content[0] as any)?.text || "[]";
+    const raw = (resp.content[0] as any)?.text || "";
+    /* token-limit detection — if generation was truncated the JSON cannot parse */
+    const truncated = (resp as any)?.stop_reason === "max_tokens";
+    if (!raw) {
+      return { success: false, cards: [],
+        error: `The AI returned an empty response${algoStageNote ? ` (algorithm stage: ${algoStageNote})` : ""}.` };
+    }
     const parsed = parseJSON(raw);
-    if (!Array.isArray(parsed)) return { success: false, error: "AI did not return a card list", cards: [] };
+    if (!Array.isArray(parsed)) {
+      const preview = raw.slice(0, 160).replace(/\s+/g, " ").trim();
+      return { success: false, cards: [],
+        error: truncated
+          ? `The AI ran out of tokens before completing the card list. Try generating again — the prompt may be too long given the project's data.`
+          : `The AI did not return a card list. It returned: "${preview}${raw.length > 160 ? "…" : ""}"${algoStageNote ? ` (algorithm stage: ${algoStageNote})` : ""}` };
+    }
+    if (!parsed.length) {
+      return { success: false, cards: [],
+        error: "The AI returned an empty card list. The project may not have enough data — check that it has keywords, a goal, and an audit or crawl." };
+    }
 
     const saved: any[] = [];
     for (const c of parsed.slice(0, 14)) {

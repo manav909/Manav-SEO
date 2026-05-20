@@ -131,10 +131,24 @@ export async function gatherRequirements(projectId: string): Promise<Requirement
 }
 
 /* Ask AI to generate a set of task cards from gathered requirements. */
-export async function generateCards(projectId: string): Promise<TaskCard[]> {
+/* Ask AI to generate task cards from the gathered intelligence.
+   Returns the saved cards or, on failure, a clear error message
+   from the backend so the user can see what actually went wrong. */
+export async function generateCards(projectId: string): Promise<{
+  cards: TaskCard[]; error?: string;
+}> {
   const r = await post(ENGINE, { action: 'pm_generate_cards', projectId });
-  if (!r?.success || !Array.isArray(r.cards)) return [];
-  return r.cards.map(rowToCard);
+  if (!r) return { cards: [], error: 'No response from the card generator.' };
+  if (!r.success) {
+    return {
+      cards: Array.isArray(r.cards) ? r.cards.map(rowToCard) : [],
+      error: r.error || 'Card generation failed without a stated reason.',
+    };
+  }
+  if (!Array.isArray(r.cards)) {
+    return { cards: [], error: 'Card generator returned an unexpected response.' };
+  }
+  return { cards: r.cards.map(rowToCard) };
 }
 
 /* Ask AI to enhance / refine a single card. */

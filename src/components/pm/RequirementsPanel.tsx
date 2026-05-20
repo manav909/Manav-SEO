@@ -45,13 +45,15 @@ export default function RequirementsPanel({
   const generate = async () => {
     setGen(true);
     setResult('');
-    const cards = await pmApi.generateCards(projectId);
+    const { cards, error } = await pmApi.generateCards(projectId);
     setGen(false);
     if (cards.length) {
       setResult(`✓ ${cards.length} task card${cards.length === 1 ? '' : 's'} generated. Open the Board tab to place them.`);
       onCardsGenerated();
+    } else if (error) {
+      setResult(`Card generation failed: ${error}`);
     } else {
-      setResult('No cards were generated — check the data sources below have enough to work with.');
+      setResult('No cards were generated — the AI returned an empty list. Check that the project has keywords, a goal, and either an audit or a crawl to work from.');
     }
   };
 
