@@ -281,43 +281,38 @@ const PAGES: Record<string, {
 
   '/mission-control': {
     title: 'Mission Control', icon: Rocket,
-    tagline: 'Presidential command. Every signal. One screen. Your advisor speaks only when it matters.',
+    tagline: 'Portfolio view of every active project. Triage-first — what needs eyes today.',
     sections: [
-      { title: 'The Vital Strip — what to read first', icon: '🎯', items: [
-        'Scan left to right. Green = healthy. Amber = decision waiting. One amber tile means one action needed.',
-        'Pending Approvals is the most important tile. Anything above zero demands your attention before anything else. Tap it — approve or reject in 30 seconds.',
-        'Brain Avg below 60 means at least one project is giving generic advice. Click the project with the lowest ring score on the left.',
-        'API Cost Today is your spend gauge. If it spikes unexpectedly, check Operations feed — something ran repeatedly.',
-        'Institutional Memory is your compound intelligence — learnings from closed projects still working for you. The higher this number, the smarter Brain is for every new project.',
+      { title: 'How to read the page (top to bottom)', icon: '🎯', items: [
+        'Eight portfolio tiles at the top: active projects, projects needing attention, cards in progress, blocked cards, shipped this month, ripe for measurement, open alerts, pending suggestions. Coloured tiles mean action — calm tiles mean healthy.',
+        'Attention Required section appears only when projects have flags. Red = critical (open critical alerts). Amber = warn (open alerts or blocked cards). Blue = info (ripe measurements, pending suggestions, stale integrations).',
+        'Portfolio table at the bottom shows every active project as one row. Sort by attention, name, in progress, shipped, audit score, alerts, or last activity.',
+        'Filter pills (All / Attention / Healthy) narrow the table. Default sort is attention descending — fires float to the top.',
       ]},
-      { title: 'Project Signal Cards — reading the rings', icon: '📡', items: [
-        'The ring score is everything. Green (80+): Brain is calibrated, giving specific advice. Red (<40): Brain is flying blind — act immediately.',
-        'NO CMS flag is critical. Without a CMS set, Brain cannot give platform-specific code, config, or plugin steps. Click the project → centre panel → ask Brain "what do I fix first".',
-        'STALE flag means no activity in 7+ days. Either the project is on hold (acceptable) or it has been forgotten (not acceptable).',
-        'Click any card to load its full intelligence in the centre panel. You do not need to go anywhere else.',
-        'The amber "N pending" button on each card approves all that project\'s pending learnings in one tap — no drawer needed for confident approvals.',
+      { title: 'The triage flow — clear morning routine', icon: '⚡', items: [
+        'Step 1: Scan the Attention Required section. Each card lists exactly what is wrong (e.g. "2 blocked cards · GSC stale · 1 critical alert"). Click Open to jump straight into that project\'s PM page.',
+        'Step 2: Look at portfolio totals. If "Need attention" tile is 0 and "Open alerts" tile is 0, the portfolio is healthy — you can spend the day on whichever project deserves deep work.',
+        'Step 3: Use the table for non-urgent monitoring. Sort by "Last Activity" ascending to find stale projects. Sort by "Audit Score" ascending to find weakest sites.',
       ]},
-      { title: 'Centre Panel — your briefing room', icon: '🧠', items: [
-        'This is your one-on-one with the intelligence for the selected project. Brain knows its CMS, keywords, goals, and all active learnings.',
-        'Use the three quick prompts first: "What should I fix first?" gives you a priority order in under 30 seconds. No reading required.',
-        'Gap chips (amber badges under the quality bar) are specific missing fields. Each is a clickable directive — tap any chip to go to the right fix.',
-        'If you have 5 minutes: ask Brain "Give me this week\'s top 3 priorities". If you have 30 seconds: check the pending count, approve it, move on.',
-        'The centre panel stays loaded as you switch between projects on the left — your briefing updates instantly.',
+      { title: 'Understanding the table', icon: '📊', items: [
+        'In Progress column shows cards being worked on. "(N blocked)" means cards waiting on dependencies — open the PM board to resolve.',
+        'Shipped (mo) column shows shipments this month. "(N ripe)" means shipments 14+ days old not yet measured — these auto-measure via cron, but you can also click into the card lifecycle to measure manually.',
+        'GSC · GA4 dots: green = pulled in last 3 days. Amber = stale, refresh recommended. Grey = not connected.',
+        'Alerts column shows open alert count. Red badge means at least one critical alert. "C" suffix shows critical count.',
+        'Suggest column shows pending suggestions from auto-pilot rules. Click into the project\'s Auto-pilot tab to accept or dismiss.',
       ]},
-      { title: 'Operations & Command Strip — directing the system', icon: '⚡', items: [
-        'Operations feed shows what Brain has been doing. Green = completed successfully. Red = something failed — investigate.',
-        'Algo Intel watch shows which algorithm topics are loaded. Stale topics (7d+) should be refreshed — tap "manage" to open Algorithm Intel.',
-        'The Command Strip at the bottom is your direct line to every tool. You don\'t navigate to find things — you direct from here.',
-        '"Review Pending" in the Command Strip opens the full approvals drawer with every pending learning across every project.',
-        'LIVE mode auto-refreshes every 90 seconds. PAUSE it when you\'re reading the centre panel carefully.',
+      { title: 'Drill-in', icon: '🔍', items: [
+        'Clicking any project in the Attention list or table sets it as your selected project and navigates to /pm. You land on the Board tab.',
+        'Use the Auto-pilot tab in the PM module to handle Suggestions and Alerts for that project.',
+        'Use the Requirements tab → Integrations section to reconnect a stale GSC/GA4.',
       ]},
     ],
     tips: [
-      'Start with Pending Approvals — clear the queue first, then assess project health.',
-      'A Brain Avg above 80 means your system is running at full intelligence. Below 60 means multiple projects need attention.',
-      'The president\'s one daily action: open Mission Control, clear pending, check rings, ask Brain one question per red project.',
+      'Refresh button at the top re-runs the aggregation. The page is read-only — all changes happen in the per-project PM module.',
+      'A "0 projects need attention" portfolio is the goal of every Monday morning. Pick the next deep-work project from the Healthy filter.',
+      'If a project never moves off Attention Required, dig into why — usually one root cause (no GSC, perpetual blocker, missed measurements) fixes the rest.',
     ],
-    brainPrompt: 'I am reviewing Mission Control right now. Give me a presidential briefing: what is the current state of all my projects, what needs my attention today, and what are the top 3 directives I should issue to improve performance across the system? Be concise and specific — I have 5 minutes.',
+    brainPrompt: 'I am looking at Mission Control. Based on what you can see, what should my priority be today across the portfolio? Walk me through the top 3 projects I should touch in order, and what specific action each needs.',
   },
 
   '/admin': {

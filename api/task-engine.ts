@@ -453,6 +453,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (ga4Result !== null) return ok(res, ga4Result);
   }
 
+  /* ═══ MISSION CONTROL (Phase G) — mc_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("mc_")) {
+    const { handleMissionControl } = await import("./lib/mission-control.js");
+    const mcResult = await handleMissionControl(action, body);
+    if (mcResult !== null) return ok(res, mcResult);
+  }
+
 
   // ═══ INLINE BDE ACTIONS (override dynamic-import versions below) ═══
 

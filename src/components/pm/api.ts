@@ -796,3 +796,67 @@ export async function alertResolve(alertId: string, note?: string): Promise<{ su
   if (!r?.success) return { success: false, error: r?.error || 'Resolve failed.' };
   return { success: true };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Mission Control API (Phase G)
+═══════════════════════════════════════════════════════════ */
+
+export interface McProjectRow {
+  id: string;
+  name: string;
+  url: string | null;
+  client_name: string;
+  industry: string;
+  primary_goal: string;
+  report_audience: string;
+  last_activity: string | null;
+  audit_score: number | null;
+  audit_date: string | null;
+  counts: {
+    in_progress: number; planned: number; blocked: number;
+    shipped_this_month: number; ripe_unmeasured: number;
+    open_alerts: number; critical_alerts: number; acknowledged_alerts: number;
+    pending_suggestions: number;
+  };
+  integrations: {
+    gsc: { state: 'live' | 'stale' | 'not_connected'; last_pull_at: string | null; property: string | null };
+    ga4: { state: 'live' | 'stale' | 'not_connected'; last_pull_at: string | null; property: string | null };
+  };
+  attention: {
+    score: number;
+    flags: string[];
+    severity: 'critical' | 'warn' | 'info' | 'calm';
+  };
+}
+
+export interface McSummary {
+  projects: McProjectRow[];
+  totals: {
+    projects: number;
+    cards_in_progress: number; cards_planned: number; cards_blocked: number;
+    shipped_this_month: number; ripe_unmeasured: number;
+    open_alerts: number; critical_alerts: number; pending_suggestions: number;
+    projects_needing_attention: number;
+    integrations: {
+      gsc_live: number; gsc_stale: number; gsc_not: number;
+      ga4_live: number; ga4_stale: number; ga4_not: number;
+    };
+  };
+  attention: McProjectRow[];
+  generated_at: string;
+}
+
+export async function missionControlSummary(): Promise<{
+  summary?: McSummary; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'mc_summary' });
+  if (!r?.success) return { error: r?.error || 'Mission control fetch failed.' };
+  return {
+    summary: {
+      projects:   Array.isArray(r.projects) ? r.projects : [],
+      totals:     r.totals,
+      attention:  Array.isArray(r.attention) ? r.attention : [],
+      generated_at: r.generated_at,
+    },
+  };
+}
