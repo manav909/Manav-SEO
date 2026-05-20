@@ -360,7 +360,15 @@ const PAGES: Record<string, {
         'Cards land on the Board (next tab). Each card carries its content, prerequisites, and algorithm checklist items.',
         'Open a card to execute it: the checklist items become the criteria — work is measured against real algorithm requirements.',
         'Verify cards once executed; verified work feeds Brain learnings for future projects.',
-        'The Reports tab summarises everything done for client updates.',
+        'The Reports tab builds composable client-shareable reports: pick blocks (narrative, charts, tables, KPIs, matrices), set tone & emotion sliders, generate, edit, share.',
+      ]},
+      { title: 'Building a client report', icon: '📄', items: [
+        'Open the Reports tab → New report. Pick the period.',
+        'Choose which blocks to include — narrative slots (AI-written), KPI tiles, time-series charts, tables of delivered cards, the audit synthesis, the competitive matrix. Each block shows whether the data exists.',
+        'Set the tone & style sliders: tone (casual↔formal), technical depth, confidence, emotion, length. These shape every AI-written block.',
+        'Add PM context: what to emphasize, what to downplay, client mood, and a custom PM note. This is what makes the report feel like YOU wrote it.',
+        'Generate, then edit/reorder/regenerate individual blocks. Save as draft, finalize, or share with an unguessable link.',
+        'Trend charts need history. Take a snapshot any time you want a data point captured. Each report generation also captures one automatically.',
       ]},
     ],
     tips: [

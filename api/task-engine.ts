@@ -376,6 +376,10 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handlePM } = await import("./lib/pm-engine.js");
     const pmResult = await handlePM(action, body);
     if (pmResult !== null) return ok(res, pmResult);
+    /* fall through to the reports engine for pm_report_* + pm_metrics_snapshot */
+    const { handlePmReport } = await import("./lib/pm-reports.js");
+    const rptResult = await handlePmReport(action, body);
+    if (rptResult !== null) return ok(res, rptResult);
   }
 
 

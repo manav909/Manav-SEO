@@ -397,3 +397,96 @@ export async function runCrawl(
     return { success: false, error: e?.message || 'Crawl failed' };
   }
 }
+/* ═══════════════════════════════════════════════════════════
+   Client report API client
+═══════════════════════════════════════════════════════════ */
+
+import type {
+  ReportBlock, Sliders, PmContext, ReportSummary, FullReport, SharedReport,
+} from './types';
+
+/* Build the block catalog for the picker. */
+export async function reportCatalog(
+  projectId: string, periodStart: string, periodEnd: string,
+): Promise<{ catalog: ReportBlock[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_report_catalog', projectId, periodStart, periodEnd });
+  if (!r?.success) return { catalog: [], error: r?.error || 'Failed to load block catalog.' };
+  return { catalog: Array.isArray(r.catalog) ? r.catalog : [] };
+}
+
+/* Generate a new report — picks blocks, AI writes narratives, persists as draft. */
+export async function generateReport(opts: {
+  projectId: string; periodStart: string; periodEnd: string;
+  selectedBlocks: string[]; sliders: Sliders; pmContext: PmContext; title?: string;
+}): Promise<{ report?: FullReport; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_report_generate', ...opts });
+  if (!r?.success || !r.report) return { error: r?.error || 'Generation failed.' };
+  return { report: r.report };
+}
+
+/* Save edits (block order, edited text, title, finalize). */
+export async function saveReport(opts: {
+  reportId: string; blocks?: ReportBlock[]; title?: string; status?: 'draft' | 'finalized';
+}): Promise<{ report?: FullReport; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_report_save', ...opts });
+  if (!r?.success || !r.report) return { error: r?.error || 'Save failed.' };
+  return { report: r.report };
+}
+
+/* Regenerate one block in place with current (or new) sliders/context. */
+export async function regenerateBlock(opts: {
+  reportId: string; blockId: string; sliders?: Sliders; pmContext?: PmContext;
+}): Promise<{ report?: FullReport; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_report_regenerate', ...opts });
+  if (!r?.success || !r.report) return { error: r?.error || 'Regenerate failed.' };
+  return { report: r.report };
+}
+
+/* Generate or revoke a public share token. */
+export async function shareReport(reportId: string, revoke = false): Promise<{
+  shareToken: string | null; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_report_share', reportId, revoke });
+  if (!r?.success) return { shareToken: null, error: r?.error || 'Share failed.' };
+  return { shareToken: r.share_token || null };
+}
+
+export async function listReports(projectId: string): Promise<{
+  reports: ReportSummary[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_report_list', projectId });
+  if (!r?.success) return { reports: [], error: r?.error || 'List failed.' };
+  return { reports: Array.isArray(r.reports) ? r.reports : [] };
+}
+
+export async function getReport(reportId: string): Promise<{
+  report?: FullReport; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_report_get', reportId });
+  if (!r?.success || !r.report) return { error: r?.error || 'Load failed.' };
+  return { report: r.report };
+}
+
+/* Public read by share token — no auth required. Called from /r/:token. */
+export async function getSharedReport(token: string): Promise<{
+  report?: SharedReport; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_report_get_shared', token });
+  if (!r?.success || !r.report) return { error: r?.error || 'Report not available.' };
+  return { report: r.report };
+}
+
+export async function deleteReport(reportId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'pm_report_delete', reportId });
+  if (!r?.success) return { success: false, error: r?.error || 'Delete failed.' };
+  return { success: true };
+}
+
+/* Manual metric snapshot — adds a point to the time-series for trend charts. */
+export async function takeMetricsSnapshot(projectId: string): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'pm_metrics_snapshot', projectId, source: 'manual' });
+  if (!r?.success) return { success: false, error: r?.error || 'Snapshot failed.' };
+  return { success: true };
+}

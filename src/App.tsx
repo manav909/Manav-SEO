@@ -24,6 +24,7 @@ import Dashboard      from "./pages/Dashboard";
 import Launchpad      from "./pages/Launchpad";
 import Audit          from "./pages/Audit";
 import Admin          from "./pages/Admin";
+import ClientReportView from "./pages/ClientReportView";
 import PMModule       from "./pages/PMModule";
 import Playground     from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
@@ -103,6 +104,7 @@ const AppRoutes = () => {
         {/* Public routes */}
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
         <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />
+        <Route path="/r/:token"       element={<B name="client-report"> <ClientReportView />                              </B>} />
         <Route path="/admin"          element={<B name="admin">         <Admin />                                          </B>} />
         <Route path="/build"          element={<B name="build">         <Build />                                          </B>} />
 

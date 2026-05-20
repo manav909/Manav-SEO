@@ -233,3 +233,66 @@ export interface AuditDetail {
   visibility:    string;
   competitive:   string;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Client report types
+═══════════════════════════════════════════════════════════ */
+
+export type ReportBlockType = 'narrative' | 'kpi' | 'chart' | 'table' | 'matrix' | 'embed';
+export type ReportBlockCategory = 'summary' | 'delivery' | 'performance' | 'competitive' | 'next';
+
+export interface ReportBlock {
+  id:        string;
+  type:      ReportBlockType;
+  title:     string;
+  category:  ReportBlockCategory;
+  available: boolean;
+  hint?:     string;
+  content?:  string;          // narrative blocks: the text
+  data?:     any;             // structured blocks: chart/table/kpi/matrix data
+}
+
+export interface Sliders {
+  tone?:           number;    // 0=casual → 100=formal
+  technicalDepth?: number;    // 0=plain-English → 100=technical
+  confidence?:     number;    // 0=cautious → 100=confident
+  emotion?:        number;    // 0=reserved → 100=warm
+  length?:         number;    // 0=brief → 100=comprehensive
+}
+
+export interface PmContext {
+  emphasize?:  string;
+  downplay?:   string;
+  mood?:       '' | 'steady' | 'launching' | 'under_pressure' | 'celebrating';
+  customNote?: string;
+}
+
+export interface ReportSummary {
+  id:           string;
+  title:        string;
+  period_start: string | null;
+  period_end:   string | null;
+  status:       'draft' | 'finalized' | 'shared';
+  share_token:  string | null;
+  shared_at:    string | null;
+  created_at:   string;
+  updated_at:   string;
+}
+
+export interface FullReport extends ReportSummary {
+  project_id:      string;
+  sliders:         Sliders;
+  pm_context:      PmContext;
+  selected_blocks: string[];
+  blocks:          ReportBlock[];
+}
+
+export interface SharedReport {
+  title:        string;
+  period_start: string | null;
+  period_end:   string | null;
+  blocks:       ReportBlock[];
+  shared_at:    string;
+  project_name: string;
+  client:       string;
+}

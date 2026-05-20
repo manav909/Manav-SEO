@@ -140,7 +140,10 @@ export default function PMModule() {
               />
             )}
             {tab === 'reports' && (
-              <ReportsPanel projectId={selectedProjectId} />
+              <ReportsPanel
+                projectId={selectedProjectId}
+                projectName={selectedProject?.name || ''}
+              />
             )}
           </>
         )}
