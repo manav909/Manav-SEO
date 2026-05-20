@@ -31,6 +31,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import BrandBar from '@/components/brand-studio/BrandBar';
 import Library from '@/components/brand-studio/Library';
+import Ingest from '@/components/brand-studio/Ingest';
 import EntitlementGate from '@/components/brand-studio/EntitlementGate';
 import {
   getEntitlements, getBrandAssets, updateBrandAssets, getCatalogs,
@@ -69,6 +70,7 @@ export default function BrandStudio() {
   const [loadingEnt,    setLoadingEnt]    = useState(false);
   const [loadingAssets, setLoadingAssets] = useState(false);
   const [projectName,   setProjectName]   = useState<string>('');
+  const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
 
   const projectId = selectedProjectId || '';
 
@@ -223,21 +225,15 @@ export default function BrandStudio() {
 
         {/* ── Tab content ── */}
         {entitlements && tab === 'library' && (
-          <Library projectId={projectId} catalogs={catalogs} />
+          <Library key={libraryRefreshKey} projectId={projectId} catalogs={catalogs} />
         )}
 
         {entitlements && tab === 'ingest' && (
           <EntitlementGate entitlements={entitlements} feature="brand_studio.ingest" showLockedState>
-            <PlaceholderCard
-              title="Ingest V2 — coming in H.1"
-              description={[
-                'Multi-format upload: PDF, DOCX, XLSX directly. Drag-drop multiple files.',
-                'URL ingestion — paste a Google Doc public link, a Notion page, a press release URL, an About page.',
-                'Auto-detect doc type from filename + content patterns. Stakeholder tagging on every upload.',
-                'V2-aware extraction: brand guidelines → content fields; sales notes → audience objections; strategy decks → goal anti-goals.',
-                'Cross-document synthesis — 3 sales call notes synthesise into one persona.',
-                'Full provenance: every extracted Data Room field shows the source document(s).',
-              ]}
+            <Ingest
+              projectId={projectId}
+              catalogs={catalogs}
+              onIngested={() => setLibraryRefreshKey((k) => k + 1)}
             />
           </EntitlementGate>
         )}

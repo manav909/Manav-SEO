@@ -1660,6 +1660,20 @@ Evidence: ${c.data_basis}` : ''}`,
     const isAiStale = isAiInferred && aiNotes?.inferred_at &&
       (Date.now() - new Date(aiNotes.inferred_at).getTime()) / 86_400_000 > 60;
 
+    /* Document-extracted state — blue badge. Field was populated by
+       extracting from an ingested document (Brand Studio H.1). The
+       `notes` JSON includes confidence + evidence + source_doc id. */
+    const isDocExtracted = knData?.source === 'document_extracted';
+    let docNotes: { confidence?: string; evidence?: string; source_doc?: string; extracted_at?: string } | null = null;
+    if (isDocExtracted && knData?.notes) {
+      try { docNotes = JSON.parse(knData.notes); } catch { docNotes = null; }
+    }
+    const docConfidence = docNotes?.confidence || 'medium';
+    const docBadgeTone =
+      docConfidence === 'high'   ? 'bg-blue-500/15 text-blue-300' :
+      docConfidence === 'medium' ? 'bg-blue-500/10 text-blue-400' :
+                                    'bg-blue-500/8 text-blue-400/80';
+
     return (
       <div key={field.key} className="space-y-1">
         <div className="flex items-center gap-2">
@@ -1679,7 +1693,12 @@ Evidence: ${c.data_basis}` : ''}`,
               {isAiStale && <span className="text-amber-400 ml-1">· verify</span>}
             </span>
           )}
-          {!isAutoSynced && !isAiInferred && val && !dirty && (
+          {isDocExtracted && !isAutoSynced && !isAiInferred && !dirty && (
+            <span className={`ml-auto flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${docBadgeTone}`} title={docNotes?.evidence || 'From an ingested document'}>
+              <FileText size={10}/> From document · {docConfidence}
+            </span>
+          )}
+          {!isAutoSynced && !isAiInferred && !isDocExtracted && val && !dirty && (
             <div className="flex items-center gap-1 ml-auto">
               {source && <span className="text-xs text-muted-foreground font-mono">{source}</span>}
               {dDate  && <span className="text-xs text-muted-foreground font-mono">· {dDate}</span>}
@@ -1703,6 +1722,26 @@ Evidence: ${c.data_basis}` : ''}`,
               {aiNotes.inferred_at && (
                 <div className="text-muted-foreground/70">
                   Inferred {new Date(aiNotes.inferred_at).toLocaleDateString('en-GB')}{isAiStale ? ' (stale — verify with client)' : ''}
+                </div>
+              )}
+            </div>
+          </details>
+        )}
+
+        {/* Document-extracted evidence panel — parallel to AI inferred */}
+        {isDocExtracted && docNotes?.evidence && !dirty && (
+          <details className="text-[10px] pl-1">
+            <summary className="cursor-pointer text-blue-400/70 hover:text-blue-400">From which document?</summary>
+            <div className="mt-1 pl-2 border-l-2 border-blue-500/30 space-y-0.5">
+              <div className="text-foreground/80 italic">{docNotes.evidence}</div>
+              {source && (
+                <div className="text-muted-foreground">
+                  <span className="font-semibold">Source: </span>{source}
+                </div>
+              )}
+              {docNotes.extracted_at && (
+                <div className="text-muted-foreground/70">
+                  Extracted {new Date(docNotes.extracted_at).toLocaleDateString('en-GB')}
                 </div>
               )}
             </div>

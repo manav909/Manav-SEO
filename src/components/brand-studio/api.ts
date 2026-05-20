@@ -105,3 +105,145 @@ export async function getCatalogs(): Promise<{
     },
   };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   H.1 — Ingest V2
+═══════════════════════════════════════════════════════════ */
+
+export interface DocTypeOption {
+  key:               string;
+  label:             string;
+  description:       string;
+  target_categories: string[];
+  stakeholder_hint:  string;
+}
+
+export interface DocTypeDetection {
+  detected:   string;
+  confidence: 'high' | 'medium' | 'low';
+  reason:     string;
+}
+
+export interface FieldExtractionDetail {
+  category:         string;
+  field_key:        string;
+  value:            string;
+  confidence:       'high' | 'medium' | 'low';
+  evidence:         string;
+  source_location?: string;
+  action?:          'written' | 'skipped_existing' | 'failed';
+  existing_source?: string;
+  error?:           string;
+}
+
+export interface IngestResult {
+  document_id?:    string;
+  document?:       BrandStudioDocument;
+  detection?:      DocTypeDetection;
+  parsed_text_preview?: string;
+  pdf_in_memory?:  boolean;          // signal — extract step needs base64
+  error?:          string;
+}
+
+export interface ExtractResult {
+  summary?:         string;
+  data_quality?:    'high' | 'medium' | 'low';
+  fields_extracted?: number;
+  fields_written?:   number;
+  fields_skipped?:   number;
+  key_findings?:    string[];
+  open_questions?:  string[];
+  write_details?:   FieldExtractionDetail[];
+  error?:           string;
+}
+
+export interface FieldProvenance {
+  document_id:     string;
+  document_name?:  string;
+  doc_type?:       string;
+  stakeholder?:    string;
+  extracted_value: string;
+  extracted_at:    string;
+  source_location?: string;
+}
+
+export async function getDocTypes(): Promise<{ doc_types: DocTypeOption[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_doc_types' });
+  if (!r?.success) return { doc_types: [], error: r?.error };
+  return { doc_types: Array.isArray(r.doc_types) ? r.doc_types : [] };
+}
+
+export async function detectDocType(opts: { filename: string; contentSample?: string }): Promise<DocTypeDetection | null> {
+  const r = await post(ENGINE, { action: 'bs_detect_doc_type', filename: opts.filename, contentSample: opts.contentSample || '' });
+  if (!r?.success) return null;
+  return { detected: r.detected, confidence: r.confidence, reason: r.reason };
+}
+
+export async function ingestFile(opts: {
+  projectId: string;
+  fileName:  string;
+  base64?:   string;
+  text?:     string;
+  mimeType:  string;
+  stakeholderRole: string;
+  providedBy?:     string;
+  audienceRole?:   string;
+}): Promise<IngestResult> {
+  const r = await post(ENGINE, { action: 'bs_ingest_file', ...opts });
+  if (!r?.success) return { error: r?.error || 'Ingest failed.' };
+  return {
+    document_id: r.document_id, document: r.document, detection: r.detection,
+    parsed_text_preview: r.parsed_text_preview, pdf_in_memory: r.pdf_in_memory,
+  };
+}
+
+export async function ingestUrl(opts: {
+  projectId: string;
+  url:       string;
+  stakeholderRole: string;
+  providedBy?:     string;
+  audienceRole?:   string;
+}): Promise<IngestResult> {
+  const r = await post(ENGINE, { action: 'bs_ingest_url', ...opts });
+  if (!r?.success) return { error: r?.error || 'URL ingest failed.' };
+  return {
+    document_id: r.document_id, document: r.document, detection: r.detection,
+    parsed_text_preview: r.parsed_text_preview,
+  };
+}
+
+export async function ingestExtract(opts: {
+  documentId:      string;
+  docTypeOverride?: string;
+  pdfBase64?:      string;
+}): Promise<ExtractResult> {
+  const r = await post(ENGINE, { action: 'bs_ingest_extract', ...opts });
+  if (!r?.success) return { error: r?.error || 'Extraction failed.' };
+  return {
+    summary: r.summary, data_quality: r.data_quality,
+    fields_extracted: r.fields_extracted, fields_written: r.fields_written, fields_skipped: r.fields_skipped,
+    key_findings: r.key_findings, open_questions: r.open_questions, write_details: r.write_details,
+  };
+}
+
+export async function getDocumentDetail(documentId: string): Promise<{
+  document?: BrandStudioDocument; provenance?: any[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_get_document', documentId });
+  if (!r?.success) return { error: r?.error || 'Failed to load document.' };
+  return { document: r.document, provenance: r.provenance || [] };
+}
+
+export async function deleteDocument(documentId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_delete_document', documentId });
+  if (!r?.success) return { success: false, error: r?.error || 'Delete failed.' };
+  return { success: true };
+}
+
+export async function getFieldProvenance(opts: {
+  projectId: string; category: string; fieldKey: string;
+}): Promise<{ sources: FieldProvenance[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_field_provenance', ...opts });
+  if (!r?.success) return { sources: [], error: r?.error };
+  return { sources: Array.isArray(r.sources) ? r.sources : [] };
+}

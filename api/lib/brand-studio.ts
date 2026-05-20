@@ -385,9 +385,20 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
     case "bs_get_catalogs":
       return bsGetCatalogs();
 
-    /* H.1+ handlers will plug in here:
-       case "bs_ingest_url": return bsIngestUrl(body);
-       case "bs_ingest_file": return bsIngestFile(body);
+    /* H.1 — Ingest V2 handlers ── */
+    case "bs_get_doc_types":
+    case "bs_detect_doc_type":
+    case "bs_ingest_file":
+    case "bs_ingest_url":
+    case "bs_ingest_extract":
+    case "bs_get_document":
+    case "bs_delete_document":
+    case "bs_get_field_provenance": {
+      const { handleBrandStudioIngest } = await import("./brand-studio-ingest.js");
+      return handleBrandStudioIngest(action, body);
+    }
+
+    /* H.2+ handlers will plug in here:
        case "bs_generate_preview": return bsGeneratePreview(body);
        case "bs_generate_apply": return bsGenerateApply(body);
        ... */
