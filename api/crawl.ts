@@ -418,7 +418,7 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const summaries = results.map(r => {
+    const summaries = results.map((r: any) => {
       const p = r.page_analysis;
       const cached = r.from_cache ? " [cached]" : "";
       if (!p) return `URL: ${r.url}${cached}\nStatus: ${r.error || "fetch failed"}\n`;
