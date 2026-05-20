@@ -479,6 +479,101 @@ export async function pmShippedInPeriod(
   }
 }
 
+/* ── cron jobs ────────────────────────────────────────────── */
+
+/**
+ * Daily cron jobs for the execution loop:
+ *
+ * JOB A — Snapshot active projects.
+ *   A project is "active" if it has cards updated, audits run, or shipments
+ *   in the last 60 days. These get a metric snapshot daily so trend charts
+ *   populate over time without manual button-clicking.
+ *
+ * JOB B — Auto-measure ripe shipments.
+ *   A shipment with a baseline 14+ days old that hasn't been measured yet
+ *   is "ripe". We measure it automatically, capturing post-ship metrics and
+ *   computing lift. The card transitions to "measured" automatically.
+ *
+ * Both jobs are best-effort: errors on one project don't stop the others.
+ * Returns a summary suitable for cron monitoring.
+ */
+export async function pmCronTick(): Promise<{
+  success: boolean;
+  snapshotted: number;
+  measured: number;
+  skipped: number;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let snapshotted = 0;
+  let measured = 0;
+  let skipped = 0;
+
+  /* ── JOB A: snapshot active projects ── */
+  try {
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    /* find active project ids — any project with a card updated recently
+       (this is the cheapest signal of activity) */
+    const { data: activeRows } = await db().from("kanban_tasks")
+      .select("project_id").gt("updated_at", sixtyDaysAgo).limit(2000);
+    const activeIds = Array.from(new Set((activeRows || [])
+      .map((r: any) => r?.project_id).filter(Boolean)));
+
+    /* don't snapshot the same project twice in one day — check last snapshot age */
+    const oneDayAgo = new Date(Date.now() - 86_400_000).toISOString();
+
+    for (const pid of activeIds) {
+      try {
+        const { data: recent } = await db().from("metrics_snapshots")
+          .select("id").eq("project_id", pid).gt("captured_at", oneDayAgo).limit(1);
+        if (recent && recent.length) { skipped++; continue; }
+
+        /* dynamic import keeps pm-reports out of the lifecycle's load path
+           unless the cron is actually running */
+        const { captureMetricsSnapshot } = await import("./pm-reports.js");
+        const r = await captureMetricsSnapshot({ projectId: pid, source: "cron" });
+        if (r.success) snapshotted++;
+      } catch (e: any) {
+        errors.push(`snapshot ${pid}: ${e?.message || "fail"}`);
+      }
+    }
+  } catch (e: any) {
+    errors.push(`JOB A: ${e?.message || "fail"}`);
+  }
+
+  /* ── JOB B: auto-measure ripe shipments (14+ days, unmeasured) ── */
+  try {
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+    const { data: ripe } = await db().from("card_shipments")
+      .select("id,card_id,project_id,shipped_at")
+      .is("post_captured_at", null)
+      .lt("shipped_at", fourteenDaysAgo)
+      .order("shipped_at", { ascending: true })
+      .limit(50);
+
+    for (const s of (ripe || [])) {
+      try {
+        const r = await pmCardMeasure({
+          cardId: (s as any).card_id,
+          shipmentId: (s as any).id,
+          actor: "system_cron",
+        });
+        if (r.success) measured++;
+        else errors.push(`measure ${(s as any).id}: ${r.error || "fail"}`);
+      } catch (e: any) {
+        errors.push(`measure ${(s as any).id}: ${e?.message || "fail"}`);
+      }
+    }
+  } catch (e: any) {
+    errors.push(`JOB B: ${e?.message || "fail"}`);
+  }
+
+  return {
+    success: errors.length === 0,
+    snapshotted, measured, skipped, errors,
+  };
+}
+
 /* ── dispatch ─────────────────────────────────────────────── */
 
 export async function handlePmLifecycle(action: string, body: any): Promise<any | null> {

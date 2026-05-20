@@ -2386,6 +2386,16 @@ Return ONLY raw JSON:
 
   /* ── RUN SCHEDULED VERIFICATIONS — Module 02 The Closed Loop runner ── */
   if (action === "run_scheduled_verifications") {
+    /* ── PM cron jobs (Phase C) — runs alongside the verification runner.
+       Best-effort; failures don't block verifications. */
+    let pmCronSummary: any = null;
+    try {
+      const { pmCronTick } = await import("./lib/pm-lifecycle.js");
+      pmCronSummary = await pmCronTick();
+    } catch (e: any) {
+      pmCronSummary = { success: false, error: e?.message || "pmCronTick failed" };
+    }
+
     const now = new Date().toISOString();
 
     /* Get all pending verifications due now */
@@ -2397,7 +2407,7 @@ Return ONLY raw JSON:
       .limit(10);
 
     if (!due || due.length === 0) {
-      return ok(res, { success: true, processed: 0, message: "No verifications due" });
+      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary });
     }
 
     const results: any[] = [];
@@ -2532,6 +2542,7 @@ Respond with JSON only:
       success:   true,
       processed: results.length,
       results,
+      pmCron:    pmCronSummary,
       timestamp: new Date().toISOString(),
     });
   }
