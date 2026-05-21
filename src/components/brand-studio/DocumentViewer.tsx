@@ -16,7 +16,8 @@
    - Client-side workspace doc detail
 ═══════════════════════════════════════════════════════════════ */
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkDirective from 'remark-directive';
@@ -24,6 +25,7 @@ import { Printer, Download, Copy, CheckCircle2, FileText, ExternalLink } from 'l
 import { toast } from '@/hooks/use-toast';
 import { remarkDirectiveRender } from './document-directives';
 import DirectiveDispatcher from './DirectiveRenderer';
+import DocumentPrintBody from './DocumentPrintBody';
 
 interface Props {
   /** The markdown / text content of the document */
@@ -59,11 +61,27 @@ export default function DocumentViewer({
   const accent = brandColor || '#8b5cf6';
   const printRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
 
-  const handlePrint = () => {
-    /* window.print() with our print stylesheet — user picks "Save as PDF" */
-    window.print();
-  };
+  /* When isPrinting flips on, render the portal then trigger window.print().
+     Listen for afterprint to clean up. */
+  useEffect(() => {
+    if (!isPrinting) return;
+    /* Wait one frame for the portal to be in the DOM */
+    const raf = requestAnimationFrame(() => {
+      setTimeout(() => {
+        window.print();
+      }, 80);
+    });
+    const onAfter = () => setIsPrinting(false);
+    window.addEventListener('afterprint', onAfter);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('afterprint', onAfter);
+    };
+  }, [isPrinting]);
+
+  const handlePrint = () => setIsPrinting(true);
 
   const handleDownloadMd = () => {
     const blob = new Blob([content || ''], { type: 'text/markdown;charset=utf-8' });
@@ -123,21 +141,11 @@ export default function DocumentViewer({
         )}
       </div>
 
-      {/* The rendered document — also the print target */}
+      {/* The rendered document — on-screen view only.
+          (Printing renders through the portal at body root — see below.) */}
       <div ref={printRef} className="ds-document">
-        {/* Print header — only visible when printing */}
-        <div className="ds-print-header hidden print:block">
-          <div className="ds-print-title">{documentName}</div>
-          {meta?.publishedAt && (
-            <div className="ds-print-meta">
-              {new Date(meta.publishedAt).toLocaleDateString('en-GB', { dateStyle: 'long' })}
-              {meta.version && meta.version > 1 ? ` · Version ${meta.version}` : ''}
-            </div>
-          )}
-        </div>
-
-        {/* Screen header (compact metadata) — hidden when printing */}
-        <div className="print:hidden mb-4 pb-3 border-b border-border">
+        {/* Screen header (compact metadata) */}
+        <div className="mb-4 pb-3 border-b border-border">
           <div className="text-base font-bold text-foreground">{documentName}</div>
           <div className="flex items-center gap-2 flex-wrap mt-1 text-[10px] text-muted-foreground">
             {meta?.docType && (
@@ -298,186 +306,304 @@ export default function DocumentViewer({
             </div>
           )}
         </article>
-
-        {/* Print footer */}
-        <div className="ds-print-footer hidden print:block">
-          <div>{documentName}</div>
-        </div>
       </div>
 
-      {/* Print stylesheet — scoped to ds-document.
-          Strategy: force light-theme CSS variables in print so every
-          element using `bg-card` / `bg-background` / etc. renders white
-          instead of dark navy. Then hide UI chrome and position the
-          document to fill the page cleanly. */}
+      {/* Portal-based print: when isPrinting is on, render a clean
+          copy of the document at body root with explicit light theme.
+          The print stylesheet hides everything else in print media. */}
+      {isPrinting && createPortal(
+        <div className="ds-print-portal">
+          <DocumentPrintBody
+            content={content}
+            documentName={documentName}
+            meta={meta}
+            brandColor={accent}
+            summary={summary}
+            keyFindings={keyFindings}
+            dataContext={dataContext}
+          />
+        </div>,
+        document.body
+      )}
+
+      {/* Print stylesheet — portal-based. The .ds-print-portal element
+          is rendered at body root with isolated light-theme CSS variables.
+          In print media we hide everything except the portal. */}
       <style>{`
+        /* Hide the portal on screen — it's only for print */
+        .ds-print-portal {
+          display: none;
+        }
+
         @media print {
-          /* ── 1. Force light-theme CSS variables in print ─────────────
-             This makes EVERY element using design-system tokens
-             (bg-card, bg-background, text-foreground, border-border)
-             render in light mode automatically. */
-          :root,
-          .dark,
-          html,
-          body {
-            --background:        0 0% 100% !important;
-            --foreground:        0 0% 8% !important;
-            --card:              0 0% 100% !important;
-            --card-foreground:   0 0% 8% !important;
-            --muted:             0 0% 95% !important;
-            --muted-foreground:  0 0% 35% !important;
-            --border:            0 0% 85% !important;
-            --primary:           240 13% 8% !important;
-            --primary-foreground:0 0% 100% !important;
+          /* ── 1. Hide every sibling of the print portal at body level ── */
+          body > *:not(.ds-print-portal) {
+            display: none !important;
           }
 
-          /* ── 2. Hard reset all backgrounds + text to print-safe ──── */
+          /* ── 2. Reset html/body chrome ───────────────────────────── */
           html, body {
             background: white !important;
             color: black !important;
             margin: 0 !important;
             padding: 0 !important;
-            min-height: 0 !important;
           }
 
-          /* ── 3. Allow background graphics that matter (charts,
-                  callouts, KPI tiles) to keep their color while
-                  forcing chrome backgrounds to white. We target
-                  the modal/backdrop classes explicitly. */
-          .fixed.inset-0,
-          [class*="bg-black/"],
-          [class*="bg-card"]:not(.ds-kpi):not(.ds-callout):not(.ds-quote):not(.ds-chart),
-          [class*="backdrop-blur"] {
-            background: white !important;
-            background-color: white !important;
-            background-image: none !important;
-            backdrop-filter: none !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
-
-          /* ── 4. Hide all UI chrome — show only ds-document ──────── */
-          body * { visibility: hidden; }
-          .ds-document, .ds-document * { visibility: visible; }
-
-          /* ── 5. Position ds-document to fill the page ───────────── */
-          .ds-document {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            right: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 24px 32px 48px 32px !important;
+          /* ── 3. Make the portal the page. Force light-theme CSS
+                  variables locally so any directive component that
+                  uses bg-card / bg-background / etc. renders white.
+                  These variable values match the project's light
+                  theme block in src/index.css. */
+          .ds-print-portal {
+            display: block !important;
+            position: static !important;
             background: white !important;
             color: black !important;
             font-family: Georgia, 'Times New Roman', serif !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
+            /* Light-theme variable overrides — apply only inside portal */
+            --background:        0 0% 100%;
+            --foreground:        240 13% 8%;
+            --card:              0 0% 100%;
+            --card-foreground:   240 13% 8%;
+            --muted:             0 0% 95%;
+            --muted-foreground:  240 5% 35%;
+            --border:            0 0% 85%;
+            --primary:           234 89% 50%;
+            --primary-foreground:0 0% 100%;
+          }
+          .ds-print-portal * {
+            background-image: none !important;
+            box-shadow: none !important;
+            text-shadow: none !important;
           }
 
-          /* ── 6. Ensure document descendants use clean print colors,
-                  but PRESERVE chart colors, callout tints, and brand
-                  accents (those use inline styles with !important
-                  bypasses or distinct ds-* classes). ───────────────── */
-          .ds-document p,
-          .ds-document li,
-          .ds-document h1,
-          .ds-document h2,
-          .ds-document h3,
-          .ds-document h4,
-          .ds-document h5,
-          .ds-document h6,
-          .ds-document td,
-          .ds-document th,
-          .ds-document figcaption,
-          .ds-document .ds-prose * {
-            color: black !important;
+          /* ── 4. Print body typography ───────────────────────────── */
+          .ds-print-portal-content {
+            padding: 0 !important;
+            max-width: none !important;
           }
-
-          /* Headings use sans-serif, body uses serif */
-          .ds-document .ds-prose h1,
-          .ds-document .ds-prose h2,
-          .ds-document .ds-prose h3,
-          .ds-document .ds-prose h4 {
-            page-break-after: avoid;
-            font-family: 'Helvetica Neue', Arial, sans-serif !important;
-          }
-          .ds-document .ds-prose p,
-          .ds-document .ds-prose li {
-            font-family: Georgia, 'Times New Roman', serif !important;
-            line-height: 1.6 !important;
-            orphans: 3;
-            widows: 3;
-          }
-          .ds-document .ds-prose table {
-            page-break-inside: avoid;
-          }
-          .ds-document .ds-prose blockquote {
-            border-left: 3px solid #999 !important;
-            font-style: italic !important;
-          }
-
-          /* ── 7. Preserve chart SVG colors — Recharts uses inline
-                  fill/stroke which would otherwise be wiped by the
-                  blanket overrides above. ──────────────────────────── */
-          .ds-chart svg,
-          .ds-chart svg *,
-          .recharts-wrapper * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
-          /* ── 8. Preserve KPI tile, callout, and quote backgrounds
-                  by re-enabling backgrounds via inline-style passthrough.
-                  These directives use inline style attributes; we
-                  re-allow background on the directive containers. */
-          .ds-kpi,
-          .ds-callout,
-          .ds-quote,
-          .ds-chart > div {
-            background: white !important;
-            border: 1px solid #ccc !important;
-          }
-
-          /* ── 9. Print header + footer ───────────────────────────── */
           .ds-print-header {
-            border-bottom: 2px solid #333 !important;
             padding-bottom: 12px;
             margin-bottom: 24px;
+            border-bottom: 2px solid #333;
+            page-break-after: avoid;
           }
           .ds-print-title {
             font-size: 22pt !important;
-            font-weight: bold;
+            font-weight: 700;
             font-family: 'Helvetica Neue', Arial, sans-serif !important;
             color: black !important;
+            margin: 0 !important;
+            line-height: 1.2;
           }
           .ds-print-meta {
-            font-size: 10pt !important;
+            font-size: 10pt;
             color: #666 !important;
             margin-top: 4px;
-          }
-          .ds-summary {
-            border: 1px solid #ccc !important;
-            background: #f8f8f8 !important;
-            padding: 12px !important;
-          }
-          .ds-print-footer {
-            position: fixed;
-            bottom: 12mm;
-            left: 32px;
-            right: 32px;
-            font-size: 8pt !important;
-            color: #999 !important;
-            border-top: 1px solid #ccc !important;
-            padding-top: 6px;
             font-family: 'Helvetica Neue', Arial, sans-serif !important;
           }
 
-          /* ── 10. Cover page — light-theme accent only ──────────── */
-          .ds-cover-page {
+          .ds-print-summary {
+            border: 1px solid #ccc;
+            background: #fafafa !important;
+            padding: 12px;
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+          }
+          .ds-print-summary-label {
+            font-size: 9pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #555 !important;
+            margin-bottom: 6px;
+          }
+          .ds-print-summary-body {
+            font-size: 11pt;
+            font-style: italic;
+            color: #222 !important;
+            line-height: 1.5;
+          }
+
+          .ds-print-findings {
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+          }
+          .ds-print-findings-label {
+            font-size: 9pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #555 !important;
+            margin-bottom: 6px;
+            font-family: 'Helvetica Neue', Arial, sans-serif !important;
+          }
+          .ds-print-findings ul {
+            padding-left: 18px;
+            margin: 0;
+          }
+          .ds-print-findings li {
+            font-size: 11pt;
+            color: #222 !important;
+            line-height: 1.5;
+            margin-bottom: 4px;
+          }
+
+          .ds-print-prose {
+            font-size: 11pt;
+            line-height: 1.6;
+          }
+          .ds-h1 {
+            font-size: 18pt;
+            font-weight: 700;
+            font-family: 'Helvetica Neue', Arial, sans-serif !important;
+            color: black !important;
+            margin: 18pt 0 8pt;
+            padding-bottom: 4pt;
+            border-bottom: 1px solid;
+            page-break-after: avoid;
+          }
+          .ds-h2 {
+            font-size: 14pt;
+            font-weight: 700;
+            font-family: 'Helvetica Neue', Arial, sans-serif !important;
+            margin: 14pt 0 6pt;
+            page-break-after: avoid;
+          }
+          .ds-h3 {
+            font-size: 12pt;
+            font-weight: 700;
+            font-family: 'Helvetica Neue', Arial, sans-serif !important;
+            color: black !important;
+            margin: 12pt 0 4pt;
+            page-break-after: avoid;
+          }
+          .ds-h4 {
+            font-size: 11pt;
+            font-weight: 700;
+            font-family: 'Helvetica Neue', Arial, sans-serif !important;
+            color: black !important;
+            margin: 10pt 0 4pt;
+            page-break-after: avoid;
+          }
+          .ds-p {
+            font-family: Georgia, 'Times New Roman', serif !important;
+            font-size: 11pt;
+            line-height: 1.6;
+            margin: 0 0 8pt;
+            color: black !important;
+            orphans: 3;
+            widows: 3;
+          }
+          .ds-ul, .ds-ol {
+            margin: 6pt 0 8pt 18pt;
+            padding: 0;
+          }
+          .ds-li {
+            font-family: Georgia, 'Times New Roman', serif !important;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: black !important;
+            margin-bottom: 3pt;
+          }
+          .ds-blockquote {
+            margin: 8pt 0;
+            padding: 4pt 0 4pt 12pt;
+            border-left: 3px solid;
+            font-style: italic;
+            color: #444 !important;
+            page-break-inside: avoid;
+          }
+          .ds-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10pt 0;
+            font-size: 10pt;
+            page-break-inside: avoid;
+          }
+          .ds-th {
+            text-align: left;
+            font-weight: 700;
+            font-size: 9pt;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 6pt 8pt;
+            border-bottom: 2px solid #333;
+            font-family: 'Helvetica Neue', Arial, sans-serif !important;
+          }
+          .ds-td {
+            padding: 5pt 8pt;
+            border-bottom: 1px solid #ddd;
+            font-family: Georgia, 'Times New Roman', serif !important;
+            color: black !important;
+            vertical-align: top;
+          }
+          .ds-hr {
+            border: none;
+            border-top: 1px solid #ccc !important;
+            margin: 14pt 0;
+            background: none !important;
+            height: 0;
+          }
+          .ds-code {
+            font-family: 'Courier New', monospace !important;
+            font-size: 10pt;
+            padding: 1pt 3pt;
+            background: #f5f5f5 !important;
+            border-radius: 2pt;
+          }
+          .ds-pre {
+            font-family: 'Courier New', monospace !important;
+            font-size: 9pt;
+            background: #f5f5f5 !important;
+            border: 1px solid #ddd;
+            padding: 8pt;
+            border-radius: 3pt;
+            overflow: hidden;
+            margin: 8pt 0;
+            page-break-inside: avoid;
+          }
+          .ds-a {
+            text-decoration: underline;
+          }
+
+          /* ── 5. Directive containers — keep chart/KPI/callout borders
+                  but force white-friendly backgrounds. Charts keep their
+                  SVG colors via print-color-adjust exact above. ──── */
+          .ds-print-portal .ds-cover-page {
             background: white !important;
             border: 1px solid #ddd !important;
+            page-break-after: always;
+            min-height: 0 !important;
+          }
+          .ds-print-portal .ds-kpi,
+          .ds-print-portal .ds-callout,
+          .ds-print-portal .ds-quote,
+          .ds-print-portal .ds-chart > div,
+          .ds-print-portal .ds-image,
+          .ds-print-portal .ds-data-table-placeholder,
+          .ds-print-portal .ds-chart-placeholder {
+            background: white !important;
+            border: 1px solid #ccc !important;
+            box-shadow: none !important;
+            page-break-inside: avoid;
+          }
+
+          /* Page-break directive */
+          .ds-print-portal .ds-page-break {
+            page-break-after: always;
+            height: 0;
+            visibility: hidden;
+          }
+
+          /* ── 6. Recharts SVG color preservation ─────────────────── */
+          .ds-print-portal .recharts-wrapper *,
+          .ds-print-portal .ds-chart svg,
+          .ds-print-portal .ds-chart svg * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
 
           @page {
