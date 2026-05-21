@@ -34,8 +34,9 @@ interface Props {
   summary?:     string;
   keyFindings?: string[];
   dataContext?: {
-    fields?:      Record<string, any>;
-    attachments?: Array<{ id: string; signedUrl: string; alt?: string; caption?: string }>;
+    fields?:         Record<string, any>;
+    attachments?:    Array<{ id: string; signedUrl: string; alt?: string; caption?: string }>;
+    dataReferences?: Record<string, any>;
   };
 }
 

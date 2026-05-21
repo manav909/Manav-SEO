@@ -518,6 +518,12 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return handleBrandStudioCollab(action, body);
     }
 
+    /* Phase 1D — Live data reference resolution */
+    case "bs_resolve_data_references": {
+      const { bsResolveDataReferences } = await import("./brand-studio-resolve.js");
+      return bsResolveDataReferences(body);
+    }
+
     /* H.2+ handlers will plug in here:
        case "bs_generate_preview": return bsGeneratePreview(body);
        case "bs_generate_apply": return bsGenerateApply(body);

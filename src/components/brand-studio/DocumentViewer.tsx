@@ -50,8 +50,10 @@ interface Props {
   /** Optional data context for live directive references (Data Room fields, attachments).
    *  Phase 1A: types defined, populated by Phase 1B/1C/1D. */
   dataContext?: {
-    fields?:      Record<string, any>;
-    attachments?: Array<{ id: string; signedUrl: string; alt?: string; caption?: string }>;
+    fields?:         Record<string, any>;
+    attachments?:    Array<{ id: string; signedUrl: string; alt?: string; caption?: string }>;
+    /** Live data resolutions — keyed by composite ref key */
+    dataReferences?: Record<string, any>;
   };
 }
 

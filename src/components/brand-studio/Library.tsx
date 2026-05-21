@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react';
 import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare, BookOpen, X, Image as ImageIcon } from 'lucide-react';
 import { listDocuments, publishDocument, listStaleDocs, getDocumentDetail, listAttachments, getBrandAssets, type DocumentAttachment } from './api';
+import { extractDataReferences, fetchDataReferences } from './data-references';
 import { toast } from '@/hooks/use-toast';
 import DocumentDiff from './DocumentDiff';
 import DocumentViewer from './DocumentViewer';
@@ -45,6 +46,8 @@ export default function Library({ projectId, catalogs }: Props) {
   const [viewerAttachments, setViewerAttachments] = useState<DocumentAttachment[]>([]);
   const [brandLogoUrl,    setBrandLogoUrl]    = useState<string | null>(null);
   const [showAttachments, setShowAttachments] = useState(false);
+  /** Phase 1D — live data resolutions for the open document */
+  const [dataRefs,        setDataRefs]        = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (!projectId) return;
@@ -169,6 +172,7 @@ export default function Library({ projectId, catalogs }: Props) {
               setViewerDoc({ ...doc });
               setViewerAttachments([]);
               setBrandLogoUrl(null);
+              setDataRefs({});
               /* Parallel: document detail, attachments, brand assets */
               const [docRes, attRes, brandRes] = await Promise.all([
                 getDocumentDetail(doc.id),
@@ -186,6 +190,13 @@ export default function Library({ projectId, catalogs }: Props) {
               setViewerAttachments(attRes.attachments || []);
               if (brandRes?.assets?.primary_logo_url) {
                 setBrandLogoUrl(String(brandRes.assets.primary_logo_url));
+              }
+              /* Phase 1D — extract + fetch live data references */
+              const content = (docRes.document as any)?.raw_content || '';
+              const refs = extractDataReferences(content);
+              if (refs.length > 0) {
+                const resolutions = await fetchDataReferences(projectId, refs);
+                setDataRefs(resolutions);
               }
               setViewerLoading(false);
             }}
@@ -254,6 +265,7 @@ export default function Library({ projectId, catalogs }: Props) {
                         alt:       a.alt || undefined,
                         caption:   a.caption || undefined,
                       })),
+                    dataReferences: dataRefs,
                   }}
                 />
               )}

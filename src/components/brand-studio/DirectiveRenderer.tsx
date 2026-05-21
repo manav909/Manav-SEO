@@ -32,9 +32,34 @@ interface RendererProps {
   /** Optional data context for live references (Data Room values, attachments).
    *  Phase 1B/1C/1D populate this. Phase 1A passes empty. */
   dataContext?: {
-    fields?:      Record<string, any>;
-    attachments?: Array<{ id: string; signedUrl: string; alt?: string; caption?: string }>;
+    fields?:        Record<string, any>;
+    attachments?:   Array<{ id: string; signedUrl: string; alt?: string; caption?: string }>;
+    /** Live data resolutions — keyed by composite ref key (from|field=...|range=...) */
+    dataReferences?: Record<string, any>;
   };
+}
+
+/** Stable key used by both the extractor and the renderer to look up
+ *  resolved data. Matches the algorithm in data-references.ts. */
+function refKey(from: string, attrs?: DirectiveAttrs): string {
+  const parts = [from];
+  if (attrs?.field != null)  parts.push(`field=${attrs.field}`);
+  if (attrs?.range != null)  parts.push(`range=${attrs.range}`);
+  if (attrs?.limit != null)  parts.push(`limit=${attrs.limit}`);
+  return parts.join('|');
+}
+
+/** Format a number for KPI display. */
+function formatNumber(v: any): string {
+  if (v == null) return '—';
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!isFinite(n)) return String(v);
+  /* Currency-looking strings pass through */
+  if (typeof v === 'string' && /^[$£€¥]/.test(v)) return v;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000)    return `${(n / 1000).toFixed(0)}k`;
+  if (n >= 1_000)     return `${(n / 1000).toFixed(1)}k`;
+  return n.toLocaleString();
 }
 
 /* ─── 1. Cover page ─────────────────────────────────────────────── */
@@ -104,30 +129,50 @@ export function CoverPage({ attrs, brandColor, dataContext }: RendererProps) {
 /* ─── 2. KPI tile ───────────────────────────────────────────────── */
 
 export function Kpi({ attrs, brandColor, dataContext }: RendererProps) {
-  /* Resolve value: inline OR pulled from Data Room via attrs.from */
+  /* Resolve value: live data ref → fields → inline */
   const liveValue = useMemo(() => {
-    if (attrs.from && dataContext?.fields) {
-      const key = String(attrs.from);
-      return dataContext.fields[key];
+    if (attrs.from) {
+      const k = refKey(String(attrs.from), attrs);
+      const fromRefs = dataContext?.dataReferences?.[k] ?? dataContext?.dataReferences?.[String(attrs.from)];
+      if (fromRefs != null) {
+        /* If it's an array (time series), take the last point's value */
+        if (Array.isArray(fromRefs)) {
+          const last = fromRefs[fromRefs.length - 1];
+          if (last && typeof last === 'object' && 'value' in last) return (last as any).value;
+          return last;
+        }
+        /* Scalar — return directly */
+        if (typeof fromRefs !== 'object') return fromRefs;
+        /* Object with .value */
+        if (fromRefs && typeof fromRefs === 'object' && 'value' in fromRefs) return (fromRefs as any).value;
+      }
+      /* Legacy fields lookup */
+      if (dataContext?.fields) {
+        const key = String(attrs.from);
+        if (key in dataContext.fields) return dataContext.fields[key];
+      }
     }
     return undefined;
-  }, [attrs.from, dataContext]);
+  }, [attrs, dataContext]);
 
-  const value = liveValue != null ? String(liveValue) : String(attrs.value ?? '—');
-  const label = String(attrs.label || '');
-  const sub   = attrs.sublabel ? String(attrs.sublabel) : (attrs.from ? `${attrs.from}` : '');
-  const trendRaw = attrs.trend != null ? String(attrs.trend) : '';
-  const trendNum = parseFloat(trendRaw.replace(/[%+]/g, ''));
-  const trendDir = isNaN(trendNum) ? null : (trendNum > 0 ? 'up' : trendNum < 0 ? 'down' : 'flat');
+  const rawValue   = liveValue != null ? liveValue : attrs.value;
+  const value      = rawValue != null ? (typeof rawValue === 'string' ? rawValue : formatNumber(rawValue)) : '—';
+  const isMissing  = liveValue == null && attrs.value == null;
+  const label      = String(attrs.label || '');
+  const sub        = attrs.sublabel ? String(attrs.sublabel) : (attrs.from ? `${attrs.from}` : '');
+  const trendRaw   = attrs.trend != null ? String(attrs.trend) : '';
+  const trendNum   = parseFloat(trendRaw.replace(/[%+]/g, ''));
+  const trendDir   = isNaN(trendNum) ? null : (trendNum > 0 ? 'up' : trendNum < 0 ? 'down' : 'flat');
 
   return (
     <div
       className="ds-kpi inline-block min-w-[180px] rounded-xl border bg-card/60 p-4 my-2 mr-3 align-top print:rounded-none print:bg-transparent print:border-2"
       style={{ borderColor: `${brandColor}33` }}
+      title={attrs.from ? `Source: ${attrs.from}` : undefined}
     >
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">{label}</div>
       <div className="flex items-baseline gap-2">
-        <div className="text-2xl print:text-3xl font-bold" style={{ color: brandColor }}>{value}</div>
+        <div className="text-2xl print:text-3xl font-bold" style={{ color: isMissing ? '#888' : brandColor }}>{value}</div>
         {trendDir && (
           <div className={`text-xs font-bold flex items-center gap-0.5 ${
             trendDir === 'up' ? 'text-green-500' : trendDir === 'down' ? 'text-red-500' : 'text-muted-foreground'
@@ -140,6 +185,9 @@ export function Kpi({ attrs, brandColor, dataContext }: RendererProps) {
         )}
       </div>
       {sub && <div className="text-[10px] text-muted-foreground mt-1 font-mono">{sub}</div>}
+      {isMissing && attrs.from && (
+        <div className="text-[9px] text-amber-500 mt-1 italic">Data not found — check the source path</div>
+      )}
     </div>
   );
 }
@@ -280,6 +328,15 @@ export function ImageBlock({ attrs, brandColor, dataContext }: RendererProps) {
 
 /* ─── 6. Chart (Phase 1B: real Recharts rendering) ────────────── */
 
+/** Format an ISO date string as "MMM DD" for chart axes. */
+function formatShortDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch { return iso; }
+}
+
 /** Generate a palette of colors from a brand seed for multi-series charts. */
 function palette(brand: string, count: number): string[] {
   const base = [brand, '#06b6d4', '#f59e0b', '#22c55e', '#ec4899', '#a855f7', '#3b82f6', '#ef4444'];
@@ -291,38 +348,56 @@ function palette(brand: string, count: number): string[] {
 /** Parse chart data from one of three sources:
  *  - attrs.data (JSON string)
  *  - rawBody (JSON code block inside the container)
- *  - Future: dataContext fields (Phase 1D)
+ *  - dataContext.dataReferences (Phase 1D — live data from backend)
  *  Returns the array or null if unparseable. */
-function parseChartData(attrs: DirectiveAttrs, rawBody?: string): any[] | null {
+function parseChartData(attrs: DirectiveAttrs, rawBody?: string, dataContext?: RendererProps['dataContext']): any[] | null {
   /* Try attrs.data first */
-  if (typeof attrs.data === 'string' && attrs.data.trim()) {
+  if (typeof attrs.data === 'string' && (attrs.data as string).trim()) {
     try { const parsed = JSON.parse(attrs.data as string); return Array.isArray(parsed) ? parsed : null; } catch { /* fall through */ }
   }
-  /* Try rawBody */
+  /* Try live data references */
+  if (attrs.from && dataContext?.dataReferences) {
+    const key = refKey(String(attrs.from), attrs);
+    const live = dataContext.dataReferences[key] ?? dataContext.dataReferences[String(attrs.from)];
+    if (Array.isArray(live)) return live;
+  }
+  /* Try rawBody (inline JSON code block) */
   if (rawBody && rawBody.trim()) {
     try { const parsed = JSON.parse(rawBody); return Array.isArray(parsed) ? parsed : null; } catch {}
   }
   return null;
 }
 
-export function Chart({ attrs, rawBody, brandColor }: RendererProps) {
+export function Chart({ attrs, rawBody, brandColor, dataContext }: RendererProps) {
   const type   = String(attrs.type  || 'line');
   const title  = attrs.title ? String(attrs.title) : '';
-  const data   = parseChartData(attrs, rawBody);
-  const xKey   = attrs.xKey ? String(attrs.xKey) : (data && data[0] ? Object.keys(data[0])[0] : 'x');
+  let   data   = parseChartData(attrs, rawBody, dataContext);
+
+  /* If the data came from metrics.* (shape: [{date, value}]) and the
+     user specified xKey/yKey explicitly, the renderer will use them.
+     Default behaviour for that shape: xKey="date", yKey="value". */
+  let xKey   = attrs.xKey ? String(attrs.xKey) : (data && data[0] ? Object.keys(data[0])[0] : 'x');
   const yKeysAttr = attrs.yKeys ? String(attrs.yKeys) :
                    attrs.yKey  ? String(attrs.yKey)  : '';
-  /* If no yKeys/yKey specified, infer from data — first non-x key, or all non-x keys for multi-series */
   let yKeys: string[];
   if (yKeysAttr) {
     yKeys = yKeysAttr.split(',').map((s) => s.trim()).filter(Boolean);
   } else if (data && data[0]) {
     yKeys = Object.keys(data[0]).filter((k) => k !== xKey);
     if (type === 'line' || type === 'bar' || type === 'area') {
-      yKeys = yKeys.slice(0, 1);  /* default to single-series */
+      yKeys = yKeys.slice(0, 1);
     }
   } else {
     yKeys = [];
+  }
+
+  /* For metrics.* time series, format date strings to "MMM DD" for cleaner axes */
+  if (data && data[0] && data[0].date && !attrs.xKey) {
+    data = data.map((d) => ({
+      ...d,
+      date: typeof d.date === 'string' ? formatShortDate(d.date) : d.date,
+    }));
+    xKey = 'date';
   }
 
   const nameKey  = String(attrs.nameKey  || (data?.[0] ? Object.keys(data[0])[0] : 'name'));
@@ -519,29 +594,111 @@ function renderChart(
   }
 }
 
-/* ─── 7. Data table (Phase 1A: placeholder; Phase 1D will wire live data) ── */
+/* ─── 7. Data table (Phase 1D: live data from dataReferences) ──── */
 
-export function DataTable({ attrs, brandColor }: RendererProps) {
+export function DataTable({ attrs, brandColor, dataContext }: RendererProps) {
   const title = attrs.title ? String(attrs.title) : '';
   const from  = String(attrs.from || '');
-  const cols  = attrs.columns ? String(attrs.columns).split(',').map((s) => s.trim()) : [];
+  const cols  = attrs.columns ? String(attrs.columns).split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const limit = attrs.limit != null ? Number(attrs.limit) : 25;
+
+  /* Resolve data */
+  let rows: any[] | null = null;
+  if (from && dataContext?.dataReferences) {
+    const k = refKey(from, attrs);
+    const live = dataContext.dataReferences[k] ?? dataContext.dataReferences[from];
+    if (Array.isArray(live)) rows = live;
+  }
+
+  /* No data — placeholder card */
+  if (!rows) {
+    return (
+      <div className="ds-data-table-placeholder my-4 rounded-xl border-2 border-dashed p-4 bg-card/40 break-inside-avoid"
+        style={{ borderColor: `${brandColor}30` }}>
+        <div className="flex items-center gap-2">
+          <TableIcon className="h-4 w-4" style={{ color: brandColor }} />
+          <div className="text-sm font-bold" style={{ color: brandColor }}>{title || 'Live data table'}</div>
+        </div>
+        <div className="text-[10px] text-muted-foreground mt-2 font-mono">
+          from: {from || '(none)'}
+          {cols.length > 0 && <div>columns: {cols.join(', ')}</div>}
+        </div>
+        <div className="text-[10px] text-amber-500 mt-2 italic">
+          {from
+            ? `No data found for ${from}. Check the source path or backing table.`
+            : 'No source specified — set the `from` attribute on the directive.'}
+        </div>
+      </div>
+    );
+  }
+
+  /* Trim to limit */
+  const trimmed = rows.slice(0, limit);
+
+  /* If no columns specified, infer from first row's keys */
+  const columns = cols.length > 0 ? cols : (trimmed[0] ? Object.keys(trimmed[0]) : []);
+
+  if (columns.length === 0 || trimmed.length === 0) {
+    return (
+      <div className="ds-data-table my-4 rounded-xl border p-4 text-xs text-muted-foreground italic break-inside-avoid"
+        style={{ borderColor: `${brandColor}30` }}>
+        {title && <div className="font-bold text-sm not-italic mb-1" style={{ color: brandColor }}>{title}</div>}
+        No rows to display.
+      </div>
+    );
+  }
 
   return (
-    <div className="ds-data-table-placeholder my-4 rounded-xl border-2 border-dashed p-4 bg-card/40 break-inside-avoid"
-      style={{ borderColor: `${brandColor}30` }}>
-      <div className="flex items-center gap-2">
-        <TableIcon className="h-4 w-4" style={{ color: brandColor }} />
-        <div className="text-sm font-bold" style={{ color: brandColor }}>{title || 'Live data table'}</div>
+    <figure className="ds-data-table my-4 break-inside-avoid">
+      {title && (
+        <figcaption className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: brandColor }}>
+          {title}
+        </figcaption>
+      )}
+      <div className="rounded-xl border overflow-hidden bg-card/40 print:rounded-none print:bg-transparent print:border-2"
+        style={{ borderColor: `${brandColor}20` }}>
+        <table className="w-full text-xs">
+          <thead style={{ backgroundColor: `${brandColor}10` }}>
+            <tr>
+              {columns.map((c) => (
+                <th key={c} className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-bold"
+                  style={{ color: brandColor }}>
+                  {c.replace(/_/g, ' ')}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {trimmed.map((row, i) => (
+              <tr key={i} className="border-t border-border/40">
+                {columns.map((c) => (
+                  <td key={c} className="px-3 py-1.5 text-foreground/90 align-top">
+                    {formatCell(row[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length > limit && (
+          <div className="text-[10px] text-muted-foreground italic px-3 py-1.5 border-t border-border/40 bg-card/20">
+            Showing first {limit} of {rows.length} rows
+          </div>
+        )}
       </div>
-      <div className="text-[10px] text-muted-foreground mt-2 font-mono">
-        from: {from}
-        {cols.length > 0 && <div>columns: {cols.join(', ')}</div>}
-      </div>
-      <div className="text-[10px] text-muted-foreground mt-2 italic">
-        Live data table ships in Phase 1D
-      </div>
-    </div>
+    </figure>
   );
+}
+
+/** Convert a cell value to displayable text. */
+function formatCell(v: any): string {
+  if (v == null) return '—';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') return v.toLocaleString();
+  if (typeof v === 'boolean') return v ? '✓' : '—';
+  if (Array.isArray(v)) return v.join(', ');
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
 }
 
 /* ─── 8. Page break ─────────────────────────────────────────────── */
