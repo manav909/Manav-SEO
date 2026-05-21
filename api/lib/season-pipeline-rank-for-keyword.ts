@@ -639,10 +639,8 @@ ${risks || '(none flagged)'}
 const stepContentBrief = {
   id: 'content_brief',
   label: 'Generate the full content brief',
-  description: 'H1 / H2 outline, target word count, internal links, schema',
+  description: 'Two-pass: outline first, then expand sections',
   artifact_kind: 'brief',
-  /* If brief generation fails, the pipeline keeps going — client_update and
-     internal_handover can produce something useful even without a brief. */
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
@@ -651,80 +649,163 @@ const stepContentBrief = {
     const competitors = ctx.prior.competitor_snapshot || {};
     const gsc         = ctx.prior.gsc_context      || {};
 
-    /* Self-contained inline LLM call (NOT going through content-engine.ts,
-       which has had reliability issues with bare module imports + JSON parsing). */
-    const sys = `You are S.E.A.S.O.N. writing a comprehensive SEO content brief. The brief must be specific, actionable, and ready to hand to a writer. Reply with ONLY valid JSON:
+    /* ── PASS 1: outline + meta ──────────────────────────────────
+       Smaller JSON, asks for the structural skeleton only.
+       Should complete in 20-40s. */
+    const outlineSys = `You are S.E.A.S.O.N. drafting the SKELETON of a content brief. Reply with ONLY valid JSON:
 {
-  "title": "the actual H1 we recommend (60-70 chars)",
-  "meta_description": "the meta description (140-160 chars)",
+  "title": "H1 (60-70 chars)",
+  "meta_description": "meta description (140-160 chars)",
   "primary_keyword": "the target keyword",
-  "secondary_keywords": ["3-7 supporting keywords/phrases"],
+  "secondary_keywords": ["3-7 supporting phrases"],
   "search_intent": "informational | commercial | transactional | navigational",
   "target_word_count": 2500,
-  "outline": [
-    {
-      "h2": "section heading",
-      "intent": "what this section answers/covers",
-      "key_points": ["specific points to make in this section"],
-      "word_target": 350
-    }
-  ],
-  "unique_angle": "what makes this different from competitors — the differentiated take",
-  "must_include_facts": ["specific facts, stats, or claims that should appear"],
-  "internal_link_targets": ["pages on the project's site to link to (suggest 2-4 anchor concepts)"],
-  "schema_recommendation": "the Schema.org type to use (Article | FAQ | HowTo | etc.) + why",
-  "writer_brief": "200-word note to the writer explaining the strategic context"
+  "section_count": 8,
+  "section_headings": ["H2 heading 1", "H2 heading 2", "..."],
+  "unique_angle": "differentiated take vs competitors (1-2 sentences)",
+  "schema_recommendation": "schema.org type + why",
+  "internal_link_targets": ["2-4 anchor concepts to link from existing site pages"]
 }
 
 Quality bar:
-- Outline must have 6-12 H2 sections
-- Key points must be specific (not generic SEO advice)
-- The unique_angle must come from the project context, not boilerplate
-- If competitor data shows a gap, build the brief AROUND filling that gap`;
+- 6-12 H2 sections, ordered for reader flow
+- Unique angle must come from the strategy + competitor gap, not boilerplate
+- Section headings must be specific, not generic (e.g. "Setup steps for macOS 14+" not "Setup")`;
 
-    const usr = `Generate the content brief for ranking for "${keyword}".
+    const outlineUsr = `Outline the brief for ranking for "${keyword}".
 
 KEYWORD RESEARCH:
-${JSON.stringify(research, null, 2)}
+${JSON.stringify(research, null, 2).slice(0, 2000)}
 
 CURRENT GSC POSITION:
-${JSON.stringify(gsc, null, 2)}
+${JSON.stringify(gsc, null, 2).slice(0, 1000)}
 
-COMPETITOR SNAPSHOT (what currently ranks):
-${JSON.stringify(competitors, null, 2)}
+COMPETITOR SNAPSHOT:
+${JSON.stringify(competitors, null, 2).slice(0, 2000)}
 
 STRATEGY CONTEXT:
-${JSON.stringify(strategy, null, 2)}
+${JSON.stringify(strategy, null, 2).slice(0, 2000)}
 
-Now write a brief that beats the competitors and aligns with the strategy.`;
+Now produce the skeleton.`;
 
-    /* First attempt */
-    let r = await callLlmJson({ systemPrompt: sys, userMessage: usr, maxTokens: 4000 });
+    let outlineR = await callLlmJson({ systemPrompt: outlineSys, userMessage: outlineUsr, maxTokens: 2000, timeoutMs: 60_000 });
     let callsMade = 1;
 
-    /* Retry once with stricter prompt if first attempt failed */
-    if (!r.ok) {
-      const strictSys = sys + `
-
-CRITICAL: Your previous response was not valid JSON. Reply with ONLY the JSON object — no markdown fences, no prose before/after. Outline array must have 6-12 items.`;
-      r = await callLlmJson({ systemPrompt: strictSys, userMessage: usr, maxTokens: 4500 });
+    /* Retry outline once on failure */
+    if (!outlineR.ok) {
+      const strict = outlineSys + `\n\nCRITICAL: Reply with ONLY the JSON object — no fences, no prose.`;
+      outlineR = await callLlmJson({ systemPrompt: strict, userMessage: outlineUsr, maxTokens: 2000, timeoutMs: 60_000 });
       callsMade = 2;
     }
 
-    if (!r.ok || !r.parsed) {
-      return { ok: false, error: r.error || 'brief generation failed after 2 attempts', llm_calls: callsMade };
+    if (!outlineR.ok || !outlineR.parsed) {
+      return { ok: false, error: outlineR.error || 'outline failed', llm_calls: callsMade };
     }
 
-    /* Validate minimum structure */
-    const brief: any = r.parsed;
-    const hasMin = brief.title && Array.isArray(brief.outline) && brief.outline.length >= 3;
-    if (!hasMin) {
+    const skeleton: any = outlineR.parsed;
+    const headings: string[] = Array.isArray(skeleton.section_headings) ? skeleton.section_headings : [];
+    if (!skeleton.title || headings.length < 3) {
       return {
         ok: false,
-        error: `Brief response missing required fields. Got keys: ${Object.keys(brief).join(', ')}.`,
+        error: `Outline missing required structure. Got title="${skeleton.title}", ${headings.length} headings.`,
         llm_calls: callsMade,
       };
     }
+
+    /* ── PASS 2: expand the sections in ONE call ──────────────────
+       Asks for key_points + intent + word_target per heading.
+       Inputs are now lean (we don't re-send all research, just headings).
+       Should complete in 30-60s. */
+    const expandSys = `You are S.E.A.S.O.N. expanding the BODY of a content brief. For each H2 heading provided, produce specific key points the writer must cover. Reply with ONLY valid JSON:
+{
+  "sections": [
+    {
+      "h2": "(matches input heading exactly)",
+      "intent": "what this section answers (1 sentence)",
+      "key_points": ["3-6 specific points — facts, claims, comparisons, examples"],
+      "word_target": 300
+    }
+  ],
+  "must_include_facts": ["3-7 specific facts/stats the article must contain"],
+  "writer_brief": "150-word note to the writer on tone, depth, examples, and what NOT to do"
+}
+
+Quality bar:
+- Key points must be SPECIFIC (not generic SEO advice)
+- Together the word_targets should approximate the overall target_word_count
+- The writer_brief must reference the unique_angle and the strategy`;
+
+    const expandUsr = `Expand these sections for the article on "${keyword}".
+
+TARGET WORD COUNT: ${skeleton.target_word_count || 2500}
+UNIQUE ANGLE: ${skeleton.unique_angle || '(none)'}
+STRATEGY: ${strategy.strategy_name || '(unnamed)'} — ${strategy.approach || '(no approach captured)'}
+
+H2 HEADINGS TO EXPAND (in order):
+${headings.map((h, i) => `${i + 1}. ${h}`).join('\n')}
+
+Produce one entry per heading, in the same order.`;
+
+    let expandR = await callLlmJson({ systemPrompt: expandSys, userMessage: expandUsr, maxTokens: 3500, timeoutMs: 75_000 });
+    callsMade += 1;
+
+    if (!expandR.ok) {
+      /* Retry once with stricter framing */
+      const strict = expandSys + `\n\nCRITICAL: Reply with ONLY the JSON object — no fences, no prose. Sections array length MUST match the number of input headings.`;
+      expandR = await callLlmJson({ systemPrompt: strict, userMessage: expandUsr, maxTokens: 3500, timeoutMs: 75_000 });
+      callsMade += 1;
+    }
+
+    /* If expansion failed, we still have a usable skeleton — return that. */
+    if (!expandR.ok || !expandR.parsed) {
+      const fallbackBrief: any = {
+        ...skeleton,
+        outline: headings.map((h: string) => ({ h2: h, intent: '', key_points: [], word_target: Math.round((skeleton.target_word_count || 2500) / headings.length) })),
+        must_include_facts: [],
+        writer_brief: '(expansion failed — outline-only brief)',
+      };
+      return {
+        ok: true,
+        output: fallbackBrief,
+        artifact: {
+          kind: 'brief',
+          title: `Content brief: "${keyword}" (outline only)`,
+          body: renderBriefArtifact(keyword, fallbackBrief),
+        },
+        honest_note: `Outline produced, but section expansion failed: ${expandR.error}. Brief contains H2 headings only — writer will need to flesh out the key points.`,
+        llm_calls: callsMade,
+      };
+    }
+
+    /* Merge skeleton + expanded sections into the final brief shape */
+    const expanded: any = expandR.parsed;
+    const sections: any[] = Array.isArray(expanded.sections) ? expanded.sections : [];
+
+    /* Match expanded sections to headings by index (best-effort) */
+    const fullOutline = headings.map((h: string, i: number) => {
+      const match = sections[i] || sections.find((s: any) => (s.h2 || '').toLowerCase().includes(h.toLowerCase().slice(0, 20)));
+      return {
+        h2: h,
+        intent: match?.intent || '',
+        key_points: Array.isArray(match?.key_points) ? match.key_points : [],
+        word_target: match?.word_target || Math.round((skeleton.target_word_count || 2500) / headings.length),
+      };
+    });
+
+    const brief: any = {
+      title:                  skeleton.title,
+      meta_description:       skeleton.meta_description,
+      primary_keyword:        skeleton.primary_keyword || keyword,
+      secondary_keywords:     skeleton.secondary_keywords || [],
+      search_intent:          skeleton.search_intent,
+      target_word_count:      skeleton.target_word_count,
+      unique_angle:           skeleton.unique_angle,
+      schema_recommendation:  skeleton.schema_recommendation,
+      internal_link_targets:  skeleton.internal_link_targets || [],
+      outline:                fullOutline,
+      must_include_facts:     expanded.must_include_facts || [],
+      writer_brief:           expanded.writer_brief || '',
+    };
 
     return {
       ok: true,
@@ -734,9 +815,7 @@ CRITICAL: Your previous response was not valid JSON. Reply with ONLY the JSON ob
         title: `Content brief: "${keyword}"`,
         body: renderBriefArtifact(keyword, brief),
       },
-      honest_note: callsMade > 1
-        ? `Brief produced (second attempt — first returned malformed JSON). ${brief.outline?.length || 0} H2 sections, target ${brief.target_word_count || 'unspecified'} words.`
-        : `Brief produced. ${brief.outline?.length || 0} H2 sections, target ${brief.target_word_count || 'unspecified'} words.`,
+      honest_note: `Two-pass brief produced (outline + expansion). ${fullOutline.length} H2 sections, target ${brief.target_word_count || 'unspecified'} words.`,
       llm_calls: callsMade,
     };
   },

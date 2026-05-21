@@ -497,10 +497,18 @@ function ArtifactViewer({ step, onClose, moodHsl }: {
     }
     if (step.output && typeof step.output === 'object') {
       const obj: any = step.output;
+      /* Phase 13a-v3: the runner now nests the artifact's rendered markdown
+         body into output as _artifact_body. Prefer it over raw fields. */
+      if (typeof obj._artifact_body === 'string' && obj._artifact_body.length > 0) {
+        return { renderable: obj._artifact_body, isMarkdownLike: true };
+      }
       if (typeof obj.body === 'string')    return { renderable: obj.body, isMarkdownLike: true };
       if (typeof obj.content === 'string') return { renderable: obj.content, isMarkdownLike: true };
       if (typeof obj.text === 'string')    return { renderable: obj.text, isMarkdownLike: true };
-      return { renderable: JSON.stringify(obj, null, 2), isMarkdownLike: false };
+      /* Strip internal fields before JSON-dumping fallback */
+      const cleaned = { ...obj };
+      delete cleaned._artifact_body;
+      return { renderable: JSON.stringify(cleaned, null, 2), isMarkdownLike: false };
     }
     return { renderable: '(no output)', isMarkdownLike: false };
   }, [step]);

@@ -230,9 +230,15 @@ export async function runPipeline(opts: {
       if (result.honest_note) honestNotes.push(`(${step.label}) ${result.honest_note}`);
 
       if (stepRowId) {
+        /* Phase 13a-v3: nest the artifact body into the output JSONB so the
+           dashboard viewer can render formatted markdown directly without
+           falling through to a JSON dump. */
+        const outputWithBody = (result.output && typeof result.output === 'object' && !Array.isArray(result.output))
+          ? { ...result.output, _artifact_body: result.artifact?.body || null }
+          : { value: result.output, _artifact_body: result.artifact?.body || null };
         await db().from("season_pipeline_steps").update({
           status: 'completed',
-          output: result.output,
+          output: outputWithBody,
           output_artifact_kind: result.artifact?.kind || null,
           honest_note: result.honest_note || null,
           llm_calls: result.llm_calls || 0,
@@ -394,9 +400,15 @@ export async function runPipelineWithExistingRow(opts: {
       if (result.honest_note) honestNotes.push(`(${step.label}) ${result.honest_note}`);
 
       if (stepRowId) {
+        /* Phase 13a-v3: nest the artifact body into the output JSONB so the
+           dashboard viewer can render formatted markdown directly without
+           falling through to a JSON dump. */
+        const outputWithBody = (result.output && typeof result.output === 'object' && !Array.isArray(result.output))
+          ? { ...result.output, _artifact_body: result.artifact?.body || null }
+          : { value: result.output, _artifact_body: result.artifact?.body || null };
         await db().from("season_pipeline_steps").update({
           status: 'completed',
-          output: result.output,
+          output: outputWithBody,
           output_artifact_kind: result.artifact?.kind || null,
           honest_note: result.honest_note || null,
           llm_calls: result.llm_calls || 0,
@@ -738,9 +750,13 @@ export async function executeNextPendingStep(opts: {
 
     /* Persist step result */
     if (result.ok) {
+      /* Phase 13a-v3: nest artifact body into output for clean rendering */
+      const outputWithBody = (result.output && typeof result.output === 'object' && !Array.isArray(result.output))
+        ? { ...result.output, _artifact_body: result.artifact?.body || null }
+        : { value: result.output, _artifact_body: result.artifact?.body || null };
       await db().from("season_pipeline_steps").update({
         status: 'completed',
-        output: result.output,
+        output: outputWithBody,
         output_artifact_kind: result.artifact?.kind || null,
         honest_note: result.honest_note || null,
         llm_calls: result.llm_calls || 0,
@@ -855,21 +871,20 @@ export async function finalizeRun(opts: {
       if (s.status === 'completed') {
         stepsCompleted++;
         if (s.honest_note) honestNotes.push(`(${s.step_label}) ${s.honest_note}`);
-        /* Look in output for an artifact — the rank-pipeline writes the body string into a known field */
         const out = s.output;
-        if (out && typeof out === 'object') {
-          /* The pipeline saves whole step output as JSON; we don't have a separate artifact body here.
-             Use the artifact_kind field as a hint that the step produced something. */
-          if (s.output_artifact_kind) {
-            const body = typeof out === 'string' ? out :
-                         (out.body || out.content || out.text || JSON.stringify(out, null, 2));
-            artifacts.push({
-              kind: s.output_artifact_kind,
-              title: s.step_label,
-              body: String(body),
-              step_id: s.step_id,
-            });
-          }
+        if (out && typeof out === 'object' && s.output_artifact_kind) {
+          /* Phase 13a-v3: prefer the rendered markdown body if the runner stashed
+             it into _artifact_body. Falls back to body/content/text/JSON if not. */
+          const body = (typeof out._artifact_body === 'string' && out._artifact_body.length > 0)
+            ? out._artifact_body
+            : (typeof out === 'string' ? out
+              : (out.body || out.content || out.text || JSON.stringify({ ...out, _artifact_body: undefined }, null, 2)));
+          artifacts.push({
+            kind: s.output_artifact_kind,
+            title: s.step_label,
+            body: String(body),
+            step_id: s.step_id,
+          });
         }
       } else if (s.status === 'failed') {
         stepsFailed++;
