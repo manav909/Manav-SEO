@@ -692,6 +692,20 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsGetPlanningContext(body);
     }
 
+    /* Phase 7 — S.E.A.S.O.N. */
+    case "bs_season_briefing": {
+      const { bsSeasonBriefing } = await import("./season-attention.js");
+      return bsSeasonBriefing(body);
+    }
+    case "bs_season_command": {
+      const { bsSeasonCommand } = await import("./season-orchestrator.js");
+      return bsSeasonCommand(body);
+    }
+    case "bs_season_activity": {
+      const { bsSeasonActivity } = await import("./season-orchestrator.js");
+      return bsSeasonActivity(body);
+    }
+
     /* Phase 3 — Analytics Provenance & Diagnostics */
     case "bs_get_analytics_provenance": {
       const { bsGetAnalyticsProvenance } = await import("./pm-analytics-provenance.js");

@@ -1912,3 +1912,84 @@ export async function getPlanningContext(projectId: string): Promise<{ context?:
   if (!r?.success) return { error: r?.error };
   return { context: r.context };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 7 — S.E.A.S.O.N.
+═══════════════════════════════════════════════════════════ */
+
+export interface BriefingItemClient {
+  kind:        "attention" | "win" | "info";
+  severity:    "info" | "success" | "warning" | "critical";
+  headline:    string;
+  detail?:     string;
+  source:      string;
+  technical?:  any;
+  action_id?:  string;
+  age_days?:   number;
+  linked_entity?: { type: string; id: string };
+}
+
+export interface BriefingClient {
+  generated_at:    string;
+  project_id:      string;
+  project_name:    string;
+  greeting_phrase: string;
+  status_summary:  string;
+  attention:       BriefingItemClient[];
+  quiet_wins:      BriefingItemClient[];
+  honest_gaps:     string[];
+  freshness: {
+    gsc_last_pull:   string | null;
+    ga4_last_pull:   string | null;
+    intel_generated: string | null;
+    strategies_seen: number;
+    goals_seen:      number;
+  };
+}
+
+export interface ResponseChunkClient {
+  kind:    "plain" | "technical" | "artifact" | "action" | "verify";
+  content: string;
+  detail?: any;
+}
+
+export interface CommandResponseClient {
+  intent:      string;
+  confidence:  number;
+  chunks:      ResponseChunkClient[];
+  artifacts?:  any[];
+  actions?:    Array<{ id: string; label: string; payload?: any }>;
+  honest_note?: string;
+}
+
+export interface ActivityEvent {
+  id:           string;
+  event_type:   string;
+  source:       string;
+  headline:     string;
+  detail?:      string | null;
+  technical?:   any;
+  severity:     string;
+  strategy_id?: string | null;
+  goal_id?:     string | null;
+  card_id?:     string | null;
+  created_at:   string;
+}
+
+export async function seasonBriefing(projectId: string): Promise<{ briefing?: BriefingClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_briefing', projectId });
+  if (!r?.success) return { error: r?.error };
+  return { briefing: r.briefing };
+}
+
+export async function seasonCommand(opts: { projectId: string; input: string }): Promise<{ response?: CommandResponseClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_command', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { response: r.response };
+}
+
+export async function seasonActivity(opts: { projectId: string; limit?: number }): Promise<{ events?: ActivityEvent[]; count?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_activity', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { events: r.events, count: r.count };
+}
