@@ -76,8 +76,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     try {
-      const { data: prof, error: profErr } = await supabase
+      const { data: profData, error: profErr } = await supabase
         .from('profiles').select('*').eq('id', currentUser.id).single();
+      let prof = profData;
 
       if (profErr) {
         if (profErr.code === 'PGRST116') {
