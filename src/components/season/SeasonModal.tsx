@@ -181,6 +181,48 @@ export default function SeasonModal() {
     setError(null);
     setMood('thinking');
 
+    /* Phase 10b — try the action registry first for direct UI commands.
+       If the input looks like "open X tab", "switch to Y", "back to board",
+       etc., we can dispatch immediately without round-tripping to the LLM. */
+    try {
+      const lc = q.toLowerCase();
+      /* Tab name extraction for Data Room — looks for the tab token */
+      const tabMatch = lc.match(/(?:open|show|switch to|go to|jump to)\s+(?:the\s+)?(overview|goals|cms|access|analytics|technical|competitors|documents|crawl|identity|audience|content|backlinks|commercial|history|brand[\s_-]?narrative|access[\s_-]?vault|content[\s_-]?library|info[\s_-]?repository|approvals[\s_-]?log)(?:\s+tab)?/i);
+      if (tabMatch) {
+        const tab = tabMatch[1].toLowerCase().replace(/[\s-]+/g, '_');
+        const r = await runAction('data_room_set_tab', { tab });
+        if (r.ok && !r.awaiting_confirm) {
+          setSubmitting(false); setMood('calm');
+          if (r.navigated) close();
+          return;
+        }
+      }
+      /* Direct keyword: pipeline / board */
+      if (/back to (board|planning)|pipeline board|strategy board/i.test(lc)) {
+        const r = await runAction('planning_open_board', {});
+        if (r.ok && !r.awaiting_confirm) {
+          setSubmitting(false); setMood('calm');
+          if (r.navigated) close();
+          return;
+        }
+      }
+      /* refresh briefing */
+      if (/refresh briefing|reload briefing|re[\s-]?pull/i.test(lc)) {
+        const r = await runAction('refresh_briefing', {});
+        if (r.ok && !r.awaiting_confirm) {
+          setSubmitting(false); setMood('calm');
+          if (r.navigated) close();
+          return;
+        }
+      }
+      /* explicit "open settings" */
+      if (/^(open\s+)?(season\s+)?settings$/i.test(q)) {
+        const r = await runAction('navigate_season_settings', {});
+        if (r.ok && r.navigated) { close(); return; }
+      }
+    } catch { /* registry path failed; fall through to backend */ }
+
+    /* Backend orchestrator (keyword router → LLM brain) */
     try {
       const r = await seasonCommand({ projectId: selectedProjectId, input: q, awareness: awareness || undefined });
       if (r.error) {
@@ -652,18 +694,30 @@ export default function SeasonModal() {
                             }
                             /* Try the registry first — maps suggested action IDs to real handlers */
                             const idMap: Record<string, string> = {
-                              open_planning:     'navigate_planning',
-                              open_pipeline:     'navigate_planning',
-                              open_analytics:    'navigate_data_room',
-                              open_provenance:   'navigate_data_room',
-                              open_kanban:       'navigate_command',  /* desk doesn't exist as a clean route; fallback */
-                              open_dashboard:    'navigate_dashboard',
-                              open_audit:        'navigate_audit',
-                              open_settings:     'navigate_season_settings',
+                              open_planning:        'navigate_planning',
+                              open_pipeline:        'planning_open_board',
+                              open_strategy:        'planning_open_strategy',
+                              open_data_room:       'navigate_data_room',
+                              open_analytics:       'data_room_set_tab',
+                              open_provenance:      'open_provenance_detail',
+                              open_kanban:          'navigate_command',  /* desk doesn't exist as a clean route; fallback */
+                              open_dashboard:       'navigate_dashboard',
+                              open_audit:           'navigate_audit',
+                              open_command:         'navigate_command',
+                              open_settings:        'navigate_season_settings',
                               compute_intelligence: 'compute_intelligence',
+                              refresh_briefing:     'refresh_briefing',
+                              data_room_set_tab:    'data_room_set_tab',
+                              planning_open_strategy: 'planning_open_strategy',
+                              planning_open_board:  'planning_open_board',
+                              open_provenance_detail: 'open_provenance_detail',
                             };
                             const registryId = idMap[a.id] || a.id;
-                            const result = await runAction(registryId, a.payload);
+                            /* For open_analytics, force the tab payload */
+                            const payload = a.id === 'open_analytics'
+                              ? { ...(a.payload || {}), tab: 'analytics' }
+                              : a.payload;
+                            const result = await runAction(registryId, payload);
                             if (result.ok && result.navigated) {
                               close();
                             }

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectSync } from '@/hooks/useProjectSync';
 import { useSeasonAwareness } from '@/hooks/useSeasonAwareness';
+import { subscribeAction } from '@/lib/season-actions/bus';
 import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
@@ -650,6 +651,16 @@ export default function DataRoom() {
     },
     visible_filters: { tab },
   } : null);
+
+  /* Phase 10b — listen for S.E.A.S.O.N. tab-switch actions */
+  useEffect(() => {
+    const unsub = subscribeAction('data_room_set_tab', (payload: any) => {
+      if (payload?.tab && typeof payload.tab === 'string') {
+        setTab(payload.tab as any);
+      }
+    });
+    return unsub;
+  }, []);
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [saving,    setSaving]    = useState(false);

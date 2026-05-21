@@ -12,7 +12,7 @@
    with zero experience to drive the daily workflow.
 ═══════════════════════════════════════════════════════════════ */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Layers, Database, FileText, Settings, ArrowLeft, RefreshCw,
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useSeasonAwareness } from '@/hooks/useSeasonAwareness';
+import { subscribeAction } from '@/lib/season-actions/bus';
 import StrategyPipelineBoard from '@/components/pm/StrategyPipelineBoard';
 import StrategyBuilder from '@/components/pm/StrategyBuilder';
 import StrategyDetailView from '@/components/pm/StrategyDetailView';
@@ -48,6 +49,17 @@ export default function Planning() {
     } : null,
     visible_filters: { view: view.kind },
   } : null);
+
+  /* Phase 10b — listen for S.E.A.S.O.N. planning actions */
+  useEffect(() => {
+    const unsubOpen = subscribeAction('planning_open_strategy', (payload: any) => {
+      if (payload?.strategyId) setView({ kind: 'detail', strategyId: payload.strategyId });
+    });
+    const unsubBoard = subscribeAction('planning_open_board', () => {
+      setView({ kind: 'board' });
+    });
+    return () => { unsubOpen(); unsubBoard(); };
+  }, []);
 
   if (!selectedProjectId) {
     return (

@@ -20,6 +20,7 @@ import {
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSeason } from '@/contexts/SeasonContext';
+import { subscribeAction } from '@/lib/season-actions/bus';
 import SmartSidebar from '@/components/SmartSidebar';
 import SmartTopBar from '@/components/SmartTopBar';
 import CapabilitiesPanel from '@/components/season/CapabilitiesPanel';
@@ -200,16 +201,27 @@ function CommandInner() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  useEffect(() => {
+  /* Load briefing — extracted so the action bus can re-trigger it */
+  const loadBriefing = async () => {
     if (!selectedProjectId) { setLoading(false); setBriefing(null); setBriefingError(null); return; }
-    (async () => {
-      setLoading(true);
-      setBriefingError(null);
-      const r = await seasonBriefing(selectedProjectId);
-      if (r.error) setBriefingError(r.error);
-      if (r.briefing) setBriefing(r.briefing);
-      setLoading(false);
-    })();
+    setLoading(true);
+    setBriefingError(null);
+    const r = await seasonBriefing(selectedProjectId);
+    if (r.error) setBriefingError(r.error);
+    if (r.briefing) setBriefing(r.briefing);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadBriefing();
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [selectedProjectId]);
+
+  /* Phase 10b — listen for refresh_briefing action */
+  useEffect(() => {
+    const unsub = subscribeAction('refresh_briefing', () => { loadBriefing(); });
+    return unsub;
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [selectedProjectId]);
 
   /* Derive S.E.A.S.O.N. mood from briefing state — drives orb color globally */

@@ -32,6 +32,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import type { SeasonSettings, CapabilitySettings } from '@/contexts/SeasonContext';
+import { publishAction, hasSubscribers } from './bus';
 
 export type ActionPermission =
   | 'ui_only'         // pure UI — filter, sort, scroll, open modal, navigate
@@ -309,3 +310,146 @@ export function listActionExamples(scope?: ActionScope): Array<{ id: string; lab
     examples: a.examples,
   }));
 }
+
+/* ════════════════════════════════════════════════════════════
+   Phase 10b — Page-driving actions (via the action bus)
+═══════════════════════════════════════════════════════════ */
+
+/* Helper: navigate first if not on right page, then publish */
+function navigateThenPublish(
+  path: string,
+  busAction: string,
+  payload: any,
+  ctx: ActionContext,
+): ActionResult {
+  /* If the page is mounted now (a subscriber exists), publish directly. */
+  if (hasSubscribers(busAction)) {
+    publishAction(busAction, payload);
+    return { ok: true, message: `Applied: ${busAction}` };
+  }
+  /* Otherwise navigate, then publish after a short delay so the
+     destination page has time to mount + subscribe. */
+  ctx.navigate?.(path);
+  setTimeout(() => {
+    if (hasSubscribers(busAction)) publishAction(busAction, payload);
+  }, 280);
+  return { ok: true, navigated: true, message: `Opened ${path}, applying…` };
+}
+
+/* ─── Data Room tab actions ─── */
+
+const DATA_ROOM_TABS: Record<string, string> = {
+  'overview': 'overview', 'goals': 'goals', 'cms': 'cms', 'access': 'access',
+  'analytics': 'analytics', 'technical': 'technical', 'competitors': 'competitors',
+  'documents': 'documents', 'crawl': 'crawl', 'identity': 'identity',
+  'audience': 'audience', 'content': 'content', 'backlinks': 'backlinks',
+  'commercial': 'commercial', 'history': 'history',
+  'brand_narrative': 'brand_narrative',
+  'access_vault': 'access_vault', 'content_library': 'content_library',
+  'info_repository': 'info_repository', 'approvals_log': 'approvals_log',
+};
+
+register({
+  id:           'data_room_set_tab',
+  label:        'Switch Data Room tab',
+  description:  'Opens the requested tab inside the Data Room.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches: [
+    /open .*(analytics|goals|identity|audience|competitors|backlinks|brand|content|history)/i,
+    /show .*(analytics|goals|identity|audience|competitors|backlinks|brand|content|history)/i,
+    /(analytics|goals|identity|audience|competitors|backlinks|brand|content) tab/i,
+    /access vault|content library|info repository|approvals log/i,
+  ],
+  examples: [
+    'open the analytics tab',
+    'switch to brand narrative',
+    'show access vault',
+  ],
+  handler: async (ctx) => {
+    const requested = String(ctx.payload?.tab || '').toLowerCase().trim().replace(/\s+/g, '_');
+    const resolvedTab = DATA_ROOM_TABS[requested] || 'overview';
+    return navigateThenPublish('/data-room', 'data_room_set_tab', { tab: resolvedTab }, ctx);
+  },
+});
+
+/* ─── Planning view-switching ─── */
+
+register({
+  id:           'planning_open_strategy',
+  label:        'Open a strategy in Planning',
+  description:  'Jumps to the detail view of a specific strategy.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches: [
+    /open (strategy|the strategy)/i, /show me (strategy|the strategy)/i,
+    /detail view/i,
+  ],
+  examples: ['open the strategy', 'show me strategy detail'],
+  handler: async (ctx) => {
+    const strategyId = ctx.payload?.strategyId || ctx.awareness?.selected?.id;
+    if (!strategyId) {
+      return { ok: false, message: 'No strategy specified. Try selecting one first or pass an ID.' };
+    }
+    return navigateThenPublish('/planning', 'planning_open_strategy', { strategyId }, ctx);
+  },
+});
+
+register({
+  id:           'planning_open_board',
+  label:        'Show the strategy pipeline board',
+  description:  'Returns to the planning board view.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches: [/pipeline board/i, /back to (board|planning)/i, /strategy board/i],
+  examples: ['back to the board', 'show the pipeline'],
+  handler: async (ctx) => navigateThenPublish('/planning', 'planning_open_board', {}, ctx),
+});
+
+/* ─── Audit-page actions ─── */
+
+register({
+  id:           'audit_open_latest',
+  label:        'Open the most recent audit',
+  description:  'Selects and opens the latest audit report.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches: [/latest audit/i, /most recent audit/i, /open the audit/i],
+  examples: ['open the latest audit', 'show me the most recent audit'],
+  handler: async (ctx) => navigateThenPublish('/audit', 'audit_open_latest', {}, ctx),
+});
+
+/* ─── Refresh briefing on /command ─── */
+
+register({
+  id:           'refresh_briefing',
+  label:        'Refresh the briefing',
+  description:  'Re-pulls strategies, blockers, attention items.',
+  permission:   'data_read',
+  scope:        'global',
+  confirm:      false,
+  matches: [/refresh briefing/i, /reload (the )?briefing/i, /re-?pull/i],
+  examples: ['refresh the briefing', 'reload'],
+  handler: async (ctx) => navigateThenPublish('/command', 'refresh_briefing', {}, ctx),
+});
+
+/* ─── Open provenance details inside Data Room → Analytics ─── */
+
+register({
+  id:           'open_provenance_detail',
+  label:        'Open provenance details',
+  description:  'Switches to Data Room → Analytics and opens the provenance panel.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches: [
+    /(provenance|where (do|did) (these|the) numbers come from)/i,
+    /show.*provenance/i, /open.*provenance/i,
+  ],
+  examples: ['open provenance', 'where do the numbers come from?'],
+  handler: async (ctx) => navigateThenPublish('/data-room', 'data_room_set_tab', { tab: 'analytics', focus: 'provenance' }, ctx),
+});
