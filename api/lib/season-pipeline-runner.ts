@@ -207,6 +207,7 @@ export async function runPipeline(opts: {
     }).eq("id", runId);
 
     const stepStart = Date.now();
+    console.log(`[runPipeline] ▶ step ${i + 1}/${opts.definition.steps.length}: ${step.id} ("${step.label}")`);
     const result: PipelineStepResult = await runStepWithTimeout(step, {
       projectId: opts.projectId,
       awareness: opts.awareness,
@@ -214,6 +215,7 @@ export async function runPipeline(opts: {
       prior: priorOutputs,
     });
     const stepElapsed = Date.now() - stepStart;
+    console.log(`[runPipeline] ${result.ok ? '✓' : '✗'} step ${i + 1}: ${step.id} done in ${stepElapsed}ms — ${result.ok ? 'ok' : 'failed: ' + (result.error || 'unknown')}`);
 
     /* Persist outputs */
     totalLlm += result.llm_calls || 0;
@@ -370,6 +372,7 @@ export async function runPipelineWithExistingRow(opts: {
     }).eq("id", runId);
 
     const stepStart = Date.now();
+    console.log(`[runPipeline] ▶ step ${i + 1}/${opts.definition.steps.length}: ${step.id} ("${step.label}")`);
     const result: PipelineStepResult = await runStepWithTimeout(step, {
       projectId: opts.projectId,
       awareness: opts.awareness,
@@ -377,6 +380,7 @@ export async function runPipelineWithExistingRow(opts: {
       prior: priorOutputs,
     });
     const stepElapsed = Date.now() - stepStart;
+    console.log(`[runPipeline] ${result.ok ? '✓' : '✗'} step ${i + 1}: ${step.id} done in ${stepElapsed}ms — ${result.ok ? 'ok' : 'failed: ' + (result.error || 'unknown')}`);
 
     totalLlm += result.llm_calls || 0;
     totalWeb += result.web_searches || 0;

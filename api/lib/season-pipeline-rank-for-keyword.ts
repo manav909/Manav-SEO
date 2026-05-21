@@ -36,8 +36,14 @@ async function callLlmJson(opts: {
   systemPrompt: string;
   userMessage:  string;
   maxTokens?:   number;
+  timeoutMs?:   number;
 }): Promise<{ ok: boolean; parsed?: any; raw?: string; error?: string; tokens?: number }> {
   if (!ANTHROPIC_API_KEY) return { ok: false, error: "ANTHROPIC_API_KEY missing" };
+  const fetchTimeoutMs = opts.timeoutMs || 90_000;
+  const ac = new AbortController();
+  const abortTimer = setTimeout(() => ac.abort(new Error(`fetch timeout after ${fetchTimeoutMs}ms`)), fetchTimeoutMs);
+  console.log(`[callLlmJson] starting fetch (timeout ${fetchTimeoutMs}ms, max_tokens ${opts.maxTokens || 2000})`);
+  const startedAt = Date.now();
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -52,7 +58,9 @@ async function callLlmJson(opts: {
         system: opts.systemPrompt,
         messages: [{ role: "user", content: opts.userMessage }],
       }),
+      signal: ac.signal,
     });
+    console.log(`[callLlmJson] fetch completed in ${Date.now() - startedAt}ms, status ${res.status}`);
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       return { ok: false, error: `Anthropic ${res.status}: ${errText.slice(0, 200)}` };
@@ -76,7 +84,17 @@ async function callLlmJson(opts: {
       raw: text,
     };
   } catch (e: any) {
-    return { ok: false, error: e?.message || "fetch failed" };
+    const isAbort = e?.name === 'AbortError' || /aborted|timeout/i.test(String(e?.message));
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`[callLlmJson] failed after ${elapsedMs}ms — ${isAbort ? 'aborted (timeout)' : 'error'}: ${e?.message}`);
+    return {
+      ok: false,
+      error: isAbort
+        ? `Anthropic call aborted after ${(elapsedMs/1000).toFixed(0)}s (timeout hit)`
+        : (e?.message || "fetch failed"),
+    };
+  } finally {
+    clearTimeout(abortTimer);
   }
 }
 
@@ -113,8 +131,17 @@ async function callLlmWeb(opts: {
   userMessage:  string;
   maxTokens?:   number;
   maxUses?:     number;
+  timeoutMs?:   number;
 }): Promise<{ ok: boolean; parsed?: any; citations?: Array<{ url: string; title?: string }>; webUsed?: boolean; error?: string }> {
   if (!ANTHROPIC_API_KEY) return { ok: false, error: "ANTHROPIC_API_KEY missing" };
+  /* Belt-and-suspenders timeout: this aborts the fetch at the network layer,
+     independent of the step-level Promise.race timeout. Defaults to 100s so
+     it always fires before the 120s step timeout if the request hangs. */
+  const fetchTimeoutMs = opts.timeoutMs || 100_000;
+  const ac = new AbortController();
+  const abortTimer = setTimeout(() => ac.abort(new Error(`fetch timeout after ${fetchTimeoutMs}ms`)), fetchTimeoutMs);
+  console.log(`[callLlmWeb] starting fetch (timeout ${fetchTimeoutMs}ms, max_uses ${opts.maxUses || 4})`);
+  const startedAt = Date.now();
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -131,7 +158,9 @@ async function callLlmWeb(opts: {
         messages: [{ role: "user", content: opts.userMessage }],
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: opts.maxUses || 4 }],
       }),
+      signal: ac.signal,
     });
+    console.log(`[callLlmWeb] fetch completed in ${Date.now() - startedAt}ms, status ${res.status}`);
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       return { ok: false, error: `Anthropic ${res.status}: ${errText.slice(0, 200)}` };
@@ -167,7 +196,17 @@ async function callLlmWeb(opts: {
       webUsed,
     };
   } catch (e: any) {
-    return { ok: false, error: e?.message || "fetch failed" };
+    const isAbort = e?.name === 'AbortError' || /aborted|timeout/i.test(String(e?.message));
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`[callLlmWeb] failed after ${elapsedMs}ms — ${isAbort ? 'aborted (timeout)' : 'error'}: ${e?.message}`);
+    return {
+      ok: false,
+      error: isAbort
+        ? `Anthropic web-search call aborted after ${(elapsedMs/1000).toFixed(0)}s (timeout hit)`
+        : (e?.message || "fetch failed"),
+    };
+  } finally {
+    clearTimeout(abortTimer);
   }
 }
 
