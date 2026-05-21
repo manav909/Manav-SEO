@@ -19,8 +19,9 @@ import Oval                            from "./pages/Oval";
 import { DemoProvider }          from "@/contexts/DemoContext";
 import { ErrorBoundary }         from "@/components/ErrorBoundary";
 import { BrainErrorBoundary }    from "@/components/BrainErrorBoundary";
-import ManavBrainAssistant       from "@/components/ManavBrainAssistant";
-import HelpOracle                from "@/components/HelpOracle";
+import SeasonOrb                 from "@/components/season/SeasonOrb";
+import SeasonModal               from "@/components/season/SeasonModal";
+import { SeasonProvider }        from "@/contexts/SeasonContext";
 import Index          from "./pages/Index";
 import DataRoom       from './pages/DataRoom';
 import Planning       from './pages/Planning';
@@ -162,9 +163,9 @@ const AppRoutes = () => {
         <AIConcierge />
       </NavProvider></TourProvider></ThemeProvider>
 
-      {/* Manav Brain — only for approved/signed-in users. Guests have ManavBrainGuest on Index. */}
-      {isApproved && <ManavBrainAssistant />}
-      {isApproved && <HelpOracle />}
+      {/* Phase 8b — S.E.A.S.O.N. presence on every page (only for approved users) */}
+      {isApproved && <SeasonOrb />}
+      {isApproved && <SeasonModal />}
     </>
   );
 };
@@ -180,9 +181,11 @@ const App = () => (
             <AuthProvider>
               <ProjectProvider>
               <DemoProvider>
+                <SeasonProvider>
                 <ErrorBoundary>
                   <AppRoutes />
                 </ErrorBoundary>
+                </SeasonProvider>
               </DemoProvider>
               </ProjectProvider>
             </AuthProvider>

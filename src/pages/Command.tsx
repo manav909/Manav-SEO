@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSeason } from '@/contexts/SeasonContext';
 import SmartSidebar from '@/components/SmartSidebar';
 import SmartTopBar from '@/components/SmartTopBar';
 import CapabilitiesPanel from '@/components/season/CapabilitiesPanel';
@@ -163,6 +164,7 @@ export default function Command() {
 function CommandInner() {
   const { selectedProjectId, selectedProject, setSelectedProjectId } = useProject() as any;
   const { projects } = useAuth() as any;
+  const { setMood } = useSeason();
   const safeProjects = (projects || []).filter((p: any) => p && p.id);
 
   const [briefing, setBriefing] = useState<BriefingClient | null>(null);
@@ -209,6 +211,19 @@ function CommandInner() {
       setLoading(false);
     })();
   }, [selectedProjectId]);
+
+  /* Derive S.E.A.S.O.N. mood from briefing state — drives orb color globally */
+  useEffect(() => {
+    if (!briefing) { setMood('quiet'); return; }
+    const critCount = briefing.attention.filter((a: any) => a.severity === 'critical').length;
+    const warnCount = briefing.attention.filter((a: any) => a.severity === 'warning').length;
+    const winCount  = briefing.quiet_wins.length;
+    if (critCount > 0)                   setMood('critical');
+    else if (warnCount > 0)              setMood('alert');
+    else if (winCount >= 3 && briefing.attention.length === 0) setMood('celebrating');
+    else if (briefing.attention.length > 0) setMood('focused');
+    else                                 setMood('calm');
+  }, [briefing, setMood]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
