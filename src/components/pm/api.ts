@@ -1506,3 +1506,102 @@ export async function updateCardDependencies(opts: {
   if (!r?.success) return { success: false, error: r?.error };
   return { success: true };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 3 — Analytics Provenance & Diagnostics
+═══════════════════════════════════════════════════════════ */
+
+export interface GscProvenanceClient {
+  connected:           boolean;
+  resource_id:         string | null;
+  resource_label:      string | null;
+  property_type:       "domain" | "url_prefix" | null;
+  property_type_label: string;
+  search_type:         "web";
+  data_state:          "final" | "all";
+  data_state_label:    string;
+  last_pull_at:        string | null;
+  last_pull_status:    string | null;
+  last_pull_error:     string | null;
+  coverage_from:       string | null;
+  coverage_to:         string | null;
+  coverage_day_count:  number | null;
+  aggregation_type:    "byProperty" | "byPage";
+  top_n_queries:       number;
+  top_n_pages:         number;
+  caveats:             string[];
+  freshness:           "fresh" | "stale" | "very_stale" | "never";
+}
+
+export interface Ga4ProvenanceClient {
+  connected:               boolean;
+  property_id:             string | null;
+  property_label:          string | null;
+  last_pull_at:            string | null;
+  last_pull_status:        string | null;
+  last_pull_error:         string | null;
+  coverage_from:           string | null;
+  coverage_to:             string | null;
+  coverage_day_count:      number | null;
+  channel_filter:          string;
+  channel_filter_label:    string;
+  conversion_definition:   string;
+  bounce_rate_definition:  string;
+  metric_definitions:      Array<{ metric: string; definition: string }>;
+  caveats:                 string[];
+  freshness:               "fresh" | "stale" | "very_stale" | "never";
+}
+
+export interface AnalyticsProvenanceClient {
+  generatedAt: string;
+  gsc: GscProvenanceClient;
+  ga4: Ga4ProvenanceClient;
+  display: {
+    current_window_from: string | null;
+    current_window_to:   string | null;
+    current_window_label: string;
+  };
+}
+
+export interface MismatchCauseClient {
+  category:    "date_range" | "property" | "filter" | "methodology" | "freshness" | "sampling" | "privacy";
+  source:      "gsc" | "ga4" | "both";
+  severity:    "common" | "occasional" | "edge_case";
+  title:       string;
+  explanation: string;
+  verify:      string;
+  applies:     "always" | "if_recent_dates" | "if_large_range" | "conditional";
+}
+
+export interface ExternalDashboardLinksClient {
+  gsc: { url: string; instructions: string; resource_id: string } | null;
+  ga4: { url: string; instructions: string; property_id: string } | null;
+  date_range: { from: string; to: string };
+}
+
+export async function getAnalyticsProvenance(projectId: string): Promise<{
+  provenance?: AnalyticsProvenanceClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_get_analytics_provenance', projectId });
+  if (!r?.success) return { error: r?.error };
+  return { provenance: r.provenance };
+}
+
+export async function diagnoseAnalyticsMismatch(projectId: string): Promise<{
+  provenance?: AnalyticsProvenanceClient;
+  causes?: MismatchCauseClient[];
+  summary?: { total_causes: number; common_causes: number; gsc_causes: number; ga4_causes: number };
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_diagnose_analytics_mismatch', projectId });
+  if (!r?.success) return { error: r?.error };
+  return { provenance: r.provenance, causes: r.causes, summary: r.summary };
+}
+
+export async function getExternalDashboardLinks(opts: {
+  projectId: string; fromDate?: string; toDate?: string;
+}): Promise<{ links?: ExternalDashboardLinksClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_external_dashboard_links', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { links: r.links };
+}

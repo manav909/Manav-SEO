@@ -17,6 +17,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
+import DataProvenanceBanner from './DataProvenanceBanner';
 import {
   TrendingUp, TrendingDown, Activity, Shield, RefreshCw, AlertCircle, BarChart3,
   ChevronDown, ChevronRight, Info, Sparkles, Zap, Globe, Smartphone, Target,
@@ -106,20 +107,23 @@ export default function AnalyticsIntelPanel({ projectId, defaultCollapsed }: Pro
     return (
       <PanelShell expanded={expanded} onToggle={() => setExpanded(!expanded)}>
         {expanded && (
-          <div className="px-4 py-6 text-center">
-            <Sparkles className="h-5 w-5 mx-auto mb-2 text-muted-foreground/40" />
-            <div className="text-sm font-semibold text-foreground">Intelligence not yet computed</div>
-            <div className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-              {emptyMsg || 'Run a GSC + GA4 pull from Integrations first. Strategic intelligence (15 KPIs, rising/falling stars, period comparisons) will compute automatically.'}
+          <div className="px-4 py-4">
+            <DataProvenanceBanner projectId={projectId} />
+            <div className="text-center py-2">
+              <Sparkles className="h-5 w-5 mx-auto mb-2 text-muted-foreground/40" />
+              <div className="text-sm font-semibold text-foreground">Intelligence not yet computed</div>
+              <div className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                {emptyMsg || 'Run a GSC + GA4 pull from Integrations first. Strategic intelligence (15 KPIs, rising/falling stars, period comparisons) will compute automatically.'}
+              </div>
+              <button
+                onClick={refresh}
+                disabled={refreshing}
+                className="mt-3 text-[11px] px-3 py-1.5 rounded-lg font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 disabled:opacity-50 flex items-center gap-1.5 mx-auto"
+              >
+                <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? 'Computing…' : 'Compute now'}
+              </button>
             </div>
-            <button
-              onClick={refresh}
-              disabled={refreshing}
-              className="mt-3 text-[11px] px-3 py-1.5 rounded-lg font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 disabled:opacity-50 flex items-center gap-1.5 mx-auto"
-            >
-              <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
-              {refreshing ? 'Computing…' : 'Compute now'}
-            </button>
           </div>
         )}
       </PanelShell>
@@ -152,6 +156,9 @@ export default function AnalyticsIntelPanel({ projectId, defaultCollapsed }: Pro
     >
       {expanded && (
         <div className="p-4 space-y-5">
+          {/* Phase 3 — Data Provenance Banner (every number explained) */}
+          <DataProvenanceBanner projectId={projectId} />
+
           {/* Composite scores — hero gauges */}
           <CompositeScores
             health={intel.overallHealthScore}

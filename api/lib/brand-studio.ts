@@ -628,6 +628,20 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsUpdateCardDependencies(body);
     }
 
+    /* Phase 3 — Analytics Provenance & Diagnostics */
+    case "bs_get_analytics_provenance": {
+      const { bsGetAnalyticsProvenance } = await import("./pm-analytics-provenance.js");
+      return bsGetAnalyticsProvenance(body);
+    }
+    case "bs_diagnose_analytics_mismatch": {
+      const { bsDiagnoseAnalyticsMismatch } = await import("./pm-analytics-provenance.js");
+      return bsDiagnoseAnalyticsMismatch(body);
+    }
+    case "bs_get_external_dashboard_links": {
+      const { bsGetExternalDashboardLinks } = await import("./pm-analytics-provenance.js");
+      return bsGetExternalDashboardLinks(body);
+    }
+
     /* Phase 1F — DOCX export */
     case "bs_export_docx": {
       const { bsExportDocx } = await import("./brand-studio-export.js");
