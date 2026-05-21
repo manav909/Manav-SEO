@@ -120,58 +120,102 @@ export function normalizeAttrs(raw: Record<string, string | null | undefined>): 
  * it renders as `<ds-directive name=... attrs=...>body</ds-directive>`,
  * and the DocumentViewer registers `ds-directive` in its components map.
  *
- * For containerDirective nodes, we also extract the FIRST fenced code block
- * found in the children and stash its raw text in `data-raw-body` — this
- * is how chart/data-table directives receive their JSON payload without
- * losing markdown semantics elsewhere in the body.
+ * IMPORTANT: remark-directive is greedy about text directives — it parses
+ * ANY `:word` token in prose as a directive. Generated documents commonly
+ * contain citation syntax like `dataroom:identity.field_key`, which would
+ * trigger false-positive directives for `:identity`, `:audience`, etc.
+ *
+ * To prevent that, we ONLY convert directives whose name is in
+ * DIRECTIVE_NAMES. Unknown directive names are rewritten back to plain
+ * text using their original syntax (`:name`, `::name`, `:::name`) so the
+ * citation reads correctly. This is the right default — typo'd directive
+ * names will simply render as text, which is more useful than an
+ * "Unknown directive" box for every accidental citation.
+ *
+ * For containerDirective nodes that ARE recognized, we also extract the
+ * FIRST fenced code block found in the children and stash its raw text
+ * in `data-raw-body` — this is how chart/data-table directives receive
+ * their JSON payload without losing markdown semantics elsewhere.
  */
+const KNOWN_DIRECTIVES = new Set<string>(DIRECTIVE_NAMES as readonly string[]);
+
 export const remarkDirectiveRender: Plugin<[], Root> = () => {
   return (tree) => {
-    visit(tree, (node: any) => {
+    visit(tree, (node: any, index, parent: any) => {
       if (
-        node.type === 'containerDirective' ||
-        node.type === 'leafDirective'      ||
-        node.type === 'textDirective'
+        node.type !== 'containerDirective' &&
+        node.type !== 'leafDirective'      &&
+        node.type !== 'textDirective'
       ) {
-        const data = node.data || (node.data = {});
-        const attrs = normalizeAttrs(node.attributes || {});
+        return;
+      }
 
-        /* Extract the first code-block body for data-carrying directives */
-        let rawBody = '';
-        if (node.type === 'containerDirective' && Array.isArray(node.children)) {
+      const dirName  = String(node.name || '');
+      const isKnown  = KNOWN_DIRECTIVES.has(dirName);
+
+      /* Unknown directive name → revert to plain text. */
+      if (!isKnown) {
+        if (!parent || typeof index !== 'number') return;
+        const colons = node.type === 'containerDirective' ? ':::'
+                     : node.type === 'leafDirective'      ? '::'
+                     : ':';
+        const attrsObj = (node.attributes || {}) as Record<string, string>;
+        const attrsStr = Object.keys(attrsObj).length
+          ? '{' + Object.entries(attrsObj).map(([k, v]) => `${k}="${v}"`).join(' ') + '}'
+          : '';
+        const reconstructed = `${colons}${dirName}${attrsStr}`;
+
+        if (node.type === 'textDirective') {
+          /* Inline — replace with a single text node carrying the original syntax */
+          parent.children.splice(index, 1, { type: 'text', value: reconstructed });
+          return ['skip', index + 1];
+        }
+
+        /* For leaf/container, splice the original syntax as a paragraph then
+           preserve any container children below it so doc content isn't lost. */
+        const replacement: any[] = [{ type: 'paragraph', children: [{ type: 'text', value: reconstructed }] }];
+        if (Array.isArray(node.children) && node.children.length > 0) {
+          replacement.push(...node.children);
+        }
+        parent.children.splice(index, 1, ...replacement);
+        return ['skip', index + replacement.length];
+      }
+
+      /* Known directive — rewrite as ds-directive */
+      const data  = node.data || (node.data = {});
+      const attrs = normalizeAttrs(node.attributes || {});
+
+      /* Extract the first code-block body for data-carrying directives */
+      let rawBody = '';
+      if (node.type === 'containerDirective' && Array.isArray(node.children)) {
+        for (const child of node.children) {
+          if (child && child.type === 'code' && typeof child.value === 'string') {
+            rawBody = child.value;
+            break;
+          }
+        }
+        /* Mark the code-block child so the renderer can suppress it */
+        if (rawBody) {
           for (const child of node.children) {
-            if (child && child.type === 'code' && typeof child.value === 'string') {
-              rawBody = child.value;
+            if (child && child.type === 'code') {
+              child.data = child.data || {};
+              child.data.hName = 'ds-suppressed';
+              child.data.hProperties = {};
               break;
             }
           }
-          /* Mark the code-block child so the renderer can suppress it
-             (chart data shouldn't double-render as a code block) */
-          if (rawBody) {
-            for (const child of node.children) {
-              if (child && child.type === 'code') {
-                child.data = child.data || {};
-                child.data.hName = 'ds-suppressed';  /* unknown tag — renders nothing */
-                child.data.hProperties = {};
-                break;
-              }
-            }
-          }
         }
-
-        /* Serialize attrs + raw body as data-* attributes so react-markdown
-           passes them through. Keep raw children intact so the body content
-           still renders inside container directives. */
-        data.hName = 'ds-directive';
-        data.hProperties = {
-          'data-name':     String(node.name || 'unknown'),
-          'data-attrs':    JSON.stringify(attrs),
-          'data-kind':     node.type === 'containerDirective' ? 'container'
-                          : node.type === 'leafDirective'      ? 'leaf'
-                          : 'textInline',
-          'data-raw-body': rawBody,
-        };
       }
+
+      data.hName = 'ds-directive';
+      data.hProperties = {
+        'data-name':     dirName,
+        'data-attrs':    JSON.stringify(attrs),
+        'data-kind':     node.type === 'containerDirective' ? 'container'
+                        : node.type === 'leafDirective'      ? 'leaf'
+                        : 'textInline',
+        'data-raw-body': rawBody,
+      };
     });
   };
 };
