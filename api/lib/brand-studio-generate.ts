@@ -23,7 +23,8 @@
 import { db } from "./db.js";
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  getTemplate, publicTemplateCatalog, type TemplateSpec, type SectionSpec,
+  getTemplate, publicTemplateCatalog, templateHasCoverPage, templateDirectiveStyle,
+  type TemplateSpec, type SectionSpec,
 } from "./brand-studio-templates.js";
 
 const MODEL = "claude-sonnet-4-6";
@@ -322,6 +323,27 @@ function buildContextBlock(bundle: SourceBundle): string {
   return lines.join("\n");
 }
 
+/** Phase 1E — assemble the :::cover-page{} directive block that's
+ *  prepended to investor-grade documents. Quotes are escaped so the
+ *  attrs parser handles them correctly. */
+function buildCoverPageBlock(opts: {
+  title:     string;
+  subtitle?: string;
+  date:      string;
+  recipient?:string;
+  author?:   string;
+}): string {
+  const esc = (s: string) => String(s || '').replace(/"/g, '\\"').slice(0, 240);
+  const parts: string[] = [];
+  parts.push(`title="${esc(opts.title)}"`);
+  if (opts.subtitle)  parts.push(`subtitle="${esc(opts.subtitle)}"`);
+  if (opts.date)      parts.push(`date="${esc(opts.date)}"`);
+  if (opts.recipient) parts.push(`recipient="${esc(opts.recipient)}"`);
+  if (opts.author)    parts.push(`author="${esc(opts.author)}"`);
+  parts.push(`logo="auto"`);
+  return `:::cover-page{${parts.join(' ')}}\n:::`;
+}
+
 function buildSystemPrompt(template: TemplateSpec, audienceRole: string, pmVision: string): string {
   const sectionGuidance = template.sections.map((s) =>
     `  ${s.key}  ("${s.title}")\n    Purpose: ${s.description}`
@@ -354,6 +376,8 @@ function buildSystemPrompt(template: TemplateSpec, audienceRole: string, pmVisio
         "- Be honest about confidence. Low-evidence sections should say so.",
       ].join("\n");
 
+  const directiveGuidance = buildDirectiveGuidance(template);
+
   return [
     `You are a senior brand strategist and document writer producing a ${template.label} for an SEO/brand consultancy's client project.`,
     "",
@@ -381,11 +405,113 @@ function buildSystemPrompt(template: TemplateSpec, audienceRole: string, pmVisio
     "",
     strictness,
     "",
+    directiveGuidance,
+    "",
     "SECTION OUTLINE:",
     sectionGuidance,
     "",
     "The output document will be saved to the project's library and may be shared with the audience listed above. Write to that standard.",
   ].filter(Boolean).join("\n");
+}
+
+/** Phase 1E — directive DSL guidance. The AI learns when + how to use
+ *  the rich formatting directives. The intensity dial is set per template
+ *  via templateDirectiveStyle: encouraged / balanced / minimal. */
+function buildDirectiveGuidance(template: TemplateSpec): string {  const style = templateDirectiveStyle(template);
+
+  /* Header tuned per intensity */
+  const header = style === "encouraged"
+    ? "RICH FORMATTING DIRECTIVES (use liberally where they enhance reading — this template benefits from visual emphasis):"
+    : style === "minimal"
+    ? "RICH FORMATTING DIRECTIVES (use SPARINGLY — this template is mostly prose; only invoke directives when they're genuinely warranted):"
+    : "RICH FORMATTING DIRECTIVES (use where they add clarity, not as decoration):";
+
+  const lines: string[] = [header, "", "Available directives:"];
+
+  /* KPI tiles */
+  lines.push(
+    "",
+    "KPI TILES — for hero numbers that deserve emphasis. Inline (multiple sit side-by-side).",
+    '  ::kpi{label="MRR" value="$48,200" trend="+18%" sublabel="Last 30 days"}',
+    '  ::kpi{label="GSC Clicks" from="dataroom.analytics.gsc_total_clicks"}  # auto-pulls from Data Room',
+    "  Use 2-4 per section MAX. Only for numbers the reader needs at a glance.",
+  );
+
+  /* Callouts */
+  lines.push(
+    "",
+    "CALLOUTS — for risks, warnings, key insights, critical disclosures.",
+    '  :::callout{tone="warning" title="Watch: Q3 churn signal"}',
+    "  We're tracking elevated churn in the sub-$1k MRR segment. Mitigation planned.",
+    "  :::",
+    "  Tones: info | success | warning | critical | neutral.",
+    style === "minimal"
+      ? "  At most ONE callout per document, only if a risk/disclosure truly needs separation."
+      : "  Use 0-3 per document — they lose impact if overused. Match tone to severity.",
+  );
+
+  /* Quotes */
+  lines.push(
+    "",
+    "QUOTES — when sources include customer / stakeholder / press / leadership quotes.",
+    '  :::quote{author="Sarah Chen" role="VP Marketing, TechCorp" source="Q1 case study"}',
+    "  Brand Studio has fundamentally changed how we prepare investor materials.",
+    "  :::",
+    "  ONLY use when source content actually contains a verbatim quote. NEVER fabricate.",
+  );
+
+  /* Charts — strongest for performance/forward_looking */
+  if (style === "encouraged" || style === "balanced") {
+    lines.push(
+      "",
+      "CHARTS — for trend lines, comparisons, share-of-total, time series.",
+      "  Live data from Data Room or metrics table:",
+      '    :::chart{type="line" from="metrics.llm_visibility_score" range="last_90d" title="LLM Visibility"}',
+      "    :::",
+      "  Inline JSON when you have specific numbers to show:",
+      '    :::chart{type="bar" title="Q1 spend by channel" xKey="channel" yKey="spend"}',
+      "    ```json",
+      '    [{"channel":"SEO","spend":12000},{"channel":"Paid","spend":8500}]',
+      "    ```",
+      "    :::",
+      "  Types: line | area | bar | stackedBar | pie | scatter | milestone.",
+      style === "encouraged"
+        ? "  Strongly preferred over describing trends in prose."
+        : "  Use when a chart makes the point faster than prose.",
+    );
+  }
+
+  /* Data tables */
+  lines.push(
+    "",
+    "DATA TABLES — for competitor comparisons, segment lists, structured comparisons.",
+    "  Inline (use a regular markdown table for ad-hoc):",
+    "    | Competitor | Position | Weakness |",
+    "    | --- | --- | --- |",
+    "    | A | Mass-market | Slow innovation |",
+    "  Live from Data Room when the data exists there:",
+    '    :::data-table{from="revenue.records" columns="period_year,period_month,amount" limit="12"}',
+    "    :::",
+  );
+
+  /* Page breaks — investor docs only */
+  if (templateHasCoverPage(template)) {
+    lines.push(
+      "",
+      "PAGE BREAKS — to start major sections on a new printed page.",
+      "  ::page-break",
+      "  Use 1-3 per investor doc, between section groups. Don't break inside related content.",
+    );
+  }
+
+  /* Footer */
+  lines.push(
+    "",
+    "DO NOT emit a :::cover-page directive — the system adds one automatically when appropriate.",
+    "When in doubt, prefer well-written PROSE over directive decoration. Directives are tools, not garnish.",
+  );
+
+  return lines.join("\n");
 }
 
 /* ─── Generation tool schema ──────────────────────────────────── */
@@ -569,8 +695,21 @@ async function saveGeneration(opts: {
     if (parent) version = ((parent as any).version || 1) + 1;
   }
 
-  /* Render full markdown content as raw_content for storage + viewing */
+  /* Render full markdown content as raw_content for storage + viewing.
+     Phase 1E: investor-grade templates get an auto-prepended cover page. */
+  const today = new Date().toISOString().slice(0, 10);
+  const wantsCoverPage = templateHasCoverPage(template);
+
+  const coverPageBlock = wantsCoverPage ? buildCoverPageBlock({
+    title:    template.label,
+    subtitle: output.overall_summary.slice(0, 140),
+    date:     today,
+    recipient: bundle.project.name,
+    author:    "",  /* not yet plumbed through — the cover page renders with empty author gracefully */
+  }) : null;
+
   const renderedContent = [
+    ...(coverPageBlock ? [coverPageBlock, ""] : []),
     `# ${template.label}`,
     "",
     `*Generated for: ${audienceRole}*`,
@@ -590,7 +729,6 @@ async function saveGeneration(opts: {
     ]),
   ].join("\n");
 
-  const today = new Date().toISOString().slice(0, 10);
   const docName = `${template.label}${version > 1 ? ` (v${version})` : ''} — ${bundle.project.name} — ${today}`;
 
   /* What document IDs and Data Room fields did this draw from?

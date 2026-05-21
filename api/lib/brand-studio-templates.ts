@@ -50,6 +50,16 @@ export interface TemplateSpec {
   sections:              SectionSpec[];
   /* Tone calibration hint surfaced to the AI */
   voice_hint:            string;
+  /* Phase 1E — emit a :::cover-page{} directive at the top of the
+     rendered output. Default true for investor_grade templates,
+     false otherwise. Explicitly set this to override. */
+  cover_page?:           boolean;
+  /* Phase 1E — strong directive guidance for this template. When
+     "encouraged", the AI is told to use kpi/chart/callout liberally
+     where appropriate. "minimal" tells it to mostly use prose with
+     only sparing directive use. Default "encouraged" for performance
+     and forward_looking categories, "balanced" otherwise. */
+  directive_style?:      "encouraged" | "balanced" | "minimal";
 }
 
 /* ─── Brand Statement ─────────────────────────────────────────── */
@@ -570,6 +580,31 @@ export const TEMPLATES: TemplateSpec[] = [
 
 export function getTemplate(id: string): TemplateSpec | null {
   return TEMPLATES.find((t) => t.id === id) || null;
+}
+
+/* ─── Phase 1E helpers ────────────────────────────────────────── */
+
+/** Whether a template should auto-prepend a :::cover-page{} block.
+ *  Default: investor_grade → true, otherwise → false. PM can override
+ *  via the template's `cover_page` field. */
+export function templateHasCoverPage(t: TemplateSpec): boolean {
+  if (typeof t.cover_page === 'boolean') return t.cover_page;
+  return t.verification_strictness === "investor_grade";
+}
+
+/** How aggressively the AI should use formatting directives.
+ *  Default rule:
+ *  - "encouraged" for performance + forward_looking templates
+ *    (QBR, Performance Prediction, Recovery Plan, Investor docs, etc.)
+ *  - "minimal" for strategic narrative templates (Brand Statement,
+ *    Press Release, Case Study — these are mostly prose).
+ *  - "balanced" for everything else.
+ */
+export function templateDirectiveStyle(t: TemplateSpec): "encouraged" | "balanced" | "minimal" {
+  if (t.directive_style) return t.directive_style;
+  if (t.category === "performance" || t.category === "forward_looking") return "encouraged";
+  if (t.id === "brand_statement" || t.id === "press_release" || t.id === "case_study") return "minimal";
+  return "balanced";
 }
 
 /* Public template catalog for the frontend — strips internal config */
