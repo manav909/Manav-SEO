@@ -11,7 +11,11 @@ import { seedV2DataRoom, aiFillPreview as apiAiFillPreview, aiFillApply as apiAi
 import AnalyticsIntelPanel from '@/components/pm/AnalyticsIntelPanel';
 import WhatIfSimulator from '@/components/pm/WhatIfSimulator';
 import GoalEngine from '@/components/pm/GoalEngine';
-import StrategyDependenciesHub from '@/components/pm/StrategyDependenciesHub';
+import StrategyBlockersView from '@/components/pm/StrategyBlockersView';
+import AccessVaultPanel       from '@/components/pm/AccessVaultPanel';
+import ContentLibraryPanel    from '@/components/pm/ContentLibraryPanel';
+import InfoRepositoryPanel    from '@/components/pm/InfoRepositoryPanel';
+import ApprovalsLogPanel      from '@/components/pm/ApprovalsLogPanel';
 import {
   Layers,
   Upload,
@@ -635,7 +639,7 @@ export default function DataRoom() {
   const [aiFillSelected,  setAiFillSelected]  = useState<Record<string, boolean>>({});
   const [aiFillModalOpen, setAiFillModalOpen] = useState(false);
   const handleProjectChange = useProjectSync(selProjId, setSelProjId);
-  const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'|'crawl'|'identity'|'audience'|'content'|'backlinks'|'commercial'|'history'|'brand_narrative'>('overview');
+  const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'|'crawl'|'identity'|'audience'|'content'|'backlinks'|'commercial'|'history'|'brand_narrative'|'access_vault'|'content_library'|'info_repository'|'approvals_log'>('overview');
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [saving,    setSaving]    = useState(false);
@@ -1888,6 +1892,10 @@ Evidence: ${c.data_basis}` : ''}`,
                 {id:'audience',    label:'Audience',      icon:Users      },
                 {id:'competitors', label:'Competitors',   icon:Star       },
                 {id:'analytics',   label:'Analytics',     icon:BarChart3  },
+                {id:'access_vault',    label:'🔑 Access Vault',     icon:Shield    },
+                {id:'content_library', label:'📄 Content Library',  icon:FileEdit  },
+                {id:'info_repository', label:'ℹ Info Repository',   icon:Sparkles  },
+                {id:'approvals_log',   label:'🛡 Approvals Log',    icon:Shield    },
                 {id:'technical',   label:'Technical',     icon:Settings   },
                 {id:'backlinks',   label:'Backlinks',     icon:Link2      },
                 {id:'content',     label:'Content',       icon:FileEdit   },
@@ -2184,10 +2192,27 @@ Evidence: ${c.data_basis}` : ''}`,
                 {selProjId && <AnalyticsIntelPanel projectId={selProjId} />}
                 {selProjId && <WhatIfSimulator projectId={selProjId} defaultCollapsed />}
                 {selProjId && <GoalEngine projectId={selProjId} defaultCollapsed />}
-                {selProjId && <StrategyDependenciesHub projectId={selProjId} defaultCollapsed />}
+                {selProjId && (
+                  <StrategyBlockersView
+                    projectId={selProjId}
+                    defaultCollapsed
+                    onJumpToStore={(store) => {
+                      const tabId =
+                        store === 'access'   ? 'access_vault' :
+                        store === 'content'  ? 'content_library' :
+                        store === 'info'     ? 'info_repository' :
+                                               'approvals_log';
+                      setTab(tabId);
+                    }}
+                  />
+                )}
                 <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="analytics"/></div>
               </div>
             )}
+            {tab === 'access_vault'    && selProjId && <AccessVaultPanel    projectId={selProjId} />}
+            {tab === 'content_library' && selProjId && <ContentLibraryPanel projectId={selProjId} />}
+            {tab === 'info_repository' && selProjId && <InfoRepositoryPanel projectId={selProjId} />}
+            {tab === 'approvals_log'   && selProjId && <ApprovalsLogPanel   projectId={selProjId} />}
             {tab === 'technical'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="technical"/></div>}
             {tab === 'competitors' && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="competitor"/></div>}
             {/* Data Room V2 sections — added during integration foundation work */}

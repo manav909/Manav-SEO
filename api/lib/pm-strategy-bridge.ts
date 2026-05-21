@@ -154,8 +154,18 @@ export async function bsPrepareScenarioPush(body: any): Promise<any> {
     const endDate   = new Date(startCursor);
     endDate.setDate(endDate.getDate() + durationDays);
 
-    /* Auto-suggest initial dependency items based on action shape */
-    const requirements: DependencyItem[] = buildInitialDependencies(action, inst.inputs);
+    /* Phase 5 — Build initial dependencies via the matcher (templates from
+       action library + auto-resolved from project resolution stores).
+       Falls back to empty list if action has no templates declared. */
+    let requirements: any[] = [];
+    try {
+      const { matchCardDeps } = await import("./pm-resolution-matcher.js");
+      requirements = await matchCardDeps({ projectId, actionId: action.id });
+    } catch (e: any) {
+      console.error("[strategy] matcher failed:", e?.message || e);
+      /* Fallback to legacy buildInitialDependencies if matcher errors */
+      requirements = buildInitialDependencies(action, inst.inputs);
+    }
 
     /* Compose card title — include the action's target if specified */
     const titleParts: string[] = [action.name];

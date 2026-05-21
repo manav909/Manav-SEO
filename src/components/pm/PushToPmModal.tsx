@@ -364,57 +364,79 @@ function DraftCardRow({
             </div>
           </div>
 
-          {/* Dependencies by category */}
+          {/* Dependencies — driven by action library templates + auto-resolved
+              from project resolution stores. PM cannot edit per-card; they
+              resolve via the store panels (Data Room → Access Vault, etc.) */}
           <div>
-            <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground mb-1.5">Dependencies (what's needed before/during)</div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">Dependencies (auto-resolved from project stores)</div>
+              <div className="text-[10px] text-muted-foreground italic">
+                {draft.requirements.filter(r => r.met).length}/{draft.requirements.length} resolved
+              </div>
+            </div>
             <div className="space-y-2">
               {CATEGORIES.map((cat) => {
                 const meta = CATEGORY_META[cat];
                 const items = grouped[cat];
+                if (items.length === 0) return null;
+                const resolvedCount = items.filter(i => i.met).length;
                 return (
                   <div key={cat} className={`rounded-lg border p-2 ${meta.color}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-1.5">
-                        <meta.icon className="h-3 w-3" />
-                        <span className="text-[10px] uppercase tracking-wider font-bold">{meta.label}</span>
-                        {items.length > 0 && (
-                          <span className="text-[9px] opacity-70">
-                            {items.filter(i => i.met).length}/{items.length} resolved
-                          </span>
-                        )}
-                      </div>
-                      <button onClick={() => onAddDep(cat)} className="text-[10px] opacity-80 hover:opacity-100 flex items-center gap-0.5">
-                        <Plus className="h-2.5 w-2.5" />Add
-                      </button>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <meta.icon className="h-3 w-3" />
+                      <span className="text-[10px] uppercase tracking-wider font-bold">{meta.label}</span>
+                      <span className="text-[9px] opacity-70">{resolvedCount}/{items.length} resolved</span>
                     </div>
-                    {items.length === 0 ? (
-                      <div className="text-[10px] opacity-50 italic">None</div>
-                    ) : (
-                      <div className="space-y-1">
-                        {items.map((r) => (
-                          <div key={r.id} className="flex items-center gap-2 text-[11px]">
-                            <input
-                              type="checkbox"
-                              checked={r.met}
-                              onChange={() => onToggleDep(r.id!)}
-                              className="rounded border-current/30"
-                            />
-                            <input
-                              type="text"
-                              value={r.label}
-                              onChange={(e) => onUpdateDepLabel(r.id!, e.target.value)}
-                              className={`flex-1 bg-transparent border-b border-current/20 focus:outline-none focus:border-current/40 ${r.met ? 'opacity-50 line-through' : ''}`}
-                            />
-                            <button onClick={() => onRemoveDep(r.id!)} className="opacity-50 hover:opacity-100 hover:text-red-400">
-                              <Trash2 className="h-2.5 w-2.5" />
-                            </button>
+                    <div className="space-y-1">
+                      {items.map((r) => {
+                        const anyR = r as any;
+                        const required = anyR.required !== false;
+                        const resolved = r.met;
+                        const resolvedVia = anyR.resolved_via;
+                        const unresolvedPtr = anyR.unresolved_pointer;
+                        return (
+                          <div key={r.id} className={`flex items-start gap-2 text-[11px] ${resolved ? '' : 'opacity-95'}`}>
+                            {resolved
+                              ? <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0 mt-0.5" />
+                              : <AlertCircle className="h-3 w-3 text-amber-400 shrink-0 mt-0.5" />
+                            }
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`font-semibold ${resolved ? 'text-foreground' : 'text-foreground'}`}>{r.label}</span>
+                                {!required && (
+                                  <span className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-muted/30 text-muted-foreground border border-border">soft</span>
+                                )}
+                                {required && (
+                                  <span className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">required</span>
+                                )}
+                              </div>
+                              {resolved && resolvedVia && (
+                                <div className="text-[10px] text-emerald-400/80 mt-0.5">
+                                  ✓ from {resolvedVia.store === 'access' ? 'Access Vault' : resolvedVia.store === 'content' ? 'Content Library' : resolvedVia.store === 'info' ? 'Info Repository' : 'Approvals Log'}: <span className="italic">{resolvedVia.item_label}</span>
+                                </div>
+                              )}
+                              {!resolved && unresolvedPtr && (
+                                <div className="text-[10px] text-amber-400/80 mt-0.5">
+                                  ✗ Not yet in {unresolvedPtr.store === 'access' ? 'Access Vault' : unresolvedPtr.store === 'content' ? 'Content Library' : unresolvedPtr.store === 'info' ? 'Info Repository' : 'Approvals Log'} — populate it there to auto-resolve.
+                                  {unresolvedPtr.notes && <span className="block italic opacity-80 mt-0.5">{unresolvedPtr.notes}</span>}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })}
+              {draft.requirements.length === 0 && (
+                <div className="rounded-lg border border-border bg-background/30 p-2 text-[10px] text-muted-foreground italic">
+                  No dependencies declared for this action. (Action library has no templates — card will push with no blockers.)
+                </div>
+              )}
+            </div>
+            <div className="text-[10px] text-muted-foreground italic mt-1.5">
+              💡 Resolve unmet items by adding them to the relevant store in Data Room. All cards needing them will auto-unblock.
             </div>
           </div>
 

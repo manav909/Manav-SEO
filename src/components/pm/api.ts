@@ -1661,3 +1661,138 @@ export async function toggleDependency(opts: {
   if (!r?.success) return { success: false, error: r?.error };
   return { success: true };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 5 — Resolution Stores + Blockers + Matcher
+═══════════════════════════════════════════════════════════ */
+
+export type ResolutionStoreClient = "access" | "content" | "info" | "approval";
+
+export interface StoreItemBase {
+  id?:        string;
+  project_id?: string;
+  label:      string;
+  notes?:     string | null;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  is_resolved?: boolean;
+}
+
+export interface AccessItemClient extends StoreItemBase {
+  category:              "cms" | "dev" | "analytics" | "seo_tool" | "other";
+  status:                "held" | "requested" | "expired" | "revoked";
+  url?:                  string | null;
+  password_manager_link?: string | null;
+  held_by?:              string | null;
+  obtained_at?:          string | null;
+  expires_at?:           string | null;
+}
+
+export interface ContentAssetClient extends StoreItemBase {
+  asset_type:   "copy" | "brief" | "image" | "template" | "video" | "other";
+  status:       "requested" | "drafting" | "in_review" | "delivered" | "rejected";
+  asset_url?:   string | null;
+  assignee?:    string | null;
+  due_date?:    string | null;
+  delivered_at?: string | null;
+}
+
+export interface InfoItemClient extends StoreItemBase {
+  info_type:   "research" | "data" | "competitor" | "persona" | "strategy" | "other";
+  status:      "needed" | "gathered" | "stale";
+  value_text?: string | null;
+  source_url?: string | null;
+  gathered_by?: string | null;
+  gathered_at?: string | null;
+  expires_at?: string | null;
+}
+
+export interface ApprovalItemClient extends StoreItemBase {
+  approval_type:  "client" | "internal" | "budget" | "legal";
+  status:         "pending" | "approved" | "rejected" | "revoked";
+  requested_from?: string | null;
+  requested_at?:  string | null;
+  decided_at?:    string | null;
+  decided_by?:    string | null;
+  decision_notes?: string | null;
+  evidence_url?:  string | null;
+}
+
+export type AnyStoreItem = AccessItemClient | ContentAssetClient | InfoItemClient | ApprovalItemClient;
+
+export async function listStoreItems(opts: {
+  projectId: string; store: ResolutionStoreClient; status?: string; search?: string;
+}): Promise<{ items: any[]; total?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_store_items', ...opts });
+  if (!r?.success) return { items: [], error: r?.error };
+  return { items: r.items, total: r.total };
+}
+
+export async function saveStoreItem(opts: {
+  projectId: string; store: ResolutionStoreClient; item: any;
+}): Promise<{ item?: any; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_save_store_item', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { item: r.item };
+}
+
+export async function deleteStoreItem(opts: {
+  store: ResolutionStoreClient; itemId: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_delete_store_item', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function suggestStoreLabels(opts: {
+  projectId: string; store: ResolutionStoreClient;
+}): Promise<{ suggestions?: Array<{ label: string; used_by_actions: string[] }>; total?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_suggest_store_labels', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { suggestions: r.suggestions, total: r.total };
+}
+
+export interface BlockedItemClient {
+  type:     "card" | "scenario" | "goal" | "report";
+  id:       string;
+  title:    string;
+  status?:  string;
+  due_date?: string | null;
+}
+
+export interface BlockerClient {
+  store:           ResolutionStoreClient;
+  label:           string;
+  required:        boolean;
+  blocks:          BlockedItemClient[];
+  block_summary:   { cards: number; scenarios: number; goals: number; reports: number };
+  resolution_panel: ResolutionStoreClient;
+  notes?:          string;
+}
+
+export interface BlockersStatsClient {
+  total_blockers: number;
+  hard_blockers:  number;
+  soft_blockers:  number;
+  by_store:       { access: number; content: number; info: number; approval: number };
+  total_cards_blocked:     number;
+  total_scenarios_blocked: number;
+  total_goals_blocked:     number;
+}
+
+export async function getStrategyBlockers(projectId: string): Promise<{
+  blockers?: BlockerClient[]; stats?: BlockersStatsClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_get_strategy_blockers', projectId });
+  if (!r?.success) return { error: r?.error };
+  return { blockers: r.blockers, stats: r.stats };
+}
+
+export async function rematchProjectCards(projectId: string): Promise<{
+  cardsUpdated?: number; errors?: number; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_rematch_project_cards', projectId });
+  if (!r?.success) return { error: r?.error };
+  return { cardsUpdated: r.cardsUpdated, errors: r.errors };
+}

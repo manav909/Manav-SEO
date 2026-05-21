@@ -627,13 +627,31 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       const { bsUpdateCardDependencies } = await import("./pm-strategy-bridge.js");
       return bsUpdateCardDependencies(body);
     }
-    case "bs_list_strategy_dependencies": {
-      const { bsListStrategyDependencies } = await import("./pm-strategy-bridge.js");
-      return bsListStrategyDependencies(body);
+
+    /* Phase 5 — Resolution Stores + Blockers + Matcher */
+    case "bs_list_store_items": {
+      const { bsListStoreItems } = await import("./pm-resolution-stores.js");
+      return bsListStoreItems(body);
     }
-    case "bs_toggle_dependency": {
-      const { bsToggleDependency } = await import("./pm-strategy-bridge.js");
-      return bsToggleDependency(body);
+    case "bs_save_store_item": {
+      const { bsSaveStoreItem } = await import("./pm-resolution-stores.js");
+      return bsSaveStoreItem(body);
+    }
+    case "bs_delete_store_item": {
+      const { bsDeleteStoreItem } = await import("./pm-resolution-stores.js");
+      return bsDeleteStoreItem(body);
+    }
+    case "bs_suggest_store_labels": {
+      const { bsSuggestStoreLabels } = await import("./pm-resolution-stores.js");
+      return bsSuggestStoreLabels(body);
+    }
+    case "bs_get_strategy_blockers": {
+      const { bsGetStrategyBlockers } = await import("./pm-blockers.js");
+      return bsGetStrategyBlockers(body);
+    }
+    case "bs_rematch_project_cards": {
+      const { bsRematchProjectCards } = await import("./pm-resolution-matcher.js");
+      return bsRematchProjectCards(body);
     }
 
     /* Phase 3 — Analytics Provenance & Diagnostics */
