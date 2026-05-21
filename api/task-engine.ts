@@ -2525,6 +2525,21 @@ Return ONLY raw JSON:
       monitorsCronSummary = { error: e?.message || "monitorCronTick failed" };
     }
 
+    /* ── Phase 12.5b — forecast sweep — runs AFTER GSC/GA4 are fresh so
+       checkpoints evaluate against same-day actuals. Best-effort. */
+    let forecastSweepSummary: any = null;
+    try {
+      const { sweepForecastCheckpoints } = await import("./lib/season-monitor-engine.js");
+      const sweep = await sweepForecastCheckpoints();
+      forecastSweepSummary = {
+        swept: sweep.swept,
+        critical_count:  sweep.results.filter(r => r.severity === 'critical').length,
+        warning_count:   sweep.results.filter(r => r.severity === 'warning').length,
+      };
+    } catch (e: any) {
+      forecastSweepSummary = { error: e?.message || "forecast sweep failed" };
+    }
+
     const now = new Date().toISOString();
 
     /* Get all pending verifications due now */
@@ -2536,7 +2551,7 @@ Return ONLY raw JSON:
       .limit(10);
 
     if (!due || due.length === 0) {
-      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary, rulesCron: rulesCronSummary, monitorsCron: monitorsCronSummary });
+      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary, rulesCron: rulesCronSummary, monitorsCron: monitorsCronSummary, forecastSweep: forecastSweepSummary });
     }
 
     const results: any[] = [];
@@ -2668,14 +2683,16 @@ Respond with JSON only:
     }
 
     return ok(res, {
-      success:   true,
-      processed: results.length,
+      success:        true,
+      processed:      results.length,
       results,
-      pmCron:    pmCronSummary,
-      gscCron:   gscCronSummary,
-      ga4Cron:   ga4CronSummary,
-      rulesCron: rulesCronSummary,
-      timestamp: new Date().toISOString(),
+      pmCron:         pmCronSummary,
+      gscCron:        gscCronSummary,
+      ga4Cron:        ga4CronSummary,
+      rulesCron:      rulesCronSummary,
+      monitorsCron:   monitorsCronSummary,
+      forecastSweep:  forecastSweepSummary,
+      timestamp:      new Date().toISOString(),
     });
   }
 

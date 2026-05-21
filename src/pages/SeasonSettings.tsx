@@ -21,7 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, Settings, Lightbulb, Shield, Activity, Volume2,
   AlertCircle, Pause, Play, RotateCcw, ChevronRight, X,
-  CheckCircle2, Clock, Tag, MessageSquare, Lock,
+  CheckCircle2, Clock, Tag, MessageSquare, Lock, Target, TrendingUp, TrendingDown,
 } from 'lucide-react';
 import SmartSidebar from '@/components/SmartSidebar';
 import SmartTopBar from '@/components/SmartTopBar';
@@ -29,11 +29,15 @@ import { useSeason } from '@/contexts/SeasonContext';
 import { useProject } from '@/contexts/ProjectContext';
 import {
   seasonListWishes, seasonTriageWish, seasonWishStats, seasonActivity,
+  seasonForecastList, seasonForecastGet, seasonForecastCheck,
+  seasonEscalationList, seasonEscalationDecide,
   type SeasonWish, type WishStats, type ActivityEvent,
+  type ForecastSummary, type ForecastCheckpoint, type ForecastTrajectoryPoint, type SeasonEscalation,
 } from '@/components/pm/api';
 
 const TABS = [
   { id: 'capabilities', label: 'Capabilities',  icon: Shield },
+  { id: 'forecasts',    label: 'Forecasts',      icon: Target },
   { id: 'wishes',       label: 'Wishes',         icon: Lightbulb },
   { id: 'voice',        label: 'Voice & Tone',   icon: MessageSquare },
   { id: 'presence',     label: 'Presence',       icon: Sparkles },
@@ -93,6 +97,7 @@ export default function SeasonSettings() {
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.2 }}>
                 {tab === 'capabilities' && <CapabilitiesTab />}
+                {tab === 'forecasts'    && <ForecastsTab />}
                 {tab === 'wishes'       && <WishesTab />}
                 {tab === 'voice'        && <VoiceTab />}
                 {tab === 'presence'     && <PresenceTab />}
@@ -202,6 +207,449 @@ function CapabilitiesTab() {
         <ToggleRow label="Data Room — allow write"         desc="" checked={p.data_room_can_write}  onChange={() => togglePage('data_room_can_write')} compact comingSoon="Phase 10" />
         <ToggleRow label="Planning — allow advance stage" desc="" checked={p.planning_can_advance} onChange={() => togglePage('planning_can_advance')} compact comingSoon="Phase 10" />
       </Section>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   FORECASTS — the result-orientation spine
+═══════════════════════════════════════════════════════════ */
+
+function ForecastsTab() {
+  const { selectedProjectId } = useProject() as any;
+  const [forecasts, setForecasts] = useState<ForecastSummary[]>([]);
+  const [escalations, setEscalations] = useState<SeasonEscalation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedCheckpoints, setExpandedCheckpoints] = useState<Record<string, ForecastCheckpoint[]>>({});
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+
+  const load = async () => {
+    if (!selectedProjectId) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      const [fRes, eRes] = await Promise.all([
+        seasonForecastList({ projectId: selectedProjectId, status: 'active', limit: 50 }),
+        seasonEscalationList({ projectId: selectedProjectId, response_kind: 'corrective_drafted', approval_status: 'pending', limit: 50 }),
+      ]);
+      if (fRes.error) setError(fRes.error);
+      else setForecasts(fRes.forecasts || []);
+      if (!eRes.error) setEscalations(eRes.escalations || []);
+    } catch (e: any) {
+      setError(e?.message || 'load failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedProjectId]);
+
+  const expandForecast = async (forecastId: string) => {
+    if (expandedId === forecastId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(forecastId);
+    if (!expandedCheckpoints[forecastId]) {
+      const r = await seasonForecastGet({ forecastId });
+      if (r.checkpoints) {
+        setExpandedCheckpoints(prev => ({ ...prev, [forecastId]: r.checkpoints || [] }));
+      }
+    }
+  };
+
+  const checkNow = async (forecastId: string) => {
+    const r = await seasonForecastCheck({ forecastId, kind: 'manual' });
+    if (r.checkpoint) {
+      /* Refresh */
+      const refreshed = await seasonForecastGet({ forecastId });
+      if (refreshed.checkpoints) {
+        setExpandedCheckpoints(prev => ({ ...prev, [forecastId]: refreshed.checkpoints || [] }));
+      }
+    }
+  };
+
+  const decide = async (escalationId: string, decision: 'approved' | 'dismissed') => {
+    setDecidingId(escalationId);
+    await seasonEscalationDecide({ escalationId, decision });
+    setDecidingId(null);
+    await load();
+  };
+
+  if (!selectedProjectId) {
+    return (
+      <div className="rounded-lg border border-border bg-card/40 p-6 text-center text-[12px] text-muted-foreground">
+        Pick a project to see its forecasts.
+      </div>
+    );
+  }
+
+  /* Stats */
+  const stats = {
+    total: forecasts.length,
+    high_confidence: forecasts.filter(f => f.confidence >= 0.75).length,
+    pending_correctives: escalations.length,
+    avg_confidence: forecasts.length === 0 ? 0 : (forecasts.reduce((s, f) => s + f.confidence, 0) / forecasts.length),
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Intro */}
+      <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] p-3">
+        <div className="flex items-start gap-2">
+          <Target className="h-4 w-4 text-cyan-400 mt-0.5 shrink-0" />
+          <div>
+            <div className="text-[12px] font-bold text-foreground">The neck connecting strategy to result.</div>
+            <div className="text-[11.5px] text-muted-foreground mt-1 leading-relaxed">
+              Every pipeline that produces strategy emits a forecast — baseline now, target later, trajectory in between, confidence band on top. Each forecast gets checked on schedule (7d/14d/30d/60d/90d). When actuals drift from forecast, S.E.A.S.O.N. escalates honestly.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <StatCard label="Active forecasts"     value={stats.total}               accent="cyan" />
+        <StatCard label="High confidence"      value={stats.high_confidence}     accent="emerald" />
+        <StatCard label="Pending correctives"  value={stats.pending_correctives} accent="amber" />
+        <StatCard label="Avg confidence"       value={Math.round(stats.avg_confidence * 100)} accent="violet" />
+      </div>
+
+      {/* Pending correctives — surfaced first because they need decisions */}
+      {escalations.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04]">
+          <div className="px-3 py-2 border-b border-amber-500/20">
+            <div className="text-[13px] font-bold text-amber-400 flex items-center gap-2">
+              <AlertCircle className="h-3.5 w-3.5" />
+              Pending correctives — S.E.A.S.O.N. drafted these, awaiting your call
+            </div>
+          </div>
+          <div className="p-2 space-y-2">
+            {escalations.map(e => (
+              <CorrectiveCard key={e.id} escalation={e} onDecide={decide} loading={decidingId === e.id} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Forecast list */}
+      {loading ? (
+        <div className="text-[12px] text-muted-foreground italic p-4">Loading…</div>
+      ) : error ? (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/[0.05] p-3 text-[12px] text-red-400">{error}</div>
+      ) : forecasts.length === 0 ? (
+        <div className="rounded-lg border border-border bg-card/40 p-6 text-center">
+          <div className="text-[12px] text-foreground/70 mb-1">No active forecasts.</div>
+          <div className="text-[11px] text-muted-foreground">
+            Run a pipeline (e.g. <code className="text-cyan-400">rank me for [keyword]</code>) and S.E.A.S.O.N. will emit forecasts as part of the deliverable.
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {forecasts.map(f => (
+            <ForecastCard
+              key={f.id}
+              forecast={f}
+              expanded={expandedId === f.id}
+              checkpoints={expandedCheckpoints[f.id] || []}
+              onToggle={() => expandForecast(f.id)}
+              onCheckNow={() => checkNow(f.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ForecastCard({ forecast, expanded, checkpoints, onToggle, onCheckNow }: {
+  forecast: ForecastSummary;
+  expanded: boolean;
+  checkpoints: ForecastCheckpoint[];
+  onToggle: () => void;
+  onCheckNow: () => void;
+}) {
+  const ageDays = Math.floor((Date.now() - new Date(forecast.forecast_created_at).getTime()) / 86_400_000);
+  const dueIn   = Math.floor((new Date(forecast.target_due_at).getTime() - Date.now()) / 86_400_000);
+
+  const confColor =
+    forecast.confidence >= 0.75 ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' :
+    forecast.confidence >= 0.55 ? 'border-amber-500/40 text-amber-400 bg-amber-500/10' :
+                                  'border-red-500/40 text-red-400 bg-red-500/10';
+
+  /* Latest checkpoint severity drives the row tint */
+  const latest = checkpoints[0];
+  const sevTint =
+    latest?.severity === 'critical' ? 'border-red-500/40' :
+    latest?.severity === 'warning'  ? 'border-amber-500/40' :
+    latest?.severity === 'watch'    ? 'border-yellow-500/30' :
+                                      'border-border';
+
+  const kpiLabel = forecast.kpi.replace(/_/g, ' ');
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+      className={`rounded-lg border ${sevTint} bg-card/40`}>
+      <div className="p-3 flex items-start gap-3 cursor-pointer hover:bg-card/60 transition-colors"
+        onClick={onToggle}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+            <span className={`text-[9.5px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${confColor} font-bold`}>
+              {Math.round(forecast.confidence * 100)}% confidence
+            </span>
+            <span className="text-[9.5px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-foreground/20 text-foreground/70 font-bold">
+              {kpiLabel}
+            </span>
+            {forecast.baseline_source && forecast.baseline_source !== 'estimated' && (
+              <span className="text-[9.5px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-400 font-bold">
+                {forecast.baseline_source} grounded
+              </span>
+            )}
+            {forecast.baseline_source === 'estimated' && (
+              <span className="text-[9.5px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-yellow-500/30 text-yellow-400 font-bold">
+                estimated baseline
+              </span>
+            )}
+          </div>
+          <div className="text-[13px] font-bold text-foreground">
+            {kpiLabel} for "{forecast.target_entity}"
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+            <span>Baseline: {forecast.baseline_value ?? '—'}</span>
+            <span className="opacity-40">→</span>
+            <span>Target: {forecast.target_value} by day {forecast.target_day_offset}</span>
+            <span className="opacity-40">·</span>
+            <span>{ageDays}d in, {dueIn > 0 ? `${dueIn}d to go` : `${Math.abs(dueIn)}d overdue`}</span>
+          </div>
+          {latest && (
+            <div className={`text-[10.5px] mt-1 ${
+              latest.severity === 'critical' ? 'text-red-400' :
+              latest.severity === 'warning'  ? 'text-amber-400' :
+              latest.severity === 'watch'    ? 'text-yellow-400' :
+                                                'text-emerald-400'
+            }`}>
+              Latest check ({new Date(latest.checked_at).toLocaleDateString()}): {latest.honest_assessment || latest.severity}
+            </div>
+          )}
+        </div>
+        <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="border-t border-border overflow-hidden">
+            <div className="p-3 space-y-3">
+              {/* Trajectory ASCII */}
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-bold text-foreground/60 mb-1">Trajectory</div>
+                <TrajectoryStrip points={forecast.trajectory} kpi={forecast.kpi} actuals={checkpoints} />
+              </div>
+
+              {forecast.rationale && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-foreground/60 mb-1">Rationale</div>
+                  <div className="text-[11.5px] text-foreground/80 leading-relaxed">{forecast.rationale}</div>
+                </div>
+              )}
+
+              {forecast.honest_caveats && (
+                <div className="rounded border border-amber-500/20 bg-amber-500/[0.05] p-2">
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-amber-400 mb-1">Honest caveats</div>
+                  <div className="text-[11px] text-foreground/80 leading-relaxed">{forecast.honest_caveats}</div>
+                </div>
+              )}
+
+              {/* Checkpoints */}
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-bold text-foreground/60 mb-1 flex items-center justify-between">
+                  <span>Checkpoints ({checkpoints.length})</span>
+                  <button onClick={(e) => { e.stopPropagation(); onCheckNow(); }}
+                    className="text-[10px] px-2 py-0.5 rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 normal-case tracking-normal font-bold">
+                    Check now
+                  </button>
+                </div>
+                {checkpoints.length === 0 ? (
+                  <div className="text-[11px] text-muted-foreground italic">No checkpoints yet — first scheduled at day 7.</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {checkpoints.map(c => <CheckpointRow key={c.id} checkpoint={c} kpi={forecast.kpi} />)}
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function TrajectoryStrip({ points, kpi, actuals }: {
+  points: ForecastTrajectoryPoint[];
+  kpi: string;
+  actuals: ForecastCheckpoint[];
+}) {
+  if (!points || points.length === 0) return <div className="text-[11px] text-muted-foreground italic">No trajectory data.</div>;
+  const inverted = kpi === 'rank_position';
+  const values = points.flatMap(p => [p.low, p.expected, p.high]);
+  const min = Math.min(...values, ...actuals.map(a => a.actual_value).filter((v): v is number => v !== null));
+  const max = Math.max(...values, ...actuals.map(a => a.actual_value).filter((v): v is number => v !== null));
+  const range = max - min || 1;
+  const norm = (v: number) => ((v - min) / range);
+
+  return (
+    <div className="space-y-1">
+      <div className="flex gap-1 items-end h-16">
+        {points.map((p, i) => {
+          /* Find matching actual checkpoint by day_offset */
+          const actual = actuals.find(a => a.day_offset_at_check === p.day_offset);
+          const expectedY = norm(p.expected);
+          const lowY = norm(p.low);
+          const highY = norm(p.high);
+          const actualY = actual?.actual_value !== null && actual?.actual_value !== undefined ? norm(actual.actual_value) : null;
+          return (
+            <div key={i} className="flex-1 relative h-full flex flex-col items-center justify-end" title={`Day ${p.day_offset}: expected ${p.expected} (${p.low}-${p.high})`}>
+              {/* Confidence band */}
+              <div className="absolute w-1.5 bg-cyan-500/15 rounded-full"
+                style={{
+                  bottom: `${(inverted ? (1 - highY) : lowY) * 100}%`,
+                  height: `${Math.abs(highY - lowY) * 100}%`,
+                }} />
+              {/* Expected line dot */}
+              <div className="absolute w-2 h-2 rounded-full bg-cyan-400 border border-cyan-300"
+                style={{
+                  bottom: `calc(${(inverted ? (1 - expectedY) : expectedY) * 100}% - 4px)`,
+                }} />
+              {/* Actual marker */}
+              {actualY !== null && (
+                <div className={`absolute w-2.5 h-2.5 rounded-full border-2 ${
+                  actual?.severity === 'critical' ? 'bg-red-500 border-red-300' :
+                  actual?.severity === 'warning'  ? 'bg-amber-500 border-amber-300' :
+                  actual?.severity === 'watch'    ? 'bg-yellow-500 border-yellow-300' :
+                                                    'bg-emerald-500 border-emerald-300'
+                }`}
+                  style={{
+                    bottom: `calc(${(inverted ? (1 - actualY) : actualY) * 100}% - 5px)`,
+                  }}
+                  title={`Actual: ${actual?.actual_value}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-1 text-[9px] text-muted-foreground">
+        {points.map((p, i) => (
+          <div key={i} className="flex-1 text-center">d{p.day_offset}</div>
+        ))}
+      </div>
+      <div className="text-[9.5px] text-muted-foreground/70 italic mt-1">
+        Cyan = forecast (dot=expected, band=confidence). Colored dots = actual readings.
+      </div>
+    </div>
+  );
+}
+
+function CheckpointRow({ checkpoint, kpi }: { checkpoint: ForecastCheckpoint; kpi: string }) {
+  const sev = checkpoint.severity;
+  const sevColor =
+    sev === 'critical' ? 'border-red-500/40 bg-red-500/[0.06] text-red-400' :
+    sev === 'warning'  ? 'border-amber-500/40 bg-amber-500/[0.06] text-amber-400' :
+    sev === 'watch'    ? 'border-yellow-500/40 bg-yellow-500/[0.06] text-yellow-400' :
+                         'border-emerald-500/40 bg-emerald-500/[0.06] text-emerald-400';
+  const trend = checkpoint.variance_pct === null ? null
+    : (kpi === 'rank_position' ? checkpoint.variance_pct < 0 : checkpoint.variance_pct >= 0);
+
+  return (
+    <div className={`rounded border ${sevColor} p-2`}>
+      <div className="flex items-center gap-1.5 flex-wrap text-[10.5px]">
+        <span className="font-bold uppercase tracking-wider">{checkpoint.checkpoint_kind.replace(/_/g, ' ')}</span>
+        <span className="opacity-60">·</span>
+        <span>Day {checkpoint.day_offset_at_check}</span>
+        <span className="opacity-60">·</span>
+        <span>Expected: {checkpoint.expected_value?.toFixed(2) ?? '—'}</span>
+        <span className="opacity-60">·</span>
+        <span className="font-bold">Actual: {checkpoint.actual_value?.toFixed(2) ?? 'no data'}</span>
+        {checkpoint.variance_pct !== null && (
+          <>
+            <span className="opacity-60">·</span>
+            <span className="flex items-center gap-0.5">
+              {trend === true ? <TrendingUp className="h-3 w-3" /> : trend === false ? <TrendingDown className="h-3 w-3" /> : null}
+              {checkpoint.variance_pct >= 0 ? '+' : ''}{checkpoint.variance_pct.toFixed(1)}%
+            </span>
+          </>
+        )}
+      </div>
+      {checkpoint.honest_assessment && (
+        <div className="text-[11px] text-foreground/85 mt-1 leading-relaxed">{checkpoint.honest_assessment}</div>
+      )}
+      <div className="text-[9.5px] text-muted-foreground/70 mt-1">
+        {new Date(checkpoint.checked_at).toLocaleString()} · source: {checkpoint.data_source}
+      </div>
+    </div>
+  );
+}
+
+function CorrectiveCard({ escalation, onDecide, loading }: {
+  escalation: SeasonEscalation;
+  onDecide: (id: string, decision: 'approved' | 'dismissed') => void;
+  loading: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const art = escalation.corrective_artifact || {};
+  return (
+    <div className="rounded-lg border border-amber-500/30 bg-card/40 p-3">
+      <div className="text-[12px] font-bold text-foreground">{escalation.corrective_summary || escalation.detail}</div>
+      {art.diagnosis && (
+        <div className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{art.diagnosis}</div>
+      )}
+      {!expanded ? (
+        <button onClick={() => setExpanded(true)}
+          className="text-[10.5px] text-cyan-400 hover:text-cyan-300 mt-2">
+          Show steps →
+        </button>
+      ) : (
+        <div className="mt-2 space-y-1.5">
+          {Array.isArray(art.steps) && art.steps.map((s: any, i: number) => (
+            <div key={i} className="text-[11px] text-foreground/85 leading-relaxed">
+              <span className="text-cyan-400 mr-1">{i + 1}.</span>
+              {typeof s === 'string' ? s : s.step}
+              {s.owner && <span className="text-muted-foreground"> · {s.owner}</span>}
+              {s.duration_days && <span className="text-muted-foreground"> · {s.duration_days}d</span>}
+            </div>
+          ))}
+          {art.honest_unknowns && art.honest_unknowns.length > 0 && (
+            <div className="rounded border border-amber-500/20 bg-amber-500/[0.05] p-2 mt-2">
+              <div className="text-[9.5px] uppercase tracking-wider font-bold text-amber-400 mb-1">Honest unknowns</div>
+              {art.honest_unknowns.map((u: string, i: number) => (
+                <div key={i} className="text-[10.5px] text-foreground/75">• {u}</div>
+              ))}
+            </div>
+          )}
+          {art.decision_point && (
+            <div className="rounded border border-cyan-500/20 bg-cyan-500/[0.05] p-2 mt-2">
+              <div className="text-[9.5px] uppercase tracking-wider font-bold text-cyan-400 mb-1">Decision point</div>
+              <div className="text-[10.5px] text-foreground/85">{art.decision_point}</div>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="flex gap-1.5 mt-3 pt-2 border-t border-border">
+        <button
+          onClick={() => onDecide(escalation.id, 'approved')}
+          disabled={loading}
+          className="text-[10.5px] px-3 py-1 rounded-md font-bold border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50">
+          Approve
+        </button>
+        <button
+          onClick={() => onDecide(escalation.id, 'dismissed')}
+          disabled={loading}
+          className="text-[10.5px] px-3 py-1 rounded-md font-bold border border-border text-muted-foreground hover:text-foreground disabled:opacity-50">
+          Dismiss
+        </button>
+      </div>
     </div>
   );
 }

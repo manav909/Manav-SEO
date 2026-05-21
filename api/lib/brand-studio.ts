@@ -756,6 +756,34 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeasonPipelineFeedback(body);
     }
 
+    /* Phase 12.5a — forecasts + monitoring */
+    case "bs_season_forecast_list": {
+      const { bsSeasonForecastList } = await import("./season-forecast-routes.js");
+      return bsSeasonForecastList(body);
+    }
+    case "bs_season_forecast_get": {
+      const { bsSeasonForecastGet } = await import("./season-forecast-routes.js");
+      return bsSeasonForecastGet(body);
+    }
+    case "bs_season_forecast_check": {
+      const { bsSeasonForecastCheck } = await import("./season-forecast-routes.js");
+      return bsSeasonForecastCheck(body);
+    }
+    case "bs_season_forecast_sweep": {
+      const { bsSeasonForecastSweep } = await import("./season-forecast-routes.js");
+      return bsSeasonForecastSweep(body);
+    }
+
+    /* Phase 12.5b — escalations / pending correctives */
+    case "bs_season_escalation_list": {
+      const { bsSeasonEscalationList } = await import("./season-forecast-routes.js");
+      return bsSeasonEscalationList(body);
+    }
+    case "bs_season_escalation_decide": {
+      const { bsSeasonEscalationDecide } = await import("./season-forecast-routes.js");
+      return bsSeasonEscalationDecide(body);
+    }
+
     /* Phase 3 — Analytics Provenance & Diagnostics */
     case "bs_get_analytics_provenance": {
       const { bsGetAnalyticsProvenance } = await import("./pm-analytics-provenance.js");

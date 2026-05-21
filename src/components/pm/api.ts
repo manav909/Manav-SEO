@@ -2187,3 +2187,119 @@ export async function seasonPipelineFeedback(opts: {
   if (!r?.success) return { error: r?.error };
   return { step: r.step };
 }
+
+/* ───────── Phase 12.5a — Forecasts + monitoring ───────── */
+
+export type ForecastKpi =
+  | 'rank_position' | 'clicks' | 'impressions' | 'ctr'
+  | 'organic_sessions' | 'conversions';
+
+export interface ForecastTrajectoryPoint {
+  day_offset: number;
+  low: number;
+  expected: number;
+  high: number;
+}
+
+export interface ForecastSummary {
+  id:                  string;
+  kpi:                 ForecastKpi;
+  target_entity:       string;
+  trajectory:          ForecastTrajectoryPoint[];
+  target_value:        number;
+  target_day_offset:   number;
+  confidence:          number;
+  baseline_value:      number | null;
+  baseline_source:     string | null;
+  rationale:           string | null;
+  honest_caveats:      string | null;
+  forecast_created_at: string;
+  target_due_at:       string;
+}
+
+export interface ForecastCheckpoint {
+  id:                  string;
+  forecast_id:         string;
+  checkpoint_kind:     string;
+  day_offset_at_check: number;
+  actual_value:        number | null;
+  expected_value:      number | null;
+  expected_low:        number | null;
+  expected_high:       number | null;
+  variance_pct:        number | null;
+  severity:            'info' | 'watch' | 'warning' | 'critical';
+  on_track:            boolean;
+  honest_assessment:   string | null;
+  data_source:         string;
+  data_freshness_at:   string | null;
+  checked_at:          string;
+}
+
+export async function seasonForecastList(opts: {
+  projectId: string;
+  status?: 'active' | 'completed' | 'cancelled' | 'superseded';
+  limit?: number;
+}): Promise<{ forecasts?: ForecastSummary[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_forecast_list', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { forecasts: r.forecasts };
+}
+
+export async function seasonForecastGet(opts: { forecastId: string }):
+  Promise<{ forecast?: any; checkpoints?: ForecastCheckpoint[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_forecast_get', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { forecast: r.forecast, checkpoints: r.checkpoints };
+}
+
+export async function seasonForecastCheck(opts: { forecastId: string; kind?: string }):
+  Promise<{ checkpoint?: ForecastCheckpoint; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_forecast_check', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { checkpoint: r.checkpoint };
+}
+
+export async function seasonForecastSweep(opts: { projectId?: string } = {}):
+  Promise<{ swept?: number; results?: ForecastCheckpoint[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_forecast_sweep', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { swept: r.swept, results: r.results };
+}
+
+/* ───────── Phase 12.5b — escalations ───────── */
+
+export interface SeasonEscalation {
+  id:                  string;
+  checkpoint_id:       string;
+  forecast_id:         string;
+  project_id:          string;
+  response_kind:       'recorded' | 'wish_emitted' | 'diagnostic_started' | 'mood_critical' | 'corrective_drafted';
+  detail?:             string | null;
+  reference_id?:       string | null;
+  reference_table?:    string | null;
+  corrective_summary?: string | null;
+  corrective_artifact?: any;
+  approval_status?:    'pending' | 'approved' | 'dismissed' | 'executed' | null;
+  approved_at?:        string | null;
+  created_at:          string;
+}
+
+export async function seasonEscalationList(opts: {
+  projectId:        string;
+  response_kind?:   SeasonEscalation['response_kind'];
+  approval_status?: 'pending' | 'approved' | 'dismissed' | 'executed';
+  limit?: number;
+}): Promise<{ escalations?: SeasonEscalation[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_escalation_list', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { escalations: r.escalations };
+}
+
+export async function seasonEscalationDecide(opts: {
+  escalationId: string;
+  decision: 'approved' | 'dismissed';
+}): Promise<{ success?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_escalation_decide', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
+}

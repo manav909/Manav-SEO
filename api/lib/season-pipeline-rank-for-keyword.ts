@@ -152,6 +152,7 @@ export function buildRankForKeywordPipeline(): PipelineDefinition {
       stepGscContext,
       stepCompetitorSnapshot,
       stepStrategyPlan,
+      stepForecast,              // Phase 12.5a — commit to numbers and schedule monitoring
       stepContentBrief,
       stepClientUpdate,
       stepInternalHandover,
@@ -661,3 +662,171 @@ ${(strategy.phases || []).map((p: any) => `- ${p.phase} (${p.duration_days}d): $
     };
   },
 };
+
+/* ─── STEP: Forecast — commit to numbers, schedule monitoring ─── */
+
+const stepForecast = {
+  id: 'forecast',
+  label: 'Set realistic expectations and schedule monitoring',
+  description: 'Emit forecasts for rank/clicks/impressions/CTR with trajectory + confidence + checkpoints',
+  artifact_kind: 'forecast',
+  handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
+    const keyword = ctx.scope.keyword as string;
+    const research = ctx.prior.keyword_research || {};
+    const strategy = ctx.prior.strategy_plan || {};
+    const gsc = ctx.prior.gsc_context || {};
+
+    const difficulty = (research.competitive_difficulty || 'medium') as 'low' | 'medium' | 'high' | 'very_high';
+    const horizonWeeks = Number(strategy.horizon_weeks || 8);
+    const horizonDays = horizonWeeks * 7;
+
+    try {
+      const { createForecast } = await import("./season-forecast-engine.js");
+
+      /* Emit 4 KPIs for a rank-for-keyword pipeline */
+      const forecasts: any[] = [];
+      const issues: string[] = [];
+
+      const baselineRank = gsc.current_ranking?.position || null;
+      const baselineClicks = gsc.current_ranking?.clicks || null;
+      const baselineImpressions = gsc.current_ranking?.impressions || null;
+      const baselineCtr = gsc.current_ranking?.ctr || null;
+
+      /* 1. Rank position forecast — primary commitment */
+      const f1 = await createForecast({
+        projectId: ctx.projectId,
+        kpi: 'rank_position',
+        targetEntity: keyword,
+        targetEntityKind: 'keyword',
+        targetDayOffset: horizonDays,
+        explicitBaseline: baselineRank,
+        competitiveDifficulty: difficulty,
+        approach: strategy.approach,
+        rationale: `${horizonWeeks}-week strategy: ${strategy.strategy_name || 'unnamed'}. Expected impact stated by strategy step: ${strategy.expected_impact || 'unknown'}.`,
+        assumptions: {
+          strategy_horizon_weeks: horizonWeeks,
+          difficulty,
+          baseline_source: baselineRank ? 'gsc_top_queries' : 'estimated_position_50',
+        },
+      });
+      if (f1.success && f1.forecast) forecasts.push(f1.forecast);
+      else if (f1.error) issues.push(`rank forecast: ${f1.error}`);
+
+      /* 2. Clicks forecast */
+      const f2 = await createForecast({
+        projectId: ctx.projectId,
+        kpi: 'clicks',
+        targetEntity: keyword,
+        targetEntityKind: 'keyword',
+        targetDayOffset: horizonDays,
+        explicitBaseline: baselineClicks,
+        competitiveDifficulty: difficulty,
+      });
+      if (f2.success && f2.forecast) forecasts.push(f2.forecast);
+      else if (f2.error) issues.push(`clicks forecast: ${f2.error}`);
+
+      /* 3. Impressions forecast */
+      const f3 = await createForecast({
+        projectId: ctx.projectId,
+        kpi: 'impressions',
+        targetEntity: keyword,
+        targetEntityKind: 'keyword',
+        targetDayOffset: horizonDays,
+        explicitBaseline: baselineImpressions,
+        competitiveDifficulty: difficulty,
+      });
+      if (f3.success && f3.forecast) forecasts.push(f3.forecast);
+      else if (f3.error) issues.push(`impressions forecast: ${f3.error}`);
+
+      /* 4. CTR forecast (lower priority — derivative) */
+      if (baselineCtr !== null) {
+        const f4 = await createForecast({
+          projectId: ctx.projectId,
+          kpi: 'ctr',
+          targetEntity: keyword,
+          targetEntityKind: 'keyword',
+          targetDayOffset: horizonDays,
+          explicitBaseline: baselineCtr,
+          competitiveDifficulty: difficulty,
+        });
+        if (f4.success && f4.forecast) forecasts.push(f4.forecast);
+      }
+
+      if (forecasts.length === 0) {
+        return {
+          ok: false,
+          error: `No forecasts could be created. Issues: ${issues.join('; ')}`,
+        };
+      }
+
+      /* Build the artifact body */
+      const body = renderForecastArtifact(keyword, forecasts, horizonWeeks);
+
+      return {
+        ok: true,
+        output: { forecasts: forecasts.map(f => f.id), forecast_summary: forecasts },
+        artifact: {
+          kind: 'forecast',
+          title: `Expected results: "${keyword}" (${horizonWeeks}w horizon)`,
+          body,
+        },
+        honest_note: forecasts[0]?.honest_caveats
+          ? `Forecasts committed with caveats: ${forecasts[0].honest_caveats}. Monitoring will fire at 7d, 14d, 30d intervals.`
+          : `Forecasts committed. Monitoring will fire at 7d, 14d, 30d intervals.`,
+      };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || 'forecast step threw unexpectedly' };
+    }
+  },
+};
+
+function renderForecastArtifact(keyword: string, forecasts: any[], horizonWeeks: number): string {
+  const lines: string[] = [];
+  lines.push(`# Expected Results: "${keyword}"`);
+  lines.push('');
+  lines.push(`**Horizon:** ${horizonWeeks} weeks (${horizonWeeks * 7} days)`);
+  lines.push(`**Monitoring:** Automatic checkpoints at days 7, 14, 30${horizonWeeks >= 9 ? ', 60' : ''}${horizonWeeks >= 13 ? ', 90' : ''}`);
+  lines.push('');
+  lines.push('## The commitments');
+  lines.push('');
+  lines.push('| KPI | Baseline | Target by end | Confidence | Source |');
+  lines.push('|---|---|---|---|---|');
+  for (const f of forecasts) {
+    const baseline = f.baseline_value !== null
+      ? (f.kpi === 'ctr' ? `${(f.baseline_value * 100).toFixed(2)}%` : f.baseline_value.toFixed(2))
+      : 'estimated';
+    const target = f.kpi === 'ctr' ? `${(f.target_value * 100).toFixed(2)}%` : f.target_value.toFixed(2);
+    const conf = `${Math.round(f.confidence * 100)}%`;
+    const source = f.baseline_source || 'unknown';
+    lines.push(`| ${f.kpi.replace(/_/g, ' ')} | ${baseline} | ${target} | ${conf} | ${source} |`);
+  }
+  lines.push('');
+  lines.push('## Trajectory checkpoints');
+  lines.push('');
+  /* Show day 7, 14, 30 expected for the primary (rank or first forecast) */
+  const primary = forecasts[0];
+  if (primary && primary.trajectory) {
+    lines.push(`Primary KPI: **${primary.kpi.replace(/_/g, ' ')}**`);
+    lines.push('');
+    lines.push('| Day | Low | Expected | High |');
+    lines.push('|---|---|---|---|');
+    for (const p of primary.trajectory) {
+      lines.push(`| d${p.day_offset} | ${Number(p.low).toFixed(1)} | ${Number(p.expected).toFixed(1)} | ${Number(p.high).toFixed(1)} |`);
+    }
+  }
+  lines.push('');
+  lines.push('## Honest caveats');
+  const caveats = forecasts[0]?.honest_caveats;
+  lines.push(caveats || '(none flagged)');
+  lines.push('');
+  lines.push('## What happens if we drift');
+  lines.push('');
+  lines.push('S.E.A.S.O.N. monitors these forecasts continuously. At each checkpoint:');
+  lines.push('- **On track** → recorded, no action');
+  lines.push('- **Watch** → recorded, logged for attention');
+  lines.push('- **Warning** → diagnostic pipeline auto-triggers, orb pulses critical');
+  lines.push('- **Critical** → full escalation: diagnostic + wish emission + corrective action drafted for your approval');
+  lines.push('');
+  lines.push('Prevention runs continuously. Even between scheduled checkpoints, fresh GSC/GA4 data triggers anomaly checks. We do not wait for the target date to discover we missed.');
+  return lines.join('\n');
+}
