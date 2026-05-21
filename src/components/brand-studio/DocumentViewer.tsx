@@ -21,7 +21,7 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkDirective from 'remark-directive';
-import { Printer, Download, Copy, CheckCircle2, FileText, ExternalLink, FileType2, Loader2 } from 'lucide-react';
+import { Printer, Download, Copy, CheckCircle2, FileText, ExternalLink, FileType2, Loader2, AlertTriangle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { remarkDirectiveRender } from './document-directives';
 import DirectiveDispatcher from './DirectiveRenderer';
@@ -67,11 +67,17 @@ interface Props {
   onScopeChange?: (s: TimeScope) => void;
   baselineDate?:  string | null;
   scopeLoading?:  boolean;
+  /** Number of live `from=` references in the document. When 0, the
+   *  picker is a no-op and we tell the PM so explicitly. */
+  liveRefCount?:    number;
+  /** The actual date range applied by the backend resolver, so the PM
+   *  can verify the picker took effect. */
+  scopeRangeApplied?: { from: string; to: string } | null;
 }
 
 export default function DocumentViewer({
   content, documentName, documentId, meta, brandColor, summary, keyFindings, dataContext,
-  scope, onScopeChange, baselineDate, scopeLoading,
+  scope, onScopeChange, baselineDate, scopeLoading, liveRefCount, scopeRangeApplied,
 }: Props) {
   const accent = brandColor || '#8b5cf6';
   const printRef = useRef<HTMLDivElement>(null);
@@ -211,6 +217,44 @@ export default function DocumentViewer({
           </a>
         )}
       </div>
+
+      {/* Phase 1H — visible status indicator showing what the picker
+          actually does on this specific document. Critical for UX:
+          the picker only refreshes content that uses live `from=`
+          references. Static text with baked-in numbers won't change. */}
+      {scope && onScopeChange && (
+        <div className={`print:hidden rounded-lg border px-3 py-2 text-[11px] flex items-center justify-between gap-3 flex-wrap ${
+          liveRefCount === 0
+            ? 'border-amber-500/30 bg-amber-500/[0.04]'
+            : 'border-border bg-card/40'
+        }`}>
+          <div className="flex items-center gap-2">
+            {liveRefCount === 0 ? (
+              <>
+                <AlertTriangleIcon />
+                <span className="font-semibold text-amber-400">No live data references in this document</span>
+                <span className="text-muted-foreground">
+                  — The picker won't change anything here. This doc contains static text with baked-in numbers. To get scope-aware stats, the document needs <code className="px-1 py-0.5 rounded bg-muted/30">::kpi&#123;from="metrics.X"&#125;</code> or <code className="px-1 py-0.5 rounded bg-muted/30">:::chart&#123;from="metrics.X"&#125;</code> directives.
+                </span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-3 w-3 text-green-400 shrink-0" />
+                <span className="font-semibold text-foreground">
+                  {liveRefCount} live data {liveRefCount === 1 ? 'reference' : 'references'}
+                </span>
+                <span className="text-muted-foreground">
+                  {scopeLoading
+                    ? 'refreshing…'
+                    : scopeRangeApplied
+                      ? `showing ${formatRange(scopeRangeApplied)}`
+                      : 'using directive ranges'}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* The rendered document — on-screen view only.
           (Printing renders through the portal at body root — see below.) */}
@@ -699,4 +743,18 @@ function Loader2Icon() {
       <Loader2 className="h-3 w-3 animate-spin" />
     </span>
   );
+}
+
+function AlertTriangleIcon() {
+  return <AlertTriangle className="h-3 w-3 text-amber-400 shrink-0" />;
+}
+
+/** Format the resolved scope range as a tight "DD MMM YYYY → DD MMM YYYY" label. */
+function formatRange(r: { from: string; to: string }): string {
+  const fmt = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return iso; }
+  };
+  return `${fmt(r.from)} → ${fmt(r.to)}`;
 }

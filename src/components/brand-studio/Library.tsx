@@ -53,6 +53,11 @@ export default function Library({ projectId, catalogs }: Props) {
   const [baselineDate,    setBaselineDate]    = useState<string | null>(null);
   const [scope,           setScope]           = useState<TimeScope>({ kind: 'preset', presetKey: 'last_90d' });
   const [scopeLoading,    setScopeLoading]    = useState(false);
+  /** Phase 1H — number of live `from=` references detected in the open
+   *  document. Used to show the PM whether the scope picker will have
+   *  any effect (0 refs = picker is a no-op for this doc). */
+  const [liveRefCount,    setLiveRefCount]    = useState(0);
+  const [scopeRangeApplied, setScopeRangeApplied] = useState<{ from: string; to: string } | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -225,9 +230,14 @@ export default function Library({ projectId, catalogs }: Props) {
               /* Phase 1D + 1H — fetch live data refs using the current scope */
               const content = (docRes.document as any)?.raw_content || '';
               const refs = extractDataReferences(content);
+              setLiveRefCount(refs.length);
               if (refs.length > 0) {
-                const { resolutions } = await fetchDataReferences(projectId, refs, scope);
-                setDataRefs(resolutions);
+                const r = await fetchDataReferences(projectId, refs, scope);
+                setDataRefs(r.resolutions);
+                setScopeRangeApplied(r.scope || null);
+              } else {
+                setDataRefs({});
+                setScopeRangeApplied(null);
               }
               setViewerLoading(false);
             }}
@@ -305,6 +315,8 @@ export default function Library({ projectId, catalogs }: Props) {
                   scope={scope}
                   baselineDate={baselineDate}
                   scopeLoading={scopeLoading}
+                  liveRefCount={liveRefCount}
+                  scopeRangeApplied={scopeRangeApplied}
                   onScopeChange={async (nextScope) => {
                     setScope(nextScope);
                     if (!viewerDoc) return;
@@ -312,9 +324,14 @@ export default function Library({ projectId, catalogs }: Props) {
                     try {
                       const content = (viewerDoc as any).raw_content || '';
                       const refs = extractDataReferences(content);
+                      setLiveRefCount(refs.length);
                       if (refs.length > 0) {
-                        const { resolutions } = await fetchDataReferences(projectId, refs, nextScope);
-                        setDataRefs(resolutions);
+                        const r = await fetchDataReferences(projectId, refs, nextScope);
+                        setDataRefs(r.resolutions);
+                        setScopeRangeApplied(r.scope || null);
+                      } else {
+                        setDataRefs({});
+                        setScopeRangeApplied(null);
                       }
                     } catch (e: any) {
                       toast({ title: 'Could not refresh data', description: e?.message || 'Unknown error', variant: 'destructive' });

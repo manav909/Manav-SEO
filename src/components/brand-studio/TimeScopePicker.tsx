@@ -73,11 +73,16 @@ export default function TimeScopePicker({
 
   const applyCustom = () => {
     if (!customFrom && !customTo) return;
-    onChange({
-      kind: 'custom',
-      from: customFrom ? new Date(customFrom).toISOString() : undefined,
-      to:   customTo   ? new Date(customTo).toISOString()   : undefined,
-    });
+    /* Date inputs return YYYY-MM-DD. Treat "from" as start-of-day and
+       "to" as end-of-day so a custom range INCLUDES records on the
+       endpoint dates rather than excluding any after midnight UTC. */
+    const fromIso = customFrom
+      ? new Date(`${customFrom}T00:00:00.000Z`).toISOString()
+      : undefined;
+    const toIso = customTo
+      ? new Date(`${customTo}T23:59:59.999Z`).toISOString()
+      : undefined;
+    onChange({ kind: 'custom', from: fromIso, to: toIso });
     setOpen(false);
   };
 
