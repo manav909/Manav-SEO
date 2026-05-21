@@ -1229,3 +1229,145 @@ export async function deleteScenario(scenarioId: string): Promise<{ success: boo
   if (!r?.success) return { success: false, error: r?.error || 'Delete failed.' };
   return { success: true };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 1M — Goal Engine
+═══════════════════════════════════════════════════════════ */
+
+export type GoalMetricClient =
+  | "clicks" | "impressions" | "sessions" | "conversions"
+  | "avg_position" | "ctr" | "health_score";
+
+export interface TrajectoryProjectionClient {
+  metric:                GoalMetricClient;
+  currentValue:          number;
+  baselineValue:         number;
+  baselineDate:          string;
+  targetValue:           number;
+  targetDate:            string;
+  daysRemaining:         number;
+  projectedNaturalValue: number;
+  gap:                   number;
+  gapPctOfTarget:        number;
+  monthlyGrowthRate:     number;
+  confidence:            "high" | "medium" | "low";
+  trendDirection:        "growing" | "flat" | "declining";
+  isOnTrack:             boolean;
+  history:               Array<{ date: string; value: number }>;
+}
+
+export interface GoalRecord {
+  id:                   string;
+  project_id:           string;
+  metric:               GoalMetricClient;
+  target_value:         number;
+  target_date:          string;
+  baseline_value:       number;
+  baseline_date:        string;
+  status:               string;
+  name:                 string | null;
+  description:          string | null;
+  linked_scenario_ids:  string[];
+  projection_snapshot:  TrajectoryProjectionClient | null;
+  created_by_email:     string | null;
+  shared_with_client:   boolean;
+  created_at:           string;
+  updated_at:           string;
+}
+
+export interface GoalProgressSnapshot {
+  id:             string;
+  goal_id:        string;
+  recorded_at:    string;
+  actual_value:   number;
+  expected_value: number | null;
+  on_track:       boolean | null;
+  notes:          string | null;
+}
+
+export interface CandidateScenarioClient {
+  label:                string;
+  strategy:             "min_effort" | "balanced" | "aggressive";
+  actions:              ActionInstanceClient[];
+  projectedFinalValue:  number;
+  projectedGoalLift:    number;
+  effortHours:          number;
+  meetsTarget:          boolean;
+  rationale:            string;
+  actionSummary:        Array<{ action_id: string; action_name: string; impact_score: number }>;
+}
+
+export async function createGoal(opts: {
+  projectId: string;
+  metric: GoalMetricClient;
+  targetValue: number;
+  targetDate: string;
+  name?: string;
+  description?: string;
+  sharedWithClient?: boolean;
+}): Promise<{ goal?: GoalRecord; trajectory?: TrajectoryProjectionClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_create_goal', ...opts });
+  if (!r?.success) return { error: r?.error || 'Could not create goal.' };
+  return { goal: r.goal, trajectory: r.trajectory };
+}
+
+export async function listGoals(projectId: string, status?: string): Promise<{ goals: GoalRecord[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_goals', projectId, status });
+  if (!r?.success) return { goals: [], error: r?.error };
+  return { goals: r.goals || [] };
+}
+
+export async function getGoal(goalId: string): Promise<{
+  goal?: GoalRecord; trajectory?: TrajectoryProjectionClient;
+  progress?: GoalProgressSnapshot[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_get_goal', goalId });
+  if (!r?.success) return { error: r?.error };
+  return { goal: r.goal, trajectory: r.trajectory, progress: r.progress };
+}
+
+export async function updateGoal(opts: {
+  goalId: string;
+  name?: string; description?: string;
+  targetValue?: number; targetDate?: string;
+  status?: string; sharedWithClient?: boolean;
+}): Promise<{ goal?: GoalRecord; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_update_goal', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { goal: r.goal };
+}
+
+export async function deleteGoal(goalId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_delete_goal', goalId });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function recordGoalProgress(goalId: string): Promise<{ snapshot?: any; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_record_goal_progress', goalId });
+  if (!r?.success) return { error: r?.error };
+  return { snapshot: r.snapshot };
+}
+
+export async function suggestGoalScenarios(goalId: string): Promise<{
+  trajectory?: TrajectoryProjectionClient;
+  scenarios?: CandidateScenarioClient[];
+  message?: string;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_suggest_goal_scenarios', goalId });
+  if (!r?.success) return { error: r?.error };
+  return { trajectory: r.trajectory, scenarios: r.scenarios, message: r.message };
+}
+
+export async function linkScenarioToGoal(goalId: string, scenarioId: string): Promise<{ goal?: GoalRecord; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_link_scenario_to_goal', goalId, scenarioId });
+  if (!r?.success) return { error: r?.error };
+  return { goal: r.goal };
+}
+
+export async function unlinkScenarioFromGoal(goalId: string, scenarioId: string): Promise<{ goal?: GoalRecord; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_unlink_scenario_from_goal', goalId, scenarioId });
+  if (!r?.success) return { error: r?.error };
+  return { goal: r.goal };
+}

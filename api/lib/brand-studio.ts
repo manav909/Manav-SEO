@@ -568,6 +568,44 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsDeleteScenario(body);
     }
 
+    /* Phase 1M — Goal Engine */
+    case "bs_create_goal": {
+      const { bsCreateGoal } = await import("./pm-goal-storage.js");
+      return bsCreateGoal(body);
+    }
+    case "bs_list_goals": {
+      const { bsListGoals } = await import("./pm-goal-storage.js");
+      return bsListGoals(body);
+    }
+    case "bs_get_goal": {
+      const { bsGetGoal } = await import("./pm-goal-storage.js");
+      return bsGetGoal(body);
+    }
+    case "bs_update_goal": {
+      const { bsUpdateGoal } = await import("./pm-goal-storage.js");
+      return bsUpdateGoal(body);
+    }
+    case "bs_delete_goal": {
+      const { bsDeleteGoal } = await import("./pm-goal-storage.js");
+      return bsDeleteGoal(body);
+    }
+    case "bs_record_goal_progress": {
+      const { bsRecordGoalProgress } = await import("./pm-goal-storage.js");
+      return bsRecordGoalProgress(body);
+    }
+    case "bs_suggest_goal_scenarios": {
+      const { bsSuggestGoalScenarios } = await import("./pm-goal-storage.js");
+      return bsSuggestGoalScenarios(body);
+    }
+    case "bs_link_scenario_to_goal": {
+      const { bsLinkScenarioToGoal } = await import("./pm-goal-storage.js");
+      return bsLinkScenarioToGoal(body);
+    }
+    case "bs_unlink_scenario_from_goal": {
+      const { bsUnlinkScenarioFromGoal } = await import("./pm-goal-storage.js");
+      return bsUnlinkScenarioFromGoal(body);
+    }
+
     /* Phase 1F — DOCX export */
     case "bs_export_docx": {
       const { bsExportDocx } = await import("./brand-studio-export.js");
