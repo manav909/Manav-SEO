@@ -8,6 +8,7 @@ import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { seedV2DataRoom, aiFillPreview as apiAiFillPreview, aiFillApply as apiAiFillApply, type SeedSummary, type AIFillPreview, type AIFieldProposal } from '@/components/pm/api';
+import AnalyticsIntelPanel from '@/components/pm/AnalyticsIntelPanel';
 import {
   Layers,
   Upload,
@@ -2175,7 +2176,12 @@ Evidence: ${c.data_basis}` : ''}`,
             {tab === 'goals'       && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="goal"/></div>}
             {tab === 'cms'         && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="cms"/></div>}
             {tab === 'access'      && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="access"/></div>}
-            {tab === 'analytics'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="analytics"/></div>}
+            {tab === 'analytics'   && (
+              <div className="space-y-4">
+                {selProjId && <AnalyticsIntelPanel projectId={selProjId} />}
+                <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="analytics"/></div>
+              </div>
+            )}
             {tab === 'technical'   && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="technical"/></div>}
             {tab === 'competitors' && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="competitor"/></div>}
             {/* Data Room V2 sections — added during integration foundation work */}

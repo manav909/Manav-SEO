@@ -962,3 +962,103 @@ export async function aiFillApply(opts: {
   if (!r?.success) return { success: false, error: r?.error || 'AI Fill apply failed.' };
   return { success: true, applied: r.applied, skipped_existing: r.skipped_existing };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 1J/1K — Analytics intelligence
+═══════════════════════════════════════════════════════════ */
+
+export interface StrategicKpiClient {
+  key:            string;
+  name:           string;
+  category:       'stability' | 'growth' | 'quality' | 'diversification' | 'efficiency';
+  definition:     string;
+  value:          number | null;
+  unit:           string;
+  health:         'excellent' | 'good' | 'moderate' | 'concern' | 'critical' | 'unknown';
+  trend:          'improving' | 'stable' | 'declining' | 'unknown';
+  recommendation: string;
+  formula:        string;
+  meta?:          Record<string, any>;
+}
+
+export interface RisingStarClient {
+  query: string;
+  currentClicks: number;  previousClicks: number;
+  currentImpr: number;    previousImpr: number;
+  position: number;
+  impressionLift: number;
+  opportunity: 'page_2_to_1' | 'page_3_to_2' | 'first_appearance' | 'ranking_climber';
+  reason: string;
+}
+
+export interface FallingStarClient {
+  query: string;
+  currentClicks: number;  previousClicks: number;
+  currentImpr: number;    previousImpr: number;
+  position: number;       positionPrevious: number;
+  clickLoss: number;
+  severity: 'warning' | 'critical';
+  reason: string;
+}
+
+export interface QueryVelocityClient {
+  newQueriesCount:      number;
+  lostQueriesCount:     number;
+  retainedQueriesCount: number;
+  newQueriesTopExamples:  string[];
+  lostQueriesTopExamples: string[];
+  discoveryRatePct:     number;
+}
+
+export interface PeriodSummaryClient {
+  windowLabel: string;
+  fromDate: string; toDate: string; dayCount: number;
+  gscClicks: number; gscImpressions: number; gscAvgPosition: number; gscCtr: number;
+  ga4Sessions: number; ga4Users: number; ga4EngagedSessions: number;
+  ga4Conversions: number; ga4BounceRate: number; ga4AvgDuration: number;
+  ga4EngagementRate: number;
+}
+
+export interface PeriodDeltaClient {
+  fromLabel: string; toLabel: string;
+  clicks:    { from: number; to: number; change: number; pctChange: number; direction: 'up'|'down'|'flat' };
+  impressions: { from: number; to: number; change: number; pctChange: number; direction: 'up'|'down'|'flat' };
+  position:    { from: number; to: number; change: number; pctChange: number; direction: 'up'|'down'|'flat' };
+  sessions:    { from: number; to: number; change: number; pctChange: number; direction: 'up'|'down'|'flat' };
+  conversions: { from: number; to: number; change: number; pctChange: number; direction: 'up'|'down'|'flat' };
+  bounceRate:  { from: number; to: number; change: number; pctChange: number; direction: 'up'|'down'|'flat' };
+  ctr:         { from: number; to: number; change: number; pctChange: number; direction: 'up'|'down'|'flat' };
+}
+
+export interface AnalyticsIntelClient {
+  generatedAt:         string | null;
+  periods:             Record<string, PeriodSummaryClient>;
+  deltas:              Record<string, PeriodDeltaClient>;
+  kpis:                StrategicKpiClient[];
+  risingStars:         RisingStarClient[];
+  fallingStars:        FallingStarClient[];
+  cannibalization:     any[];
+  queryVelocity:       QueryVelocityClient | null;
+  overallHealthScore:  number | null;
+  algorithmResilience: number | null;
+}
+
+export async function getAnalyticsIntel(projectId: string): Promise<{
+  intel: AnalyticsIntelClient | null;
+  message?: string;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_get_analytics_intel', projectId });
+  if (!r?.success) return { intel: null, error: r?.error || 'Could not load analytics intelligence.' };
+  return { intel: r.intel || null, message: r.message };
+}
+
+export async function recomputeAnalyticsIntel(projectId: string): Promise<{
+  intel: AnalyticsIntelClient | null;
+  message?: string;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_recompute_analytics_intel', projectId });
+  if (!r?.success) return { intel: null, error: r?.error || 'Could not recompute analytics intelligence.' };
+  return { intel: r.intel || null, message: r.message };
+}
