@@ -235,6 +235,19 @@ function CommandInner() {
     })();
   }, [activityOpen, selectedProjectId]);
 
+  /* Auto-recover from stale project ID.
+     If the briefing API returned "Project not found" and the account has
+     exactly one valid project, silently switch to it. With multiple,
+     leave the picker visible so the user chooses deliberately. */
+  useEffect(() => {
+    if (briefingError === "Project not found" && safeProjects.length === 1) {
+      const onlyId = safeProjects[0].id;
+      if (onlyId && onlyId !== selectedProjectId) {
+        setSelectedProjectId(onlyId);
+      }
+    }
+  }, [briefingError, safeProjects.length, selectedProjectId, setSelectedProjectId]);
+
   const handleQuickAction = (q: string) => {
     setInput(q);
     setTimeout(() => handleSubmit(), 50);
@@ -349,6 +362,7 @@ function CommandInner() {
               projects={safeProjects}
               selectedId={selectedProjectId}
               onPick={setSelectedProjectId}
+              urgent={briefingError === "Project not found"}
             />
           )}
 
@@ -497,27 +511,42 @@ function FallbackGreeting({ hasProject, projectError, projectsAvailable }: {
   );
 }
 
-function ProjectPicker({ projects, selectedId, onPick }: {
-  projects: any[]; selectedId: string; onPick: (id: string) => void;
+function ProjectPicker({ projects, selectedId, onPick, urgent }: {
+  projects: any[]; selectedId: string; onPick: (id: string) => void; urgent?: boolean;
 }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}
-      className="mt-8 rounded-2xl border border-border bg-card/40 backdrop-blur-sm p-4">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+      className={`mt-8 rounded-2xl border backdrop-blur-sm p-4 ${
+        urgent ? 'border-cyan-500/40 bg-cyan-500/[0.06] shadow-lg shadow-cyan-500/10' : 'border-border bg-card/40'
+      }`}>
       <div className="flex items-center gap-2 mb-3">
-        <Building2 className="h-3.5 w-3.5 text-cyan-400" />
+        <motion.div
+          animate={urgent ? { scale: [1, 1.15, 1], opacity: [0.7, 1, 0.7] } : {}}
+          transition={urgent ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : {}}>
+          <Building2 className="h-3.5 w-3.5 text-cyan-400" />
+        </motion.div>
         <div className="text-[11px] uppercase tracking-wider font-bold text-foreground">
-          {selectedId ? "Switch project" : "Pick a project"}
+          {urgent ? "Tap a project to continue" : selectedId ? "Switch project" : "Pick a project"}
         </div>
         <div className="text-[10px] text-muted-foreground">({projects.length})</div>
       </div>
+      {urgent && (
+        <div className="text-[11px] text-cyan-400/90 mb-3">
+          Your previous selection isn't in the database. Pick any one below — I'll brief you the moment you click.
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {projects.slice(0, 12).map((p, i) => (
           <motion.button key={p.id} onClick={() => onPick(p.id)}
             initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.7 + i * 0.04 }}
-            whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+            transition={{ delay: 0.4 + i * 0.04 }}
+            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
             className={`text-left rounded-lg border p-3 transition-colors ${
-              p.id === selectedId ? 'border-cyan-500/40 bg-cyan-500/[0.08]' : 'border-border bg-background/30 hover:border-cyan-500/30 hover:bg-card/40'
+              p.id === selectedId
+                ? 'border-cyan-500/40 bg-cyan-500/[0.08]'
+                : urgent
+                  ? 'border-cyan-500/20 bg-background/40 hover:border-cyan-500/50 hover:bg-cyan-500/[0.08]'
+                  : 'border-border bg-background/30 hover:border-cyan-500/30 hover:bg-card/40'
             }`}>
             <div className="text-[12px] font-bold text-foreground truncate">{p.project_name || p.name || 'Untitled project'}</div>
             {p.client_url && <div className="text-[10px] text-muted-foreground truncate mt-0.5">{p.client_url}</div>}
