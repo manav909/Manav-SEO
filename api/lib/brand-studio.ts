@@ -524,6 +524,16 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsResolveDataReferences(body);
     }
 
+    /* Phase 1J — Analytics intelligence layer */
+    case "bs_get_analytics_intel": {
+      const { bsGetAnalyticsIntel } = await import("./pm-analytics-intel-orchestrator.js");
+      return bsGetAnalyticsIntel(body);
+    }
+    case "bs_recompute_analytics_intel": {
+      const { bsRecomputeAnalyticsIntel } = await import("./pm-analytics-intel-orchestrator.js");
+      return bsRecomputeAnalyticsIntel(body);
+    }
+
     /* Phase 1F — DOCX export */
     case "bs_export_docx": {
       const { bsExportDocx } = await import("./brand-studio-export.js");

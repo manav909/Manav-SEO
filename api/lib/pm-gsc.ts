@@ -301,18 +301,29 @@ export async function gscPull(opts: {
 
     const startDate = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
     const endDate   = new Date().toISOString().slice(0, 10);
+    /* For multi-period intelligence we ALSO pull a 365d daily trend
+       in parallel — one query, all windows derived by aggregation. */
+    const trendStart = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
+    /* Previous-30d queries for rising/falling star detection */
+    const prevQStart = new Date(Date.now() - 60  * 86_400_000).toISOString().slice(0, 10);
+    const prevQEnd   = new Date(Date.now() - 30  * 86_400_000).toISOString().slice(0, 10);
+
     const propPath  = encodeURIComponent(i.resource_id);
     const url       = `${SEARCHANAL_API}/${propPath}/searchAnalytics/query`;
 
     const fetched: any = {};
 
     /* ── Helper: run one searchAnalytics query, return parsed rows ── */
-    const runQuery = async (queryBody: any): Promise<any[] | null> => {
+    const runQuery = async (queryBody: any, customDates?: { startDate: string; endDate: string }): Promise<any[] | null> => {
       try {
         const res = await fetch(url, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ startDate, endDate, ...queryBody }),
+          body: JSON.stringify({
+            startDate: customDates?.startDate || startDate,
+            endDate:   customDates?.endDate   || endDate,
+            ...queryBody,
+          }),
         });
         if (!res.ok) {
           const t = await res.text().catch(() => "");
@@ -347,13 +358,24 @@ export async function gscPull(opts: {
     };
     fetched.totals = true;
 
-    /* ── 2-5. Top N by various dimensions (parallel) ─────────────── */
-    const [topQueries, topPages, topCountries, topDevices, dailyTrend] = await Promise.all([
-      runQuery({ dimensions: ["query"],   rowLimit: 25 }),
-      runQuery({ dimensions: ["page"],    rowLimit: 25 }),
-      runQuery({ dimensions: ["country"], rowLimit: 15 }),
+    /* ── 2-7. Top N by dimensions + 365d daily trend + prev-30d
+              queries (parallel) ────────────────────────────────── */
+    const [topQueries, topPages, topCountries, topDevices, dailyTrend, fullTrend365, prevPeriodQueries] = await Promise.all([
+      runQuery({ dimensions: ["query"],   rowLimit: 50 }),
+      runQuery({ dimensions: ["page"],    rowLimit: 50 }),
+      runQuery({ dimensions: ["country"], rowLimit: 20 }),
       runQuery({ dimensions: ["device"],  rowLimit: 5  }),
       runQuery({ dimensions: ["date"],    rowLimit: 1000 }),
+      /* 365d daily trend — used by intel engine to derive every time window */
+      runQuery(
+        { dimensions: ["date"], rowLimit: 1000 },
+        { startDate: trendStart, endDate },
+      ),
+      /* Previous 30d query set — used for rising/falling star detection */
+      runQuery(
+        { dimensions: ["query"], rowLimit: 100 },
+        { startDate: prevQStart, endDate: prevQEnd },
+      ),
     ]);
 
     /* ── Shape helpers ───────────────────────────────────────────── */
@@ -428,9 +450,9 @@ export async function gscPull(opts: {
     }
 
     /* ── Piece 3: mirror everything into the Data Room ────────────
-       Scalar totals + JSON-encoded top-N lists. Source='gsc_auto' so
-       the NEVER_OVERWRITE guard in ingest/H5 protects these against
-       AI extraction stomping on them. */
+       Scalar totals + JSON-encoded top-N lists + raw daily trend for
+       intel computation. Source='gsc_auto' so the NEVER_OVERWRITE
+       guard in ingest/H5 protects these against AI extraction stomp. */
     try {
       const today = new Date().toISOString().slice(0, 10);
 
@@ -443,12 +465,38 @@ export async function gscPull(opts: {
       ];
 
       /* JSON-encoded top-N fields — stored as JSON strings so downstream
-         consumers (data-table directives, chart renderers) can parse them. */
+         consumers (data-table directives, chart renderers, intel engine)
+         can parse them. */
       const jsonRows: { key: string; value: string }[] = [];
       if (topQueriesShaped.length   > 0) jsonRows.push({ key: "gsc_top_queries",   value: JSON.stringify(topQueriesShaped) });
       if (topPagesShaped.length     > 0) jsonRows.push({ key: "gsc_top_pages",     value: JSON.stringify(topPagesShaped) });
       if (topCountriesShaped.length > 0) jsonRows.push({ key: "gsc_top_countries", value: JSON.stringify(topCountriesShaped) });
       if (topDevicesShaped.length   > 0) jsonRows.push({ key: "gsc_top_devices",   value: JSON.stringify(topDevicesShaped) });
+
+      /* Phase 1J — Raw data used by intel engine. Stored as JSON so the
+         intel recompute can read them without re-querying GSC. */
+      if (Array.isArray(fullTrend365) && fullTrend365.length > 0) {
+        const trendShaped = fullTrend365
+          .map((r: any) => ({
+            date:        r.keys?.[0],
+            clicks:      Number(r.clicks || 0),
+            impressions: Number(r.impressions || 0),
+            position:    Number((r.position || 0).toFixed(2)),
+            ctr:         Number(((r.ctr || 0) * 100).toFixed(4)),
+          }))
+          .filter((r) => r.date);
+        jsonRows.push({ key: "gsc_daily_trend_365d", value: JSON.stringify(trendShaped) });
+      }
+      if (Array.isArray(prevPeriodQueries) && prevPeriodQueries.length > 0) {
+        const prevShaped = prevPeriodQueries.map((r: any) => ({
+          query:       r.keys?.[0] || "(unknown)",
+          clicks:      Number(r.clicks || 0),
+          impressions: Number(r.impressions || 0),
+          ctr:         Number(((r.ctr || 0) * 100).toFixed(2)),
+          position:    Number((r.position || 0).toFixed(2)),
+        }));
+        jsonRows.push({ key: "gsc_queries_previous_30d", value: JSON.stringify(prevShaped) });
+      }
 
       const allRows = [...scalarRows, ...jsonRows];
       for (const r of allRows) {
@@ -465,8 +513,6 @@ export async function gscPull(opts: {
         }, { onConflict: "project_id,category,field_key" });
       }
     } catch (e: any) {
-      /* mirror is best-effort — the snapshot already landed, so charts
-         and reports still see the data. Surface the error in last_pull_error. */
       console.error("[pm-gsc] data-room mirror failed:", e?.message || e);
     }
 
@@ -475,6 +521,16 @@ export async function gscPull(opts: {
       last_pull_at: new Date().toISOString(),
       last_pull_status: "ok", last_pull_error: null,
     }).eq("project_id", opts.projectId).eq("provider", "gsc");
+
+    /* Phase 1J — recompute the analytics intelligence layer (KPIs,
+       rising/falling stars, period summaries). Best-effort: if GA4
+       hasn't pulled yet, intel runs with GSC-only data. */
+    try {
+      const { recomputeAnalyticsIntel } = await import("./pm-analytics-intel-orchestrator.js");
+      await recomputeAnalyticsIntel(opts.projectId);
+    } catch (e: any) {
+      console.error("[pm-gsc] intel recompute failed:", e?.message || e);
+    }
 
     return { success: true, totals, fetched };
   } catch (e: any) {

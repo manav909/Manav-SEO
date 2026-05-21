@@ -359,8 +359,8 @@ export async function ga4Pull(opts: {
     };
     fetched.totals = true;
 
-    /* ── 2-6. Top N by dimensions + daily trend (parallel) ───────── */
-    const [topPages, topCountries, topDevices, topSources, dailyTrend] = await Promise.all([
+    /* ── 2-7. Top N by dimensions + daily trend + 365d trend (parallel) ─── */
+    const [topPages, topCountries, topDevices, topSources, dailyTrend, fullTrend365] = await Promise.all([
       runReport({
         dateRanges: [{ startDate, endDate }],
         dimensions: [{ name: "landingPagePlusQueryString" }],
@@ -395,6 +395,22 @@ export async function ga4Pull(opts: {
       }),
       runReport({
         dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: "date" }],
+        metrics:    [
+          { name: "sessions" },
+          { name: "totalUsers" },
+          { name: "engagedSessions" },
+          { name: "conversions" },
+          { name: "bounceRate" },
+          { name: "averageSessionDuration" },
+        ],
+        dimensionFilter: organicFilter,
+        orderBys:   [{ dimension: { dimensionName: "date" } }],
+        limit:      1000,
+      }),
+      /* Phase 1J — 365d trend for the intelligence engine */
+      runReport({
+        dateRanges: [{ startDate: "365daysAgo", endDate: "yesterday" }],
         dimensions: [{ name: "date" }],
         metrics:    [
           { name: "sessions" },
@@ -522,6 +538,26 @@ export async function ga4Pull(opts: {
       if (topDevicesShaped.length   > 0) jsonRows.push({ key: "ga4_top_devices",       value: JSON.stringify(topDevicesShaped) });
       if (topSourcesShaped.length   > 0) jsonRows.push({ key: "ga4_top_traffic_sources", value: JSON.stringify(topSourcesShaped) });
 
+      /* Phase 1J — raw 365d daily trend for intel engine */
+      if (fullTrend365?.rows?.length) {
+        const trendShaped = fullTrend365.rows.map((r: any) => {
+          const date = r.dimensionValues?.[0]?.value;
+          if (!date || date.length !== 8) return null;
+          const iso = `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
+          const v = (r.metricValues || []).map((x: any) => Number(x?.value || 0));
+          return {
+            date:               iso,
+            sessions:           v[0] || 0,
+            users:              v[1] || 0,
+            engagedSessions:    v[2] || 0,
+            conversions:        v[3] || 0,
+            bounceRate:         Number(((v[4] || 0) * 100).toFixed(2)),
+            avgSessionDuration: Number((v[5] || 0).toFixed(1)),
+          };
+        }).filter(Boolean);
+        jsonRows.push({ key: "ga4_daily_trend_365d", value: JSON.stringify(trendShaped) });
+      }
+
       const allRows = [...scalarRows, ...jsonRows];
       for (const r of allRows) {
         await db().from("project_knowledge").upsert({
@@ -571,6 +607,16 @@ export async function ga4Pull(opts: {
       last_pull_at: new Date().toISOString(),
       last_pull_status: "ok", last_pull_error: null,
     }).eq("project_id", opts.projectId).eq("provider", "ga4");
+
+    /* Phase 1J — recompute the analytics intelligence layer (KPIs,
+       rising/falling stars, period summaries) using the freshly stored
+       GA4 trend + whatever GSC already wrote. */
+    try {
+      const { recomputeAnalyticsIntel } = await import("./pm-analytics-intel-orchestrator.js");
+      await recomputeAnalyticsIntel(opts.projectId);
+    } catch (e: any) {
+      console.error("[pm-ga4] intel recompute failed:", e?.message || e);
+    }
 
     return { success: true, totals, fetched };
   } catch (e: any) {
