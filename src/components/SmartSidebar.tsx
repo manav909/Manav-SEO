@@ -7,6 +7,7 @@ const ALL_SECTIONS = [
   {
     id:"command", label:"Command", icon:"⚡",
     items:[
+      {icon:"✨",label:"S.E.A.S.O.N.",            href:"/command"},
       {icon:"📡",label:"Build Dashboard",     href:"/build"},
       {icon:"👑",label:"Empire Command",       href:"/empire"},
       {icon:"🤖",label:"Ask the Empire",       href:"/ask"},
@@ -46,7 +47,6 @@ const ALL_SECTIONS = [
       {icon:"❤️",label:"Client Health",          href:"/health"},
       {icon:"🔭",label:"Algorithm Intel",        href:"/algorithm-intel"},
       {icon:"💰",label:"Revenue BI",             href:"/revenue"},
-      {icon:"✨",label:"S.E.A.S.O.N.",            href:"/command"},
       {icon:"🗂",label:"Data Room",              href:"/data-room"},
       {icon:"📋",label:"Planning",               href:"/planning"},
       {icon:"📊",label:"Dashboard",              href:"/dashboard"},
