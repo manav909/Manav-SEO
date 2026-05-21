@@ -53,19 +53,57 @@ async function callLlmJson(opts: {
         messages: [{ role: "user", content: opts.userMessage }],
       }),
     });
-    if (!res.ok) return { ok: false, error: `Anthropic ${res.status}` };
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      return { ok: false, error: `Anthropic ${res.status}: ${errText.slice(0, 200)}` };
+    }
     const data = await res.json();
     const text = (data?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-    const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
-    try {
-      const parsed = JSON.parse(cleaned);
-      return { ok: true, parsed, raw: text, tokens: data?.usage?.output_tokens };
-    } catch {
-      return { ok: true, parsed: { _raw: text }, raw: text };
+    if (!text) {
+      return { ok: false, error: 'LLM returned empty content', raw: JSON.stringify(data).slice(0, 200) };
     }
+    /* Try to extract JSON from the response. The LLM may wrap it in ```json fences
+       or surround it with prose. Try several extraction strategies in order. */
+    const extracted = extractJson(text);
+    if (extracted) {
+      return { ok: true, parsed: extracted, raw: text, tokens: data?.usage?.output_tokens };
+    }
+    /* Honest failure — parse didn't succeed. Return the raw text so the caller
+       can decide what to do (don't pretend success). */
+    return {
+      ok: false,
+      error: `LLM response was not valid JSON (got ${text.length} chars; first 100: "${text.slice(0, 100).replace(/\n/g, ' ')}")`,
+      raw: text,
+    };
   } catch (e: any) {
     return { ok: false, error: e?.message || "fetch failed" };
   }
+}
+
+/* JSON extraction with multiple fallback strategies. Returns parsed object
+   or null. Never throws. */
+function extractJson(text: string): any | null {
+  /* Strategy 1: strip markdown fences, parse */
+  const fenced = text.replace(/^```json\s*/i, "").replace(/^```\s*/m, "").replace(/```\s*$/, "").trim();
+  try { return JSON.parse(fenced); } catch { /* fall through */ }
+
+  /* Strategy 2: find the first { and last } and parse between them */
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const slice = text.slice(firstBrace, lastBrace + 1);
+    try { return JSON.parse(slice); } catch { /* fall through */ }
+  }
+
+  /* Strategy 3: same for arrays */
+  const firstBracket = text.indexOf('[');
+  const lastBracket = text.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    const slice = text.slice(firstBracket, lastBracket + 1);
+    try { return JSON.parse(slice); } catch { /* fall through */ }
+  }
+
+  return null;
 }
 
 /* ─── Helper: call LLM with web search ───────────────────────── */
@@ -94,10 +132,12 @@ async function callLlmWeb(opts: {
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: opts.maxUses || 4 }],
       }),
     });
-    if (!res.ok) return { ok: false, error: `Anthropic ${res.status}` };
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      return { ok: false, error: `Anthropic ${res.status}: ${errText.slice(0, 200)}` };
+    }
     const data = await res.json();
     const text = (data?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-    const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
 
     /* Extract citations */
     const citations: Array<{ url: string; title?: string }> = [];
@@ -112,12 +152,20 @@ async function callLlmWeb(opts: {
     }
     const webUsed = (data?.content || []).some((b: any) => b.type === "tool_use" && b.name === "web_search");
 
-    try {
-      const parsed = JSON.parse(cleaned);
-      return { ok: true, parsed, citations, webUsed };
-    } catch {
-      return { ok: true, parsed: { _raw: text }, citations, webUsed };
+    if (!text) {
+      return { ok: false, error: 'LLM returned empty content', citations, webUsed };
     }
+
+    const extracted = extractJson(text);
+    if (extracted) {
+      return { ok: true, parsed: extracted, citations, webUsed };
+    }
+    return {
+      ok: false,
+      error: `LLM response was not valid JSON (got ${text.length} chars; first 100: "${text.slice(0, 100).replace(/\n/g, ' ')}")`,
+      citations,
+      webUsed,
+    };
   } catch (e: any) {
     return { ok: false, error: e?.message || "fetch failed" };
   }
@@ -463,9 +511,38 @@ ${JSON.stringify(gsc, null, 2)}
 
 COMPETITOR SNAPSHOT:
 ${JSON.stringify(competitors, null, 2)}`;
-    const r = await callLlmJson({ systemPrompt: sys, userMessage: usr, maxTokens: 2500 });
+
+    /* First attempt — generous token budget */
+    let r = await callLlmJson({ systemPrompt: sys, userMessage: usr, maxTokens: 3500 });
+    let callsMade = 1;
+
+    /* If parse failed, try once more with explicit "be concise, valid JSON only" */
+    if (!r.ok) {
+      const strictSys = sys + `
+
+CRITICAL: Your previous response was not valid JSON. Reply with ONLY the JSON object, no markdown fences, no prose before or after. Keep each string under 200 chars. Phases array must have exactly 4 items. Deliverables arrays must have 2-4 items each.`;
+      r = await callLlmJson({ systemPrompt: strictSys, userMessage: usr, maxTokens: 4000 });
+      callsMade = 2;
+    }
+
     if (!r.ok || !r.parsed) {
-      return { ok: false, error: r.error || 'strategy failed', llm_calls: 1 };
+      /* Honest failure — but don't lose the run. Return a degraded artifact
+         that says clearly what happened so the user knows to retry the step. */
+      return {
+        ok: false,
+        error: r.error || 'strategy synthesis failed after 2 attempts',
+        llm_calls: callsMade,
+      };
+    }
+
+    /* Validate the response has the minimum required structure */
+    const hasMinStructure = r.parsed.strategy_name && (r.parsed.approach || r.parsed.phases);
+    if (!hasMinStructure) {
+      return {
+        ok: false,
+        error: `Strategy response missing required fields. Got keys: ${Object.keys(r.parsed).join(', ')}.`,
+        llm_calls: callsMade,
+      };
     }
 
     return {
@@ -476,7 +553,8 @@ ${JSON.stringify(competitors, null, 2)}`;
         title: `Strategy: ${r.parsed.strategy_name || keyword}`,
         body: renderStrategyArtifact(keyword, r.parsed),
       },
-      llm_calls: 1,
+      honest_note: callsMade > 1 ? `First attempt returned malformed JSON; retried with stricter prompt.` : undefined,
+      llm_calls: callsMade,
     };
   },
 };
