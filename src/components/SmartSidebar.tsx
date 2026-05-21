@@ -1,7 +1,7 @@
 
 import React,{useState,useEffect} from "react";
 import {useNav} from "@/contexts/NavContext";
-const PORTAL_NAV_PAGES = new Set(["/","/oval","/dashboard","/playground","/audit","/launchpad","/mission-control","/brain-command","/brain-learning","/algorithm-intel","/desk","/system-control","/data-room"]);
+const PORTAL_NAV_PAGES = new Set(["/","/oval","/dashboard","/playground","/audit","/launchpad","/mission-control","/brain-command","/brain-learning","/algorithm-intel","/desk","/system-control","/data-room","/planning"]);
 
 const ALL_SECTIONS = [
   {
@@ -47,6 +47,7 @@ const ALL_SECTIONS = [
       {icon:"🔭",label:"Algorithm Intel",        href:"/algorithm-intel"},
       {icon:"💰",label:"Revenue BI",             href:"/revenue"},
       {icon:"🗂",label:"Data Room",              href:"/data-room"},
+      {icon:"📋",label:"Planning",               href:"/planning"},
       {icon:"📊",label:"Dashboard",              href:"/dashboard"},
     ]
   },

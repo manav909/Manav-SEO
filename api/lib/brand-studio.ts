@@ -654,6 +654,44 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsRematchProjectCards(body);
     }
 
+    /* Phase 6 — Project Planning Workspace (strategies as first-class) */
+    case "bs_list_strategies": {
+      const { bsListStrategies } = await import("./pm-strategies.js");
+      return bsListStrategies(body);
+    }
+    case "bs_get_strategy": {
+      const { bsGetStrategy } = await import("./pm-strategies.js");
+      return bsGetStrategy(body);
+    }
+    case "bs_save_strategy": {
+      const { bsSaveStrategy } = await import("./pm-strategies.js");
+      return bsSaveStrategy(body);
+    }
+    case "bs_delete_strategy": {
+      const { bsDeleteStrategy } = await import("./pm-strategies.js");
+      return bsDeleteStrategy(body);
+    }
+    case "bs_finalize_strategy": {
+      const { bsFinalizeStrategy } = await import("./pm-strategies.js");
+      return bsFinalizeStrategy(body);
+    }
+    case "bs_advance_strategy": {
+      const { bsAdvanceStrategy } = await import("./pm-strategies.js");
+      return bsAdvanceStrategy(body);
+    }
+    case "bs_conclude_strategy": {
+      const { bsConcludeStrategy } = await import("./pm-strategies.js");
+      return bsConcludeStrategy(body);
+    }
+    case "bs_get_strategy_impact": {
+      const { bsGetStrategyImpact } = await import("./pm-strategies.js");
+      return bsGetStrategyImpact(body);
+    }
+    case "bs_get_planning_context": {
+      const { bsGetPlanningContext } = await import("./pm-strategies.js");
+      return bsGetPlanningContext(body);
+    }
+
     /* Phase 3 — Analytics Provenance & Diagnostics */
     case "bs_get_analytics_provenance": {
       const { bsGetAnalyticsProvenance } = await import("./pm-analytics-provenance.js");

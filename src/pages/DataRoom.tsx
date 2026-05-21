@@ -9,9 +9,6 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { seedV2DataRoom, aiFillPreview as apiAiFillPreview, aiFillApply as apiAiFillApply, type SeedSummary, type AIFillPreview, type AIFieldProposal } from '@/components/pm/api';
 import AnalyticsIntelPanel from '@/components/pm/AnalyticsIntelPanel';
-import WhatIfSimulator from '@/components/pm/WhatIfSimulator';
-import GoalEngine from '@/components/pm/GoalEngine';
-import StrategyBlockersView from '@/components/pm/StrategyBlockersView';
 import AccessVaultPanel       from '@/components/pm/AccessVaultPanel';
 import ContentLibraryPanel    from '@/components/pm/ContentLibraryPanel';
 import InfoRepositoryPanel    from '@/components/pm/InfoRepositoryPanel';
@@ -2189,23 +2186,21 @@ Evidence: ${c.data_basis}` : ''}`,
             {tab === 'access'      && <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="access"/></div>}
             {tab === 'analytics'   && (
               <div className="space-y-4">
-                {selProjId && <AnalyticsIntelPanel projectId={selProjId} />}
-                {selProjId && <WhatIfSimulator projectId={selProjId} defaultCollapsed />}
-                {selProjId && <GoalEngine projectId={selProjId} defaultCollapsed />}
+                {/* Cross-link to the new Planning workspace */}
                 {selProjId && (
-                  <StrategyBlockersView
-                    projectId={selProjId}
-                    defaultCollapsed
-                    onJumpToStore={(store) => {
-                      const tabId =
-                        store === 'access'   ? 'access_vault' :
-                        store === 'content'  ? 'content_library' :
-                        store === 'info'     ? 'info_repository' :
-                                               'approvals_log';
-                      setTab(tabId);
-                    }}
-                  />
+                  <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/[0.06] via-card/40 to-violet-500/[0.04] p-4 flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-cyan-500/15 flex items-center justify-center text-cyan-400 text-lg">📋</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-foreground">Strategy planning moved to its own workspace</div>
+                      <div className="text-[11px] text-muted-foreground">What-If Simulator, Goal Engine, and Strategy Blockers now live in <strong>Planning</strong> — alongside the strategy pipeline board, builder, and impact tracker.</div>
+                    </div>
+                    <a href="/planning" className="text-[11px] px-3 py-1.5 rounded-lg font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/30 whitespace-nowrap">
+                      Open Planning →
+                    </a>
+                  </div>
                 )}
+                {/* Pure data layer — what we know */}
+                {selProjId && <AnalyticsIntelPanel projectId={selProjId} />}
                 <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="analytics"/></div>
               </div>
             )}

@@ -1796,3 +1796,119 @@ export async function rematchProjectCards(projectId: string): Promise<{
   if (!r?.success) return { error: r?.error };
   return { cardsUpdated: r.cardsUpdated, errors: r.errors };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 6 — Project Planning Workspace (Strategies)
+═══════════════════════════════════════════════════════════ */
+
+export type StrategyHorizonClient = "short_term" | "medium_term" | "long_term";
+export type StrategyStatusClient  = "drafting" | "resourcing" | "executing" | "measuring" | "concluded" | "paused";
+
+export interface StrategyRecord {
+  id:                    string;
+  project_id:            string;
+  name:                  string;
+  description:           string | null;
+  horizon:               StrategyHorizonClient;
+  status:                StrategyStatusClient;
+  target_start_date:     string | null;
+  target_end_date:       string | null;
+  source_scenario_id:    string | null;
+  linked_goal_ids:       string[];
+  expected_impact:       any | null;
+  actions:               any[] | null;
+  card_ids:              string[];
+  actual_impact:         any | null;
+  last_impact_pulled_at: string | null;
+  on_track:              boolean | null;
+  drafted_at:            string | null;
+  finalized_at:          string | null;
+  started_at:            string | null;
+  paused_at:             string | null;
+  concluded_at:          string | null;
+  conclusion_summary:    string | null;
+  created_by:            string | null;
+  created_at:            string;
+  updated_at:            string;
+  health?: {
+    total_cards: number; cards_done: number; cards_in_progress: number; cards_todo: number;
+    completion_pct: number; hard_blockers: number; soft_blockers: number; on_track: boolean | null;
+  };
+}
+
+export interface PlanningContext {
+  project: { id: string; project_name: string; client_url: string; status: string } | null;
+  active_goals: Array<{ id: string; name: string; metric: string; target_value: number; target_date: string; baseline_value: number; status: string }>;
+  saved_scenarios: Array<{ id: string; name: string; description: string; projected_impact: any; actions: any[]; created_at: string }>;
+  top_kpis: any[];
+  rising_stars: any[];
+  falling_stars: any[];
+  dataroom_categories: Record<string, number>;
+  blockers_count: number;
+  hard_blockers: number;
+  recent_audits: Array<{ id: string; created_at: string; overall_score: number; top_findings: any }>;
+}
+
+export async function listStrategies(opts: {
+  projectId: string; status?: string; horizon?: string;
+}): Promise<{ strategies: StrategyRecord[]; total?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_strategies', ...opts });
+  if (!r?.success) return { strategies: [], error: r?.error };
+  return { strategies: r.strategies || [], total: r.total };
+}
+
+export async function getStrategy(strategyId: string): Promise<{
+  strategy?: StrategyRecord; cards?: any[]; goals?: any[]; health?: any; blockers?: any[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_get_strategy', strategyId });
+  if (!r?.success) return { error: r?.error };
+  return { strategy: r.strategy, cards: r.cards, goals: r.goals, health: r.health, blockers: r.blockers };
+}
+
+export async function saveStrategy(opts: { projectId: string; strategy: Partial<StrategyRecord> & { name: string } }): Promise<{ strategy?: StrategyRecord; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_save_strategy', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { strategy: r.strategy };
+}
+
+export async function deleteStrategy(strategyId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_delete_strategy', strategyId });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function finalizeStrategy(opts: { strategyId: string; sequential?: boolean }): Promise<{
+  cards_created?: number; next_status?: string; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_finalize_strategy', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { cards_created: r.cards_created, next_status: r.next_status };
+}
+
+export async function advanceStrategy(opts: { strategyId: string; toStatus: StrategyStatusClient; override?: boolean }): Promise<{
+  status?: string; error?: string; gate_blocked?: boolean; can_override?: boolean;
+}> {
+  const r = await post(ENGINE, { action: 'bs_advance_strategy', ...opts });
+  if (!r?.success) return { error: r?.error, gate_blocked: r?.gate_blocked, can_override: r?.can_override };
+  return { status: r.status };
+}
+
+export async function concludeStrategy(opts: { strategyId: string; conclusion_summary?: string }): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_conclude_strategy', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function getStrategyImpact(strategyId: string): Promise<{
+  trace?: any[]; summary?: any; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_get_strategy_impact', strategyId });
+  if (!r?.success) return { error: r?.error };
+  return { trace: r.trace, summary: r.summary };
+}
+
+export async function getPlanningContext(projectId: string): Promise<{ context?: PlanningContext; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_planning_context', projectId });
+  if (!r?.success) return { error: r?.error };
+  return { context: r.context };
+}

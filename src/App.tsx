@@ -23,6 +23,7 @@ import ManavBrainAssistant       from "@/components/ManavBrainAssistant";
 import HelpOracle                from "@/components/HelpOracle";
 import Index          from "./pages/Index";
 import DataRoom       from './pages/DataRoom';
+import Planning       from './pages/Planning';
 import Dashboard      from "./pages/Dashboard";
 import Launchpad      from "./pages/Launchpad";
 import Audit          from "./pages/Audit";
@@ -116,6 +117,7 @@ const AppRoutes = () => {
 
         {/* Protected routes */}
         <Route path="/data-room"       element={<B name="data-room">      <StaffGuard perm="data_room">      <DataRoom />       </StaffGuard></B>} />
+        <Route path="/planning"        element={<B name="planning">       <StaffGuard perm="data_room">      <Planning />       </StaffGuard></B>} />
         <Route path="/dashboard"       element={<B name="dashboard">      <StaffGuard perm="dashboard">      <Dashboard />      </StaffGuard></B>} />
         <Route path="/launchpad"       element={<B name="launchpad">      <StaffGuard perm="playground">     <Launchpad />      </StaffGuard></B>} />
         <Route path="/audit"           element={<B name="audit">          <StaffGuard perm="audit_tools">    <Audit />          </StaffGuard></B>} />
