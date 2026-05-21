@@ -322,18 +322,23 @@ function CommandInner() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }}
               className="mt-3 flex flex-wrap gap-2">
               {[
-                "Summarize this week",
-                "What needs me today?",
-                "How are we doing?",
-                "Where do the numbers come from?",
-              ].map((q, i) => (
-                <motion.button key={q} onClick={() => handleQuickAction(q)}
+                { label: "Diagnose system",          q: "diagnose",                     priority: true },
+                { label: "Summarize this week",      q: "Summarize this week" },
+                { label: "What needs me today?",     q: "What needs me today?" },
+                { label: "How are we doing?",        q: "How are we doing?" },
+                { label: "Where do the numbers come from?", q: "Where do the numbers come from?" },
+              ].map((item, i) => (
+                <motion.button key={item.q} onClick={() => handleQuickAction(item.q)}
                   initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 1.2 + i * 0.08 }}
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                   disabled={!selectedProjectId}
-                  className="text-xs px-3 py-1.5 rounded-full border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-cyan-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                  {q}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    item.priority
+                      ? 'border-amber-500/40 bg-amber-500/[0.08] text-amber-400 hover:bg-amber-500/15 font-bold'
+                      : 'border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-cyan-500/30'
+                  }`}>
+                  {item.label}
                 </motion.button>
               ))}
               {/* Capabilities chip */}
