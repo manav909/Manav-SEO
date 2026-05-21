@@ -120,9 +120,10 @@ export default function DocumentPrintBody({
               em:     ({ children }) => <em>{children}</em>,
               'ds-directive': ({ node, children }: any) => {
                 const props      = node?.properties || {};
-                const name       = String(props.dataName  || 'unknown');
-                const attrsJSON  = String(props.dataAttrs || '{}');
-                const rawBody    = String(props.dataRawBody || '');
+                /* hast stores `data-*` as kebab-case; check both conventions */
+                const name       = String(props['data-name']     || props.dataName    || 'unknown');
+                const attrsJSON  = String(props['data-attrs']    || props.dataAttrs   || '{}');
+                const rawBody    = String(props['data-raw-body'] || props.dataRawBody || '');
                 let attrs: any = {};
                 try { attrs = JSON.parse(attrsJSON); } catch {}
                 return (

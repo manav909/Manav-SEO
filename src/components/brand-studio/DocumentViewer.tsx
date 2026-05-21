@@ -322,9 +322,13 @@ export default function DocumentViewer({
                    and stashes the first code-block body into data-raw-body. */
                 'ds-directive': ({ node, children }: any) => {
                   const props      = node?.properties || {};
-                  const name       = String(props.dataName  || 'unknown');
-                  const attrsJSON  = String(props.dataAttrs || '{}');
-                  const rawBody    = String(props.dataRawBody || '');
+                  /* hast stores `data-*` attributes as kebab-case keys.
+                     React-Markdown 9 preserves them when passing to custom
+                     components. We try both naming conventions to stay
+                     robust across versions. */
+                  const name       = String(props['data-name']     || props.dataName    || 'unknown');
+                  const attrsJSON  = String(props['data-attrs']    || props.dataAttrs   || '{}');
+                  const rawBody    = String(props['data-raw-body'] || props.dataRawBody || '');
                   let attrs: any = {};
                   try { attrs = JSON.parse(attrsJSON); } catch {}
                   return (

@@ -324,8 +324,12 @@ function buildContextBlock(bundle: SourceBundle): string {
 }
 
 /** Phase 1E — assemble the :::cover-page{} directive block that's
- *  prepended to investor-grade documents. Quotes are escaped so the
- *  attrs parser handles them correctly. */
+ *  prepended to investor-grade documents.
+ *
+ *  Defensive escaping: remark-directive's attr block must stay on one
+ *  line, and double-quotes / braces / backslashes break parsing. Any
+ *  of those characters in the source values (e.g. an AI summary with
+ *  a newline) would silently kill the directive. We strip them here. */
 function buildCoverPageBlock(opts: {
   title:     string;
   subtitle?: string;
@@ -333,13 +337,26 @@ function buildCoverPageBlock(opts: {
   recipient?:string;
   author?:   string;
 }): string {
-  const esc = (s: string) => String(s || '').replace(/"/g, '\\"').slice(0, 240);
+  const esc = (s: string | undefined): string => {
+    if (!s) return '';
+    return String(s)
+      .replace(/[\r\n\t]+/g, ' ')      /* control chars → spaces */
+      .replace(/[{}"\\]/g, '')          /* directive-syntax chars → removed */
+      .replace(/\s+/g, ' ')             /* collapse whitespace */
+      .trim()
+      .slice(0, 200);
+  };
   const parts: string[] = [];
-  parts.push(`title="${esc(opts.title)}"`);
-  if (opts.subtitle)  parts.push(`subtitle="${esc(opts.subtitle)}"`);
-  if (opts.date)      parts.push(`date="${esc(opts.date)}"`);
-  if (opts.recipient) parts.push(`recipient="${esc(opts.recipient)}"`);
-  if (opts.author)    parts.push(`author="${esc(opts.author)}"`);
+  const title     = esc(opts.title);
+  const subtitle  = esc(opts.subtitle);
+  const date      = esc(opts.date);
+  const recipient = esc(opts.recipient);
+  const author    = esc(opts.author);
+  if (title)     parts.push(`title="${title}"`);
+  if (subtitle)  parts.push(`subtitle="${subtitle}"`);
+  if (date)      parts.push(`date="${date}"`);
+  if (recipient) parts.push(`recipient="${recipient}"`);
+  if (author)    parts.push(`author="${author}"`);
   parts.push(`logo="auto"`);
   return `:::cover-page{${parts.join(' ')}}\n:::`;
 }
