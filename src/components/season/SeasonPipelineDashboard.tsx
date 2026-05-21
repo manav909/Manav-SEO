@@ -18,14 +18,15 @@ import {
 } from 'lucide-react';
 import { useSeason } from '@/contexts/SeasonContext';
 import {
-  seasonPipelineGet, seasonPipelineInterrupt,
-  type PipelineStepDetail, type PipelineRunDetail,
+  seasonPipelineGet, seasonPipelineInterrupt, seasonPipelineExecuteNext,
+  type PipelineStepDetail, type PipelineRunDetail, type PipelineType,
 } from '@/components/pm/api';
 
 interface SeasonPipelineDashboardProps {
   runId:          string;
   expectedSteps:  number;
   pipelineLabel:  string;
+  pipelineType:   PipelineType;     // needed for execute_next calls
   onClose:        () => void;
   onComplete?:    (run: PipelineRunDetail) => void;
 }
@@ -44,7 +45,7 @@ const MOOD_HSL_STATUS: Record<string, string> = {
 };
 
 export default function SeasonPipelineDashboard({
-  runId, expectedSteps, pipelineLabel, onClose, onComplete,
+  runId, expectedSteps, pipelineLabel, pipelineType, onClose, onComplete,
 }: SeasonPipelineDashboardProps) {
   const { mood } = useSeason();
   const [run, setRun]       = useState<PipelineRunDetail | null>(null);
@@ -56,6 +57,45 @@ export default function SeasonPipelineDashboard({
   const [interruptInProgress, setInterruptInProgress] = useState(false);
   const pollStartedAt = useRef(Date.now());
   const completedRef = useRef(false);
+  const executingRef = useRef(false);     // guards the execute loop so we don't overlap calls
+  const stopExecRef  = useRef(false);     // set true on unmount or interrupt to halt the chain
+
+  /* ── Step-by-step execution loop ─────────────────────────────
+     The frontend is now the conductor. We call execute_next, wait for the
+     server to finish ONE step, then call again. Each request has its own
+     5-min Vercel function budget — no more background-freeze issues.
+
+     Runs alongside the polling loop. Polling updates UI state from the DB;
+     this loop drives execution forward. They're decoupled. */
+  useEffect(() => {
+    stopExecRef.current = false;
+    const drive = async () => {
+      if (executingRef.current) return;
+      executingRef.current = true;
+      try {
+        while (!stopExecRef.current) {
+          const r = await seasonPipelineExecuteNext({ runId, pipelineType });
+          if (stopExecRef.current) break;
+          if (r.error) {
+            setError(`Execution failed: ${r.error}`);
+            break;
+          }
+          if (r.no_more_steps || r.run_status === 'completed' || r.run_status === 'failed' || r.run_status === 'cancelled') {
+            /* Terminal state — polling loop will pick up the final summary. */
+            break;
+          }
+          /* Tiny pause between step kicks so the polling loop can update UI */
+          await new Promise(res => setTimeout(res, 200));
+        }
+      } catch (e: any) {
+        setError(`Execution loop crashed: ${e?.message || 'unknown'}`);
+      } finally {
+        executingRef.current = false;
+      }
+    };
+    drive();
+    return () => { stopExecRef.current = true; };
+  }, [runId, pipelineType]);
 
   useEffect(() => {
     let cancelled = false;

@@ -252,3 +252,72 @@ export async function bsSeasonPipelineInterrupt(body: any): Promise<any> {
     return { success: false, error: e?.message || "interrupt failed" };
   }
 }
+
+/* Phase 13a-v2 — step-by-step execution routes.
+   These replace bsSeasonPipelineLaunch (which used fire-and-forget background
+   work that Vercel was freezing). Each step is now its own HTTP request. */
+
+export async function bsSeasonPipelineCreate(body: any): Promise<any> {
+  const { projectId, pipelineType, inputText, scope } = body || {};
+  if (!projectId)    return { success: false, error: "projectId required" };
+  if (!pipelineType) return { success: false, error: "pipelineType required" };
+  if (!inputText)    return { success: false, error: "inputText required" };
+
+  try {
+    let definition: any;
+    if (pipelineType === 'rank_for_keyword') {
+      const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
+      definition = buildRankForKeywordPipeline();
+    } else {
+      return { success: false, error: `Unknown pipeline type: ${pipelineType}` };
+    }
+
+    const { createRunOnly } = await import("./season-pipeline-runner.js");
+    const result = await createRunOnly({
+      projectId,
+      inputText: String(inputText).slice(0, 2000),
+      scope: scope || {},
+      definition,
+    });
+
+    if (result.error || !result.run_id) {
+      return { success: false, error: result.error || 'create failed' };
+    }
+    return { success: true, run_id: result.run_id, step_count: result.step_count };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "create failed" };
+  }
+}
+
+export async function bsSeasonPipelineExecuteNext(body: any): Promise<any> {
+  const { runId, pipelineType } = body || {};
+  if (!runId) return { success: false, error: "runId required" };
+  if (!pipelineType) return { success: false, error: "pipelineType required" };
+
+  try {
+    let definition: any;
+    if (pipelineType === 'rank_for_keyword') {
+      const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
+      definition = buildRankForKeywordPipeline();
+    } else {
+      return { success: false, error: `Unknown pipeline type: ${pipelineType}` };
+    }
+
+    const { executeNextPendingStep } = await import("./season-pipeline-runner.js");
+    const result = await executeNextPendingStep({ runId, definition });
+    if (result.error) return { success: false, error: result.error };
+
+    return {
+      success: true,
+      step_index:    result.step_index,
+      step_id:       result.step_id,
+      step_label:    result.step_label,
+      step_status:   result.step_status,
+      step_error:    result.step_error,
+      no_more_steps: result.no_more_steps,
+      run_status:    result.run_status,
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "execute next failed" };
+  }
+}

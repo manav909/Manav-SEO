@@ -2329,3 +2329,43 @@ export async function seasonPipelineInterrupt(opts: {
   if (!r?.success) return { error: r?.error };
   return { success: true, message: r.message };
 }
+
+/* ───── Phase 13a-v2 — step-by-step execution ───── */
+
+export async function seasonPipelineCreate(opts: {
+  projectId:    string;
+  pipelineType: PipelineType;
+  inputText:    string;
+  scope:        Record<string, any>;
+}): Promise<{ run_id?: string; step_count?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_create', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { run_id: r.run_id, step_count: r.step_count };
+}
+
+export interface ExecuteNextResult {
+  step_index?:    number;
+  step_id?:       string;
+  step_label?:    string;
+  step_status?:   string;       // 'completed' | 'failed'
+  step_error?:    string;
+  no_more_steps?: boolean;
+  run_status?:    string;       // 'running' | 'completed' | 'failed'
+}
+
+export async function seasonPipelineExecuteNext(opts: {
+  runId:        string;
+  pipelineType: PipelineType;
+}): Promise<ExecuteNextResult & { error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_execute_next', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    step_index:    r.step_index,
+    step_id:       r.step_id,
+    step_label:    r.step_label,
+    step_status:   r.step_status,
+    step_error:    r.step_error,
+    no_more_steps: r.no_more_steps,
+    run_status:    r.run_status,
+  };
+}

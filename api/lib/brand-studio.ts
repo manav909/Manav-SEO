@@ -748,6 +748,15 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       const { bsSeasonPipelineLaunch } = await import("./season-pipeline-routes.js");
       return bsSeasonPipelineLaunch(body);
     }
+    /* Phase 13a-v2 — step-by-step execution */
+    case "bs_season_pipeline_create": {
+      const { bsSeasonPipelineCreate } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineCreate(body);
+    }
+    case "bs_season_pipeline_execute_next": {
+      const { bsSeasonPipelineExecuteNext } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineExecuteNext(body);
+    }
     case "bs_season_pipeline_list": {
       const { bsSeasonPipelineList } = await import("./season-pipeline-routes.js");
       return bsSeasonPipelineList(body);

@@ -30,7 +30,7 @@ import { useSeasonAction } from '@/hooks/useSeasonAction';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { seasonCommand, type CommandResponseClient } from '@/components/pm/api';
+import { seasonCommand, type CommandResponseClient, type PipelineType } from '@/components/pm/api';
 import SeasonPipelineDashboard from './SeasonPipelineDashboard';
 
 /* Mood → color (matches the Orb's profile) */
@@ -141,6 +141,7 @@ export default function SeasonModal() {
   const [activeRunId, setActiveRunId]                 = useState<string | null>(null);
   const [activeRunStepCount, setActiveRunStepCount]   = useState<number>(0);
   const [activeRunLabel, setActiveRunLabel]           = useState<string>('');
+  const [activeRunType, setActiveRunType]             = useState<PipelineType>('rank_for_keyword');
 
   const moodHsl       = MOOD_HSL[mood] || MOOD_HSL.quiet;
   const isMac         = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
@@ -198,30 +199,31 @@ export default function SeasonModal() {
       const keyword = rankMatch[1].trim().replace(/\s+/g, ' ').slice(0, 120);
       if (keyword.length >= 3) {
         try {
-          const { seasonPipelineLaunch } = await import('@/components/pm/api');
-          const r = await seasonPipelineLaunch({
+          /* Phase 13a-v2 — only CREATE the run rows here. The dashboard drives
+             execution step-by-step via execute_next, so each step gets its own
+             HTTP request and its own Vercel function budget (no more background
+             freezes). */
+          const { seasonPipelineCreate } = await import('@/components/pm/api');
+          const r = await seasonPipelineCreate({
             projectId: selectedProjectId,
             pipelineType: 'rank_for_keyword',
             inputText: q,
             scope: { keyword, goal: `rank for "${keyword}"` },
-            awareness: awareness || undefined,
           });
           if (r.error || !r.run_id) {
-            setError(`Pipeline launch failed: ${r.error || 'no run id returned'}`);
+            setError(`Pipeline create failed: ${r.error || 'no run id returned'}`);
             setMood('alert');
             setSubmitting(false);
             return;
           }
-          /* Hand off to the live dashboard. Close the modal cleanly so the
-             dashboard owns the screen. Input + response state reset so when the
-             user later reopens Cmd+K it's a clean slate. */
           setActiveRunId(r.run_id);
           setActiveRunStepCount(r.step_count || 7);
           setActiveRunLabel(`Ranking for "${keyword}"`);
+          setActiveRunType('rank_for_keyword');
           setMood('focused');
           setInput('');
           setResponse(null);
-          close();  /* dismisses the modal — dashboard renders on its own */
+          close();
         } catch (e: any) {
           setError(`Pipeline error: ${e?.message || 'unknown'}`);
           setMood('alert');
@@ -317,6 +319,7 @@ export default function SeasonModal() {
             runId={activeRunId}
             expectedSteps={activeRunStepCount}
             pipelineLabel={activeRunLabel}
+            pipelineType={activeRunType}
             onClose={() => {
               setActiveRunId(null);
               setActiveRunStepCount(0);

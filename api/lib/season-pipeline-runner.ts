@@ -580,3 +580,342 @@ export async function retryStep(opts: {
 
   return result;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 13a-v2 — Step-by-step execution.
+
+   Replaces the fire-and-forget background pattern that was prone to
+   Vercel function freezes. Each step is now its own HTTP request
+   with its own 5-min function budget.
+
+   Three functions: createRunOnly, executeNextPendingStep, finalizeRun.
+═══════════════════════════════════════════════════════════════ */
+
+/* Create the run row + a pending row for each step. No execution.
+   The frontend then drives the chain by calling executeNextPendingStep. */
+export async function createRunOnly(opts: {
+  projectId: string;
+  inputText: string;
+  scope: Record<string, any>;
+  definition: PipelineDefinition;
+}): Promise<{ run_id: string; step_count: number; error?: string }> {
+  try {
+    const { data: runInsert, error: runErr } = await db().from("season_pipeline_runs").insert({
+      project_id:    opts.projectId,
+      pipeline_type: opts.definition.type,
+      input_text:    opts.inputText.slice(0, 2000),
+      goal_summary:  String(opts.scope.goal || '').slice(0, 240),
+      scope:         opts.scope,
+      status:        'running',
+      step_count:    opts.definition.steps.length,
+      step_current:  0,
+    }).select("id").maybeSingle();
+
+    if (runErr || !runInsert) {
+      return { run_id: '', step_count: 0, error: runErr?.message || 'could not create run row' };
+    }
+    const runId = (runInsert as any).id as string;
+
+    /* Create all step rows up front so the dashboard sees the full pipeline shape immediately */
+    const stepRows = opts.definition.steps.map((step, i) => ({
+      run_id:     runId,
+      step_index: i,
+      step_id:    step.id,
+      step_label: step.label,
+      status:     'pending',
+    }));
+    const { error: stepsErr } = await db().from("season_pipeline_steps").insert(stepRows);
+    if (stepsErr) {
+      /* Mark the run failed and bail */
+      await db().from("season_pipeline_runs").update({
+        status: 'failed',
+        honest_summary: `Could not create step rows: ${stepsErr.message}`,
+        finished_at: new Date().toISOString(),
+      }).eq("id", runId);
+      return { run_id: runId, step_count: 0, error: stepsErr.message };
+    }
+
+    await logActivity(opts.projectId, runId, 'pipeline_started',
+      `Pipeline started: ${opts.definition.type} — "${opts.inputText.slice(0, 80)}${opts.inputText.length > 80 ? '…' : ''}"`,
+      `${opts.definition.steps.length} steps planned. Step-by-step execution.`,
+    );
+
+    return { run_id: runId, step_count: opts.definition.steps.length };
+  } catch (e: any) {
+    return { run_id: '', step_count: 0, error: e?.message || 'create failed' };
+  }
+}
+
+/* Execute the next pending step in this run. Synchronous — returns when
+   the step is done. Each call is its own HTTP request, so it has a fresh
+   5-min Vercel function budget. */
+export async function executeNextPendingStep(opts: {
+  runId: string;
+  definition: PipelineDefinition;
+}): Promise<{
+  step_index?: number;
+  step_id?: string;
+  step_label?: string;
+  step_status?: string;
+  step_error?: string;
+  no_more_steps?: boolean;
+  run_status?: string;
+  error?: string;
+}> {
+  try {
+    /* Load run + completed steps to rebuild priorOutputs */
+    const { data: run } = await db().from("season_pipeline_runs")
+      .select("id, project_id, scope, status, llm_calls_used, web_searches_used, steps_completed")
+      .eq("id", opts.runId).maybeSingle();
+    if (!run)   return { error: "run not found" };
+    if ((run as any).status !== 'running') {
+      return { no_more_steps: true, run_status: (run as any).status };
+    }
+
+    const { data: allSteps } = await db().from("season_pipeline_steps")
+      .select("id, step_index, step_id, status, output")
+      .eq("run_id", opts.runId)
+      .order("step_index");
+
+    /* Find next pending step */
+    const pending = (allSteps || []).find((s: any) => s.status === 'pending');
+    if (!pending) {
+      /* No more pending steps — finalize the run */
+      await finalizeRun({ runId: opts.runId, definition: opts.definition });
+      return { no_more_steps: true, run_status: 'completed' };
+    }
+
+    /* Build priorOutputs from completed steps */
+    const priorOutputs: Record<string, any> = {};
+    for (const s of ((allSteps || []) as any[])) {
+      if (s.status === 'completed' && s.step_id && s.output !== null) {
+        priorOutputs[s.step_id] = s.output;
+      }
+    }
+
+    const stepDef = opts.definition.steps[(pending as any).step_index];
+    if (!stepDef) {
+      return { error: `step ${(pending as any).step_index} not found in definition` };
+    }
+
+    /* Cost cap check */
+    const cap = opts.definition.llm_call_cap || DEFAULT_LLM_CAP;
+    if (((run as any).llm_calls_used || 0) >= cap) {
+      await db().from("season_pipeline_steps").update({
+        status: 'failed',
+        error_message: `LLM cap (${cap}) reached for this pipeline. Manual retry or raise cap to continue.`,
+        finished_at: new Date().toISOString(),
+      }).eq("id", (pending as any).id);
+      await db().from("season_pipeline_runs").update({
+        status: 'failed',
+        honest_summary: `Stopped at step ${(pending as any).step_index + 1}: hit LLM call cap of ${cap}.`,
+        finished_at: new Date().toISOString(),
+      }).eq("id", opts.runId);
+      return { step_index: (pending as any).step_index, step_status: 'failed', step_error: 'llm cap reached' };
+    }
+
+    /* Mark step as running, update run.step_current */
+    await db().from("season_pipeline_steps").update({
+      status: 'running',
+      started_at: new Date().toISOString(),
+      input_snapshot: { scope: (run as any).scope || {}, prior_keys: Object.keys(priorOutputs) },
+    }).eq("id", (pending as any).id);
+
+    await db().from("season_pipeline_runs").update({
+      step_current: (pending as any).step_index + 1,
+    }).eq("id", opts.runId);
+
+    /* Execute the step with timeout protection */
+    const stepStart = Date.now();
+    console.log(`[execute_step] \u25b6 run ${opts.runId.slice(0,8)} step ${(pending as any).step_index + 1}/${opts.definition.steps.length}: ${stepDef.id}`);
+    const result = await runStepWithTimeout(stepDef, {
+      projectId: (run as any).project_id,
+      scope:     (run as any).scope || {},
+      prior:     priorOutputs,
+    });
+    const stepElapsed = Date.now() - stepStart;
+    console.log(`[execute_step] ${result.ok ? '\u2713' : '\u2717'} step ${(pending as any).step_index + 1}: ${stepDef.id} done in ${stepElapsed}ms`);
+
+    /* Persist step result */
+    if (result.ok) {
+      await db().from("season_pipeline_steps").update({
+        status: 'completed',
+        output: result.output,
+        output_artifact_kind: result.artifact?.kind || null,
+        honest_note: result.honest_note || null,
+        llm_calls: result.llm_calls || 0,
+        web_searches: result.web_searches || 0,
+        duration_ms: stepElapsed,
+        finished_at: new Date().toISOString(),
+      }).eq("id", (pending as any).id);
+    } else {
+      await db().from("season_pipeline_steps").update({
+        status: 'failed',
+        error_message: (result.error || 'unknown').slice(0, 500),
+        llm_calls: result.llm_calls || 0,
+        web_searches: result.web_searches || 0,
+        duration_ms: stepElapsed,
+        finished_at: new Date().toISOString(),
+      }).eq("id", (pending as any).id);
+    }
+
+    /* Update aggregates on the run */
+    const newLlm  = ((run as any).llm_calls_used    || 0) + (result.llm_calls    || 0);
+    const newWeb  = ((run as any).web_searches_used || 0) + (result.web_searches || 0);
+    const newDone = ((run as any).steps_completed   || 0) + (result.ok ? 1 : 0);
+
+    await db().from("season_pipeline_runs").update({
+      llm_calls_used:     newLlm,
+      web_searches_used:  newWeb,
+      estimated_cost_usd: Number((newLlm * COST_PER_CALL).toFixed(4)),
+      steps_completed:    newDone,
+    }).eq("id", opts.runId);
+
+    /* If this step failed and isn't marked continue_on_fail, mark the whole run failed */
+    if (!result.ok && !stepDef.continue_on_fail) {
+      /* But still let the frontend know about it; the FE may try to finalize later */
+      await db().from("season_pipeline_runs").update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        honest_summary: `Stopped at step ${(pending as any).step_index + 1} ("${stepDef.label}"): ${result.error || 'failed'}.`,
+      }).eq("id", opts.runId);
+      return {
+        step_index: (pending as any).step_index,
+        step_id: stepDef.id,
+        step_label: stepDef.label,
+        step_status: 'failed',
+        step_error: result.error,
+        run_status: 'failed',
+      };
+    }
+
+    /* Step succeeded (or failed but continue_on_fail). Check if there are more pending. */
+    const { data: remainingPending } = await db().from("season_pipeline_steps")
+      .select("id")
+      .eq("run_id", opts.runId)
+      .eq("status", 'pending')
+      .limit(1);
+
+    if (!remainingPending || remainingPending.length === 0) {
+      /* This was the last step — finalize */
+      await finalizeRun({ runId: opts.runId, definition: opts.definition });
+      return {
+        step_index: (pending as any).step_index,
+        step_id: stepDef.id,
+        step_label: stepDef.label,
+        step_status: result.ok ? 'completed' : 'failed',
+        run_status: 'completed',
+      };
+    }
+
+    /* More steps pending — return the result of this step */
+    return {
+      step_index: (pending as any).step_index,
+      step_id: stepDef.id,
+      step_label: stepDef.label,
+      step_status: result.ok ? 'completed' : 'failed',
+      step_error: result.ok ? undefined : result.error,
+      run_status: 'running',
+    };
+  } catch (e: any) {
+    return { error: e?.message || 'execute step failed' };
+  }
+}
+
+/* Finalize a run — aggregate artifacts, write summaries, mark completed. */
+export async function finalizeRun(opts: {
+  runId: string;
+  definition: PipelineDefinition;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    /* Load run + all step rows */
+    const { data: run } = await db().from("season_pipeline_runs")
+      .select("*").eq("id", opts.runId).maybeSingle();
+    if (!run) return { success: false, error: 'run not found' };
+
+    /* Already finalized? */
+    if (['completed', 'failed', 'cancelled'].includes((run as any).status)) {
+      return { success: true };
+    }
+
+    const { data: steps } = await db().from("season_pipeline_steps")
+      .select("step_index, step_id, step_label, status, output, output_artifact_kind, honest_note, error_message, duration_ms")
+      .eq("run_id", opts.runId)
+      .order("step_index");
+
+    const stepRows = (steps || []) as any[];
+
+    /* Aggregate artifacts (from each completed step's output if it contains an artifact body) */
+    const artifacts: Array<{ kind: string; title: string; body: string; step_id: string }> = [];
+    const honestNotes: string[] = [];
+    let stepsCompleted = 0;
+    let stepsFailed    = 0;
+
+    for (const s of stepRows) {
+      if (s.status === 'completed') {
+        stepsCompleted++;
+        if (s.honest_note) honestNotes.push(`(${s.step_label}) ${s.honest_note}`);
+        /* Look in output for an artifact — the rank-pipeline writes the body string into a known field */
+        const out = s.output;
+        if (out && typeof out === 'object') {
+          /* The pipeline saves whole step output as JSON; we don't have a separate artifact body here.
+             Use the artifact_kind field as a hint that the step produced something. */
+          if (s.output_artifact_kind) {
+            const body = typeof out === 'string' ? out :
+                         (out.body || out.content || out.text || JSON.stringify(out, null, 2));
+            artifacts.push({
+              kind: s.output_artifact_kind,
+              title: s.step_label,
+              body: String(body),
+              step_id: s.step_id,
+            });
+          }
+        }
+      } else if (s.status === 'failed') {
+        stepsFailed++;
+        if (s.error_message) honestNotes.push(`Step "${s.step_label}" failed: ${s.error_message}`);
+      }
+    }
+
+    const finalStatus: 'completed' | 'failed' | 'partial' =
+      stepsFailed === 0 ? 'completed' :
+      stepsCompleted > 0 ? 'partial' : 'failed';
+    const persistedStatus = finalStatus === 'partial' ? 'completed' : finalStatus;
+
+    const elapsedMs = (run as any).started_at
+      ? Date.now() - new Date((run as any).started_at).getTime()
+      : 0;
+
+    const honestSummary = buildHonestSummary({
+      stepsCompleted, stepsFailed,
+      stepCount: opts.definition.steps.length,
+      notes: honestNotes,
+      elapsedMs,
+    });
+    const clientFacingSummary = buildClientFacingSummary({
+      pipelineType: opts.definition.type,
+      artifacts,
+      stepsCompleted,
+    });
+
+    await db().from("season_pipeline_runs").update({
+      status:                persistedStatus,
+      steps_completed:       stepsCompleted,
+      steps_failed:          stepsFailed,
+      final_artifacts:       artifacts,
+      honest_summary:        honestSummary,
+      client_facing_summary: clientFacingSummary,
+      finished_at:           new Date().toISOString(),
+    }).eq("id", opts.runId);
+
+    await logActivity((run as any).project_id, opts.runId,
+      finalStatus === 'completed' ? 'pipeline_completed' : 'pipeline_partial',
+      `Pipeline ${finalStatus}: ${opts.definition.type} (${stepsCompleted}/${opts.definition.steps.length} steps)`,
+      honestSummary.slice(0, 500),
+    );
+
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'finalize failed' };
+  }
+}
