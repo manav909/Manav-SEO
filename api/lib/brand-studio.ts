@@ -281,7 +281,7 @@ export async function bsListDocuments(opts: {
       "audience_role, template_id, confidence, source_url, version, " +
       "parent_document_id, published_to_client, published_at, doc_status, " +
       "file_size_kb, source_date, created_at, extracted_data, " +
-      "source_documents, web_sources"
+      "source_documents, web_sources, share_in_investor_pack"
     ).eq("project_id", opts.projectId);
 
     if (opts.kind)             q = q.eq("kind", opts.kind);
@@ -528,6 +528,16 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
     case "bs_export_docx": {
       const { bsExportDocx } = await import("./brand-studio-export.js");
       return bsExportDocx(body);
+    }
+
+    /* Phase 1G — Investor data room bundle */
+    case "bs_export_investor_bundle": {
+      const { bsExportInvestorBundle } = await import("./brand-studio-investor-bundle.js");
+      return bsExportInvestorBundle(body);
+    }
+    case "bs_toggle_investor_pack": {
+      const { bsToggleInvestorPack } = await import("./brand-studio-investor-bundle.js");
+      return bsToggleInvestorPack(body);
     }
 
     /* H.2+ handlers will plug in here:

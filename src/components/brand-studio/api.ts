@@ -1625,3 +1625,76 @@ export async function exportDocumentDocx(documentId: string): Promise<{
   if (!j?.success) return { error: j?.error || 'Export failed' };
   return { base64: j.base64, filename: j.filename, contentType: j.contentType };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 1G — Investor data room bundle
+═══════════════════════════════════════════════════════════ */
+
+export interface InvestorBundleReport {
+  projectName:         string;
+  builtAt:             string;
+  investorDocs:        Array<{
+    templateLabel: string;
+    status:        'included' | 'missing' | 'export_failed';
+    documentName?: string;
+    version?:      number;
+    confidence?:   string;
+    published?:    boolean;
+    filename?:     string;
+    note?:         string;
+  }>;
+  sourceDocs:          Array<{
+    name:            string;
+    path:            string;
+    docType?:        string;
+    stakeholderRole?:string;
+    createdAt?:      string;
+    sourceUrl?:      string;
+  }>;
+  metricsRowCount:     number;
+  coverLetterIncluded: boolean;
+}
+
+export async function exportInvestorBundle(opts: {
+  projectId: string;
+  cover_letter?:     boolean;
+  source_documents?: boolean;
+}): Promise<{
+  signedUrl?: string;
+  filename?:  string;
+  sizeBytes?: number;
+  report?:    InvestorBundleReport;
+  error?:     string;
+}> {
+  const res = await fetch(ENGINE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'bs_export_investor_bundle',
+      projectId: opts.projectId,
+      include: {
+        cover_letter:     opts.cover_letter,
+        source_documents: opts.source_documents,
+      },
+    }),
+  });
+  if (!res.ok) return { error: `HTTP ${res.status}` };
+  const j = await res.json();
+  if (!j?.success) return { error: j?.error || 'Bundle export failed' };
+  return {
+    signedUrl: j.signedUrl,
+    filename:  j.filename,
+    sizeBytes: j.sizeBytes,
+    report:    j.report,
+  };
+}
+
+export async function toggleInvestorPack(opts: {
+  documentId: string;
+  projectId:  string;
+  include:    boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_toggle_investor_pack', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}

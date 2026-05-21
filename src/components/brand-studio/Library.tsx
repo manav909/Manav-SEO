@@ -12,13 +12,14 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
-import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare, BookOpen, X, Image as ImageIcon } from 'lucide-react';
-import { listDocuments, publishDocument, listStaleDocs, getDocumentDetail, listAttachments, getBrandAssets, type DocumentAttachment } from './api';
+import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare, BookOpen, X, Image as ImageIcon, Briefcase } from 'lucide-react';
+import { listDocuments, publishDocument, listStaleDocs, getDocumentDetail, listAttachments, getBrandAssets, toggleInvestorPack, type DocumentAttachment } from './api';
 import { extractDataReferences, fetchDataReferences } from './data-references';
 import { toast } from '@/hooks/use-toast';
 import DocumentDiff from './DocumentDiff';
 import DocumentViewer from './DocumentViewer';
 import AttachmentManager from './AttachmentManager';
+import InvestorBundleButton from './InvestorBundleButton';
 import type { BrandStudioDocument, BrandStudioCatalogs } from './types';
 
 interface Props {
@@ -81,6 +82,11 @@ export default function Library({ projectId, catalogs }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Action header — investor bundle export */}
+      <div className="flex items-center justify-end">
+        <InvestorBundleButton projectId={projectId} />
+      </div>
+
       {/* Filter row */}
       <div className="rounded-xl border border-border bg-card/40 p-3 flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-semibold">
@@ -203,6 +209,9 @@ export default function Library({ projectId, catalogs }: Props) {
             onPublishChange={(id, published) => {
               setDocs((prev) => prev.map((d) => d.id === id ? { ...d, published_to_client: published, published_at: published ? new Date().toISOString() : undefined } : d));
             }}
+            onInvestorPackChange={(id, included) => {
+              setDocs((prev) => prev.map((d) => d.id === id ? { ...d, share_in_investor_pack: included } : d));
+            }}
           />
         ))}
       </div>
@@ -292,11 +301,12 @@ export default function Library({ projectId, catalogs }: Props) {
 }
 
 function DocumentRow({
-  doc, catalogs, onPublishChange, isStale, staleReasons, onCompareToParent, onOpen,
+  doc, catalogs, onPublishChange, onInvestorPackChange, isStale, staleReasons, onCompareToParent, onOpen,
 }: {
   doc: BrandStudioDocument;
   catalogs: BrandStudioCatalogs | null;
   onPublishChange: (id: string, published: boolean) => void;
+  onInvestorPackChange?: (id: string, included: boolean) => void;
   isStale?: boolean;
   staleReasons?: string[];
   onCompareToParent?: () => void;
@@ -442,6 +452,31 @@ function DocumentRow({
               <><EyeOff className="h-2.5 w-2.5" /> Internal</>
             )}
           </button>
+
+          {/* Investor-pack include toggle — ingested docs only */}
+          {doc.kind === 'ingested' && (
+            <button
+              onClick={async () => {
+                const next = !(doc.share_in_investor_pack || false);
+                const r = await toggleInvestorPack({ documentId: doc.id, projectId: doc.project_id, include: next });
+                if (r.success) {
+                  onInvestorPackChange?.(doc.id, next);
+                  toast({ title: next ? 'Added to investor pack' : 'Removed from investor pack' });
+                } else {
+                  toast({ title: 'Toggle failed', description: r.error || 'Run the Phase 1G migration first.', variant: 'destructive' });
+                }
+              }}
+              title={doc.share_in_investor_pack ? 'Click to exclude from investor data room bundle' : 'Click to include in investor data room bundle'}
+              className={`text-[10px] px-2 py-1 rounded-lg font-bold flex items-center gap-1 ${
+                doc.share_in_investor_pack
+                  ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25'
+                  : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/20'
+              }`}
+            >
+              <Briefcase className="h-2.5 w-2.5" />
+              {doc.share_in_investor_pack ? 'In pack' : 'Pack'}
+            </button>
+          )}
         </div>
       </div>
     </div>

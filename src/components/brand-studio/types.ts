@@ -84,6 +84,8 @@ export interface BrandStudioDocument {
   extracted_data?:     any;
   source_documents?:   string[];
   web_sources?:        Array<{ url: string; retrieved_at: string }>;
+  /** Phase 1G — opt-in for inclusion in investor data room bundles */
+  share_in_investor_pack?: boolean;
 }
 
 export interface StakeholderRole {
