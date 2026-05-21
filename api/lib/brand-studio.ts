@@ -534,6 +534,40 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsRecomputeAnalyticsIntel(body);
     }
 
+    /* Phase 1L — What-If Simulator */
+    case "bs_list_actions": {
+      const { bsListActions } = await import("./pm-scenario-storage.js");
+      return bsListActions(body);
+    }
+    case "bs_get_action_suggestions": {
+      const { bsGetActionSuggestions } = await import("./pm-scenario-storage.js");
+      return bsGetActionSuggestions(body);
+    }
+    case "bs_project_scenario": {
+      const { bsProjectScenario } = await import("./pm-scenario-storage.js");
+      return bsProjectScenario(body);
+    }
+    case "bs_save_scenario": {
+      const { bsSaveScenario } = await import("./pm-scenario-storage.js");
+      return bsSaveScenario(body);
+    }
+    case "bs_list_scenarios": {
+      const { bsListScenarios } = await import("./pm-scenario-storage.js");
+      return bsListScenarios(body);
+    }
+    case "bs_get_scenario": {
+      const { bsGetScenario } = await import("./pm-scenario-storage.js");
+      return bsGetScenario(body);
+    }
+    case "bs_update_scenario": {
+      const { bsUpdateScenario } = await import("./pm-scenario-storage.js");
+      return bsUpdateScenario(body);
+    }
+    case "bs_delete_scenario": {
+      const { bsDeleteScenario } = await import("./pm-scenario-storage.js");
+      return bsDeleteScenario(body);
+    }
+
     /* Phase 1F — DOCX export */
     case "bs_export_docx": {
       const { bsExportDocx } = await import("./brand-studio-export.js");

@@ -1062,3 +1062,170 @@ export async function recomputeAnalyticsIntel(projectId: string): Promise<{
   if (!r?.success) return { intel: null, error: r?.error || 'Could not recompute analytics intelligence.' };
   return { intel: r.intel || null, message: r.message };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 1L — What-If Simulator
+═══════════════════════════════════════════════════════════ */
+
+export type ActionCategoryClient = "content" | "onpage" | "technical" | "links" | "ux" | "strategy";
+export type ActionConfidenceClient = "high" | "medium" | "low";
+export type ActionInputTypeClient = "page_url" | "query" | "number" | "text" | "select" | "page_list";
+
+export interface ActionInputDefClient {
+  key: string; label: string; type: ActionInputTypeClient;
+  required: boolean; helperText?: string; options?: string[];
+  defaultValue?: string; min?: number; max?: number;
+}
+
+export interface ImpactRangeClient {
+  min: number; max: number; basis: string;
+  unit: "percent" | "absolute" | "position_delta";
+}
+
+export interface ImpactModelClient {
+  clicks?:      ImpactRangeClient;
+  impressions?: ImpactRangeClient;
+  position?:    ImpactRangeClient;
+  ctr?:         ImpactRangeClient;
+  conversions?: ImpactRangeClient;
+  visibility?:  ImpactRangeClient;
+}
+
+export interface TimelineCurveClient {
+  immediate: number; day_30: number; day_60: number; day_90: number;
+  notes: string;
+}
+
+export interface SeoActionClient {
+  id: string;
+  category: ActionCategoryClient;
+  name: string;
+  shortDescription: string;
+  fullDescription: string;
+  inputs: ActionInputDefClient[];
+  impact: ImpactModelClient;
+  timeline: TimelineCurveClient;
+  effortHours: number;
+  confidence: ActionConfidenceClient;
+  costSummary: string;
+  evidence: string;
+  applicableWhen: string[];
+  prerequisites?: string[];
+}
+
+export interface SuggestedActionClient {
+  action: SeoActionClient;
+  reason: string;
+  priority: "must_do" | "should_do" | "could_do";
+  trigger_kpi?: string;
+  prefilled_inputs?: Record<string, any>;
+}
+
+export interface ActionInstanceClient {
+  action_id: string;
+  inputs: Record<string, any>;
+  target_label?: string;
+}
+
+export interface ProjectedMetricClient {
+  baseline: number; immediate: number;
+  day_30: number; day_60: number; day_90: number;
+  day_90_low: number; day_90_high: number;
+  unit: "count" | "percent" | "position";
+}
+
+export interface ScenarioProjectionClient {
+  baseline: {
+    clicks_30d: number; impressions_30d: number; avg_position: number;
+    ctr_pct: number; sessions_30d: number; conversions_30d: number;
+    health_score: number; resilience_score: number;
+  };
+  projected: {
+    clicks:        ProjectedMetricClient;
+    impressions:   ProjectedMetricClient;
+    position:      ProjectedMetricClient;
+    ctr:           ProjectedMetricClient;
+    sessions:      ProjectedMetricClient;
+    conversions:   ProjectedMetricClient;
+  };
+  total_effort_hours: number;
+  total_cost_summary: string;
+  contributions: Array<{
+    action_id: string; action_name: string;
+    contribution_clicks: number; contribution_position: number;
+    confidence: string; notes: string;
+  }>;
+  diminishing_returns_pct: number;
+}
+
+export interface SavedScenarioClient {
+  id: string; project_id: string;
+  name: string; description?: string; status: string;
+  actions: ActionInstanceClient[];
+  baseline_snapshot?: any; projected_impact?: ScenarioProjectionClient;
+  tags?: string[]; shared_with_client?: boolean;
+  created_at: string; updated_at: string;
+  created_by_email?: string;
+}
+
+export async function listActions(category?: ActionCategoryClient): Promise<{ actions: SeoActionClient[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_actions', category });
+  if (!r?.success) return { actions: [], error: r?.error || 'Could not load action library.' };
+  return { actions: r.actions || [] };
+}
+
+export async function getActionSuggestions(projectId: string, maxResults?: number): Promise<{ suggestions: SuggestedActionClient[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_action_suggestions', projectId, maxResults });
+  if (!r?.success) return { suggestions: [], error: r?.error || 'Could not get suggestions.' };
+  return { suggestions: r.suggestions || [] };
+}
+
+export async function projectScenarioImpact(opts: {
+  projectId: string; actions: ActionInstanceClient[];
+}): Promise<{ projection?: ScenarioProjectionClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_project_scenario', ...opts });
+  if (!r?.success) return { error: r?.error || 'Projection failed.' };
+  return { projection: r.projection };
+}
+
+export async function saveScenario(opts: {
+  projectId: string;
+  name: string;
+  description?: string;
+  actions: ActionInstanceClient[];
+  status?: string;
+  tags?: string[];
+  sharedWithClient?: boolean;
+}): Promise<{ scenario?: SavedScenarioClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_save_scenario', ...opts });
+  if (!r?.success) return { error: r?.error || 'Save failed.' };
+  return { scenario: r.scenario };
+}
+
+export async function listScenarios(projectId: string, status?: string): Promise<{ scenarios: SavedScenarioClient[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_scenarios', projectId, status });
+  if (!r?.success) return { scenarios: [], error: r?.error || 'List failed.' };
+  return { scenarios: r.scenarios || [] };
+}
+
+export async function getScenario(scenarioId: string): Promise<{ scenario?: SavedScenarioClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_scenario', scenarioId });
+  if (!r?.success) return { error: r?.error || 'Get failed.' };
+  return { scenario: r.scenario };
+}
+
+export async function updateScenario(opts: {
+  scenarioId: string;
+  name?: string; description?: string; actions?: ActionInstanceClient[];
+  status?: string; tags?: string[]; sharedWithClient?: boolean;
+}): Promise<{ scenario?: SavedScenarioClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_update_scenario', ...opts });
+  if (!r?.success) return { error: r?.error || 'Update failed.' };
+  return { scenario: r.scenario };
+}
+
+export async function deleteScenario(scenarioId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_delete_scenario', scenarioId });
+  if (!r?.success) return { success: false, error: r?.error || 'Delete failed.' };
+  return { success: true };
+}

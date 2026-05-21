@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { seedV2DataRoom, aiFillPreview as apiAiFillPreview, aiFillApply as apiAiFillApply, type SeedSummary, type AIFillPreview, type AIFieldProposal } from '@/components/pm/api';
 import AnalyticsIntelPanel from '@/components/pm/AnalyticsIntelPanel';
+import WhatIfSimulator from '@/components/pm/WhatIfSimulator';
 import {
   Layers,
   Upload,
@@ -2179,6 +2180,7 @@ Evidence: ${c.data_basis}` : ''}`,
             {tab === 'analytics'   && (
               <div className="space-y-4">
                 {selProjId && <AnalyticsIntelPanel projectId={selProjId} />}
+                {selProjId && <WhatIfSimulator projectId={selProjId} defaultCollapsed />}
                 <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="analytics"/></div>
               </div>
             )}
