@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react';
 import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare, BookOpen, X, Image as ImageIcon, Briefcase } from 'lucide-react';
 import { listDocuments, publishDocument, listStaleDocs, getDocumentDetail, listAttachments, getBrandAssets, toggleInvestorPack, type DocumentAttachment } from './api';
-import { extractDataReferences, fetchDataReferences } from './data-references';
+import { extractDataReferences, fetchDataReferences, defaultScope, type TimeScope } from './data-references';
 import { toast } from '@/hooks/use-toast';
 import DocumentDiff from './DocumentDiff';
 import DocumentViewer from './DocumentViewer';
@@ -49,6 +49,10 @@ export default function Library({ projectId, catalogs }: Props) {
   const [showAttachments, setShowAttachments] = useState(false);
   /** Phase 1D — live data resolutions for the open document */
   const [dataRefs,        setDataRefs]        = useState<Record<string, any>>({});
+  /** Phase 1H — time scope for live data references + baseline detection */
+  const [baselineDate,    setBaselineDate]    = useState<string | null>(null);
+  const [scope,           setScope]           = useState<TimeScope>({ kind: 'preset', presetKey: 'last_90d' });
+  const [scopeLoading,    setScopeLoading]    = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -80,11 +84,32 @@ export default function Library({ projectId, catalogs }: Props) {
     return () => { cancelled = true; };
   }, [projectId, kindFilter, stakeholderF, audienceF, publishedOnly]);
 
+  /* Phase 1H — fetch project baseline date once per project so the
+     bundle button + viewer picker can offer "Since baseline" + Custom
+     date pre-fill. Single 1-reference resolve call. */
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    (async () => {
+      const { resolutions } = await fetchDataReferences(projectId, [
+        { id: '__baseline__', from: 'dataroom.analytics.organic_sessions_baseline_date' },
+      ]);
+      if (cancelled) return;
+      const baseline = resolutions['__baseline__'] || null;
+      setBaselineDate(baseline);
+      /* If a baseline exists, switch the default scope to since_baseline */
+      if (baseline) setScope((prev) => prev.kind === 'preset' && prev.presetKey === 'last_90d'
+        ? defaultScope(true)
+        : prev);
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
   return (
     <div className="space-y-4">
       {/* Action header — investor bundle export */}
       <div className="flex items-center justify-end">
-        <InvestorBundleButton projectId={projectId} />
+        <InvestorBundleButton projectId={projectId} baselineDate={baselineDate} />
       </div>
 
       {/* Filter row */}
@@ -197,11 +222,11 @@ export default function Library({ projectId, catalogs }: Props) {
               if (brandRes?.assets?.primary_logo_url) {
                 setBrandLogoUrl(String(brandRes.assets.primary_logo_url));
               }
-              /* Phase 1D — extract + fetch live data references */
+              /* Phase 1D + 1H — fetch live data refs using the current scope */
               const content = (docRes.document as any)?.raw_content || '';
               const refs = extractDataReferences(content);
               if (refs.length > 0) {
-                const resolutions = await fetchDataReferences(projectId, refs);
+                const { resolutions } = await fetchDataReferences(projectId, refs, scope);
                 setDataRefs(resolutions);
               }
               setViewerLoading(false);
@@ -276,6 +301,26 @@ export default function Library({ projectId, catalogs }: Props) {
                         caption:   a.caption || undefined,
                       })),
                     dataReferences: dataRefs,
+                  }}
+                  scope={scope}
+                  baselineDate={baselineDate}
+                  scopeLoading={scopeLoading}
+                  onScopeChange={async (nextScope) => {
+                    setScope(nextScope);
+                    if (!viewerDoc) return;
+                    setScopeLoading(true);
+                    try {
+                      const content = (viewerDoc as any).raw_content || '';
+                      const refs = extractDataReferences(content);
+                      if (refs.length > 0) {
+                        const { resolutions } = await fetchDataReferences(projectId, refs, nextScope);
+                        setDataRefs(resolutions);
+                      }
+                    } catch (e: any) {
+                      toast({ title: 'Could not refresh data', description: e?.message || 'Unknown error', variant: 'destructive' });
+                    } finally {
+                      setScopeLoading(false);
+                    }
                   }}
                 />
               )}

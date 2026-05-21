@@ -21,12 +21,14 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkDirective from 'remark-directive';
-import { Printer, Download, Copy, CheckCircle2, FileText, ExternalLink, FileType2 } from 'lucide-react';
+import { Printer, Download, Copy, CheckCircle2, FileText, ExternalLink, FileType2, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { remarkDirectiveRender } from './document-directives';
 import DirectiveDispatcher from './DirectiveRenderer';
 import DocumentPrintBody from './DocumentPrintBody';
 import { exportDocumentDocx } from './api';
+import TimeScopePicker from './TimeScopePicker';
+import { type TimeScope } from './data-references';
 
 interface Props {
   /** The markdown / text content of the document */
@@ -58,10 +60,18 @@ interface Props {
     /** Live data resolutions — keyed by composite ref key */
     dataReferences?: Record<string, any>;
   };
+  /** Phase 1H — Time scope picker. When onScopeChange is provided, the
+   *  picker renders in the action bar. baselineDate enables the
+   *  "Since baseline" preset + pre-fills the Custom range start. */
+  scope?:         TimeScope;
+  onScopeChange?: (s: TimeScope) => void;
+  baselineDate?:  string | null;
+  scopeLoading?:  boolean;
 }
 
 export default function DocumentViewer({
   content, documentName, documentId, meta, brandColor, summary, keyFindings, dataContext,
+  scope, onScopeChange, baselineDate, scopeLoading,
 }: Props) {
   const accent = brandColor || '#8b5cf6';
   const printRef = useRef<HTMLDivElement>(null);
@@ -175,12 +185,27 @@ export default function DocumentViewer({
         >
           {copied ? <><CheckCircle2 className="h-3 w-3 text-green-400" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
         </button>
+
+        {/* Phase 1H — Time scope picker for live data references */}
+        {scope && onScopeChange && (
+          <div className="ml-auto flex items-center gap-2">
+            {scopeLoading && <Loader2Icon />}
+            <TimeScopePicker
+              scope={scope}
+              onChange={onScopeChange}
+              baselineDate={baselineDate}
+              brandColor={accent}
+              label="Data range"
+            />
+          </div>
+        )}
+
         {meta?.sourceUrl && (
           <a
             href={meta.sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+            className={`${scope && onScopeChange ? '' : 'ml-auto'} text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center gap-1.5`}
           >
             <ExternalLink className="h-3 w-3" /> Original source
           </a>
@@ -663,5 +688,15 @@ export default function DocumentViewer({
         }
       `}</style>
     </div>
+  );
+}
+
+/* Small spinner used while the parent re-fetches data references after
+   a scope change. Kept inline to avoid a separate file. */
+function Loader2Icon() {
+  return (
+    <span title="Re-resolving live data…" className="inline-flex items-center text-muted-foreground">
+      <Loader2 className="h-3 w-3 animate-spin" />
+    </span>
   );
 }

@@ -46,10 +46,16 @@ interface BundleOpts {
     cover_letter?:     boolean;
     source_documents?: boolean;
   };
+  /** Phase 1H — time scope passed through to DOCX exports for live data.
+   *  Currently the DOCX exporter only renders placeholders for live data,
+   *  so this is recorded in the README for the audit trail but doesn't
+   *  yet affect the rendered docx content. Will be wired through in a
+   *  follow-up that adds server-side data resolution to bsExportDocx. */
+  scope?: any;
 }
 
 export async function bsExportInvestorBundle(body: BundleOpts): Promise<any> {
-  const { projectId } = body;
+  const { projectId, scope } = body;
   if (!projectId) return { success: false, error: "projectId required" };
   const includeSources     = body.include?.source_documents !== false;  /* default true */
   const includeCoverLetter = body.include?.cover_letter      === true;  /* default false */
@@ -61,6 +67,23 @@ export async function bsExportInvestorBundle(body: BundleOpts): Promise<any> {
   ]);
   if (!project) return { success: false, error: "Project not found" };
 
+  /* Resolve the scope to an actual date range for the audit trail.
+     We lazily import to avoid pulling the resolver into the bundle
+     module's static graph. */
+  let scopeLabel = "All available data";
+  let scopeRange: { from: string; to: string } | null = null;
+  if (scope && typeof scope === "object") {
+    try {
+      const { resolveScopeForReport } = await import("./brand-studio-resolve.js")
+        .then((m: any) => ({ resolveScopeForReport: m.resolveScopeForReport || m.resolveScopeRange }))
+        .catch(() => ({ resolveScopeForReport: null as any }));
+      if (resolveScopeForReport) {
+        scopeRange = await resolveScopeForReport(projectId, scope);
+      }
+    } catch { /* non-fatal */ }
+    scopeLabel = describeScopeForReport(scope, scopeRange);
+  }
+
   const zip = new JSZip();
   const report: BundleReport = {
     projectName:        (project as any).name,
@@ -69,6 +92,8 @@ export async function bsExportInvestorBundle(body: BundleOpts): Promise<any> {
     sourceDocs:         [],
     metricsRowCount:    0,
     coverLetterIncluded:false,
+    scopeLabel,
+    scopeRange,
   };
 
   /* 2. For each of the 5 investor templates, find the most recent version
@@ -256,6 +281,9 @@ interface BundleReport {
   }>;
   metricsRowCount:     number;
   coverLetterIncluded: boolean;
+  /** Phase 1H — time scope captured at the moment of bundle creation */
+  scopeLabel?:         string;
+  scopeRange?:         { from: string; to: string } | null;
 }
 
 /* ─── README generator ──────────────────────────────────────── */
@@ -266,6 +294,10 @@ function buildReadme(report: BundleReport, project: any, brand: any): string {
   lines.push("");
   lines.push(`*Generated: ${new Date(report.builtAt).toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short" })}*`);
   lines.push("");
+  if (report.scopeLabel) {
+    lines.push(`*Time scope for charts, KPIs & metrics: **${report.scopeLabel}***`);
+    lines.push("");
+  }
 
   if (brand?.tagline) lines.push(`> ${brand.tagline}`);
   lines.push("");
@@ -429,6 +461,41 @@ function sanitizeFilename(s: string): string {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 80) || "file";
+}
+
+/** Phase 1H — derive a human-readable label for the chosen scope.
+ *  Mirrors the frontend describeScope but server-side. */
+function describeScopeForReport(scope: any, range: { from: string; to: string } | null): string {
+  if (!scope || typeof scope !== "object") return "All available data";
+  const fmt = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    } catch { return iso; }
+  };
+  if (scope.kind === "custom") {
+    const from = scope.from ? fmt(scope.from) : "(start)";
+    const to   = scope.to   ? fmt(scope.to)   : "today";
+    return `${from} → ${to}`;
+  }
+  if (scope.kind === "preset") {
+    const presetLabels: Record<string, string> = {
+      last_30d:       "Last 30 days",
+      last_90d:       "Last 90 days",
+      last_365d:      "Last 365 days",
+      monthly:        "This month",
+      last_month:     "Last month",
+      quarterly:      "This quarter",
+      last_quarter:   "Last quarter",
+      ytd:            "Year to date",
+      since_baseline: range ? `Since baseline (${fmt(range.from)})` : "Since baseline",
+    };
+    const base = presetLabels[scope.presetKey] || String(scope.presetKey || "");
+    if (range && scope.presetKey !== "since_baseline") {
+      return `${base} (${fmt(range.from)} → ${fmt(range.to)})`;
+    }
+    return base;
+  }
+  return "All available data";
 }
 
 /* ─── Toggle endpoint — flip the share_in_investor_pack flag ─── */

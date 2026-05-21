@@ -1,21 +1,32 @@
 /* ════════════════════════════════════════════════════════════════
    src/components/brand-studio/data-references.ts
-   Brand Studio Phase 1D — Extract + fetch live data references.
+   Brand Studio Phase 1D + scope — Extract + fetch live data references.
 
    Workflow:
    1. extractDataReferences(content) — scans markdown for directive
       attrs `from=...` (plus `field`, `range`, `limit`, `columns`).
-      Returns a deduped list of References.
-   2. fetchDataReferences(projectId, references) — single round-trip
-      to the bs_resolve_data_references endpoint. Returns a dict
-      keyed by reference id (which equals the directive's `from`
-      attribute when there's no field/range; otherwise a composite key).
+   2. fetchDataReferences(projectId, references, scope?) — single
+      round-trip to the bs_resolve_data_references endpoint with
+      optional time scope. Returns a dict keyed by reference id.
 
    The dict is passed into DocumentViewer's dataContext.dataReferences
-   so directive renderers can look up resolved values inline.
+   so directive renderers can look up resolved values inline. When the
+   user picks a different scope, Library re-calls fetchDataReferences
+   and refreshes the dataContext.
 ═══════════════════════════════════════════════════════════════ */
 
 const ENGINE = '/api/task-engine';
+
+export type TimeScopePreset =
+  | 'monthly' | 'last_month'
+  | 'quarterly' | 'last_quarter'
+  | 'ytd'
+  | 'last_30d' | 'last_90d' | 'last_365d'
+  | 'since_baseline';
+
+export type TimeScope =
+  | { kind: 'preset'; presetKey: TimeScopePreset }
+  | { kind: 'custom'; from?: string; to?: string };
 
 export interface DataReference {
   id:       string;
@@ -92,12 +103,14 @@ function parseAttrs(s: string): Record<string, string> {
 }
 
 /** Round-trip to the backend resolver. Returns the dict of
- *  resolutions keyed by reference id. */
+ *  resolutions keyed by reference id. Optionally passes a TimeScope
+ *  that the resolver applies to metric queries. */
 export async function fetchDataReferences(
   projectId: string,
   references: DataReference[],
-): Promise<Record<string, any>> {
-  if (!projectId || references.length === 0) return {};
+  scope?: TimeScope,
+): Promise<{ resolutions: Record<string, any>; scope?: { from: string; to: string } }> {
+  if (!projectId || references.length === 0) return { resolutions: {} };
   try {
     const res = await fetch(ENGINE, {
       method: 'POST',
@@ -106,13 +119,46 @@ export async function fetchDataReferences(
         action: 'bs_resolve_data_references',
         projectId,
         references,
+        scope,
       }),
     });
-    if (!res.ok) return {};
+    if (!res.ok) return { resolutions: {} };
     const j = await res.json();
-    if (!j?.success) return {};
-    return j.resolutions || {};
+    if (!j?.success) return { resolutions: {} };
+    return { resolutions: j.resolutions || {}, scope: j.scope };
   } catch {
-    return {};
+    return { resolutions: {} };
+  }
+}
+
+/** Default scope used when nothing else is selected: prefer "since baseline"
+ *  if the project has a baseline date set, otherwise last 90 days. The
+ *  picker UI sets this based on probe data. */
+export function defaultScope(hasBaseline: boolean): TimeScope {
+  return hasBaseline
+    ? { kind: 'preset', presetKey: 'since_baseline' }
+    : { kind: 'preset', presetKey: 'last_90d' };
+}
+
+/** Human-readable label for a scope (used in picker button + meta) */
+export function describeScope(s: TimeScope, baselineDate?: string | null): string {
+  if (s.kind === 'custom') {
+    const from = s.from ? new Date(s.from).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const to   = s.to   ? new Date(s.to).toLocaleDateString('en-GB',   { day: '2-digit', month: 'short', year: 'numeric' }) : 'today';
+    return `${from} → ${to}`;
+  }
+  switch (s.presetKey) {
+    case 'last_30d':       return 'Last 30 days';
+    case 'last_90d':       return 'Last 90 days';
+    case 'last_365d':      return 'Last 365 days';
+    case 'monthly':        return 'This month';
+    case 'last_month':     return 'Last month';
+    case 'quarterly':      return 'This quarter';
+    case 'last_quarter':   return 'Last quarter';
+    case 'ytd':            return 'Year to date';
+    case 'since_baseline': return baselineDate
+                                    ? `Since baseline (${new Date(baselineDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })})`
+                                    : 'Since baseline';
+    default:               return 'Custom';
   }
 }

@@ -1,10 +1,10 @@
 /* ════════════════════════════════════════════════════════════════
    src/components/brand-studio/InvestorBundleButton.tsx
-   Brand Studio Phase 1G — Investor data room export.
+   Brand Studio Phase 1G + 1H — Investor data room export.
 
    PM-side button that:
    1. Opens a small modal with options (include cover letter, include
-      source docs)
+      source docs, time scope for live data)
    2. Calls bs_export_investor_bundle
    3. Shows progress + the bundle report when done
    4. Auto-triggers download of the ZIP via signed URL
@@ -18,17 +18,21 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { exportInvestorBundle, type InvestorBundleReport } from './api';
+import TimeScopePicker from './TimeScopePicker';
+import { defaultScope, type TimeScope } from './data-references';
 
 interface Props {
-  projectId:   string;
-  brandColor?: string;
+  projectId:    string;
+  brandColor?:  string;
+  baselineDate?:string | null;
 }
 
-export default function InvestorBundleButton({ projectId, brandColor }: Props) {
+export default function InvestorBundleButton({ projectId, brandColor, baselineDate }: Props) {
   const accent = brandColor || '#8b5cf6';
   const [open, setOpen]               = useState(false);
   const [includeCoverLetter, setICL]  = useState(false);
   const [includeSources, setIS]       = useState(true);
+  const [scope, setScope]             = useState<TimeScope>(() => defaultScope(!!baselineDate));
   const [building, setBuilding]       = useState(false);
   const [result, setResult]           = useState<{
     signedUrl?: string;
@@ -45,6 +49,7 @@ export default function InvestorBundleButton({ projectId, brandColor }: Props) {
       projectId,
       cover_letter:     includeCoverLetter,
       source_documents: includeSources,
+      scope,
     });
     setBuilding(false);
     if (r.error) {
@@ -141,6 +146,16 @@ export default function InvestorBundleButton({ projectId, brandColor }: Props) {
                       <span>Include templated cover letter</span>
                     </label>
                   </div>
+
+                  {/* Phase 1H — time scope picker for live data in the bundled docs */}
+                  <TimeScopePicker
+                    scope={scope}
+                    onChange={setScope}
+                    baselineDate={baselineDate}
+                    brandColor={accent}
+                    compact={false}
+                    label="Time scope for charts, KPIs & metrics"
+                  />
 
                   <div className="text-[10px] text-muted-foreground italic">
                     To mark an ingested document for inclusion, open it in the Library and toggle the "Include in investor pack" option.

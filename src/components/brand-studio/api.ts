@@ -1659,6 +1659,7 @@ export async function exportInvestorBundle(opts: {
   projectId: string;
   cover_letter?:     boolean;
   source_documents?: boolean;
+  scope?:            any;
 }): Promise<{
   signedUrl?: string;
   filename?:  string;
@@ -1676,6 +1677,7 @@ export async function exportInvestorBundle(opts: {
         cover_letter:     opts.cover_letter,
         source_documents: opts.source_documents,
       },
+      scope: opts.scope,
     }),
   });
   if (!res.ok) return { error: `HTTP ${res.status}` };
