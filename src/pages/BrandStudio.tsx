@@ -26,7 +26,7 @@ import { supabase } from '@/lib/supabase';
 import type { LucideIcon } from 'lucide-react';
 import {
   Library as LibraryIcon, Upload, Sparkles, Palette as PaletteIcon,
-  TrendingUp, Globe, Bell, Loader2, Save, Lock, KeyRound,
+  TrendingUp, Globe, Bell, Loader2, Save, Lock, KeyRound, Users,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import BrandBar from '@/components/brand-studio/BrandBar';
@@ -36,6 +36,7 @@ import Generate from '@/components/brand-studio/Generate';
 import InvestorPanel from '@/components/brand-studio/InvestorPanel';
 import MonitorsPanel from '@/components/brand-studio/MonitorsPanel';
 import TriggersPanel from '@/components/brand-studio/TriggersPanel';
+import StakeholdersPanel from '@/components/brand-studio/StakeholdersPanel';
 import ClientAccess from '@/components/brand-studio/ClientAccess';
 import EntitlementGate from '@/components/brand-studio/EntitlementGate';
 import {
@@ -45,7 +46,7 @@ import type {
   EntitlementResolution, BrandAssets, BrandStudioCatalogs,
 } from '@/components/brand-studio/types';
 
-type Tab = 'library' | 'ingest' | 'generate' | 'brand' | 'investor' | 'market' | 'triggers' | 'client_access';
+type Tab = 'library' | 'ingest' | 'generate' | 'brand' | 'investor' | 'market' | 'triggers' | 'stakeholders' | 'client_access';
 
 interface TabDef {
   id:      Tab;
@@ -62,6 +63,8 @@ const TABS: TabDef[] = [
   { id: 'investor',      label: 'Investor',      icon: TrendingUp,  feature: 'brand_studio.investor' },
   { id: 'market',        label: 'Market',        icon: Globe,       feature: 'brand_studio.market'   },
   { id: 'triggers',      label: 'Triggers',      icon: Bell,        feature: 'brand_studio.triggers' },
+  /* Stakeholders + synthesis (H.5) — gated on Brand Studio access (any tier with the studio gets it) */
+  { id: 'stakeholders',  label: 'Stakeholders',  icon: Users,       feature: 'brand_studio.access'   },
   /* Client Access is gated on the master Brand Studio access flag,
      not on a specific feature — every tier that has Brand Studio access
      gets the ability to configure client access. */
@@ -286,6 +289,10 @@ export default function BrandStudio() {
               onSuggestGenerate={(_templateId) => setTab('generate')}
             />
           </EntitlementGate>
+        )}
+
+        {entitlements && tab === 'stakeholders' && (
+          <StakeholdersPanel projectId={projectId} catalogs={catalogs} />
         )}
 
         {entitlements && tab === 'client_access' && (

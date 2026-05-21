@@ -803,3 +803,184 @@ export async function dismissStale(opts: { documentId: string; projectId: string
   if (!r?.success) return { success: false, error: r?.error };
   return { success: true };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   H.5 — Stakeholders + synthesis + diff + re-extract + deps
+═══════════════════════════════════════════════════════════ */
+
+export interface StakeholderProfile {
+  id?:                       string;
+  project_id?:               string;
+  display_name:              string;
+  role_title?:               string | null;
+  stakeholder_role:          string;
+  email?:                    string | null;
+  org?:                      string | null;
+  communication_preference?: string | null;
+  decision_style?:           string | null;
+  focus_areas?:              string | null;
+  what_they_care_about?:     string | null;
+  language_patterns?:        string | null;
+  interaction_history?:      string | null;
+  watch_outs?:               string | null;
+  preferred_format?:         string | null;
+  active:                    boolean;
+  notes?:                    string | null;
+  created_at?:               string;
+  updated_at?:               string;
+}
+
+export async function listStakeholders(opts: { projectId: string; includeInactive?: boolean }): Promise<{
+  stakeholders: StakeholderProfile[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_stakeholders', ...opts });
+  if (!r?.success) return { stakeholders: [], error: r?.error };
+  return { stakeholders: Array.isArray(r.stakeholders) ? r.stakeholders : [] };
+}
+
+export async function upsertStakeholder(opts: { projectId: string } & StakeholderProfile): Promise<{
+  stakeholder?: StakeholderProfile; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_upsert_stakeholder', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { stakeholder: r.stakeholder };
+}
+
+export async function deleteStakeholder(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_delete_stakeholder', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export interface SynthesisCandidate {
+  id:               string;
+  name:             string;
+  doc_type:         string;
+  stakeholder_role: string | null;
+  summary:          string | null;
+  key_findings:     string[];
+  created_at:       string;
+  char_count:       number;
+}
+
+export interface SynthesisField {
+  field_key:                 string;
+  value:                     string;
+  confidence:                'high' | 'medium' | 'low';
+  evidence:                  string[];
+  reasoning:                 string;
+  existing_value?:           string | null;
+  existing_source?:          string | null;
+  would_overwrite_protected?: boolean;
+}
+
+export interface SynthesisContradiction {
+  topic:          string;
+  views:          string[];
+  recommendation: string;
+}
+
+export interface SynthesisResult {
+  overall_summary:     string;
+  synthesized_fields:  SynthesisField[];
+  contradictions:      SynthesisContradiction[];
+  open_questions:      string[];
+}
+
+export async function listSynthesisCandidates(projectId: string): Promise<{
+  candidates: SynthesisCandidate[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_synthesis_candidates', projectId });
+  if (!r?.success) return { candidates: [], error: r?.error };
+  return { candidates: Array.isArray(r.candidates) ? r.candidates : [] };
+}
+
+export async function synthesizePersona(opts: {
+  projectId: string; documentIds: string[]; pmGuidance?: string;
+}): Promise<{ synthesis?: SynthesisResult; source_doc_ids?: string[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_synthesize_persona', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { synthesis: r.synthesis, source_doc_ids: r.source_doc_ids };
+}
+
+export async function applySynthesis(opts: {
+  projectId: string; approvedFields: SynthesisField[]; sourceDocIds: string[];
+}): Promise<{ written?: number; skipped?: number; details?: any[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_apply_synthesis', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { written: r.written, skipped: r.skipped, details: r.details };
+}
+
+export async function reextractDocument(documentId: string): Promise<{
+  success: boolean; summary?: string; fields_written?: number; fields_skipped?: number;
+  fields_extracted?: number; key_findings?: string[]; open_questions?: string[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_reextract_document', documentId });
+  return { success: !!r?.success, ...r };
+}
+
+export interface VersionDiffSection {
+  key:                 string;
+  title:               string;
+  change_type:         'added' | 'removed' | 'modified' | 'unchanged';
+  earlier_content:     string | null;
+  later_content:       string | null;
+  earlier_confidence:  string | null;
+  later_confidence:    string | null;
+  earlier_sources:     string[];
+  later_sources:       string[];
+}
+
+export interface VersionDiff {
+  earlier:        { id: string; name: string; version: number; created_at: string; overall_summary: string | null };
+  later:          { id: string; name: string; version: number; created_at: string; overall_summary: string | null };
+  template_id?:   string;
+  sections:       VersionDiffSection[];
+  changed_count:  number;
+}
+
+export async function getVersionDiff(documentId: string): Promise<{ diff?: VersionDiff; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_version_diff', documentId });
+  if (!r?.success) return { error: r?.error };
+  return { diff: r.diff };
+}
+
+export interface Dependency {
+  id:                string;
+  subscription_type: string;
+  target_id?:        string | null;
+  target_category?:  string | null;
+  target_field_key?: string | null;
+  target_label:      string;
+  target_detail:     string | null;
+  target_kind:       string;
+  stale_since?:      string | null;
+  stale_reason?:     string | null;
+}
+
+export async function getDocumentDependencies(opts: { documentId: string; projectId: string }): Promise<{
+  dependencies: Dependency[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_get_document_dependencies', ...opts });
+  if (!r?.success) return { dependencies: [], error: r?.error };
+  return { dependencies: Array.isArray(r.dependencies) ? r.dependencies : [] };
+}
+
+export interface FieldDependent {
+  document_id:    string;
+  document_name?: string;
+  template_id?:   string;
+  version?:       number;
+  stale_since?:   string | null;
+  stale_reason?:  string | null;
+}
+
+export async function getFieldDependents(opts: {
+  projectId: string; category: string; fieldKey: string;
+}): Promise<{ dependents: FieldDependent[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_field_dependents', ...opts });
+  if (!r?.success) return { dependents: [], error: r?.error };
+  return { dependents: Array.isArray(r.dependents) ? r.dependents : [] };
+}

@@ -12,9 +12,10 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
-import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning } from 'lucide-react';
+import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare } from 'lucide-react';
 import { listDocuments, publishDocument, listStaleDocs } from './api';
 import { toast } from '@/hooks/use-toast';
+import DocumentDiff from './DocumentDiff';
 import type { BrandStudioDocument, BrandStudioCatalogs } from './types';
 
 interface Props {
@@ -34,6 +35,8 @@ export default function Library({ projectId, catalogs }: Props) {
   /* H.4 — stale doc IDs (from document_subscriptions) */
   const [staleDocIds,     setStaleDocIds]     = useState<Set<string>>(new Set());
   const [staleReasons,    setStaleReasons]    = useState<Map<string, string[]>>(new Map());
+  /* H.5 — diff modal */
+  const [diffDocId,       setDiffDocId]       = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -152,24 +155,28 @@ export default function Library({ projectId, catalogs }: Props) {
             catalogs={catalogs}
             isStale={staleDocIds.has(doc.id)}
             staleReasons={staleReasons.get(doc.id) || []}
+            onCompareToParent={() => setDiffDocId(doc.id)}
             onPublishChange={(id, published) => {
               setDocs((prev) => prev.map((d) => d.id === id ? { ...d, published_to_client: published, published_at: published ? new Date().toISOString() : undefined } : d));
             }}
           />
         ))}
       </div>
+
+      {diffDocId && <DocumentDiff documentId={diffDocId} onClose={() => setDiffDocId(null)} />}
     </div>
   );
 }
 
 function DocumentRow({
-  doc, catalogs, onPublishChange, isStale, staleReasons,
+  doc, catalogs, onPublishChange, isStale, staleReasons, onCompareToParent,
 }: {
   doc: BrandStudioDocument;
   catalogs: BrandStudioCatalogs | null;
   onPublishChange: (id: string, published: boolean) => void;
   isStale?: boolean;
   staleReasons?: string[];
+  onCompareToParent?: () => void;
 }) {
   const isGenerated = doc.kind === 'generated';
   const stakeholderLabel = catalogs?.stakeholder_roles.find((r) => r.key === doc.stakeholder_role)?.label;
@@ -263,25 +270,39 @@ function DocumentRow({
           </div>
         </div>
 
-        {/* Publish toggle (PM-only) */}
-        <button
-          onClick={togglePublish}
-          disabled={publishing}
-          title={doc.published_to_client ? 'Click to unpublish — client will no longer see this' : 'Click to publish — client can see this in their workspace'}
-          className={`text-[10px] px-2 py-1 rounded-lg font-bold flex items-center gap-1 shrink-0 disabled:opacity-50 ${
-            doc.published_to_client
-              ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
-              : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/20'
-          }`}
-        >
-          {publishing ? (
-            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-          ) : doc.published_to_client ? (
-            <><Eye className="h-2.5 w-2.5" /> Published</>
-          ) : (
-            <><EyeOff className="h-2.5 w-2.5" /> Internal</>
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Compare to v1 (only for versioned docs with parent) */}
+          {doc.version && doc.version > 1 && onCompareToParent && (
+            <button
+              onClick={onCompareToParent}
+              title="Compare to previous version"
+              className="text-[10px] px-2 py-1 rounded-lg font-bold border border-border text-muted-foreground hover:text-foreground hover:bg-muted/20 flex items-center gap-1"
+            >
+              <GitCompare className="h-2.5 w-2.5" />
+              Compare to v{doc.version - 1}
+            </button>
           )}
-        </button>
+
+          {/* Publish toggle (PM-only) */}
+          <button
+            onClick={togglePublish}
+            disabled={publishing}
+            title={doc.published_to_client ? 'Click to unpublish — client will no longer see this' : 'Click to publish — client can see this in their workspace'}
+            className={`text-[10px] px-2 py-1 rounded-lg font-bold flex items-center gap-1 disabled:opacity-50 ${
+              doc.published_to_client
+                ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+                : 'border border-border text-muted-foreground hover:text-foreground hover:bg-muted/20'
+            }`}
+          >
+            {publishing ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : doc.published_to_client ? (
+              <><Eye className="h-2.5 w-2.5" /> Published</>
+            ) : (
+              <><EyeOff className="h-2.5 w-2.5" /> Internal</>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

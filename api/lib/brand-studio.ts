@@ -449,6 +449,21 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return handleBrandStudioMonitors(action, body);
     }
 
+    /* H.5 — Stakeholders + synthesis + diff + re-extract + deps ── */
+    case "bs_list_stakeholders":
+    case "bs_upsert_stakeholder":
+    case "bs_delete_stakeholder":
+    case "bs_list_synthesis_candidates":
+    case "bs_synthesize_persona":
+    case "bs_apply_synthesis":
+    case "bs_reextract_document":
+    case "bs_get_version_diff":
+    case "bs_get_document_dependencies":
+    case "bs_get_field_dependents": {
+      const { handleBrandStudioH5 } = await import("./brand-studio-h5.js");
+      return handleBrandStudioH5(action, body);
+    }
+
     /* H.2+ handlers will plug in here:
        case "bs_generate_preview": return bsGeneratePreview(body);
        case "bs_generate_apply": return bsGenerateApply(body);
