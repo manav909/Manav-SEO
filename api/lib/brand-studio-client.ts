@@ -278,6 +278,47 @@ export async function bsClientGetDocument(body: any): Promise<any> {
   return { success: true, document: data };
 }
 
+/** H.3 — Token-gated investor data fetch.
+ *  Returns only verified traction proof points and market intelligence
+ *  (status='verified'), with PM-internal fields stripped (notes, status,
+ *  workflow metadata). This is what founders share with investors. */
+export async function bsClientGetInvestorData(body: any): Promise<any> {
+  const { token } = body;
+  const resolved = await resolveTokenRow(token);
+  if (!resolved) return { success: false, error: "Invalid or expired access link" };
+  touchToken(resolved.id).catch(() => {});
+
+  /* Verify the client portal has the investor feature enabled */
+  const { data: ent } = await db().from("project_entitlements")
+    .select("client_portal_enabled,client_visible_features")
+    .eq("project_id", resolved.project_id).maybeSingle();
+  if (!(ent as any)?.client_portal_enabled) {
+    return { success: false, error: "Portal not enabled" };
+  }
+  if (!(ent as any)?.client_visible_features?.investor) {
+    return { success: false, error: "Investor view not enabled for this workspace" };
+  }
+
+  /* Only show 'verified' rows to clients — drafts stay PM-side */
+  const { data: tractionRows } = await db().from("traction_proof_points")
+    .select("id,category,claim,metric_value,metric_period,evidence_date,evidence_type,source_name,source_url,confidence")
+    .eq("project_id", resolved.project_id)
+    .eq("status", "verified")
+    .order("evidence_date", { ascending: false });
+
+  const { data: miRows } = await db().from("market_intelligence")
+    .select("id,category,claim,metric_value,source_url,source_name,source_date,source_excerpt,methodology,confidence,competitor_name")
+    .eq("project_id", resolved.project_id)
+    .eq("status", "verified")
+    .order("source_date", { ascending: false, nullsFirst: false });
+
+  return {
+    success: true,
+    traction_proof_points: tractionRows || [],
+    market_intelligence:   miRows || [],
+  };
+}
+
 /* ─── Dispatcher ──────────────────────────────────────────────── */
 
 export async function handleBrandStudioClient(action: string, body: any): Promise<any | null> {
@@ -294,6 +335,7 @@ export async function handleBrandStudioClient(action: string, body: any): Promis
     case "bs_client_resolve":        return bsClientResolve(body);
     case "bs_client_list_documents": return bsClientListDocuments(body);
     case "bs_client_get_document":   return bsClientGetDocument(body);
+    case "bs_client_get_investor_data": return bsClientGetInvestorData(body);
 
     default: return null;
   }

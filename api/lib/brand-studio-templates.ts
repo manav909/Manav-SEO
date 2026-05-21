@@ -410,6 +410,136 @@ const SALES_BATTLECARD: TemplateSpec = {
   ],
 };
 
+/* ─── Investor One-Pager ──────────────────────────────────────── */
+const INVESTOR_ONE_PAGER: TemplateSpec = {
+  id: "investor_one_pager",
+  label: "Investor One-Pager",
+  description:
+    "The single-page distillation of the investment case. Designed for first-look investor outreach — a partner should be able to read it in 90 seconds and know whether to take the meeting. Every claim sourced, every number defensible.",
+  category: "strategic",
+  required_categories: ["identity", "audience", "goal"],
+  optional_categories: ["commercial", "competitor", "brand_narrative"],
+  useful_doc_types: ["strategy_deck", "internal_memo", "press_coverage"],
+  default_audience_role: "investor",
+  verification_strictness: "investor_grade",
+  voice_hint: "Precise. Defensible. Every sentence earns its space. No hype words ('revolutionary', 'world-class'). No padding. The reader is a partner at a top-tier fund with 200 unread one-pagers in their inbox — yours needs to be the one they finish.",
+  sections: [
+    { key: "the_company",             title: "The Company",              description: "Sentence 1: what the company does + who for. Sentence 2: lifecycle stage + ask (raising X to do Y). No more. Concrete." },
+    { key: "the_problem",             title: "The Problem",              description: "1-2 sentences: the specific market problem this business addresses. Cite a problem-size data point if available (traction:* or market_intel:*). NOT 'the industry is broken' — the SPECIFIC problem." },
+    { key: "the_solution",            title: "The Solution",             description: "1-2 sentences: how the company solves it. Concrete — not 'AI-powered platform' but the actual mechanism." },
+    { key: "the_market",              title: "Market Size",              description: "TAM/SAM with sources. Format: 'TAM $X.XB (Source: <name>, <year>). SAM $X.XB based on <methodology>.' If no cited market intel exists, write '[Market sizing requires market_intel:* entries before publication]' — do not fabricate." },
+    { key: "the_traction",            title: "Traction",                 description: "3-5 specific dated proof points from traction_proof_points. Format: 'Metric X grew from A to B between dates C and D (Source: type).' If proof points are thin, say so directly — investors trust honesty more than overclaiming." },
+    { key: "why_now",                 title: "Why Now",                  description: "1-2 sentences: what changed in the market that makes this moment correct. Tie to a specific external signal (regulatory shift, technological inflection, demographic change). Cited where possible." },
+    { key: "the_team",                title: "Why This Team",            description: "1-2 sentences on team strength. Concrete relevant background only — not adjectives. If team field data is thin, write '[Team section needs founder/leadership context — populate identity.headcount and any team-specific Data Room fields]'." },
+    { key: "the_ask",                 title: "The Ask",                  description: "1-2 sentences: amount raising, use of funds, intended milestones. Direct — investors prefer 'raising $4M to extend runway 18 months and reach $X ARR' to vague framing." },
+  ],
+};
+
+/* ─── Pitch Deck Outline ──────────────────────────────────────── */
+const PITCH_DECK_OUTLINE: TemplateSpec = {
+  id: "pitch_deck_outline",
+  label: "Pitch Deck Outline",
+  description:
+    "Slide-by-slide outline for an investor pitch deck. Each slide includes: headline, key visual concept, key talking points, and speaker notes. Designed for a founder to walk into a pitch and remember exactly what each slide proves.",
+  category: "strategic",
+  required_categories: ["identity", "audience", "goal"],
+  optional_categories: ["commercial", "competitor", "brand_narrative", "history"],
+  useful_doc_types: ["strategy_deck", "internal_memo", "market_research", "case_study"],
+  default_audience_role: "investor",
+  verification_strictness: "investor_grade",
+  voice_hint: "Confident, evidence-grounded, calibrated for live presentation. Each slide's job is clear. Speaker notes guide what the founder SAYS, not what they read off the slide.",
+  sections: [
+    { key: "slide_1_title",           title: "Slide 1 — Title & Vision",  description: "Company name. One-line vision statement. Founder name + role. Date. Speaker notes: opening hook the founder uses to set tone — should reference the moment / market shift / specific customer pain that makes this company necessary." },
+    { key: "slide_2_problem",         title: "Slide 2 — The Problem",     description: "Headline (problem stated as a question or assertion). Visual concept: a chart or photo showing the problem's scale or human cost. Talking points: 3 specific manifestations of the problem. Speaker notes: how to bridge from problem framing to 'and that's why we built X.'" },
+    { key: "slide_3_solution",        title: "Slide 3 — The Solution",    description: "Headline (the solution stated as a one-line product description). Visual concept: product screenshot or workflow diagram. Talking points: 3 mechanism-level points about how it works. Speaker notes: the demo / story moment to land emotionally." },
+    { key: "slide_4_market",          title: "Slide 4 — Market",          description: "Headline (the market opportunity quantified). Visual concept: TAM/SAM/SOM diagram. Talking points: cited market data from market_intel:* entries. Speaker notes: how to handle the 'how did you calculate that?' question — methodology should be one sentence." },
+    { key: "slide_5_traction",        title: "Slide 5 — Traction",        description: "Headline (one-line top-of-mind traction stat). Visual concept: growth chart with the metric on the y-axis. Talking points: 3-4 specific traction proof points from traction_proof_points:*. Speaker notes: how to handle the 'is this real?' question — anchor to dated sources." },
+    { key: "slide_6_business_model",  title: "Slide 6 — Business Model",  description: "Headline (pricing model in one phrase). Visual concept: unit economics or revenue flow diagram. Talking points: pricing structure, unit economics, current revenue if any. Speaker notes: how to handle margin questions." },
+    { key: "slide_7_competition",     title: "Slide 7 — Competition",     description: "Headline (one-line positioning vs. competitors). Visual concept: 2x2 matrix or competitive map. Talking points: who else is in the space, where we win, where we don't. Speaker notes: honest acknowledgment of competitive strengths — investors verify this independently anyway." },
+    { key: "slide_8_team",            title: "Slide 8 — Team",            description: "Headline. Visual: team photos + roles. Talking points: relevant background per key person. Speaker notes: how to convey the team's specific edge — not 'we're great' but 'we worked together at X where we shipped Y.'" },
+    { key: "slide_9_ask",             title: "Slide 9 — The Ask",         description: "Headline (amount + use of funds). Visual: milestone chart. Talking points: specific milestones the raise will unlock, runway implications. Speaker notes: how to handle the 'why this amount and not 2x?' question." },
+    { key: "slide_10_close",          title: "Slide 10 — Close & Q&A",    description: "Headline (the vision restated as a closing line). Visual: company logo + contact. Talking points: the single sentence the founder wants the room remembering. Speaker notes: the bridge into Q&A, AND the prepared answers for the 3 hardest questions this deck will get." },
+  ],
+};
+
+/* ─── Market Opportunity Memo ─────────────────────────────────── */
+const MARKET_OPPORTUNITY: TemplateSpec = {
+  id: "market_opportunity",
+  label: "Market Opportunity Memo",
+  description:
+    "Deep-dive investor memo on the market opportunity. Used in Series-B and later contexts where market sizing is scrutinized. Every figure cited with source URL and methodology. Honest about TAM-shaving assumptions.",
+  category: "strategic",
+  required_categories: ["identity", "audience"],
+  optional_categories: ["competitor", "goal", "commercial"],
+  useful_doc_types: ["market_research", "strategy_deck", "press_coverage", "internal_memo"],
+  default_audience_role: "investor",
+  verification_strictness: "investor_grade",
+  voice_hint: "Analyst-grade. Every number sourced. Every methodology stated. No hand-waving. The reader is a fund's research associate who will check every citation — write to that standard.",
+  sections: [
+    { key: "market_thesis",           title: "Market Thesis",             description: "2-3 sentence statement of the market opportunity in plain language. What's happening in the market that creates the opening." },
+    { key: "tam_analysis",            title: "TAM — Total Addressable Market", description: "TAM figure with full source. Format: '$X.XB (Source: <name>, year). Methodology: <bottom-up or top-down>.' Show the calculation if bottom-up. If only directional figure available, say so explicitly and describe the range." },
+    { key: "sam_analysis",            title: "SAM — Serviceable Addressable Market", description: "SAM figure with explicit shaving from TAM. Format: 'From TAM of $X.XB, we exclude <Y> for reason <Z>, leaving SAM of $A.AB.' Make every exclusion defensible." },
+    { key: "som_analysis",            title: "SOM — Serviceable Obtainable Market", description: "Realistic SOM over a stated time horizon (e.g. 'SOM over 5 years'). Methodology must be transparent — penetration rate × SAM, or comparable's actual penetration in similar markets." },
+    { key: "growth_drivers",          title: "Market Growth Drivers",      description: "3-5 specific forces driving market growth. Each tied to a cited data point — regulatory change, technology shift, demographic trend. Industry growth rate stated with source." },
+    { key: "market_segmentation",     title: "Market Segmentation",        description: "How the market splits — by geography, customer size, vertical, use case. Which segments we target and why. Cited where possible." },
+    { key: "tailwinds_headwinds",     title: "Tailwinds & Headwinds",      description: "Honest list. Tailwinds: external forces helping the market. Headwinds: external forces that could slow or shrink it. Failing to mention obvious headwinds is the fastest way to lose investor trust." },
+    { key: "expansion_optionality",   title: "Expansion Optionality",      description: "Adjacent markets the company could expand into. Each with directional sizing. Frame as optionality (potential), not certainty." },
+    { key: "key_uncertainties",       title: "Key Uncertainties",          description: "Honest list of what we don't know about the market. The questions an investor's diligence will probe — better to surface them ourselves with our best current view." },
+    { key: "sources_appendix",        title: "Sources & Methodology",      description: "List of every cited source with URL, publication date, and source type. Plus any explicit assumptions baked into our SAM/SOM math. Investors check this — make it bulletproof." },
+  ],
+};
+
+/* ─── Traction Memo ────────────────────────────────────────────── */
+const TRACTION_MEMO: TemplateSpec = {
+  id: "traction_memo",
+  label: "Traction Memo",
+  description:
+    "Quarterly investor update memo focused on traction. Dated, sourced proof points across revenue/customers/engagement. Honest about what missed, what surprised. Designed for existing investors expecting transparent quarterly reporting.",
+  category: "performance",
+  required_categories: ["identity", "goal"],
+  optional_categories: ["audience", "commercial", "history", "analytics"],
+  useful_doc_types: ["internal_memo", "strategy_deck", "case_study", "ga4_export", "gsc_export"],
+  default_audience_role: "investor",
+  verification_strictness: "investor_grade",
+  voice_hint: "Operator-to-investor. Direct. Owned outcomes (good and bad). The kind of memo an existing investor wants to receive — no marketing spin, no defensiveness, just facts plus what the team learned. Builds trust over time.",
+  sections: [
+    { key: "headline",                title: "Headline",                  description: "One sentence: the quarter in one line. Where the business is and how confident we are about the trajectory. Lead with the verdict." },
+    { key: "key_metrics_dashboard",   title: "Key Metrics",                description: "Compact table-format readout of top metrics. For each: current value, period covered, prior-period value, change. Cite traction_proof_points:* and analytics fields. Where a number is internally reported (no third-party verification), tag as [self-reported]." },
+    { key: "what_went_well",          title: "What Went Well",             description: "Specific wins with dated proof points. Each win names the underlying cause where known — 'X grew because we shipped Y in week Z and Z increased adoption' — not 'X grew thanks to our team's hard work.'" },
+    { key: "what_missed",             title: "What Missed",                description: "Honest list of misses. What didn't hit plan and by how much. Hypothesized causes. Investors trust founders who acknowledge misses; they distrust founders whose updates are all wins." },
+    { key: "surprises",               title: "Surprises (Positive & Negative)", description: "Things that happened we didn't expect. Customer behavior, market shifts, competitor moves. The 'surprises' section is one of the most signal-rich for sophisticated investors — they know operators learn from anomalies." },
+    { key: "key_decisions",           title: "Key Decisions This Quarter", description: "Strategic decisions taken this quarter, with the reasoning. 'We chose to focus on X audience over Y because of evidence Z.' Helps investors see how thinking is evolving." },
+    { key: "next_quarter_plan",       title: "Next Quarter — Specific Goals", description: "Specific goals with target values + deadlines + how we'll measure. Avoid vague language. 'We aim to grow ARR' is worthless; 'We aim to grow ARR from $X to $Y by date Z, with X added through channel A' is operator-grade." },
+    { key: "asks",                    title: "Asks of Investors",          description: "Specific introductions, advice, or actions we'd value from the investor reader. Lists by name where possible. Sophisticated investors EXPECT specific asks — vague 'let us know if you can help' suggests the founder isn't operating with clarity about what they need." },
+    { key: "appendix_sources",        title: "Sources",                    description: "All cited proof points with source name and date. For internally-reported metrics, the system of record. Maintains the audit trail an investor expects." },
+  ],
+};
+
+/* ─── Competitive Moat Memo ────────────────────────────────────── */
+const COMPETITIVE_MOAT: TemplateSpec = {
+  id: "competitive_moat",
+  label: "Competitive Moat Memo",
+  description:
+    "Diligence-stage investor memo on competitive defensibility. Honest landscape map. Defensible moat thesis grounded in specific evidence. Acknowledges competitor strengths because investors will find them anyway.",
+  category: "competitive",
+  required_categories: ["identity", "competitor"],
+  optional_categories: ["audience", "history", "content", "commercial"],
+  useful_doc_types: ["strategy_deck", "market_research", "press_coverage", "competitor_battlecard"],
+  default_audience_role: "investor",
+  verification_strictness: "investor_grade",
+  voice_hint: "Analytical. Self-aware. Acknowledging competitor strength is a sign of strategic maturity — pretending competitors don't exist is the fastest way to lose investor trust during diligence.",
+  sections: [
+    { key: "landscape_map",           title: "Competitive Landscape",      description: "Honest map of the competitive space. Direct competitors, adjacent competitors, substitute solutions. Each with one-sentence positioning. Use market_intel:* for any competitor figures cited." },
+    { key: "competitor_strengths",    title: "What Competitors Do Well",   description: "For each major competitor: what they're genuinely strong at. Pretending they have no strengths is the fastest credibility leak in a diligence memo. Investors verify this independently." },
+    { key: "where_we_differ",         title: "Where We're Different",      description: "Specific differentiators backed by Data Room evidence. Not 'we're better' — what's structurally different about the company. Tech, audience, business model, distribution, pricing." },
+    { key: "moat_thesis",             title: "The Moat Thesis",            description: "The argument for why this differentiation compounds over time. Specific mechanism: network effects, data flywheel, switching costs, regulatory moat, brand, scale economics. State which moat type(s) apply and the evidence." },
+    { key: "moat_evidence",           title: "Moat Evidence",              description: "Specific data points supporting the moat thesis. Customer retention rates, organic growth signals, switching cost behaviors, data scale advantages. Each cited to traction_proof_points:* or analytics fields." },
+    { key: "what_could_erode_it",     title: "What Could Erode the Moat",  description: "Honest assessment of moat fragility. What competitive moves or market changes would weaken the position. A moat that the founder can't articulate erosion paths for is usually not a moat — it's wishful thinking." },
+    { key: "how_we_widen_it",         title: "How We Widen the Moat",      description: "Concrete actions the company is taking to strengthen the moat. Each tied to a specific investment or operational priority." },
+    { key: "competitive_response_plan", title: "Response Plan for Competitive Threats", description: "If specific competitor X makes specific move Y, our planned response is Z. The presence of a written plan signals operational maturity to investors." },
+  ],
+};
+
 /* ─── Master template registry ────────────────────────────────── */
 
 export const TEMPLATES: TemplateSpec[] = [
@@ -430,6 +560,12 @@ export const TEMPLATES: TemplateSpec[] = [
   PRESS_RELEASE,
   CASE_STUDY,
   SALES_BATTLECARD,
+  /* H.3 — 5 investor-grade templates */
+  INVESTOR_ONE_PAGER,
+  PITCH_DECK_OUTLINE,
+  MARKET_OPPORTUNITY,
+  TRACTION_MEMO,
+  COMPETITIVE_MOAT,
 ];
 
 export function getTemplate(id: string): TemplateSpec | null {

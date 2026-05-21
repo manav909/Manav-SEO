@@ -44,6 +44,33 @@ interface SourceBundle {
     extracted_summary: string | null;
     key_findings:     string[];
   }>;
+  /* H.3 — investor data, populated only for investor templates */
+  traction_proof_points?: Array<{
+    id:             string;
+    category:       string;
+    claim:          string;
+    metric_value:   string | null;
+    metric_period:  string | null;
+    evidence_date:  string;
+    evidence_type:  string;
+    source_name:    string | null;
+    source_url:     string | null;
+    confidence:     string;
+    status:         string;
+  }>;
+  market_intelligence?: Array<{
+    id:             string;
+    category:       string;
+    claim:          string;
+    metric_value:   string | null;
+    source_url:     string | null;
+    source_name:    string | null;
+    source_date:    string | null;
+    methodology:    string | null;
+    confidence:     string;
+    status:         string;
+    competitor_name: string | null;
+  }>;
 }
 
 async function gatherSources(opts: {
@@ -122,11 +149,37 @@ async function gatherSources(opts: {
     }));
   }
 
+  /* H.3 — for investor templates, pull traction proof points and
+     market intelligence. Identifying "investor templates" by the
+     default_audience_role being investor — keeps this self-describing
+     in the template config without needing a new flag. */
+  let tractionProofPoints: SourceBundle["traction_proof_points"];
+  let marketIntelligence:  SourceBundle["market_intelligence"];
+  if (template.default_audience_role === "investor") {
+    const { data: tractionRows } = await db().from("traction_proof_points")
+      .select("id,category,claim,metric_value,metric_period,evidence_date,evidence_type,source_name,source_url,confidence,status")
+      .eq("project_id", projectId)
+      .neq("status", "archived")
+      .order("evidence_date", { ascending: false })
+      .limit(40);
+    tractionProofPoints = (tractionRows || []) as any[];
+
+    const { data: miRows } = await db().from("market_intelligence")
+      .select("id,category,claim,metric_value,source_url,source_name,source_date,methodology,confidence,status,competitor_name")
+      .eq("project_id", projectId)
+      .neq("status", "archived")
+      .order("source_date", { ascending: false, nullsFirst: false })
+      .limit(40);
+    marketIntelligence = (miRows || []) as any[];
+  }
+
   return {
     project: p, client,
     brand_assets: brandData || null,
     knowledge,
     documents,
+    traction_proof_points: tractionProofPoints,
+    market_intelligence:   marketIntelligence,
   };
 }
 
@@ -232,6 +285,40 @@ function buildContextBlock(bundle: SourceBundle): string {
     }
   }
 
+  /* H.3 — Traction Proof Points (cite as traction:<id>) */
+  if (bundle.traction_proof_points && bundle.traction_proof_points.length) {
+    lines.push("");
+    lines.push("TRACTION PROOF POINTS (cite as traction:<id>):");
+    lines.push("Each entry below has been entered by the PM as defensible evidence of company performance. Use these for any traction-related claims in the document.");
+    for (const t of bundle.traction_proof_points) {
+      const parts = [`[traction:${t.id}]`, `(${t.category}, ${t.confidence} confidence, ${t.evidence_type})`];
+      lines.push(parts.join(" "));
+      lines.push(`  Claim: ${t.claim}`);
+      if (t.metric_value)  lines.push(`  Value: ${t.metric_value}`);
+      if (t.metric_period) lines.push(`  Period: ${t.metric_period}`);
+      lines.push(`  Evidence date: ${t.evidence_date}`);
+      if (t.source_name)   lines.push(`  Source: ${t.source_name}`);
+      if (t.source_url)    lines.push(`  URL: ${t.source_url}`);
+    }
+  }
+
+  /* H.3 — Market Intelligence (cite as market_intel:<id>) */
+  if (bundle.market_intelligence && bundle.market_intelligence.length) {
+    lines.push("");
+    lines.push("MARKET INTELLIGENCE (cite as market_intel:<id>):");
+    lines.push("Each entry below is a market data point the PM has captured with citation. Use these for any market sizing, competitor, or industry claims. NEVER fabricate market data — if you need a figure not listed here, write '[Market data needed — populate market_intelligence first]' rather than guessing.");
+    for (const m of bundle.market_intelligence) {
+      const parts = [`[market_intel:${m.id}]`, `(${m.category}, ${m.confidence} confidence)`];
+      lines.push(parts.join(" "));
+      lines.push(`  Claim: ${m.claim}`);
+      if (m.metric_value)     lines.push(`  Value: ${m.metric_value}`);
+      if (m.methodology)      lines.push(`  Methodology: ${m.methodology}`);
+      if (m.competitor_name)  lines.push(`  Competitor: ${m.competitor_name}`);
+      if (m.source_name)      lines.push(`  Source: ${m.source_name}${m.source_date ? ` (${m.source_date})` : ''}`);
+      if (m.source_url)       lines.push(`  URL: ${m.source_url}`);
+    }
+  }
+
   return lines.join("\n");
 }
 
@@ -286,6 +373,8 @@ function buildSystemPrompt(template: TemplateSpec, audienceRole: string, pmVisio
     "   - dataroom:<category>.<field_key>    (e.g. dataroom:identity.unique_value_prop)",
     "   - doc:<document_id>                  (e.g. doc:a1b2c3d4-...)",
     "   - brand:<asset>                      (e.g. brand:tagline, brand:colors, brand:archetype)",
+    "   - traction:<proof_point_id>          (for investor templates — dated, sourced traction evidence)",
+    "   - market_intel:<intel_id>            (for investor templates — TAM/SAM/growth/competitor data with URL)",
     "   - ASSUMPTION                         (explicit assumption flag — never silent)",
     "4. NEVER fabricate facts. Numbers, names, dates, comparative claims must all trace to a source.",
     "5. If the available context is insufficient for a section, write what you can with [Limited evidence] flag and set confidence='low'. Don't pad.",

@@ -370,6 +370,20 @@ export async function clientGetDocument(opts: { token: string; documentId: strin
   return { document: r.document };
 }
 
+/* H.3 — client-side investor data (token-gated, verified-only) */
+export async function clientGetInvestorData(token: string): Promise<{
+  traction_proof_points: TractionProofPoint[];
+  market_intelligence:   MarketIntelEntry[];
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_get_investor_data', token });
+  if (!r?.success) return { traction_proof_points: [], market_intelligence: [], error: r?.error };
+  return {
+    traction_proof_points: Array.isArray(r.traction_proof_points) ? r.traction_proof_points : [],
+    market_intelligence:   Array.isArray(r.market_intelligence)   ? r.market_intelligence   : [],
+  };
+}
+
 /* ═══════════════════════════════════════════════════════════
    H.2 — Generation engine
 ═══════════════════════════════════════════════════════════ */
@@ -476,4 +490,175 @@ export async function listGenerated(projectId: string): Promise<{
   const r = await post(ENGINE, { action: 'bs_list_generated', projectId });
   if (!r?.success) return { documents: [], error: r?.error };
   return { documents: Array.isArray(r.documents) ? r.documents : [] };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   H.3 — Investor View (traction, market intel, research)
+═══════════════════════════════════════════════════════════ */
+
+export interface TractionProofPoint {
+  id?:             string;
+  project_id?:     string;
+  category:        string;
+  claim:           string;
+  metric_value?:   string | null;
+  metric_period?:  string | null;
+  evidence_date:   string;        // ISO date
+  effective_from?: string | null;
+  effective_to?:   string | null;
+  evidence_type:   string;
+  source?:         string | null;
+  source_name?:    string | null;
+  source_url?:     string | null;
+  source_excerpt?: string | null;
+  confidence:      'high' | 'medium' | 'low';
+  status:          'draft' | 'verified' | 'archived';
+  notes?:          string | null;
+  created_at?:     string;
+  updated_at?:     string;
+}
+
+export const TRACTION_CATEGORIES = [
+  { key: 'revenue',         label: 'Revenue' },
+  { key: 'customers',       label: 'Customers' },
+  { key: 'retention',       label: 'Retention' },
+  { key: 'engagement',      label: 'Engagement' },
+  { key: 'organic_growth',  label: 'Organic Growth' },
+  { key: 'awards',          label: 'Awards' },
+  { key: 'partnerships',    label: 'Partnerships' },
+  { key: 'team',            label: 'Team' },
+  { key: 'product',         label: 'Product' },
+  { key: 'other',           label: 'Other' },
+];
+
+export const TRACTION_EVIDENCE_TYPES = [
+  { key: 'verified_third_party',  label: 'Verified — Third Party' },
+  { key: 'verified_internal',     label: 'Verified — Internal System' },
+  { key: 'self_reported',         label: 'Self-Reported' },
+  { key: 'estimate',              label: 'Estimate' },
+];
+
+export async function listTraction(opts: { projectId: string; includeArchived?: boolean }): Promise<{
+  proof_points: TractionProofPoint[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_traction', ...opts });
+  if (!r?.success) return { proof_points: [], error: r?.error };
+  return { proof_points: Array.isArray(r.proof_points) ? r.proof_points : [] };
+}
+
+export async function upsertTraction(opts: { projectId: string } & TractionProofPoint): Promise<{
+  proof_point?: TractionProofPoint; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_upsert_traction', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { proof_point: r.proof_point };
+}
+
+export async function deleteTraction(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_delete_traction', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export interface MarketIntelEntry {
+  id?:             string;
+  project_id?:     string;
+  category:        string;
+  claim:           string;
+  metric_value?:   string | null;
+  source_url?:     string | null;
+  source_name?:    string | null;
+  source_date?:    string | null;
+  source_excerpt?: string | null;
+  source_type?:    string | null;
+  methodology?:    string | null;
+  assumptions?:    string | null;
+  confidence:      'high' | 'medium' | 'low';
+  status:          'draft' | 'verified' | 'archived';
+  competitor_name?: string | null;
+  notes?:          string | null;
+  created_at?:     string;
+  updated_at?:     string;
+}
+
+export const MARKET_INTEL_CATEGORIES = [
+  { key: 'tam',                 label: 'TAM (Total Addressable Market)' },
+  { key: 'sam',                 label: 'SAM (Serviceable Addressable Market)' },
+  { key: 'som',                 label: 'SOM (Serviceable Obtainable Market)' },
+  { key: 'growth_rate',         label: 'Growth Rate' },
+  { key: 'market_share',        label: 'Market Share' },
+  { key: 'competitor_funding',  label: 'Competitor — Funding' },
+  { key: 'competitor_metric',   label: 'Competitor — Metric' },
+  { key: 'industry_trend',      label: 'Industry Trend' },
+  { key: 'regulatory',          label: 'Regulatory' },
+  { key: 'other',               label: 'Other' },
+];
+
+export const MARKET_INTEL_SOURCE_TYPES = [
+  { key: 'gov_statistics',    label: 'Government Statistics' },
+  { key: 'industry_research', label: 'Industry Research Firm' },
+  { key: 'company_filing',    label: 'Company Filing (SEC, etc.)' },
+  { key: 'press_release',     label: 'Press Release' },
+  { key: 'third_party_db',    label: 'Third-Party Database' },
+  { key: 'analyst_report',    label: 'Analyst Report' },
+  { key: 'other',             label: 'Other' },
+];
+
+export async function listMarketIntel(opts: { projectId: string; includeArchived?: boolean }): Promise<{
+  market_intel: MarketIntelEntry[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_market_intel', ...opts });
+  if (!r?.success) return { market_intel: [], error: r?.error };
+  return { market_intel: Array.isArray(r.market_intel) ? r.market_intel : [] };
+}
+
+export async function upsertMarketIntel(opts: { projectId: string } & MarketIntelEntry): Promise<{
+  market_intel?: MarketIntelEntry; notice?: string; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_upsert_market_intel', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { market_intel: r.market_intel, notice: r.notice };
+}
+
+export async function deleteMarketIntel(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_delete_market_intel', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export interface ResearchExcerpt {
+  excerpt: string;
+  offset:  number;
+}
+
+export interface ResearchResult {
+  url:               string;
+  domain:            string;
+  trusted:           boolean;
+  untrusted_reason?: string | null;
+  title?:            string;
+  excerpts?:         ResearchExcerpt[];
+  word_count_extracted?: number;
+  full_text_preview?: string;
+  error?:            string;
+  status?:           number;
+}
+
+export async function researchFetch(opts: {
+  url: string; query: string; allowUntrusted?: boolean; untrustedReason?: string;
+}): Promise<ResearchResult & { success: boolean }> {
+  const r = await post(ENGINE, { action: 'bs_research_fetch', ...opts });
+  return { success: !!r?.success, ...r };
+}
+
+export async function researchBulk(opts: {
+  urls: string[]; query: string; allowUntrusted?: boolean;
+}): Promise<{ results: ResearchResult[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_research_bulk', ...opts });
+  if (!r?.success) return { results: [], error: r?.error };
+  return { results: Array.isArray(r.results) ? r.results : [] };
 }

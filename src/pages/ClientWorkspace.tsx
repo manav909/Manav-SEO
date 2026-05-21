@@ -20,9 +20,11 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, Lock, FileText, Palette as PaletteIcon, TrendingUp, Globe, ExternalLink, ArrowLeft, Sparkles } from 'lucide-react';
 import {
-  clientResolve, clientListDocuments, clientGetDocument,
+  clientResolve, clientListDocuments, clientGetDocument, clientGetInvestorData,
 } from '@/components/brand-studio/api';
-import type { ClientPortalContext } from '@/components/brand-studio/api';
+import type {
+  ClientPortalContext, TractionProofPoint, MarketIntelEntry,
+} from '@/components/brand-studio/api';
 import type { BrandStudioDocument } from '@/components/brand-studio/types';
 
 type Tab = 'library' | 'brand' | 'investor' | 'market';
@@ -37,6 +39,12 @@ export default function ClientWorkspace() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [openDoc,   setOpenDoc]   = useState<(BrandStudioDocument & { raw_content?: string }) | null>(null);
   const [openDocLoading, setOpenDocLoading] = useState(false);
+
+  /* H.3 — investor data */
+  const [tractionRows, setTractionRows] = useState<TractionProofPoint[]>([]);
+  const [marketRows,   setMarketRows]   = useState<MarketIntelEntry[]>([]);
+  const [investorLoading, setInvestorLoading] = useState(false);
+  const [investorLoaded,  setInvestorLoaded]  = useState(false);
 
   /* ── resolve token on mount ── */
   useEffect(() => {
@@ -80,6 +88,24 @@ export default function ClientWorkspace() {
     })();
     return () => { cancelled = true; };
   }, [tab, token, context, documents.length]);
+
+  /* ── load investor data when investor tab opens ── */
+  useEffect(() => {
+    if (!token || !context) return;
+    if (tab !== 'investor') return;
+    if (investorLoaded) return;
+    let cancelled = false;
+    setInvestorLoading(true);
+    (async () => {
+      const r = await clientGetInvestorData(token);
+      if (cancelled) return;
+      setTractionRows(r.traction_proof_points);
+      setMarketRows(r.market_intelligence);
+      setInvestorLoading(false);
+      setInvestorLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [tab, token, context, investorLoaded]);
 
   /* ── open a document detail ── */
   const openDocument = async (doc: BrandStudioDocument) => {
@@ -338,14 +364,113 @@ export default function ClientWorkspace() {
           </div>
         )}
 
-        {/* ── Investor placeholder — H.3 ── */}
+        {/* ── Investor tab — H.3 ── */}
         {tab === 'investor' && (
-          <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
-            <TrendingUp className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-            <div className="text-sm font-semibold">Investor View — coming soon</div>
-            <div className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-              Your traction proof points, market opportunity sizing, and investor-ready documents will appear here once configured.
-            </div>
+          <div className="space-y-5">
+            {investorLoading && (
+              <div className="text-center py-12">
+                <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground mb-2" />
+                <div className="text-xs text-muted-foreground">Loading investor data…</div>
+              </div>
+            )}
+
+            {!investorLoading && tractionRows.length === 0 && marketRows.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
+                <TrendingUp className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                <div className="text-sm font-semibold">Investor data being prepared</div>
+                <div className="text-xs text-muted-foreground mt-1.5 max-w-md mx-auto">
+                  Your account manager hasn't published verified traction proof points or market intelligence yet. Once they do, this view becomes your one-stop reference for investor conversations.
+                </div>
+              </div>
+            )}
+
+            {/* Traction Proof Points */}
+            {!investorLoading && tractionRows.length > 0 && (
+              <div className="rounded-2xl border border-border bg-card/60 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <TrendingUp className="h-4 w-4" style={{ color: primaryColor }} />
+                  <div className="text-sm font-bold">Traction Proof Points</div>
+                  <span className="text-[10px] text-muted-foreground">— {tractionRows.length} verified</span>
+                </div>
+                <div className="space-y-2">
+                  {tractionRows.map((t) => (
+                    <div key={t.id} className="rounded-xl border border-border bg-background/40 p-3">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
+                        {t.category}
+                      </div>
+                      <div className="text-sm font-semibold mt-0.5">{t.claim}</div>
+                      <div className="flex items-center gap-2 flex-wrap mt-1 text-[11px]">
+                        {t.metric_value && <span className="font-mono text-foreground/90">{t.metric_value}</span>}
+                        {t.metric_period && <span className="text-muted-foreground">· {t.metric_period}</span>}
+                        <span className="text-muted-foreground">· {new Date(t.evidence_date).toLocaleDateString('en-GB')}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap mt-1.5 text-[10px]">
+                        <span className={`uppercase tracking-wider px-1.5 py-0.5 rounded font-bold ${
+                          t.evidence_type === 'verified_third_party' ? 'bg-green-500/15 text-green-400' :
+                          t.evidence_type === 'verified_internal' ? 'bg-blue-500/15 text-blue-400' :
+                          'bg-amber-500/15 text-amber-400'
+                        }`}>{t.evidence_type.replace(/_/g, ' ')}</span>
+                        {t.source_name && <span className="text-muted-foreground">{t.source_name}</span>}
+                        {t.source_url && (
+                          <a href={t.source_url} target="_blank" rel="noopener noreferrer"
+                            className="hover:underline inline-flex items-center gap-0.5" style={{ color: primaryColor }}>
+                            <ExternalLink className="h-2.5 w-2.5" /> Source
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Market Intelligence */}
+            {!investorLoading && marketRows.length > 0 && (
+              <div className="rounded-2xl border border-border bg-card/60 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Globe className="h-4 w-4" style={{ color: primaryColor }} />
+                  <div className="text-sm font-bold">Market Intelligence</div>
+                  <span className="text-[10px] text-muted-foreground">— {marketRows.length} verified</span>
+                </div>
+                <div className="space-y-2">
+                  {marketRows.map((m) => (
+                    <div key={m.id} className="rounded-xl border border-border bg-background/40 p-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] uppercase tracking-wider font-bold" style={{ color: primaryColor }}>
+                          {m.category}
+                        </span>
+                        {m.competitor_name && (
+                          <span className="text-[10px] text-muted-foreground">re: {m.competitor_name}</span>
+                        )}
+                      </div>
+                      <div className="text-sm font-semibold mt-0.5">{m.claim}</div>
+                      {m.metric_value && <div className="text-xs font-mono mt-0.5">{m.metric_value}</div>}
+                      {m.methodology && (
+                        <div className="text-[11px] text-muted-foreground italic mt-1">
+                          Methodology: {m.methodology}
+                        </div>
+                      )}
+                      {m.source_excerpt && (
+                        <div className="text-[11px] text-foreground/80 mt-1.5 border-l-2 pl-2 italic"
+                          style={{ borderColor: `${primaryColor}55` }}>
+                          "{m.source_excerpt}"
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap mt-1.5 text-[10px]">
+                        {m.source_name && <span className="text-muted-foreground">{m.source_name}</span>}
+                        {m.source_date && <span className="text-muted-foreground">· {new Date(m.source_date).toLocaleDateString('en-GB')}</span>}
+                        {m.source_url && (
+                          <a href={m.source_url} target="_blank" rel="noopener noreferrer"
+                            className="hover:underline inline-flex items-center gap-0.5" style={{ color: primaryColor }}>
+                            <ExternalLink className="h-2.5 w-2.5" /> Source
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

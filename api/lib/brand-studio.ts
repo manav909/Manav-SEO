@@ -407,7 +407,8 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
     case "bs_publish_bulk":
     case "bs_client_resolve":
     case "bs_client_list_documents":
-    case "bs_client_get_document": {
+    case "bs_client_get_document":
+    case "bs_client_get_investor_data": {
       const { handleBrandStudioClient } = await import("./brand-studio-client.js");
       return handleBrandStudioClient(action, body);
     }
@@ -420,6 +421,19 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
     case "bs_list_generated": {
       const { handleBrandStudioGenerate } = await import("./brand-studio-generate.js");
       return handleBrandStudioGenerate(action, body);
+    }
+
+    /* H.3 — Investor backend (traction, market intel, research) ── */
+    case "bs_list_traction":
+    case "bs_upsert_traction":
+    case "bs_delete_traction":
+    case "bs_list_market_intel":
+    case "bs_upsert_market_intel":
+    case "bs_delete_market_intel":
+    case "bs_research_fetch":
+    case "bs_research_bulk": {
+      const { handleBrandStudioInvestor } = await import("./brand-studio-investor.js");
+      return handleBrandStudioInvestor(action, body);
     }
 
     /* H.2+ handlers will plug in here:

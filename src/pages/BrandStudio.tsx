@@ -33,6 +33,7 @@ import BrandBar from '@/components/brand-studio/BrandBar';
 import Library from '@/components/brand-studio/Library';
 import Ingest from '@/components/brand-studio/Ingest';
 import Generate from '@/components/brand-studio/Generate';
+import InvestorPanel from '@/components/brand-studio/InvestorPanel';
 import ClientAccess from '@/components/brand-studio/ClientAccess';
 import EntitlementGate from '@/components/brand-studio/EntitlementGate';
 import {
@@ -266,16 +267,7 @@ export default function BrandStudio() {
 
         {entitlements && tab === 'investor' && (
           <EntitlementGate entitlements={entitlements} feature="brand_studio.investor" showLockedState>
-            <PlaceholderCard
-              title="Investor Relations — coming in H.3"
-              description={[
-                'Traction proof points: milestones, press mentions, awards, customer logos, growth metrics — every entry sourced and verifiable.',
-                'Market intelligence: market sizing (TAM/SAM/SOM) with third-party citations, industry trends, regulatory landscape.',
-                'Investor-specific templates: one-pager, pitch deck outline, market opportunity memo, traction memo, competitive moat memo.',
-                'Verification rigor: investor templates refuse to generate if claims can\'t be cited. Honest "needs more data" rather than fake fluency.',
-                'IR cadence: quarterly investor updates, board reporting, distribution tracking.',
-              ]}
-            />
+            <InvestorPanel projectId={projectId} />
           </EntitlementGate>
         )}
 
