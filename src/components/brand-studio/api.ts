@@ -1540,3 +1540,70 @@ export async function clientSessionGetDocument(opts: { sessionToken: string; doc
   if (!r?.success) return { error: r?.error };
   return { document: r.document, access_level: r.access_level };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 1C — Document image attachments
+═══════════════════════════════════════════════════════════ */
+
+export interface DocumentAttachment {
+  id:               string;
+  document_id:      string;
+  project_id:       string;
+  name:             string;
+  content_type:     string;
+  size_bytes:       number;
+  storage_path:     string;
+  alt?:             string | null;
+  caption?:         string | null;
+  width?:           number | null;
+  height?:          number | null;
+  uploaded_by_type: 'staff' | 'client';
+  uploaded_by_id?:  string | null;
+  uploaded_by_label?: string | null;
+  created_at:       string;
+  /** Fresh signed URL (1 hour TTL) — populated by backend on list/attach */
+  signedUrl?:       string | null;
+}
+
+export async function attachImage(opts: {
+  documentId:        string;
+  projectId:         string;
+  fileName:          string;
+  contentType:       string;
+  base64:            string;
+  alt?:              string;
+  caption?:          string;
+  width?:            number;
+  height?:           number;
+  uploadedByType?:   'staff' | 'client';
+  uploadedById?:     string;
+  uploadedByLabel?:  string;
+}): Promise<{ attachment?: DocumentAttachment; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_attach_image', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { attachment: r.attachment };
+}
+
+export async function listAttachments(opts: { documentId: string }): Promise<{
+  attachments: DocumentAttachment[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_attachments', ...opts });
+  if (!r?.success) return { attachments: [], error: r?.error };
+  return { attachments: Array.isArray(r.attachments) ? r.attachments : [] };
+}
+
+export async function deleteAttachment(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_delete_attachment', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function refreshAttachmentUrl(id: string): Promise<{
+  signedUrl?: string; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_refresh_attachment_url', id });
+  if (!r?.success) return { error: r?.error };
+  return { signedUrl: r.signedUrl };
+}

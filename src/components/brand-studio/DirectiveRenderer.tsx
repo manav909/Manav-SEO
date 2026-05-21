@@ -39,13 +39,22 @@ interface RendererProps {
 
 /* ─── 1. Cover page ─────────────────────────────────────────────── */
 
-export function CoverPage({ attrs, brandColor }: RendererProps) {
+export function CoverPage({ attrs, brandColor, dataContext }: RendererProps) {
   const title    = String(attrs.title    || '');
   const subtitle = String(attrs.subtitle || '');
   const date     = String(attrs.date     || '');
   const author   = String(attrs.author   || '');
   const recipient= String(attrs.recipient|| '');
-  const logoSrc  = attrs.logo === 'auto' || attrs.logo == null ? null : String(attrs.logo);
+
+  /* logo=auto pulls from dataContext.fields['brand.primary_logo_url'].
+     Explicit URL passes through. */
+  let logoSrc: string | null = null;
+  if (attrs.logo === 'auto' || attrs.logo == null) {
+    const url = dataContext?.fields?.['brand.primary_logo_url'];
+    logoSrc = typeof url === 'string' && url ? url : null;
+  } else {
+    logoSrc = String(attrs.logo);
+  }
 
   return (
     <div
@@ -197,16 +206,35 @@ export function Quote({ attrs, body, brandColor }: RendererProps) {
 
 export function ImageBlock({ attrs, brandColor, dataContext }: RendererProps) {
   const srcRaw = String(attrs.src || '');
+  let src     = srcRaw;
+  let resolvedAlt     = attrs.alt     ? String(attrs.alt)     : '';
+  let resolvedCaption = attrs.caption ? String(attrs.caption) : '';
+
   /* Resolve document://attachment-id via dataContext.attachments */
-  let src = srcRaw;
   if (srcRaw.startsWith('document://') && dataContext?.attachments) {
     const id = srcRaw.replace('document://', '');
     const attachment = dataContext.attachments.find((a) => a.id === id);
-    if (attachment) src = attachment.signedUrl;
+    if (attachment) {
+      src = attachment.signedUrl;
+      if (!resolvedAlt     && attachment.alt)     resolvedAlt     = attachment.alt;
+      if (!resolvedCaption && attachment.caption) resolvedCaption = attachment.caption;
+    } else {
+      src = '';   /* triggers placeholder below */
+    }
   }
-  const alt     = attrs.alt     ? String(attrs.alt)     : '';
-  const caption = attrs.caption ? String(attrs.caption) : '';
-  const width   = String(attrs.width || 'full');
+
+  /* Resolve brand:logo via dataContext.fields (set by DocumentViewer
+     when it has brand assets loaded) */
+  if (srcRaw === 'brand:logo' || srcRaw === 'brand:logo_url') {
+    const brandLogoUrl = dataContext?.fields?.['brand.primary_logo_url'];
+    if (typeof brandLogoUrl === 'string' && brandLogoUrl) {
+      src = brandLogoUrl;
+    } else {
+      src = '';
+    }
+  }
+
+  const width = String(attrs.width || 'full');
   const widthClass =
     width === 'half'  ? 'max-w-[50%]'  :
     width === 'third' ? 'max-w-[33%]' :
@@ -216,7 +244,18 @@ export function ImageBlock({ attrs, brandColor, dataContext }: RendererProps) {
     return (
       <div className="my-4 rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
         <ImageIcon className="h-6 w-6 mx-auto mb-1 opacity-40" />
-        Image source not resolved
+        <div>Image source not resolved</div>
+        <code className="text-[10px] font-mono mt-1 block opacity-70">{srcRaw || '(empty)'}</code>
+        {srcRaw.startsWith('document://') && (
+          <div className="text-[10px] mt-1">
+            This attachment ID isn't in the document's attachments list. Open <strong>Manage attachments</strong> to upload it.
+          </div>
+        )}
+        {srcRaw.startsWith('brand:') && (
+          <div className="text-[10px] mt-1">
+            No brand logo set. Configure it in Brand Studio → Brand tab.
+          </div>
+        )}
       </div>
     );
   }
@@ -225,14 +264,14 @@ export function ImageBlock({ attrs, brandColor, dataContext }: RendererProps) {
     <figure className={`ds-image my-4 ${widthClass} mx-auto break-inside-avoid`}>
       <img
         src={src}
-        alt={alt}
+        alt={resolvedAlt}
         className="w-full rounded-lg border border-border print:rounded-none print:border-2"
         style={{ borderColor: `${brandColor}20` }}
         onError={(e) => (e.currentTarget.style.opacity = '0.3')}
       />
-      {caption && (
+      {resolvedCaption && (
         <figcaption className="text-[10px] text-muted-foreground text-center italic mt-1">
-          {caption}
+          {resolvedCaption}
         </figcaption>
       )}
     </figure>

@@ -1001,6 +1001,188 @@ export async function bsGetFieldProvenance(body: any): Promise<any> {
   };
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Phase 1C — Document image attachments
+
+   Endpoints:
+   - bs_attach_image          PM uploads an image to a document
+   - bs_list_attachments      List a document's attachments with fresh
+                              1-hour signed URLs
+   - bs_delete_attachment     Remove an attachment (DB row + storage)
+   - bs_refresh_attachment_url Re-sign a single URL (rarely needed —
+                              list already returns fresh URLs)
+
+   Storage: bucket 'document-attachments', path '<project_id>/<id>.<ext>'.
+   25MB hard cap (matches client_upload pipeline). Compression happens
+   client-side before upload.
+═══════════════════════════════════════════════════════════════ */
+
+const ATTACHMENT_BUCKET     = "document-attachments";
+const ATTACHMENT_SIGNED_TTL = 3600;  /* 1 hour */
+const ATTACHMENT_MAX_BYTES  = 25 * 1024 * 1024;
+const ATTACHMENT_ALLOWED_TYPES = new Set([
+  "image/jpeg","image/png","image/webp","image/gif","image/svg+xml",
+]);
+
+function extFromContentType(ct: string): string {
+  switch (ct) {
+    case "image/jpeg":   return "jpg";
+    case "image/png":    return "png";
+    case "image/webp":   return "webp";
+    case "image/gif":    return "gif";
+    case "image/svg+xml":return "svg";
+    default:             return "bin";
+  }
+}
+
+async function freshSignedUrl(storagePath: string): Promise<string | null> {
+  try {
+    const { data, error } = await db().storage
+      .from(ATTACHMENT_BUCKET)
+      .createSignedUrl(storagePath, ATTACHMENT_SIGNED_TTL);
+    if (error || !data?.signedUrl) return null;
+    return data.signedUrl;
+  } catch { return null; }
+}
+
+export async function bsAttachImage(body: any): Promise<any> {
+  const {
+    documentId, projectId,
+    fileName, contentType, base64,
+    alt, caption, width, height,
+    uploadedByType, uploadedById, uploadedByLabel,
+  } = body;
+
+  if (!documentId || !projectId) return { success: false, error: "documentId + projectId required" };
+  if (!base64) return { success: false, error: "base64 content required" };
+  if (!contentType || !ATTACHMENT_ALLOWED_TYPES.has(contentType)) {
+    return { success: false, error: `Unsupported content_type. Allowed: ${[...ATTACHMENT_ALLOWED_TYPES].join(", ")}` };
+  }
+
+  /* Decode base64 — accept either pure base64 or data-URL prefix */
+  let cleanB64 = String(base64);
+  const dataUrlMatch = cleanB64.match(/^data:[^;]+;base64,(.+)$/);
+  if (dataUrlMatch) cleanB64 = dataUrlMatch[1];
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(cleanB64, "base64");
+  } catch (e: any) {
+    return { success: false, error: "Invalid base64: " + (e?.message || "unknown") };
+  }
+  if (buffer.length === 0) return { success: false, error: "Empty image data" };
+  if (buffer.length > ATTACHMENT_MAX_BYTES) {
+    return { success: false, error: `Image exceeds 25MB cap (${(buffer.length / 1024 / 1024).toFixed(1)}MB). Compress first.` };
+  }
+
+  /* Verify document belongs to project */
+  const { data: doc } = await db().from("project_documents")
+    .select("project_id").eq("id", documentId).maybeSingle();
+  if (!doc) return { success: false, error: "Document not found" };
+  if ((doc as any).project_id !== projectId) return { success: false, error: "Document not on this project" };
+
+  /* Generate attachment ID + storage path */
+  const attachmentId = (globalThis.crypto?.randomUUID
+    ? globalThis.crypto.randomUUID()
+    : `att_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  const ext  = extFromContentType(contentType);
+  const path = `${projectId}/${attachmentId}.${ext}`;
+
+  /* Upload to storage */
+  const { error: upErr } = await db().storage
+    .from(ATTACHMENT_BUCKET)
+    .upload(path, buffer, {
+      contentType,
+      cacheControl: "3600",
+      upsert: false,
+    });
+  if (upErr) {
+    return { success: false, error: `Storage upload failed: ${upErr.message}` };
+  }
+
+  /* Insert metadata row */
+  const { data: row, error: insErr } = await db().from("document_attachments").insert({
+    id:               attachmentId,
+    document_id:      documentId,
+    project_id:       projectId,
+    name:             String(fileName || `image.${ext}`).slice(0, 200),
+    content_type:     contentType,
+    size_bytes:       buffer.length,
+    storage_path:     path,
+    alt:              alt ? String(alt).slice(0, 500) : null,
+    caption:          caption ? String(caption).slice(0, 500) : null,
+    width:            width != null  ? Number(width)  : null,
+    height:           height != null ? Number(height) : null,
+    uploaded_by_type: uploadedByType === "client" ? "client" : "staff",
+    uploaded_by_id:   uploadedById   ? String(uploadedById)   : null,
+    uploaded_by_label:uploadedByLabel? String(uploadedByLabel): null,
+  }).select().single();
+
+  if (insErr || !row) {
+    /* Roll back the storage object so we don't orphan it */
+    await db().storage.from(ATTACHMENT_BUCKET).remove([path]).catch(() => {});
+    return { success: false, error: `DB insert failed: ${insErr?.message || "unknown"}` };
+  }
+
+  /* Fresh signed URL for immediate use */
+  const signedUrl = await freshSignedUrl(path);
+
+  return {
+    success: true,
+    attachment: {
+      ...row,
+      signedUrl,
+    },
+  };
+}
+
+export async function bsListAttachments(body: any): Promise<any> {
+  const { documentId } = body;
+  if (!documentId) return { success: false, error: "documentId required" };
+
+  const { data, error } = await db().from("document_attachments")
+    .select("*").eq("document_id", documentId)
+    .order("created_at", { ascending: true });
+  if (error) return { success: false, error: error.message };
+
+  const rows = data || [];
+  /* Mint fresh signed URLs in parallel */
+  const withUrls = await Promise.all(rows.map(async (r: any) => ({
+    ...r,
+    signedUrl: await freshSignedUrl(r.storage_path),
+  })));
+
+  return { success: true, attachments: withUrls };
+}
+
+export async function bsDeleteAttachment(body: any): Promise<any> {
+  const { id, projectId } = body;
+  if (!id || !projectId) return { success: false, error: "id + projectId required" };
+
+  const { data: row } = await db().from("document_attachments")
+    .select("storage_path,project_id").eq("id", id).maybeSingle();
+  if (!row) return { success: false, error: "Attachment not found" };
+  if ((row as any).project_id !== projectId) return { success: false, error: "Wrong project" };
+
+  /* Delete storage object first; if that fails we still remove the row
+     so it's not a dangling reference in the viewer */
+  await db().storage.from(ATTACHMENT_BUCKET).remove([(row as any).storage_path]).catch(() => {});
+
+  const { error } = await db().from("document_attachments").delete().eq("id", id);
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+export async function bsRefreshAttachmentUrl(body: any): Promise<any> {
+  const { id } = body;
+  if (!id) return { success: false, error: "id required" };
+  const { data: row } = await db().from("document_attachments")
+    .select("storage_path").eq("id", id).maybeSingle();
+  if (!row) return { success: false, error: "Attachment not found" };
+  const signedUrl = await freshSignedUrl((row as any).storage_path);
+  if (!signedUrl) return { success: false, error: "Could not sign URL" };
+  return { success: true, signedUrl };
+}
+
 /* ─── Dispatcher ──────────────────────────────────────────────── */
 
 export async function handleBrandStudioIngest(action: string, body: any): Promise<any | null> {
@@ -1013,6 +1195,11 @@ export async function handleBrandStudioIngest(action: string, body: any): Promis
     case "bs_get_document":       return bsGetDocumentDetail(body);
     case "bs_delete_document":    return bsDeleteDocument(body);
     case "bs_get_field_provenance": return bsGetFieldProvenance(body);
+    /* Phase 1C — attachments */
+    case "bs_attach_image":          return bsAttachImage(body);
+    case "bs_list_attachments":      return bsListAttachments(body);
+    case "bs_delete_attachment":     return bsDeleteAttachment(body);
+    case "bs_refresh_attachment_url":return bsRefreshAttachmentUrl(body);
     default: return null;
   }
 }

@@ -393,7 +393,12 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
     case "bs_ingest_extract":
     case "bs_get_document":
     case "bs_delete_document":
-    case "bs_get_field_provenance": {
+    case "bs_get_field_provenance":
+    /* Phase 1C — Image attachments */
+    case "bs_attach_image":
+    case "bs_list_attachments":
+    case "bs_delete_attachment":
+    case "bs_refresh_attachment_url": {
       const { handleBrandStudioIngest } = await import("./brand-studio-ingest.js");
       return handleBrandStudioIngest(action, body);
     }

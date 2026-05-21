@@ -12,11 +12,12 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
-import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare, BookOpen, X } from 'lucide-react';
-import { listDocuments, publishDocument, listStaleDocs, getDocumentDetail } from './api';
+import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare, BookOpen, X, Image as ImageIcon } from 'lucide-react';
+import { listDocuments, publishDocument, listStaleDocs, getDocumentDetail, listAttachments, getBrandAssets, type DocumentAttachment } from './api';
 import { toast } from '@/hooks/use-toast';
 import DocumentDiff from './DocumentDiff';
 import DocumentViewer from './DocumentViewer';
+import AttachmentManager from './AttachmentManager';
 import type { BrandStudioDocument, BrandStudioCatalogs } from './types';
 
 interface Props {
@@ -41,6 +42,9 @@ export default function Library({ projectId, catalogs }: Props) {
   /* Doc viewer modal */
   const [viewerDoc,       setViewerDoc]       = useState<(BrandStudioDocument & { raw_content?: string }) | null>(null);
   const [viewerLoading,   setViewerLoading]   = useState(false);
+  const [viewerAttachments, setViewerAttachments] = useState<DocumentAttachment[]>([]);
+  const [brandLogoUrl,    setBrandLogoUrl]    = useState<string | null>(null);
+  const [showAttachments, setShowAttachments] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -163,12 +167,25 @@ export default function Library({ projectId, catalogs }: Props) {
             onOpen={async () => {
               setViewerLoading(true);
               setViewerDoc({ ...doc });
-              const r = await getDocumentDetail(doc.id);
-              if (r.document) {
-                setViewerDoc(r.document as any);
-              } else if (r.error) {
-                toast({ title: 'Could not load document', description: r.error, variant: 'destructive' });
+              setViewerAttachments([]);
+              setBrandLogoUrl(null);
+              /* Parallel: document detail, attachments, brand assets */
+              const [docRes, attRes, brandRes] = await Promise.all([
+                getDocumentDetail(doc.id),
+                listAttachments({ documentId: doc.id }),
+                getBrandAssets(projectId),
+              ]);
+              if (docRes.document) {
+                setViewerDoc(docRes.document as any);
+              } else if (docRes.error) {
+                toast({ title: 'Could not load document', description: docRes.error, variant: 'destructive' });
                 setViewerDoc(null);
+                setViewerLoading(false);
+                return;
+              }
+              setViewerAttachments(attRes.attachments || []);
+              if (brandRes?.assets?.primary_logo_url) {
+                setBrandLogoUrl(String(brandRes.assets.primary_logo_url));
               }
               setViewerLoading(false);
             }}
@@ -189,9 +206,22 @@ export default function Library({ projectId, catalogs }: Props) {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold truncate">{viewerDoc.name}</div>
               </div>
-              <button onClick={() => setViewerDoc(null)} className="text-muted-foreground hover:text-foreground p-1">
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setShowAttachments(true)}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-semibold border border-border hover:bg-muted/40 text-foreground flex items-center gap-1"
+                  title="Upload + embed images in this document"
+                >
+                  <ImageIcon className="h-3 w-3" />
+                  Attachments
+                  {viewerAttachments.length > 0 && (
+                    <span className="ml-1 text-[9px] opacity-70">({viewerAttachments.length})</span>
+                  )}
+                </button>
+                <button onClick={() => setViewerDoc(null)} className="text-muted-foreground hover:text-foreground p-1">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4 print:overflow-visible print:p-0">
               {viewerLoading && !viewerDoc.raw_content ? (
@@ -214,11 +244,35 @@ export default function Library({ projectId, catalogs }: Props) {
                   }}
                   summary={(viewerDoc as any).extracted_data?.doc_summary}
                   keyFindings={(viewerDoc as any).extracted_data?.key_findings}
+                  dataContext={{
+                    fields: brandLogoUrl ? { 'brand.primary_logo_url': brandLogoUrl } : {},
+                    attachments: viewerAttachments
+                      .filter((a) => a.signedUrl)
+                      .map((a) => ({
+                        id:        a.id,
+                        signedUrl: a.signedUrl as string,
+                        alt:       a.alt || undefined,
+                        caption:   a.caption || undefined,
+                      })),
+                  }}
                 />
               )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Attachment manager (uploads + manages document images) ── */}
+      {showAttachments && viewerDoc && (
+        <AttachmentManager
+          documentId={viewerDoc.id}
+          projectId={projectId}
+          authorId="staff"
+          authorLabel="PM"
+          brandColor={brandLogoUrl ? '#8b5cf6' : '#8b5cf6'}
+          onClose={() => setShowAttachments(false)}
+          onChange={(atts) => setViewerAttachments(atts)}
+        />
       )}
     </div>
   );
