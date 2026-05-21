@@ -179,7 +179,15 @@ async function callLlmWeb(opts: {
         }
       }
     }
-    const webUsed = (data?.content || []).some((b: any) => b.type === "tool_use" && b.name === "web_search");
+    /* Detect whether the model actually used web_search. The block-type for
+       server-side tools is "server_tool_use" (not "tool_use" — that's for
+       client-callable tools). We also check for the presence of any
+       web_search citations as a fallback signal, since the citation
+       extraction above is the most reliable proof that a search ran. */
+    const webUsed = citations.length > 0 || (data?.content || []).some((b: any) =>
+      (b.type === "server_tool_use" || b.type === "tool_use" || b.type === "web_search_tool_result")
+      && (b.name === "web_search" || b.server_name === "web_search")
+    );
 
     if (!text) {
       return { ok: false, error: 'LLM returned empty content', citations, webUsed };
