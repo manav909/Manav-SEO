@@ -278,30 +278,43 @@ export default function SeasonModal() {
             }}
           />
 
-          {/* Modal */}
-          <motion.div
-            key="season-modal"
-            initial={{ opacity: 0, y: 20, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0,  scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.97 }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: 'fixed',
-              top: '50%', left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: 'min(720px, calc(100vw - 32px))',
-              maxHeight: 'calc(100vh - 64px)',
-              zIndex: 10000,
-              borderRadius: 20,
-              border: `1px solid hsla(${moodHsl} / 0.3)`,
-              background: 'rgba(15, 16, 24, 0.96)',
-              boxShadow: `0 20px 60px rgba(0,0,0,0.6), 0 0 60px hsla(${moodHsl} / 0.15)`,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
+          {/* Centering container — uses flex so it doesn't conflict with the inner modal's
+              animated transform (Framer Motion's animated y/scale clobbers any
+              transform set via inline style). Pointer-events none so backdrop clicks
+              still reach the backdrop layer underneath. */}
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            pointerEvents: 'none',
+            overflow: 'hidden',
+          }}>
+            {/* Modal */}
+            <motion.div
+              key="season-modal"
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0,  scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.97 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'relative',
+                width: 'min(720px, 100%)',
+                maxHeight: 'min(720px, calc(100vh - 32px))',
+                borderRadius: 20,
+                border: `1px solid hsla(${moodHsl} / 0.3)`,
+                background: 'rgba(15, 16, 24, 0.96)',
+                boxShadow: `0 20px 60px rgba(0,0,0,0.6), 0 0 60px hsla(${moodHsl} / 0.15)`,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                pointerEvents: 'auto',
+              }}
+            >
             {/* Top aura glow */}
             <motion.div
               animate={{ opacity: [0.5, 0.8, 0.5] }}
@@ -843,7 +856,8 @@ export default function SeasonModal() {
                 <span>S.E.A.S.O.N. v1</span>
               </div>
             </div>
-          </motion.div>
+            </motion.div>
+          </div>
         </>
       )}
     </AnimatePresence>
