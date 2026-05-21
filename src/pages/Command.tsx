@@ -11,7 +11,7 @@
      4. Honest copy: explains what went wrong + how to fix it.
 ═══════════════════════════════════════════════════════════════ */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Component, type ReactNode, type ErrorInfo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, AlertCircle, CheckCircle2, Activity, ArrowRight,
@@ -44,7 +44,123 @@ function useTypewriter(text: string, speedMs = 18): string {
   return displayed;
 }
 
+/* ────────────────────────────────────────────────────────────
+   Local error boundary — page never crashes to global handler.
+   If render throws (TDZ, missing data, anything), we show a
+   graceful inline state with the input still usable.
+──────────────────────────────────────────────────────────── */
+
+class CommandBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    /* Log to console for diagnostic — never to a sink we don't own. */
+    // eslint-disable-next-line no-console
+    console.error('[S.E.A.S.O.N. caught render error]', error, info?.componentStack);
+  }
+  reset = () => this.setState({ error: null });
+  render() {
+    if (this.state.error) {
+      return <SoftCommandFallback error={this.state.error} reset={this.reset} />;
+    }
+    return this.props.children;
+  }
+}
+
+function SoftCommandFallback({ error, reset }: { error: Error; reset: () => void }) {
+  const errText = `${error.name}: ${error.message}\n\nStack:\n${error.stack || '(no stack)'}`;
+  const copy = () => {
+    try { navigator.clipboard?.writeText(errText); } catch { /* ignore */ }
+  };
+  /* Pure HTML — no SmartSidebar/SmartTopBar/etc. so a TDZ
+     in any of those components can't crash the fallback. */
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(180deg, hsl(222 47% 4%) 0%, hsl(222 47% 6%) 100%)',
+      color: 'hsl(210 40% 96%)',
+      padding: '48px 24px',
+      fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+    }}>
+      <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgb(34, 211, 238)', fontWeight: 'bold', marginBottom: '8px' }}>
+          S.E.A.S.O.N.
+        </div>
+        <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0, lineHeight: 1.2 }}>
+          Something went wrong on this page.
+        </h1>
+        <p style={{ marginTop: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+          Honest answer: my last code change had a runtime error. The rest of the app is unaffected. Below is the exact error so I can fix it.
+        </p>
+        <div style={{
+          marginTop: '20px',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          background: 'rgba(239, 68, 68, 0.05)',
+          borderRadius: '12px',
+          padding: '12px',
+        }}>
+          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 'bold', color: 'rgb(239, 68, 68)', marginBottom: '4px' }}>
+            Error signature
+          </div>
+          <pre style={{ fontSize: '11px', color: 'rgba(255,255,255,0.9)', fontFamily: 'ui-monospace, monospace', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+            {error.message}
+          </pre>
+        </div>
+        <details style={{ marginTop: '12px' }}>
+          <summary style={{ fontSize: '11px', color: 'rgba(34, 211, 238, 0.8)', cursor: 'pointer' }}>
+            Show full diagnostic
+          </summary>
+          <pre style={{
+            marginTop: '8px',
+            fontSize: '10px',
+            color: 'rgba(255,255,255,0.5)',
+            fontFamily: 'ui-monospace, monospace',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            maxHeight: '256px',
+            overflowY: 'auto',
+            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'rgba(0,0,0,0.3)',
+            padding: '8px',
+            borderRadius: '8px',
+          }}>{errText}</pre>
+        </details>
+        <div style={{ marginTop: '20px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button onClick={reset} style={{
+            fontSize: '12px', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold',
+            background: 'rgba(34, 211, 238, 0.15)', color: 'rgb(34, 211, 238)',
+            border: '1px solid rgba(34, 211, 238, 0.3)', cursor: 'pointer',
+          }}>Try again</button>
+          <button onClick={copy} style={{
+            fontSize: '12px', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold',
+            background: 'transparent', color: 'rgba(255,255,255,0.6)',
+            border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer',
+          }}>Copy diagnostic</button>
+          <a href="/data-room" style={{
+            fontSize: '12px', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold',
+            background: 'transparent', color: 'rgba(255,255,255,0.6)',
+            border: '1px solid rgba(255,255,255,0.15)', textDecoration: 'none', display: 'inline-block',
+          }}>Go to Data Room</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Command() {
+  return (
+    <CommandBoundary>
+      <CommandInner />
+    </CommandBoundary>
+  );
+}
+
+function CommandInner() {
   const { selectedProjectId, selectedProject, setSelectedProjectId } = useProject() as any;
   const { projects } = useAuth() as any;
   const safeProjects = (projects || []).filter((p: any) => p && p.id);
