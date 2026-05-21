@@ -305,25 +305,97 @@ export default function DocumentViewer({
         </div>
       </div>
 
-      {/* Print stylesheet — scoped to ds-document */}
+      {/* Print stylesheet — scoped to ds-document.
+          Strategy: force light-theme CSS variables in print so every
+          element using `bg-card` / `bg-background` / etc. renders white
+          instead of dark navy. Then hide UI chrome and position the
+          document to fill the page cleanly. */}
       <style>{`
         @media print {
-          /* Hide everything except the document */
+          /* ── 1. Force light-theme CSS variables in print ─────────────
+             This makes EVERY element using design-system tokens
+             (bg-card, bg-background, text-foreground, border-border)
+             render in light mode automatically. */
+          :root,
+          .dark,
+          html,
+          body {
+            --background:        0 0% 100% !important;
+            --foreground:        0 0% 8% !important;
+            --card:              0 0% 100% !important;
+            --card-foreground:   0 0% 8% !important;
+            --muted:             0 0% 95% !important;
+            --muted-foreground:  0 0% 35% !important;
+            --border:            0 0% 85% !important;
+            --primary:           240 13% 8% !important;
+            --primary-foreground:0 0% 100% !important;
+          }
+
+          /* ── 2. Hard reset all backgrounds + text to print-safe ──── */
+          html, body {
+            background: white !important;
+            color: black !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            min-height: 0 !important;
+          }
+
+          /* ── 3. Allow background graphics that matter (charts,
+                  callouts, KPI tiles) to keep their color while
+                  forcing chrome backgrounds to white. We target
+                  the modal/backdrop classes explicitly. */
+          .fixed.inset-0,
+          [class*="bg-black/"],
+          [class*="bg-card"]:not(.ds-kpi):not(.ds-callout):not(.ds-quote):not(.ds-chart),
+          [class*="backdrop-blur"] {
+            background: white !important;
+            background-color: white !important;
+            background-image: none !important;
+            backdrop-filter: none !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+
+          /* ── 4. Hide all UI chrome — show only ds-document ──────── */
           body * { visibility: hidden; }
           .ds-document, .ds-document * { visibility: visible; }
+
+          /* ── 5. Position ds-document to fill the page ───────────── */
           .ds-document {
-            position: absolute;
-            left: 0; top: 0;
-            width: 100%;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            right: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
             padding: 24px 32px 48px 32px !important;
             background: white !important;
             color: black !important;
             font-family: Georgia, 'Times New Roman', serif !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
-          .ds-document * {
+
+          /* ── 6. Ensure document descendants use clean print colors,
+                  but PRESERVE chart colors, callout tints, and brand
+                  accents (those use inline styles with !important
+                  bypasses or distinct ds-* classes). ───────────────── */
+          .ds-document p,
+          .ds-document li,
+          .ds-document h1,
+          .ds-document h2,
+          .ds-document h3,
+          .ds-document h4,
+          .ds-document h5,
+          .ds-document h6,
+          .ds-document td,
+          .ds-document th,
+          .ds-document figcaption,
+          .ds-document .ds-prose * {
             color: black !important;
-            background: transparent !important;
           }
+
+          /* Headings use sans-serif, body uses serif */
           .ds-document .ds-prose h1,
           .ds-document .ds-prose h2,
           .ds-document .ds-prose h3,
@@ -345,6 +417,30 @@ export default function DocumentViewer({
             border-left: 3px solid #999 !important;
             font-style: italic !important;
           }
+
+          /* ── 7. Preserve chart SVG colors — Recharts uses inline
+                  fill/stroke which would otherwise be wiped by the
+                  blanket overrides above. ──────────────────────────── */
+          .ds-chart svg,
+          .ds-chart svg *,
+          .recharts-wrapper * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* ── 8. Preserve KPI tile, callout, and quote backgrounds
+                  by re-enabling backgrounds via inline-style passthrough.
+                  These directives use inline style attributes; we
+                  re-allow background on the directive containers. */
+          .ds-kpi,
+          .ds-callout,
+          .ds-quote,
+          .ds-chart > div {
+            background: white !important;
+            border: 1px solid #ccc !important;
+          }
+
+          /* ── 9. Print header + footer ───────────────────────────── */
           .ds-print-header {
             border-bottom: 2px solid #333 !important;
             padding-bottom: 12px;
@@ -354,6 +450,7 @@ export default function DocumentViewer({
             font-size: 22pt !important;
             font-weight: bold;
             font-family: 'Helvetica Neue', Arial, sans-serif !important;
+            color: black !important;
           }
           .ds-print-meta {
             font-size: 10pt !important;
@@ -376,6 +473,13 @@ export default function DocumentViewer({
             padding-top: 6px;
             font-family: 'Helvetica Neue', Arial, sans-serif !important;
           }
+
+          /* ── 10. Cover page — light-theme accent only ──────────── */
+          .ds-cover-page {
+            background: white !important;
+            border: 1px solid #ddd !important;
+          }
+
           @page {
             margin: 18mm;
             size: A4;
