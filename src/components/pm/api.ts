@@ -1953,6 +1953,12 @@ export interface ResponseChunkClient {
   detail?: any;
 }
 
+export interface WebCitation {
+  url:         string;
+  title?:      string;
+  cited_text?: string;
+}
+
 export interface CommandResponseClient {
   intent:      string;
   confidence:  number;
@@ -1960,6 +1966,9 @@ export interface CommandResponseClient {
   artifacts?:  Array<{ kind: string; title: string; body: string }>;
   actions?:    Array<{ id: string; label: string; payload?: any }>;
   honest_note?: string;
+  /* Phase 11 — web search support */
+  citations?:  WebCitation[];
+  web_used?:   boolean;
 }
 
 export interface ActivityEvent {
@@ -1982,7 +1991,7 @@ export async function seasonBriefing(projectId: string): Promise<{ briefing?: Br
   return { briefing: r.briefing };
 }
 
-export async function seasonCommand(opts: { projectId: string; input: string; awareness?: any }): Promise<{ response?: CommandResponseClient; error?: string }> {
+export async function seasonCommand(opts: { projectId: string; input: string; awareness?: any; web_access?: boolean }): Promise<{ response?: CommandResponseClient; error?: string }> {
   const r = await post(ENGINE, { action: 'bs_season_command', ...opts });
   if (!r?.success) return { error: r?.error };
   return { response: r.response };

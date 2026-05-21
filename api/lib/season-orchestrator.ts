@@ -39,7 +39,11 @@ export interface CommandResponse {
 /* ─── Main endpoint ──────────────────────────────────────────── */
 
 export async function bsSeasonCommand(body: any): Promise<any> {
-  const { projectId, input, awareness } = body;
+  const { projectId, input, awareness, web_access } = body;
+  /* web_access defaults to true if not specified (older clients).
+     Setting it to false disables the web brain — questions that
+     would route to web get the honest fallback instead. */
+  const webEnabled = web_access !== false;
   if (!projectId) return { success: false, error: "projectId required" };
   if (!input || typeof input !== "string") return { success: false, error: "input required" };
 
@@ -58,6 +62,40 @@ export async function bsSeasonCommand(body: any): Promise<any> {
     else if (intent === "status")     response = await handleStatus(projectId);
     else if (intent === "explain")    response = await handleExplain(projectId, text, awareness);
     else if (intent === "verify")     response = await handleVerify(projectId);
+    else if (intent === "web") {
+      /* Web-enabled brain — uses Anthropic web_search tool */
+      if (!webEnabled) {
+        response = {
+          intent: "web_disabled",
+          confidence: 1,
+          chunks: [
+            { kind: "plain", content: "Your question looks like it needs live web info, but web access is off in your S.E.A.S.O.N. settings." },
+            { kind: "plain", content: "Enable it under Settings → Capabilities → Web access. Or rephrase as a question I can answer from your project data." },
+          ],
+          honest_note: "Web access is disabled.",
+        } as any;
+      } else {
+      try {
+        const { seasonLlmWebHandle } = await import("./season-llm-web.js");
+        const llm = await seasonLlmWebHandle({ projectId, input, awareness });
+        response = {
+          intent:       llm.intent,
+          confidence:   llm.confidence,
+          chunks:       llm.chunks as any,
+          artifacts:    llm.artifacts,
+          actions:      llm.actions,
+          honest_note:  llm.honest_note,
+        };
+        /* Attach citations + web_used flag via the response.detail mechanism */
+        (response as any).citations = llm.citations;
+        (response as any).web_used  = llm.web_used;
+      } catch (webErr: any) {
+        response = handleUnknown(text);
+        response.honest_note = (response.honest_note || "") +
+          ` (Web brain unavailable: ${webErr?.message || 'unknown'}). Try "diagnose" to check.`;
+      }
+      }
+    }
     else {
       /* Hand to the LLM brain */
       try {
@@ -114,6 +152,12 @@ function detectIntent(text: string): string {
   if (/^(help|what can you do|capabilities|what.{1,8}help)/i.test(text))                                         return "help";
   if (/(compute|recompute|refresh|build|run|generate|make).{0,20}(intelligence|analytics|intel|kpi|insight)/i.test(text)) return "compute_intel";
   if (/^make it$|^do it$|^compute it$|^run it$/i.test(text))                                                    return "compute_intel";
+  /* Web intent — questions that need live external info.
+     Carefully scoped so legitimate project questions don't go to web. */
+  if (/(latest|recent|this (week|month|year)|currently|right now|today|news on|update on|happening with|happening in)/i.test(text)
+      && /(seo|google|algorithm|update|industry|market|competitor|news|trend|launch|release)/i.test(text)) return "web";
+  if (/^(search|google|look up|find online|web search|fetch)\b/i.test(text))                                  return "web";
+  if (/(what'?s new in|what changed in|whats happening with) (seo|google|search|paid|ads|social)/i.test(text)) return "web";
   if (/(summari[sz]e|recap|what.{1,10}(been |going on|happened.{1,15}this week)|wrap.?up|digest)/i.test(text)) return "summarize";
   if (/(why|explain|what.{1,5}happen|root cause|slipping|behind|off.?track|dip)/i.test(text))                  return "explain";
   if (/(what should i|what needs|urgent|blocking|today|focus|next)/i.test(text))                                 return "attention";

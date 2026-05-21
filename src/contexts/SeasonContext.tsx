@@ -76,6 +76,7 @@ export interface SeasonSettings {
   /* Knowledge */
   use_general_seo:     boolean;
   remember_sessions:   boolean;
+  web_access:          boolean;  // Phase 11 — gate live web search
 
   /* Cost */
   daily_llm_cap:       number;           // 10..500
@@ -103,6 +104,7 @@ const DEFAULT_SETTINGS: SeasonSettings = {
   sound_feedback:    'off',
   use_general_seo:   true,
   remember_sessions: true,
+  web_access:        true,
   daily_llm_cap:     50,
 };
 

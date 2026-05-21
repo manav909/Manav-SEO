@@ -120,7 +120,7 @@ function chipsForAwareness(awareness: any): Array<{ label: string; q: string; ur
 }
 
 export default function SeasonModal() {
-  const { isOpen, close, initialQuery, mood, setMood, awareness } = useSeason();
+  const { isOpen, close, initialQuery, mood, setMood, awareness, settings } = useSeason();
   const { run: runAction, confirm: confirmAction, cancel: cancelAction, pendingConfirm, running: actionRunning } = useSeasonAction();
   const { selectedProjectId } = useProject() as any;
   const { projects } = useAuth() as any;
@@ -224,7 +224,12 @@ export default function SeasonModal() {
 
     /* Backend orchestrator (keyword router → LLM brain) */
     try {
-      const r = await seasonCommand({ projectId: selectedProjectId, input: q, awareness: awareness || undefined });
+      const r = await seasonCommand({
+        projectId: selectedProjectId,
+        input: q,
+        awareness: awareness || undefined,
+        web_access: settings.web_access,
+      });
       if (r.error) {
         setError(r.error);
         setMood('alert');
@@ -619,12 +624,23 @@ export default function SeasonModal() {
                   <div style={{
                     fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.15em', fontWeight: 700,
                     color: `hsl(${moodHsl})`, marginBottom: 8,
-                    display: 'flex', alignItems: 'center', gap: 6,
+                    display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
                   }}>
                     <CheckCircle2 size={10} />
                     <span>{response.intent.replace(/_/g,' ')}</span>
                     <span style={{ opacity: 0.5 }}>·</span>
                     <span>{Math.round(response.confidence * 100)}% confident</span>
+                    {response.web_used && (
+                      <span style={{
+                        marginLeft: 4,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        background: 'hsla(210 80% 60% / 0.15)',
+                        border: '1px solid hsla(210 80% 60% / 0.4)',
+                        color: 'hsl(210 80% 70%)',
+                        fontSize: 9,
+                      }}>🌐 web</span>
+                    )}
                   </div>
 
                   {/* Chunks */}
@@ -655,6 +671,58 @@ export default function SeasonModal() {
                       {response.artifacts.map((art, i) => (
                         <ArtifactBox key={i} artifact={art} moodHsl={moodHsl} />
                       ))}
+                    </div>
+                  )}
+
+                  {/* Citations (Phase 11) — clickable web sources */}
+                  {response.citations && response.citations.length > 0 && (
+                    <div style={{
+                      marginTop: 12,
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: '1px solid hsla(210 80% 60% / 0.2)',
+                      background: 'hsla(210 80% 60% / 0.05)',
+                    }}>
+                      <div style={{
+                        fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.15em', fontWeight: 700,
+                        color: 'hsl(210 80% 70%)', marginBottom: 8,
+                      }}>
+                        Sources · {response.citations.length}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {response.citations.map((c, i) => {
+                          let host = '';
+                          try { host = new URL(c.url).hostname.replace(/^www\./, ''); } catch { host = c.url.slice(0, 24); }
+                          return (
+                            <a
+                              key={i}
+                              href={c.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={c.title || c.url}
+                              style={{
+                                fontSize: 10.5,
+                                padding: '4px 8px',
+                                borderRadius: 6,
+                                border: '1px solid hsla(210 80% 60% / 0.3)',
+                                background: 'hsla(210 80% 60% / 0.08)',
+                                color: 'hsl(210 80% 75%)',
+                                textDecoration: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                maxWidth: 220,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                fontWeight: 600,
+                              }}>
+                              <span style={{ opacity: 0.7 }}>[{i + 1}]</span>
+                              <span>{host}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 

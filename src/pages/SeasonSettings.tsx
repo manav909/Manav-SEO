@@ -438,6 +438,13 @@ function VoiceTab() {
           checked={settings.remember_sessions}
           onChange={() => updateSettings({ remember_sessions: !settings.remember_sessions })}
         />
+        <ToggleRow
+          label="Live web access"
+          desc="Lets S.E.A.S.O.N. search the open web for current info (algorithm updates, competitor moves, news). Sources are cited."
+          checked={settings.web_access}
+          onChange={() => updateSettings({ web_access: !settings.web_access })}
+          impact="Counts toward your daily LLM cap. Costs more per call."
+        />
       </Section>
     </div>
   );
