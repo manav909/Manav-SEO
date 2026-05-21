@@ -326,7 +326,7 @@ function tableNodeToDocx(node: any, ctx: ExportContext): Table {
     const isHeader = i === 0;
     const cells: TableCell[] = (row.children || []).map((cell: any) => new TableCell({
       width:   { size: 100 / row.children.length, type: WidthType.PERCENTAGE },
-      shading: isHeader ? { type: ShadingType.CLEAR, fill: hexNoHash(ctx.brandColor) + "15" } : undefined,
+      shading: isHeader ? { type: ShadingType.CLEAR, fill: tintHex(ctx.brandColor, 0.92) } : undefined,
       children: [new Paragraph({
         children: inlineRuns(cell.children || [], isHeader ? { bold: true, color: ctx.brandColor } : {}),
       })],
@@ -577,7 +577,7 @@ function renderChart(attrs: any, children: any[], ctx: ExportContext): any[] {
       tableHeader: true,
       children: columns.map((c) => new TableCell({
         width:   { size: 100 / columns.length, type: WidthType.PERCENTAGE },
-        shading: { type: ShadingType.CLEAR, fill: hexNoHash(ctx.brandColor) + "15" },
+        shading: { type: ShadingType.CLEAR, fill: tintHex(ctx.brandColor, 0.92) },
         children: [new Paragraph({ children: [new TextRun({ text: c, bold: true, color: hexNoHash(ctx.brandColor), size: 18, font: "Calibri" })] })],
       })),
     });
@@ -638,6 +638,23 @@ function renderSignature(attrs: any): Paragraph[] {
 
 function hexNoHash(c: string): string {
   return String(c || "").replace(/^#/, "").toUpperCase().slice(0, 6).padEnd(6, "0");
+}
+
+/** Mix a hex color toward white. docx requires exact 6-digit hex values
+ *  (no alpha suffix), so we precompute the tinted shade via channel mixing.
+ *  mixRatio: 0 = pure source, 1 = pure white. ~0.92 produces a faint tint
+ *  similar to the CSS "<color>15" pattern (~8% opacity on white). */
+function tintHex(hex: string, mixRatio: number): string {
+  const h = hexNoHash(hex);
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  if ([r, g, b].some(isNaN)) return "F5F5F5";
+  const mix = (c: number) => Math.round(c + (255 - c) * mixRatio);
+  return [mix(r), mix(g), mix(b)]
+    .map((c) => c.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
 }
 
 function formatCell(v: any): string {
