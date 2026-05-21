@@ -652,49 +652,62 @@ const stepContentBrief = {
     /* ── PASS 1: outline + meta ──────────────────────────────────
        Smaller JSON, asks for the structural skeleton only.
        Should complete in 20-40s. */
-    const outlineSys = `You are S.E.A.S.O.N. drafting the SKELETON of a content brief. Reply with ONLY valid JSON:
+    /* ── PASS 1: skeleton — kept genuinely small for speed.
+       We only ask for the highest-value fields: title, meta, intent, headings,
+       unique angle, schema. Other fields (secondary_keywords, internal_link_targets)
+       move to a fast PASS 1b or are filled later, so PASS 1 always finishes fast.
+
+       Token math: typical output ~600-900 tokens. Sonnet 4.6 at ~70 tok/sec ≈
+       10-15s of generation. Comfortably under any timeout. */
+    const outlineSys = `You output ONLY valid JSON for an SEO content brief skeleton. No prose. No fences. Just the JSON.
+
+Required shape:
 {
   "title": "H1 (60-70 chars)",
-  "meta_description": "meta description (140-160 chars)",
-  "primary_keyword": "the target keyword",
-  "secondary_keywords": ["3-7 supporting phrases"],
-  "search_intent": "informational | commercial | transactional | navigational",
+  "meta_description": "140-160 chars",
+  "search_intent": "informational|commercial|transactional|navigational",
   "target_word_count": 2500,
-  "section_count": 8,
-  "section_headings": ["H2 heading 1", "H2 heading 2", "..."],
-  "unique_angle": "differentiated take vs competitors (1-2 sentences)",
-  "schema_recommendation": "schema.org type + why",
-  "internal_link_targets": ["2-4 anchor concepts to link from existing site pages"]
+  "section_headings": ["H2 1", "H2 2", "H2 3", "H2 4", "H2 5", "H2 6", "H2 7", "H2 8"],
+  "unique_angle": "1 sentence",
+  "schema_recommendation": "Article|FAQ|HowTo|... + 5-word why"
 }
 
-Quality bar:
-- 6-12 H2 sections, ordered for reader flow
-- Unique angle must come from the strategy + competitor gap, not boilerplate
-- Section headings must be specific, not generic (e.g. "Setup steps for macOS 14+" not "Setup")`;
+Rules:
+- 6-10 H2 headings, ordered for reader flow
+- Headings are specific, not generic
+- unique_angle ties to the strategy + competitor gap`;
 
-    const outlineUsr = `Outline the brief for ranking for "${keyword}".
+    /* Lean input — just the keyword + a one-line summary of each prior step.
+       Stuffing full JSON into the prompt slows generation AND increases prompt
+       processing time. Keep it short. */
+    const stratLine = strategy.strategy_name
+      ? `Strategy: ${strategy.strategy_name} — ${(strategy.approach || '').slice(0, 200)}`
+      : '';
+    const compLine = competitors.top_pages?.length
+      ? `Top competitors: ${competitors.top_pages.slice(0, 5).map((p: any) => p.domain).filter(Boolean).join(', ')}`
+      : '';
+    const gscLine = gsc.current_ranking?.position
+      ? `Currently ranking at position ${gsc.current_ranking.position} for this query.`
+      : 'No current GSC traction.';
+    const intentLine = research.primary_intent
+      ? `Intent: ${research.primary_intent}. ${research.intent_explanation || ''}`
+      : '';
 
-KEYWORD RESEARCH:
-${JSON.stringify(research, null, 2).slice(0, 2000)}
+    const outlineUsr = `Keyword: "${keyword}"
+${intentLine}
+${gscLine}
+${compLine}
+${stratLine}
 
-CURRENT GSC POSITION:
-${JSON.stringify(gsc, null, 2).slice(0, 1000)}
+Produce the JSON skeleton.`;
 
-COMPETITOR SNAPSHOT:
-${JSON.stringify(competitors, null, 2).slice(0, 2000)}
-
-STRATEGY CONTEXT:
-${JSON.stringify(strategy, null, 2).slice(0, 2000)}
-
-Now produce the skeleton.`;
-
-    let outlineR = await callLlmJson({ systemPrompt: outlineSys, userMessage: outlineUsr, maxTokens: 2000, timeoutMs: 60_000 });
+    let outlineR = await callLlmJson({ systemPrompt: outlineSys, userMessage: outlineUsr, maxTokens: 1200, timeoutMs: 90_000 });
     let callsMade = 1;
 
     /* Retry outline once on failure */
     if (!outlineR.ok) {
-      const strict = outlineSys + `\n\nCRITICAL: Reply with ONLY the JSON object — no fences, no prose.`;
-      outlineR = await callLlmJson({ systemPrompt: strict, userMessage: outlineUsr, maxTokens: 2000, timeoutMs: 60_000 });
+      const strict = outlineSys + `\n\nCRITICAL: Reply with ONLY the JSON object — no fences, no prose before or after.`;
+      outlineR = await callLlmJson({ systemPrompt: strict, userMessage: outlineUsr, maxTokens: 1200, timeoutMs: 90_000 });
       callsMade = 2;
     }
 
@@ -746,13 +759,13 @@ ${headings.map((h, i) => `${i + 1}. ${h}`).join('\n')}
 
 Produce one entry per heading, in the same order.`;
 
-    let expandR = await callLlmJson({ systemPrompt: expandSys, userMessage: expandUsr, maxTokens: 3500, timeoutMs: 75_000 });
+    let expandR = await callLlmJson({ systemPrompt: expandSys, userMessage: expandUsr, maxTokens: 2500, timeoutMs: 150_000 });
     callsMade += 1;
 
     if (!expandR.ok) {
       /* Retry once with stricter framing */
       const strict = expandSys + `\n\nCRITICAL: Reply with ONLY the JSON object — no fences, no prose. Sections array length MUST match the number of input headings.`;
-      expandR = await callLlmJson({ systemPrompt: strict, userMessage: expandUsr, maxTokens: 3500, timeoutMs: 75_000 });
+      expandR = await callLlmJson({ systemPrompt: strict, userMessage: expandUsr, maxTokens: 2500, timeoutMs: 150_000 });
       callsMade += 1;
     }
 

@@ -92,7 +92,10 @@ export interface PipelineRunResult {
 
 const DEFAULT_LLM_CAP = 20;
 const COST_PER_CALL   = 0.10;   // rough estimate, sonnet-4-6 average
-const STEP_TIMEOUT_MS = 120_000;   // 2 min per step. Phase 13a recovery mechanism.
+const STEP_TIMEOUT_MS = 280_000;   /* 4min 40s — just under Vercel's 5min hard cap.
+                                       The inner timeout shouldn't fire before Vercel
+                                       itself would. Real protection happens at the
+                                       per-fetch AbortController level. */
 
 /* Race a step handler against a timeout so a hung step (stuck LLM call, hung
    DB query, dropped connection) doesn't take down the whole function before
