@@ -399,8 +399,34 @@ function CommandInner() {
               <div className="text-[10px] uppercase tracking-wider font-bold text-amber-400/80 mb-1.5 flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" /> Honest gaps · things I couldn't check
               </div>
-              <ul className="space-y-0.5 text-[11px] text-foreground/70">
-                {briefing.honest_gaps.map((g, i) => <li key={i}>• {g}</li>)}
+              <ul className="space-y-1 text-[11px] text-foreground/70">
+                {briefing.honest_gaps.map((g, i) => {
+                  const isIntelGap = /analytics intelligence/i.test(g);
+                  const isGscGap   = /gsc.{1,20}(connect|pull|fresh)/i.test(g);
+                  const isGa4Gap   = /ga4.{1,20}(connect|pull|fresh)/i.test(g);
+                  return (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="text-amber-400/60 mt-0.5">•</span>
+                      <div className="flex-1">
+                        <div>{g}</div>
+                        {isIntelGap && (
+                          <motion.button
+                            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                            onClick={() => handleQuickAction("compute analytics intelligence")}
+                            className="mt-1 text-[10px] px-2 py-1 rounded-md font-bold border border-amber-500/40 bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors">
+                            Compute it now
+                          </motion.button>
+                        )}
+                        {(isGscGap || isGa4Gap) && (
+                          <a href="/data-room"
+                            className="mt-1 inline-block text-[10px] px-2 py-1 rounded-md font-bold border border-amber-500/40 bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors no-underline">
+                            Open Data Room → Integrations
+                          </a>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </motion.div>
           )}

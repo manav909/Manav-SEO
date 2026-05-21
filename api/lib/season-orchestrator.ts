@@ -51,6 +51,7 @@ export async function bsSeasonCommand(body: any): Promise<any> {
   let response: CommandResponse;
   try {
     if (intent === "diagnose")        response = await handleDiagnose(projectId);
+    else if (intent === "compute_intel") response = await handleComputeIntel(projectId);
     else if (intent === "help")        response = handleHelp();
     else if (intent === "summarize")  response = await handleSummarize(projectId);
     else if (intent === "attention")  response = await handleAttention(projectId);
@@ -111,6 +112,8 @@ export async function bsSeasonCommand(body: any): Promise<any> {
 function detectIntent(text: string): string {
   if (/(diagn|health.?check|what.{1,5}working|self.?test|test the (brain|system|llm))/i.test(text))            return "diagnose";
   if (/^(help|what can you do|capabilities|what.{1,8}help)/i.test(text))                                         return "help";
+  if (/(compute|recompute|refresh|build|run|generate|make).{0,20}(intelligence|analytics|intel|kpi|insight)/i.test(text)) return "compute_intel";
+  if (/^make it$|^do it$|^compute it$|^run it$/i.test(text))                                                    return "compute_intel";
   if (/(summari[sz]e|recap|what.{1,10}(been |going on|happened.{1,15}this week)|wrap.?up|digest)/i.test(text)) return "summarize";
   if (/(why|explain|what.{1,5}happen|root cause|slipping|behind|off.?track|dip)/i.test(text))                  return "explain";
   if (/(what should i|what needs|urgent|blocking|today|focus|next)/i.test(text))                                 return "attention";
@@ -274,6 +277,107 @@ async function handleDiagnose(projectId: string): Promise<CommandResponse> {
 }
 
 /* ════════════════════════════════════════════════════════════
+   HANDLER 1.5 — COMPUTE INTEL. Runs the analytics intel pipeline
+   and surfaces what came out, so the next briefing is informed.
+═══════════════════════════════════════════════════════════ */
+
+async function handleComputeIntel(projectId: string): Promise<CommandResponse> {
+  const chunks: ResponseChunk[] = [];
+  chunks.push({ kind: "plain", content: "On it. Running the analytics intelligence pipeline now — this reads your last 90 days of GSC and GA4 data, ranks every query/page by movement, finds rising and falling stars, and computes quick-win opportunities. Usually takes 8-20 seconds." });
+
+  const start = Date.now();
+  let intel: any = null;
+  let errorMsg: string | null = null;
+
+  try {
+    const { recomputeAnalyticsIntel } = await import("./pm-analytics-intel-orchestrator.js");
+    intel = await recomputeAnalyticsIntel(projectId);
+  } catch (e: any) {
+    errorMsg = e?.message || "compute failed";
+  }
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+
+  if (errorMsg || !intel) {
+    return {
+      intent: "compute_intel",
+      confidence: 0.7,
+      chunks: [
+        ...chunks,
+        { kind: "plain", content: `Honest result: that didn't go through. Reason: ${errorMsg || "compute returned null — usually means GSC/GA4 hasn't pulled enough data yet for this project"}.` },
+        { kind: "plain", content: "Things to check: (1) GSC and GA4 are both connected — they were 7 hours ago per the last diagnose. (2) They have data — fresh accounts can have <14 days of nothing. (3) The pull worked — re-pull from Data Room → Integrations." },
+      ],
+      actions: [
+        { id: "try_diagnose", label: "Re-run diagnostic" },
+      ],
+      honest_note: `Compute attempt took ${elapsed}s before failing.`,
+    };
+  }
+
+  /* Success — describe what was built */
+  const kpiCount       = Array.isArray(intel.kpis)         ? intel.kpis.length         : 0;
+  const risingCount    = Array.isArray(intel.risingStars)  ? intel.risingStars.length  : 0;
+  const fallingCount   = Array.isArray(intel.fallingStars) ? intel.fallingStars.length : 0;
+  const quickWinCount  = Array.isArray(intel.quickWins)    ? intel.quickWins.length    : 0;
+  const anomalyCount   = Array.isArray(intel.anomalies)    ? intel.anomalies.length    : 0;
+
+  chunks.push({
+    kind: "plain",
+    content: `Done in ${elapsed}s. Here's what landed:`,
+  });
+  const lines: string[] = [];
+  if (kpiCount > 0)      lines.push(`  • ${kpiCount} KPIs computed (clicks, impressions, CTR, position, conversions, etc.)`);
+  if (risingCount > 0)   lines.push(`  • ${risingCount} rising star${risingCount === 1 ? '' : 's'} found (queries/pages climbing)`);
+  if (fallingCount > 0)  lines.push(`  • ${fallingCount} falling star${fallingCount === 1 ? '' : 's'} found (slipping — worth investigating)`);
+  if (quickWinCount > 0) lines.push(`  • ${quickWinCount} quick-win opportunit${quickWinCount === 1 ? 'y' : 'ies'} (small effort, real lift)`);
+  if (anomalyCount > 0)  lines.push(`  • ${anomalyCount} anomal${anomalyCount === 1 ? 'y' : 'ies'} detected (sudden spikes/drops)`);
+  if (lines.length === 0) {
+    chunks.push({ kind: "plain", content: "The pipeline ran but found no meaningful patterns. That can happen when GSC/GA4 are connected but data volume is still thin — usually resolves after 14+ days of accumulated history." });
+  } else {
+    chunks.push({ kind: "plain", content: lines.join('\n') });
+  }
+
+  /* Surface the headline finding if there's one */
+  if (risingCount > 0) {
+    const top = intel.risingStars[0];
+    const label = top.query || top.page || top.label || "an entity";
+    const delta = top.delta != null ? ` (${top.delta > 0 ? '+' : ''}${Number(top.delta).toFixed(0)})` : '';
+    chunks.push({ kind: "plain", content: `Most interesting riser: "${label}"${delta}.` });
+  }
+  if (fallingCount > 0) {
+    const top = intel.fallingStars[0];
+    const label = top.query || top.page || top.label || "an entity";
+    const delta = top.delta != null ? ` (${top.delta > 0 ? '+' : ''}${Number(top.delta).toFixed(0)})` : '';
+    chunks.push({ kind: "plain", content: `Sharpest faller: "${label}"${delta} — worth a look.` });
+  }
+  if (quickWinCount > 0) {
+    const top = intel.quickWins[0];
+    const label = top.query || top.page || top.label || "an entity";
+    chunks.push({ kind: "plain", content: `Top quick win: "${label}".` });
+  }
+
+  chunks.push({
+    kind: "plain",
+    content: "All of this is now cached. Next time you ask \"summarize this week\" or \"what's interesting\", I'll read from this bundle instead of raw data.",
+  });
+  chunks.push({
+    kind: "verify",
+    content: "Source: pm-analytics-intel-orchestrator (recomputeAnalyticsIntel) · reads from project_metrics + gsc_daily + ga4_daily over a 90-day window · writes to project_knowledge",
+    detail: { kpiCount, risingCount, fallingCount, quickWinCount, anomalyCount, elapsed_seconds: elapsed },
+  });
+
+  return {
+    intent: "compute_intel",
+    confidence: 0.95,
+    chunks,
+    actions: [
+      { id: "try_summarize",  label: "Now summarize this week" },
+      { id: "try_attention",  label: "What needs me today?" },
+      { id: "open_analytics", label: "Open Data Room → Analytics" },
+    ],
+  };
+}
+
+/* ════════════════════════════════════════════════════════════
    HANDLER 2 — HELP. Plain-language directory.
 ═══════════════════════════════════════════════════════════ */
 
@@ -288,6 +392,7 @@ function handleHelp(): CommandResponse {
       { kind: "plain", content: `• "how are we doing" / "overall status" / "where are we"` },
       { kind: "plain", content: `• "why is X slipping" / "explain the dip" / "what happened"` },
       { kind: "plain", content: `• "where do these numbers come from" / "verify"` },
+      { kind: "plain", content: `• "compute intelligence" / "refresh analytics" / "make it" — rebuilds the analytics intelligence bundle so every other answer is richer` },
       { kind: "plain", content: `• "diagnose" / "self-test" — shows you exactly what's working` },
       { kind: "plain", content: "For anything else (drafts, briefs, emails, custom questions) I route to my deeper LLM brain. Try things like: \"draft a content brief for /pricing\", \"write me a status email for the client\", \"what's the most interesting pattern in our data?\"" },
       { kind: "plain", content: "Press ? for the visual capabilities panel." },
