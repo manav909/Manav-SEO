@@ -60,7 +60,23 @@ export async function bsSeasonCommand(body: any): Promise<any> {
     } else if (intent === "verify") {
       response = await handleVerify(projectId, text);
     } else {
-      response = handleUnknown(text);
+      /* Unknown intent — hand to the LLM brain instead of the dead-end fallback */
+      try {
+        const { seasonLlmHandle } = await import("./season-llm.js");
+        const llm = await seasonLlmHandle({ projectId, input });
+        response = {
+          intent:       llm.intent,
+          confidence:   llm.confidence,
+          chunks:       llm.chunks as any,
+          artifacts:    llm.artifacts,
+          actions:      llm.actions,
+          honest_note:  llm.honest_note,
+        };
+      } catch (llmErr: any) {
+        /* LLM failed entirely — fall back to honest template */
+        response = handleUnknown(text);
+        response.honest_note = (response.honest_note || "") + ` (LLM brain unavailable: ${llmErr?.message || 'unknown'})`;
+      }
     }
   } catch (e: any) {
     response = {

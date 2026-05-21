@@ -659,6 +659,13 @@ function ResponsePanel({ response, onClose }: { response: CommandResponseClient;
           </motion.div>
         )}
       </div>
+      {response.artifacts && response.artifacts.length > 0 && (
+        <div className="px-4 pb-4 space-y-3">
+          {response.artifacts.map((art, i) => (
+            <ArtifactPanel key={i} artifact={art} delay={response.chunks.length * 0.15 + 0.6 + i * 0.2} />
+          ))}
+        </div>
+      )}
       {response.actions && response.actions.length > 0 && (
         <div className="px-4 py-3 border-t border-border bg-card/40 flex flex-wrap gap-2">
           {response.actions.map((a) => (
@@ -668,6 +675,58 @@ function ResponsePanel({ response, onClose }: { response: CommandResponseClient;
             </motion.button>
           ))}
         </div>
+      )}
+    </motion.div>
+  );
+}
+
+function ArtifactPanel({ artifact, delay }: { artifact: { kind: string; title: string; body: string }; delay: number }) {
+  const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+  const handleCopy = () => {
+    try {
+      navigator.clipboard?.writeText(artifact.body);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+  const kindIcon = artifact.kind === 'brief' ? '📝' : artifact.kind === 'email' ? '✉' : artifact.kind === 'table' ? '◫' : artifact.kind === 'plan' ? '◆' : '◦';
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }}
+      className="rounded-xl border border-violet-500/30 bg-violet-500/[0.05] overflow-hidden">
+      <div className="px-3 py-2 border-b border-violet-500/20 bg-gradient-to-r from-violet-500/[0.08] to-transparent flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-base">{kindIcon}</span>
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider font-bold text-violet-400">{artifact.kind} · drafted</div>
+            <div className="text-[12px] font-bold text-foreground truncate">{artifact.title}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <motion.button onClick={handleCopy}
+            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            className={`text-[10px] px-2 py-1 rounded-md border transition-colors flex items-center gap-1 font-bold ${
+              copied ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-400' : 'border-violet-500/30 bg-violet-500/10 text-violet-400 hover:bg-violet-500/20'
+            }`}>
+            {copied ? '✓ copied' : 'Copy'}
+          </motion.button>
+          <button onClick={() => setExpanded(!expanded)}
+            className="text-[10px] px-2 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground transition-colors">
+            {expanded ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+      </div>
+      {expanded && (
+        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+          className="p-3">
+          <pre className="text-[11.5px] text-foreground/90 whitespace-pre-wrap font-mono leading-relaxed max-h-[420px] overflow-y-auto">
+            {artifact.body}
+          </pre>
+          <div className="mt-2 text-[10px] text-muted-foreground italic">
+            Review before sending. This is a starting point — I drafted it from your project data, but you know your client.
+          </div>
+        </motion.div>
       )}
     </motion.div>
   );

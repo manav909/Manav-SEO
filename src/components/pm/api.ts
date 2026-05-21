@@ -1957,7 +1957,7 @@ export interface CommandResponseClient {
   intent:      string;
   confidence:  number;
   chunks:      ResponseChunkClient[];
-  artifacts?:  any[];
+  artifacts?:  Array<{ kind: string; title: string; body: string }>;
   actions?:    Array<{ id: string; label: string; payload?: any }>;
   honest_note?: string;
 }
