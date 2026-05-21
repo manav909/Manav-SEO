@@ -606,6 +606,28 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsUnlinkScenarioFromGoal(body);
     }
 
+    /* Phase 2 — Strategy-to-PM Bridge */
+    case "bs_prepare_scenario_push": {
+      const { bsPrepareScenarioPush } = await import("./pm-strategy-bridge.js");
+      return bsPrepareScenarioPush(body);
+    }
+    case "bs_push_scenario_to_pm": {
+      const { bsPushScenarioToPm } = await import("./pm-strategy-bridge.js");
+      return bsPushScenarioToPm(body);
+    }
+    case "bs_get_strategy_cards": {
+      const { bsGetStrategyCards } = await import("./pm-strategy-bridge.js");
+      return bsGetStrategyCards(body);
+    }
+    case "bs_get_strategy_health": {
+      const { bsGetStrategyHealth } = await import("./pm-strategy-bridge.js");
+      return bsGetStrategyHealth(body);
+    }
+    case "bs_update_card_dependencies": {
+      const { bsUpdateCardDependencies } = await import("./pm-strategy-bridge.js");
+      return bsUpdateCardDependencies(body);
+    }
+
     /* Phase 1F — DOCX export */
     case "bs_export_docx": {
       const { bsExportDocx } = await import("./brand-studio-export.js");

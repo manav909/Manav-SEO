@@ -20,6 +20,7 @@ import {
   Target, Plus, ChevronDown, ChevronRight, X, Trash2, RefreshCw,
   TrendingUp, TrendingDown, AlertCircle, CheckCircle2, Zap, Calendar,
   Sparkles, Activity, Beaker, ArrowUpRight, ArrowDownRight, Minus, Save,
+  Rocket,
 } from 'lucide-react';
 import {
   listGoals, createGoal, getGoal, updateGoal, deleteGoal,
@@ -27,8 +28,9 @@ import {
   type GoalRecord, type GoalMetricClient,
   type TrajectoryProjectionClient, type CandidateScenarioClient,
   type GoalProgressSnapshot,
-  saveScenario,
+  saveScenario, getStrategyHealth, type StrategyHealthClient,
 } from './api';
+import PushToPmModal from './PushToPmModal';
 
 interface Props {
   projectId: string;
@@ -313,6 +315,10 @@ function GoalRow({
   const [progress, setProgress]     = useState<GoalProgressSnapshot[]>([]);
   const [loading, setLoading]       = useState(false);
   const [scenariosLoaded, setScenariosLoaded] = useState(false);
+  /* Phase 2 — linked PM cards health + push modal */
+  const [strategyHealth, setStrategyHealth] = useState<StrategyHealthClient | null>(null);
+  const [pushingScenarioId, setPushingScenarioId] = useState<string | null>(null);
+  const [pushing, setPushing] = useState(false);
 
   useEffect(() => {
     if (!expanded || trajectory) return;
@@ -327,6 +333,15 @@ function GoalRow({
       setLoading(false);
     })();
   }, [expanded, goal.id]);
+
+  /* Load linked-cards health when expanded */
+  useEffect(() => {
+    if (!expanded) return;
+    (async () => {
+      const r = await getStrategyHealth({ projectId, goalId: goal.id });
+      if (r.health) setStrategyHealth(r.health);
+    })();
+  }, [expanded, goal.id, projectId]);
 
   const loadScenarios = async () => {
     setLoading(true);
@@ -364,7 +379,7 @@ function GoalRow({
     else { onInfo('Marked as achieved.'); await onRefresh(); }
   };
 
-  const handleSaveScenarioToSimulator = async (candidate: CandidateScenarioClient) => {
+  const handleSaveScenarioToSimulator = async (candidate: CandidateScenarioClient): Promise<string | null> => {
     /* Save as a draft scenario in the simulator's storage */
     const r = await saveScenario({
       projectId,
@@ -374,8 +389,17 @@ function GoalRow({
       status: 'planned',
       sharedWithClient: false,
     });
-    if (r.error) onError(r.error);
-    else onInfo(`Scenario saved — load it in the What-If Simulator to refine.`);
+    if (r.error) { onError(r.error); return null; }
+    onInfo(`Scenario saved — load it in the What-If Simulator to refine.`);
+    return r.scenario?.id || null;
+  };
+
+  /* Push directly to PM: saves scenario, then opens push modal with goal context */
+  const handlePushCandidateToPm = async (candidate: CandidateScenarioClient) => {
+    setPushing(true);
+    const id = await handleSaveScenarioToSimulator(candidate);
+    setPushing(false);
+    if (id) setPushingScenarioId(id);
   };
 
   /* Display values */
@@ -488,7 +512,9 @@ function GoalRow({
                 <div className="space-y-1.5">
                   {scenarios.map((s, i) => (
                     <CandidateScenarioRow key={i} scenario={s} metric={metric}
-                      onUseInSimulator={() => handleSaveScenarioToSimulator(s)}/>
+                      onUseInSimulator={() => handleSaveScenarioToSimulator(s)}
+                      onPushToPm={() => handlePushCandidateToPm(s)}
+                      pushing={pushing}/>
                   ))}
                 </div>
               )}
@@ -499,6 +525,43 @@ function GoalRow({
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-2.5 text-[11px] text-emerald-400 flex items-center gap-2">
               <CheckCircle2 className="h-3.5 w-3.5" />
               <span>Trajectory projects you'll hit this target naturally — no intervention required.</span>
+            </div>
+          )}
+
+          {/* Phase 2 — Linked PM cards health */}
+          {strategyHealth && strategyHealth.total > 0 && (
+            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-400 flex items-center gap-1.5">
+                  <Rocket className="h-3 w-3" /> Linked PM cards · execution health
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {strategyHealth.completion_pct.toFixed(0)}% complete
+                </div>
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-[10px]">
+                <HealthChip label="Total"        value={strategyHealth.total} color="text-foreground" />
+                <HealthChip label="To do"        value={strategyHealth.counts.todo} color="text-muted-foreground" />
+                <HealthChip label="In progress"  value={strategyHealth.counts.in_progress} color="text-blue-400" />
+                <HealthChip label="Done"         value={strategyHealth.counts.done} color="text-emerald-400" />
+                <HealthChip label="Blocked"      value={strategyHealth.counts.blocked + strategyHealth.blocked_or_dependent} color="text-amber-400" />
+              </div>
+              {(strategyHealth.unmet_dependencies > 0 || strategyHealth.overdue > 0 || strategyHealth.upcoming_deadline_7d > 0) && (
+                <div className="mt-2 pt-2 border-t border-emerald-500/15 flex flex-wrap gap-3 text-[10px]">
+                  {strategyHealth.unmet_dependencies > 0 && (
+                    <span className="text-amber-400">⚠ {strategyHealth.unmet_dependencies} unmet dependencies</span>
+                  )}
+                  {strategyHealth.overdue > 0 && (
+                    <span className="text-red-400">🔥 {strategyHealth.overdue} overdue</span>
+                  )}
+                  {strategyHealth.upcoming_deadline_7d > 0 && (
+                    <span className="text-blue-400">📅 {strategyHealth.upcoming_deadline_7d} due in 7d</span>
+                  )}
+                </div>
+              )}
+              <div className="text-[9px] text-muted-foreground italic mt-1.5">
+                Tracked separately from goal trajectory — task completion is a leading indicator, goal value is the outcome.
+              </div>
             </div>
           )}
 
@@ -544,11 +607,35 @@ function GoalRow({
           </div>
         </div>
       )}
+
+      {/* Phase 2 — Push-to-PM modal (with goal link) */}
+      {pushingScenarioId && (
+        <PushToPmModal
+          scenarioId={pushingScenarioId}
+          goalId={goal.id}
+          onClose={() => setPushingScenarioId(null)}
+          onPushed={async (ids) => {
+            onInfo(`Pushed ${ids.length} ${ids.length === 1 ? 'card' : 'cards'} to project management for this goal.`);
+            /* Refresh health */
+            const r = await getStrategyHealth({ projectId, goalId: goal.id });
+            if (r.health) setStrategyHealth(r.health);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── Sub-components ────────────────────────────────────────── */
+
+function HealthChip({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="rounded-md bg-card/40 p-1.5 text-center">
+      <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold mb-0.5">{label}</div>
+      <div className={`text-base font-bold ${color}`}>{value}</div>
+    </div>
+  );
+}
 
 function TrajectoryStat({ label, value, sub, emphasize }: { label: string; value: string; sub: string; emphasize?: boolean }) {
   return (
@@ -561,10 +648,12 @@ function TrajectoryStat({ label, value, sub, emphasize }: { label: string; value
 }
 
 function CandidateScenarioRow({
-  scenario, metric, onUseInSimulator,
+  scenario, metric, onUseInSimulator, onPushToPm, pushing,
 }: {
   scenario: CandidateScenarioClient; metric: GoalMetricClient;
   onUseInSimulator: () => void;
+  onPushToPm: () => void;
+  pushing: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const strategyColor = {
@@ -575,7 +664,7 @@ function CandidateScenarioRow({
 
   return (
     <div className="rounded-md border border-border bg-background/30">
-      <div className="px-2.5 py-1.5 flex items-center gap-2">
+      <div className="px-2.5 py-1.5 flex items-center gap-2 flex-wrap">
         <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${strategyColor}`}>{scenario.label}</span>
         <div className="flex-1 min-w-0 text-[11px]">
           <span className="text-foreground font-bold">{formatMetricValue(scenario.projectedFinalValue, metric)}</span>
@@ -589,6 +678,10 @@ function CandidateScenarioRow({
         <button onClick={onUseInSimulator}
           className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 font-bold">
           → Simulator
+        </button>
+        <button onClick={onPushToPm} disabled={pushing}
+          className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 font-bold flex items-center gap-1 disabled:opacity-50">
+          <Rocket className="h-2.5 w-2.5" />{pushing ? '…' : 'Push to PM'}
         </button>
       </div>
       {expanded && (

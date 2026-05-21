@@ -20,7 +20,7 @@ import {
   Sparkles, Plus, X, Save, FolderOpen, ChevronDown, ChevronRight,
   Wand2, Zap, Layers, RefreshCw, Target, ArrowUpRight, ArrowDownRight,
   Minus, AlertCircle, Trash2, Clock, CheckCircle2, Beaker, Filter,
-  TrendingUp, TrendingDown, Activity, Info,
+  TrendingUp, TrendingDown, Activity, Info, Rocket,
 } from 'lucide-react';
 import {
   listActions, getActionSuggestions, projectScenarioImpact,
@@ -29,6 +29,7 @@ import {
   type ActionInstanceClient, type ScenarioProjectionClient,
   type SavedScenarioClient, type ActionCategoryClient,
 } from './api';
+import PushToPmModal from './PushToPmModal';
 
 interface Props {
   projectId: string;
@@ -82,6 +83,8 @@ export default function WhatIfSimulator({ projectId, defaultCollapsed }: Props) 
   const [librarySearch, setLibrarySearch]     = useState('');
   const [editingScenarioId, setEditingScenarioId] = useState<string | null>(null);
   const [shareWithClient, setShareWithClient] = useState(false);
+  /* Phase 2 — push to PM modal */
+  const [pushingScenarioId, setPushingScenarioId] = useState<string | null>(null);
 
   /* Initial load */
   useEffect(() => {
@@ -424,6 +427,7 @@ export default function WhatIfSimulator({ projectId, defaultCollapsed }: Props) 
                         scenario={s}
                         onLoad={() => loadScenario(s)}
                         onDelete={() => handleDeleteScenario(s.id, s.name)}
+                        onPushToPm={() => setPushingScenarioId(s.id)}
                       />
                     ))}
                   </div>
@@ -432,6 +436,18 @@ export default function WhatIfSimulator({ projectId, defaultCollapsed }: Props) 
             </>
           )}
         </div>
+      )}
+
+      {/* Phase 2 — Push-to-PM modal */}
+      {pushingScenarioId && (
+        <PushToPmModal
+          scenarioId={pushingScenarioId}
+          onClose={() => setPushingScenarioId(null)}
+          onPushed={(ids) => {
+            setInfo(`Pushed ${ids.length} ${ids.length === 1 ? 'card' : 'cards'} to project management.`);
+            setTimeout(() => setInfo(null), 4000);
+          }}
+        />
       )}
     </div>
   );
@@ -737,8 +753,8 @@ function ProjectionMetric({
 /* ─── Saved scenario row ────────────────────────────────────── */
 
 function SavedScenarioRow({
-  scenario, onLoad, onDelete,
-}: { scenario: SavedScenarioClient; onLoad: () => void; onDelete: () => void }) {
+  scenario, onLoad, onDelete, onPushToPm,
+}: { scenario: SavedScenarioClient; onLoad: () => void; onDelete: () => void; onPushToPm: () => void }) {
   const proj = scenario.projected_impact;
   const clicksLift = proj
     ? Math.round(((proj.projected.clicks.day_90 - proj.projected.clicks.baseline) / Math.max(1, proj.projected.clicks.baseline)) * 100)
@@ -757,6 +773,13 @@ function SavedScenarioRow({
             onClick={onLoad}
             className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 font-bold"
           >Load</button>
+          <button
+            onClick={onPushToPm}
+            className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 font-bold flex items-center gap-1"
+            title="Push this scenario to project management as kanban cards"
+          >
+            <Rocket className="h-2.5 w-2.5" />Push to PM
+          </button>
           <button
             onClick={onDelete}
             className="text-muted-foreground hover:text-red-400 p-1"

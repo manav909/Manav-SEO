@@ -1371,3 +1371,138 @@ export async function unlinkScenarioFromGoal(goalId: string, scenarioId: string)
   if (!r?.success) return { error: r?.error };
   return { goal: r.goal };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 2 — Strategy-to-PM Bridge
+═══════════════════════════════════════════════════════════ */
+
+export type DependencyCategoryClient =
+  | "access" | "content" | "info" | "approval" | "task_prereq";
+
+export interface DependencyItemClient {
+  id?:            string;
+  label:          string;
+  category:       DependencyCategoryClient;
+  met:            boolean;
+  prereq_card_id?: string;
+}
+
+export interface StrategicLinkClient {
+  type:        "scenario" | "goal";
+  id:          string;
+  name:        string;
+  goal_metric?: string;
+  goal_target?: number;
+  goal_date?:   string;
+}
+
+export interface CardDraftClient {
+  source_action_id:       string;
+  title:                  string;
+  description:            string;
+  estimated_hours:        number;
+  strategic_link:         StrategicLinkClient;
+  expected_impact:        Record<string, ImpactRangeClient>;
+  target_start_date:      string;
+  target_completion_date: string;
+  priority:               "low" | "medium" | "high";
+  requirements:           DependencyItemClient[];
+  depends_on:             string[];
+  action_inputs:          Record<string, any>;
+}
+
+export interface StrategyHealthClient {
+  total: number;
+  counts: { todo: number; in_progress: number; done: number; blocked: number; other: number };
+  completion_pct: number;
+  unmet_dependencies: number;
+  blocked_or_dependent: number;
+  upcoming_deadline_7d: number;
+  overdue: number;
+}
+
+export interface StrategyCardClient {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  strategic_link: StrategicLinkClient;
+  target_start_date: string | null;
+  target_completion_date: string | null;
+  expected_impact: any;
+  source_action_id: string | null;
+  requirements: DependencyItemClient[];
+  depends_on: string[];
+  estimated_hours: number | null;
+  tags: string[] | null;
+  created_at: string;
+  updated_at: string;
+  executed_at: string | null;
+  verified_at: string | null;
+  assigned_to: string | null;
+}
+
+export async function prepareScenarioPush(opts: { scenarioId?: string; goalId?: string; }): Promise<{
+  drafts?: CardDraftClient[];
+  projectId?: string;
+  scenario_summary?: { id: string; name: string; total_effort_hours: number; projected_impact?: any };
+  goal_summary?: { id: string; name?: string; metric: string; target_value: number; target_date: string } | null;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_prepare_scenario_push', ...opts });
+  if (!r?.success) return { error: r?.error || 'Could not prepare push.' };
+  return {
+    drafts: r.drafts, projectId: r.projectId,
+    scenario_summary: r.scenario_summary, goal_summary: r.goal_summary,
+  };
+}
+
+export async function pushScenarioToPm(opts: {
+  projectId: string;
+  scenarioId?: string;
+  goalId?: string;
+  drafts: CardDraftClient[];
+  sequential?: boolean;
+  createdByEmail?: string;
+}): Promise<{
+  cardIds?: string[];
+  cards?: Array<{ id: string; title: string; target_completion_date: string }>;
+  summary?: { created: number; failed: number; tag: string };
+  errors?: string[];
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_push_scenario_to_pm', ...opts });
+  if (!r?.success) return { error: r?.error || 'Could not push to PM.', errors: r?.errors };
+  return { cardIds: r.cardIds, cards: r.cards, summary: r.summary, errors: r.errors };
+}
+
+export async function getStrategyCards(opts: {
+  projectId: string;
+  scenarioId?: string;
+  goalId?: string;
+  statusFilter?: string;
+}): Promise<{ cards: StrategyCardClient[]; total?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_strategy_cards', ...opts });
+  if (!r?.success) return { cards: [], error: r?.error };
+  return { cards: r.cards || [], total: r.total };
+}
+
+export async function getStrategyHealth(opts: {
+  projectId: string;
+  scenarioId?: string;
+  goalId?: string;
+}): Promise<{ health?: StrategyHealthClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_get_strategy_health', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { health: r.health };
+}
+
+export async function updateCardDependencies(opts: {
+  cardId: string;
+  requirements: DependencyItemClient[];
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_update_card_dependencies', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
