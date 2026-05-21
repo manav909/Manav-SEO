@@ -556,7 +556,7 @@ function ActivityTab() {
   const { selectedProjectId } = useProject() as any;
   const [events, setEvents]   = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter]   = useState<'all' | 'llm' | 'user' | 'system'>('all');
+  const [filter, setFilter]   = useState<'all' | 'llm' | 'user' | 'system' | 'action'>('all');
 
   useEffect(() => {
     if (!selectedProjectId) { setLoading(false); return; }
@@ -582,7 +582,7 @@ function ActivityTab() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="text-[11px] text-muted-foreground mr-2">Filter:</div>
-        {(['all','user','llm','system'] as const).map(f => (
+        {(['all','user','llm','system','action'] as const).map(f => (
           <Pill key={f} active={filter === f} onClick={() => setFilter(f)}>{f}</Pill>
         ))}
       </div>
@@ -604,6 +604,7 @@ function ActivityTab() {
                   e.source === 'llm'    ? 'border-violet-500/40 text-violet-400 bg-violet-500/10' :
                   e.source === 'user'   ? 'border-cyan-500/40 text-cyan-400 bg-cyan-500/10' :
                   e.source === 'system' ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' :
+                  e.source === 'action' ? 'border-amber-500/40 text-amber-400 bg-amber-500/10' :
                                           'border-border text-muted-foreground'
                 }`}>{e.source}</span>
                 <div className="flex-1 min-w-0">

@@ -249,6 +249,11 @@ OTHER:
 - open_provenance_detail  — opens the provenance trail inside Analytics
 - compute_intelligence    — runs the analytics intel pipeline
 
+DATA-WRITE ACTIONS (these require user confirmation by default — emit them only when the user EXPLICITLY asks to save/update/change something):
+- save_data_room_note     — payload: { category, field_key, note_text }
+- update_strategy_status  — payload: { strategyId?, new_status, reason? }  (uses awareness.selected if strategyId omitted; new_status ∈ drafting|resourcing|executing|measuring|concluded|paused)
+- add_kanban_note         — payload: { cardId?, note_text }  (uses awareness.selected if cardId omitted)
+
 QUERY-REFIRE ACTIONS (these re-submit a keyword query):
 - try_diagnose            — refire "diagnose"
 - try_summarize           — refire "summarize this week"

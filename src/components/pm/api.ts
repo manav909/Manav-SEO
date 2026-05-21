@@ -2051,3 +2051,37 @@ export async function seasonWishStats(opts: { projectId?: string | "platform" } 
   if (!r?.success) return { error: r?.error };
   return { stats: r.stats };
 }
+
+/* ───────── Phase 10c — Write actions ───────── */
+
+export async function seasonActionSaveDataRoomNote(opts: {
+  projectId: string;
+  category: string;
+  field_key: string;
+  note_text: string;
+}): Promise<{ changed?: any; previous?: any; message?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_action_save_data_room_note', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { changed: r.changed, previous: r.previous, message: r.message };
+}
+
+export async function seasonActionUpdateStrategyStatus(opts: {
+  projectId: string;
+  strategyId: string;
+  new_status: string;
+  reason?: string;
+}): Promise<{ changed?: any; previous?: any; message?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_action_update_strategy_status', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { changed: r.changed, previous: r.previous, message: r.message };
+}
+
+export async function seasonActionAddKanbanNote(opts: {
+  projectId: string;
+  cardId: string;
+  note_text: string;
+}): Promise<{ changed?: any; previous?: any; message?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_action_add_kanban_note', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { changed: r.changed, previous: r.previous, message: r.message };
+}

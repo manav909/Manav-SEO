@@ -453,3 +453,127 @@ register({
   examples: ['open provenance', 'where do the numbers come from?'],
   handler: async (ctx) => navigateThenPublish('/data-room', 'data_room_set_tab', { tab: 'analytics', focus: 'provenance' }, ctx),
 });
+
+/* ════════════════════════════════════════════════════════════
+   Phase 10c — Data-write actions (all require confirmation by default)
+═══════════════════════════════════════════════════════════ */
+
+/* These handlers post to the existing /api/task-engine endpoint via
+   the client API. Imports are inline to avoid loading API code in
+   places that import the registry but don't use writes. */
+
+register({
+  id:           'save_data_room_note',
+  label:        'Save a note to the Data Room',
+  description:  'Appends a note to a Data Room field (e.g. audience.notes). Existing content is preserved.',
+  permission:   'data_write',
+  scope:        'global',
+  confirm:      true,
+  matches: [
+    /save .*(note|comment).*(data ?room|audience|competitor|identity|brand)/i,
+    /add .*(note|context).*(data ?room|to the room)/i,
+    /remember .*(in the )?data ?room/i,
+  ],
+  examples: [
+    'save a note to audience: "client prefers Friday calls"',
+    'add a competitor note: "Acme launched new pricing page"',
+  ],
+  handler: async (ctx) => {
+    if (!ctx.projectId) return { ok: false, message: 'No project selected.' };
+    const { category, field_key, note_text } = (ctx.payload || {}) as any;
+    if (!category || !field_key || !note_text) {
+      return { ok: false, message: 'Need category, field_key, and note_text in payload.' };
+    }
+    try {
+      const { seasonActionSaveDataRoomNote } = await import('@/components/pm/api');
+      const r = await seasonActionSaveDataRoomNote({
+        projectId: ctx.projectId,
+        category, field_key, note_text,
+      });
+      if (r.error) return { ok: false, message: r.error };
+      return { ok: true, message: r.message || 'Note saved.' };
+    } catch (e: any) {
+      return { ok: false, message: e?.message || 'Save failed.' };
+    }
+  },
+});
+
+register({
+  id:           'update_strategy_status',
+  label:        'Move strategy to a new lifecycle stage',
+  description:  'Changes a strategy\'s status. Stage gates apply — HARD blockers can prevent the move.',
+  permission:   'data_write',
+  scope:        'global',
+  confirm:      true,
+  matches: [
+    /move (the )?strateg(y|ies) to/i,
+    /(advance|finalize|pause|resume|conclude) (the )?strateg/i,
+    /change strategy status/i,
+  ],
+  examples: [
+    'move this strategy to executing',
+    'pause the Q4 push',
+    'finalize this strategy',
+  ],
+  handler: async (ctx) => {
+    if (!ctx.projectId) return { ok: false, message: 'No project selected.' };
+    const { strategyId, new_status, reason } = (ctx.payload || {}) as any;
+    const resolvedStrategyId =
+      strategyId
+      || (ctx.awareness?.selected?.type === 'strategy' ? ctx.awareness.selected.id : null);
+    if (!resolvedStrategyId) return { ok: false, message: 'No strategy specified. Open a strategy first or pass strategyId.' };
+    if (!new_status)         return { ok: false, message: 'Need new_status (drafting/resourcing/executing/measuring/concluded/paused).' };
+    try {
+      const { seasonActionUpdateStrategyStatus } = await import('@/components/pm/api');
+      const r = await seasonActionUpdateStrategyStatus({
+        projectId: ctx.projectId,
+        strategyId: resolvedStrategyId,
+        new_status,
+        reason,
+      });
+      if (r.error) return { ok: false, message: r.error };
+      return { ok: true, message: r.message || 'Strategy updated.' };
+    } catch (e: any) {
+      return { ok: false, message: e?.message || 'Update failed.' };
+    }
+  },
+});
+
+register({
+  id:           'add_kanban_note',
+  label:        'Add a note to a kanban card',
+  description:  'Appends a note (timestamped, attributed to S.E.A.S.O.N.) to a card\'s notes field.',
+  permission:   'data_write',
+  scope:        'global',
+  confirm:      true,
+  matches: [
+    /add (a )?(note|comment) to (the |this )?card/i,
+    /note (on|to) (the |this )?card/i,
+    /comment (on|to) (the |this )?card/i,
+  ],
+  examples: [
+    'add a note to this card: "waiting on client approval"',
+    'comment on the card: blocked by CMS access',
+  ],
+  handler: async (ctx) => {
+    if (!ctx.projectId) return { ok: false, message: 'No project selected.' };
+    const { cardId, note_text } = (ctx.payload || {}) as any;
+    const resolvedCardId =
+      cardId
+      || (ctx.awareness?.selected?.type === 'card' ? ctx.awareness.selected.id : null);
+    if (!resolvedCardId) return { ok: false, message: 'No card specified. Open a card first or pass cardId.' };
+    if (!note_text)      return { ok: false, message: 'Need note_text.' };
+    try {
+      const { seasonActionAddKanbanNote } = await import('@/components/pm/api');
+      const r = await seasonActionAddKanbanNote({
+        projectId: ctx.projectId,
+        cardId: resolvedCardId,
+        note_text,
+      });
+      if (r.error) return { ok: false, message: r.error };
+      return { ok: true, message: r.message || 'Note added.' };
+    } catch (e: any) {
+      return { ok: false, message: e?.message || 'Note add failed.' };
+    }
+  },
+});
