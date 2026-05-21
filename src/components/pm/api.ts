@@ -1982,7 +1982,7 @@ export async function seasonBriefing(projectId: string): Promise<{ briefing?: Br
   return { briefing: r.briefing };
 }
 
-export async function seasonCommand(opts: { projectId: string; input: string }): Promise<{ response?: CommandResponseClient; error?: string }> {
+export async function seasonCommand(opts: { projectId: string; input: string; awareness?: any }): Promise<{ response?: CommandResponseClient; error?: string }> {
   const r = await post(ENGINE, { action: 'bs_season_command', ...opts });
   if (!r?.success) return { error: r?.error };
   return { response: r.response };

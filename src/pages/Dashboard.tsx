@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectSync } from '@/hooks/useProjectSync';
+import { useSeasonAwareness } from '@/hooks/useSeasonAwareness';
 import PortalNav from '@/components/PortalNav';
 import {
   TrendingUp, Globe, Zap, Star, Brain,
@@ -531,6 +532,23 @@ export default function Dashboard() {
   const [savingBaseline,  setSavingBaseline]  = useState(false);
   const [chartFrom,       setChartFrom]       = useState('');
   const [chartTo,         setChartTo]         = useState('');
+
+  /* Phase 9 — declare awareness so S.E.A.S.O.N. knows what's on screen */
+  useSeasonAwareness(selectedProject ? {
+    page: 'dashboard',
+    page_label: `Dashboard · ${selectedProject?.project_name || 'project'}`,
+    selected: {
+      type: 'project',
+      id: selectedProject?.id,
+      title: selectedProject?.project_name || 'project',
+      meta: { metrics_count: allMetrics.length, upsells_count: upsells.length },
+    },
+    visible_items: projects.slice(0, 6).map((p: any) => ({
+      type: 'project',
+      id: p.id,
+      title: p.project_name || 'project',
+    })),
+  } : null);
 
   useEffect(() => {
     if (!authChecked) return;

@@ -18,6 +18,26 @@ import { createContext, useContext, useEffect, useState, useCallback, ReactNode 
 export type SeasonMood =
   | 'calm' | 'focused' | 'alert' | 'critical' | 'celebrating' | 'thinking' | 'quiet';
 
+/* ─── Awareness types (Phase 9) ─────────────────────────────── */
+
+export interface AwarenessSelected {
+  type:     'card' | 'strategy' | 'goal' | 'audit' | 'store_item' | 'metric' | 'query' | 'page' | 'project' | 'other';
+  id?:      string;
+  title?:   string;
+  status?:  string;
+  meta?:    Record<string, any>;
+}
+
+export interface SeasonAwareness {
+  page:               string;        // 'kanban' | 'data-room' | 'planning' | etc.
+  page_label?:        string;        // human-readable page name
+  visible_filters?:   Record<string, any>;  // what filter state the user has applied
+  selected?:          AwarenessSelected | null;
+  visible_items?:     Array<{ type: string; id: string; title: string }>;  // up to 8 things visible on screen
+  recent_actions?:    string[];      // last few things user did (e.g. ["filtered overdue", "opened card X"])
+  updated_at:         number;        // Date.now() when this was last pushed
+}
+
 /* ─── Settings types ─────────────────────────────────────────── */
 
 export type SeasonTone     = 'passive' | 'balanced' | 'active';
@@ -111,6 +131,10 @@ interface SeasonContextValue {
   settings:      SeasonSettings;
   updateSettings: (patch: Partial<SeasonSettings>) => void;
   resetSettings:  () => void;
+
+  /* Awareness (Phase 9) */
+  awareness:        SeasonAwareness | null;
+  setAwareness:     (a: SeasonAwareness | null) => void;
 }
 
 const SeasonContext = createContext<SeasonContextValue | null>(null);
@@ -161,6 +185,7 @@ export function SeasonProvider({ children }: { children: ReactNode }) {
     return localStorage.getItem(LS_PAUSED) === 'true';
   });
   const [settings, setSettings]            = useState<SeasonSettings>(() => loadSettings());
+  const [awareness, setAwareness]          = useState<SeasonAwareness | null>(null);
 
   const setOrbVisible  = useCallback((v: boolean) => {
     setOrbVisibleState(v);
@@ -231,6 +256,7 @@ export function SeasonProvider({ children }: { children: ReactNode }) {
       orbPosition, setOrbPosition,
       paused, setPaused,
       settings, updateSettings, resetSettings,
+      awareness, setAwareness,
     }}>
       {children}
     </SeasonContext.Provider>

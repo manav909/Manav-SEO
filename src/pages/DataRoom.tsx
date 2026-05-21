@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectSync } from '@/hooks/useProjectSync';
+import { useSeasonAwareness } from '@/hooks/useSeasonAwareness';
 import PortalNav from '@/components/PortalNav';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
@@ -637,6 +638,18 @@ export default function DataRoom() {
   const [aiFillModalOpen, setAiFillModalOpen] = useState(false);
   const handleProjectChange = useProjectSync(selProjId, setSelProjId);
   const [tab,       setTab]       = useState<'overview'|'goals'|'cms'|'access'|'analytics'|'technical'|'competitors'|'documents'|'crawl'|'identity'|'audience'|'content'|'backlinks'|'commercial'|'history'|'brand_narrative'|'access_vault'|'content_library'|'info_repository'|'approvals_log'>('overview');
+
+  /* Phase 9 — declare awareness so S.E.A.S.O.N. knows what's on screen */
+  useSeasonAwareness(selProjId ? {
+    page: 'data-room',
+    page_label: `Data Room · ${tab.replace(/_/g, ' ')}`,
+    selected: {
+      type: 'page',
+      title: tab.replace(/_/g, ' '),
+      meta: { tab },
+    },
+    visible_filters: { tab },
+  } : null);
   const [knowledge, setKnowledge] = useState<Record<string,Record<string,KField>>>({});
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [saving,    setSaving]    = useState(false);

@@ -3,6 +3,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectSync } from '@/hooks/useProjectSync';
+import { useSeasonAwareness } from '@/hooks/useSeasonAwareness';
 import { supabase } from '@/lib/supabase';
 import {
   Brain, Globe, RefreshCw, Loader2, CheckCircle, XCircle, AlertTriangle,
@@ -102,6 +103,19 @@ export default function AlgorithmIntel() {
   const [practicesCat,  setPracticesCat]  = useState('');
   const [checkedItems,  setCheckedItems]  = useState<Record<string,boolean>>({});
   const [learningFreshnessAlert, setLearningFreshnessAlert] = useState<{count:number;topic:string;learnings:any[]}|null>(null);
+
+  /* Phase 9 — declare awareness so S.E.A.S.O.N. knows what's on screen */
+  useSeasonAwareness(selProjId ? {
+    page: 'algorithm-intel',
+    page_label: `Algorithm Intel · ${tab}`,
+    selected: { type: 'page', title: tab, meta: { tab } },
+    visible_filters: { tab, engine_filter: filterEngine, search },
+    visible_items: library.slice(0, 5).map((s: any) => ({
+      type: 'algorithm_learning',
+      id: s.id,
+      title: s.title,
+    })),
+  } : null);
 
   // Scan / custom topic state
   const [scanning,      setScanning]      = useState(false);

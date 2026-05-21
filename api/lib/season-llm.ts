@@ -52,8 +52,9 @@ export interface LlmResponse {
 export async function seasonLlmHandle(opts: {
   projectId: string;
   input: string;
+  awareness?: any;
 }): Promise<LlmResponse> {
-  const { projectId, input } = opts;
+  const { projectId, input, awareness } = opts;
 
   /* ─── Cost protection ─── */
   if (!ANTHROPIC_API_KEY) {
@@ -69,7 +70,7 @@ export async function seasonLlmHandle(opts: {
 
   /* ─── Build the prompt ─── */
   const systemPrompt = buildSystemPrompt();
-  const userMessage  = buildUserMessage(input, ctx);
+  const userMessage  = buildUserMessage(input, ctx, awareness);
 
   /* ─── Call Anthropic ─── */
   let raw: any;
@@ -243,10 +244,61 @@ REMEMBER
 
 /* ─── User message — input + condensed project context ─────── */
 
-function buildUserMessage(input: string, ctx: ContextBundle): string {
+function buildUserMessage(input: string, ctx: ContextBundle, awareness?: any): string {
+  /* Render awareness block — what the user is looking at RIGHT NOW.
+     This makes "tell me about this", "filter this", "explain this score"
+     etc. resolvable to a specific entity. */
+  let awarenessBlock = '';
+  if (awareness && awareness.page) {
+    const lines: string[] = ['─── WHAT THE USER IS LOOKING AT RIGHT NOW ───'];
+    lines.push(`Page: ${awareness.page_label || awareness.page}`);
+
+    if (awareness.selected) {
+      const s = awareness.selected;
+      const parts = [`type=${s.type}`];
+      if (s.id)     parts.push(`id=${s.id}`);
+      if (s.title)  parts.push(`title="${s.title}"`);
+      if (s.status) parts.push(`status=${s.status}`);
+      lines.push(`Selected/focused: ${parts.join(' · ')}`);
+      if (s.meta && typeof s.meta === 'object') {
+        const metaKeys = Object.keys(s.meta).slice(0, 5);
+        if (metaKeys.length) {
+          lines.push(`  meta: ${metaKeys.map(k => `${k}=${JSON.stringify(s.meta[k]).slice(0, 80)}`).join(', ')}`);
+        }
+      }
+    }
+
+    if (awareness.visible_filters && Object.keys(awareness.visible_filters).length > 0) {
+      const filt = Object.entries(awareness.visible_filters)
+        .slice(0, 6)
+        .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+        .join(', ');
+      lines.push(`Active filters: ${filt}`);
+    }
+
+    if (awareness.visible_items && awareness.visible_items.length > 0) {
+      lines.push(`Visible on screen (${awareness.visible_items.length} items):`);
+      awareness.visible_items.slice(0, 6).forEach((v: any, i: number) =>
+        lines.push(`  ${i + 1}. [${v.type}] ${v.title}`));
+    }
+
+    if (awareness.recent_actions && awareness.recent_actions.length > 0) {
+      lines.push(`Recent user actions: ${awareness.recent_actions.slice(0, 3).join(' → ')}`);
+    }
+
+    lines.push('');
+    lines.push('INTERPRETATION RULES:');
+    lines.push('- When the user says "this", "it", "that card", "the audit", etc., they likely mean the selected/focused item above.');
+    lines.push('- When they say "filter", "sort", "show only", they\'re asking you to act on what\'s visible.');
+    lines.push('- When they ask vague questions, the page they\'re on is a strong hint about scope (kanban→cards; planning→strategies; audit→audits).');
+
+    awarenessBlock = lines.join('\n') + '\n\n';
+  }
+
   return [
     `USER INPUT:\n"${input}"`,
     ``,
+    awarenessBlock,
     `─── PROJECT CONTEXT ───`,
     `Project: ${ctx.project_name || 'Unknown'} (${ctx.client_url || 'no url'})`,
     `Status: ${ctx.project_status || 'unknown'}`,
@@ -271,7 +323,7 @@ function buildUserMessage(input: string, ctx: ContextBundle): string {
     `Analytics intelligence computed: ${ctx.intel_computed_at || 'not yet'}`,
     ``,
     `─── INSTRUCTIONS ───`,
-    `Answer the user's input above using ONLY this context. Reply with valid JSON matching the schema in your system prompt. Do not invent data. If the context doesn't contain what you need, say so honestly.`,
+    `Answer the user's input above using the context provided. When the user references "this", "it", or similar, resolve via the awareness block. Reply with valid JSON matching the schema in your system prompt. Don't invent data. If context is missing what you need, say so honestly.`,
   ].join('\n');
 }
 

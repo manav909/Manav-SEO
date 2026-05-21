@@ -39,7 +39,7 @@ export interface CommandResponse {
 /* ─── Main endpoint ──────────────────────────────────────────── */
 
 export async function bsSeasonCommand(body: any): Promise<any> {
-  const { projectId, input } = body;
+  const { projectId, input, awareness } = body;
   if (!projectId) return { success: false, error: "projectId required" };
   if (!input || typeof input !== "string") return { success: false, error: "input required" };
 
@@ -53,16 +53,16 @@ export async function bsSeasonCommand(body: any): Promise<any> {
     if (intent === "diagnose")        response = await handleDiagnose(projectId);
     else if (intent === "compute_intel") response = await handleComputeIntel(projectId);
     else if (intent === "help")        response = handleHelp();
-    else if (intent === "summarize")  response = await handleSummarize(projectId);
+    else if (intent === "summarize")  response = await handleSummarize(projectId, awareness);
     else if (intent === "attention")  response = await handleAttention(projectId);
     else if (intent === "status")     response = await handleStatus(projectId);
-    else if (intent === "explain")    response = await handleExplain(projectId, text);
+    else if (intent === "explain")    response = await handleExplain(projectId, text, awareness);
     else if (intent === "verify")     response = await handleVerify(projectId);
     else {
       /* Hand to the LLM brain */
       try {
         const { seasonLlmHandle } = await import("./season-llm.js");
-        const llm = await seasonLlmHandle({ projectId, input });
+        const llm = await seasonLlmHandle({ projectId, input, awareness });
         response = {
           intent:       llm.intent,
           confidence:   llm.confidence,
@@ -408,12 +408,44 @@ function handleHelp(): CommandResponse {
    HANDLER 3 — SUMMARIZE (rich version).
 ═══════════════════════════════════════════════════════════ */
 
-async function handleSummarize(projectId: string): Promise<CommandResponse> {
+async function handleSummarize(projectId: string, awareness?: any): Promise<CommandResponse> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
 
+  /* If a specific strategy is in awareness, narrow the summary to that
+     strategy's cards + its own movement only. */
+  const scopedStrategyId =
+    awareness?.selected?.type === 'strategy' && awareness.selected.id
+      ? awareness.selected.id as string
+      : null;
+
+  const cardQuery = scopedStrategyId
+    ? db().from("kanban_tasks")
+        .select("id,title,status,executed_at,updated_at,strategic_link,target_completion_date")
+        .eq("project_id", projectId)
+        .eq("strategic_link->>id", scopedStrategyId)
+        .gte("updated_at", sevenDaysAgo)
+        .limit(200)
+    : db().from("kanban_tasks")
+        .select("id,title,status,executed_at,updated_at,strategic_link,target_completion_date")
+        .eq("project_id", projectId)
+        .gte("updated_at", sevenDaysAgo)
+        .limit(200);
+
+  const stratQuery = scopedStrategyId
+    ? db().from("strategies")
+        .select("id,name,status,finalized_at,started_at,concluded_at,actual_impact,target_end_date,on_track")
+        .eq("project_id", projectId)
+        .eq("id", scopedStrategyId)
+        .limit(1)
+    : db().from("strategies")
+        .select("id,name,status,finalized_at,started_at,concluded_at,actual_impact,target_end_date,on_track")
+        .eq("project_id", projectId)
+        .neq("status","drafting")
+        .limit(50);
+
   const [cardsRes, strategiesRes, activityRes, integrationsRes, allCardsRes] = await Promise.all([
-    db().from("kanban_tasks").select("id,title,status,executed_at,updated_at,strategic_link,target_completion_date").eq("project_id", projectId).gte("updated_at", sevenDaysAgo).limit(200),
-    db().from("strategies").select("id,name,status,finalized_at,started_at,concluded_at,actual_impact,target_end_date,on_track").eq("project_id", projectId).neq("status","drafting").limit(50),
+    cardQuery,
+    stratQuery,
     db().from("activity_log").select("event_type,headline,severity,created_at").eq("project_id", projectId).gte("created_at", sevenDaysAgo).limit(200),
     db().from("project_integrations").select("provider,last_pull_at").eq("project_id", projectId),
     db().from("kanban_tasks").select("id,title,status,target_completion_date").eq("project_id", projectId).neq("status","done").limit(40),
@@ -431,7 +463,10 @@ async function handleSummarize(projectId: string): Promise<CommandResponse> {
   const ga4 = integrations.find(i => i.provider === "ga4")?.last_pull_at;
 
   const chunks: ResponseChunk[] = [];
-  chunks.push({ kind: "plain", content: "Here's the last 7 days, in plain English:" });
+  const scopeLine = scopedStrategyId && strategies[0]
+    ? `Here's the last 7 days for "${strategies[0].name}", in plain English:`
+    : `Here's the last 7 days, in plain English:`;
+  chunks.push({ kind: "plain", content: scopeLine });
 
   /* Cards completed — by NAME */
   if (cardsDone.length > 0) {
@@ -610,11 +645,20 @@ async function handleStatus(projectId: string): Promise<CommandResponse> {
    HANDLER 6 — EXPLAIN
 ═══════════════════════════════════════════════════════════ */
 
-async function handleExplain(projectId: string, _text: string): Promise<CommandResponse> {
+async function handleExplain(projectId: string, _text: string, awareness?: any): Promise<CommandResponse> {
   const { data: strategies } = await db().from("strategies").select("*").eq("project_id", projectId).order("updated_at",{ ascending: false }).limit(10);
-  const offTrack = (strategies || []).find((s: any) => s.on_track === false);
 
-  if (!offTrack) {
+  /* If user has a strategy selected in awareness, explain THAT one */
+  let target: any = null;
+  if (awareness?.selected?.type === 'strategy' && awareness.selected.id) {
+    target = (strategies || []).find((s: any) => s.id === awareness.selected.id);
+  }
+  /* Otherwise default to the off-track one */
+  if (!target) {
+    target = (strategies || []).find((s: any) => s.on_track === false);
+  }
+
+  if (!target) {
     return {
       intent: "explain",
       confidence: 0.7,
@@ -625,9 +669,13 @@ async function handleExplain(projectId: string, _text: string): Promise<CommandR
       honest_note: "v1 keyword router looks at off-track flags only. For targeted analysis of a specific item, the LLM brain handles it — try a more specific question.",
     };
   }
+  const offTrack = target;
 
   const chunks: ResponseChunk[] = [];
-  chunks.push({ kind: "plain", content: `"${offTrack.name}" is the one pacing behind. Here's what the data shows:` });
+  const leadVerb = offTrack.on_track === false
+    ? `is the one pacing behind`
+    : `is what we're looking at`;
+  chunks.push({ kind: "plain", content: `"${offTrack.name}" ${leadVerb}. Here's what the data shows:` });
 
   /* Read its blockers */
   let hardBlocker: any = null;

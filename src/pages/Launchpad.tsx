@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSeasonAwareness } from '@/hooks/useSeasonAwareness';
 import PortalNav from '@/components/PortalNav';
 import {
   ChevronRight, Zap, Shield, TrendingUp,
@@ -188,6 +189,19 @@ export default function Launchpad() {
   const [approvingIdx, setApprovingIdx] = useState<number|null>(null);
   const [generatedAt,  setGeneratedAt]  = useState('');
   const [sourceAnalysis, setSourceAnalysis] = useState<string>('');
+
+  /* Phase 9 — declare awareness so S.E.A.S.O.N. knows what's on screen */
+  useSeasonAwareness(project ? {
+    page: 'launchpad',
+    page_label: 'Launchpad',
+    selected: {
+      type: 'project',
+      id: project.id,
+      title: project.project_name || 'project',
+      status: dashboard ? 'ready' : 'pending',
+      meta: { has_launchpad: !!project.launchpad_data, generated_at: generatedAt },
+    },
+  } : null);
 
   useEffect(() => {
     if (!authChecked) return;

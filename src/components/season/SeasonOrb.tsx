@@ -52,7 +52,7 @@ const POSITION_STYLES: Record<'br' | 'bl' | 'tr' | 'tl', React.CSSProperties> = 
 /* ─── The Orb ─── */
 
 export default function SeasonOrb() {
-  const { isOpen, open, mood, orbVisible, orbPosition, setOrbPosition, paused } = useSeason();
+  const { isOpen, open, mood, orbVisible, orbPosition, setOrbPosition, paused, awareness } = useSeason();
   const [hovering,  setHovering]  = useState(false);
   const [pressed,   setPressed]   = useState(false);
   const longPressTimer            = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -180,6 +180,43 @@ export default function SeasonOrb() {
             }}>
             S
           </motion.div>
+
+          {/* AWARENESS INDICATOR — tiny dot that appears when S.E.A.S.O.N. knows
+              what's on screen. Subtle, top-right of the orb. */}
+          {awareness && (
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 18 }}
+              title={awareness.selected
+                ? `Aware: ${awareness.page_label || awareness.page} · ${awareness.selected.type}`
+                : `Aware: ${awareness.page_label || awareness.page}`}
+              style={{
+                position: 'absolute',
+                top:    -1,
+                right:  -1,
+                width:  10,
+                height: 10,
+                borderRadius: '50%',
+                background:   `hsl(${profile.ringHsl})`,
+                border:       '2px solid rgba(15, 16, 24, 0.95)',
+                boxShadow:    `0 0 6px hsla(${profile.ringHsl} / 0.8)`,
+                pointerEvents: 'none',
+              }}>
+              {awareness.selected && (
+                <motion.div
+                  animate={{ scale: [1, 1.4, 1], opacity: [0.6, 0.1, 0.6] }}
+                  transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{
+                    position: 'absolute',
+                    inset:    -4,
+                    borderRadius: '50%',
+                    border:   `1.5px solid hsla(${profile.ringHsl} / 0.7)`,
+                  }}
+                />
+              )}
+            </motion.div>
+          )}
         </motion.button>
 
         {/* HOVER TIP — Cmd+K */}

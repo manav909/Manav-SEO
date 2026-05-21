@@ -42,7 +42,7 @@ const MOOD_HSL: Record<SeasonMood, string> = {
   quiet:       '210 50% 55%',  // a touch warmer than orb-quiet for legibility
 };
 
-const QUICK_CHIPS = [
+const DEFAULT_CHIPS = [
   { label: 'Diagnose',                q: 'diagnose',                      urgent: true  },
   { label: 'Summarize this week',     q: 'Summarize this week',           urgent: false },
   { label: 'What needs me today?',    q: 'What needs me today?',          urgent: false },
@@ -50,8 +50,76 @@ const QUICK_CHIPS = [
   { label: 'Where do these numbers come from?', q: 'verify',              urgent: false },
 ];
 
+/* Awareness-aware chips: when we know what page you're on,
+   suggest questions that fit. Always keep Diagnose at the top. */
+function chipsForAwareness(awareness: any): Array<{ label: string; q: string; urgent?: boolean }> {
+  if (!awareness?.page) return DEFAULT_CHIPS;
+  const page = awareness.page;
+  const sel  = awareness.selected;
+
+  if (page === 'audit') {
+    return [
+      { label: 'Diagnose', q: 'diagnose', urgent: true },
+      ...(sel?.type === 'audit'
+        ? [{ label: 'Explain this audit score', q: `explain this audit and what the score means` }]
+        : []),
+      { label: 'What should I fix first?',          q: 'What top issues should I prioritize from this audit?' },
+      { label: 'Draft a remediation plan',          q: 'Draft a remediation plan based on the latest audit' },
+      { label: 'Compare audits over time',          q: 'How have audit scores changed for this project?' },
+    ];
+  }
+  if (page === 'planning') {
+    return [
+      { label: 'Diagnose', q: 'diagnose', urgent: true },
+      ...(sel?.type === 'strategy'
+        ? [
+            { label: 'Explain this strategy', q: 'explain this strategy and why it might be slipping' },
+            { label: 'What\'s blocking it?',  q: 'what is blocking this strategy?' },
+          ]
+        : []),
+      { label: 'Which strategy needs attention?',  q: 'which active strategy needs my attention most?' },
+      { label: 'Draft a new strategy',              q: 'Draft a strategy plan I could finalize next' },
+    ];
+  }
+  if (page === 'data-room') {
+    const tab = awareness.visible_filters?.tab || 'this tab';
+    return [
+      { label: 'Diagnose', q: 'diagnose', urgent: true },
+      { label: `What does ${tab} mean?`,       q: `What does the ${tab} tab in Data Room hold and how do I use it?` },
+      { label: 'What needs filling in here?',  q: `What fields on the ${tab} tab are empty or stale?` },
+      { label: 'Summarize this week',          q: 'Summarize this week' },
+      { label: 'Verify these numbers',          q: 'Where do these numbers come from?' },
+    ];
+  }
+  if (page === 'dashboard') {
+    return [
+      { label: 'Diagnose', q: 'diagnose', urgent: true },
+      { label: 'How is this project doing?', q: 'How is this project doing overall?' },
+      { label: 'What needs me today?',       q: 'What needs me today?' },
+      { label: 'Summarize this week',         q: 'Summarize this week' },
+      { label: 'Compute intelligence',        q: 'compute analytics intelligence' },
+    ];
+  }
+  if (page === 'launchpad') {
+    return [
+      { label: 'Diagnose', q: 'diagnose', urgent: true },
+      { label: 'What does Launchpad show me?', q: 'Explain what Launchpad data tells me and how to act on it' },
+      { label: 'What should I prioritize?',     q: 'Based on Launchpad, what should I prioritize?' },
+    ];
+  }
+  if (page === 'algorithm-intel') {
+    return [
+      { label: 'Diagnose', q: 'diagnose', urgent: true },
+      { label: 'Anything I should learn?',       q: 'Are there fresh algorithm learnings I should know about?' },
+      { label: 'Apply to my project',             q: 'How do recent algorithm signals affect my current strategies?' },
+    ];
+  }
+  /* Fallback */
+  return DEFAULT_CHIPS;
+}
+
 export default function SeasonModal() {
-  const { isOpen, close, initialQuery, mood, setMood } = useSeason();
+  const { isOpen, close, initialQuery, mood, setMood, awareness } = useSeason();
   const { selectedProjectId } = useProject() as any;
   const { projects } = useAuth() as any;
   const navigate = useNavigate();
@@ -112,7 +180,7 @@ export default function SeasonModal() {
     setMood('thinking');
 
     try {
-      const r = await seasonCommand({ projectId: selectedProjectId, input: q });
+      const r = await seasonCommand({ projectId: selectedProjectId, input: q, awareness: awareness || undefined });
       if (r.error) {
         setError(r.error);
         setMood('alert');
@@ -254,6 +322,49 @@ export default function SeasonModal() {
             {/* Body — scrollable */}
             <div style={{ flex: 1, overflowY: 'auto', padding: 20, position: 'relative' }}>
 
+              {/* Awareness chip — shows what S.E.A.S.O.N. knows is on screen */}
+              {awareness && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  style={{
+                    marginBottom: 12,
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    border: `1px solid hsla(${moodHsl} / 0.18)`,
+                    background: `hsla(${moodHsl} / 0.04)`,
+                    fontSize: 10.5,
+                    color: 'rgba(255,255,255,0.65)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                  }}>
+                  <span style={{ color: `hsl(${moodHsl})`, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: 9 }}>
+                    aware
+                  </span>
+                  <span>you're on</span>
+                  <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
+                    {awareness.page_label || awareness.page}
+                  </span>
+                  {awareness.selected && (
+                    <>
+                      <span style={{ opacity: 0.4 }}>·</span>
+                      <span>looking at</span>
+                      <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
+                        {awareness.selected.type}: {awareness.selected.title || awareness.selected.id?.slice(0, 8) || 'item'}
+                      </span>
+                    </>
+                  )}
+                  {awareness.visible_filters && Object.keys(awareness.visible_filters).length > 0 && (
+                    <>
+                      <span style={{ opacity: 0.4 }}>·</span>
+                      <span style={{ opacity: 0.7 }}>filters active</span>
+                    </>
+                  )}
+                </motion.div>
+              )}
+
               {/* Input */}
               <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
                 <div style={{ position: 'relative' }}>
@@ -306,7 +417,7 @@ export default function SeasonModal() {
               {/* Quick chips — only show when no response yet */}
               {!response && !submitting && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-                  {QUICK_CHIPS.map((c, i) => (
+                  {chipsForAwareness(awareness).map((c, i) => (
                     <motion.button
                       key={c.q}
                       initial={{ opacity: 0, y: 4 }}

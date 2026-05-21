@@ -19,6 +19,7 @@ import {
   Building2, ChevronRight,
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
+import { useSeasonAwareness } from '@/hooks/useSeasonAwareness';
 import StrategyPipelineBoard from '@/components/pm/StrategyPipelineBoard';
 import StrategyBuilder from '@/components/pm/StrategyBuilder';
 import StrategyDetailView from '@/components/pm/StrategyDetailView';
@@ -31,6 +32,22 @@ type View =
 export default function Planning() {
   const { selectedProjectId, selectedProject } = useProject() as any;
   const [view, setView] = useState<View>({ kind: 'board' });
+
+  /* Phase 9 — declare awareness so S.E.A.S.O.N. knows what's on screen */
+  useSeasonAwareness(selectedProjectId ? {
+    page: 'planning',
+    page_label: `Planning · ${view.kind}`,
+    selected: view.kind === 'detail' && (view as any).strategyId ? {
+      type: 'strategy',
+      id: (view as any).strategyId,
+      title: 'strategy in detail view',
+    } : view.kind === 'builder' ? {
+      type: 'strategy',
+      title: 'new strategy being drafted',
+      status: 'drafting',
+    } : null,
+    visible_filters: { view: view.kind },
+  } : null);
 
   if (!selectedProjectId) {
     return (

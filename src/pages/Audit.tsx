@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProjectSync } from '@/hooks/useProjectSync';
+import { useSeasonAwareness } from '@/hooks/useSeasonAwareness';
 import PortalNav from '@/components/PortalNav';
 import { SeoEngine } from '@/components/SeoEngine';
 import { Button } from '@/components/ui/button';
@@ -263,7 +264,7 @@ export default function Audit() {
     setOrchExpanded({});
 
     try {
-      const res = await fetch('/api/audit-orchestrator', {
+      const res = await fetch('/api/run-analysis', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: selectedProjectId, urls: urlList, mode: orchMode }),
@@ -309,6 +310,28 @@ export default function Audit() {
   /* ── Strategy reports from SeoEngine (saved_by: 'seo-engine') ── */
   const strategyReports = pastReports.filter(r => r.saved_by === 'seo-engine');
   const metricsReports  = pastReports.filter(r => r.saved_by !== 'seo-engine');
+
+  /* ── Phase 9: tell S.E.A.S.O.N. what's on screen ── */
+  const latestReport = pastReports[0];
+  useSeasonAwareness({
+    page: 'audit',
+    page_label: 'SEO Audit',
+    selected: latestReport ? {
+      type: 'audit',
+      id: latestReport.id,
+      title: latestReport.brand_name || latestReport.company || 'audit report',
+      status: latestReport.saved_by === 'seo-engine' ? 'strategy' : 'metrics',
+      meta: {
+        score: latestReport.overall_score,
+        created_at: latestReport.created_at,
+      },
+    } : null,
+    visible_items: pastReports.slice(0, 6).map((r: any) => ({
+      type: 'audit',
+      id: r.id,
+      title: `${r.brand_name || r.company || 'audit'} · score ${r.overall_score || '—'}`,
+    })),
+  });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
