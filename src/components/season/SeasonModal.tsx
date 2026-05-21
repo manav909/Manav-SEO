@@ -31,6 +31,7 @@ import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { seasonCommand, type CommandResponseClient } from '@/components/pm/api';
+import SeasonPipelineDashboard from './SeasonPipelineDashboard';
 
 /* Mood → color (matches the Orb's profile) */
 const MOOD_HSL: Record<SeasonMood, string> = {
@@ -132,6 +133,15 @@ export default function SeasonModal() {
   const [error, setError]               = useState<string | null>(null);
   const inputRef                        = useRef<HTMLInputElement | null>(null);
 
+  /* Phase 13a — live pipeline dashboard state.
+     When a pipeline launches, we get a run_id and switch from the modal
+     into the full-screen live dashboard. Once the run completes (or fails),
+     the dashboard surfaces final artifacts and the user can close back to
+     the modal or to a fresh state. */
+  const [activeRunId, setActiveRunId]                 = useState<string | null>(null);
+  const [activeRunStepCount, setActiveRunStepCount]   = useState<number>(0);
+  const [activeRunLabel, setActiveRunLabel]           = useState<string>('');
+
   const moodHsl       = MOOD_HSL[mood] || MOOD_HSL.quiet;
   const isMac         = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
@@ -181,43 +191,33 @@ export default function SeasonModal() {
     setError(null);
     setMood('thinking');
 
-    /* Phase 12 — pipeline intent: "rank me for X", "get me ranking for Y",
-       "rank for 'foo'". Highest priority because it kicks off a multi-step
-       chain that takes 30-90s and produces multiple artifacts. */
+    /* Phase 12 → Phase 13a pipeline intent: "rank me for X". Now launches in the
+       background and opens the live dashboard. The dashboard polls progress. */
     const rankMatch = q.match(/(?:rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keyword)[\s:]+["']?([^"'?.!]+)["']?/i);
     if (rankMatch) {
       const keyword = rankMatch[1].trim().replace(/\s+/g, ' ').slice(0, 120);
       if (keyword.length >= 3) {
         try {
-          const { seasonPipelineRun } = await import('@/components/pm/api');
-          const r = await seasonPipelineRun({
+          const { seasonPipelineLaunch } = await import('@/components/pm/api');
+          const r = await seasonPipelineLaunch({
             projectId: selectedProjectId,
             pipelineType: 'rank_for_keyword',
             inputText: q,
             scope: { keyword, goal: `rank for "${keyword}"` },
             awareness: awareness || undefined,
           });
-          if (r.error) {
-            setError(`Pipeline failed: ${r.error}`);
+          if (r.error || !r.run_id) {
+            setError(`Pipeline launch failed: ${r.error || 'no run id returned'}`);
             setMood('alert');
-          } else if (r.run) {
-            /* Synthesize a CommandResponseClient from the pipeline result so the modal renders it */
-            const run = r.run as any;
-            setResponse({
-              intent: 'pipeline_run',
-              confidence: run.status === 'completed' ? 0.9 : 0.6,
-              chunks: [
-                { kind: 'plain', content: `Pipeline complete. Ran ${run.steps_completed}/${run.step_count} steps in ${(run.elapsed_ms / 1000).toFixed(1)}s.` },
-                { kind: 'plain', content: run.honest_summary || '' },
-                { kind: 'verify', content: `Source: rank-for-keyword pipeline · ${run.llm_calls_used} LLM calls · ${run.web_searches_used} web searches · est. $${run.estimated_cost_usd.toFixed(2)} · run id: ${run.run_id}` },
-              ] as any,
-              artifacts: (run.final_artifacts || []).map((a: any) => ({
-                kind: a.kind, title: a.title, body: a.body,
-              })),
-              honest_note: run.status !== 'completed' ? 'Pipeline ran partially — see honest_summary above for which steps failed.' : undefined,
-            } as any);
-            setMood(run.status === 'completed' ? 'celebrating' : 'alert');
+            setSubmitting(false);
+            return;
           }
+          /* Hand off to the live dashboard. The modal stays mounted but hidden
+             behind the dashboard's full-screen layer. */
+          setActiveRunId(r.run_id);
+          setActiveRunStepCount(r.step_count || 7);
+          setActiveRunLabel(`Ranking for "${keyword}"`);
+          setMood('focused');
         } catch (e: any) {
           setError(`Pipeline error: ${e?.message || 'unknown'}`);
           setMood('alert');
@@ -303,7 +303,44 @@ export default function SeasonModal() {
 
   /* Render */
   return (
-    <AnimatePresence>
+    <>
+      {/* Phase 13a — live pipeline dashboard. Stays mounted while a run is active,
+          independent of the modal's open/closed state. */}
+      <AnimatePresence>
+        {activeRunId && (
+          <SeasonPipelineDashboard
+            key={activeRunId}
+            runId={activeRunId}
+            expectedSteps={activeRunStepCount}
+            pipelineLabel={activeRunLabel}
+            onClose={() => {
+              setActiveRunId(null);
+              setActiveRunStepCount(0);
+              setActiveRunLabel('');
+            }}
+            onComplete={(run) => {
+              /* When the run completes, drop a synthesized response into the modal
+                 so reopening Cmd+K shows the final summary. The dashboard itself
+                 stays visible (with the completion state) until the user closes it. */
+              setResponse({
+                intent: 'pipeline_run',
+                confidence: run.status === 'completed' ? 0.9 : 0.6,
+                chunks: [
+                  { kind: 'plain', content: `Pipeline ${run.status}. ${run.steps_completed}/${run.step_count} steps.` },
+                  { kind: 'plain', content: run.honest_summary || '' },
+                  { kind: 'verify', content: `Run id: ${run.id}` },
+                ] as any,
+                artifacts: (run.final_artifacts || []).map((a: any) => ({
+                  kind: a.kind, title: a.title, body: a.body,
+                })),
+                honest_note: run.status !== 'completed' ? 'Pipeline did not complete fully — see honest summary.' : undefined,
+              } as any);
+              setMood(run.status === 'completed' ? 'celebrating' : 'alert');
+            }}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
       {isOpen && (
         <>
           {/* Backdrop */}
@@ -907,6 +944,7 @@ export default function SeasonModal() {
         </>
       )}
     </AnimatePresence>
+    </>
   );
 }
 

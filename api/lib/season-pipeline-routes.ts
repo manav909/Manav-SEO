@@ -6,13 +6,87 @@
    via the existing task-engine action router. No new function slot.
 
    Endpoints:
-     bs_season_pipeline_run       — start a new pipeline
+     bs_season_pipeline_run       — start a new pipeline (synchronous, blocks until done)
+     bs_season_pipeline_launch    — start a new pipeline (async, returns run_id immediately)
      bs_season_pipeline_list      — list runs for a project
-     bs_season_pipeline_get       — get a run with all steps
+     bs_season_pipeline_get       — get a run with all steps (used for polling)
      bs_season_pipeline_feedback  — Manav's feedback on a step
 ═══════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+
+/* Phase 13a — launch endpoint for live dashboard.
+   Creates the run row, returns run_id immediately, and triggers the
+   pipeline execution as fire-and-forget. The frontend polls
+   bs_season_pipeline_get to watch progress live.
+   The pipeline runs inside the same serverless function invocation —
+   Vercel keeps the process alive until either work completes or
+   maxDuration (300s) is hit, both of which are fine. */
+export async function bsSeasonPipelineLaunch(body: any): Promise<any> {
+  const { projectId, pipelineType, inputText, scope, awareness } = body || {};
+  if (!projectId)    return { success: false, error: "projectId required" };
+  if (!pipelineType) return { success: false, error: "pipelineType required" };
+  if (!inputText)    return { success: false, error: "inputText required" };
+
+  try {
+    /* Resolve the pipeline definition first so we can write step_count to the run row */
+    let definition: any;
+    if (pipelineType === 'rank_for_keyword') {
+      const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
+      definition = buildRankForKeywordPipeline();
+    } else {
+      return { success: false, error: `Unknown pipeline type: ${pipelineType}. Currently supported: rank_for_keyword.` };
+    }
+
+    /* Create the run row immediately so the frontend has a run_id to poll. */
+    const { data: runInsert, error: runErr } = await db().from("season_pipeline_runs").insert({
+      project_id:    projectId,
+      pipeline_type: pipelineType,
+      input_text:    String(inputText).slice(0, 2000),
+      goal_summary:  String((scope || {}).goal || '').slice(0, 240),
+      scope:         scope || {},
+      status:        'running',
+      step_count:    definition.steps.length,
+    }).select("id").maybeSingle();
+
+    if (runErr || !runInsert) {
+      return { success: false, error: runErr?.message || 'could not create run row' };
+    }
+    const runId = (runInsert as any).id as string;
+
+    /* Fire-and-forget the actual pipeline work. The function process stays
+       alive until the work completes or maxDuration hits. Errors here are
+       captured into the run row by runPipelineWithExistingRow. */
+    (async () => {
+      try {
+        const { runPipelineWithExistingRow } = await import("./season-pipeline-runner.js");
+        await runPipelineWithExistingRow({
+          runId,
+          projectId,
+          inputText: String(inputText).slice(0, 2000),
+          awareness,
+          scope: scope || {},
+          definition,
+        });
+      } catch (e: any) {
+        /* If the background work crashes, write a failure to the run row so
+           the polling frontend sees the failure rather than an eternal "running". */
+        try {
+          await db().from("season_pipeline_runs").update({
+            status: 'failed',
+            honest_summary: `Pipeline crashed in background: ${e?.message || 'unknown error'}`,
+            finished_at: new Date().toISOString(),
+          }).eq("id", runId);
+        } catch { /* non-fatal */ }
+      }
+    })();
+
+    /* Return immediately so the frontend can start polling */
+    return { success: true, run_id: runId, step_count: definition.steps.length };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "pipeline launch failed" };
+  }
+}
 
 export async function bsSeasonPipelineRun(body: any): Promise<any> {
   const { projectId, pipelineType, inputText, scope, awareness } = body || {};

@@ -2112,9 +2112,11 @@ export interface PipelineRunSummary {
   goal_summary?:        string | null;
   status:               string;
   step_count:           number;
+  step_current?:        number;
   steps_completed:      number;
   steps_failed:         number;
   llm_calls_used:       number;
+  web_searches_used?:   number;
   estimated_cost_usd:   number;
   started_at:           string;
   finished_at?:         string | null;
@@ -2157,6 +2159,20 @@ export async function seasonPipelineRun(opts: {
   const r = await post(ENGINE, { action: 'bs_season_pipeline_run', ...opts });
   if (!r?.success) return { error: r?.error };
   return { run: r.run };
+}
+
+/* Phase 13a — async launch. Returns run_id immediately; the pipeline
+   executes in the background. Pair with seasonPipelineGet polling. */
+export async function seasonPipelineLaunch(opts: {
+  projectId:    string;
+  pipelineType: PipelineType;
+  inputText:    string;
+  scope:        Record<string, any>;
+  awareness?:   any;
+}): Promise<{ run_id?: string; step_count?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_launch', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { run_id: r.run_id, step_count: r.step_count };
 }
 
 export async function seasonPipelineList(opts: {

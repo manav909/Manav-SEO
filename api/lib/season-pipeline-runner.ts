@@ -289,6 +289,170 @@ export async function runPipeline(opts: {
 
 /* ─── Helpers ───────────────────────────────────────────────── */
 
+/* Phase 13a — variant for use with bsSeasonPipelineLaunch.
+   The run row is already created by the launch endpoint; this function
+   just walks the steps using the existing run_id. Same logic as runPipeline
+   but without the row-creation step at the top. */
+export async function runPipelineWithExistingRow(opts: {
+  runId: string;
+  projectId: string;
+  inputText: string;
+  awareness?: any;
+  scope: Record<string, any>;
+  definition: PipelineDefinition;
+}): Promise<PipelineRunResult> {
+  const start = Date.now();
+  const cap = opts.definition.llm_call_cap || DEFAULT_LLM_CAP;
+  const runId = opts.runId;
+
+  await logActivity(opts.projectId, runId, 'pipeline_started',
+    `Pipeline started: ${opts.definition.type} — "${opts.inputText.slice(0, 80)}${opts.inputText.length > 80 ? '…' : ''}"`,
+    `${opts.definition.steps.length} steps planned.`,
+  );
+
+  const priorOutputs: Record<string, any> = {};
+  const artifacts: PipelineRunResult['final_artifacts'] = [];
+  let totalLlm  = 0;
+  let totalWeb  = 0;
+  let stepsCompleted = 0;
+  let stepsFailed    = 0;
+  const honestNotes: string[] = [];
+
+  for (let i = 0; i < opts.definition.steps.length; i++) {
+    const step = opts.definition.steps[i];
+
+    if (totalLlm >= cap) {
+      honestNotes.push(`Stopped at step ${i + 1} ("${step.label}") — hit the per-pipeline LLM cap of ${cap}.`);
+      await markStepFailed(runId, i, step, 'llm cap reached', { cap, used: totalLlm });
+      stepsFailed++;
+      break;
+    }
+
+    const { data: stepInsert } = await db().from("season_pipeline_steps").insert({
+      run_id: runId,
+      step_index: i,
+      step_id: step.id,
+      step_label: step.label,
+      status: 'running',
+      started_at: new Date().toISOString(),
+      input_snapshot: { scope: opts.scope, prior_keys: Object.keys(priorOutputs) },
+    }).select("id").maybeSingle();
+    const stepRowId = (stepInsert as any)?.id;
+
+    await db().from("season_pipeline_runs").update({
+      step_current: i + 1,
+    }).eq("id", runId);
+
+    const stepStart = Date.now();
+    let result: PipelineStepResult;
+    try {
+      result = await step.handler({
+        projectId: opts.projectId,
+        awareness: opts.awareness,
+        scope: opts.scope,
+        prior: priorOutputs,
+      });
+    } catch (e: any) {
+      result = { ok: false, error: e?.message || 'step threw unexpectedly' };
+    }
+    const stepElapsed = Date.now() - stepStart;
+
+    totalLlm += result.llm_calls || 0;
+    totalWeb += result.web_searches || 0;
+
+    if (result.ok) {
+      stepsCompleted++;
+      priorOutputs[step.id] = result.output;
+      if (result.artifact) {
+        artifacts.push({ ...result.artifact, step_id: step.id });
+      }
+      if (result.honest_note) honestNotes.push(`(${step.label}) ${result.honest_note}`);
+
+      if (stepRowId) {
+        await db().from("season_pipeline_steps").update({
+          status: 'completed',
+          output: result.output,
+          output_artifact_kind: result.artifact?.kind || null,
+          honest_note: result.honest_note || null,
+          llm_calls: result.llm_calls || 0,
+          web_searches: result.web_searches || 0,
+          duration_ms: stepElapsed,
+          finished_at: new Date().toISOString(),
+        }).eq("id", stepRowId);
+      }
+
+      await db().from("season_pipeline_runs").update({
+        steps_completed:    stepsCompleted,
+        llm_calls_used:     totalLlm,
+        web_searches_used:  totalWeb,
+        estimated_cost_usd: Number((totalLlm * COST_PER_CALL).toFixed(4)),
+      }).eq("id", runId);
+    } else {
+      stepsFailed++;
+      if (stepRowId) {
+        await db().from("season_pipeline_steps").update({
+          status: 'failed',
+          error_message: (result.error || 'unknown').slice(0, 500),
+          llm_calls: result.llm_calls || 0,
+          web_searches: result.web_searches || 0,
+          duration_ms: stepElapsed,
+          finished_at: new Date().toISOString(),
+        }).eq("id", stepRowId);
+      }
+      honestNotes.push(`Step "${step.label}" failed: ${result.error || 'unknown'}.`);
+      if (!step.continue_on_fail) break;
+    }
+  }
+
+  const elapsedMs = Date.now() - start;
+  const success = stepsCompleted === opts.definition.steps.length;
+  const finalStatus: 'completed' | 'failed' | 'partial' =
+    success ? 'completed' : (stepsCompleted > 0 ? 'partial' : 'failed');
+
+  const honestSummary = buildHonestSummary({
+    stepsCompleted, stepsFailed,
+    stepCount: opts.definition.steps.length,
+    notes: honestNotes,
+    elapsedMs,
+  });
+  const clientFacingSummary = buildClientFacingSummary({
+    pipelineType: opts.definition.type,
+    artifacts,
+    stepsCompleted,
+  });
+
+  await db().from("season_pipeline_runs").update({
+    status:                finalStatus === 'partial' ? 'completed' : finalStatus,
+    steps_completed:       stepsCompleted,
+    steps_failed:          stepsFailed,
+    final_artifacts:       artifacts,
+    honest_summary:        honestSummary,
+    client_facing_summary: clientFacingSummary,
+    finished_at:           new Date().toISOString(),
+  }).eq("id", runId);
+
+  await logActivity(opts.projectId, runId,
+    success ? 'pipeline_completed' : 'pipeline_partial',
+    `Pipeline ${finalStatus}: ${opts.definition.type} (${stepsCompleted}/${opts.definition.steps.length} steps)`,
+    `Used ${totalLlm} LLM calls, ${totalWeb} web searches, ~$${(totalLlm * COST_PER_CALL).toFixed(2)}, ${(elapsedMs/1000).toFixed(1)}s total.`,
+  );
+
+  return {
+    run_id:                runId,
+    status:                finalStatus,
+    step_count:            opts.definition.steps.length,
+    steps_completed:       stepsCompleted,
+    steps_failed:          stepsFailed,
+    final_artifacts:       artifacts,
+    honest_summary:        honestSummary,
+    client_facing_summary: clientFacingSummary,
+    llm_calls_used:        totalLlm,
+    web_searches_used:     totalWeb,
+    estimated_cost_usd:    Number((totalLlm * COST_PER_CALL).toFixed(4)),
+    elapsed_ms:            elapsedMs,
+  };
+}
+
 async function markStepFailed(runId: string, idx: number, step: PipelineStep, reason: string, technical: any) {
   await db().from("season_pipeline_steps").insert({
     run_id: runId,
