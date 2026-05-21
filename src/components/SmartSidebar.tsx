@@ -8,6 +8,7 @@ const ALL_SECTIONS = [
     id:"command", label:"Command", icon:"⚡",
     items:[
       {icon:"✨",label:"S.E.A.S.O.N.",            href:"/command"},
+      {icon:"⚙",label:"S.E.A.S.O.N. Settings",   href:"/season-settings"},
       {icon:"📡",label:"Build Dashboard",     href:"/build"},
       {icon:"👑",label:"Empire Command",       href:"/empire"},
       {icon:"🤖",label:"Ask the Empire",       href:"/ask"},

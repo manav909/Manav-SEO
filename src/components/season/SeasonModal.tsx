@@ -505,7 +505,20 @@ export default function SeasonModal() {
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             }}>
               <span>{isMac ? '⌘K' : 'Ctrl+K'} to toggle · Esc to close</span>
-              <span>S.E.A.S.O.N. v1</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => { close(); setTimeout(() => navigate('/season-settings'), 100); }}
+                  title="Open S.E.A.S.O.N. settings"
+                  style={{
+                    fontSize: 10, padding: '2px 8px', borderRadius: 6,
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    background: 'transparent', color: 'rgba(255,255,255,0.5)',
+                    cursor: 'pointer',
+                  }}>
+                  ⚙ Settings
+                </button>
+                <span>S.E.A.S.O.N. v1</span>
+              </div>
             </div>
           </motion.div>
         </>

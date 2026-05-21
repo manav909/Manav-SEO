@@ -26,6 +26,7 @@ import Index          from "./pages/Index";
 import DataRoom       from './pages/DataRoom';
 import Planning       from './pages/Planning';
 import Command        from './pages/Command';
+import SeasonSettings from './pages/SeasonSettings';
 import Dashboard      from "./pages/Dashboard";
 import Launchpad      from "./pages/Launchpad";
 import Audit          from "./pages/Audit";
@@ -121,6 +122,7 @@ const AppRoutes = () => {
         <Route path="/data-room"       element={<B name="data-room">      <StaffGuard perm="data_room">      <DataRoom />       </StaffGuard></B>} />
         <Route path="/planning"        element={<B name="planning">       <StaffGuard perm="data_room">      <Planning />       </StaffGuard></B>} />
         <Route path="/command"         element={<B name="command">        <StaffGuard perm="data_room">      <Command />        </StaffGuard></B>} />
+        <Route path="/season-settings"  element={<B name="season-settings"><StaffGuard perm="data_room">      <SeasonSettings />  </StaffGuard></B>} />
         <Route path="/dashboard"       element={<B name="dashboard">      <StaffGuard perm="dashboard">      <Dashboard />      </StaffGuard></B>} />
         <Route path="/launchpad"       element={<B name="launchpad">      <StaffGuard perm="playground">     <Launchpad />      </StaffGuard></B>} />
         <Route path="/audit"           element={<B name="audit">          <StaffGuard perm="audit_tools">    <Audit />          </StaffGuard></B>} />
