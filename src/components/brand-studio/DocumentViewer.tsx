@@ -19,8 +19,11 @@
 import { useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkDirective from 'remark-directive';
 import { Printer, Download, Copy, CheckCircle2, FileText, ExternalLink } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { remarkDirectiveRender } from './document-directives';
+import DirectiveDispatcher from './DirectiveRenderer';
 
 interface Props {
   /** The markdown / text content of the document */
@@ -42,10 +45,16 @@ interface Props {
   /** Optional summary + key findings (typically from extracted_data) */
   summary?:       string;
   keyFindings?:   string[];
+  /** Optional data context for live directive references (Data Room fields, attachments).
+   *  Phase 1A: types defined, populated by Phase 1B/1C/1D. */
+  dataContext?: {
+    fields?:      Record<string, any>;
+    attachments?: Array<{ id: string; signedUrl: string; alt?: string; caption?: string }>;
+  };
 }
 
 export default function DocumentViewer({
-  content, documentName, meta, brandColor, summary, keyFindings,
+  content, documentName, meta, brandColor, summary, keyFindings, dataContext,
 }: Props) {
   const accent = brandColor || '#8b5cf6';
   const printRef = useRef<HTMLDivElement>(null);
@@ -185,7 +194,7 @@ export default function DocumentViewer({
         <article className="ds-prose">
           {content ? (
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkDirective, remarkDirectiveRender]}
               components={{
                 /* H1 styling — bigger and accent-colored */
                 h1: ({ children }) => (
@@ -253,7 +262,26 @@ export default function DocumentViewer({
                 ),
                 strong: ({ children }) => <strong className="font-bold text-foreground">{children}</strong>,
                 em:     ({ children }) => <em className="italic">{children}</em>,
-              }}
+                /* Custom directive renderer — react-markdown 9 supports unknown tags
+                   when passed in components map. The remarkDirectiveRender plugin
+                   rewrites directive nodes to hName='ds-directive' + data-* attrs. */
+                'ds-directive': ({ node, children }: any) => {
+                  const props      = node?.properties || {};
+                  const name       = String(props.dataName  || 'unknown');
+                  const attrsJSON  = String(props.dataAttrs || '{}');
+                  let attrs: any = {};
+                  try { attrs = JSON.parse(attrsJSON); } catch {}
+                  return (
+                    <DirectiveDispatcher
+                      name={name}
+                      attrs={attrs}
+                      body={children}
+                      brandColor={accent}
+                      dataContext={dataContext}
+                    />
+                  );
+                },
+              } as any}
             >
               {content}
             </ReactMarkdown>
