@@ -1607,3 +1607,21 @@ export async function refreshAttachmentUrl(id: string): Promise<{
   if (!r?.success) return { error: r?.error };
   return { signedUrl: r.signedUrl };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 1F — DOCX export
+═══════════════════════════════════════════════════════════ */
+
+export async function exportDocumentDocx(documentId: string): Promise<{
+  base64?: string; filename?: string; contentType?: string; error?: string;
+}> {
+  const res = await fetch(ENGINE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'bs_export_docx', documentId }),
+  });
+  if (!res.ok) return { error: `HTTP ${res.status}` };
+  const j = await res.json();
+  if (!j?.success) return { error: j?.error || 'Export failed' };
+  return { base64: j.base64, filename: j.filename, contentType: j.contentType };
+}

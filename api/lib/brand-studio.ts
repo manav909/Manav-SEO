@@ -524,6 +524,12 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsResolveDataReferences(body);
     }
 
+    /* Phase 1F — DOCX export */
+    case "bs_export_docx": {
+      const { bsExportDocx } = await import("./brand-studio-export.js");
+      return bsExportDocx(body);
+    }
+
     /* H.2+ handlers will plug in here:
        case "bs_generate_preview": return bsGeneratePreview(body);
        case "bs_generate_apply": return bsGenerateApply(body);

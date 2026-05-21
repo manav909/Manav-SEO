@@ -21,17 +21,20 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkDirective from 'remark-directive';
-import { Printer, Download, Copy, CheckCircle2, FileText, ExternalLink } from 'lucide-react';
+import { Printer, Download, Copy, CheckCircle2, FileText, ExternalLink, FileType2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { remarkDirectiveRender } from './document-directives';
 import DirectiveDispatcher from './DirectiveRenderer';
 import DocumentPrintBody from './DocumentPrintBody';
+import { exportDocumentDocx } from './api';
 
 interface Props {
   /** The markdown / text content of the document */
   content:        string;
   /** Document name used as the file title for downloads */
   documentName:   string;
+  /** Optional document ID — when provided, enables the DOCX export button */
+  documentId?:    string;
   /** Optional metadata to render above the body */
   meta?: {
     docType?:        string;
@@ -58,12 +61,13 @@ interface Props {
 }
 
 export default function DocumentViewer({
-  content, documentName, meta, brandColor, summary, keyFindings, dataContext,
+  content, documentName, documentId, meta, brandColor, summary, keyFindings, dataContext,
 }: Props) {
   const accent = brandColor || '#8b5cf6';
   const printRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   /* When isPrinting flips on, render the portal then trigger window.print().
      Listen for afterprint to clean up. */
@@ -84,6 +88,36 @@ export default function DocumentViewer({
   }, [isPrinting]);
 
   const handlePrint = () => setIsPrinting(true);
+
+  const handleDownloadDocx = async () => {
+    if (!documentId) return;
+    setIsExporting(true);
+    try {
+      const r = await exportDocumentDocx(documentId);
+      if (r.error || !r.base64) {
+        toast({ title: 'Export failed', description: r.error || 'No data returned', variant: 'destructive' });
+        return;
+      }
+      /* Decode base64 → Blob → download */
+      const binary = atob(r.base64);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: r.contentType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = r.filename || `${documentName.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase()}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: 'Downloaded', description: r.filename || 'Word document saved.' });
+    } catch (e: any) {
+      toast({ title: 'Export failed', description: e?.message || String(e), variant: 'destructive' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleDownloadMd = () => {
     const blob = new Blob([content || ''], { type: 'text/markdown;charset=utf-8' });
@@ -119,6 +153,16 @@ export default function DocumentViewer({
         >
           <Printer className="h-3 w-3" /> Download as PDF
         </button>
+        {documentId && (
+          <button
+            onClick={handleDownloadDocx}
+            disabled={isExporting}
+            className="text-xs px-3 py-1.5 rounded-lg border border-border text-foreground hover:bg-muted/40 flex items-center gap-1.5 disabled:opacity-60"
+            title="Export as Word document"
+          >
+            <FileType2 className="h-3 w-3" /> {isExporting ? 'Exporting…' : 'Download .docx'}
+          </button>
+        )}
         <button
           onClick={handleDownloadMd}
           className="text-xs px-3 py-1.5 rounded-lg border border-border text-foreground hover:bg-muted/40 flex items-center gap-1.5"

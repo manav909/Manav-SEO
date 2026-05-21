@@ -244,6 +244,7 @@ export default function Library({ projectId, catalogs }: Props) {
                 <DocumentViewer
                   content={viewerDoc.raw_content || ''}
                   documentName={viewerDoc.name}
+                  documentId={viewerDoc.id}
                   meta={{
                     docType:      viewerDoc.doc_type,
                     audienceRole: viewerDoc.audience_role,
