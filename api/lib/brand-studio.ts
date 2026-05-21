@@ -408,7 +408,22 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
     case "bs_client_resolve":
     case "bs_client_list_documents":
     case "bs_client_get_document":
-    case "bs_client_get_investor_data": {
+    case "bs_client_get_investor_data":
+    /* H.6a session-token client endpoints */
+    case "bs_client_session_resolve":
+    case "bs_client_session_list_documents":
+    case "bs_client_session_post_comment":
+    case "bs_client_session_list_comments":
+    case "bs_client_session_respond_approval":
+    case "bs_client_session_list_approvals":
+    case "bs_client_session_share_doc":
+    case "bs_client_session_revoke_share":
+    case "bs_client_session_list_share_grants":
+    case "bs_client_session_upload_file":
+    case "bs_client_session_list_intake_forms":
+    case "bs_client_session_submit_intake":
+    case "bs_client_session_list_notifications":
+    case "bs_client_session_mark_notification_read": {
       const { handleBrandStudioClient } = await import("./brand-studio-client.js");
       return handleBrandStudioClient(action, body);
     }
@@ -462,6 +477,39 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
     case "bs_get_field_dependents": {
       const { handleBrandStudioH5 } = await import("./brand-studio-h5.js");
       return handleBrandStudioH5(action, body);
+    }
+
+    /* H.6a — Client collaboration (users + sharing + comments +
+       approvals + intake + uploads + notifications + audit) ── */
+    case "bs_invite_client_user":
+    case "bs_list_client_users":
+    case "bs_update_client_user":
+    case "bs_revoke_client_user":
+    case "bs_redeem_invite":
+    case "bs_list_share_grants":
+    case "bs_create_share_grant":
+    case "bs_revoke_share_grant":
+    case "bs_list_comments":
+    case "bs_post_comment":
+    case "bs_resolve_comment":
+    case "bs_delete_comment":
+    case "bs_list_approvals":
+    case "bs_request_approval":
+    case "bs_respond_approval":
+    case "bs_cancel_approval":
+    case "bs_list_intake_forms":
+    case "bs_upsert_intake_form":
+    case "bs_delete_intake_form":
+    case "bs_list_intake_responses":
+    case "bs_submit_intake_response":
+    case "bs_review_intake_response":
+    case "bs_client_list_intake_forms":
+    case "bs_client_upload_file":
+    case "bs_list_notifications":
+    case "bs_mark_notification_read":
+    case "bs_list_audit_log": {
+      const { handleBrandStudioCollab } = await import("./brand-studio-collab.js");
+      return handleBrandStudioCollab(action, body);
     }
 
     /* H.2+ handlers will plug in here:
