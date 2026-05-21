@@ -246,8 +246,24 @@ export async function gscSelectProperty(opts: {
 
 /* ── 6. pull metrics ──────────────────────────────────────── */
 
-/** Pull GSC totals for the project's chosen property, default last 7 days,
- *  and write a metrics_snapshot row. Designed to be safe to call daily. */
+/** Phase 1I — full-coverage GSC pull.
+ *
+ *  Each pull runs SIX search-analytics queries against the chosen
+ *  property and writes the results into:
+ *    1. `metrics_snapshots`  — point-in-time totals (legacy, kept for
+ *                              dashboards still wired to it)
+ *    2. `metrics`            — one row per day in the window with
+ *                              daily clicks/impressions/position/ctr
+ *                              so the resolver returns proper time
+ *                              series for the scope picker
+ *    3. `project_knowledge.analytics` — totals + JSON-encoded top-N
+ *                                       lists (queries, pages,
+ *                                       countries, devices) so the
+ *                                       Data Room shows real insights
+ *
+ *  Designed to be safe to call daily. Falls back gracefully if any
+ *  individual sub-query fails — the totals path is guaranteed to
+ *  complete so dashboards never go dark. */
 export async function gscPull(opts: {
   projectId: string;
   days?: number;          // default 7
@@ -255,9 +271,17 @@ export async function gscPull(opts: {
 }): Promise<{
   success: boolean; error?: string;
   totals?: { clicks: number; impressions: number; position: number; ctr: number };
+  fetched?: {
+    totals?:         boolean;
+    daily_trend?:    boolean;
+    top_queries?:    number;
+    top_pages?:      number;
+    top_countries?:  number;
+    top_devices?:    number;
+  };
 }> {
   if (!opts.projectId) return { success: false, error: "projectId required" };
-  const days = Math.min(Math.max(opts.days || 7, 1), 90);
+  const days = Math.min(Math.max(opts.days || 28, 1), 90);
   const source = opts.source || "manual";
   try {
     const { data: integ } = await db().from("project_integrations").select("*")
@@ -278,33 +302,80 @@ export async function gscPull(opts: {
     const startDate = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
     const endDate   = new Date().toISOString().slice(0, 10);
     const propPath  = encodeURIComponent(i.resource_id);
-    const url = `${SEARCHANAL_API}/${propPath}/searchAnalytics/query`;
-    const res = await fetch(url, {
-      method:  "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        startDate, endDate,
-        dimensions: [],       /* totals — no breakdown */
-        rowLimit: 1,
-      }),
-    });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      const errMsg = `GSC query: ${res.status} ${t.slice(0, 200)}`;
+    const url       = `${SEARCHANAL_API}/${propPath}/searchAnalytics/query`;
+
+    const fetched: any = {};
+
+    /* ── Helper: run one searchAnalytics query, return parsed rows ── */
+    const runQuery = async (queryBody: any): Promise<any[] | null> => {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ startDate, endDate, ...queryBody }),
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          console.error(`[pm-gsc] sub-query failed: ${res.status} ${t.slice(0, 200)}`);
+          return null;
+        }
+        const j = await res.json() as any;
+        return Array.isArray(j?.rows) ? j.rows : [];
+      } catch (e: any) {
+        console.error(`[pm-gsc] sub-query exception: ${e?.message || e}`);
+        return null;
+      }
+    };
+
+    /* ── 1. Totals (the historical query — must succeed for the pull
+              to be considered successful) ────────────────────────── */
+    const totalsRow = await runQuery({ dimensions: [], rowLimit: 1 });
+    if (totalsRow === null) {
+      const errMsg = `GSC totals query failed`;
       await db().from("project_integrations").update({
         last_pull_at: new Date().toISOString(),
         last_pull_status: "error", last_pull_error: errMsg,
       }).eq("project_id", opts.projectId).eq("provider", "gsc");
       return { success: false, error: errMsg };
     }
-    const j = await res.json() as any;
-    const row = (j?.rows || [])[0] || {};
+    const tRow = totalsRow[0] || {};
     const totals = {
-      clicks:      Number(row.clicks || 0),
-      impressions: Number(row.impressions || 0),
-      position:    Number(row.position || 0),
-      ctr:         Number(row.ctr || 0),
+      clicks:      Number(tRow.clicks || 0),
+      impressions: Number(tRow.impressions || 0),
+      position:    Number(tRow.position || 0),
+      ctr:         Number(tRow.ctr || 0),
     };
+    fetched.totals = true;
+
+    /* ── 2-5. Top N by various dimensions (parallel) ─────────────── */
+    const [topQueries, topPages, topCountries, topDevices, dailyTrend] = await Promise.all([
+      runQuery({ dimensions: ["query"],   rowLimit: 25 }),
+      runQuery({ dimensions: ["page"],    rowLimit: 25 }),
+      runQuery({ dimensions: ["country"], rowLimit: 15 }),
+      runQuery({ dimensions: ["device"],  rowLimit: 5  }),
+      runQuery({ dimensions: ["date"],    rowLimit: 1000 }),
+    ]);
+
+    /* ── Shape helpers ───────────────────────────────────────────── */
+    const shapeDim = (rows: any[] | null, keyField: string): any[] => {
+      if (!rows) return [];
+      return rows.map((r) => ({
+        [keyField]:  r.keys?.[0] || "(unknown)",
+        clicks:      Number(r.clicks || 0),
+        impressions: Number(r.impressions || 0),
+        ctr:         Number(((r.ctr || 0) * 100).toFixed(2)),
+        position:    Number((r.position || 0).toFixed(2)),
+      }));
+    };
+    const topQueriesShaped   = shapeDim(topQueries,   "query");
+    const topPagesShaped     = shapeDim(topPages,     "page");
+    const topCountriesShaped = shapeDim(topCountries, "country");
+    const topDevicesShaped   = shapeDim(topDevices,   "device");
+    fetched.top_queries   = topQueriesShaped.length;
+    fetched.top_pages     = topPagesShaped.length;
+    fetched.top_countries = topCountriesShaped.length;
+    fetched.top_devices   = topDevicesShaped.length;
+    fetched.daily_trend   = Array.isArray(dailyTrend) && dailyTrend.length > 0;
 
     /* write a metrics_snapshot row so the chart engine + reports pick this up */
     await db().from("metrics_snapshots").insert({
@@ -313,22 +384,74 @@ export async function gscPull(opts: {
       gsc_impressions:   totals.impressions,
       gsc_avg_position:  totals.position,
       source:            source,
-      extras:            { gsc_window_days: days, gsc_ctr: totals.ctr, gsc_property: i.resource_id },
+      extras: {
+        gsc_window_days: days,
+        gsc_ctr:         totals.ctr,
+        gsc_property:    i.resource_id,
+        top_queries:     topQueriesShaped.slice(0, 10),
+        top_pages:       topPagesShaped.slice(0, 10),
+      },
     });
 
-    /* ── Piece 1: mirror into the Data Room ──
-       Make the Data Room the single source of truth: every successful
-       pull updates project_knowledge.analytics with source='gsc_auto'
-       and data_date=today. PM never sees stale numbers in the brief. */
+    /* ── Piece 2: write daily trend to `metrics` table ───────────────
+       This is what the Phase 1H scope picker reads. One row per day
+       in the window, upserted by (project_id, recorded_at, source). */
+    if (dailyTrend && dailyTrend.length > 0) {
+      const dayRows = dailyTrend.map((r: any) => {
+        const date = r.keys?.[0];
+        if (!date) return null;
+        return {
+          project_id:       opts.projectId,
+          recorded_at:      new Date(`${date}T12:00:00.000Z`).toISOString(),
+          gsc_clicks:       Number(r.clicks || 0),
+          gsc_impressions:  Number(r.impressions || 0),
+          gsc_avg_position: Number(r.position || 0),
+          gsc_ctr:          Number(((r.ctr || 0) * 100).toFixed(4)),
+          source:           "gsc_daily",
+        };
+      }).filter(Boolean);
+
+      /* Upsert: same (project_id, recorded_at, source) row gets
+         overwritten on subsequent pulls. We do a delete-then-insert
+         for the window to avoid duplicate rows piling up. */
+      try {
+        await db().from("metrics")
+          .delete()
+          .eq("project_id", opts.projectId)
+          .eq("source",     "gsc_daily")
+          .gte("recorded_at", new Date(`${startDate}T00:00:00.000Z`).toISOString())
+          .lte("recorded_at", new Date(`${endDate}T23:59:59.999Z`).toISOString());
+        await db().from("metrics").insert(dayRows as any);
+      } catch (e: any) {
+        console.error("[pm-gsc] daily trend write failed:", e?.message || e);
+      }
+    }
+
+    /* ── Piece 3: mirror everything into the Data Room ────────────
+       Scalar totals + JSON-encoded top-N lists. Source='gsc_auto' so
+       the NEVER_OVERWRITE guard in ingest/H5 protects these against
+       AI extraction stomping on them. */
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const rows = [
+
+      /* Scalar fields */
+      const scalarRows = [
         { key: "gsc_total_clicks",      value: String(totals.clicks) },
         { key: "gsc_total_impressions", value: String(totals.impressions) },
         { key: "gsc_avg_position",      value: totals.position.toFixed(2) },
         { key: "gsc_ctr",               value: (totals.ctr * 100).toFixed(2) + "%" },
       ];
-      for (const r of rows) {
+
+      /* JSON-encoded top-N fields — stored as JSON strings so downstream
+         consumers (data-table directives, chart renderers) can parse them. */
+      const jsonRows: { key: string; value: string }[] = [];
+      if (topQueriesShaped.length   > 0) jsonRows.push({ key: "gsc_top_queries",   value: JSON.stringify(topQueriesShaped) });
+      if (topPagesShaped.length     > 0) jsonRows.push({ key: "gsc_top_pages",     value: JSON.stringify(topPagesShaped) });
+      if (topCountriesShaped.length > 0) jsonRows.push({ key: "gsc_top_countries", value: JSON.stringify(topCountriesShaped) });
+      if (topDevicesShaped.length   > 0) jsonRows.push({ key: "gsc_top_devices",   value: JSON.stringify(topDevicesShaped) });
+
+      const allRows = [...scalarRows, ...jsonRows];
+      for (const r of allRows) {
         await db().from("project_knowledge").upsert({
           project_id:  opts.projectId,
           category:    "analytics",
@@ -353,7 +476,7 @@ export async function gscPull(opts: {
       last_pull_status: "ok", last_pull_error: null,
     }).eq("project_id", opts.projectId).eq("provider", "gsc");
 
-    return { success: true, totals };
+    return { success: true, totals, fetched };
   } catch (e: any) {
     return { success: false, error: e?.message || "pull failed" };
   }

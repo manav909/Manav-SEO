@@ -265,9 +265,17 @@ export async function ga4Pull(opts: {
 }): Promise<{
   success: boolean; error?: string;
   totals?: { sessions: number; users: number; conversions: number; bounceRate: number; engagedSessions: number; avgSessionSec: number };
+  fetched?: {
+    totals?:               boolean;
+    daily_trend?:          boolean;
+    top_landing_pages?:    number;
+    top_countries?:        number;
+    top_devices?:          number;
+    top_traffic_sources?:  number;
+  };
 }> {
   if (!opts.projectId) return { success: false, error: "projectId required" };
-  const days = Math.min(Math.max(opts.days || 7, 1), 90);
+  const days = Math.min(Math.max(opts.days || 28, 1), 90);
   const source = opts.source || "manual";
   try {
     const { data: integ } = await db().from("project_integrations").select("*")
@@ -287,10 +295,39 @@ export async function ga4Pull(opts: {
 
     const startDate = `${days}daysAgo`;
     const endDate   = "yesterday";          /* GA4 has reporting latency — yesterday is the safe most-recent boundary */
-    const url = `${DATA_API}/${i.resource_id}:runReport`;
+    const url       = `${DATA_API}/${i.resource_id}:runReport`;
+    const fetched: any = {};
 
-    /* ── Build the request — ORGANIC FILTER is the key strategic detail ── */
-    const body = {
+    /* Reusable filter: organic traffic only */
+    const organicFilter = {
+      filter: {
+        fieldName: "sessionMedium",
+        stringFilter: { matchType: "EXACT", value: "organic", caseSensitive: false },
+      },
+    };
+
+    /* ── Helper: run one Data API query, return parsed rows ── */
+    const runReport = async (body: any): Promise<any | null> => {
+      try {
+        const res = await fetch(url, {
+          method:  "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body:    JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          console.error(`[pm-ga4] sub-query failed: ${res.status} ${t.slice(0, 200)}`);
+          return null;
+        }
+        return await res.json();
+      } catch (e: any) {
+        console.error(`[pm-ga4] sub-query exception: ${e?.message || e}`);
+        return null;
+      }
+    };
+
+    /* ── 1. Totals (must succeed) ────────────────────────────────── */
+    const totalsResp = await runReport({
       dateRanges: [{ startDate, endDate }],
       metrics: [
         { name: "sessions" },
@@ -300,40 +337,108 @@ export async function ga4Pull(opts: {
         { name: "bounceRate" },
         { name: "averageSessionDuration" },
       ],
-      dimensionFilter: {
-        filter: {
-          fieldName: "sessionMedium",
-          stringFilter: { matchType: "EXACT", value: "organic", caseSensitive: false },
-        },
-      },
-    };
-
-    const res = await fetch(url, {
-      method:  "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body:    JSON.stringify(body),
+      dimensionFilter: organicFilter,
     });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      const errMsg = `GA4 query: ${res.status} ${t.slice(0, 200)}`;
+    if (!totalsResp) {
+      const errMsg = `GA4 totals query failed`;
       await db().from("project_integrations").update({
         last_pull_at: new Date().toISOString(),
         last_pull_status: "error", last_pull_error: errMsg,
       }).eq("project_id", opts.projectId).eq("provider", "ga4");
       return { success: false, error: errMsg };
     }
-    const j = await res.json() as any;
-    const row = (j?.rows || [])[0];
-    const vals = (row?.metricValues || []).map((v: any) => Number(v?.value || 0));
-    /* metric order must match the request above */
+    const tRow = (totalsResp?.rows || [])[0];
+    const tVals = (tRow?.metricValues || []).map((v: any) => Number(v?.value || 0));
     const totals = {
-      sessions:        vals[0] || 0,
-      users:           vals[1] || 0,
-      engagedSessions: vals[2] || 0,
-      conversions:     vals[3] || 0,
-      bounceRate:      vals[4] || 0,    /* GA4 returns bounce rate as 0..1 */
-      avgSessionSec:   vals[5] || 0,
+      sessions:        tVals[0] || 0,
+      users:           tVals[1] || 0,
+      engagedSessions: tVals[2] || 0,
+      conversions:     tVals[3] || 0,
+      bounceRate:      tVals[4] || 0,    /* GA4 returns bounce rate as 0..1 */
+      avgSessionSec:   tVals[5] || 0,
     };
+    fetched.totals = true;
+
+    /* ── 2-6. Top N by dimensions + daily trend (parallel) ───────── */
+    const [topPages, topCountries, topDevices, topSources, dailyTrend] = await Promise.all([
+      runReport({
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: "landingPagePlusQueryString" }],
+        metrics:    [{ name: "sessions" }, { name: "conversions" }, { name: "bounceRate" }],
+        dimensionFilter: organicFilter,
+        orderBys:   [{ desc: true, metric: { metricName: "sessions" } }],
+        limit:      25,
+      }),
+      runReport({
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: "country" }],
+        metrics:    [{ name: "sessions" }, { name: "totalUsers" }],
+        dimensionFilter: organicFilter,
+        orderBys:   [{ desc: true, metric: { metricName: "sessions" } }],
+        limit:      15,
+      }),
+      runReport({
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: "deviceCategory" }],
+        metrics:    [{ name: "sessions" }, { name: "totalUsers" }, { name: "conversions" }],
+        dimensionFilter: organicFilter,
+        orderBys:   [{ desc: true, metric: { metricName: "sessions" } }],
+        limit:      5,
+      }),
+      runReport({
+        /* No organic filter — we want the full traffic source breakdown */
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: "sessionDefaultChannelGroup" }],
+        metrics:    [{ name: "sessions" }, { name: "totalUsers" }, { name: "conversions" }],
+        orderBys:   [{ desc: true, metric: { metricName: "sessions" } }],
+        limit:      10,
+      }),
+      runReport({
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: "date" }],
+        metrics:    [
+          { name: "sessions" },
+          { name: "totalUsers" },
+          { name: "engagedSessions" },
+          { name: "conversions" },
+          { name: "bounceRate" },
+          { name: "averageSessionDuration" },
+        ],
+        dimensionFilter: organicFilter,
+        orderBys:   [{ dimension: { dimensionName: "date" } }],
+        limit:      1000,
+      }),
+    ]);
+
+    /* ── Shape helpers ───────────────────────────────────────────── */
+    const shapeDim = (resp: any, dimKey: string, metricNames: string[]): any[] => {
+      if (!resp?.rows) return [];
+      return resp.rows.map((r: any) => {
+        const out: any = { [dimKey]: r.dimensionValues?.[0]?.value || "(unknown)" };
+        (r.metricValues || []).forEach((v: any, idx: number) => {
+          const name = metricNames[idx] || `m${idx}`;
+          /* Convert bounce rate (0..1) to % for readability */
+          if (name === "bounceRate") {
+            out[name] = Number(((Number(v?.value || 0)) * 100).toFixed(2));
+          } else if (name === "averageSessionDuration") {
+            out[name] = Number((Number(v?.value || 0)).toFixed(1));
+          } else {
+            out[name] = Number(v?.value || 0);
+          }
+        });
+        return out;
+      });
+    };
+
+    const topPagesShaped     = shapeDim(topPages,     "page",    ["sessions","conversions","bounceRate"]);
+    const topCountriesShaped = shapeDim(topCountries, "country", ["sessions","users"]);
+    const topDevicesShaped   = shapeDim(topDevices,   "device",  ["sessions","users","conversions"]);
+    const topSourcesShaped   = shapeDim(topSources,   "channel", ["sessions","users","conversions"]);
+    fetched.top_landing_pages   = topPagesShaped.length;
+    fetched.top_countries       = topCountriesShaped.length;
+    fetched.top_devices         = topDevicesShaped.length;
+    fetched.top_traffic_sources = topSourcesShaped.length;
+    fetched.daily_trend         = !!(dailyTrend?.rows?.length);
 
     /* write a metrics_snapshot row */
     await db().from("metrics_snapshots").insert({
@@ -343,24 +448,82 @@ export async function ga4Pull(opts: {
       bounce_rate:      totals.bounceRate * 100,    /* normalise to %, matches GSC mirror convention */
       source:           source,
       extras: {
-        ga4_window_days:     days,
-        ga4_users:           totals.users,
+        ga4_window_days:      days,
+        ga4_users:            totals.users,
         ga4_engaged_sessions: totals.engagedSessions,
-        ga4_avg_session_sec: totals.avgSessionSec,
-        ga4_property:        i.resource_id,
-        ga4_filter:          "organic",
+        ga4_avg_session_sec:  totals.avgSessionSec,
+        ga4_property:         i.resource_id,
+        ga4_filter:           "organic",
+        top_landing_pages:    topPagesShaped.slice(0, 10),
       },
     });
 
-    /* mirror into the Data Room — same approach as GSC */
+    /* ── Piece 2: write daily trend to `metrics` table ───────────────
+       This is what the Phase 1H scope picker reads to chart organic
+       sessions / conversions over time. */
+    if (dailyTrend?.rows?.length > 0) {
+      const dayRows = dailyTrend.rows.map((r: any) => {
+        const date = r.dimensionValues?.[0]?.value;
+        if (!date || date.length !== 8) return null;
+        /* GA4 returns date as YYYYMMDD — reformat to ISO */
+        const iso = `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}T12:00:00.000Z`;
+        const v = (r.metricValues || []).map((x: any) => Number(x?.value || 0));
+        return {
+          project_id:           opts.projectId,
+          recorded_at:          iso,
+          organic_sessions:     v[0] || 0,
+          total_users:          v[1] || 0,
+          engaged_sessions:     v[2] || 0,
+          conversions:          v[3] || 0,
+          bounce_rate:          Number(((v[4] || 0) * 100).toFixed(4)),
+          avg_session_duration: Number((v[5] || 0).toFixed(2)),
+          source:               "ga4_daily",
+        };
+      }).filter(Boolean);
+
+      try {
+        /* Delete-then-insert in the window — keeps the trend free of dupes */
+        const startIso = new Date(Date.now() - days * 86_400_000).toISOString();
+        const endIso   = new Date().toISOString();
+        await db().from("metrics")
+          .delete()
+          .eq("project_id", opts.projectId)
+          .eq("source",     "ga4_daily")
+          .gte("recorded_at", startIso)
+          .lte("recorded_at", endIso);
+        await db().from("metrics").insert(dayRows as any);
+      } catch (e: any) {
+        console.error("[pm-ga4] daily trend write failed:", e?.message || e);
+      }
+    }
+
+    /* ── Piece 3: mirror everything into the Data Room ─────────────
+       Scalar totals (including the previously-DROPPED avg_session_duration!)
+       + JSON-encoded top-N lists. Source='ga4_auto' protected by guards. */
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const rows = [
+
+      const scalarRows = [
         { key: "organic_sessions_monthly", value: String(totals.sessions) },
         { key: "conversions_monthly",      value: String(totals.conversions) },
         { key: "bounce_rate",              value: (totals.bounceRate * 100).toFixed(2) + "%" },
+        /* PHASE 1I FIX — was fetched but never written before! */
+        { key: "avg_session_duration",     value: totals.avgSessionSec.toFixed(1) + "s" },
+        { key: "ga4_users_monthly",        value: String(totals.users) },
+        { key: "ga4_engaged_sessions_monthly", value: String(totals.engagedSessions) },
+        { key: "ga4_engagement_rate",      value: totals.sessions > 0
+            ? ((totals.engagedSessions / totals.sessions) * 100).toFixed(2) + "%"
+            : "0%" },
       ];
-      for (const r of rows) {
+
+      const jsonRows: { key: string; value: string }[] = [];
+      if (topPagesShaped.length     > 0) jsonRows.push({ key: "top_landing_pages",     value: JSON.stringify(topPagesShaped) });
+      if (topCountriesShaped.length > 0) jsonRows.push({ key: "ga4_top_countries",     value: JSON.stringify(topCountriesShaped) });
+      if (topDevicesShaped.length   > 0) jsonRows.push({ key: "ga4_top_devices",       value: JSON.stringify(topDevicesShaped) });
+      if (topSourcesShaped.length   > 0) jsonRows.push({ key: "ga4_top_traffic_sources", value: JSON.stringify(topSourcesShaped) });
+
+      const allRows = [...scalarRows, ...jsonRows];
+      for (const r of allRows) {
         await db().from("project_knowledge").upsert({
           project_id:  opts.projectId,
           category:    "analytics",
@@ -370,6 +533,32 @@ export async function ga4Pull(opts: {
           source_name: i.resource_id,
           data_date:   today,
           notes:       `Auto-synced from Google Analytics 4 (organic traffic only, last ${days}-day window).`,
+          updated_at:  new Date().toISOString(),
+        }, { onConflict: "project_id,category,field_key" });
+      }
+
+      /* ── Auto-set baseline date if not present ─────────────────
+         The scope picker's "Since baseline" preset needs a date here.
+         On the first successful pull, set it to (today - days) — that's
+         the start of the earliest window we have data for. PM can
+         override manually anytime. */
+      const { data: existingBaseline } = await db().from("project_knowledge")
+        .select("field_value,source")
+        .eq("project_id", opts.projectId)
+        .eq("category",   "analytics")
+        .eq("field_key",  "organic_sessions_baseline_date")
+        .maybeSingle();
+      if (!existingBaseline?.field_value) {
+        const baselineDate = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+        await db().from("project_knowledge").upsert({
+          project_id:  opts.projectId,
+          category:    "analytics",
+          field_key:   "organic_sessions_baseline_date",
+          field_value: baselineDate,
+          source:      "ga4_auto",
+          source_name: i.resource_id,
+          data_date:   today,
+          notes:       `Auto-set on first GA4 pull — start of the initial ${days}-day window. Override manually if your project's measurement baseline is different.`,
           updated_at:  new Date().toISOString(),
         }, { onConflict: "project_id,category,field_key" });
       }
@@ -383,7 +572,7 @@ export async function ga4Pull(opts: {
       last_pull_status: "ok", last_pull_error: null,
     }).eq("project_id", opts.projectId).eq("provider", "ga4");
 
-    return { success: true, totals };
+    return { success: true, totals, fetched };
   } catch (e: any) {
     return { success: false, error: e?.message || "pull failed" };
   }

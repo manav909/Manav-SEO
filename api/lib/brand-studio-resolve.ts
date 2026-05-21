@@ -64,9 +64,14 @@ interface Reference {
 }
 
 const METRICS_COLUMNS = new Set([
+  /* Score-card metrics (audit-driven) */
   "llm_visibility_score","algorithm_health_score","eeat_score",
   "content_authority_score","overall_growth_score",
   "pages_indexed","pages_submitted","brand_mentions",
+  /* Phase 1I — raw analytics columns (GSC + GA4 daily trend) */
+  "organic_sessions","gsc_clicks","gsc_impressions","gsc_avg_position","gsc_ctr",
+  "conversions","bounce_rate","avg_session_duration",
+  "engaged_sessions","total_users",
 ]);
 
 /* ─── Time-scope resolution ──────────────────────────────────── */
@@ -177,7 +182,18 @@ async function resolveOne(
       .eq("field_key",  fieldKey)
       .maybeSingle();
     if (error || !data) return null;
-    return (data as any).field_value;
+    const raw = (data as any).field_value;
+    /* Phase 1I — auto-parse JSON-encoded fields like gsc_top_queries,
+       top_landing_pages, etc. so chart/data-table directives can
+       consume them as arrays without each renderer having to parse. */
+    if (typeof raw === "string" && raw.length > 1) {
+      const trimmed = raw.trim();
+      if ((trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+          (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+        try { return JSON.parse(trimmed); } catch { /* fall through to raw */ }
+      }
+    }
+    return raw;
   }
 
   /* brand.<field> ─────────────────────────────────────────────── */
@@ -196,7 +212,8 @@ async function resolveOne(
     if (!METRICS_COLUMNS.has(col)) return null;
     let q: any = db().from("metrics")
       .select(`recorded_at,${col}`)
-      .eq("project_id", projectId);
+      .eq("project_id", projectId)
+      .not(col, "is", null);              /* skip rows that don't carry this metric */
     if (scopeRange) {
       /* Global scope wins over per-directive range */
       q = q.gte("recorded_at", scopeRange.from).lte("recorded_at", scopeRange.to);
