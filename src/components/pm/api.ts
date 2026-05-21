@@ -1993,3 +1993,61 @@ export async function seasonActivity(opts: { projectId: string; limit?: number }
   if (!r?.success) return { error: r?.error };
   return { events: r.events, count: r.count };
 }
+
+/* ───────── Phase 8a — Wishes ───────── */
+
+export interface SeasonWish {
+  id:               string;
+  project_id:       string | null;
+  wish_text:        string;
+  category:         "data_source" | "feature" | "integration" | "permission" | "ui_action" | "knowledge" | "other";
+  triggered_by:     string | null;
+  user_input:       string | null;
+  context_summary:  string | null;
+  status:           "open" | "planned" | "building" | "shipped" | "declined" | "duplicate" | "stale";
+  priority:         "high" | "medium" | "low" | null;
+  operator_note:    string | null;
+  decided_at:       string | null;
+  emitted_count:    number;
+  similar_count:    number;
+  last_emitted_at:  string;
+  created_at:       string;
+  updated_at:       string;
+}
+
+export interface WishStats {
+  total:              number;
+  by_status:          Record<string, number>;
+  by_priority:        Record<string, number>;
+  by_category:        Record<string, number>;
+  open_count:         number;
+  high_priority_open: number;
+}
+
+export async function seasonListWishes(opts: {
+  projectId?: string | "platform";
+  status?: SeasonWish["status"];
+  category?: SeasonWish["category"];
+  limit?: number;
+}): Promise<{ wishes?: SeasonWish[]; count?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_list_wishes', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { wishes: r.wishes, count: r.count };
+}
+
+export async function seasonTriageWish(opts: {
+  wishId: string;
+  status: SeasonWish["status"];
+  priority?: "high" | "medium" | "low";
+  operatorNote?: string;
+}): Promise<{ wish?: any; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_triage_wish', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { wish: r.wish };
+}
+
+export async function seasonWishStats(opts: { projectId?: string | "platform" } = {}): Promise<{ stats?: WishStats; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_wish_stats', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { stats: r.stats };
+}

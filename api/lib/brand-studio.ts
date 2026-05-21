@@ -706,6 +706,24 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeasonActivity(body);
     }
 
+    /* Phase 8a — wishes */
+    case "bs_season_emit_wish": {
+      const { bsSeasonEmitWish } = await import("./season-wishes.js");
+      return bsSeasonEmitWish(body);
+    }
+    case "bs_season_list_wishes": {
+      const { bsSeasonListWishes } = await import("./season-wishes.js");
+      return bsSeasonListWishes(body);
+    }
+    case "bs_season_triage_wish": {
+      const { bsSeasonTriageWish } = await import("./season-wishes.js");
+      return bsSeasonTriageWish(body);
+    }
+    case "bs_season_wish_stats": {
+      const { bsSeasonWishStats } = await import("./season-wishes.js");
+      return bsSeasonWishStats(body);
+    }
+
     /* Phase 3 — Analytics Provenance & Diagnostics */
     case "bs_get_analytics_provenance": {
       const { bsGetAnalyticsProvenance } = await import("./pm-analytics-provenance.js");
