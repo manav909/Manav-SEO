@@ -633,32 +633,143 @@ const stepContentBrief = {
   label: 'Generate the full content brief',
   description: 'H1 / H2 outline, target word count, internal links, schema',
   artifact_kind: 'brief',
+  /* If brief generation fails, the pipeline keeps going — client_update and
+     internal_handover can produce something useful even without a brief. */
+  continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
-    try {
-      const { generateContentBrief } = await import("./content-engine.js");
-      const result: any = await generateContentBrief(ctx.projectId, keyword, 'high');
-      if (!result || result.success === false) {
-        return { ok: false, error: result?.error || 'brief generation returned nothing', llm_calls: 1 };
-      }
-      return {
-        ok: true,
-        output: result.brief || result,
-        artifact: {
-          kind: 'brief',
-          title: `Content brief: "${keyword}"`,
-          body: typeof result.brief === 'string'
-            ? result.brief
-            : JSON.stringify(result.brief || result, null, 2),
-        },
-        honest_note: 'Brief produced by existing content-engine; ready for writer (or the next pipeline step in Phase 13).',
-        llm_calls: 1,
-      };
-    } catch (e: any) {
-      return { ok: false, error: e?.message || 'content-engine import failed', llm_calls: 0 };
+    const research    = ctx.prior.keyword_research || {};
+    const strategy    = ctx.prior.strategy_plan    || {};
+    const competitors = ctx.prior.competitor_snapshot || {};
+    const gsc         = ctx.prior.gsc_context      || {};
+
+    /* Self-contained inline LLM call (NOT going through content-engine.ts,
+       which has had reliability issues with bare module imports + JSON parsing). */
+    const sys = `You are S.E.A.S.O.N. writing a comprehensive SEO content brief. The brief must be specific, actionable, and ready to hand to a writer. Reply with ONLY valid JSON:
+{
+  "title": "the actual H1 we recommend (60-70 chars)",
+  "meta_description": "the meta description (140-160 chars)",
+  "primary_keyword": "the target keyword",
+  "secondary_keywords": ["3-7 supporting keywords/phrases"],
+  "search_intent": "informational | commercial | transactional | navigational",
+  "target_word_count": 2500,
+  "outline": [
+    {
+      "h2": "section heading",
+      "intent": "what this section answers/covers",
+      "key_points": ["specific points to make in this section"],
+      "word_target": 350
     }
+  ],
+  "unique_angle": "what makes this different from competitors — the differentiated take",
+  "must_include_facts": ["specific facts, stats, or claims that should appear"],
+  "internal_link_targets": ["pages on the project's site to link to (suggest 2-4 anchor concepts)"],
+  "schema_recommendation": "the Schema.org type to use (Article | FAQ | HowTo | etc.) + why",
+  "writer_brief": "200-word note to the writer explaining the strategic context"
+}
+
+Quality bar:
+- Outline must have 6-12 H2 sections
+- Key points must be specific (not generic SEO advice)
+- The unique_angle must come from the project context, not boilerplate
+- If competitor data shows a gap, build the brief AROUND filling that gap`;
+
+    const usr = `Generate the content brief for ranking for "${keyword}".
+
+KEYWORD RESEARCH:
+${JSON.stringify(research, null, 2)}
+
+CURRENT GSC POSITION:
+${JSON.stringify(gsc, null, 2)}
+
+COMPETITOR SNAPSHOT (what currently ranks):
+${JSON.stringify(competitors, null, 2)}
+
+STRATEGY CONTEXT:
+${JSON.stringify(strategy, null, 2)}
+
+Now write a brief that beats the competitors and aligns with the strategy.`;
+
+    /* First attempt */
+    let r = await callLlmJson({ systemPrompt: sys, userMessage: usr, maxTokens: 4000 });
+    let callsMade = 1;
+
+    /* Retry once with stricter prompt if first attempt failed */
+    if (!r.ok) {
+      const strictSys = sys + `
+
+CRITICAL: Your previous response was not valid JSON. Reply with ONLY the JSON object — no markdown fences, no prose before/after. Outline array must have 6-12 items.`;
+      r = await callLlmJson({ systemPrompt: strictSys, userMessage: usr, maxTokens: 4500 });
+      callsMade = 2;
+    }
+
+    if (!r.ok || !r.parsed) {
+      return { ok: false, error: r.error || 'brief generation failed after 2 attempts', llm_calls: callsMade };
+    }
+
+    /* Validate minimum structure */
+    const brief: any = r.parsed;
+    const hasMin = brief.title && Array.isArray(brief.outline) && brief.outline.length >= 3;
+    if (!hasMin) {
+      return {
+        ok: false,
+        error: `Brief response missing required fields. Got keys: ${Object.keys(brief).join(', ')}.`,
+        llm_calls: callsMade,
+      };
+    }
+
+    return {
+      ok: true,
+      output: brief,
+      artifact: {
+        kind: 'brief',
+        title: `Content brief: "${keyword}"`,
+        body: renderBriefArtifact(keyword, brief),
+      },
+      honest_note: callsMade > 1
+        ? `Brief produced (second attempt — first returned malformed JSON). ${brief.outline?.length || 0} H2 sections, target ${brief.target_word_count || 'unspecified'} words.`
+        : `Brief produced. ${brief.outline?.length || 0} H2 sections, target ${brief.target_word_count || 'unspecified'} words.`,
+      llm_calls: callsMade,
+    };
   },
 };
+
+function renderBriefArtifact(keyword: string, brief: any): string {
+  const outline = (brief.outline || []).map((s: any, i: number) => {
+    const points = (s.key_points || []).map((p: string) => `  - ${p}`).join('\n');
+    return `### ${i + 1}. ${s.h2 || 'untitled section'}${s.word_target ? ` _(${s.word_target}w)_` : ''}
+${s.intent ? `> ${s.intent}` : ''}
+${points || '  - (no key points specified)'}`;
+  }).join('\n\n');
+
+  return `# Content Brief: "${keyword}"
+
+**Title (H1):** ${brief.title || '—'}
+**Meta description:** ${brief.meta_description || '—'}
+**Target word count:** ${brief.target_word_count || '—'}
+**Search intent:** ${brief.search_intent || '—'}
+**Schema type:** ${brief.schema_recommendation || '—'}
+
+**Primary keyword:** ${brief.primary_keyword || keyword}
+**Secondary keywords:** ${(brief.secondary_keywords || []).join(', ') || '—'}
+
+## Unique angle
+${brief.unique_angle || '—'}
+
+## Outline
+
+${outline}
+
+## Must-include facts
+${(brief.must_include_facts || []).map((f: string) => `- ${f}`).join('\n') || '(none specified)'}
+
+## Internal link targets
+${(brief.internal_link_targets || []).map((l: string) => `- ${l}`).join('\n') || '(none specified)'}
+
+## Writer brief
+${brief.writer_brief || '—'}
+`;
+}
 
 /* ─── STEP 6: Client-facing progress update (Manav's voice) ──── */
 
@@ -667,6 +778,9 @@ const stepClientUpdate = {
   label: 'Draft the client-facing progress update',
   description: 'In Manav\'s voice, no AI/pipeline mention',
   artifact_kind: 'client_update',
+  /* If something upstream failed, the client update can still be drafted
+     describing what WAS completed honestly. Don't block on upstream failures. */
+  continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
     const strategy = ctx.prior.strategy_plan || {};
@@ -720,6 +834,9 @@ const stepInternalHandover = {
   label: 'Internal handover document',
   description: 'For the project manager — accurate provenance, full context',
   artifact_kind: 'internal_doc',
+  /* The internal handover MUST run even when other steps failed — it documents
+     what happened, including the failures. Template-only (no LLM), so always cheap. */
+  continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
     const research = ctx.prior.keyword_research || {};
@@ -888,7 +1005,7 @@ const stepForecast = {
           body,
         },
         honest_note: forecasts[0]?.honest_caveats
-          ? `Forecasts committed with caveats: ${forecasts[0].honest_caveats}. Monitoring will fire at 7d, 14d, 30d intervals.`
+          ? `Forecasts committed with caveats: ${String(forecasts[0].honest_caveats).replace(/\.$/, '')}. Monitoring will fire at 7d, 14d, 30d intervals.`
           : `Forecasts committed. Monitoring will fire at 7d, 14d, 30d intervals.`,
       };
     } catch (e: any) {
