@@ -4,7 +4,7 @@ export async function generateContentCalendar(projectId:string,weeksAhead:number
   if(!p)return null;
   const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
     headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
+    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,
       messages:[{role:"user",content:`Create a ${weeksAhead}-week content calendar for ${p.name} (${p.industry||"general"}, ${p.market||"global"}). Goals: ${p.goals||"improve visibility"}. Return JSON array (${weeksAhead*2} items): [{"title":"...","target_keyword":"...","content_type":"article|guide|faq","scheduled_for":"YYYY-MM-DD","seo_priority":80,"llm_priority":true}]. Start from today. Return JSON only.`}]})});
   const aj=await ai.json() as any;
   let calendar:any[]=[];

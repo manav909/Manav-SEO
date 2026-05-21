@@ -133,14 +133,31 @@ async function handleDiagnose(projectId: string): Promise<CommandResponse> {
     db().from("project_integrations").select("provider,last_pull_at,last_pull_status").eq("project_id", projectId),
     db().from("project_knowledge").select("updated_at").eq("project_id", projectId).eq("category","analytics").eq("field_key","analytics_intelligence").maybeSingle(),
   ]);
-  const project = projectRes.data as any;
+  let project = projectRes.data as any;
+  let projectSource = "projects";
+
+  /* If projects table doesn't have it, try clients table */
+  if (!project) {
+    try {
+      const cr = await db().from("clients").select("id,client_name,client_url,status,company_name,brand_name").eq("id", projectId).maybeSingle();
+      if (cr.data) {
+        const c = cr.data as any;
+        project = {
+          project_name: c.client_name || c.company_name || c.brand_name || "Unnamed",
+          client_url:   c.client_url || null,
+          status:       c.status || "active",
+        };
+        projectSource = "clients";
+      }
+    } catch { /* ignore */ }
+  }
   const integrations = (integRes.data || []) as any[];
   const gsc = integrations.find(i => i.provider === "gsc");
   const ga4 = integrations.find(i => i.provider === "ga4");
 
   const projectLine = project
-    ? `Project: ${project.project_name}${project.client_url ? ` (${project.client_url})` : ''} · status ${project.status || 'unknown'}`
-    : `Project: NOT FOUND in database — that's why nothing else can work`;
+    ? `Project: ${project.project_name}${project.client_url ? ` (${project.client_url})` : ''} · status ${project.status || 'unknown'} · found in ${projectSource} table`
+    : `Project: not in projects OR clients table — that's why briefings fail. The ID is still valid (other tables have records under it) but the parent row is missing.`;
   chunks.push({ kind: "plain", content: `1. ${projectLine}` });
 
   const gscLine = gsc?.last_pull_at
@@ -190,7 +207,7 @@ async function handleDiagnose(projectId: string): Promise<CommandResponse> {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 20,
           messages: [{ role: "user", content: "Reply with exactly: PING_OK" }],
         }),
@@ -200,7 +217,7 @@ async function handleDiagnose(projectId: string): Promise<CommandResponse> {
         const text = (body?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
         if (text.includes("PING_OK")) {
           llmReachable = true;
-          llmLine = `LLM brain: REACHABLE and responsive · model claude-sonnet-4-20250514 · ready to handle natural-language queries`;
+          llmLine = `LLM brain: REACHABLE and responsive · model claude-sonnet-4-6 · ready to handle natural-language queries`;
         } else {
           llmLine = `LLM brain: REACHED but returned unexpected output (${text.slice(0, 60)}). Strange but not blocking.`;
           llmReachable = true;

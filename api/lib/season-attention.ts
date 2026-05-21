@@ -70,7 +70,38 @@ export async function bsSeasonBriefing(body: any): Promise<any> {
     const intelRow      = intelRes.data as any;
     const recentCards   = (recentCardsRes.data || []) as any[];
 
-    if (!project) return { success: false, error: "Project not found" };
+    /* Project-row resolution.
+       The `projects` table may not have a row for this ID even when
+       strategies/goals/cards do reference it — the user's deployment
+       organizes work under `clients`, not `projects`. Fall back to
+       clients table, then to a synthesized stub. As long as ONE table
+       has work tied to this ID, we proceed. */
+    let projectRow: any = project;
+    if (!projectRow) {
+      try {
+        const cr = await db().from("clients").select("id,client_name,client_url,status,company_name,brand_name").eq("id", projectId).maybeSingle();
+        if (cr.data) {
+          const c = cr.data as any;
+          projectRow = {
+            id: c.id,
+            project_name: c.client_name || c.company_name || c.brand_name || "Unnamed",
+            status: c.status || "active",
+            _source: "clients",
+          };
+        }
+      } catch { /* ignore — fall through */ }
+    }
+    if (!projectRow) {
+      /* Last resort: if other tables have work tied to this ID, proceed
+         with a minimal stub so the user still gets value. */
+      const haveWork = strategies.length > 0 || goals.length > 0 || recentCards.length > 0 || blockers.length > 0;
+      if (haveWork) {
+        projectRow = { id: projectId, project_name: "Unnamed project", status: "active", _source: "synthesized" };
+      } else {
+        return { success: false, error: "Project not found" };
+      }
+    }
+    const projectName = projectRow.project_name || "your project";
 
     /* Build briefing */
     const attention: BriefingItem[] = [];
@@ -221,7 +252,7 @@ export async function bsSeasonBriefing(body: any): Promise<any> {
     const briefing: Briefing = {
       generated_at: new Date().toISOString(),
       project_id:   projectId,
-      project_name: project.project_name,
+      project_name: projectName,
       greeting_phrase: greetingPhrase,
       status_summary: statusSummary,
       attention:    attention.slice(0, 8),

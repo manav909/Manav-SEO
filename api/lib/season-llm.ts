@@ -24,7 +24,7 @@ import { db } from "./db.js";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const DAILY_CAP = Number(process.env.SEASON_LLM_DAILY_CAP || 50);
-const MODEL     = "claude-sonnet-4-20250514";
+const MODEL     = "claude-sonnet-4-6";
 const MAX_TOK   = 3000;
 
 /* ─── Public types ───────────────────────────────────────────── */
@@ -293,7 +293,21 @@ async function gatherContext(projectId: string): Promise<ContextBundle> {
     db().from("project_integrations").select("provider,last_pull_at").eq("project_id", projectId),
   ]);
 
-  const project = projectRes.data as any;
+  const project_raw = projectRes.data as any;
+  let project = project_raw;
+  if (!project) {
+    try {
+      const cr = await db().from("clients").select("client_name,client_url,status,company_name,brand_name").eq("id", projectId).maybeSingle();
+      if (cr.data) {
+        const c = cr.data as any;
+        project = {
+          project_name: c.client_name || c.company_name || c.brand_name || "Unnamed",
+          client_url:   c.client_url || null,
+          status:       c.status || "active",
+        };
+      }
+    } catch { /* ignore */ }
+  }
   const goals = (goalsRes.data || []) as any[];
   const strategies = (strategiesRes.data || []) as any[];
   const cards = (cardsRes.data || []) as any[];

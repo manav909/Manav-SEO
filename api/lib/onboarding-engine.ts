@@ -17,7 +17,7 @@ export async function startOnboarding(projectId:string){
       }catch{}
       const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
         headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,
           messages:[{role:"user",content:`Create a 12-week SEO strategy for ${url} in ${project.industry||"general"} market. Goals: ${project.goals||"improve organic visibility"}. CMS: ${discovery.cms}. Give practical week-by-week plan with top 5 immediate actions.`}]})});
       const aj=await ai.json() as any;
       discovery.initial_strategy=aj?.content?.[0]?.text||"";
