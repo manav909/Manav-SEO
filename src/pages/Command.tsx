@@ -237,9 +237,9 @@ function CommandInner() {
     else                                 setMood('calm');
   }, [briefing, setMood]);
 
-  const handleSubmit = async (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent, override?: string) => {
     e?.preventDefault();
-    const text = input.trim();
+    const text = (override ?? input).trim();
     if (!text || submitting) return;
     if (!selectedProjectId) {
       setCommandError("Pick a project first — see the suggestions below.");
@@ -277,7 +277,11 @@ function CommandInner() {
 
   const handleQuickAction = (q: string) => {
     setInput(q);
-    setTimeout(() => handleSubmit(), 50);
+    /* Pass q directly — don't rely on setInput having propagated to the
+       handleSubmit closure. Previously this set input then called
+       handleSubmit, which closed over the stale empty input value and
+       silently bailed. */
+    handleSubmit(undefined, q);
   };
 
   const showProjectPicker =
