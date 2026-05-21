@@ -2094,3 +2094,96 @@ export async function seasonActionAddKanbanNote(opts: {
   if (!r?.success) return { error: r?.error };
   return { changed: r.changed, previous: r.previous, message: r.message };
 }
+
+/* ───────── Phase 12 — Pipelines ───────── */
+
+export type PipelineType =
+  | 'rank_for_keyword'
+  | 'content_production'
+  | 'audit_remediation'
+  | 'monthly_client_pack'
+  | 'competitor_deep_dive'
+  | 'algorithm_response';
+
+export interface PipelineRunSummary {
+  id:                   string;
+  pipeline_type:        PipelineType;
+  input_text:           string;
+  goal_summary?:        string | null;
+  status:               string;
+  step_count:           number;
+  steps_completed:      number;
+  steps_failed:         number;
+  llm_calls_used:       number;
+  estimated_cost_usd:   number;
+  started_at:           string;
+  finished_at?:         string | null;
+}
+
+export interface PipelineRunDetail extends PipelineRunSummary {
+  scope?:                any;
+  final_artifacts?:      Array<{ kind: string; title: string; body: string; step_id: string }>;
+  honest_summary?:       string | null;
+  client_facing_summary?: string | null;
+}
+
+export interface PipelineStepDetail {
+  id:                   string;
+  run_id:               string;
+  step_index:           number;
+  step_id:              string;
+  step_label:           string;
+  status:               string;
+  output?:              any;
+  output_artifact_kind?: string | null;
+  honest_note?:         string | null;
+  llm_calls:            number;
+  web_searches:         number;
+  duration_ms?:         number | null;
+  error_message?:       string | null;
+  feedback?:            string | null;
+  feedback_status?:     string | null;
+  started_at?:          string | null;
+  finished_at?:         string | null;
+}
+
+export async function seasonPipelineRun(opts: {
+  projectId:    string;
+  pipelineType: PipelineType;
+  inputText:    string;
+  scope:        Record<string, any>;
+  awareness?:   any;
+}): Promise<{ run?: any; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_run', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { run: r.run };
+}
+
+export async function seasonPipelineList(opts: {
+  projectId:    string;
+  limit?:       number;
+  pipelineType?: PipelineType;
+  status?:      string;
+}): Promise<{ runs?: PipelineRunSummary[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_list', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { runs: r.runs };
+}
+
+export async function seasonPipelineGet(opts: {
+  runId: string;
+}): Promise<{ run?: PipelineRunDetail; steps?: PipelineStepDetail[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_get', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { run: r.run, steps: r.steps };
+}
+
+export async function seasonPipelineFeedback(opts: {
+  stepId:           string;
+  feedback:         string;
+  feedback_status?: 'approved' | 'needs_revision' | 'rejected';
+}): Promise<{ step?: any; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_feedback', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { step: r.step };
+}

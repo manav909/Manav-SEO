@@ -738,6 +738,24 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeasonActionAddKanbanNote(body);
     }
 
+    /* Phase 12 — pipeline runs */
+    case "bs_season_pipeline_run": {
+      const { bsSeasonPipelineRun } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineRun(body);
+    }
+    case "bs_season_pipeline_list": {
+      const { bsSeasonPipelineList } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineList(body);
+    }
+    case "bs_season_pipeline_get": {
+      const { bsSeasonPipelineGet } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineGet(body);
+    }
+    case "bs_season_pipeline_feedback": {
+      const { bsSeasonPipelineFeedback } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineFeedback(body);
+    }
+
     /* Phase 3 — Analytics Provenance & Diagnostics */
     case "bs_get_analytics_provenance": {
       const { bsGetAnalyticsProvenance } = await import("./pm-analytics-provenance.js");

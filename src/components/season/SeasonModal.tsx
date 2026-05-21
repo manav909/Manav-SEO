@@ -181,6 +181,52 @@ export default function SeasonModal() {
     setError(null);
     setMood('thinking');
 
+    /* Phase 12 — pipeline intent: "rank me for X", "get me ranking for Y",
+       "rank for 'foo'". Highest priority because it kicks off a multi-step
+       chain that takes 30-90s and produces multiple artifacts. */
+    const rankMatch = q.match(/(?:rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keyword)[\s:]+["']?([^"'?.!]+)["']?/i);
+    if (rankMatch) {
+      const keyword = rankMatch[1].trim().replace(/\s+/g, ' ').slice(0, 120);
+      if (keyword.length >= 3) {
+        try {
+          const { seasonPipelineRun } = await import('@/components/pm/api');
+          const r = await seasonPipelineRun({
+            projectId: selectedProjectId,
+            pipelineType: 'rank_for_keyword',
+            inputText: q,
+            scope: { keyword, goal: `rank for "${keyword}"` },
+            awareness: awareness || undefined,
+          });
+          if (r.error) {
+            setError(`Pipeline failed: ${r.error}`);
+            setMood('alert');
+          } else if (r.run) {
+            /* Synthesize a CommandResponseClient from the pipeline result so the modal renders it */
+            const run = r.run as any;
+            setResponse({
+              intent: 'pipeline_run',
+              confidence: run.status === 'completed' ? 0.9 : 0.6,
+              chunks: [
+                { kind: 'plain', content: `Pipeline complete. Ran ${run.steps_completed}/${run.step_count} steps in ${(run.elapsed_ms / 1000).toFixed(1)}s.` },
+                { kind: 'plain', content: run.honest_summary || '' },
+                { kind: 'verify', content: `Source: rank-for-keyword pipeline · ${run.llm_calls_used} LLM calls · ${run.web_searches_used} web searches · est. $${run.estimated_cost_usd.toFixed(2)} · run id: ${run.run_id}` },
+              ] as any,
+              artifacts: (run.final_artifacts || []).map((a: any) => ({
+                kind: a.kind, title: a.title, body: a.body,
+              })),
+              honest_note: run.status !== 'completed' ? 'Pipeline ran partially — see honest_summary above for which steps failed.' : undefined,
+            } as any);
+            setMood(run.status === 'completed' ? 'celebrating' : 'alert');
+          }
+        } catch (e: any) {
+          setError(`Pipeline error: ${e?.message || 'unknown'}`);
+          setMood('alert');
+        }
+        setSubmitting(false);
+        return;
+      }
+    }
+
     /* Phase 10b — try the action registry first for direct UI commands.
        If the input looks like "open X tab", "switch to Y", "back to board",
        etc., we can dispatch immediately without round-tripping to the LLM. */
