@@ -54,15 +54,20 @@ function AnimNum({v,prefix="",suffix=""}:{v:number,prefix?:string,suffix?:string
 }
 
 export default function SmartTopBar(){
-  // Hide on original PortalNav pages to avoid double navigation
-  if (PORTAL_NAV_PAGES.has(location.pathname)) return null;
+  // Hooks MUST run before any early return (React Rules of Hooks).
+  // Also: `const location = useLocation()` shadows window.location across
+  // the whole function scope. Referencing it before this line = TDZ crash
+  // in production builds. Order matters.
+  const location=useLocation();
   const{setSidebarOpen,sidebarOpen,sidebarPinned,
         role,setRole,empireStats,suggestion,navigate}=useNav();
-  const location=useLocation();
   const[time,setTime]=useState(new Date());
   const[showSearch,setShowSearch]=useState(false);
   const[jarvisMsg,setJarvisMsg]=useState("");
   const[showMsg,setShowMsg]=useState(false);
+
+  // Hide on original PortalNav pages to avoid double navigation
+  if (PORTAL_NAV_PAGES.has(location.pathname)) return null;
 
   useEffect(()=>{const id=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(id);},[]);
 
