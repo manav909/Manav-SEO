@@ -553,6 +553,45 @@ export async function bsClientSessionMarkNotificationRead(body: any): Promise<an
   });
 }
 
+/** Session-authenticated document detail fetch. Verifies session_token,
+ *  scopes by project, requires either an explicit share grant OR a non-
+ *  gated published doc (client_resharable !== false). Returns raw_content
+ *  so the client can read the actual document body. */
+export async function bsClientSessionGetDocument(body: any): Promise<any> {
+  const { user, error } = await withClientSession(body);
+  if (!user) return { success: false, error };
+  const { documentId } = body;
+  if (!documentId) return { success: false, error: "documentId required" };
+
+  const { data: doc } = await db().from("project_documents")
+    .select(
+      "id, project_id, name, doc_type, kind, audience_role, confidence, source_url, " +
+      "version, published_at, doc_status, file_size_kb, source_date, created_at, " +
+      "raw_content, extracted_data, source_documents, web_sources, " +
+      "published_to_client, client_resharable, client_uploaded, approval_state"
+    )
+    .eq("id", documentId)
+    .maybeSingle();
+
+  if (!doc) return { success: false, error: "Document not found" };
+  const d = doc as any;
+  if (d.project_id !== user.project_id) return { success: false, error: "Document not available" };
+  if (!d.published_to_client)            return { success: false, error: "Document not yet published" };
+
+  /* Access gate: explicit grant OR non-gated doc */
+  const { data: grant } = await db().from("document_share_grants")
+    .select("access_level").eq("document_id", documentId)
+    .eq("granted_to_user_id", user.id).eq("revoked", false).maybeSingle();
+  const access = grant ? (grant as any).access_level : (d.client_resharable !== false ? "view" : null);
+  if (!access) return { success: false, error: "You don't have access to this document" };
+
+  return {
+    success:       true,
+    document:      doc,
+    access_level:  access,
+  };
+}
+
 /* ─── Dispatcher ──────────────────────────────────────────────── */
 
 export async function handleBrandStudioClient(action: string, body: any): Promise<any | null> {
@@ -586,6 +625,7 @@ export async function handleBrandStudioClient(action: string, body: any): Promis
     case "bs_client_session_submit_intake":     return bsClientSessionSubmitIntake(body);
     case "bs_client_session_list_notifications": return bsClientSessionListNotifications(body);
     case "bs_client_session_mark_notification_read": return bsClientSessionMarkNotificationRead(body);
+    case "bs_client_session_get_document":      return bsClientSessionGetDocument(body);
 
     default: return null;
   }

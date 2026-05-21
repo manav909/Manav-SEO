@@ -15,7 +15,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, Lock, FileText, Palette as PaletteIcon, TrendingUp, Globe, ExternalLink, ArrowLeft, Sparkles, Upload, ClipboardList, LogOut, Users } from 'lucide-react';
 import {
   clientResolve, clientListDocuments, clientGetDocument, clientGetInvestorData,
-  clientSessionResolve, clientSessionListDocuments, getStoredClientSession, clearClientSession,
+  clientSessionResolve, clientSessionListDocuments, clientSessionGetDocument,
+  getStoredClientSession, clearClientSession,
 } from '@/components/brand-studio/api';
 import type {
   ClientPortalContext, TractionProofPoint, MarketIntelEntry,
@@ -27,6 +28,7 @@ import CommentsPanel    from '@/components/brand-studio/CommentsPanel';
 import ApprovalsPanel   from '@/components/brand-studio/ApprovalsPanel';
 import ShareGrantsPanel from '@/components/brand-studio/ShareGrantsPanel';
 import ClientUploadPanel from '@/components/brand-studio/ClientUploadPanel';
+import DocumentViewer   from '@/components/brand-studio/DocumentViewer';
 import { ClientIntakeList } from '@/components/brand-studio/IntakeForms';
 
 type Tab = 'library' | 'brand' | 'investor' | 'market' | 'intake' | 'upload';
@@ -163,11 +165,11 @@ export default function ClientWorkspace() {
       const r = await clientGetDocument({ token, documentId: doc.id });
       if (r.document) setOpenDoc({ ...r.document, ...((doc as any).access_level ? { access_level: (doc as any).access_level } : {}) });
     } else if (mode === 'session' && sessionToken) {
-      const r = await clientGetDocument({ token: sessionToken, documentId: doc.id });
+      const r = await clientSessionGetDocument({ sessionToken, documentId: doc.id });
       if (r.document) {
         setOpenDoc({
           ...r.document,
-          access_level:       (doc as any).access_level,
+          access_level:       r.access_level || (doc as any).access_level || 'view',
           client_resharable:  (doc as any).client_resharable,
         });
       }
@@ -608,48 +610,36 @@ export default function ClientWorkspace() {
                 <ArrowLeft className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 print:overflow-visible print:p-0">
               {openDocLoading && !openDoc.raw_content && (
-                <div className="text-center py-6">
-                  <Loader2 className="h-4 w-4 animate-spin mx-auto text-muted-foreground" />
+                <div className="text-center py-10">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+                  <div className="text-xs text-muted-foreground mt-2">Loading document…</div>
                 </div>
               )}
-              {openDoc.extracted_data?.doc_summary && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Summary</div>
-                  <div className="text-sm text-foreground/90 italic">{openDoc.extracted_data.doc_summary}</div>
-                </div>
-              )}
-              {(openDoc.extracted_data?.key_findings?.length ?? 0) > 0 && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Key findings</div>
-                  <ul className="space-y-1">
-                    {openDoc.extracted_data.key_findings.map((f: string, i: number) => (
-                      <li key={i} className="text-xs text-foreground/90 flex items-start gap-1.5">
-                        <span className="mt-0.5" style={{ color: primaryColor }}>•</span>
-                        <span>{f}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {openDoc.raw_content && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Document content</div>
-                  <pre className="text-xs text-foreground/90 whitespace-pre-wrap font-sans bg-background/40 rounded-lg p-3 border border-border">{openDoc.raw_content}</pre>
-                </div>
-              )}
-              {openDoc.source_url && (
-                <a href={openDoc.source_url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs inline-flex items-center gap-1 hover:underline"
-                  style={{ color: primaryColor }}>
-                  View original source <ExternalLink className="h-3 w-3" />
-                </a>
+
+              {!openDocLoading && (
+                <DocumentViewer
+                  content={openDoc.raw_content || ''}
+                  documentName={openDoc.name}
+                  meta={{
+                    docType:      openDoc.doc_type,
+                    audienceRole: openDoc.audience_role,
+                    confidence:   openDoc.confidence,
+                    version:      openDoc.version,
+                    publishedAt:  openDoc.published_at,
+                    providedBy:   (openDoc as any).provided_by,
+                    sourceUrl:    openDoc.source_url,
+                  }}
+                  brandColor={primaryColor}
+                  summary={(openDoc as any).extracted_data?.doc_summary}
+                  keyFindings={(openDoc as any).extracted_data?.key_findings}
+                />
               )}
 
               {/* ── H.6a: Collaboration panels — session mode only ── */}
               {mode === 'session' && sessionUser && sessionContext && (
-                <div className="space-y-3 pt-3 mt-3 border-t border-border">
+                <div className="space-y-3 pt-3 mt-3 border-t border-border print:hidden">
                   <ApprovalsPanel
                     mode="client_session"
                     documentId={openDoc.id}

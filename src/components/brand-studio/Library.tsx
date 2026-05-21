@@ -12,10 +12,11 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
-import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare } from 'lucide-react';
-import { listDocuments, publishDocument, listStaleDocs } from './api';
+import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning, GitCompare, BookOpen, X } from 'lucide-react';
+import { listDocuments, publishDocument, listStaleDocs, getDocumentDetail } from './api';
 import { toast } from '@/hooks/use-toast';
 import DocumentDiff from './DocumentDiff';
+import DocumentViewer from './DocumentViewer';
 import type { BrandStudioDocument, BrandStudioCatalogs } from './types';
 
 interface Props {
@@ -37,6 +38,9 @@ export default function Library({ projectId, catalogs }: Props) {
   const [staleReasons,    setStaleReasons]    = useState<Map<string, string[]>>(new Map());
   /* H.5 — diff modal */
   const [diffDocId,       setDiffDocId]       = useState<string | null>(null);
+  /* Doc viewer modal */
+  const [viewerDoc,       setViewerDoc]       = useState<(BrandStudioDocument & { raw_content?: string }) | null>(null);
+  const [viewerLoading,   setViewerLoading]   = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -156,6 +160,18 @@ export default function Library({ projectId, catalogs }: Props) {
             isStale={staleDocIds.has(doc.id)}
             staleReasons={staleReasons.get(doc.id) || []}
             onCompareToParent={() => setDiffDocId(doc.id)}
+            onOpen={async () => {
+              setViewerLoading(true);
+              setViewerDoc({ ...doc });
+              const r = await getDocumentDetail(doc.id);
+              if (r.document) {
+                setViewerDoc(r.document as any);
+              } else if (r.error) {
+                toast({ title: 'Could not load document', description: r.error, variant: 'destructive' });
+                setViewerDoc(null);
+              }
+              setViewerLoading(false);
+            }}
             onPublishChange={(id, published) => {
               setDocs((prev) => prev.map((d) => d.id === id ? { ...d, published_to_client: published, published_at: published ? new Date().toISOString() : undefined } : d));
             }}
@@ -164,12 +180,52 @@ export default function Library({ projectId, catalogs }: Props) {
       </div>
 
       {diffDocId && <DocumentDiff documentId={diffDocId} onClose={() => setDiffDocId(null)} />}
+
+      {/* ── Document viewer modal ────────────────────────────────── */}
+      {viewerDoc && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 print:p-0 print:bg-white print:static">
+          <div className="bg-card border border-border rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col print:border-0 print:rounded-none print:max-w-none print:max-h-none print:bg-white">
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between print:hidden">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold truncate">{viewerDoc.name}</div>
+              </div>
+              <button onClick={() => setViewerDoc(null)} className="text-muted-foreground hover:text-foreground p-1">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 print:overflow-visible print:p-0">
+              {viewerLoading && !viewerDoc.raw_content ? (
+                <div className="text-center py-10">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+                  <div className="text-xs text-muted-foreground mt-2">Loading document…</div>
+                </div>
+              ) : (
+                <DocumentViewer
+                  content={viewerDoc.raw_content || ''}
+                  documentName={viewerDoc.name}
+                  meta={{
+                    docType:      viewerDoc.doc_type,
+                    audienceRole: viewerDoc.audience_role,
+                    confidence:   viewerDoc.confidence,
+                    version:      viewerDoc.version,
+                    publishedAt:  viewerDoc.published_at,
+                    providedBy:   (viewerDoc as any).provided_by,
+                    sourceUrl:    viewerDoc.source_url,
+                  }}
+                  summary={(viewerDoc as any).extracted_data?.doc_summary}
+                  keyFindings={(viewerDoc as any).extracted_data?.key_findings}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function DocumentRow({
-  doc, catalogs, onPublishChange, isStale, staleReasons, onCompareToParent,
+  doc, catalogs, onPublishChange, isStale, staleReasons, onCompareToParent, onOpen,
 }: {
   doc: BrandStudioDocument;
   catalogs: BrandStudioCatalogs | null;
@@ -177,6 +233,7 @@ function DocumentRow({
   isStale?: boolean;
   staleReasons?: string[];
   onCompareToParent?: () => void;
+  onOpen?: () => void;
 }) {
   const isGenerated = doc.kind === 'generated';
   const stakeholderLabel = catalogs?.stakeholder_roles.find((r) => r.key === doc.stakeholder_role)?.label;
@@ -200,7 +257,10 @@ function DocumentRow({
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card/60 px-4 py-3 hover:bg-card/80 transition-colors">
+    <div
+      className="rounded-xl border border-border bg-card/60 px-4 py-3 hover:bg-card/80 transition-colors cursor-pointer"
+      onClick={() => onOpen && onOpen()}
+    >
       <div className="flex items-start gap-3">
         {/* Icon */}
         <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${
@@ -262,6 +322,7 @@ function DocumentRow({
                 href={doc.source_url}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
                 className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 inline-flex items-center gap-1"
               >
                 Source URL <ExternalLink className="h-2 w-2" />
@@ -270,7 +331,19 @@ function DocumentRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {/* Read (open viewer) */}
+          {onOpen && (
+            <button
+              onClick={onOpen}
+              title="Read the full formatted document"
+              className="text-[10px] px-2 py-1 rounded-lg font-bold bg-purple-500 text-white hover:bg-purple-500/90 flex items-center gap-1"
+            >
+              <BookOpen className="h-2.5 w-2.5" />
+              Read
+            </button>
+          )}
+
           {/* Compare to v1 (only for versioned docs with parent) */}
           {doc.version && doc.version > 1 && onCompareToParent && (
             <button

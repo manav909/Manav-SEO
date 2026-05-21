@@ -423,7 +423,8 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
     case "bs_client_session_list_intake_forms":
     case "bs_client_session_submit_intake":
     case "bs_client_session_list_notifications":
-    case "bs_client_session_mark_notification_read": {
+    case "bs_client_session_mark_notification_read":
+    case "bs_client_session_get_document": {
       const { handleBrandStudioClient } = await import("./brand-studio-client.js");
       return handleBrandStudioClient(action, body);
     }

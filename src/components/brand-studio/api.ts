@@ -1530,3 +1530,13 @@ export async function clientSessionMarkNotificationRead(opts: {
   if (!r?.success) return { success: false, error: r?.error };
   return { success: true };
 }
+
+export async function clientSessionGetDocument(opts: { sessionToken: string; documentId: string }): Promise<{
+  document?: any;
+  access_level?: 'view' | 'comment' | 'approve';
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_session_get_document', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { document: r.document, access_level: r.access_level };
+}
