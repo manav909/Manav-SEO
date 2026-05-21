@@ -212,3 +212,43 @@ export async function bsSeasonPipelineFeedback(body: any): Promise<any> {
     return { success: false, error: e?.message || "feedback failed" };
   }
 }
+
+/* Phase 13a recovery — mark a stuck run as interrupted.
+   Used when the frontend detects a run has been stuck in 'running'
+   status with no progress for too long (Vercel maxDuration likely hit).
+   This is a safe cleanup operation: it only acts on runs whose status
+   is currently 'running', so accidental re-calls are no-ops. */
+export async function bsSeasonPipelineInterrupt(body: any): Promise<any> {
+  const { runId, reason } = body || {};
+  if (!runId) return { success: false, error: "runId required" };
+  try {
+    /* Update the run row */
+    const { data: existing } = await db().from("season_pipeline_runs")
+      .select("status, steps_completed, step_count")
+      .eq("id", runId)
+      .maybeSingle();
+    if (!existing) return { success: false, error: "run not found" };
+    if ((existing as any).status !== 'running') {
+      return { success: true, message: `Run already in terminal state: ${(existing as any).status}` };
+    }
+
+    const honestReason = String(reason || "Marked interrupted from dashboard — likely Vercel maxDuration hit").slice(0, 500);
+
+    await db().from("season_pipeline_runs").update({
+      status:          'failed',
+      honest_summary:  `Run interrupted. ${honestReason}. Steps completed before interruption: ${(existing as any).steps_completed} / ${(existing as any).step_count}.`,
+      finished_at:     new Date().toISOString(),
+    }).eq("id", runId);
+
+    /* Mark any 'running' steps as interrupted too */
+    await db().from("season_pipeline_steps").update({
+      status:        'failed',
+      error_message: 'Interrupted — see run honest_summary.',
+      finished_at:   new Date().toISOString(),
+    }).eq("run_id", runId).eq("status", 'running');
+
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "interrupt failed" };
+  }
+}

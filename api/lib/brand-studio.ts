@@ -760,6 +760,11 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       const { bsSeasonPipelineFeedback } = await import("./season-pipeline-routes.js");
       return bsSeasonPipelineFeedback(body);
     }
+    /* Phase 13a recovery — mark a stuck run as interrupted */
+    case "bs_season_pipeline_interrupt": {
+      const { bsSeasonPipelineInterrupt } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineInterrupt(body);
+    }
 
     /* Phase 12.5a — forecasts + monitoring */
     case "bs_season_forecast_list": {

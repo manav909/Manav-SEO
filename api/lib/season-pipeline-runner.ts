@@ -92,6 +92,37 @@ export interface PipelineRunResult {
 
 const DEFAULT_LLM_CAP = 20;
 const COST_PER_CALL   = 0.10;   // rough estimate, sonnet-4-6 average
+const STEP_TIMEOUT_MS = 120_000;   // 2 min per step. Phase 13a recovery mechanism.
+
+/* Race a step handler against a timeout so a hung step (stuck LLM call, hung
+   DB query, dropped connection) doesn't take down the whole function before
+   Vercel kills it. Returns a failed result if the timeout fires. */
+async function runStepWithTimeout(
+  step: PipelineStep,
+  ctx: PipelineStepContext,
+  timeoutMs: number = STEP_TIMEOUT_MS,
+): Promise<PipelineStepResult> {
+  let timeoutId: any = null;
+  const timeoutPromise = new Promise<PipelineStepResult>((resolve) => {
+    timeoutId = setTimeout(() => {
+      resolve({
+        ok: false,
+        error: `Step "${step.label}" exceeded ${Math.round(timeoutMs/1000)}s timeout — aborted to keep the pipeline responsive.`,
+      });
+    }, timeoutMs);
+  });
+  try {
+    const result = await Promise.race([
+      step.handler(ctx),
+      timeoutPromise,
+    ]);
+    return result;
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'step threw unexpectedly' };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 /* ─── Public entrypoint ─────────────────────────────────────── */
 
@@ -176,17 +207,12 @@ export async function runPipeline(opts: {
     }).eq("id", runId);
 
     const stepStart = Date.now();
-    let result: PipelineStepResult;
-    try {
-      result = await step.handler({
-        projectId: opts.projectId,
-        awareness: opts.awareness,
-        scope: opts.scope,
-        prior: priorOutputs,
-      });
-    } catch (e: any) {
-      result = { ok: false, error: e?.message || 'step threw unexpectedly' };
-    }
+    const result: PipelineStepResult = await runStepWithTimeout(step, {
+      projectId: opts.projectId,
+      awareness: opts.awareness,
+      scope: opts.scope,
+      prior: priorOutputs,
+    });
     const stepElapsed = Date.now() - stepStart;
 
     /* Persist outputs */
@@ -344,17 +370,12 @@ export async function runPipelineWithExistingRow(opts: {
     }).eq("id", runId);
 
     const stepStart = Date.now();
-    let result: PipelineStepResult;
-    try {
-      result = await step.handler({
-        projectId: opts.projectId,
-        awareness: opts.awareness,
-        scope: opts.scope,
-        prior: priorOutputs,
-      });
-    } catch (e: any) {
-      result = { ok: false, error: e?.message || 'step threw unexpectedly' };
-    }
+    const result: PipelineStepResult = await runStepWithTimeout(step, {
+      projectId: opts.projectId,
+      awareness: opts.awareness,
+      scope: opts.scope,
+      prior: priorOutputs,
+    });
     const stepElapsed = Date.now() - stepStart;
 
     totalLlm += result.llm_calls || 0;
@@ -532,7 +553,7 @@ export async function retryStep(opts: {
   const step = opts.definition.steps[opts.stepIndex];
   if (!step) return { ok: false, error: "step not in definition" };
 
-  const result = await step.handler({
+  const result = await runStepWithTimeout(step, {
     projectId: r.project_id,
     scope:     r.scope || {},
     prior:     priorOutputs,

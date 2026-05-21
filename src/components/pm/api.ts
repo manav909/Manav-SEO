@@ -2319,3 +2319,13 @@ export async function seasonEscalationDecide(opts: {
   if (!r?.success) return { error: r?.error };
   return { success: true };
 }
+
+/* Phase 13a recovery — mark a stuck pipeline run as interrupted */
+export async function seasonPipelineInterrupt(opts: {
+  runId: string;
+  reason?: string;
+}): Promise<{ success?: boolean; message?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_interrupt', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true, message: r.message };
+}
