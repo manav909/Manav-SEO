@@ -11,12 +11,17 @@
    phases just swap implementations.
 ═══════════════════════════════════════════════════════════════ */
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, type ReactNode, type ReactElement } from 'react';
 import {
   Info, AlertTriangle, CheckCircle2, AlertOctagon, MessageSquare,
   TrendingUp, TrendingDown, Minus, Image as ImageIcon, BarChart3,
   Table as TableIcon, FileSignature, Quote as QuoteIcon, FileText,
 } from 'lucide-react';
+import {
+  LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
+  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, ReferenceLine,
+} from 'recharts';
 import type { DirectiveAttrs } from './document-directives';
 
 interface RendererProps {
@@ -234,32 +239,245 @@ export function ImageBlock({ attrs, brandColor, dataContext }: RendererProps) {
   );
 }
 
-/* ─── 6. Chart (Phase 1A: placeholder; Phase 1B will wire recharts) ── */
+/* ─── 6. Chart (Phase 1B: real Recharts rendering) ────────────── */
 
-export function Chart({ attrs, brandColor }: RendererProps) {
-  /* Phase 1A: render a metadata card so authors see the chart was
-     recognized + understand what will populate later. Phase 1B replaces
-     this with real Recharts rendering. */
-  const type  = String(attrs.type  || 'unknown');
-  const title = attrs.title ? String(attrs.title) : '';
-  const from  = attrs.from  ? String(attrs.from)  : '';
-  const field = attrs.field ? String(attrs.field) : '';
+/** Generate a palette of colors from a brand seed for multi-series charts. */
+function palette(brand: string, count: number): string[] {
+  const base = [brand, '#06b6d4', '#f59e0b', '#22c55e', '#ec4899', '#a855f7', '#3b82f6', '#ef4444'];
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) out.push(base[i % base.length]);
+  return out;
+}
+
+/** Parse chart data from one of three sources:
+ *  - attrs.data (JSON string)
+ *  - rawBody (JSON code block inside the container)
+ *  - Future: dataContext fields (Phase 1D)
+ *  Returns the array or null if unparseable. */
+function parseChartData(attrs: DirectiveAttrs, rawBody?: string): any[] | null {
+  /* Try attrs.data first */
+  if (typeof attrs.data === 'string' && attrs.data.trim()) {
+    try { const parsed = JSON.parse(attrs.data as string); return Array.isArray(parsed) ? parsed : null; } catch { /* fall through */ }
+  }
+  /* Try rawBody */
+  if (rawBody && rawBody.trim()) {
+    try { const parsed = JSON.parse(rawBody); return Array.isArray(parsed) ? parsed : null; } catch {}
+  }
+  return null;
+}
+
+export function Chart({ attrs, rawBody, brandColor }: RendererProps) {
+  const type   = String(attrs.type  || 'line');
+  const title  = attrs.title ? String(attrs.title) : '';
+  const data   = parseChartData(attrs, rawBody);
+  const xKey   = attrs.xKey ? String(attrs.xKey) : (data && data[0] ? Object.keys(data[0])[0] : 'x');
+  const yKeysAttr = attrs.yKeys ? String(attrs.yKeys) :
+                   attrs.yKey  ? String(attrs.yKey)  : '';
+  /* If no yKeys/yKey specified, infer from data — first non-x key, or all non-x keys for multi-series */
+  let yKeys: string[];
+  if (yKeysAttr) {
+    yKeys = yKeysAttr.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (data && data[0]) {
+    yKeys = Object.keys(data[0]).filter((k) => k !== xKey);
+    if (type === 'line' || type === 'bar' || type === 'area') {
+      yKeys = yKeys.slice(0, 1);  /* default to single-series */
+    }
+  } else {
+    yKeys = [];
+  }
+
+  const nameKey  = String(attrs.nameKey  || (data?.[0] ? Object.keys(data[0])[0] : 'name'));
+  const valueKey = String(attrs.valueKey || (data?.[0] ? Object.keys(data[0])[1] || 'value' : 'value'));
+  const colors   = palette(brandColor, Math.max(yKeys.length, data?.length || 0, 1));
+
+  /* Empty / unparseable data — fall back to friendly placeholder */
+  if (!data || data.length === 0) {
+    if (attrs.from) {
+      /* Has a Data Room reference but no resolved data yet — Phase 1D will populate */
+      return (
+        <div className="ds-chart-placeholder my-4 rounded-xl border-2 border-dashed p-6 text-center bg-card/40 break-inside-avoid"
+          style={{ borderColor: `${brandColor}30` }}>
+          <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-50" style={{ color: brandColor }} />
+          <div className="text-sm font-bold" style={{ color: brandColor }}>{title || `${type} chart`}</div>
+          <div className="text-[10px] text-muted-foreground mt-1 font-mono">{String(attrs.from)}{attrs.field ? `.${attrs.field}` : ''}</div>
+          <div className="text-[10px] text-muted-foreground mt-2 italic">Live data wiring ships in Phase 1D</div>
+        </div>
+      );
+    }
+    return (
+      <div className="ds-chart-empty my-4 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-3 text-xs text-amber-500">
+        Chart "{title || type}" has no parseable data. Provide JSON in a fenced code block inside the directive, or set `data="..."` in attrs.
+      </div>
+    );
+  }
+
+  /* Common axis + grid styling */
+  const gridColor = `${brandColor}15`;
+  const axisColor = '#888';
 
   return (
-    <div className="ds-chart-placeholder my-4 rounded-xl border-2 border-dashed p-6 text-center bg-card/40 break-inside-avoid"
-      style={{ borderColor: `${brandColor}30` }}>
-      <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-50" style={{ color: brandColor }} />
-      <div className="text-sm font-bold" style={{ color: brandColor }}>{title || `${type} chart`}</div>
-      {(from || field) && (
-        <div className="text-[10px] text-muted-foreground mt-1 font-mono">
-          {from}{field ? `.${field}` : ''}
-        </div>
+    <figure className="ds-chart my-4 break-inside-avoid">
+      {title && (
+        <figcaption className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: brandColor }}>
+          {title}
+        </figcaption>
       )}
-      <div className="text-[10px] text-muted-foreground mt-2 italic">
-        Chart rendering ships in Phase 1B
+      <div className="rounded-xl border bg-card/40 p-3 print:rounded-none print:bg-transparent print:border-2" style={{ borderColor: `${brandColor}20` }}>
+        <div style={{ width: '100%', height: 280 }} className="print:!h-[260px]">
+          <ResponsiveContainer width="100%" height="100%">
+            {renderChart(type, data, xKey, yKeys, nameKey, valueKey, colors, gridColor, axisColor)}
+          </ResponsiveContainer>
+        </div>
+        {attrs.footnote && (
+          <div className="text-[10px] text-muted-foreground italic mt-2">{String(attrs.footnote)}</div>
+        )}
       </div>
-    </div>
+    </figure>
   );
+}
+
+/** Switch over chart type → return the right Recharts element. Returns ReactElement
+ *  (Recharts requires a single element child for ResponsiveContainer). */
+function renderChart(
+  type: string,
+  data: any[],
+  xKey: string,
+  yKeys: string[],
+  nameKey: string,
+  valueKey: string,
+  colors: string[],
+  gridColor: string,
+  axisColor: string,
+): ReactElement {
+  const commonAxes = (
+    <>
+      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+      <XAxis dataKey={xKey} tick={{ fill: axisColor, fontSize: 11 }} axisLine={{ stroke: gridColor }} tickLine={{ stroke: gridColor }} />
+      <YAxis tick={{ fill: axisColor, fontSize: 11 }} axisLine={{ stroke: gridColor }} tickLine={{ stroke: gridColor }} />
+      <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+      {yKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+    </>
+  );
+
+  switch (type) {
+    case 'line':
+      return (
+        <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          {commonAxes}
+          {yKeys.map((k, i) => (
+            <Line key={k} type="monotone" dataKey={k} stroke={colors[i]} strokeWidth={2} dot={{ fill: colors[i], r: 3 }} activeDot={{ r: 5 }} />
+          ))}
+        </LineChart>
+      );
+
+    case 'area':
+      return (
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          {commonAxes}
+          {yKeys.map((k, i) => (
+            <Area key={k} type="monotone" dataKey={k} stroke={colors[i]} fill={`${colors[i]}40`} strokeWidth={2} />
+          ))}
+        </AreaChart>
+      );
+
+    case 'bar':
+      return (
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          {commonAxes}
+          {yKeys.map((k, i) => (
+            <Bar key={k} dataKey={k} fill={colors[i]} radius={[4, 4, 0, 0]} />
+          ))}
+        </BarChart>
+      );
+
+    case 'stackedBar':
+    case 'stacked-bar':
+      return (
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          {commonAxes}
+          {yKeys.map((k, i) => (
+            <Bar key={k} dataKey={k} fill={colors[i]} stackId="a" />
+          ))}
+        </BarChart>
+      );
+
+    case 'pie': {
+      /* Pie expects [{ nameKey: ..., valueKey: ... }, ...] */
+      return (
+        <PieChart>
+          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Pie
+            data={data}
+            dataKey={valueKey}
+            nameKey={nameKey}
+            cx="50%"
+            cy="50%"
+            outerRadius={90}
+            label={({ name, percent }: any) => `${name}: ${(percent * 100).toFixed(0)}%`}
+            labelLine={false}
+          >
+            {data.map((_, i) => <Cell key={i} fill={colors[i]} />)}
+          </Pie>
+        </PieChart>
+      );
+    }
+
+    case 'scatter':
+      return (
+        <ScatterChart margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          {commonAxes}
+          {yKeys.map((k, i) => (
+            <Scatter key={k} name={k} dataKey={k} fill={colors[i]} />
+          ))}
+        </ScatterChart>
+      );
+
+    case 'milestone': {
+      /* Custom timeline: render as horizontal scatter with status-colored dots.
+         Expects data of shape [{ date, label, status }] where status ∈ done|in-progress|upcoming. */
+      const statusColor = (s: any) => s === 'done' ? '#22c55e' : s === 'in-progress' ? '#f59e0b' : '#94a3b8';
+      const mapped = data.map((d, i) => ({ ...d, _y: 1, _i: i }));
+      return (
+        <ScatterChart margin={{ top: 8, right: 12, left: 12, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} horizontal={false} />
+          <XAxis dataKey={xKey} type="category" tick={{ fill: axisColor, fontSize: 11 }} axisLine={{ stroke: gridColor }} tickLine={{ stroke: gridColor }} />
+          <YAxis type="number" dataKey="_y" hide domain={[0, 2]} />
+          <Tooltip
+            contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
+            formatter={(_v: any, _name: any, item: any) => [item?.payload?.label || '—', item?.payload?.status || '']}
+          />
+          <ReferenceLine y={1} stroke={gridColor} strokeWidth={2} />
+          <Scatter
+            data={mapped}
+            shape={(props: any) => {
+              const { cx, cy, payload } = props;
+              const color = statusColor(payload?.status);
+              return (
+                <g>
+                  <circle cx={cx} cy={cy} r={8} fill={color} stroke="white" strokeWidth={2} />
+                  <text x={cx} y={cy - 14} fontSize={10} fill="hsl(var(--foreground))" textAnchor="middle" fontWeight="600">
+                    {payload?.label || ''}
+                  </text>
+                </g>
+              );
+            }}
+          />
+        </ScatterChart>
+      );
+    }
+
+    default:
+      /* Unknown type — render as line by default */
+      return (
+        <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          {commonAxes}
+          {yKeys.map((k, i) => (
+            <Line key={k} type="monotone" dataKey={k} stroke={colors[i]} strokeWidth={2} />
+          ))}
+        </LineChart>
+      );
+  }
 }
 
 /* ─── 7. Data table (Phase 1A: placeholder; Phase 1D will wire live data) ── */

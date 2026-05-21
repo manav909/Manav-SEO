@@ -119,6 +119,11 @@ export function normalizeAttrs(raw: Record<string, string | null | undefined>): 
  * tags. We rewrite each directive node to have a hName + hProperties so
  * it renders as `<ds-directive name=... attrs=...>body</ds-directive>`,
  * and the DocumentViewer registers `ds-directive` in its components map.
+ *
+ * For containerDirective nodes, we also extract the FIRST fenced code block
+ * found in the children and stash its raw text in `data-raw-body` — this
+ * is how chart/data-table directives receive their JSON payload without
+ * losing markdown semantics elsewhere in the body.
  */
 export const remarkDirectiveRender: Plugin<[], Root> = () => {
   return (tree) => {
@@ -130,16 +135,41 @@ export const remarkDirectiveRender: Plugin<[], Root> = () => {
       ) {
         const data = node.data || (node.data = {});
         const attrs = normalizeAttrs(node.attributes || {});
-        /* Serialize attrs as JSON in a data-* attribute so react-markdown
-           passes them through. We also keep the raw children intact so
-           the body content renders inside. */
+
+        /* Extract the first code-block body for data-carrying directives */
+        let rawBody = '';
+        if (node.type === 'containerDirective' && Array.isArray(node.children)) {
+          for (const child of node.children) {
+            if (child && child.type === 'code' && typeof child.value === 'string') {
+              rawBody = child.value;
+              break;
+            }
+          }
+          /* Mark the code-block child so the renderer can suppress it
+             (chart data shouldn't double-render as a code block) */
+          if (rawBody) {
+            for (const child of node.children) {
+              if (child && child.type === 'code') {
+                child.data = child.data || {};
+                child.data.hName = 'ds-suppressed';  /* unknown tag — renders nothing */
+                child.data.hProperties = {};
+                break;
+              }
+            }
+          }
+        }
+
+        /* Serialize attrs + raw body as data-* attributes so react-markdown
+           passes them through. Keep raw children intact so the body content
+           still renders inside container directives. */
         data.hName = 'ds-directive';
         data.hProperties = {
-          'data-name':  String(node.name || 'unknown'),
-          'data-attrs': JSON.stringify(attrs),
-          'data-kind':  node.type === 'containerDirective' ? 'container'
-                       : node.type === 'leafDirective'      ? 'leaf'
-                       : 'textInline',
+          'data-name':     String(node.name || 'unknown'),
+          'data-attrs':    JSON.stringify(attrs),
+          'data-kind':     node.type === 'containerDirective' ? 'container'
+                          : node.type === 'leafDirective'      ? 'leaf'
+                          : 'textInline',
+          'data-raw-body': rawBody,
         };
       }
     });

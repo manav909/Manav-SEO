@@ -264,11 +264,13 @@ export default function DocumentViewer({
                 em:     ({ children }) => <em className="italic">{children}</em>,
                 /* Custom directive renderer — react-markdown 9 supports unknown tags
                    when passed in components map. The remarkDirectiveRender plugin
-                   rewrites directive nodes to hName='ds-directive' + data-* attrs. */
+                   rewrites directive nodes to hName='ds-directive' + data-* attrs,
+                   and stashes the first code-block body into data-raw-body. */
                 'ds-directive': ({ node, children }: any) => {
                   const props      = node?.properties || {};
                   const name       = String(props.dataName  || 'unknown');
                   const attrsJSON  = String(props.dataAttrs || '{}');
+                  const rawBody    = String(props.dataRawBody || '');
                   let attrs: any = {};
                   try { attrs = JSON.parse(attrsJSON); } catch {}
                   return (
@@ -276,11 +278,15 @@ export default function DocumentViewer({
                       name={name}
                       attrs={attrs}
                       body={children}
+                      rawBody={rawBody}
                       brandColor={accent}
                       dataContext={dataContext}
                     />
                   );
                 },
+                /* Suppressed code blocks — chart data that's been extracted into
+                   the directive's rawBody shouldn't double-render. */
+                'ds-suppressed': () => null,
               } as any}
             >
               {content}
