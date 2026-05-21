@@ -1605,3 +1605,59 @@ export async function getExternalDashboardLinks(opts: {
   if (!r?.success) return { error: r?.error };
   return { links: r.links };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Phase 4 — Strategy Dependencies Hub
+═══════════════════════════════════════════════════════════ */
+
+export interface DependencyFlatRowClient {
+  card_id:               string;
+  card_title:            string;
+  card_status:           string;
+  card_assigned_to:      string | null;
+  card_target_start:     string | null;
+  card_target_completion: string | null;
+  card_created_at:       string;
+  strategic_link:        StrategicLinkClient | null;
+  strategy_label:        string;
+  req_id:                string;
+  req_label:             string;
+  req_category:          DependencyCategoryClient;
+  req_met:               boolean;
+  req_prereq_card_id:    string | null;
+  age_days:              number;
+  age_bucket:            "fresh" | "aging" | "slow" | "very_slow";
+}
+
+export interface DependenciesHubStats {
+  total_dependencies: number;
+  resolved:           number;
+  unresolved:         number;
+  by_category:        Record<DependencyCategoryClient, { total: number; unresolved: number; resolved: number }>;
+  unique_cards:       number;
+  aging_warnings:     number;
+  very_aged:          number;
+}
+
+export async function listStrategyDependencies(opts: {
+  projectId: string;
+  category?: DependencyCategoryClient;
+  status?: "all" | "unresolved" | "resolved";
+  strategicLinkId?: string;
+}): Promise<{
+  dependencies?: DependencyFlatRowClient[];
+  stats?:        DependenciesHubStats;
+  error?:        string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_strategy_dependencies', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { dependencies: r.dependencies, stats: r.stats };
+}
+
+export async function toggleDependency(opts: {
+  cardId: string; reqId: string; met: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_toggle_dependency', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}

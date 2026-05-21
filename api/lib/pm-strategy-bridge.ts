@@ -570,3 +570,151 @@ export async function bsUpdateCardDependencies(body: any): Promise<any> {
     return { success: false, error: e?.message || "update failed" };
   }
 }
+
+/* ─── Phase 4 — Strategy Dependencies Hub ─────────────────────
+   Flattens every requirement on every strategy-linked card in the
+   project into a single list with full context. The frontend hub
+   groups/filters/acts on this. */
+
+export interface DependencyFlatRow {
+  /* Card context */
+  card_id:            string;
+  card_title:         string;
+  card_status:        string;
+  card_assigned_to:   string | null;
+  card_target_start:  string | null;
+  card_target_completion: string | null;
+  card_created_at:    string;
+  /* Strategic context */
+  strategic_link:     StrategicLink | null;
+  strategy_label:     string;
+  /* The dependency itself */
+  req_id:             string;
+  req_label:          string;
+  req_category:       DependencyCategory;
+  req_met:            boolean;
+  req_prereq_card_id: string | null;
+  /* Derived */
+  age_days:           number;
+  age_bucket:         "fresh" | "aging" | "slow" | "very_slow";
+}
+
+export async function bsListStrategyDependencies(body: any): Promise<any> {
+  const { projectId, category, status, strategicLinkId } = body;
+  if (!projectId) return { success: false, error: "projectId required" };
+
+  try {
+    let q = db().from("kanban_tasks")
+      .select("id,title,status,assigned_to,requirements,strategic_link,target_start_date,target_completion_date,created_at")
+      .eq("project_id", projectId)
+      .not("strategic_link", "is", null)
+      .not("requirements",  "is", null);
+    const { data, error } = await q;
+    if (error) return { success: false, error: error.message };
+
+    const rows: DependencyFlatRow[] = [];
+    const now = Date.now();
+    for (const c of (data || []) as any[]) {
+      const reqs = Array.isArray(c.requirements) ? c.requirements : [];
+      const link = (c.strategic_link || null) as StrategicLink | null;
+      if (strategicLinkId && link?.id !== strategicLinkId) continue;
+
+      const createdAt = c.created_at ? new Date(c.created_at).getTime() : now;
+      const ageDays = Math.max(0, Math.floor((now - createdAt) / 86_400_000));
+      const ageBucket: DependencyFlatRow["age_bucket"] =
+        ageDays < 3  ? "fresh"   :
+        ageDays < 7  ? "aging"   :
+        ageDays < 14 ? "slow"    : "very_slow";
+
+      for (const r of reqs) {
+        if (!r?.label) continue;
+        const reqCat = ["access","content","info","approval","task_prereq"].includes(r.category)
+          ? r.category as DependencyCategory : "info";
+        if (category && reqCat !== category) continue;
+        if (status === "unresolved" && r.met) continue;
+        if (status === "resolved"   && !r.met) continue;
+
+        rows.push({
+          card_id:           c.id,
+          card_title:        c.title || "",
+          card_status:       c.status || "todo",
+          card_assigned_to:  c.assigned_to || null,
+          card_target_start: c.target_start_date || null,
+          card_target_completion: c.target_completion_date || null,
+          card_created_at:   c.created_at,
+          strategic_link:    link,
+          strategy_label:    link ? `${link.type === "goal" ? "Goal" : "Scenario"}: ${link.name}` : "(none)",
+          req_id:            r.id || "",
+          req_label:         String(r.label),
+          req_category:      reqCat,
+          req_met:           !!r.met,
+          req_prereq_card_id: r.prereq_card_id || null,
+          age_days:          ageDays,
+          age_bucket:        ageBucket,
+        });
+      }
+    }
+
+    /* Sort: unresolved first, then by age (oldest first) */
+    rows.sort((a, b) => {
+      if (a.req_met !== b.req_met) return a.req_met ? 1 : -1;
+      return b.age_days - a.age_days;
+    });
+
+    /* Aggregate stats by category */
+    const byCategory: Record<DependencyCategory, { total: number; unresolved: number; resolved: number }> = {
+      access:      { total: 0, unresolved: 0, resolved: 0 },
+      content:     { total: 0, unresolved: 0, resolved: 0 },
+      info:        { total: 0, unresolved: 0, resolved: 0 },
+      approval:    { total: 0, unresolved: 0, resolved: 0 },
+      task_prereq: { total: 0, unresolved: 0, resolved: 0 },
+    };
+    for (const r of rows) {
+      byCategory[r.req_category].total       += 1;
+      if (r.req_met) byCategory[r.req_category].resolved   += 1;
+      else           byCategory[r.req_category].unresolved += 1;
+    }
+
+    return {
+      success: true,
+      dependencies: rows,
+      total: rows.length,
+      stats: {
+        total_dependencies:    rows.length,
+        resolved:              rows.filter(r => r.req_met).length,
+        unresolved:            rows.filter(r => !r.req_met).length,
+        by_category:           byCategory,
+        unique_cards:          new Set(rows.map(r => r.card_id)).size,
+        aging_warnings:        rows.filter(r => !r.req_met && r.age_bucket === "slow").length,
+        very_aged:             rows.filter(r => !r.req_met && r.age_bucket === "very_slow").length,
+      },
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "list failed" };
+  }
+}
+
+/* Quick-resolve a single dependency by toggling its `met` flag */
+export async function bsToggleDependency(body: any): Promise<any> {
+  const { cardId, reqId, met } = body;
+  if (!cardId || !reqId) return { success: false, error: "cardId and reqId required" };
+
+  try {
+    /* Read current requirements, flip the matching item */
+    const { data: card, error: e1 } = await db().from("kanban_tasks")
+      .select("id,requirements").eq("id", cardId).maybeSingle();
+    if (e1)   return { success: false, error: e1.message };
+    if (!card) return { success: false, error: "Card not found" };
+
+    const reqs = Array.isArray((card as any).requirements) ? (card as any).requirements : [];
+    const updated = reqs.map((r: any) => r?.id === reqId ? { ...r, met: !!met } : r);
+
+    const { error: e2 } = await db().from("kanban_tasks")
+      .update({ requirements: updated, updated_at: new Date().toISOString() })
+      .eq("id", cardId);
+    if (e2) return { success: false, error: e2.message };
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "toggle failed" };
+  }
+}

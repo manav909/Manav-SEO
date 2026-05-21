@@ -627,6 +627,14 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       const { bsUpdateCardDependencies } = await import("./pm-strategy-bridge.js");
       return bsUpdateCardDependencies(body);
     }
+    case "bs_list_strategy_dependencies": {
+      const { bsListStrategyDependencies } = await import("./pm-strategy-bridge.js");
+      return bsListStrategyDependencies(body);
+    }
+    case "bs_toggle_dependency": {
+      const { bsToggleDependency } = await import("./pm-strategy-bridge.js");
+      return bsToggleDependency(body);
+    }
 
     /* Phase 3 — Analytics Provenance & Diagnostics */
     case "bs_get_analytics_provenance": {

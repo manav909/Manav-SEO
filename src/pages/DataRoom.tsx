@@ -11,6 +11,7 @@ import { seedV2DataRoom, aiFillPreview as apiAiFillPreview, aiFillApply as apiAi
 import AnalyticsIntelPanel from '@/components/pm/AnalyticsIntelPanel';
 import WhatIfSimulator from '@/components/pm/WhatIfSimulator';
 import GoalEngine from '@/components/pm/GoalEngine';
+import StrategyDependenciesHub from '@/components/pm/StrategyDependenciesHub';
 import {
   Layers,
   Upload,
@@ -2183,6 +2184,7 @@ Evidence: ${c.data_basis}` : ''}`,
                 {selProjId && <AnalyticsIntelPanel projectId={selProjId} />}
                 {selProjId && <WhatIfSimulator projectId={selProjId} defaultCollapsed />}
                 {selProjId && <GoalEngine projectId={selProjId} defaultCollapsed />}
+                {selProjId && <StrategyDependenciesHub projectId={selProjId} defaultCollapsed />}
                 <div className="rounded-2xl border border-border bg-card/60 p-6"><CategoryForm catKey="analytics"/></div>
               </div>
             )}
