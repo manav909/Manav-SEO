@@ -1,7 +1,7 @@
 
 import React,{useState,useEffect} from "react";
 import {useNav} from "@/contexts/NavContext";
-const PORTAL_NAV_PAGES = new Set(["/","/oval","/dashboard","/playground","/audit","/launchpad","/mission-control","/brain-command","/brain-learning","/algorithm-intel","/desk","/system-control","/data-room","/planning","/command"]);
+const PORTAL_NAV_PAGES = new Set(["/","/oval","/dashboard","/playground","/audit","/launchpad","/mission-control","/brain-command","/brain-learning","/algorithm-intel","/desk","/system-control","/data-room","/planning"]);
 
 const ALL_SECTIONS = [
   {
