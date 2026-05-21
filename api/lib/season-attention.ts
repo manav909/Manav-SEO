@@ -296,16 +296,33 @@ function composeStatusSummary(s: {
 
 function composeGreeting(attentionCount: number, winCount: number): string {
   const hour = new Date().getHours();
-  const timeOfDay = hour < 5 ? "Up late" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : hour < 22 ? "Good evening" : "Burning the midnight oil";
+  const dayOfWeek = new Date().getDay(); // 0=Sun
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+  const isMonday = dayOfWeek === 1;
+  const isFriday = dayOfWeek === 5;
+  const timeOfDay =
+    hour < 5  ? "Up late" :
+    hour < 12 ? "Good morning" :
+    hour < 17 ? "Good afternoon" :
+    hour < 22 ? "Good evening" : "Burning the midnight oil";
 
+  /* Quiet day */
   if (attentionCount === 0 && winCount === 0) {
-    return `${timeOfDay}. Quiet day so far. Where would you like to start?`;
+    if (isWeekend) return `${timeOfDay}. It's quiet — both because it's the weekend and because nothing's on fire. Take a breath or tell me what to work on.`;
+    if (isMonday)  return `${timeOfDay}. Quiet start to the week. A good moment to plan something ambitious.`;
+    return `${timeOfDay}. Nothing pressing. Where would you like to start?`;
   }
+  /* All wins, no attention */
   if (attentionCount === 0) {
-    return `${timeOfDay}. Nothing on fire, a few wins to report.`;
+    if (winCount >= 4) return `${timeOfDay}. Good news only — ${winCount} wins to walk you through, nothing on fire.`;
+    return `${timeOfDay}. Nothing urgent. ${winCount === 1 ? 'A small win' : 'A few wins'} to report.`;
   }
+  /* A few things, mild */
   if (attentionCount <= 2) {
+    if (isFriday) return `${timeOfDay}. Couple of loose ends before the weekend — nothing dramatic.`;
     return `${timeOfDay}. Couple of things while you were away — nothing dramatic.`;
   }
+  /* Busy */
+  if (attentionCount >= 5) return `${timeOfDay}. I've been busy. There's a lot on the desk, but it's all manageable — let's go through it.`;
   return `${timeOfDay}. I've been busy. Here's what landed on my desk.`;
 }

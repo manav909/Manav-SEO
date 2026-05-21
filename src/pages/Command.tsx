@@ -15,7 +15,8 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, AlertCircle, CheckCircle2, Activity, ArrowRight,
-  X, Send, RefreshCw, Database, Building2,
+  X, Send, RefreshCw, Database, Building2, Wand2,
+  Search, Heart, Lock,
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -60,6 +61,26 @@ export default function Command() {
 
   const [activityOpen, setActivityOpen]   = useState(false);
   const [activity, setActivity]            = useState<ActivityEvent[]>([]);
+
+  /* Capabilities panel state + ? keyboard shortcut */
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
+      if (isTyping) return;
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        setCapabilitiesOpen(o => !o);
+      }
+      if (e.key === 'Escape') {
+        setCapabilitiesOpen(false);
+        setActivityOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   useEffect(() => {
     if (!selectedProjectId) { setLoading(false); setBriefing(null); setBriefingError(null); return; }
@@ -186,6 +207,15 @@ export default function Command() {
                   {q}
                 </motion.button>
               ))}
+              {/* Capabilities chip */}
+              <motion.button onClick={() => setCapabilitiesOpen(true)}
+                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.2 + 4 * 0.08 }}
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                className="text-xs px-3 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/[0.05] text-cyan-400 hover:bg-cyan-500/15 transition-colors flex items-center gap-1">
+                <Sparkles className="h-3 w-3" />What can I do?
+                <span className="text-[9px] text-muted-foreground/60 ml-0.5">·  ?</span>
+              </motion.button>
             </motion.div>
 
             {commandError && (
@@ -250,10 +280,26 @@ export default function Command() {
             className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
           Behind the scenes
         </motion.button>
+
+        {/* Help / capabilities — mirror to bottom-left */}
+        <motion.button
+          onClick={() => setCapabilitiesOpen(true)}
+          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 2.6 }}
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+          className="fixed bottom-5 left-5 md:left-[17rem] px-3 py-2 rounded-full border border-violet-500/30 bg-card/80 backdrop-blur-sm text-violet-400 hover:border-violet-500/60 transition-colors text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-violet-500/10 z-30"
+          title="Press ? anytime to open this">
+          <Sparkles className="h-3 w-3" />
+          What can I do?
+          <span className="text-[9px] text-muted-foreground/60 ml-0.5 hidden sm:inline">·  ?</span>
+        </motion.button>
       </div>
 
       <AnimatePresence>
         {activityOpen && <ActivityDrawer events={activity} onClose={() => setActivityOpen(false)} briefing={briefing} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {capabilitiesOpen && <CapabilitiesPanel onClose={() => setCapabilitiesOpen(false)} onTry={handleQuickAction} hasProject={!!selectedProjectId} />}
       </AnimatePresence>
     </div>
   );
@@ -593,3 +639,215 @@ function timeAgo(iso: string): string {
   const d = Math.floor(h / 24);
   return `${d}d ago`;
 }
+
+/* ────────────────────────────────────────────────────────────
+   Capabilities Panel — what S.E.A.S.O.N. can do today, gracefully.
+   Press ? to toggle.
+──────────────────────────────────────────────────────────── */
+
+interface Capability {
+  title: string;
+  description: string;
+  try?: string;          // a prompt to populate the input when clicked
+  ready: boolean;        // true = works now, false = honest "coming"
+  icon?: any;
+}
+
+interface CapabilityGroup {
+  title: string;
+  subtitle: string;
+  icon: any;
+  tone: string;
+  capabilities: Capability[];
+}
+
+const CAPABILITY_GROUPS: CapabilityGroup[] = [
+  {
+    title: "Reading the room",
+    subtitle: "What's happening right now",
+    icon: Activity,
+    tone: "text-cyan-400 border-cyan-500/20 bg-cyan-500/[0.04]",
+    capabilities: [
+      { title: "Summarize this week",         description: "Plain-English recap of card movement, strategy progress, and real impact.", try: "Summarize this week", ready: true },
+      { title: "How are we doing?",            description: "Overall status across every active strategy, with honest gaps named.", try: "How are we doing?", ready: true },
+      { title: "What needs my attention?",     description: "Ranked list of blockers, off-track strategies, overdue cards, looming deadlines.", try: "What needs me today?", ready: true },
+      { title: "Quiet wins",                    description: "What worked in the last 7 days. The stuff worth noticing without celebrating loudly.", try: "What needs me today?", ready: true },
+    ],
+  },
+  {
+    title: "Investigating",
+    subtitle: "Why something is happening",
+    icon: Search,
+    tone: "text-violet-400 border-violet-500/20 bg-violet-500/[0.04]",
+    capabilities: [
+      { title: "Why is X slipping?",            description: "Finds off-track strategies, identifies the most-likely cause, suggests recovery moves.", try: "Why is this strategy slipping?", ready: true },
+      { title: "Where do these numbers come from?", description: "Full source trail: which property, which date range, which data state, when it was pulled.", try: "Where do these numbers come from?", ready: true },
+      { title: "What's blocking us?",            description: "Every dependency across every store — what it's blocking, where to resolve it.", try: "What needs me today?", ready: true },
+    ],
+  },
+  {
+    title: "Knowing your data",
+    subtitle: "The trust layer",
+    icon: Database,
+    tone: "text-emerald-400 border-emerald-500/20 bg-emerald-500/[0.04]",
+    capabilities: [
+      { title: "Data freshness",              description: "When GSC + GA4 last pulled, how stale they are, which intel has been computed.", ready: true },
+      { title: "Strategy health rollup",       description: "How many cards done, how many blocked, real impact vs projected for every strategy.", ready: true },
+      { title: "Activity ledger",              description: "Every status check, every system action, append-only, in the Behind-the-scenes drawer.", ready: true },
+    ],
+  },
+  {
+    title: "Coming next",
+    subtitle: "Honest about scope — these need API integrations I'm wiring",
+    icon: Wand2,
+    tone: "text-amber-400 border-amber-500/20 bg-amber-500/[0.04]",
+    capabilities: [
+      { title: "Take a goal and build the full plan",   description: "\"Rank me #1 for [keyword]\" → I read your data, pick the right actions, draft a content brief, create the strategy + cards. End to end.", ready: false },
+      { title: "Draft a content brief",                  description: "1,500+ word outline targeting any query, sourced from your top 10 competitors and audit findings.", ready: false },
+      { title: "Draft an outreach email",                description: "Matched to your brand voice, personalized to the prospect type, ready to copy.", ready: false },
+      { title: "Weekly client status report",            description: "Plain-language summary in your house style, with cited numbers, ready to send.", ready: false },
+      { title: "Competitor comparison table",            description: "Pulled from competitor data + your identity, ready to drop into a page.", ready: false },
+      { title: "Internal link plan with anchor texts",   description: "From topic clusters + audit, with exact source pages and anchor copy.", ready: false },
+    ],
+  },
+  {
+    title: "What I genuinely don't have yet",
+    subtitle: "No pretending — these need separate integrations",
+    icon: Lock,
+    tone: "text-muted-foreground border-border bg-card/40",
+    capabilities: [
+      { title: "Live web search",                description: "Industry news, weather, geopolitical context, competitor pricing — anything outside your database. Wiring the Anthropic web-search tool would unlock this.", ready: false },
+      { title: "Publishing to your CMS",         description: "I draft content; humans paste. I can prepare ready-to-paste markdown. CMS API integration would unlock direct publish.", ready: false },
+      { title: "Sending emails / calls / sign-offs", description: "Drafts only for now. Resend/Twilio/DocuSign integrations would unlock direct send.", ready: false },
+      { title: "Real-time GSC/GA4 (sub-minute fresh)", description: "Pulls run on schedule. True streaming would need an ingestion pipeline.", ready: false },
+    ],
+  },
+];
+
+const SPINE_PRINCIPLES = [
+  { icon: CheckCircle2, text: "Honesty over confidence — if I don't know, I tell you." },
+  { icon: Database,      text: "Every number is sourced — one click to the verification trail." },
+  { icon: Heart,         text: "Plain English by default, technical version on tap." },
+  { icon: Sparkles,      text: "I won't make things up. Ever. Not even a 'helpful guess' without labelling it." },
+];
+
+function CapabilitiesPanel({ onClose, onTry, hasProject }: {
+  onClose: () => void; onTry: (s: string) => void; hasProject: boolean;
+}) {
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        transition={{ duration: 0.3 }}
+        onClick={onClose}
+        className="fixed inset-0 bg-black/60 backdrop-blur-md z-40" />
+
+      <motion.div
+        initial={{ opacity: 0, y: 30, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.96 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="fixed inset-x-4 top-8 bottom-8 sm:inset-x-8 lg:inset-x-auto lg:left-1/2 lg:-translate-x-1/2 lg:w-[800px] lg:max-h-[calc(100vh-4rem)] z-50 rounded-3xl border border-cyan-500/30 bg-card shadow-2xl shadow-cyan-500/10 overflow-hidden flex flex-col">
+
+        {/* Header */}
+        <div className="relative px-6 py-5 border-b border-border bg-gradient-to-br from-cyan-500/[0.08] via-violet-500/[0.04] to-transparent">
+          <motion.div
+            className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] rounded-full opacity-30 pointer-events-none"
+            style={{ background: 'radial-gradient(ellipse, rgba(34,211,238,0.25) 0%, transparent 70%)' }}
+            animate={{ scale: [1, 1.05, 1], opacity: [0.2, 0.35, 0.2] }}
+            transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <div className="relative flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-400 font-bold mb-1">S.E.A.S.O.N.</div>
+              <h2 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">What I can do today.</h2>
+              <p className="text-sm text-muted-foreground mt-1 max-w-md">
+                Here's everything I'm capable of, what's coming next, and what I'm honest enough to admit I can't do yet.
+              </p>
+            </div>
+            <button onClick={onClose}
+              className="p-1.5 rounded-md hover:bg-muted/40 text-muted-foreground hover:text-foreground transition-colors">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Body — scrollable */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {CAPABILITY_GROUPS.map((group, gi) => (
+            <motion.section
+              key={group.title}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 + gi * 0.08 }}>
+              <div className={`flex items-center gap-2 mb-2 pb-2 border-b ${group.tone.split(' ').filter(c => c.startsWith('border')).join(' ')}`}>
+                <group.icon className={`h-4 w-4 ${group.tone.split(' ').filter(c => c.startsWith('text')).join(' ')}`} />
+                <div className="flex-1">
+                  <div className="text-[12px] font-bold text-foreground">{group.title}</div>
+                  <div className="text-[10px] text-muted-foreground italic">{group.subtitle}</div>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {group.capabilities.map((cap, ci) => (
+                  <motion.div
+                    key={cap.title}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.15 + gi * 0.08 + ci * 0.04 }}
+                    className="group rounded-lg border border-border bg-background/30 p-3 hover:border-cyan-500/30 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="text-[12.5px] font-bold text-foreground">{cap.title}</div>
+                          {!cap.ready && (
+                            <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              {group.title.startsWith("What I genuinely") ? "needs integration" : "coming next"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{cap.description}</div>
+                      </div>
+                      {cap.ready && cap.try && hasProject && (
+                        <motion.button
+                          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                          onClick={() => { onTry(cap.try!); onClose(); }}
+                          className="text-[10px] px-2 py-1 rounded-md border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition-colors whitespace-nowrap font-bold flex items-center gap-1">
+                          Try it<ArrowRight className="h-2.5 w-2.5" />
+                        </motion.button>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.section>
+          ))}
+
+          {/* Spine principles */}
+          <motion.section
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+            className="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/[0.05] via-violet-500/[0.03] to-transparent p-4">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-400 font-bold mb-3">The spine</div>
+            <div className="space-y-2">
+              {SPINE_PRINCIPLES.map((p, i) => (
+                <motion.div key={i}
+                  initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.6 + i * 0.06 }}
+                  className="flex items-start gap-2.5">
+                  <p.icon className="h-3.5 w-3.5 text-cyan-400/80 shrink-0 mt-0.5" />
+                  <div className="text-[12px] text-foreground/85 leading-relaxed">{p.text}</div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.section>
+
+          {/* Closing line */}
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
+            className="text-center text-[11px] text-muted-foreground italic py-2">
+            Press <kbd className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-card font-mono">?</kbd> anytime to reopen this. Press <kbd className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-card font-mono">esc</kbd> to close.
+          </motion.div>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
