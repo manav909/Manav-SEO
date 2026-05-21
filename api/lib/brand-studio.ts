@@ -436,6 +436,19 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return handleBrandStudioInvestor(action, body);
     }
 
+    /* H.4 — Monitors + observations + subscriptions ── */
+    case "bs_list_monitors":
+    case "bs_upsert_monitor":
+    case "bs_delete_monitor":
+    case "bs_check_monitor_now":
+    case "bs_list_observations":
+    case "bs_update_observation_status":
+    case "bs_list_stale_docs":
+    case "bs_dismiss_stale": {
+      const { handleBrandStudioMonitors } = await import("./brand-studio-monitors.js");
+      return handleBrandStudioMonitors(action, body);
+    }
+
     /* H.2+ handlers will plug in here:
        case "bs_generate_preview": return bsGeneratePreview(body);
        case "bs_generate_apply": return bsGenerateApply(body);

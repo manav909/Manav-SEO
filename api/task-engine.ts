@@ -2513,6 +2513,18 @@ Return ONLY raw JSON:
       rulesCronSummary = { error: e?.message || "ruleEngineTick failed" };
     }
 
+    /* ── Brand Studio monitors (H.4) — fetch eligible URLs, classify
+       changes via AI, propagate staleness to subscribed documents.
+       Hard-capped at MAX_FETCHES_PER_RUN / MAX_CLASSIFICATIONS_PER_RUN
+       (50 / 100 respectively) for predictable cost. Best-effort. */
+    let monitorsCronSummary: any = null;
+    try {
+      const { monitorCronTick } = await import("./lib/brand-studio-monitors.js");
+      monitorsCronSummary = await monitorCronTick();
+    } catch (e: any) {
+      monitorsCronSummary = { error: e?.message || "monitorCronTick failed" };
+    }
+
     const now = new Date().toISOString();
 
     /* Get all pending verifications due now */
@@ -2524,7 +2536,7 @@ Return ONLY raw JSON:
       .limit(10);
 
     if (!due || due.length === 0) {
-      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary, rulesCron: rulesCronSummary });
+      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary, rulesCron: rulesCronSummary, monitorsCron: monitorsCronSummary });
     }
 
     const results: any[] = [];

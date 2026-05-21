@@ -662,3 +662,144 @@ export async function researchBulk(opts: {
   if (!r?.success) return { results: [], error: r?.error };
   return { results: Array.isArray(r.results) ? r.results : [] };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   H.4 — Market & Monitoring
+═══════════════════════════════════════════════════════════ */
+
+export interface InternetMonitor {
+  id?:                     string;
+  project_id?:             string;
+  monitor_type:            string;
+  url:                     string;
+  label:                   string;
+  why:                     string;
+  competitor_name?:        string | null;
+  watch_focus?:            string | null;
+  enabled:                 boolean;
+  check_frequency_hours:   number;
+  last_check_at?:          string | null;
+  next_check_due_at?:      string | null;
+  last_content_hash?:      string | null;
+  last_content_excerpt?:   string | null;
+  last_ai_summary?:        string | null;
+  consecutive_errors?:     number;
+  last_error?:             string | null;
+  last_error_at?:          string | null;
+  created_at?:             string;
+  updated_at?:             string;
+}
+
+export const MONITOR_TYPES = [
+  { key: 'competitor_page',       label: 'Competitor Page',       desc: 'A specific competitor URL — pricing, comparison, features, or landing page.' },
+  { key: 'industry_publication',  label: 'Industry Publication',  desc: 'A blog index, news landing, or RSS feed page — watch for new posts.' },
+  { key: 'regulatory_source',     label: 'Regulatory Source',     desc: 'A gov/regulator page where guidance or compliance text may change.' },
+  { key: 'general_url',           label: 'General URL',           desc: 'Any other URL where meaningful change matters.' },
+];
+
+export const MONITOR_FREQUENCY_PRESETS = [
+  { hours: 6,    label: '6 hours'   },
+  { hours: 12,   label: '12 hours'  },
+  { hours: 24,   label: '1 day'     },
+  { hours: 72,   label: '3 days'    },
+  { hours: 168,  label: '1 week'    },
+  { hours: 720,  label: '30 days'   },
+];
+
+export interface MonitorObservation {
+  id:                    string;
+  monitor_id:            string;
+  monitor_label?:        string;
+  monitor_url?:          string;
+  monitor_type?:         string;
+  competitor_name?:      string | null;
+  observed_at:           string;
+  change_classification: 'no_change' | 'cosmetic' | 'meaningful' | 'new_item' | 'error';
+  summary_of_change?:    string | null;
+  ai_assessment?:        string | null;
+  suggested_action?:     string | null;
+  suggested_template_id?: string | null;
+  status:                'open' | 'reviewed' | 'acted' | 'dismissed';
+  acted_document_id?:    string | null;
+}
+
+export interface StaleDoc {
+  document_id:        string;
+  document_name?:     string;
+  template_id?:       string;
+  version?:           number;
+  most_recent_stale:  string;
+  reasons:            string[];
+}
+
+export async function listMonitors(projectId: string): Promise<{
+  monitors: InternetMonitor[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_monitors', projectId });
+  if (!r?.success) return { monitors: [], error: r?.error };
+  return { monitors: Array.isArray(r.monitors) ? r.monitors : [] };
+}
+
+export async function upsertMonitor(opts: { projectId: string } & InternetMonitor): Promise<{
+  monitor?: InternetMonitor; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_upsert_monitor', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { monitor: r.monitor };
+}
+
+export async function deleteMonitor(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_delete_monitor', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function checkMonitorNow(opts: { id: string; projectId: string }): Promise<{
+  success:                boolean;
+  classification?:        string;
+  summary_of_change?:     string;
+  ai_assessment?:         string;
+  suggested_action?:      string | null;
+  suggested_template_id?: string | null;
+  error?:                 string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_check_monitor_now', ...opts });
+  return { success: !!r?.success, ...r };
+}
+
+export async function listObservations(opts: {
+  projectId:                string;
+  status?:                  string;
+  includeClassifications?:  string[];
+  limit?:                   number;
+}): Promise<{ observations: MonitorObservation[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_observations', ...opts });
+  if (!r?.success) return { observations: [], error: r?.error };
+  return { observations: Array.isArray(r.observations) ? r.observations : [] };
+}
+
+export async function updateObservationStatus(opts: {
+  id: string; projectId: string; status: string; actedDocumentId?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_update_observation_status', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function listStaleDocs(projectId: string): Promise<{
+  stale_docs: StaleDoc[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_stale_docs', projectId });
+  if (!r?.success) return { stale_docs: [], error: r?.error };
+  return { stale_docs: Array.isArray(r.stale_docs) ? r.stale_docs : [] };
+}
+
+export async function dismissStale(opts: { documentId: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_dismiss_stale', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}

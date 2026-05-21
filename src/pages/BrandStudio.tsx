@@ -34,6 +34,8 @@ import Library from '@/components/brand-studio/Library';
 import Ingest from '@/components/brand-studio/Ingest';
 import Generate from '@/components/brand-studio/Generate';
 import InvestorPanel from '@/components/brand-studio/InvestorPanel';
+import MonitorsPanel from '@/components/brand-studio/MonitorsPanel';
+import TriggersPanel from '@/components/brand-studio/TriggersPanel';
 import ClientAccess from '@/components/brand-studio/ClientAccess';
 import EntitlementGate from '@/components/brand-studio/EntitlementGate';
 import {
@@ -273,30 +275,15 @@ export default function BrandStudio() {
 
         {entitlements && tab === 'market' && (
           <EntitlementGate entitlements={entitlements} feature="brand_studio.market" showLockedState>
-            <PlaceholderCard
-              title="Market & Competitive — coming in H.4"
-              description={[
-                'Share-of-voice analysis, market prominence report, brand visibility tracking.',
-                'Competitor move detection: when a competitor launches a feature, releases a campaign, publishes a case study.',
-                'Industry signal aggregation: regulatory news, market shifts, algorithm updates affecting the project.',
-                'Content gap opportunities: where competitors have authoritative coverage we lack.',
-                'Strategic verdicts: "here is the biggest unblocked opportunity right now, and the concrete path through it."',
-              ]}
-            />
+            <MonitorsPanel projectId={projectId} />
           </EntitlementGate>
         )}
 
         {entitlements && tab === 'triggers' && (
           <EntitlementGate entitlements={entitlements} feature="brand_studio.triggers" showLockedState>
-            <PlaceholderCard
-              title="Triggers & Monitoring — coming in H.4"
-              description={[
-                'Per-project internet monitor configuration: competitor URLs to watch, industry publications to track, search trends to follow.',
-                'Daily cron-driven checks. Change detection at the page and topic level.',
-                'When something material changes, trigger a document suggestion: "Competitor X launched a comparison page targeting your top keyword — recommend a counter-positioning memo."',
-                'Subscription model: each generated document declares its input dependencies. When inputs change, the document is flagged for revision.',
-                'Stale-doc detection: documents older than their relevance window get gentle nudges to regenerate.',
-              ]}
+            <TriggersPanel
+              projectId={projectId}
+              onSuggestGenerate={(_templateId) => setTab('generate')}
             />
           </EntitlementGate>
         )}

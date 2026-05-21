@@ -12,8 +12,8 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
-import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { listDocuments, publishDocument } from './api';
+import { FileText, Sparkles, Filter, ExternalLink, Eye, EyeOff, Loader2, FileWarning } from 'lucide-react';
+import { listDocuments, publishDocument, listStaleDocs } from './api';
 import { toast } from '@/hooks/use-toast';
 import type { BrandStudioDocument, BrandStudioCatalogs } from './types';
 
@@ -31,21 +31,35 @@ export default function Library({ projectId, catalogs }: Props) {
   const [stakeholderF,    setStakeholderF]    = useState<string>('');
   const [audienceF,       setAudienceF]       = useState<string>('');
   const [publishedOnly,   setPublishedOnly]   = useState(false);
+  /* H.4 — stale doc IDs (from document_subscriptions) */
+  const [staleDocIds,     setStaleDocIds]     = useState<Set<string>>(new Set());
+  const [staleReasons,    setStaleReasons]    = useState<Map<string, string[]>>(new Map());
 
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const { documents } = await listDocuments({
-        projectId,
-        kind:             kindFilter === 'all' ? undefined : kindFilter,
-        stakeholderRole:  stakeholderF || undefined,
-        audienceRole:     audienceF || undefined,
-        publishedOnly:    publishedOnly || undefined,
-      });
+      const [docsResp, staleResp] = await Promise.all([
+        listDocuments({
+          projectId,
+          kind:             kindFilter === 'all' ? undefined : kindFilter,
+          stakeholderRole:  stakeholderF || undefined,
+          audienceRole:     audienceF || undefined,
+          publishedOnly:    publishedOnly || undefined,
+        }),
+        listStaleDocs(projectId),
+      ]);
       if (cancelled) return;
-      setDocs(documents);
+      setDocs(docsResp.documents);
+      const ids = new Set<string>();
+      const reasons = new Map<string, string[]>();
+      for (const sd of staleResp.stale_docs) {
+        ids.add(sd.document_id);
+        reasons.set(sd.document_id, sd.reasons);
+      }
+      setStaleDocIds(ids);
+      setStaleReasons(reasons);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -136,6 +150,8 @@ export default function Library({ projectId, catalogs }: Props) {
             key={doc.id}
             doc={doc}
             catalogs={catalogs}
+            isStale={staleDocIds.has(doc.id)}
+            staleReasons={staleReasons.get(doc.id) || []}
             onPublishChange={(id, published) => {
               setDocs((prev) => prev.map((d) => d.id === id ? { ...d, published_to_client: published, published_at: published ? new Date().toISOString() : undefined } : d));
             }}
@@ -147,11 +163,13 @@ export default function Library({ projectId, catalogs }: Props) {
 }
 
 function DocumentRow({
-  doc, catalogs, onPublishChange,
+  doc, catalogs, onPublishChange, isStale, staleReasons,
 }: {
   doc: BrandStudioDocument;
   catalogs: BrandStudioCatalogs | null;
   onPublishChange: (id: string, published: boolean) => void;
+  isStale?: boolean;
+  staleReasons?: string[];
 }) {
   const isGenerated = doc.kind === 'generated';
   const stakeholderLabel = catalogs?.stakeholder_roles.find((r) => r.key === doc.stakeholder_role)?.label;
@@ -195,6 +213,13 @@ function DocumentRow({
             )}
             {doc.version && doc.version > 1 && (
               <span className="text-[9px] text-muted-foreground font-mono">v{doc.version}</span>
+            )}
+            {isStale && (
+              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-bold flex items-center gap-0.5"
+                title={(staleReasons || []).join(' · ')}>
+                <FileWarning className="h-2.5 w-2.5" />
+                Inputs changed
+              </span>
             )}
           </div>
 

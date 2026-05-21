@@ -642,7 +642,64 @@ async function saveGeneration(opts: {
   }).select().single();
 
   if (error || !data) return { error: error?.message || "Failed to save generated document" };
-  return { documentId: (data as any).id, version };
+
+  const documentId = (data as any).id;
+
+  /* H.4 — auto-create document_subscriptions from cited source IDs.
+     Each unique source ID becomes a subscription that will track
+     staleness when the underlying input changes. Best-effort — failures
+     here don't fail the save. */
+  try {
+    const allCitedIds = new Set<string>();
+    for (const sec of output.sections) {
+      for (const src of sec.sources_cited) allCitedIds.add(src);
+    }
+    const subscriptionRows: any[] = [];
+    for (const src of allCitedIds) {
+      if (src.startsWith("doc:")) {
+        const targetId = src.slice(4);
+        if (targetId) subscriptionRows.push({
+          document_id: documentId, project_id: projectId,
+          subscription_type: "monitor",          /* docs can be re-ingested → subscription tracks the source doc */
+          target_id: targetId,
+        });
+      } else if (src.startsWith("traction:")) {
+        const targetId = src.slice(9);
+        if (targetId) subscriptionRows.push({
+          document_id: documentId, project_id: projectId,
+          subscription_type: "traction", target_id: targetId,
+        });
+      } else if (src.startsWith("market_intel:")) {
+        const targetId = src.slice(13);
+        if (targetId) subscriptionRows.push({
+          document_id: documentId, project_id: projectId,
+          subscription_type: "market_intel", target_id: targetId,
+        });
+      } else if (src.startsWith("dataroom:")) {
+        const rest = src.slice(9);
+        const dotIdx = rest.indexOf(".");
+        if (dotIdx > 0) {
+          const category = rest.slice(0, dotIdx);
+          const fieldKey = rest.slice(dotIdx + 1);
+          subscriptionRows.push({
+            document_id: documentId, project_id: projectId,
+            subscription_type: "dataroom_field",
+            target_category: category, target_field_key: fieldKey,
+          });
+        }
+      }
+      /* brand: and ASSUMPTION don't get subscriptions — brand assets
+         change via direct PM edit which doesn't need automated staleness;
+         ASSUMPTION is the writer's explicit caveat with no input to watch. */
+    }
+    if (subscriptionRows.length) {
+      await db().from("document_subscriptions").insert(subscriptionRows);
+    }
+  } catch (e: any) {
+    console.error("[bs-generate] subscription creation failed:", e?.message);
+  }
+
+  return { documentId, version };
 }
 
 /* ─── Public action handlers ──────────────────────────────────── */
