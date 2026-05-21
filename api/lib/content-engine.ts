@@ -1,4 +1,4 @@
-import {db} from "./db";
+import {db} from "./db.js";
 export async function generateContentBrief(projectId:string,keyword:string,priority:string="medium"){
   const{data:p}=await db().from("projects").select("name,url,goals,industry,language,market").eq("id",projectId).single();
   if(!p)return null;
