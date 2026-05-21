@@ -26,6 +26,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, Send, Sparkles, X, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useSeason, SeasonMood } from '@/contexts/SeasonContext';
+import { useSeasonAction } from '@/hooks/useSeasonAction';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -120,6 +121,7 @@ function chipsForAwareness(awareness: any): Array<{ label: string; q: string; ur
 
 export default function SeasonModal() {
   const { isOpen, close, initialQuery, mood, setMood, awareness } = useSeason();
+  const { run: runAction, confirm: confirmAction, cancel: cancelAction, pendingConfirm, running: actionRunning } = useSeasonAction();
   const { selectedProjectId } = useProject() as any;
   const { projects } = useAuth() as any;
   const navigate = useNavigate();
@@ -414,8 +416,84 @@ export default function SeasonModal() {
                 </div>
               </form>
 
+              {/* Pending confirmation — when an action awaits "tap to confirm" */}
+              <AnimatePresence>
+                {pendingConfirm && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                    transition={{ duration: 0.2 }}
+                    style={{
+                      marginTop: 12,
+                      padding: '12px 14px',
+                      borderRadius: 12,
+                      border: `1px solid hsla(${
+                        pendingConfirm.action.permission === 'destructive' ? '0 75% 55%' : moodHsl
+                      } / 0.35)`,
+                      background: `hsla(${
+                        pendingConfirm.action.permission === 'destructive' ? '0 75% 55%' : moodHsl
+                      } / 0.06)`,
+                    }}>
+                    <div style={{
+                      fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.15em',
+                      fontWeight: 700, color: `hsl(${
+                        pendingConfirm.action.permission === 'destructive' ? '0 75% 60%' : moodHsl
+                      })`, marginBottom: 4,
+                    }}>
+                      {pendingConfirm.action.permission === 'destructive'
+                        ? '⚠ Confirm destructive action'
+                        : 'Confirm this action'}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.92)', fontWeight: 600 }}>
+                      {pendingConfirm.action.label}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 3, lineHeight: 1.5 }}>
+                      {pendingConfirm.action.description}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                      <button
+                        disabled={actionRunning}
+                        onClick={async () => {
+                          const r = await confirmAction();
+                          if (r.ok && r.navigated) close();
+                        }}
+                        style={{
+                          fontSize: 11, padding: '5px 12px', borderRadius: 8,
+                          border: `1px solid hsla(${
+                            pendingConfirm.action.permission === 'destructive' ? '0 75% 55%' : moodHsl
+                          } / 0.4)`,
+                          background: `hsla(${
+                            pendingConfirm.action.permission === 'destructive' ? '0 75% 55%' : moodHsl
+                          } / 0.18)`,
+                          color: `hsl(${
+                            pendingConfirm.action.permission === 'destructive' ? '0 75% 60%' : moodHsl
+                          })`,
+                          cursor: actionRunning ? 'wait' : 'pointer',
+                          fontWeight: 700,
+                          opacity: actionRunning ? 0.5 : 1,
+                        }}>
+                        {actionRunning ? 'Running…' : 'Yes, do it'}
+                      </button>
+                      <button
+                        disabled={actionRunning}
+                        onClick={cancelAction}
+                        style={{
+                          fontSize: 11, padding: '5px 12px', borderRadius: 8,
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          background: 'transparent',
+                          color: 'rgba(255,255,255,0.65)',
+                          cursor: 'pointer',
+                        }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Quick chips — only show when no response yet */}
-              {!response && !submitting && (
+              {!response && !submitting && !pendingConfirm && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
                   {chipsForAwareness(awareness).map((c, i) => (
                     <motion.button
@@ -558,8 +636,9 @@ export default function SeasonModal() {
                       {response.actions.map((a, i) => (
                         <button
                           key={i}
-                          onClick={() => {
-                            /* For try_xxx actions, refire as a query */
+                          disabled={actionRunning}
+                          onClick={async () => {
+                            /* try_xxx — refire as a query */
                             if (a.id.startsWith('try_')) {
                               const map: Record<string, string> = {
                                 try_diagnose:  'diagnose',
@@ -571,21 +650,32 @@ export default function SeasonModal() {
                               setInput(q); submit(q);
                               return;
                             }
-                            /* Otherwise close + maybe navigate */
-                            if (a.id === 'open_planning')    { close(); setTimeout(() => navigate('/planning'), 100); }
-                            else if (a.id === 'open_pipeline') { close(); setTimeout(() => navigate('/planning'), 100); }
-                            else if (a.id === 'open_analytics') { close(); setTimeout(() => navigate('/data-room'), 100); }
-                            else if (a.id === 'open_kanban')   { close(); setTimeout(() => navigate('/desk'), 100); }
-                            else if (a.id === 'open_provenance') { close(); setTimeout(() => navigate('/data-room'), 100); }
-                            else { /* no-op */ }
+                            /* Try the registry first — maps suggested action IDs to real handlers */
+                            const idMap: Record<string, string> = {
+                              open_planning:     'navigate_planning',
+                              open_pipeline:     'navigate_planning',
+                              open_analytics:    'navigate_data_room',
+                              open_provenance:   'navigate_data_room',
+                              open_kanban:       'navigate_command',  /* desk doesn't exist as a clean route; fallback */
+                              open_dashboard:    'navigate_dashboard',
+                              open_audit:        'navigate_audit',
+                              open_settings:     'navigate_season_settings',
+                              compute_intelligence: 'compute_intelligence',
+                            };
+                            const registryId = idMap[a.id] || a.id;
+                            const result = await runAction(registryId, a.payload);
+                            if (result.ok && result.navigated) {
+                              close();
+                            }
                           }}
                           style={{
                             fontSize: 11, padding: '6px 12px', borderRadius: 8,
                             border: `1px solid hsla(${moodHsl} / 0.3)`,
                             background: `hsla(${moodHsl} / 0.08)`,
                             color: `hsl(${moodHsl})`,
-                            cursor: 'pointer',
+                            cursor: actionRunning ? 'wait' : 'pointer',
                             fontWeight: 600,
+                            opacity: actionRunning ? 0.6 : 1,
                             display: 'flex', alignItems: 'center', gap: 4,
                           }}>
                           {a.label} <ArrowRight size={10} />
