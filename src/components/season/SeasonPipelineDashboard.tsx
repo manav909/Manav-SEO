@@ -133,13 +133,12 @@ export default function SeasonPipelineDashboard({
       transition={{ duration: 0.3 }}
       style={{
         position: 'fixed', inset: 0,
-        background: 'radial-gradient(ellipse at center, rgba(15,16,24,0.92) 0%, rgba(8,9,15,0.98) 70%)',
-        backdropFilter: 'blur(8px)',
-        zIndex: 9999,
+        background: 'radial-gradient(ellipse at center, #0f1018 0%, #08090f 70%)',
+        zIndex: 10010,
         overflow: 'auto',
       }}>
       <div style={{
-        position: 'fixed', inset: 0, zIndex: 10000,
+        position: 'fixed', inset: 0, zIndex: 10011,
         display: 'flex', flexDirection: 'column',
         padding: '24px',
         pointerEvents: 'none',

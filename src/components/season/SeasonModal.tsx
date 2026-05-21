@@ -212,12 +212,16 @@ export default function SeasonModal() {
             setSubmitting(false);
             return;
           }
-          /* Hand off to the live dashboard. The modal stays mounted but hidden
-             behind the dashboard's full-screen layer. */
+          /* Hand off to the live dashboard. Close the modal cleanly so the
+             dashboard owns the screen. Input + response state reset so when the
+             user later reopens Cmd+K it's a clean slate. */
           setActiveRunId(r.run_id);
           setActiveRunStepCount(r.step_count || 7);
           setActiveRunLabel(`Ranking for "${keyword}"`);
           setMood('focused');
+          setInput('');
+          setResponse(null);
+          close();  /* dismisses the modal — dashboard renders on its own */
         } catch (e: any) {
           setError(`Pipeline error: ${e?.message || 'unknown'}`);
           setMood('alert');
