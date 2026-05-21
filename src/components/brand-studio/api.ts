@@ -984,3 +984,549 @@ export async function getFieldDependents(opts: {
   if (!r?.success) return { dependents: [], error: r?.error };
   return { dependents: Array.isArray(r.dependents) ? r.dependents : [] };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   H.6a — Client collaboration: users, sharing, comments,
+   approvals, intake, uploads, notifications, audit
+═══════════════════════════════════════════════════════════ */
+
+export interface ClientUser {
+  id?:                 string;
+  project_id?:         string;
+  email:               string;
+  display_name?:       string | null;
+  role:                'client_executive' | 'client_marketing' | 'client_legal' | 'client_designer' | 'client_internal' | 'client_press_contact';
+  title?:              string | null;
+  org?:                string | null;
+  invite_token?:       string;
+  invite_used?:        boolean;
+  invite_sent_at?:     string;
+  invite_expires_at?:  string | null;
+  session_token?:      string | null;
+  active?:             boolean;
+  last_seen_at?:       string | null;
+  visit_count?:        number;
+  notes?:              string | null;
+  created_at?:         string;
+}
+
+export const CLIENT_ROLES = [
+  { key: 'client_executive',    label: 'Executive',    desc: 'Sees everything in the workspace, can approve all docs' },
+  { key: 'client_marketing',    label: 'Marketing',    desc: 'Sees brand + library + investor (if enabled), approves marketing-relevant docs' },
+  { key: 'client_legal',        label: 'Legal',        desc: 'Sees legal/compliance docs, can flag/approve press releases + case studies' },
+  { key: 'client_designer',     label: 'Designer',     desc: 'Sees brand assets, can upload logo variants and brand visual files' },
+  { key: 'client_internal',     label: 'Internal',     desc: 'Read-only generalist, no approval rights by default' },
+  { key: 'client_press_contact',label: 'Press Contact',desc: 'Sees press releases only, can flag for review' },
+];
+
+export async function inviteClientUser(opts: {
+  projectId: string; email: string; role: string;
+  title?: string; org?: string; invitedBy?: string; notes?: string;
+}): Promise<{ client_user?: ClientUser; invite_token?: string; was_regenerated?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_invite_client_user', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { client_user: r.client_user, invite_token: r.invite_token, was_regenerated: r.was_regenerated };
+}
+
+export async function listClientUsers(opts: { projectId: string; includeInactive?: boolean }): Promise<{
+  client_users: ClientUser[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_client_users', ...opts });
+  if (!r?.success) return { client_users: [], error: r?.error };
+  return { client_users: Array.isArray(r.client_users) ? r.client_users : [] };
+}
+
+export async function updateClientUser(opts: {
+  id: string; projectId: string; role?: string; title?: string; org?: string; active?: boolean; notes?: string;
+}): Promise<{ client_user?: ClientUser; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_update_client_user', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { client_user: r.client_user };
+}
+
+export async function revokeClientUser(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_revoke_client_user', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function redeemInvite(opts: { inviteToken: string; displayName: string }): Promise<{
+  session_token?: string;
+  session_expires_at?: string;
+  client_user?: ClientUser;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_redeem_invite', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { session_token: r.session_token, session_expires_at: r.session_expires_at, client_user: r.client_user };
+}
+
+/* ─── Share grants ─── */
+
+export interface ShareGrant {
+  id:                  string;
+  document_id:         string;
+  project_id:          string;
+  granted_to_user_id:  string;
+  granted_to_label?:   string;
+  granted_to_email?:   string;
+  granted_to_role?:    string;
+  granted_to_active?:  boolean;
+  access_level:        'view' | 'comment' | 'approve';
+  granted_by_type:     'staff' | 'client';
+  granted_by_id:       string;
+  granted_by_label:    string;
+  granted_at:          string;
+  revoked:             boolean;
+  revoked_at?:         string | null;
+  revoked_by_label?:   string | null;
+  revoke_reason?:      string | null;
+}
+
+export async function listShareGrants(opts: { documentId: string; projectId: string; includeRevoked?: boolean }): Promise<{
+  grants: ShareGrant[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_share_grants', ...opts });
+  if (!r?.success) return { grants: [], error: r?.error };
+  return { grants: Array.isArray(r.grants) ? r.grants : [] };
+}
+
+export async function createShareGrant(opts: {
+  documentId: string; projectId: string;
+  grantedToUserId: string; accessLevel: 'view' | 'comment' | 'approve';
+  grantedByType: 'staff' | 'client'; grantedById: string; grantedByLabel: string;
+}): Promise<{ grant?: ShareGrant; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_create_share_grant', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { grant: r.grant };
+}
+
+export async function revokeShareGrant(opts: {
+  id: string; projectId: string;
+  revokedByType: 'staff' | 'client'; revokedById: string; revokedByLabel: string; reason?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_revoke_share_grant', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+/* ─── Comments ─── */
+
+export interface DocumentComment {
+  id:                string;
+  document_id:       string;
+  section_key?:      string | null;
+  parent_comment_id?: string | null;
+  author_type:       'staff' | 'client';
+  author_id:         string;
+  author_label:      string;
+  body:              string;
+  mentions?:         Array<{ type: string; id: string; label: string }>;
+  resolved:          boolean;
+  resolved_by_label?: string | null;
+  resolved_at?:      string | null;
+  edited_at?:        string | null;
+  deleted_at?:       string | null;
+  created_at:        string;
+  updated_at:        string;
+}
+
+export async function listComments(opts: {
+  documentId: string; projectId: string; includeResolved?: boolean; includeDeleted?: boolean;
+}): Promise<{ comments: DocumentComment[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_comments', ...opts });
+  if (!r?.success) return { comments: [], error: r?.error };
+  return { comments: Array.isArray(r.comments) ? r.comments : [] };
+}
+
+export async function postComment(opts: {
+  documentId: string; projectId: string;
+  sectionKey?: string | null; parentCommentId?: string | null;
+  bodyText: string; authorType: 'staff' | 'client'; authorId: string; authorLabel: string;
+}): Promise<{ comment?: DocumentComment; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_post_comment', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { comment: r.comment };
+}
+
+export async function resolveComment(opts: {
+  id: string; projectId: string; undo?: boolean;
+  resolvedByType?: string; resolvedById?: string; resolvedByLabel?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_resolve_comment', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function deleteComment(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_delete_comment', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+/* ─── Approvals ─── */
+
+export interface DocumentApproval {
+  id:                   string;
+  document_id:          string;
+  project_id:           string;
+  document_version:     number;
+  requested_by_id:      string;
+  requested_by_label:   string;
+  requested_at:         string;
+  request_message?:     string | null;
+  requested_from_user_id?: string | null;
+  state:                'in_review' | 'approved' | 'needs_changes' | 'cancelled';
+  responded_by_user_id?: string | null;
+  responded_by_label?:  string | null;
+  responded_at?:        string | null;
+  response_message?:    string | null;
+  linked_comment_id?:   string | null;
+}
+
+export async function listApprovals(opts: {
+  projectId: string; documentId?: string; openOnly?: boolean;
+}): Promise<{ approvals: DocumentApproval[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_approvals', ...opts });
+  if (!r?.success) return { approvals: [], error: r?.error };
+  return { approvals: Array.isArray(r.approvals) ? r.approvals : [] };
+}
+
+export async function requestApproval(opts: {
+  documentId: string; projectId: string;
+  requestedById: string; requestedByLabel: string;
+  requestMessage?: string; requestedFromUserId?: string;
+}): Promise<{ approval?: DocumentApproval; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_request_approval', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { approval: r.approval };
+}
+
+export async function cancelApproval(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_cancel_approval', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function respondApproval(opts: {
+  id: string; projectId: string;
+  decision: 'approved' | 'needs_changes';
+  responseMessage?: string;
+  respondedByUserId: string; respondedByLabel: string;
+  linkedCommentId?: string;
+}): Promise<{ approval?: DocumentApproval; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_respond_approval', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { approval: r.approval };
+}
+
+/* ─── Intake forms ─── */
+
+export interface IntakeQuestion {
+  key:                string;
+  question_text:      string;
+  response_type:      'short_text' | 'long_text' | 'multi_choice' | 'single_choice' | 'number' | 'date';
+  required?:          boolean;
+  target_category?:   string | null;
+  target_field_key?:  string | null;
+  options?:           string[] | null;
+  help_text?:         string | null;
+}
+
+export interface IntakeForm {
+  id?:                 string;
+  project_id?:         string;
+  title:               string;
+  description?:        string | null;
+  status:              'draft' | 'open' | 'closed';
+  questions:           IntakeQuestion[];
+  visible_to_roles:    string[];
+  created_by?:         string | null;
+  created_at?:         string;
+  updated_at?:         string;
+}
+
+export interface IntakeResponse {
+  id:                  string;
+  form_id:             string;
+  project_id:          string;
+  responding_user_id:  string;
+  responses:           Record<string, any>;
+  status:              'in_progress' | 'submitted' | 'pm_reviewed';
+  submitted_at?:       string | null;
+  pm_reviewed_at?:     string | null;
+  pm_reviewed_by?:     string | null;
+  pm_review_notes?:    string | null;
+  pm_apply_results?:   any;
+  created_at:          string;
+}
+
+export const RESPONSE_TYPES = [
+  { key: 'short_text',     label: 'Short text' },
+  { key: 'long_text',      label: 'Long text' },
+  { key: 'single_choice',  label: 'Single choice' },
+  { key: 'multi_choice',   label: 'Multiple choice' },
+  { key: 'number',         label: 'Number' },
+  { key: 'date',           label: 'Date' },
+];
+
+export async function listIntakeForms(opts: { projectId: string; status?: string }): Promise<{
+  forms: IntakeForm[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_intake_forms', ...opts });
+  if (!r?.success) return { forms: [], error: r?.error };
+  return { forms: Array.isArray(r.forms) ? r.forms : [] };
+}
+
+export async function upsertIntakeForm(opts: { projectId: string } & IntakeForm & { id?: string }): Promise<{
+  form?: IntakeForm; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_upsert_intake_form', ...opts, visibleToRoles: opts.visible_to_roles });
+  if (!r?.success) return { error: r?.error };
+  return { form: r.form };
+}
+
+export async function deleteIntakeForm(opts: { id: string; projectId: string }): Promise<{
+  success: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_delete_intake_form', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function listIntakeResponses(opts: {
+  projectId: string; formId?: string; status?: string; pendingReviewOnly?: boolean;
+}): Promise<{ responses: IntakeResponse[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_intake_responses', ...opts });
+  if (!r?.success) return { responses: [], error: r?.error };
+  return { responses: Array.isArray(r.responses) ? r.responses : [] };
+}
+
+export async function reviewIntakeResponse(opts: {
+  id: string; projectId: string;
+  applyMap?: Record<string, { skip?: boolean }>;
+  reviewedBy?: string; reviewNotes?: string;
+}): Promise<{ written?: number; skipped?: number; results?: any[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_review_intake_response', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { written: r.written, skipped: r.skipped, results: r.results };
+}
+
+/* ─── Notifications ─── */
+
+export interface ClientNotification {
+  id:              string;
+  project_id:      string;
+  recipient_type:  'staff' | 'client';
+  recipient_id:    string;
+  kind:            string;
+  title:           string;
+  body?:           string | null;
+  payload?:        any;
+  read_at?:        string | null;
+  acted_at?:       string | null;
+  created_at:      string;
+}
+
+export async function listNotifications(opts: {
+  recipientType: 'staff' | 'client'; recipientId: string;
+  projectId?: string; unreadOnly?: boolean; limit?: number;
+}): Promise<{ notifications: ClientNotification[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_list_notifications', ...opts });
+  if (!r?.success) return { notifications: [], error: r?.error };
+  return { notifications: Array.isArray(r.notifications) ? r.notifications : [] };
+}
+
+export async function markNotificationRead(opts: {
+  id?: string; recipientType: 'staff' | 'client'; recipientId: string; all?: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_mark_notification_read', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+/* ─── Audit ─── */
+
+export interface AuditEvent {
+  kind:         string;
+  id:           string;
+  document_id?: string;
+  actor:        string;
+  body:         string;
+  at:           string;
+}
+
+export async function listAuditLog(opts: { projectId: string; limit?: number }): Promise<{
+  events: AuditEvent[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_list_audit_log', ...opts });
+  if (!r?.success) return { events: [], error: r?.error };
+  return { events: Array.isArray(r.events) ? r.events : [] };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   H.6a — Client-side session-token API
+═══════════════════════════════════════════════════════════ */
+
+const CLIENT_SESSION_STORAGE_KEY = 'bs_client_session';
+
+export interface ClientSessionContext {
+  user: {
+    id: string;
+    display_name: string;
+    email: string;
+    role: string;
+    title?: string | null;
+    org?: string | null;
+  };
+  project: { id: string; name: string; url?: string };
+  brand: any;
+  visible_features: Record<string, boolean>;
+}
+
+export function getStoredClientSession(): { token: string; expires_at: string } | null {
+  try {
+    const raw = window.localStorage.getItem(CLIENT_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.token) return null;
+    if (parsed.expires_at && new Date(parsed.expires_at) < new Date()) {
+      window.localStorage.removeItem(CLIENT_SESSION_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch { return null; }
+}
+
+export function storeClientSession(token: string, expires_at: string) {
+  try { window.localStorage.setItem(CLIENT_SESSION_STORAGE_KEY, JSON.stringify({ token, expires_at })); } catch {}
+}
+
+export function clearClientSession() {
+  try { window.localStorage.removeItem(CLIENT_SESSION_STORAGE_KEY); } catch {}
+}
+
+export async function clientSessionResolve(sessionToken: string): Promise<{
+  context?: ClientSessionContext; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_session_resolve', sessionToken });
+  if (!r?.success) return { error: r?.error };
+  return { context: { user: r.user, project: r.project, brand: r.brand, visible_features: r.visible_features } };
+}
+
+export async function clientSessionListDocuments(sessionToken: string): Promise<{
+  documents: any[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_session_list_documents', sessionToken });
+  if (!r?.success) return { documents: [], error: r?.error };
+  return { documents: Array.isArray(r.documents) ? r.documents : [] };
+}
+
+export async function clientSessionPostComment(opts: {
+  sessionToken: string; documentId: string;
+  sectionKey?: string | null; parentCommentId?: string | null; bodyText: string;
+}): Promise<{ comment?: DocumentComment; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_client_session_post_comment', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { comment: r.comment };
+}
+
+export async function clientSessionListComments(opts: { sessionToken: string; documentId: string }): Promise<{
+  comments: DocumentComment[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_session_list_comments', ...opts });
+  if (!r?.success) return { comments: [], error: r?.error };
+  return { comments: Array.isArray(r.comments) ? r.comments : [] };
+}
+
+export async function clientSessionRespondApproval(opts: {
+  sessionToken: string; id: string;
+  decision: 'approved' | 'needs_changes';
+  responseMessage?: string; linkedCommentId?: string;
+}): Promise<{ approval?: DocumentApproval; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_client_session_respond_approval', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { approval: r.approval };
+}
+
+export async function clientSessionListApprovals(opts: { sessionToken: string; documentId?: string; openOnly?: boolean }): Promise<{
+  approvals: DocumentApproval[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_session_list_approvals', ...opts });
+  if (!r?.success) return { approvals: [], error: r?.error };
+  return { approvals: Array.isArray(r.approvals) ? r.approvals : [] };
+}
+
+export async function clientSessionShareDoc(opts: {
+  sessionToken: string; documentId: string;
+  grantedToUserId: string; accessLevel: 'view' | 'comment' | 'approve';
+}): Promise<{ grant?: ShareGrant; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_client_session_share_doc', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { grant: r.grant };
+}
+
+export async function clientSessionRevokeShare(opts: {
+  sessionToken: string; id: string; reason?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_client_session_revoke_share', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}
+
+export async function clientSessionListShareGrants(opts: { sessionToken: string; documentId: string }): Promise<{
+  grants: ShareGrant[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_session_list_share_grants', ...opts });
+  if (!r?.success) return { grants: [], error: r?.error };
+  return { grants: Array.isArray(r.grants) ? r.grants : [] };
+}
+
+export async function clientSessionUploadFile(opts: {
+  sessionToken: string; fileName: string;
+  contentType?: string; contentBase64: string;
+  docType?: string; sourceUrl?: string;
+}): Promise<{ document_id?: string; requires_pm_review?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_client_session_upload_file', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { document_id: r.document_id, requires_pm_review: r.requires_pm_review };
+}
+
+export async function clientSessionListIntakeForms(sessionToken: string): Promise<{
+  forms: (IntakeForm & { response_status?: string | null; submitted_at?: string | null })[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_session_list_intake_forms', sessionToken });
+  if (!r?.success) return { forms: [], error: r?.error };
+  return { forms: Array.isArray(r.forms) ? r.forms : [] };
+}
+
+export async function clientSessionSubmitIntake(opts: {
+  sessionToken: string; formId: string;
+  responses: Record<string, any>; isFinalSubmit: boolean;
+}): Promise<{ response?: IntakeResponse; status?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_client_session_submit_intake', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { response: r.response, status: r.status };
+}
+
+export async function clientSessionListNotifications(opts: { sessionToken: string; unreadOnly?: boolean; limit?: number }): Promise<{
+  notifications: ClientNotification[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_session_list_notifications', ...opts });
+  if (!r?.success) return { notifications: [], error: r?.error };
+  return { notifications: Array.isArray(r.notifications) ? r.notifications : [] };
+}
+
+export async function clientSessionMarkNotificationRead(opts: {
+  sessionToken: string; id?: string; all?: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_client_session_mark_notification_read', ...opts });
+  if (!r?.success) return { success: false, error: r?.error };
+  return { success: true };
+}

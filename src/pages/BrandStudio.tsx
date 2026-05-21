@@ -22,6 +22,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import PortalNav from '@/components/PortalNav';
 import { useProject } from '@/contexts/ProjectContext';
+import { useAuth }    from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -38,6 +39,9 @@ import MonitorsPanel from '@/components/brand-studio/MonitorsPanel';
 import TriggersPanel from '@/components/brand-studio/TriggersPanel';
 import StakeholdersPanel from '@/components/brand-studio/StakeholdersPanel';
 import ClientAccess from '@/components/brand-studio/ClientAccess';
+import ClientUsersPanel  from '@/components/brand-studio/ClientUsersPanel';
+import { IntakeFormsManager } from '@/components/brand-studio/IntakeForms';
+import NotificationInbox from '@/components/brand-studio/NotificationInbox';
 import EntitlementGate from '@/components/brand-studio/EntitlementGate';
 import {
   getEntitlements, getBrandAssets, updateBrandAssets, getCatalogs,
@@ -73,6 +77,7 @@ const TABS: TabDef[] = [
 
 export default function BrandStudio() {
   const { selectedProjectId } = useProject();
+  const { user, profile } = useAuth();
   const [tab, setTab] = useState<Tab>('library');
 
   const [entitlements, setEntitlements] = useState<EntitlementResolution | null>(null);
@@ -85,6 +90,9 @@ export default function BrandStudio() {
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
 
   const projectId = selectedProjectId || '';
+  /* H.6a: PM staff identity for collaboration actions */
+  const pmStaffId    = user?.id || 'pm';
+  const pmStaffLabel = (profile as any)?.display_name || user?.email || 'Staff';
 
   /* ── load entitlements + brand assets when project changes ── */
   const loadEverything = useCallback(async () => {
@@ -194,6 +202,13 @@ export default function BrandStudio() {
               Brand intelligence, document ingestion + generation, market visibility, and investor-grade artifacts.
             </p>
           </div>
+          {projectId && (
+            <NotificationInbox
+              mode="staff"
+              projectId={projectId}
+              recipientId={`pm:${projectId}`}
+            />
+          )}
         </div>
 
         {/* ── Brand Bar ── */}
@@ -296,11 +311,19 @@ export default function BrandStudio() {
         )}
 
         {entitlements && tab === 'client_access' && (
-          <ClientAccess
-            projectId={projectId}
-            entitlements={entitlements}
-            onEntitlementsChange={(e) => setEntitlements(e)}
-          />
+          <div className="space-y-6">
+            <ClientAccess
+              projectId={projectId}
+              entitlements={entitlements}
+              onEntitlementsChange={(e) => setEntitlements(e)}
+            />
+            <div className="border-t border-border pt-6">
+              <ClientUsersPanel projectId={projectId} />
+            </div>
+            <div className="border-t border-border pt-6">
+              <IntakeFormsManager projectId={projectId} />
+            </div>
+          </div>
         )}
       </div>
     </div>

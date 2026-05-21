@@ -1,43 +1,53 @@
 /* ════════════════════════════════════════════════════════════════
    src/pages/ClientWorkspace.tsx
-   Brand Studio H.1.5 — Public client portal.
+   Brand Studio H.1.5 + H.6a — Client portal.
 
-   Route: /c/:token  (no auth — token is the auth)
-   Distinct from /client-portal (internal staff page listing clients).
+   Routes:
+   - /c/:token    — legacy bare-token (anonymous link share, read-only)
+   - /c/workspace — session-token identity (magic-link invited user,
+                    can comment / approve / share / upload / fill intake)
 
-   The token IS the auth — server-side validates and returns the
-   client's context (project, brand assets, entitled features,
-   published documents).
-
-   Layout:
-   - Branded with the CLIENT'S own brand assets (logo, colors, tagline)
-   - No staff PortalNav
-   - Tabs filtered by client_visible_features (only what they're entitled to)
-   - Read-only — clients consume, never edit
+   Detects which mode based on URL params + localStorage session.
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Loader2, Lock, FileText, Palette as PaletteIcon, TrendingUp, Globe, ExternalLink, ArrowLeft, Sparkles } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Loader2, Lock, FileText, Palette as PaletteIcon, TrendingUp, Globe, ExternalLink, ArrowLeft, Sparkles, Upload, ClipboardList, LogOut, Users } from 'lucide-react';
 import {
   clientResolve, clientListDocuments, clientGetDocument, clientGetInvestorData,
+  clientSessionResolve, clientSessionListDocuments, getStoredClientSession, clearClientSession,
 } from '@/components/brand-studio/api';
 import type {
   ClientPortalContext, TractionProofPoint, MarketIntelEntry,
+  ClientSessionContext,
 } from '@/components/brand-studio/api';
 import type { BrandStudioDocument } from '@/components/brand-studio/types';
+import NotificationInbox from '@/components/brand-studio/NotificationInbox';
+import CommentsPanel    from '@/components/brand-studio/CommentsPanel';
+import ApprovalsPanel   from '@/components/brand-studio/ApprovalsPanel';
+import ShareGrantsPanel from '@/components/brand-studio/ShareGrantsPanel';
+import ClientUploadPanel from '@/components/brand-studio/ClientUploadPanel';
+import { ClientIntakeList } from '@/components/brand-studio/IntakeForms';
 
-type Tab = 'library' | 'brand' | 'investor' | 'market';
+type Tab = 'library' | 'brand' | 'investor' | 'market' | 'intake' | 'upload';
 
 export default function ClientWorkspace() {
   const { token } = useParams<{ token: string }>();
+  const navigate  = useNavigate();
+
+  /* Mode: 'bare_token' for /c/:token legacy, 'session' for /c/workspace */
+  const [mode, setMode] = useState<'bare_token' | 'session' | null>(null);
+  const [sessionToken, setSessionToken] = useState<string>('');
+
   const [context,   setContext]   = useState<ClientPortalContext | null>(null);
+  const [sessionContext, setSessionContext] = useState<ClientSessionContext | null>(null);
+
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
   const [tab,       setTab]       = useState<Tab>('library');
   const [documents, setDocuments] = useState<BrandStudioDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
-  const [openDoc,   setOpenDoc]   = useState<(BrandStudioDocument & { raw_content?: string }) | null>(null);
+  const [openDoc,   setOpenDoc]   = useState<(BrandStudioDocument & { raw_content?: string; access_level?: string; client_resharable?: boolean }) | null>(null);
   const [openDocLoading, setOpenDocLoading] = useState(false);
 
   /* H.3 — investor data */
@@ -46,27 +56,51 @@ export default function ClientWorkspace() {
   const [investorLoading, setInvestorLoading] = useState(false);
   const [investorLoaded,  setInvestorLoaded]  = useState(false);
 
-  /* ── resolve token on mount ── */
+  /* ── resolve identity on mount ── */
   useEffect(() => {
-    if (!token) {
-      setError('Missing access link');
-      setLoading(false);
-      return;
-    }
     let cancelled = false;
     (async () => {
-      const r = await clientResolve(token);
-      if (cancelled) return;
-      if (r.error || !r.context) {
-        setError(r.error || 'Invalid or expired access link');
+      /* Decide which mode */
+      if (token) {
+        /* /c/:token — legacy bare-token */
+        setMode('bare_token');
+        const r = await clientResolve(token);
+        if (cancelled) return;
+        if (r.error || !r.context) {
+          setError(r.error || 'Invalid or expired access link');
+          setLoading(false);
+          return;
+        }
+        setContext(r.context);
+        const visible = r.context.client_visible_features || {};
+        const order: Tab[] = ['library', 'brand', 'investor', 'market'];
+        const first = order.find((t) => visible[t]);
+        if (first) setTab(first);
         setLoading(false);
         return;
       }
-      setContext(r.context);
-      /* default tab → first enabled */
-      const visible = r.context.client_visible_features || {};
-      const order: Tab[] = ['library', 'brand', 'investor', 'market'];
-      const first = order.find((t) => visible[t]);
+
+      /* /c/workspace — session mode */
+      const stored = getStoredClientSession();
+      if (!stored?.token) {
+        setError('Please use the invite link your account manager sent you.');
+        setLoading(false);
+        return;
+      }
+      setMode('session');
+      setSessionToken(stored.token);
+      const r = await clientSessionResolve(stored.token);
+      if (cancelled) return;
+      if (r.error || !r.context) {
+        clearClientSession();
+        setError(r.error || 'Session expired — please use a fresh invite link');
+        setLoading(false);
+        return;
+      }
+      setSessionContext(r.context);
+      const visible = r.context.visible_features || {};
+      const order: Tab[] = ['library', 'brand', 'investor', 'market', 'intake', 'upload'];
+      const first = order.find((t) => visible[t] || t === 'intake' || t === 'upload');
       if (first) setTab(first);
       setLoading(false);
     })();
@@ -75,25 +109,39 @@ export default function ClientWorkspace() {
 
   /* ── load library when tab opens ── */
   useEffect(() => {
-    if (!token || !context) return;
+    if (!context && !sessionContext) return;
     if (tab !== 'library') return;
     if (documents.length > 0) return;
     let cancelled = false;
     setDocsLoading(true);
     (async () => {
-      const r = await clientListDocuments(token);
-      if (cancelled) return;
-      setDocuments(r.documents);
-      setDocsLoading(false);
+      if (mode === 'bare_token' && token) {
+        const r = await clientListDocuments(token);
+        if (!cancelled) {
+          setDocuments(r.documents);
+          setDocsLoading(false);
+        }
+      } else if (mode === 'session' && sessionToken) {
+        const r = await clientSessionListDocuments(sessionToken);
+        if (!cancelled) {
+          setDocuments(r.documents as any[]);
+          setDocsLoading(false);
+        }
+      }
     })();
     return () => { cancelled = true; };
-  }, [tab, token, context, documents.length]);
+  }, [tab, mode, token, sessionToken, context, sessionContext, documents.length]);
 
   /* ── load investor data when investor tab opens ── */
   useEffect(() => {
-    if (!token || !context) return;
+    if (!context && !sessionContext) return;
     if (tab !== 'investor') return;
     if (investorLoaded) return;
+    if (mode !== 'bare_token' || !token) {
+      /* Session-mode investor data not yet wired — show empty for now */
+      setInvestorLoaded(true);
+      return;
+    }
     let cancelled = false;
     setInvestorLoading(true);
     (async () => {
@@ -105,23 +153,41 @@ export default function ClientWorkspace() {
       setInvestorLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, [tab, token, context, investorLoaded]);
+  }, [tab, mode, token, context, sessionContext, investorLoaded]);
 
   /* ── open a document detail ── */
   const openDocument = async (doc: BrandStudioDocument) => {
-    if (!token) return;
     setOpenDocLoading(true);
     setOpenDoc({ ...doc });
-    const r = await clientGetDocument({ token, documentId: doc.id });
-    if (r.document) setOpenDoc(r.document);
+    if (mode === 'bare_token' && token) {
+      const r = await clientGetDocument({ token, documentId: doc.id });
+      if (r.document) setOpenDoc({ ...r.document, ...((doc as any).access_level ? { access_level: (doc as any).access_level } : {}) });
+    } else if (mode === 'session' && sessionToken) {
+      const r = await clientGetDocument({ token: sessionToken, documentId: doc.id });
+      if (r.document) {
+        setOpenDoc({
+          ...r.document,
+          access_level:       (doc as any).access_level,
+          client_resharable:  (doc as any).client_resharable,
+        });
+      }
+    }
     setOpenDocLoading(false);
   };
 
+  const handleLogout = () => {
+    clearClientSession();
+    navigate('/');
+  };
+
   /* ── derive brand styling from brand_assets ── */
-  const brand = context?.brand_assets;
+  const brand = (mode === 'session' ? sessionContext?.brand : context?.brand_assets);
   const primaryColor = brand?.color_palette?.[0]?.hex || '#a78bfa';
-  const projectName  = context?.project.name || 'Workspace';
+  const projectName  = mode === 'session'
+    ? sessionContext?.project.name || 'Workspace'
+    : context?.project.name || 'Workspace';
   const tagline      = brand?.primary_tagline;
+  const sessionUser  = mode === 'session' ? sessionContext?.user : null;
 
   /* ── early returns ── */
 
@@ -136,27 +202,32 @@ export default function ClientWorkspace() {
     );
   }
 
-  if (error || !context) {
+  if (error || (!context && !sessionContext)) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
         <div className="max-w-md w-full rounded-2xl border border-border bg-card/60 p-8 text-center">
           <Lock className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-          <div className="text-base font-bold">Access link not valid</div>
-          <div className="text-sm text-muted-foreground mt-2">{error || 'This link is invalid or has expired.'}</div>
+          <div className="text-base font-bold">Access not available</div>
+          <div className="text-sm text-muted-foreground mt-2">{error || 'This workspace is not accessible.'}</div>
           <div className="text-xs text-muted-foreground/70 mt-4">
-            If you believe this is an error, contact your account manager for a fresh link.
+            If you believe this is an error, contact your account manager for a fresh invite link.
           </div>
         </div>
       </div>
     );
   }
 
-  const visible = context.client_visible_features || {};
+  const visible = mode === 'session'
+    ? (sessionContext?.visible_features || { library: true, brand: true })
+    : (context?.client_visible_features || {});
   const TABS: { id: Tab; label: string; icon: any; enabled: boolean }[] = [
-    { id: 'library',  label: 'Documents',     icon: FileText,    enabled: !!visible.library  },
-    { id: 'brand',    label: 'Brand',         icon: PaletteIcon, enabled: !!visible.brand    },
-    { id: 'investor', label: 'Investor View', icon: TrendingUp,  enabled: !!visible.investor },
-    { id: 'market',   label: 'Market',        icon: Globe,       enabled: !!visible.market   },
+    { id: 'library',  label: 'Documents',     icon: FileText,      enabled: !!visible.library  },
+    { id: 'brand',    label: 'Brand',         icon: PaletteIcon,   enabled: !!visible.brand    },
+    { id: 'investor', label: 'Investor View', icon: TrendingUp,    enabled: !!visible.investor },
+    { id: 'market',   label: 'Market',        icon: Globe,         enabled: !!visible.market   },
+    /* Session-only tabs — always shown in session mode */
+    { id: 'intake',   label: 'Forms',         icon: ClipboardList, enabled: mode === 'session' },
+    { id: 'upload',   label: 'Share files',   icon: Upload,        enabled: mode === 'session' },
   ];
   const visibleTabs = TABS.filter((t) => t.enabled);
 
@@ -205,7 +276,32 @@ export default function ClientWorkspace() {
               <div className="text-sm text-muted-foreground italic">"{tagline}"</div>
             )}
           </div>
-          {context.client?.name && (
+
+          {/* Session mode: notifications + user badge + logout */}
+          {mode === 'session' && sessionUser && (
+            <div className="flex items-center gap-2 shrink-0">
+              <NotificationInbox
+                mode="client_session"
+                sessionToken={sessionToken}
+                brandColor={primaryColor}
+              />
+              <div className="text-right hidden sm:block">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Signed in as</div>
+                <div className="text-sm font-semibold">{sessionUser.display_name || sessionUser.email}</div>
+                {sessionUser.title && <div className="text-[10px] text-muted-foreground">{sessionUser.title}</div>}
+              </div>
+              <button
+                onClick={handleLogout}
+                title="Sign out"
+                className="p-2 rounded-xl border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:bg-muted/40"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Bare-token mode: show client name */}
+          {mode === 'bare_token' && context?.client?.name && (
             <div className="text-right">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Workspace for</div>
               <div className="text-sm font-semibold">{context.client.name}</div>
@@ -484,6 +580,16 @@ export default function ClientWorkspace() {
             </div>
           </div>
         )}
+
+        {/* ── H.6a: Forms (intake) ── session-only */}
+        {tab === 'intake' && mode === 'session' && sessionToken && (
+          <ClientIntakeList sessionToken={sessionToken} brandColor={primaryColor} />
+        )}
+
+        {/* ── H.6a: Share files (upload) ── session-only */}
+        {tab === 'upload' && mode === 'session' && sessionToken && (
+          <ClientUploadPanel sessionToken={sessionToken} brandColor={primaryColor} />
+        )}
       </div>
 
       {/* ── Document detail modal ── */}
@@ -539,6 +645,34 @@ export default function ClientWorkspace() {
                   style={{ color: primaryColor }}>
                   View original source <ExternalLink className="h-3 w-3" />
                 </a>
+              )}
+
+              {/* ── H.6a: Collaboration panels — session mode only ── */}
+              {mode === 'session' && sessionUser && sessionContext && (
+                <div className="space-y-3 pt-3 mt-3 border-t border-border">
+                  <ApprovalsPanel
+                    mode="client_session"
+                    documentId={openDoc.id}
+                    sessionToken={sessionToken}
+                  />
+                  <CommentsPanel
+                    mode="client_session"
+                    documentId={openDoc.id}
+                    projectId={sessionContext.project.id}
+                    sessionToken={sessionToken}
+                    authorId={sessionUser.id}
+                    authorLabel={`${sessionUser.display_name}${sessionUser.title ? ` (${sessionUser.title})` : ''}`}
+                  />
+                  <ShareGrantsPanel
+                    mode="client_session"
+                    documentId={openDoc.id}
+                    documentResharable={openDoc.client_resharable !== false}
+                    sessionToken={sessionToken}
+                    myAccessLevel={(openDoc.access_level as any) || 'view'}
+                    myUserId={sessionUser.id}
+                    myUserLabel={`${sessionUser.display_name}${sessionUser.title ? ` (${sessionUser.title})` : ''}`}
+                  />
+                </div>
               )}
             </div>
           </div>
