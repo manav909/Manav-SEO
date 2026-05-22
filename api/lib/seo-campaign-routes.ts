@@ -240,3 +240,31 @@ export async function bsSeoMonitoringData(body: any): Promise<any> {
   const { getPanelMonitoringData } = await import("./seo-monitoring.js");
   return getPanelMonitoringData({ panelId, limit });
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 21 — Block 1: Quality Foundation routes
+   Exposes the grouping orchestrator + helpers to the chat surface.
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoPositioningResolve(body: any): Promise<any> {
+  const { projectId, forceRefresh } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { resolveProjectPositioning } = await import("./seo-campaign-grouping.js");
+  return resolveProjectPositioning({ projectId, forceRefresh: !!forceRefresh });
+}
+
+export async function bsSeoRecommendCampaignStructure(body: any): Promise<any> {
+  const { projectId, rawInput } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  if (!rawInput || typeof rawInput !== 'string') return { success: false, error: "rawInput required" };
+  const { recommendCampaignStructure } = await import("./seo-campaign-grouping.js");
+  return recommendCampaignStructure({ projectId, rawInput });
+}
+
+export async function bsSeoExtractKeywords(body: any): Promise<any> {
+  const { rawInput } = body || {};
+  if (!rawInput || typeof rawInput !== 'string') return { success: false, error: "rawInput required" };
+  const { extractKeywordsFromText } = await import("./seo-campaign-grouping.js");
+  const result = await extractKeywordsFromText(rawInput);
+  return { success: true, ...result };
+}

@@ -837,6 +837,20 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoOpportunityBulkUpdate(body);
     }
 
+    /* Phase 21 — Block 1: Quality Foundation (positioning + grouping) */
+    case "bs_seo_positioning_resolve": {
+      const { bsSeoPositioningResolve } = await import("./seo-campaign-routes.js");
+      return bsSeoPositioningResolve(body);
+    }
+    case "bs_seo_recommend_campaign_structure": {
+      const { bsSeoRecommendCampaignStructure } = await import("./seo-campaign-routes.js");
+      return bsSeoRecommendCampaignStructure(body);
+    }
+    case "bs_seo_extract_keywords": {
+      const { bsSeoExtractKeywords } = await import("./seo-campaign-routes.js");
+      return bsSeoExtractKeywords(body);
+    }
+
     /* Phase 14.1 — unification adapters */
     case "bs_seo_opportunity_from_alert": {
       const { bsSeoOpportunityFromAlert } = await import("./seo-campaign-routes.js");

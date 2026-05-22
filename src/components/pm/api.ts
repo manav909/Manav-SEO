@@ -2866,3 +2866,98 @@ export async function seoMonitoringData(opts: {
   if (!r?.success) return { error: r?.error };
   return { runs: r.runs, findings: r.findings, latest_snapshot: r.latest_snapshot };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 21 — Block 1: Quality Foundation client methods
+═══════════════════════════════════════════════════════════════ */
+
+export interface ProjectPositioning {
+  client_segment:                string;
+  target_audience:               string;
+  competitive_tier:              string;
+  topical_authority_strengths:   string[];
+  topical_authority_gaps:        string[];
+  buyer_intent_languages:        string[];
+  resolved_at:                   string;
+  confidence:                    'high' | 'medium' | 'low';
+  confidence_reason:             string;
+  unverified_fields?:            string[];
+}
+
+export interface CampaignStructureRecommendation {
+  primary_campaign: {
+    keywords:        string[];
+    intent_label:    string;
+    target_url_hint: string | null;
+    coherence_score: number;
+  };
+  suggested_followup_campaigns: Array<{
+    keywords:     string[];
+    intent_label: string;
+    why_separate: string;
+  }>;
+  opportunities_to_create: Array<{
+    keyword:     string;
+    reason:      string;
+    feasibility: 'worth_exploring' | 'weak_signal' | 'unclear';
+  }>;
+  duplicates_detected: Array<{
+    keyword:                   string;
+    existing_campaign_id:      string;
+    existing_campaign_keyword: string;
+    suggestion:                'merge' | 'skip' | 'verify_intent_match';
+  }>;
+  better_target_detected: Array<{
+    keywords:                  string[];
+    existing_campaign_id:      string;
+    existing_campaign_keyword: string;
+    reasoning:                 string;
+  }>;
+  decisions_avoided: Array<{
+    timestamp:        string;
+    decision_type:    'duplicate_prevented' | 'redirected_to_better_target' | 'bad_keyword_blocked' | 'misalignment_warned';
+    original_intent:  string;
+    redirected_to:    string | null;
+    reasoning:        string;
+  }>;
+  honest_note: string;
+}
+
+export async function seoPositioningResolve(opts: {
+  projectId:     string;
+  forceRefresh?: boolean;
+}): Promise<{ positioning?: ProjectPositioning; cached?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_positioning_resolve', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { positioning: r.positioning, cached: r.cached };
+}
+
+export async function seoRecommendCampaignStructure(opts: {
+  projectId: string;
+  rawInput:  string;
+}): Promise<{
+  structure?:   CampaignStructureRecommendation;
+  positioning?: ProjectPositioning;
+  error?:       string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_recommend_campaign_structure', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { structure: r.structure, positioning: r.positioning };
+}
+
+export async function seoExtractKeywords(opts: {
+  rawInput: string;
+}): Promise<{
+  keywords?:          string[];
+  intent_phrase?:     string;
+  used_llm_fallback?: boolean;
+  error?:             string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_extract_keywords', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    keywords:          r.keywords,
+    intent_phrase:     r.intent_phrase,
+    used_llm_fallback: r.used_llm_fallback,
+  };
+}
