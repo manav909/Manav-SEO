@@ -920,3 +920,153 @@ async function callClaude(sys: string, user: string, maxTokens: number, timeoutM
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   return JSON.parse(cleaned);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   Phase 21 — Block 2 — commitCampaignStructure
+
+   Takes a structure recommendation (output of recommendCampaignStructure)
+   plus user-confirmed choices, and persists it:
+
+     - Creates the primary campaign with full metadata (positioning,
+       keyword_group, intent_label, excluded_keywords, decisions_avoided)
+     - For each suggested followup campaign that user accepted: creates as
+       an opportunity (kind='keyword', suggested_action='new_campaign')
+     - For each opportunity_to_create that user accepted: creates as a
+       'keyword' or 'content_gap' opportunity
+     - Returns campaign_id of the primary so the pipeline can launch
+══════════════════════════════════════════════════════════════════════ */
+
+export async function commitCampaignStructure(opts: {
+  projectId:         string;
+  structure:         {
+    primary_campaign: {
+      keywords:        string[];
+      intent_label:    string;
+      target_url_hint: string | null;
+      coherence_score: number;
+    };
+    suggested_followup_campaigns: Array<{ keywords: string[]; intent_label: string; why_separate: string }>;
+    opportunities_to_create:      Array<{ keyword: string; reason: string; feasibility: 'worth_exploring' | 'weak_signal' | 'unclear' }>;
+    duplicates_detected:          Array<{ keyword: string; existing_campaign_id: string; existing_campaign_keyword: string; suggestion: string }>;
+    better_target_detected:       Array<{ keywords: string[]; existing_campaign_id: string; existing_campaign_keyword: string; reasoning: string }>;
+    decisions_avoided:            Array<{ timestamp: string; decision_type: string; original_intent: string; redirected_to: string | null; reasoning: string }>;
+    honest_note:                  string;
+  };
+  positioning?: any;
+  /* User's choices — which suggested entities to actually create */
+  acceptFollowupCampaigns?:  number[];   // indices of followups to materialize as opportunities
+  acceptOpportunities?:      number[];   // indices of opportunities_to_create to materialize
+  /* If user wants to use a campaign type other than 'standard' (e.g. feasibility_exploration) */
+  campaignType?: 'standard' | 'feasibility_exploration';
+}): Promise<{
+  success: boolean;
+  primary_campaign_id?: string;
+  followup_opportunity_ids?: string[];
+  opportunity_ids?: string[];
+  excluded_keywords?: string[];
+  error?: string;
+}> {
+  try {
+    const { structure, projectId, positioning } = opts;
+    const primaryKeywords = structure.primary_campaign.keywords;
+
+    if (primaryKeywords.length === 0) {
+      return { success: false, error: 'primary campaign has no keywords' };
+    }
+
+    /* Compute excluded_keywords: everything from input that did NOT end up in primary */
+    const allInputKeywords = new Set<string>([
+      ...primaryKeywords,
+      ...structure.suggested_followup_campaigns.flatMap(f => f.keywords),
+      ...structure.opportunities_to_create.map(o => o.keyword),
+    ]);
+    const primarySet = new Set(primaryKeywords);
+    const excludedKeywords = Array.from(allInputKeywords).filter(k => !primarySet.has(k));
+
+    /* Create the primary campaign */
+    const { createOrFindCampaign, recordOpportunity } = await import("./seo-campaign-engine.js");
+    const primaryResult = await createOrFindCampaign({
+      projectId,
+      keyword:             primaryKeywords[0],     // primary = first keyword
+      campaignKind:        'rank_for_keyword',
+      goal:                `Rank for ${primaryKeywords.map(k => `"${k}"`).join(', ')}`,
+      keywordGroup:        primaryKeywords,
+      keywordIntentLabel:  structure.primary_campaign.intent_label,
+      projectPositioning:  positioning,
+      excludedKeywords:    excludedKeywords.length > 0 ? excludedKeywords : undefined,
+      decisionsAvoided:    structure.decisions_avoided,
+      campaignType:        opts.campaignType || 'standard',
+    });
+
+    if (!primaryResult.success || !primaryResult.campaign_id) {
+      return { success: false, error: primaryResult.error || 'primary campaign creation failed' };
+    }
+    const primaryCampaignId = primaryResult.campaign_id;
+
+    /* Create followup-campaign opportunities (default: accept all unless user filtered) */
+    const followupIndices = opts.acceptFollowupCampaigns ?? structure.suggested_followup_campaigns.map((_, i) => i);
+    const followupIds: string[] = [];
+    for (const idx of followupIndices) {
+      const followup = structure.suggested_followup_campaigns[idx];
+      if (!followup) continue;
+      const oppResult = await recordOpportunity({
+        projectId,
+        kind:                  'keyword',
+        title:                 `Suggested follow-up campaign: "${followup.keywords[0]}" + ${followup.keywords.length - 1} more`,
+        description:           `${followup.why_separate}\n\nKeywords: ${followup.keywords.map(k => `"${k}"`).join(', ')}`,
+        evidence:              {
+          keyword_group:    followup.keywords,
+          intent_label:     followup.intent_label,
+          why_separate:     followup.why_separate,
+          parent_structure: 'campaign_grouping',
+          spun_off_from:    primaryCampaignId,
+        },
+        estimatedValue:        'medium',
+        estimatedEffort:       'medium',
+        suggestedAction:       'new_campaign',
+        suggestedCampaignKind: 'rank_for_keyword',
+        suggestedKeyword:      followup.keywords[0],
+        sourceCampaignId:      primaryCampaignId,
+        sourceKind:            'manual',
+      });
+      if (oppResult.opportunity_id) followupIds.push(oppResult.opportunity_id);
+    }
+
+    /* Create individual opportunity entries (default: accept all unless user filtered) */
+    const oppIndices = opts.acceptOpportunities ?? structure.opportunities_to_create.map((_, i) => i);
+    const oppIds: string[] = [];
+    for (const idx of oppIndices) {
+      const opp = structure.opportunities_to_create[idx];
+      if (!opp) continue;
+      const oppResult = await recordOpportunity({
+        projectId,
+        kind:                  'keyword',
+        title:                 `Explore: "${opp.keyword}" (${opp.feasibility.replace(/_/g, ' ')})`,
+        description:           opp.reason,
+        evidence:              {
+          keyword:        opp.keyword,
+          feasibility:    opp.feasibility,
+          parent_structure: 'campaign_grouping',
+          spun_off_from: primaryCampaignId,
+        },
+        estimatedValue:        opp.feasibility === 'worth_exploring' ? 'medium' : 'low',
+        estimatedEffort:       'medium',
+        suggestedAction:       opp.feasibility === 'worth_exploring' ? 'new_campaign' : 'investigate',
+        suggestedKeyword:      opp.keyword,
+        sourceCampaignId:      primaryCampaignId,
+        sourceKind:            'manual',
+      });
+      if (oppResult.opportunity_id) oppIds.push(oppResult.opportunity_id);
+    }
+
+    return {
+      success:                  true,
+      primary_campaign_id:      primaryCampaignId,
+      followup_opportunity_ids: followupIds,
+      opportunity_ids:          oppIds,
+      excluded_keywords:        excludedKeywords,
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'commit failed' };
+  }
+}

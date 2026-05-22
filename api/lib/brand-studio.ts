@@ -850,6 +850,10 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       const { bsSeoExtractKeywords } = await import("./seo-campaign-routes.js");
       return bsSeoExtractKeywords(body);
     }
+    case "bs_seo_commit_campaign_structure": {
+      const { bsSeoCommitCampaignStructure } = await import("./seo-campaign-routes.js");
+      return bsSeoCommitCampaignStructure(body);
+    }
 
     /* Phase 14.1 — unification adapters */
     case "bs_seo_opportunity_from_alert": {

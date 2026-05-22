@@ -268,3 +268,18 @@ export async function bsSeoExtractKeywords(body: any): Promise<any> {
   const result = await extractKeywordsFromText(rawInput);
   return { success: true, ...result };
 }
+
+export async function bsSeoCommitCampaignStructure(body: any): Promise<any> {
+  const { projectId, structure, positioning, acceptFollowupCampaigns, acceptOpportunities, campaignType } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  if (!structure) return { success: false, error: "structure required" };
+  const { commitCampaignStructure } = await import("./seo-campaign-grouping.js");
+  return commitCampaignStructure({
+    projectId,
+    structure,
+    positioning,
+    acceptFollowupCampaigns,
+    acceptOpportunities,
+    campaignType,
+  });
+}

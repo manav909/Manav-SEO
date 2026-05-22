@@ -2961,3 +2961,27 @@ export async function seoExtractKeywords(opts: {
     used_llm_fallback: r.used_llm_fallback,
   };
 }
+
+export async function seoCommitCampaignStructure(opts: {
+  projectId:                  string;
+  structure:                  CampaignStructureRecommendation;
+  positioning?:               ProjectPositioning;
+  acceptFollowupCampaigns?:   number[];
+  acceptOpportunities?:       number[];
+  campaignType?:              'standard' | 'feasibility_exploration';
+}): Promise<{
+  primary_campaign_id?:       string;
+  followup_opportunity_ids?:  string[];
+  opportunity_ids?:           string[];
+  excluded_keywords?:         string[];
+  error?:                     string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_commit_campaign_structure', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    primary_campaign_id:      r.primary_campaign_id,
+    followup_opportunity_ids: r.followup_opportunity_ids,
+    opportunity_ids:          r.opportunity_ids,
+    excluded_keywords:        r.excluded_keywords,
+  };
+}

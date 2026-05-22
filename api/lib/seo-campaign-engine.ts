@@ -83,16 +83,40 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
   },
 ];
 
-/* ─── createOrFindCampaign — idempotent for (project, keyword) ─── */
+/* ─── createOrFindCampaign — idempotent for (project, keyword) ───
+   Phase 21 Block 2: extended to accept keyword_group + positioning +
+   decisions_avoided. The primary keyword is the first element of the
+   group; if no group is provided, [keyword] is used. */
 
 export async function createOrFindCampaign(opts: {
   projectId: string;
   keyword: string;
   campaignKind?: 'rank_for_keyword' | 'traffic_growth' | 'sales_funnel' | 'authority_building' | 'recovery';
   goal?: string;
+  /* Phase 21 Block 2 — quality foundation metadata */
+  keywordGroup?:        string[];                    // 1-8 keywords, primary first
+  keywordIntentLabel?:  string;
+  projectPositioning?:  any;                         // ProjectPositioning JSON
+  excludedKeywords?:    string[];
+  decisionsAvoided?:    any[];                       // array of decision_avoided entries
+  campaignType?:        'standard' | 'feasibility_exploration' | 'merged_with';
+  parentCampaignId?:    string;
 }): Promise<{ success: boolean; campaign_id?: string; created?: boolean; reused?: boolean; error?: string }> {
   const kind = opts.campaignKind || 'rank_for_keyword';
   const keywordSlim = opts.keyword.trim().toLowerCase().slice(0, 240);
+
+  /* Normalize the keyword_group: ensure primary is at index 0, dedupe, cap at 8 */
+  let keywordGroup: string[] | undefined;
+  if (Array.isArray(opts.keywordGroup) && opts.keywordGroup.length > 0) {
+    const cleaned = opts.keywordGroup
+      .map(k => (k || '').trim().toLowerCase())
+      .filter(k => k.length >= 2 && k.length <= 240);
+    /* Ensure primary keyword is first */
+    const withoutPrimary = cleaned.filter(k => k !== keywordSlim);
+    keywordGroup = [keywordSlim, ...withoutPrimary].slice(0, 8);
+    /* Dedupe while preserving order */
+    keywordGroup = Array.from(new Set(keywordGroup));
+  }
 
   try {
     /* Look for an existing active or paused campaign with the same keyword */
@@ -119,13 +143,33 @@ export async function createOrFindCampaign(opts: {
     }
 
     /* Create new campaign */
-    const { data: inserted, error: insertErr } = await db().from("seo_campaigns").insert({
+    const insertRow: any = {
       project_id:     opts.projectId,
       keyword:        keywordSlim,
       campaign_kind:  kind,
       goal:           (opts.goal || `Rank for "${opts.keyword}"`).slice(0, 500),
       status:         'active',
-    }).select("id").maybeSingle();
+    };
+
+    /* Phase 21 Block 2 — persist quality foundation metadata when provided */
+    if (keywordGroup && keywordGroup.length > 0) {
+      insertRow.keyword_group = keywordGroup;
+    } else {
+      /* Default: single-keyword campaigns get keyword_group = [keyword] for consistency */
+      insertRow.keyword_group = [keywordSlim];
+    }
+    if (opts.keywordIntentLabel) insertRow.keyword_intent_label = opts.keywordIntentLabel.slice(0, 200);
+    if (opts.projectPositioning) insertRow.project_positioning  = opts.projectPositioning;
+    if (Array.isArray(opts.excludedKeywords) && opts.excludedKeywords.length > 0) {
+      insertRow.excluded_keywords = opts.excludedKeywords.slice(0, 30);
+    }
+    if (Array.isArray(opts.decisionsAvoided) && opts.decisionsAvoided.length > 0) {
+      insertRow.decisions_avoided = opts.decisionsAvoided.slice(0, 50);
+    }
+    if (opts.campaignType) insertRow.campaign_type = opts.campaignType;
+    if (opts.parentCampaignId) insertRow.parent_campaign_id = opts.parentCampaignId;
+
+    const { data: inserted, error: insertErr } = await db().from("seo_campaigns").insert(insertRow).select("id").maybeSingle();
 
     if (insertErr || !inserted) {
       return { success: false, error: insertErr?.message || 'campaign insert failed' };

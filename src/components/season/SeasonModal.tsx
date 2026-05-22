@@ -24,13 +24,18 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Send, Sparkles, X, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, Send, Sparkles, X, ExternalLink, AlertCircle, CheckCircle2, Layers, Lightbulb, AlertTriangle, Edit3 } from 'lucide-react';
 import { useSeason, SeasonMood } from '@/contexts/SeasonContext';
 import { useSeasonAction } from '@/hooks/useSeasonAction';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { seasonCommand, type CommandResponseClient, type PipelineType } from '@/components/pm/api';
+import {
+  seasonCommand, type CommandResponseClient, type PipelineType,
+  /* Phase 21 Block 2 — quality foundation chat integration */
+  seoRecommendCampaignStructure, seoCommitCampaignStructure,
+  type CampaignStructureRecommendation, type ProjectPositioning,
+} from '@/components/pm/api';
 import SeasonPipelineDashboard from './SeasonPipelineDashboard';
 
 /* Mood → color (matches the Orb's profile) */
@@ -143,6 +148,17 @@ export default function SeasonModal() {
   const [activeRunLabel, setActiveRunLabel]           = useState<string>('');
   const [activeRunType, setActiveRunType]             = useState<PipelineType>('rank_for_keyword');
 
+  /* Phase 21 Block 2 — campaign structure preview state.
+     When user types multi-keyword input, we don't launch immediately —
+     we run the orchestrator first, show a conversational preview, and
+     let the user confirm before committing. */
+  const [pendingStructure, setPendingStructure]           = useState<CampaignStructureRecommendation | null>(null);
+  const [pendingPositioning, setPendingPositioning]       = useState<ProjectPositioning | null>(null);
+  const [pendingOriginalInput, setPendingOriginalInput]   = useState<string>('');
+  const [committingStructure, setCommittingStructure]     = useState(false);
+  const [structureAcceptFollowups, setStructureAcceptFollowups] = useState<Set<number>>(new Set());
+  const [structureAcceptOpps, setStructureAcceptOpps]     = useState<Set<number>>(new Set());
+
   const moodHsl       = MOOD_HSL[mood] || MOOD_HSL.quiet;
   const isMac         = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
@@ -172,6 +188,13 @@ export default function SeasonModal() {
       setError(null);
       setSubmitting(false);
       setMood('quiet');
+      /* Phase 21 Block 2 — clear pending structure preview too */
+      setPendingStructure(null);
+      setPendingPositioning(null);
+      setPendingOriginalInput('');
+      setStructureAcceptFollowups(new Set());
+      setStructureAcceptOpps(new Set());
+      setCommittingStructure(false);
     } else {
       /* Focus input shortly after open */
       const t = setTimeout(() => inputRef.current?.focus(), 220);
@@ -179,6 +202,103 @@ export default function SeasonModal() {
     }
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [isOpen]);
+
+  /* Phase 21 Block 2 — commit the campaign structure and launch the pipeline.
+     This is what fires when the user clicks "Yes, set it up" in the preview
+     panel. Two steps:
+       1. seoCommitCampaignStructure — creates primary campaign with full
+          metadata, plus opportunities for excluded keywords + suggested
+          followup campaigns.
+       2. seasonPipelineCreate — launches the actual pipeline against the
+          primary keyword + group, with scope.campaignId so the runner
+          doesn't try to re-create the campaign. */
+  const commitStructureAndLaunch = async () => {
+    if (!pendingStructure || !selectedProjectId || committingStructure) return;
+    setCommittingStructure(true);
+    setError(null);
+    setMood('thinking');
+
+    try {
+      /* Step 1 — commit the structure (creates primary campaign + opportunities) */
+      const commitResult = await seoCommitCampaignStructure({
+        projectId:               selectedProjectId,
+        structure:               pendingStructure,
+        positioning:             pendingPositioning || undefined,
+        acceptFollowupCampaigns: Array.from(structureAcceptFollowups),
+        acceptOpportunities:     Array.from(structureAcceptOpps),
+      });
+      if (commitResult.error || !commitResult.primary_campaign_id) {
+        setError(`Setup failed: ${commitResult.error || 'no campaign id returned'}`);
+        setMood('alert');
+        setCommittingStructure(false);
+        return;
+      }
+
+      /* Step 2 — launch the pipeline against the new campaign */
+      const primaryKws = pendingStructure.primary_campaign.keywords;
+      const { seasonPipelineCreate } = await import('@/components/pm/api');
+      const runResult = await seasonPipelineCreate({
+        projectId:    selectedProjectId,
+        pipelineType: 'rank_for_keyword',
+        inputText:    pendingOriginalInput,
+        scope: {
+          campaignId:    commitResult.primary_campaign_id,
+          keyword:       primaryKws[0],
+          keywordGroup:  primaryKws,
+          goal:          `Rank for ${primaryKws.map(k => `"${k}"`).join(', ')}`,
+        },
+      });
+      if (runResult.error || !runResult.run_id) {
+        setError(`Pipeline launch failed: ${runResult.error || 'no run id returned'} (campaign was created — check campaigns list)`);
+        setMood('alert');
+        setCommittingStructure(false);
+        return;
+      }
+
+      /* Success — open the live dashboard */
+      setActiveRunId(runResult.run_id);
+      setActiveRunStepCount(runResult.step_count || 7);
+      setActiveRunLabel(
+        primaryKws.length === 1
+          ? `Ranking for "${primaryKws[0]}"`
+          : `Ranking for "${primaryKws[0]}" + ${primaryKws.length - 1} more`
+      );
+      setActiveRunType('rank_for_keyword');
+      setMood('focused');
+
+      /* Clear pending state */
+      setPendingStructure(null);
+      setPendingPositioning(null);
+      setPendingOriginalInput('');
+      setStructureAcceptFollowups(new Set());
+      setStructureAcceptOpps(new Set());
+      setInput('');
+      setResponse(null);
+      setCommittingStructure(false);
+      close();
+    } catch (e: any) {
+      setError(`Setup error: ${e?.message || 'unknown'}`);
+      setMood('alert');
+      setCommittingStructure(false);
+    }
+  };
+
+  /* Cancel the pending structure preview — return to input */
+  const cancelStructure = () => {
+    setPendingStructure(null);
+    setPendingPositioning(null);
+    setPendingOriginalInput('');
+    setStructureAcceptFollowups(new Set());
+    setStructureAcceptOpps(new Set());
+    setMood('quiet');
+  };
+
+  /* Edit — return to input with the original text restored for adjustment */
+  const editStructureInput = () => {
+    setInput(pendingOriginalInput);
+    cancelStructure();
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
 
   /* Submit handler */
   const submit = async (text?: string) => {
@@ -192,42 +312,39 @@ export default function SeasonModal() {
     setError(null);
     setMood('thinking');
 
-    /* Phase 12 → Phase 13a pipeline intent: "rank me for X". Now launches in the
-       background and opens the live dashboard. The dashboard polls progress. */
-    const rankMatch = q.match(/(?:rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keyword)[\s:]+["']?([^"'?.!]+)["']?/i);
-    if (rankMatch) {
-      const keyword = rankMatch[1].trim().replace(/\s+/g, ' ').slice(0, 120);
-      if (keyword.length >= 3) {
-        try {
-          /* Phase 13a-v2 — only CREATE the run rows here. The dashboard drives
-             execution step-by-step via execute_next, so each step gets its own
-             HTTP request and its own Vercel function budget (no more background
-             freezes). */
-          const { seasonPipelineCreate } = await import('@/components/pm/api');
-          const r = await seasonPipelineCreate({
-            projectId: selectedProjectId,
-            pipelineType: 'rank_for_keyword',
-            inputText: q,
-            scope: { keyword, goal: `rank for "${keyword}"` },
-          });
-          if (r.error || !r.run_id) {
-            setError(`Pipeline create failed: ${r.error || 'no run id returned'}`);
-            setMood('alert');
-            setSubmitting(false);
-            return;
-          }
-          setActiveRunId(r.run_id);
-          setActiveRunStepCount(r.step_count || 7);
-          setActiveRunLabel(`Ranking for "${keyword}"`);
-          setActiveRunType('rank_for_keyword');
-          setMood('focused');
-          setInput('');
-          setResponse(null);
-          close();
-        } catch (e: any) {
-          setError(`Pipeline error: ${e?.message || 'unknown'}`);
+    /* Phase 12 → Phase 13a → Phase 21 Block 2 pipeline intent: "rank me for X[, Y, Z, …]".
+       Phase 21 changes:
+         - Detect rank-intent broadly (no longer just one keyword)
+         - Run the structure recommendation orchestrator (positioning + grouping + dedup)
+         - Show conversational preview with personality
+         - User confirms → commit structure → launch pipeline with the keyword_group */
+    const rankIntentRe = /(?:^|\s)(rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keywords?|seo\s+for)\b/i;
+    if (rankIntentRe.test(q)) {
+      try {
+        setMood('thinking');
+        const recResult = await seoRecommendCampaignStructure({
+          projectId: selectedProjectId,
+          rawInput:  q,
+        });
+        if (recResult.error || !recResult.structure) {
+          setError(`Couldn't read those keywords cleanly — ${recResult.error || 'no structure returned'}. Try rephrasing, or just give me one keyword to start.`);
           setMood('alert');
+          setSubmitting(false);
+          return;
         }
+        /* Show the structure preview — user confirms before commit */
+        setPendingStructure(recResult.structure);
+        setPendingPositioning(recResult.positioning || null);
+        setPendingOriginalInput(q);
+        /* By default, accept all suggested followups + opportunities (user can deselect) */
+        setStructureAcceptFollowups(new Set(recResult.structure.suggested_followup_campaigns.map((_, i) => i)));
+        setStructureAcceptOpps(new Set(recResult.structure.opportunities_to_create.map((_, i) => i)));
+        setMood('focused');
+        setSubmitting(false);
+        return;
+      } catch (e: any) {
+        setError(`Couldn't analyze that — ${e?.message || 'unknown error'}. Try with simpler input.`);
+        setMood('alert');
         setSubmitting(false);
         return;
       }
@@ -640,10 +757,357 @@ export default function SeasonModal() {
                     </div>
                   </motion.div>
                 )}
+
+                {/* ════════════════════════════════════════════════════════════
+                    Phase 21 Block 2 — Campaign structure preview
+                    Renders after user types "rank me for X, Y, Z" — shows the
+                    smart-grouped structure with personality, then user confirms.
+                ════════════════════════════════════════════════════════════ */}
+                {pendingStructure && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                    transition={{ duration: 0.25 }}
+                    style={{
+                      marginTop: 12,
+                      padding: '14px 16px',
+                      borderRadius: 14,
+                      border: `1px solid hsla(${moodHsl} / 0.35)`,
+                      background: `hsla(${moodHsl} / 0.06)`,
+                      maxHeight: '60vh',
+                      overflowY: 'auto',
+                    }}>
+
+                    {/* Header — what I understood */}
+                    <div style={{
+                      fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.15em',
+                      fontWeight: 700, color: `hsl(${moodHsl})`, marginBottom: 6,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
+                      <Sparkles size={11} />
+                      Reading these
+                    </div>
+
+                    {/* Conversational intro — personality. Adjusts to the structure. */}
+                    {(() => {
+                      const primaryKws    = pendingStructure.primary_campaign.keywords;
+                      const followupCount = pendingStructure.suggested_followup_campaigns.length;
+                      const oppCount      = pendingStructure.opportunities_to_create.length;
+                      const dupeCount     = pendingStructure.duplicates_detected.length;
+                      const btCount       = pendingStructure.better_target_detected.length;
+                      const coherence     = pendingStructure.primary_campaign.coherence_score;
+
+                      let opener = '';
+                      if (primaryKws.length === 1 && followupCount === 0 && oppCount === 0) {
+                        opener = `Single keyword campaign — clean and focused. Setting up for "${primaryKws[0]}".`;
+                      } else if (coherence >= 0.8) {
+                        opener = `These cluster tightly — same intent, same audience. Solid keyword group.`;
+                      } else if (coherence >= 0.5) {
+                        opener = `Mostly coherent, with some natural splits. I've grouped the tightest ${primaryKws.length} into the primary campaign.`;
+                      } else if (primaryKws.length > 1) {
+                        opener = `Mixed signals here — different intents in one ask. Picked the ${primaryKws.length} that cohere best and parked the rest.`;
+                      } else {
+                        opener = `Working with what fits. ${primaryKws.length} keyword in primary, the rest routed elsewhere.`;
+                      }
+
+                      return (
+                        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.92)', lineHeight: 1.5, marginBottom: 10 }}>
+                          {opener}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Primary campaign block */}
+                    <div style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      background: 'rgba(255,255,255,0.03)',
+                      marginBottom: 10,
+                    }}>
+                      <div style={{
+                        fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em',
+                        color: 'rgba(255,255,255,0.55)', marginBottom: 6,
+                        display: 'flex', alignItems: 'center', gap: 5,
+                      }}>
+                        <Layers size={11} /> Primary campaign · {pendingStructure.primary_campaign.keywords.length} keyword{pendingStructure.primary_campaign.keywords.length === 1 ? '' : 's'}
+                        <span style={{
+                          marginLeft: 'auto', fontSize: 9,
+                          padding: '1px 6px', borderRadius: 999,
+                          background: pendingStructure.primary_campaign.coherence_score >= 0.7
+                            ? 'hsla(152 70% 50% / 0.18)'
+                            : pendingStructure.primary_campaign.coherence_score >= 0.5
+                              ? 'hsla(38 92% 55% / 0.18)'
+                              : 'hsla(0 75% 55% / 0.18)',
+                          color: pendingStructure.primary_campaign.coherence_score >= 0.7
+                            ? 'hsl(152 70% 60%)'
+                            : pendingStructure.primary_campaign.coherence_score >= 0.5
+                              ? 'hsl(38 92% 60%)'
+                              : 'hsl(0 75% 65%)',
+                        }}>
+                          coherence {pendingStructure.primary_campaign.coherence_score.toFixed(2)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
+                        {pendingStructure.primary_campaign.keywords.map((kw, i) => (
+                          <span key={i} style={{
+                            fontSize: 12,
+                            padding: '3px 9px', borderRadius: 999,
+                            background: i === 0 ? `hsla(${moodHsl} / 0.18)` : 'rgba(255,255,255,0.06)',
+                            color: i === 0 ? `hsl(${moodHsl})` : 'rgba(255,255,255,0.85)',
+                            fontWeight: i === 0 ? 600 : 400,
+                            border: i === 0 ? `1px solid hsla(${moodHsl} / 0.3)` : '1px solid rgba(255,255,255,0.08)',
+                          }}>
+                            {i === 0 && '★ '}{kw}
+                          </span>
+                        ))}
+                      </div>
+                      {pendingStructure.primary_campaign.intent_label && (
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 4, fontStyle: 'italic' }}>
+                          Intent: {pendingStructure.primary_campaign.intent_label}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Warnings — better-target redirect */}
+                    {pendingStructure.better_target_detected.length > 0 && (
+                      <div style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid hsla(38 92% 55% / 0.3)',
+                        background: 'hsla(38 92% 55% / 0.06)',
+                        marginBottom: 10,
+                      }}>
+                        <div style={{
+                          fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em',
+                          color: 'hsl(38 92% 65%)', marginBottom: 5,
+                          display: 'flex', alignItems: 'center', gap: 5,
+                        }}>
+                          <AlertTriangle size={11} /> Heads up — existing campaign is a better fit
+                        </div>
+                        {pendingStructure.better_target_detected.map((bt, i) => (
+                          <div key={i} style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 4, lineHeight: 1.5 }}>
+                            For <strong>{bt.keywords.join(', ')}</strong>: {bt.reasoning} <span style={{ color: 'rgba(255,255,255,0.5)' }}>(existing campaign: "{bt.existing_campaign_keyword}")</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Warnings — duplicate */}
+                    {pendingStructure.duplicates_detected.length > 0 && (
+                      <div style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid hsla(0 75% 55% / 0.3)',
+                        background: 'hsla(0 75% 55% / 0.06)',
+                        marginBottom: 10,
+                      }}>
+                        <div style={{
+                          fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em',
+                          color: 'hsl(0 75% 65%)', marginBottom: 5,
+                          display: 'flex', alignItems: 'center', gap: 5,
+                        }}>
+                          <AlertCircle size={11} /> Duplicate work prevented
+                        </div>
+                        {pendingStructure.duplicates_detected.map((d, i) => (
+                          <div key={i} style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 4, lineHeight: 1.5 }}>
+                            <strong>"{d.keyword}"</strong> {d.suggestion === 'skip' ? 'is already an active campaign' : 'overlaps with an existing campaign'} ("{d.existing_campaign_keyword}").
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Suggested follow-up campaigns — checkable */}
+                    {pendingStructure.suggested_followup_campaigns.length > 0 && (
+                      <div style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: 'rgba(255,255,255,0.02)',
+                        marginBottom: 10,
+                      }}>
+                        <div style={{
+                          fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em',
+                          color: 'rgba(255,255,255,0.55)', marginBottom: 6,
+                          display: 'flex', alignItems: 'center', gap: 5,
+                        }}>
+                          <Lightbulb size={11} /> Suggested follow-up campaign{pendingStructure.suggested_followup_campaigns.length === 1 ? '' : 's'}
+                        </div>
+                        {pendingStructure.suggested_followup_campaigns.map((f, i) => (
+                          <label key={i} style={{
+                            display: 'flex', alignItems: 'flex-start', gap: 8,
+                            padding: '6px 0', cursor: 'pointer',
+                            borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={structureAcceptFollowups.has(i)}
+                              onChange={(e) => {
+                                const next = new Set(structureAcceptFollowups);
+                                if (e.target.checked) next.add(i); else next.delete(i);
+                                setStructureAcceptFollowups(next);
+                              }}
+                              style={{ marginTop: 3, cursor: 'pointer' }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>
+                                {f.keywords.join(', ')}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 2, lineHeight: 1.4 }}>
+                                {f.why_separate}
+                              </div>
+                            </div>
+                          </label>
+                        ))}
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 4, fontStyle: 'italic' }}>
+                          Checked items are saved as opportunities — start them as campaigns when ready.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Opportunities — checkable */}
+                    {pendingStructure.opportunities_to_create.length > 0 && (
+                      <div style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: 'rgba(255,255,255,0.02)',
+                        marginBottom: 10,
+                      }}>
+                        <div style={{
+                          fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em',
+                          color: 'rgba(255,255,255,0.55)', marginBottom: 6,
+                          display: 'flex', alignItems: 'center', gap: 5,
+                        }}>
+                          <Lightbulb size={11} /> Worth exploring later · {pendingStructure.opportunities_to_create.length}
+                        </div>
+                        {pendingStructure.opportunities_to_create.map((o, i) => (
+                          <label key={i} style={{
+                            display: 'flex', alignItems: 'flex-start', gap: 8,
+                            padding: '6px 0', cursor: 'pointer',
+                            borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={structureAcceptOpps.has(i)}
+                              onChange={(e) => {
+                                const next = new Set(structureAcceptOpps);
+                                if (e.target.checked) next.add(i); else next.delete(i);
+                                setStructureAcceptOpps(next);
+                              }}
+                              style={{ marginTop: 3, cursor: 'pointer' }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>
+                                "{o.keyword}" <span style={{
+                                  fontSize: 9, padding: '1px 5px', borderRadius: 4, marginLeft: 4,
+                                  background: o.feasibility === 'worth_exploring'
+                                    ? 'hsla(152 70% 50% / 0.18)'
+                                    : o.feasibility === 'weak_signal'
+                                      ? 'rgba(255,255,255,0.08)'
+                                      : 'hsla(38 92% 55% / 0.15)',
+                                  color: o.feasibility === 'worth_exploring'
+                                    ? 'hsl(152 70% 60%)'
+                                    : o.feasibility === 'weak_signal'
+                                      ? 'rgba(255,255,255,0.5)'
+                                      : 'hsl(38 92% 60%)',
+                                }}>
+                                  {o.feasibility.replace(/_/g, ' ')}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 2, lineHeight: 1.4 }}>
+                                {o.reason}
+                              </div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Decisions avoided — credibility surface */}
+                    {pendingStructure.decisions_avoided.length > 0 && (
+                      <div style={{
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        background: 'hsla(152 70% 50% / 0.05)',
+                        border: '1px solid hsla(152 70% 50% / 0.2)',
+                        marginBottom: 10,
+                      }}>
+                        <div style={{
+                          fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.12em',
+                          color: 'hsl(152 70% 60%)', marginBottom: 4,
+                          display: 'flex', alignItems: 'center', gap: 5,
+                        }}>
+                          <CheckCircle2 size={10} /> Decisions saved · {pendingStructure.decisions_avoided.length}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+                          {pendingStructure.decisions_avoided.map(d => d.decision_type.replace(/_/g, ' ')).join(' · ')}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Honest note */}
+                    {pendingStructure.honest_note && (
+                      <div style={{
+                        fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5,
+                        marginBottom: 12, fontStyle: 'italic',
+                      }}>
+                        {pendingStructure.honest_note}
+                      </div>
+                    )}
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        disabled={committingStructure || pendingStructure.primary_campaign.keywords.length === 0}
+                        onClick={commitStructureAndLaunch}
+                        style={{
+                          fontSize: 12, padding: '7px 14px', borderRadius: 8,
+                          border: `1px solid hsla(${moodHsl} / 0.4)`,
+                          background: `hsla(${moodHsl} / 0.2)`,
+                          color: `hsl(${moodHsl})`,
+                          cursor: committingStructure ? 'wait' : 'pointer',
+                          fontWeight: 700,
+                          opacity: committingStructure ? 0.5 : 1,
+                          display: 'flex', alignItems: 'center', gap: 5,
+                        }}>
+                        <Sparkles size={11} />
+                        {committingStructure ? 'Setting up…' : 'Yes, set it up'}
+                      </button>
+                      <button
+                        disabled={committingStructure}
+                        onClick={editStructureInput}
+                        style={{
+                          fontSize: 12, padding: '7px 12px', borderRadius: 8,
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          background: 'transparent',
+                          color: 'rgba(255,255,255,0.75)',
+                          cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: 5,
+                        }}>
+                        <Edit3 size={11} />
+                        Edit input
+                      </button>
+                      <button
+                        disabled={committingStructure}
+                        onClick={cancelStructure}
+                        style={{
+                          fontSize: 12, padding: '7px 12px', borderRadius: 8,
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          background: 'transparent',
+                          color: 'rgba(255,255,255,0.55)',
+                          cursor: 'pointer',
+                        }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
               </AnimatePresence>
 
-              {/* Quick chips — only show when no response yet */}
-              {!response && !submitting && !pendingConfirm && (
+              {/* Quick chips — only show when no response yet AND no pending structure */}
+              {!response && !submitting && !pendingConfirm && !pendingStructure && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
                   {chipsForAwareness(awareness).map((c, i) => (
                     <motion.button

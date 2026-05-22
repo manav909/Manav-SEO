@@ -285,32 +285,52 @@ export async function bsSeasonPipelineCreate(body: any): Promise<any> {
     }
 
     /* Phase 14 — wire the run to a campaign + content panel.
-       Best-effort: if campaign creation fails, the run still proceeds without
-       campaign linkage. We don't want to block a pipeline on campaign infrastructure. */
+       Phase 21 Block 2 — if scope.campaignId is provided (because the chat
+       surface already committed the structure via commitCampaignStructure),
+       just stamp the run with it. Otherwise fall back to the legacy
+       createOrFindCampaign single-keyword flow. */
     let campaignId: string | undefined;
     let panelId:    string | undefined;
     let campaignNote = '';
     try {
-      const keyword = (scope?.keyword as string) || '';
-      if (keyword && pipelineType === 'rank_for_keyword') {
-        const { createOrFindCampaign, getContentPanelId } = await import("./seo-campaign-engine.js");
-        const camp = await createOrFindCampaign({
-          projectId,
-          keyword,
-          campaignKind: 'rank_for_keyword',
-          goal: `Rank for "${keyword}"`,
-        });
-        if (camp.success && camp.campaign_id) {
-          campaignId = camp.campaign_id;
-          panelId = (await getContentPanelId(camp.campaign_id)) || undefined;
-          campaignNote = camp.created ? 'new_campaign' : 'reused_campaign';
+      /* Phase 21 Block 2: chat surface already committed the campaign */
+      if (scope?.campaignId && pipelineType === 'rank_for_keyword') {
+        campaignId = scope.campaignId as string;
+        const { getContentPanelId } = await import("./seo-campaign-engine.js");
+        panelId = (await getContentPanelId(campaignId)) || undefined;
+        campaignNote = 'pre_committed_campaign';
 
-          /* Stamp the run with campaign_id + panel_id */
-          const { db } = await import("./db.js");
-          await db().from("season_pipeline_runs").update({
-            campaign_id: campaignId,
-            panel_id:    panelId,
-          }).eq("id", result.run_id);
+        const { db } = await import("./db.js");
+        await db().from("season_pipeline_runs").update({
+          campaign_id: campaignId,
+          panel_id:    panelId,
+        }).eq("id", result.run_id);
+      } else {
+        /* Legacy single-keyword path */
+        const keyword = (scope?.keyword as string) || '';
+        if (keyword && pipelineType === 'rank_for_keyword') {
+          const { createOrFindCampaign, getContentPanelId } = await import("./seo-campaign-engine.js");
+          const camp = await createOrFindCampaign({
+            projectId,
+            keyword,
+            campaignKind: 'rank_for_keyword',
+            goal: `Rank for "${keyword}"`,
+            /* If scope has a keywordGroup (e.g. from a direct API caller bypassing the
+               chat orchestrator), pass it through */
+            keywordGroup: Array.isArray(scope?.keywordGroup) ? scope.keywordGroup : undefined,
+          });
+          if (camp.success && camp.campaign_id) {
+            campaignId = camp.campaign_id;
+            panelId = (await getContentPanelId(camp.campaign_id)) || undefined;
+            campaignNote = camp.created ? 'new_campaign' : 'reused_campaign';
+
+            /* Stamp the run with campaign_id + panel_id */
+            const { db } = await import("./db.js");
+            await db().from("season_pipeline_runs").update({
+              campaign_id: campaignId,
+              panel_id:    panelId,
+            }).eq("id", result.run_id);
+          }
         }
       }
     } catch (e: any) {
