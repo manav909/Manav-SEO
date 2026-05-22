@@ -28,6 +28,7 @@ interface Props {
 
 const PILLAR_ICON: Record<string, any> = {
   content:          FileText,
+  research:         Sparkles,
   technical_audit:  AlertCircle,
   cluster_map:      Layers,
   internal_linking: Link2,
@@ -37,6 +38,7 @@ const PILLAR_ICON: Record<string, any> = {
 
 const PILLAR_LABEL: Record<string, string> = {
   content:          'Content',
+  research:         'Research',
   technical_audit:  'Technical Audit',
   cluster_map:      'Cluster Map',
   internal_linking: 'Internal Linking',

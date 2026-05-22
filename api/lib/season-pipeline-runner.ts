@@ -945,41 +945,70 @@ export async function finalizeRun(opts: {
        to the content panel and refresh the living overview. Best-effort. */
     if ((run as any).campaign_id) {
       try {
-        const briefArtifact = artifacts.find(a => a.kind === 'brief');
-        if (briefArtifact) {
-          const { writeReportToPanel, generateLivingOverview } = await import("./seo-campaign-engine.js");
+        const { writeReportToPanel, generateLivingOverview } = await import("./seo-campaign-engine.js");
+
+        /* Phase 14.0.2 — write EACH completed step's artifact as its own report.
+           Maps each step to the right pillar AND uses a specific report_kind
+           so the document is searchable/filterable later. */
+        const keyword = (run as any).scope?.keyword || '';
+        const stepToPillarKind: Record<string, { pillar: string; kind: any; updatePanelStatus?: boolean }> = {
+          keyword_research:    { pillar: 'research',    kind: 'keyword_research' },
+          gsc_context:         { pillar: 'research',    kind: 'gsc_baseline' },
+          competitor_snapshot: { pillar: 'research',    kind: 'competitor_intel' },
+          strategy_plan:       { pillar: 'research',    kind: 'strategy' },
+          forecast:            { pillar: 'monitoring',  kind: 'forecast_emission', updatePanelStatus: true },
+          content_brief:       { pillar: 'content',     kind: 'content_brief', updatePanelStatus: true },
+          client_update:       { pillar: 'content',     kind: 'client_update' },
+          internal_handover:   { pillar: 'content',     kind: 'handover' },
+        };
+
+        for (const stepRow of stepRows as any[]) {
+          if (stepRow.status !== 'completed') continue;
+          const mapping = stepToPillarKind[stepRow.step_id];
+          if (!mapping) continue;
+          const out = stepRow.output || {};
+          const body = (typeof out._artifact_body === 'string' && out._artifact_body.length > 0)
+            ? out._artifact_body
+            : (typeof out === 'string' ? out
+              : (out.body || out.content || out.text
+                  || JSON.stringify({ ...out, _artifact_body: undefined }, null, 2)));
+
+          /* Extract tags from the step output for searchability */
+          const tags = extractTagsFromStepOutput(stepRow.step_id, out, keyword);
+
           await writeReportToPanel({
             campaignId:        (run as any).campaign_id,
             projectId:         (run as any).project_id,
-            pillar:             'content',
-            panelId:            (run as any).panel_id || undefined,
-            reportKind:         'pipeline_artifact',
+            pillar:             mapping.pillar,
+            reportKind:         mapping.kind,
             generatedBy:        'pipeline',
             pipelineRunId:      opts.runId,
-            llmCallsUsed:       (run as any).llm_calls_used || 0,
-            webSearchesUsed:    (run as any).web_searches_used || 0,
-            dataSources:        ['web_search', 'gsc', 'pipeline_research'],
-            confidenceRating:   stepsFailed === 0 ? 'high' : (stepsCompleted >= 5 ? 'medium' : 'low'),
-            confidenceReason:   stepsFailed === 0
-              ? 'All pipeline steps completed; brief produced with verified facts and internal link suggestions.'
-              : `${stepsCompleted} of ${opts.definition.steps.length} steps completed; ${stepsFailed} failed.`,
-            title:              briefArtifact.title || `Content brief for "${(run as any).scope?.keyword || ''}"`,
-            bodyMd:             briefArtifact.body,
-            summary:            `Pipeline produced ${artifacts.length} artifacts in ${stepsCompleted} steps.`,
-            updatePanelStatus:  true,
+            llmCallsUsed:       stepRow.llm_calls || 0,
+            webSearchesUsed:    stepRow.web_searches || 0,
+            dataSources:        deriveDataSourcesFromStep(stepRow.step_id, out),
+            confidenceRating:   stepRow.step_id === 'content_brief' && stepsFailed === 0 ? 'high'
+                                : stepRow.step_id === 'keyword_research' && (out.confidence || 0) > 0.7 ? 'high'
+                                : 'medium',
+            confidenceReason:   stepRow.honest_note?.replace(/\n\n_Stored at:[\s\S]+$/, '') || undefined,
+            title:              `${prettifyStepLabel(stepRow.step_label)}`,
+            bodyMd:             String(body),
+            summary:            stepRow.honest_note?.replace(/\n\n_Stored at:[\s\S]+$/, '').slice(0, 500) || undefined,
+            tags,
+            updatePanelStatus:  mapping.updatePanelStatus || false,
             newPanelStatus:     stepsFailed === 0 ? 'green' : 'amber',
           });
-          await generateLivingOverview({ campaignId: (run as any).campaign_id });
         }
 
-        /* Phase 14 — scan step outputs for opportunities. Pure, deterministic,
-           data-driven (not LLM-imagined). Five concrete trigger patterns. */
+        /* Refresh living overview now that all reports are in */
+        await generateLivingOverview({ campaignId: (run as any).campaign_id });
+
+        /* Phase 14 — scan step outputs for opportunities */
         await scanForOpportunities({
           projectId:     (run as any).project_id,
           campaignId:    (run as any).campaign_id,
           panelId:       (run as any).panel_id || undefined,
           runId:         opts.runId,
-          keyword:       (run as any).scope?.keyword || '',
+          keyword,
           stepOutputs:   stepRows.reduce((acc: any, s: any) => { if (s.status === 'completed') acc[s.step_id] = s.output; return acc; }, {}),
         });
       } catch (e: any) {
@@ -991,6 +1020,60 @@ export async function finalizeRun(opts: {
   } catch (e: any) {
     return { success: false, error: e?.message || 'finalize failed' };
   }
+}
+
+/* ─── helpers ─── */
+function prettifyStepLabel(s: string): string {
+  /* Step labels like "Generate the full content brief" are already nice — keep them. */
+  return s;
+}
+
+function deriveDataSourcesFromStep(stepId: string, out: any): string[] {
+  const arr: string[] = [];
+  if (stepId === 'keyword_research')    arr.push('llm', 'web_search');
+  if (stepId === 'gsc_context')         arr.push('gsc');
+  if (stepId === 'competitor_snapshot') arr.push('llm', 'web_search');
+  if (stepId === 'strategy_plan')       arr.push('llm');
+  if (stepId === 'forecast')            arr.push('llm', 'gsc');
+  if (stepId === 'content_brief')       arr.push('llm', 'web_search', 'gsc');
+  if (stepId === 'client_update')       arr.push('llm');
+  if (stepId === 'internal_handover')   arr.push('template');
+  return arr;
+}
+
+function extractTagsFromStepOutput(stepId: string, out: any, keyword: string): string[] {
+  const tags: Set<string> = new Set();
+  if (keyword) tags.add(keyword.toLowerCase());
+  tags.add(stepId);
+
+  if (stepId === 'keyword_research') {
+    if (out.primary_intent) tags.add(`intent:${out.primary_intent}`);
+    if (out.competitive_difficulty) tags.add(`difficulty:${out.competitive_difficulty}`);
+    if (Array.isArray(out.related_queries)) {
+      for (const q of out.related_queries.slice(0, 5)) {
+        if (typeof q === 'string') tags.add(q.toLowerCase());
+      }
+    }
+  }
+  if (stepId === 'competitor_snapshot') {
+    if (Array.isArray(out.top_pages)) {
+      for (const p of out.top_pages.slice(0, 5)) {
+        if (p?.domain) tags.add(`domain:${p.domain.toLowerCase()}`);
+      }
+    }
+  }
+  if (stepId === 'content_brief') {
+    if (out.primary_keyword) tags.add(out.primary_keyword.toLowerCase());
+    if (Array.isArray(out.secondary_keywords)) {
+      for (const k of out.secondary_keywords.slice(0, 5)) {
+        if (typeof k === 'string') tags.add(k.toLowerCase());
+      }
+    }
+  }
+  if (stepId === 'strategy_plan') {
+    if (out.strategy_name) tags.add(`strategy:${out.strategy_name.toLowerCase().slice(0, 40)}`);
+  }
+  return Array.from(tags).slice(0, 25);
 }
 
 /* ════════════════════════════════════════════════════════════════

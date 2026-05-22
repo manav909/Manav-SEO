@@ -22,7 +22,7 @@ import { db } from "./db.js";
 /* ─── Pillar definitions ──────────────────────────────────── */
 
 interface PillarSpec {
-  pillar: 'technical_audit' | 'cluster_map' | 'content' | 'internal_linking' | 'off_page' | 'monitoring';
+  pillar: 'technical_audit' | 'cluster_map' | 'content' | 'internal_linking' | 'off_page' | 'monitoring' | 'research';
   display_order: number;
   goal_summary: string;
   recheck_cadence_days: number;
@@ -37,11 +37,18 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
     display_order: 1,
     goal_summary: 'Produce a senior-strategist-quality brief, then track content publication and performance.',
     recheck_cadence_days: 14,
-    initial_status: 'active',                    // content brief pipeline produces a real artifact today
+    initial_status: 'active',
+  },
+  {
+    pillar: 'research',
+    display_order: 2,
+    goal_summary: 'Hold the research intelligence: keyword research, SERP/competitor snapshot, GSC context, strategy. Reusable across campaigns.',
+    recheck_cadence_days: 30,
+    initial_status: 'active',                    // populated by every rank pipeline
   },
   {
     pillar: 'technical_audit',
-    display_order: 2,
+    display_order: 3,
     goal_summary: 'Audit target page on-page, indexability, Core Web Vitals; recommend prioritized fixes.',
     recheck_cadence_days: 7,
     initial_status: 'scheduled',
@@ -49,7 +56,7 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
   },
   {
     pillar: 'cluster_map',
-    display_order: 3,
+    display_order: 4,
     goal_summary: 'Map the topical cluster; identify hub-and-spoke structure; surface coverage gaps.',
     recheck_cadence_days: 30,
     initial_status: 'scheduled',
@@ -57,7 +64,7 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
   },
   {
     pillar: 'internal_linking',
-    display_order: 4,
+    display_order: 5,
     goal_summary: 'Identify authority pages, suggest internal links, track link execution and impact.',
     recheck_cadence_days: 30,
     initial_status: 'scheduled',
@@ -65,7 +72,7 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
   },
   {
     pillar: 'off_page',
-    display_order: 5,
+    display_order: 6,
     goal_summary: 'Identify linkable assets, outreach targets, broken-link opportunities, brand mentions.',
     recheck_cadence_days: 14,
     initial_status: 'scheduled',
@@ -73,10 +80,10 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
   },
   {
     pillar: 'monitoring',
-    display_order: 6,
+    display_order: 7,
     goal_summary: 'Daily rank/traffic tracking, forecast variance detection, escalation when off-trajectory.',
     recheck_cadence_days: 1,
-    initial_status: 'active',                    // forecast engine already running daily
+    initial_status: 'active',
   },
 ];
 
@@ -315,12 +322,20 @@ export async function archiveCampaign(opts: {
 /* ─── writeReportToPanel ────────────────────────────────────
    Called by pipeline steps, cron sweeps, or manual triggers. */
 
+export type ReportKind =
+  | 'initial_baseline' | 'scheduled_recheck' | 'manual_refresh'
+  | 'pipeline_artifact' | 'resumed_diff' | 'living_overview'
+  /* Phase 14.0.2 — specific artifact kinds for reusability/searchability */
+  | 'keyword_research' | 'gsc_baseline' | 'competitor_intel'
+  | 'strategy' | 'forecast_emission'
+  | 'content_brief' | 'client_update' | 'handover';
+
 export async function writeReportToPanel(opts: {
   campaignId:        string;
   projectId:         string;
   pillar:            string;
   panelId?:          string;
-  reportKind:        'initial_baseline' | 'scheduled_recheck' | 'manual_refresh' | 'pipeline_artifact' | 'resumed_diff' | 'living_overview';
+  reportKind:        ReportKind;
   generatedBy:       'cron' | 'manual' | 'pipeline';
   pipelineRunId?:    string;
   llmCallsUsed?:     number;
@@ -332,6 +347,8 @@ export async function writeReportToPanel(opts: {
   bodyMd:            string;
   summary?:          string;
   metricSnapshot?:   any;
+  tags?:             string[];        // Phase 14.0.2 — findability
+  searchableText?:   string;          // Phase 14.0.2 — full-text search
   /* Also update the panel's current_summary + last_assessed_at? */
   updatePanelStatus?: boolean;
   newPanelStatus?:    'green' | 'amber' | 'red';
@@ -362,6 +379,10 @@ export async function writeReportToPanel(opts: {
       body_md:            opts.bodyMd,
       summary:            opts.summary?.slice(0, 1000) || null,
       metric_snapshot:    opts.metricSnapshot || null,
+      tags:               opts.tags && opts.tags.length > 0 ? opts.tags.slice(0, 30) : null,
+      searchable_text:    opts.searchableText
+                            ? opts.searchableText.slice(0, 8000)
+                            : `${opts.title}\n${opts.summary || ''}\n${opts.bodyMd.slice(0, 3000)}`.slice(0, 8000),
     }).select("id").maybeSingle();
 
     if (insertErr || !inserted) return { success: false, error: insertErr?.message || 'report insert failed' };
@@ -459,6 +480,7 @@ async function projectIdForCampaign(campaignId: string): Promise<string> {
 
 function prettyPillar(p: string): string {
   return ({
+    research:         'Research',
     technical_audit:  'Technical Audit',
     cluster_map:      'Cluster Map',
     content:          'Content',
