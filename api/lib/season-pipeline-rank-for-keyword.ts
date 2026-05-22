@@ -580,9 +580,16 @@ const stepStrategyPlan = {
   artifact_kind: 'plan',
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
-    const research = ctx.prior.keyword_research;
-    const gsc = ctx.prior.gsc_context;
-    const competitors = ctx.prior.competitor_snapshot;
+    const research    = ctx.prior.keyword_research    || {};
+    const gsc         = ctx.prior.gsc_context         || {};
+    const competitors = ctx.prior.competitor_snapshot || {};
+
+    /* Phase 14.2 — note any missing upstream so we can flag the strategy as
+       lower-confidence rather than silently producing thin output. */
+    const missingUpstream: string[] = [];
+    if (Object.keys(research).length === 0)    missingUpstream.push('keyword_research');
+    if (Object.keys(gsc).length === 0)         missingUpstream.push('gsc_context');
+    if (Object.keys(competitors).length === 0) missingUpstream.push('competitor_snapshot');
 
     const sys = `You are S.E.A.S.O.N. building an SEO ranking strategy. You have keyword research, the project's GSC data, and a competitor snapshot. Synthesize a tight, actionable plan. Reply with ONLY valid JSON:
 {
@@ -656,7 +663,12 @@ CRITICAL: Your previous response was not valid JSON. Reply with ONLY the JSON ob
         title: `Strategy: ${r.parsed.strategy_name || keyword}`,
         body: renderStrategyArtifact(keyword, r.parsed),
       },
-      honest_note: callsMade > 1 ? `First attempt returned malformed JSON; retried with stricter prompt.` : undefined,
+      honest_note: [
+        callsMade > 1 ? `First attempt returned malformed JSON; retried with stricter prompt.` : null,
+        missingUpstream.length > 0
+          ? `⚠️ Built without these upstream steps: ${missingUpstream.join(', ')}. Strategy may be less specific without that data. Re-run those steps for a more grounded plan.`
+          : null,
+      ].filter(Boolean).join(' ') || undefined,
       llm_calls: callsMade,
     };
   },

@@ -775,6 +775,20 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeasonPipelineInterrupt(body);
     }
 
+    /* Phase 14.2 — mid-pipeline resilience */
+    case "bs_season_pipeline_retry_step": {
+      const { bsSeasonPipelineRetryStep } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineRetryStep(body);
+    }
+    case "bs_season_pipeline_retry_from_step": {
+      const { bsSeasonPipelineRetryFromStep } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineRetryFromStep(body);
+    }
+    case "bs_season_pipeline_skip_step": {
+      const { bsSeasonPipelineSkipStep } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineSkipStep(body);
+    }
+
     /* Phase 14 — campaigns + opportunities */
     case "bs_seo_campaign_list": {
       const { bsSeoCampaignList } = await import("./seo-campaign-routes.js");

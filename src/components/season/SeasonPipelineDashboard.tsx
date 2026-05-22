@@ -10,15 +10,17 @@
      not browser memory. Close = run continues; reopen by run_id.
 ═══════════════════════════════════════════════════════════════ */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2, XCircle, Loader2, Circle, AlertCircle, X,
-  AlertTriangle, Copy, Check, FileText,
+  AlertTriangle, Copy, Check, FileText, RefreshCw, SkipForward, PlayCircle,
 } from 'lucide-react';
 import { useSeason } from '@/contexts/SeasonContext';
+import { useToast } from '@/hooks/use-toast';
 import {
   seasonPipelineGet, seasonPipelineInterrupt, seasonPipelineExecuteNext,
+  seasonPipelineRetryStep, seasonPipelineRetryFromStep, seasonPipelineSkipStep,
   type PipelineStepDetail, type PipelineRunDetail, type PipelineType,
 } from '@/components/pm/api';
 
@@ -38,6 +40,7 @@ const STUCK_THRESHOLD_MS = 130_000;
 const MOOD_HSL_STATUS: Record<string, string> = {
   pending:   '210 30% 50%',
   running:   '186 80% 55%',
+  retrying:  '186 80% 55%',          // Phase 14.2 — same as running for visual continuity
   completed: '152 70% 50%',
   failed:    '0 75% 55%',
   skipped:   '38 60% 55%',
@@ -59,6 +62,43 @@ export default function SeasonPipelineDashboard({
   const completedRef = useRef(false);
   const executingRef = useRef(false);     // guards the execute loop so we don't overlap calls
   const stopExecRef  = useRef(false);     // set true on unmount or interrupt to halt the chain
+  const { toast } = useToast();
+
+  /* Phase 14.2 — resilience handlers. After any retry/skip op succeeds, we
+     restart the execution loop so it picks up the now-pending steps. */
+  const handleRetryStep = async (stepIndex: number) => {
+    const r = await seasonPipelineRetryStep({ runId, stepIndex });
+    if (r.error) {
+      toast({ title: 'Retry failed', description: r.error, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Retrying step', description: `Attempt ${r.new_retry_count || '?'} of 3` });
+    /* Restart the execute loop. It checks the executingRef guard. */
+    setTimeout(() => driveExecution(), 200);
+  };
+
+  const handleRetryFromStep = async (stepIndex: number) => {
+    if (!confirm(`Re-run from step ${stepIndex + 1} onward? All later steps will be re-executed.`)) return;
+    const r = await seasonPipelineRetryFromStep({ runId, stepIndex });
+    if (r.error) {
+      toast({ title: 'Resume failed', description: r.error, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Resuming from this step', description: `${r.steps_reset} step${r.steps_reset === 1 ? '' : 's'} reset` });
+    setTimeout(() => driveExecution(), 200);
+  };
+
+  const handleSkipStep = async (stepIndex: number) => {
+    const reason = prompt('Why are you skipping this step? (optional)');
+    if (reason === null) return;  // user cancelled
+    const r = await seasonPipelineSkipStep({ runId, stepIndex, reason: reason || undefined });
+    if (r.error) {
+      toast({ title: 'Skip failed', description: r.error, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Step skipped', description: 'Downstream steps may have less complete data' });
+    setTimeout(() => driveExecution(), 200);
+  };
 
   /* ── Step-by-step execution loop ─────────────────────────────
      The frontend is now the conductor. We call execute_next, wait for the
@@ -67,35 +107,39 @@ export default function SeasonPipelineDashboard({
 
      Runs alongside the polling loop. Polling updates UI state from the DB;
      this loop drives execution forward. They're decoupled. */
-  useEffect(() => {
+
+  /* Phase 14.2 — extracted into a callable function so retry/skip handlers
+     can restart the loop after a step is reset. */
+  const driveExecution = useCallback(async () => {
+    if (executingRef.current) return;
+    executingRef.current = true;
     stopExecRef.current = false;
-    const drive = async () => {
-      if (executingRef.current) return;
-      executingRef.current = true;
-      try {
-        while (!stopExecRef.current) {
-          const r = await seasonPipelineExecuteNext({ runId, pipelineType });
-          if (stopExecRef.current) break;
-          if (r.error) {
-            setError(`Execution failed: ${r.error}`);
-            break;
-          }
-          if (r.no_more_steps || r.run_status === 'completed' || r.run_status === 'failed' || r.run_status === 'cancelled') {
-            /* Terminal state — polling loop will pick up the final summary. */
-            break;
-          }
-          /* Tiny pause between step kicks so the polling loop can update UI */
-          await new Promise(res => setTimeout(res, 200));
+    try {
+      while (!stopExecRef.current) {
+        const r = await seasonPipelineExecuteNext({ runId, pipelineType });
+        if (stopExecRef.current) break;
+        if (r.error) {
+          setError(`Execution failed: ${r.error}`);
+          break;
         }
-      } catch (e: any) {
-        setError(`Execution loop crashed: ${e?.message || 'unknown'}`);
-      } finally {
-        executingRef.current = false;
+        if (r.no_more_steps || r.run_status === 'completed' || r.run_status === 'failed' || r.run_status === 'cancelled') {
+          /* Terminal state — polling loop will pick up the final summary. */
+          break;
+        }
+        /* Tiny pause between step kicks so the polling loop can update UI */
+        await new Promise(res => setTimeout(res, 200));
       }
-    };
-    drive();
-    return () => { stopExecRef.current = true; };
+    } catch (e: any) {
+      setError(`Execution loop crashed: ${e?.message || 'unknown'}`);
+    } finally {
+      executingRef.current = false;
+    }
   }, [runId, pipelineType]);
+
+  useEffect(() => {
+    driveExecution();
+    return () => { stopExecRef.current = true; };
+  }, [driveExecution]);
 
   useEffect(() => {
     let cancelled = false;
@@ -321,6 +365,9 @@ export default function SeasonPipelineDashboard({
                 index={idx}
                 isActive={polling && (run?.step_current || 0) === step.step_index + 1 && step.status === 'running'}
                 onOpenViewer={() => setViewerStep(step)}
+                onRetryStep={handleRetryStep}
+                onRetryFromStep={handleRetryFromStep}
+                onSkipStep={handleSkipStep}
               />
             ))}
           </AnimatePresence>
@@ -366,15 +413,22 @@ export default function SeasonPipelineDashboard({
   );
 }
 
-function StepCard({ step, index, isActive, onOpenViewer }: {
+function StepCard({ step, index, isActive, onOpenViewer, onRetryStep, onRetryFromStep, onSkipStep }: {
   step: PipelineStepDetail;
   index: number;
   isActive: boolean;
   onOpenViewer: () => void;
+  onRetryStep?:     (stepIndex: number) => void;
+  onRetryFromStep?: (stepIndex: number) => void;
+  onSkipStep?:      (stepIndex: number) => void;
 }) {
   const status = step.status || 'pending';
   const sevHsl = MOOD_HSL_STATUS[status] || MOOD_HSL_STATUS.pending;
   const hasViewable = step.output || step.error_message;
+  const retryCount = step.retry_count || 0;
+  const maxRetries = Math.min(step.max_retries || 3, 3);
+  const canRetry   = (status === 'failed' || status === 'skipped') && retryCount < maxRetries;
+  const canSkip    = status === 'failed';
 
   const Icon = status === 'completed' ? CheckCircle2 :
                status === 'failed'    ? XCircle :
@@ -475,10 +529,69 @@ function StepCard({ step, index, isActive, onOpenViewer }: {
               Open full artifact
             </button>
           )}
+
+          {/* Phase 14.2 — resilience action buttons */}
+          {(status === 'failed' || status === 'skipped') && (
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {canRetry && onRetryStep && (
+                <button onClick={() => onRetryStep(step.step_index)}
+                  title={`Retry this step (${retryCount}/${maxRetries} attempts used)`}
+                  style={resilienceBtnStyle('186 80% 55%')}>
+                  <RefreshCw size={11} />
+                  Retry step {retryCount > 0 ? `(${retryCount}/${maxRetries})` : ''}
+                </button>
+              )}
+              {canSkip && onSkipStep && (
+                <button onClick={() => onSkipStep(step.step_index)}
+                  title="Skip this step and continue pipeline"
+                  style={resilienceBtnStyle('38 92% 55%')}>
+                  <SkipForward size={11} />
+                  Skip & continue
+                </button>
+              )}
+              {canRetry && onRetryFromStep && (
+                <button onClick={() => onRetryFromStep(step.step_index)}
+                  title="Reset this step and all later steps to pending"
+                  style={resilienceBtnStyle('210 30% 60%')}>
+                  <PlayCircle size={11} />
+                  Retry from here
+                </button>
+              )}
+              {!canRetry && (status === 'failed' || status === 'skipped') && (
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', padding: '6px 0' }}>
+                  Retry limit reached ({maxRetries}). Skip to continue, or investigate the root cause.
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Phase 14.2 — show skip reason inline if applicable */}
+          {status === 'skipped' && step.skipped_reason && (
+            <div style={{
+              fontSize: 10.5, color: 'rgba(255,255,255,0.55)',
+              marginTop: 8, padding: 7, borderRadius: 6,
+              background: 'rgba(251, 146, 60, 0.05)',
+              border: '1px dashed rgba(251, 146, 60, 0.25)',
+              fontStyle: 'italic',
+            }}>
+              Skipped: {step.skipped_reason}
+            </div>
+          )}
         </div>
       </div>
     </motion.div>
   );
+}
+
+function resilienceBtnStyle(hue: string): React.CSSProperties {
+  return {
+    padding: '5px 10px', borderRadius: 6,
+    border: `1px solid hsla(${hue} / 0.35)`,
+    background: `hsla(${hue} / 0.10)`,
+    color: `hsl(${hue})`,
+    fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', gap: 4,
+  };
 }
 
 function ArtifactViewer({ step, onClose, moodHsl }: {

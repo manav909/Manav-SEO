@@ -2147,6 +2147,12 @@ export interface PipelineStepDetail {
   feedback_status?:     string | null;
   started_at?:          string | null;
   finished_at?:         string | null;
+  /* Phase 14.2 — resilience fields */
+  retry_count?:         number;
+  max_retries?:         number;
+  skipped_reason?:      string | null;
+  skipped_at?:          string | null;
+  skipped_by?:          string | null;
 }
 
 export async function seasonPipelineRun(opts: {
@@ -2589,4 +2595,32 @@ export async function seoReportSearch(opts: {
   const r = await post(ENGINE, { action: 'bs_seo_report_search', ...opts });
   if (!r?.success) return { error: r?.error };
   return { reports: r.reports };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 14.2 — Resilience client methods
+═══════════════════════════════════════════════════════════════ */
+
+export async function seasonPipelineRetryStep(opts: {
+  runId: string; stepIndex: number;
+}): Promise<{ success?: boolean; new_retry_count?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_retry_step', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true, new_retry_count: r.new_retry_count };
+}
+
+export async function seasonPipelineRetryFromStep(opts: {
+  runId: string; stepIndex: number;
+}): Promise<{ success?: boolean; steps_reset?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_retry_from_step', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true, steps_reset: r.steps_reset };
+}
+
+export async function seasonPipelineSkipStep(opts: {
+  runId: string; stepIndex: number; reason?: string;
+}): Promise<{ success?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_skip_step', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
 }

@@ -363,3 +363,31 @@ export async function bsSeasonPipelineExecuteNext(body: any): Promise<any> {
     return { success: false, error: e?.message || "execute next failed" };
   }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 14.2 — Resilience routes (retry-step, retry-from-step, skip-step)
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeasonPipelineRetryStep(body: any): Promise<any> {
+  const { runId, stepIndex } = body || {};
+  if (!runId)                  return { success: false, error: "runId required" };
+  if (typeof stepIndex !== 'number') return { success: false, error: "stepIndex (0-based number) required" };
+  const { retryStep } = await import("./season-pipeline-runner.js");
+  return retryStep({ runId, stepIndex });
+}
+
+export async function bsSeasonPipelineRetryFromStep(body: any): Promise<any> {
+  const { runId, stepIndex } = body || {};
+  if (!runId)                  return { success: false, error: "runId required" };
+  if (typeof stepIndex !== 'number') return { success: false, error: "stepIndex (0-based number) required" };
+  const { retryFromStep } = await import("./season-pipeline-runner.js");
+  return retryFromStep({ runId, stepIndex });
+}
+
+export async function bsSeasonPipelineSkipStep(body: any): Promise<any> {
+  const { runId, stepIndex, reason } = body || {};
+  if (!runId)                  return { success: false, error: "runId required" };
+  if (typeof stepIndex !== 'number') return { success: false, error: "stepIndex (0-based number) required" };
+  const { skipStep } = await import("./season-pipeline-runner.js");
+  return skipStep({ runId, stepIndex, reason });
+}

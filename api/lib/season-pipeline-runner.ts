@@ -683,8 +683,14 @@ export async function executeNextPendingStep(opts: {
       .select("id, project_id, scope, status, llm_calls_used, web_searches_used, steps_completed")
       .eq("id", opts.runId).maybeSingle();
     if (!run)   return { error: "run not found" };
-    if ((run as any).status !== 'running') {
+    /* Phase 14.2 — accept 'retrying' (after a retry/skip op) as well as 'running' */
+    if ((run as any).status !== 'running' && (run as any).status !== 'retrying') {
       return { no_more_steps: true, run_status: (run as any).status };
+    }
+
+    /* If we're entering on 'retrying', flip to 'running' for normal flow */
+    if ((run as any).status === 'retrying') {
+      await db().from("season_pipeline_runs").update({ status: 'running' }).eq("id", opts.runId);
     }
 
     const { data: allSteps } = await db().from("season_pipeline_steps")
@@ -1218,5 +1224,197 @@ async function scanForOpportunities(opts: {
     }
   } catch (e: any) {
     console.log(`[scanForOpportunities] failed: ${e?.message}`);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 14.2 — Resilience operations
+   
+   Three operations exposed to the API layer:
+     - retryStep:        re-run a single failed step in place
+     - retryFromStep:    reset step N + all downstream back to pending
+     - skipStep:         mark a failed step as skipped, let pipeline continue
+
+   All three set the run back to 'retrying' so the standard
+   executeNextPendingStep loop picks up where it left off.
+═══════════════════════════════════════════════════════════════ */
+
+const MAX_RETRY_HARD_CEILING = 3;
+
+export async function retryStep(opts: {
+  runId: string;
+  stepIndex: number;
+}): Promise<{ success: boolean; new_retry_count?: number; error?: string }> {
+  try {
+    /* Load the step + run to validate operation is allowed */
+    const { data: step } = await db().from("season_pipeline_steps")
+      .select("id, status, retry_count, max_retries, step_id, step_label")
+      .eq("run_id", opts.runId).eq("step_index", opts.stepIndex).maybeSingle();
+    if (!step) return { success: false, error: 'step not found' };
+    const s = step as any;
+
+    if (s.status !== 'failed' && s.status !== 'skipped') {
+      return { success: false, error: `cannot retry a step in '${s.status}' state — only 'failed' or 'skipped' can be retried` };
+    }
+
+    const ceiling = Math.min(s.max_retries || MAX_RETRY_HARD_CEILING, MAX_RETRY_HARD_CEILING);
+    if ((s.retry_count || 0) >= ceiling) {
+      return { success: false, error: `retry limit (${ceiling}) reached for step "${s.step_label}". This step has failed repeatedly — investigate the underlying cause or skip it.` };
+    }
+
+    /* Reset the step to pending, increment retry counter */
+    const newCount = (s.retry_count || 0) + 1;
+    await db().from("season_pipeline_steps").update({
+      status:         'pending',
+      retry_count:    newCount,
+      error_message:  null,
+      started_at:     null,
+      finished_at:    null,
+      duration_ms:    null,
+      output:         null,
+      honest_note:    null,
+      output_artifact_kind: null,
+      llm_calls:      0,
+      web_searches:   0,
+      skipped_reason: null,
+      skipped_at:     null,
+      skipped_by:     null,
+    }).eq("id", s.id);
+
+    /* Set run back to retrying so executeNextPendingStep picks it up */
+    await db().from("season_pipeline_runs").update({
+      status:         'retrying',
+      finished_at:    null,
+      honest_summary: `Step ${opts.stepIndex + 1} "${s.step_label}" being retried (attempt ${newCount}/${ceiling}).`,
+    }).eq("id", opts.runId);
+
+    /* Log */
+    const { data: run } = await db().from("season_pipeline_runs").select("project_id").eq("id", opts.runId).maybeSingle();
+    if (run) {
+      await logActivity((run as any).project_id, opts.runId, 'pipeline_step_retry',
+        `Retrying step ${opts.stepIndex + 1}: "${s.step_label}"`,
+        `Attempt ${newCount} of ${ceiling}`);
+    }
+
+    return { success: true, new_retry_count: newCount };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'retry failed' };
+  }
+}
+
+export async function retryFromStep(opts: {
+  runId: string;
+  stepIndex: number;
+}): Promise<{ success: boolean; steps_reset?: number; error?: string }> {
+  try {
+    /* Load all steps from stepIndex onward */
+    const { data: steps } = await db().from("season_pipeline_steps")
+      .select("id, status, retry_count, max_retries, step_index, step_label, step_id")
+      .eq("run_id", opts.runId)
+      .gte("step_index", opts.stepIndex)
+      .order("step_index");
+    if (!steps || (steps as any[]).length === 0) {
+      return { success: false, error: 'no steps found at or after that index' };
+    }
+
+    /* Validate the starting step's retry limit */
+    const startStep = (steps as any[])[0];
+    const ceiling = Math.min(startStep.max_retries || MAX_RETRY_HARD_CEILING, MAX_RETRY_HARD_CEILING);
+    if ((startStep.retry_count || 0) >= ceiling) {
+      return { success: false, error: `retry limit (${ceiling}) reached for step "${startStep.step_label}". Investigate root cause or skip and resume from next step.` };
+    }
+
+    /* Reset every step in range to pending. Only increment retry_count on the
+       first one (the actual retry); downstream steps just get reset to pending
+       since they weren't the failure point. */
+    let resetCount = 0;
+    for (const s of steps as any[]) {
+      const isFirst = s.step_index === opts.stepIndex;
+      const update: any = {
+        status:         'pending',
+        error_message:  null,
+        started_at:     null,
+        finished_at:    null,
+        duration_ms:    null,
+        output:         null,
+        honest_note:    null,
+        output_artifact_kind: null,
+        llm_calls:      0,
+        web_searches:   0,
+        skipped_reason: null,
+        skipped_at:     null,
+        skipped_by:     null,
+      };
+      if (isFirst) update.retry_count = (s.retry_count || 0) + 1;
+      await db().from("season_pipeline_steps").update(update).eq("id", s.id);
+      resetCount++;
+    }
+
+    /* Run goes back to retrying */
+    await db().from("season_pipeline_runs").update({
+      status:         'retrying',
+      finished_at:    null,
+      honest_summary: `Resuming from step ${opts.stepIndex + 1}. ${resetCount} step${resetCount === 1 ? '' : 's'} reset to pending.`,
+    }).eq("id", opts.runId);
+
+    const { data: run } = await db().from("season_pipeline_runs").select("project_id").eq("id", opts.runId).maybeSingle();
+    if (run) {
+      await logActivity((run as any).project_id, opts.runId, 'pipeline_resume_from_step',
+        `Resume from step ${opts.stepIndex + 1}`,
+        `${resetCount} steps reset to pending. First step retry count: ${(startStep.retry_count || 0) + 1}/${ceiling}.`);
+    }
+
+    return { success: true, steps_reset: resetCount };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'retry-from failed' };
+  }
+}
+
+export async function skipStep(opts: {
+  runId: string;
+  stepIndex: number;
+  reason?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: step } = await db().from("season_pipeline_steps")
+      .select("id, status, step_label, step_id")
+      .eq("run_id", opts.runId).eq("step_index", opts.stepIndex).maybeSingle();
+    if (!step) return { success: false, error: 'step not found' };
+    const s = step as any;
+
+    if (s.status !== 'failed' && s.status !== 'pending') {
+      return { success: false, error: `cannot skip a step in '${s.status}' state — only 'failed' or 'pending' can be skipped` };
+    }
+
+    await db().from("season_pipeline_steps").update({
+      status:         'skipped',
+      skipped_reason: (opts.reason || 'manually skipped from dashboard').slice(0, 500),
+      skipped_at:     new Date().toISOString(),
+      skipped_by:     'user',
+      finished_at:    new Date().toISOString(),
+      honest_note:    `Step was skipped${opts.reason ? `: ${opts.reason}` : ''}. Downstream steps may produce less complete output without this data.`,
+    }).eq("id", s.id);
+
+    /* Set run back to retrying so executeNextPendingStep can pick up the next pending step */
+    const { data: anyPending } = await db().from("season_pipeline_steps")
+      .select("id").eq("run_id", opts.runId).eq("status", 'pending').limit(1).maybeSingle();
+    if (anyPending) {
+      await db().from("season_pipeline_runs").update({
+        status:         'retrying',
+        finished_at:    null,
+        honest_summary: `Step ${opts.stepIndex + 1} "${s.step_label}" skipped. Continuing with remaining steps.`,
+      }).eq("id", opts.runId);
+    }
+
+    const { data: run } = await db().from("season_pipeline_runs").select("project_id").eq("id", opts.runId).maybeSingle();
+    if (run) {
+      await logActivity((run as any).project_id, opts.runId, 'pipeline_step_skipped',
+        `Skipped step ${opts.stepIndex + 1}: "${s.step_label}"`,
+        opts.reason);
+    }
+
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'skip failed' };
   }
 }
