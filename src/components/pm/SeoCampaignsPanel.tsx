@@ -795,7 +795,21 @@ function ReportViewer({ report, onClose }: { report: SeoCampaignReport; onClose:
             <div style={{ fontSize: 10.5, color: 'rgba(150,150,170,0.7)' }}>
               {report.report_kind.replace(/_/g, ' ')} · {new Date(report.created_at).toLocaleString()} · by {report.generated_by}
               {report.confidence_rating && ` · confidence: ${report.confidence_rating}`}
+              {report.llm_calls_used !== undefined && report.llm_calls_used > 0 && ` · ${report.llm_calls_used} LLM call${report.llm_calls_used === 1 ? '' : 's'}`}
+              {report.web_searches_used !== undefined && report.web_searches_used > 0 && ` · ${report.web_searches_used} web search${report.web_searches_used === 1 ? '' : 'es'}`}
             </div>
+            {(report.data_sources?.length || 0) > 0 && (
+              <div style={{ fontSize: 10.5, color: 'rgba(150,150,170,0.7)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                <span style={{ opacity: 0.6 }}>Sources:</span>
+                {(report.data_sources || []).map((src, i) => (
+                  <span key={i} style={{
+                    padding: '1px 7px', borderRadius: 4, fontSize: 9.5,
+                    background: 'rgba(186,200,255,0.08)', color: '#a5f3fc',
+                    border: '1px solid rgba(186,200,255,0.15)', fontWeight: 600,
+                  }}>{src}</span>
+                ))}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={handleCopy} style={iconActionStyle()} title="Copy markdown">
@@ -872,9 +886,21 @@ function ExpandedReport({ report, isFirst }: { report: SeoCampaignReport; isFirs
           <div style={{ fontSize: 14, fontWeight: 700 }}>{report.title}</div>
           <div style={{ fontSize: 10.5, color: 'rgba(150,150,170,0.7)', marginTop: 3 }}>
             {new Date(report.created_at).toLocaleString()} · by {report.generated_by}
-            {report.llm_calls_used !== undefined && report.llm_calls_used > 0 && ` · ${report.llm_calls_used} LLM calls`}
-            {(report.data_sources?.length || 0) > 0 && ` · sources: ${(report.data_sources || []).join(', ')}`}
+            {report.llm_calls_used !== undefined && report.llm_calls_used > 0 && ` · ${report.llm_calls_used} LLM call${report.llm_calls_used === 1 ? '' : 's'}`}
+            {report.web_searches_used !== undefined && report.web_searches_used > 0 && ` · ${report.web_searches_used} web search${report.web_searches_used === 1 ? '' : 'es'}`}
           </div>
+          {(report.data_sources?.length || 0) > 0 && (
+            <div style={{ fontSize: 10.5, color: 'rgba(150,150,170,0.7)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+              <span style={{ opacity: 0.6 }}>Sources:</span>
+              {(report.data_sources || []).map((src, i) => (
+                <span key={i} style={{
+                  padding: '1px 7px', borderRadius: 4, fontSize: 9.5,
+                  background: 'rgba(186,200,255,0.08)', color: '#a5f3fc',
+                  border: '1px solid rgba(186,200,255,0.15)', fontWeight: 600,
+                }}>{src}</span>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
           <button onClick={handleCopy} style={iconActionStyle()} title="Copy markdown">
