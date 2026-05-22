@@ -25,6 +25,8 @@ import SmartSidebar from '@/components/SmartSidebar';
 import SmartTopBar from '@/components/SmartTopBar';
 import CapabilitiesPanel from '@/components/season/CapabilitiesPanel';
 import WarRoomSection from '@/components/season/WarRoomSection';
+import WhatNeedsYou from '@/components/season/WhatNeedsYou';
+import CampaignPreviewInline from '@/components/season/CampaignPreviewInline';
 import {
   seasonBriefing, seasonCommand, seasonActivity,
   type BriefingClient, type BriefingItemClient,
@@ -32,6 +34,10 @@ import {
   /* Phase 21 Block 2.5 — grounded chat */
   seoClassifyIntent, seoChatSuggestions, seoExploreKeyword,
   type ChatSuggestion, type ToolsStatus, type ExplorationResponseClient,
+  /* Phase 21 Block 2.7 — commitment-intent inline preview */
+  seoRecommendCampaignStructure, seoWarRoomBriefing,
+  type CampaignStructureRecommendation, type ProjectPositioning,
+  type RecoverableOpportunityClient,
 } from '@/components/pm/api';
 
 /* Phase 21 Block 2.5 — relative time display for source freshness */
@@ -51,6 +57,22 @@ function formatRelativeShort(iso?: string | null): string {
     if (d < 30) return `${d}d ago`;
     return new Date(iso).toLocaleDateString();
   } catch { return ''; }
+}
+
+/* Phase 21 Block 2.7 — extract the keyword fragment from rank-related input
+   for filter-on-type behavior. Returns "low" from "rank me for low". */
+function extractKeywordFragment(text: string): string {
+  if (!text) return '';
+  const lc = text.trim().toLowerCase();
+  if (lc.length < 4) return '';
+  if (!/\b(rank|target|campaign|seo)\b/i.test(lc)) return '';
+  /* Strip leading intent verbs, then strip trailing quotes/punct */
+  const stripped = lc
+    .replace(/^(?:rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+(?:keywords?)?|seo\s+for|campaign\s+for|start\s+(?:a\s+)?campaign\s+for|create\s+(?:a\s+)?campaign\s+for)[\s:"']*/i, '')
+    .replace(/[?!.]+$/, '')
+    .replace(/^["']?|["']?$/g, '')
+    .trim();
+  return stripped.length >= 2 ? stripped : '';
 }
 
 function useTypewriter(text: string, speedMs = 18): string {
@@ -211,6 +233,15 @@ function CommandInner() {
   const [explorationResponse, setExplorationResponse] = useState<ExplorationResponseClient | null>(null);
   const [loadingExploration, setLoadingExploration]   = useState(false);
 
+  /* Phase 21 Block 2.7 — inline commitment-intent preview state */
+  const [pendingStructure, setPendingStructure]       = useState<CampaignStructureRecommendation | null>(null);
+  const [pendingPositioning, setPendingPositioning]   = useState<ProjectPositioning | null>(null);
+  const [pendingOriginalInput, setPendingOriginalInput] = useState<string>('');
+  const [loadingStructure, setLoadingStructure]       = useState(false);
+
+  /* Phase 21 Block 2.7 — recoverable opportunities for WhatNeedsYou hero */
+  const [recoverableTop, setRecoverableTop]           = useState<RecoverableOpportunityClient[]>([]);
+
   /* Capabilities panel state + ? keyboard shortcut */
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   useEffect(() => {
@@ -308,17 +339,39 @@ function CommandInner() {
     setResponse(null);
     setCommandError(null);
     setExplorationResponse(null);
+    setPendingStructure(null);
     setChatSuggestions([]);
 
-    /* Phase 21 Block 2.5 — classify intent first. Exploration goes to a
-       grounded read; commitment to the standard chat brain (which handles
-       rank-for-keyword via the existing season pipeline). */
+    /* Phase 21 Block 2.5/2.7 — classify intent first.
+       Commitment → inline structure preview (Block 2.7)
+       Exploration → grounded read (Block 2.5)
+       Question → standard chat brain */
+    let routedAsCommitment  = false;
     let routedAsExploration = false;
     try {
       const classification = await seoClassifyIntent({ text });
-      if (classification.intent === 'exploration') routedAsExploration = true;
+      if (classification.intent === 'commitment')  routedAsCommitment  = true;
+      else if (classification.intent === 'exploration') routedAsExploration = true;
     } catch {
-      /* swallow — fall through to standard brain */
+      /* Fallback regex if classifier fails */
+      if (/(?:^|\s)(rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keywords?|seo\s+for)\b/i.test(text)) {
+        routedAsCommitment = true;
+      }
+    }
+
+    if (routedAsCommitment) {
+      setLoadingStructure(true);
+      const r = await seoRecommendCampaignStructure({ projectId: selectedProjectId, rawInput: text });
+      setLoadingStructure(false);
+      setSubmitting(false);
+      if (r.error || !r.structure) {
+        setCommandError(`Couldn't read those keywords cleanly — ${r.error || 'no structure returned'}. Try rephrasing.`);
+        return;
+      }
+      setPendingStructure(r.structure);
+      setPendingPositioning(r.positioning || null);
+      setPendingOriginalInput(text);
+      return;
     }
 
     if (routedAsExploration) {
@@ -345,12 +398,24 @@ function CommandInner() {
       return;
     }
 
-    /* Standard brain — same as before */
+    /* Standard chat brain */
     const r = await seasonCommand({ projectId: selectedProjectId, input: text });
     setSubmitting(false);
     if (r.error) { setCommandError(r.error); return; }
     if (r.response) setResponse(r.response);
   };
+
+  /* Phase 21 Block 2.7 — fetch top recoverable opportunities for WhatNeedsYou hero */
+  useEffect(() => {
+    if (!selectedProjectId) { setRecoverableTop([]); return; }
+    (async () => {
+      try {
+        const r = await seoWarRoomBriefing({ projectId: selectedProjectId });
+        const recs = r.briefing?.grounded?.recoverable_opportunities;
+        if (Array.isArray(recs)) setRecoverableTop(recs);
+      } catch { /* swallow — WhatNeedsYou will simply render fewer rows */ }
+    })();
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (!activityOpen || !selectedProjectId) return;
@@ -400,7 +465,7 @@ function CommandInner() {
           />
         </div>
 
-        <div className="relative max-w-3xl mx-auto px-6 py-12">
+        <div className="relative max-w-3xl lg:max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
 
           {loading && <LoadingHero />}
 
@@ -687,17 +752,43 @@ function CommandInner() {
             )}
           </AnimatePresence>
 
-          {!loading && briefing && !response && (
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <AttentionPanel items={briefing.attention} />
-              <QuietWinsPanel items={briefing.quiet_wins} />
+          {/* Phase 21 Block 2.7 — inline campaign preview when commitment intent submitted */}
+          {pendingStructure && selectedProjectId && (
+            <CampaignPreviewInline
+              structure={pendingStructure}
+              positioning={pendingPositioning}
+              projectId={selectedProjectId}
+              originalInput={pendingOriginalInput}
+              onClose={() => {
+                setPendingStructure(null);
+                setPendingPositioning(null);
+                setPendingOriginalInput('');
+              }}
+              onLaunched={() => { loadBriefing(); }}
+            />
+          )}
+
+          {loadingStructure && !pendingStructure && (
+            <div className="mt-4 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] p-3 text-xs text-muted-foreground/75 flex items-center gap-2">
+              <RefreshCw className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+              Reading positioning + grouping keywords + checking for duplicates…
             </div>
           )}
 
-          {/* Phase 21 Block 2.6 — Strategic War Room three-tier intelligence */}
-          {!response && !explorationResponse && (
+          {/* Phase 21 Block 2.7 — WhatNeedsYou hero replaces the old 2-col Attention/QuietWins grid */}
+          {!loading && briefing && !response && !pendingStructure && !explorationResponse && (
+            <WhatNeedsYou
+              attentionItems={briefing.attention}
+              recoverableTop={recoverableTop}
+              onLaunchCommand={(cmd) => { setInput(cmd); setTimeout(() => handleSubmit(undefined, cmd), 50); }}
+            />
+          )}
+
+          {/* Phase 21 Block 2.6/2.7 — Strategic War Room three-tier intelligence with filter-on-type */}
+          {!response && !explorationResponse && !pendingStructure && (
             <WarRoomSection
               projectId={selectedProjectId}
+              filterTerm={extractKeywordFragment(input)}
               onLaunchCommand={(cmd) => { setInput(cmd); setTimeout(() => handleSubmit(undefined, cmd), 50); }}
             />
           )}
