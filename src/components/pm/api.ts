@@ -2415,10 +2415,13 @@ export interface SeoCampaignReport {
   report_kind:         string;
   title:               string;
   summary:             string | null;
+  body_md:             string | null;      // Phase 14.0.1 — now always included in list responses
   confidence_rating:   string | null;
   generated_by:        string;
+  llm_calls_used?:     number;
+  web_searches_used?:  number;
+  data_sources?:       string[] | null;
   created_at:          string;
-  body_md?:            string;
 }
 
 export interface SeoOpportunity {

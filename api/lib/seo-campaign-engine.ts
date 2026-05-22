@@ -213,7 +213,7 @@ export async function getCampaignDetail(opts: {
       .select("*").eq("campaign_id", opts.campaignId).order("display_order");
 
     const { data: reports } = await db().from("seo_campaign_reports")
-      .select("id, panel_id, pillar, report_kind, title, summary, confidence_rating, generated_by, created_at")
+      .select("id, panel_id, pillar, report_kind, title, summary, body_md, confidence_rating, generated_by, llm_calls_used, web_searches_used, data_sources, created_at")
       .eq("campaign_id", opts.campaignId)
       .order("created_at", { ascending: false })
       .limit(20);

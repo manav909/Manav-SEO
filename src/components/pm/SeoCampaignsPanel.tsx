@@ -8,11 +8,11 @@
      • Campaign detail drawer when one is selected
 ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Target, Lightbulb, Play, Pause, Archive, RefreshCw, ChevronRight,
   CheckCircle2, AlertCircle, Loader2, X, Sparkles, FileText, TrendingUp,
-  Layers, Link2, ExternalLink, Activity, Clock,
+  Layers, Link2, ExternalLink, Activity, Clock, Copy, Check, Download,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -593,39 +593,59 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                 </button>
               </div>
               <div style={{
-                padding: 12, borderRadius: 10,
+                padding: 16, borderRadius: 10,
                 background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(160,160,180,0.1)',
-                fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'rgba(220,220,235,0.85)',
               }}>
-                {data.campaign.living_overview_md || '_(no overview yet — click Regenerate)_'}
+                {data.campaign.living_overview_md ? (
+                  <SimpleMarkdown text={data.campaign.living_overview_md} />
+                ) : (
+                  <div style={{ fontSize: 12, color: 'rgba(150,150,170,0.6)', fontStyle: 'italic' }}>
+                    No overview yet — click Regenerate.
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Reports */}
+            {/* Documents — Phase 14.0.1: latest report fully expanded inline */}
             <div style={{ marginBottom: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>Recent reports ({(data.recent_reports || []).length})</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>
+                Documents &amp; reports ({(data.recent_reports || []).length})
+              </h3>
               {(data.recent_reports || []).length === 0 ? (
                 <div style={{ fontSize: 11.5, color: 'rgba(120,120,140,0.6)' }}>No reports yet.</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {data.recent_reports.map((r: SeoCampaignReport) => (
-                    <button key={r.id} onClick={() => setSelectedReport(r)} style={{
-                      padding: 10, borderRadius: 8, textAlign: 'left',
-                      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(160,160,180,0.1)',
-                      cursor: 'pointer', color: 'inherit',
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700 }}>{r.title}</div>
-                          <div style={{ fontSize: 10, color: 'rgba(150,150,170,0.7)', marginTop: 2 }}>
-                            {PILLAR_LABEL[r.pillar] || r.pillar} · {r.report_kind.replace(/_/g, ' ')} · {new Date(r.created_at).toLocaleString()}
-                          </div>
-                        </div>
-                        {r.confidence_rating && <StatusBadge value={r.confidence_rating} hue={r.confidence_rating === 'high' ? '152 70% 50%' : r.confidence_rating === 'medium' ? '38 92% 55%' : '0 75% 55%'} />}
+                <>
+                  {/* Latest report — expanded with full content */}
+                  <ExpandedReport report={data.recent_reports[0]} isFirst={true} />
+
+                  {/* Older reports — collapsed rows, click to swap into expanded view via modal */}
+                  {data.recent_reports.length > 1 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 11, color: 'rgba(150,150,170,0.6)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 700 }}>
+                        Earlier reports ({data.recent_reports.length - 1})
                       </div>
-                    </button>
-                  ))}
-                </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {data.recent_reports.slice(1).map((r: SeoCampaignReport) => (
+                          <button key={r.id} onClick={() => setSelectedReport(r)} style={{
+                            padding: 10, borderRadius: 8, textAlign: 'left',
+                            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(160,160,180,0.1)',
+                            cursor: 'pointer', color: 'inherit',
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700 }}>{r.title}</div>
+                                <div style={{ fontSize: 10, color: 'rgba(150,150,170,0.7)', marginTop: 2 }}>
+                                  {PILLAR_LABEL[r.pillar] || r.pillar} · {r.report_kind.replace(/_/g, ' ')} · {new Date(r.created_at).toLocaleString()}
+                                </div>
+                              </div>
+                              {r.confidence_rating && <StatusBadge value={r.confidence_rating} hue={r.confidence_rating === 'high' ? '152 70% 50%' : r.confidence_rating === 'medium' ? '38 92% 55%' : '0 75% 55%'} />}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -734,8 +754,24 @@ function PanelCard({ panel }: { panel: SeoCampaignPanel }) {
   );
 }
 
-/* ─── Report viewer ──────────────────────────────────────── */
+/* ─── Report viewer (modal for older reports) ────────────── */
 function ReportViewer({ report, onClose }: { report: SeoCampaignReport; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const body = report.body_md || report.summary || '(no content)';
+
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(body); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+  };
+  const handleDownload = () => {
+    const safeTitle = report.title.replace(/[^a-z0-9-_]/gi, '_').slice(0, 80);
+    const blob = new Blob([body], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${safeTitle}.md`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 9200,
@@ -748,8 +784,8 @@ function ReportViewer({ report, onClose }: { report: SeoCampaignReport; onClose:
         border: '1px solid rgba(160,160,180,0.2)', borderRadius: 14,
         padding: 24,
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14, gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(150,150,170,0.6)', fontWeight: 700 }}>
               Report · {PILLAR_LABEL[report.pillar] || report.pillar}
             </div>
@@ -759,16 +795,309 @@ function ReportViewer({ report, onClose }: { report: SeoCampaignReport; onClose:
               {report.confidence_rating && ` · confidence: ${report.confidence_rating}`}
             </div>
           </div>
-          <button onClick={onClose} style={{
-            width: 30, height: 30, borderRadius: 15,
-            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(160,160,180,0.2)',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}><X size={14} /></button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={handleCopy} style={iconActionStyle()} title="Copy markdown">
+              {copied ? <Check size={13} color="#34d399" /> : <Copy size={13} />}
+            </button>
+            <button onClick={handleDownload} style={iconActionStyle()} title="Download .md">
+              <Download size={13} />
+            </button>
+            <button onClick={onClose} style={iconActionStyle()} title="Close">
+              <X size={14} />
+            </button>
+          </div>
         </div>
-        <div style={{ fontSize: 12.5, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'rgba(220,220,235,0.85)' }}>
-          {(report as any).body_md || report.summary || '(no content)'}
-        </div>
+        <SimpleMarkdown text={body} />
       </div>
     </div>
   );
+}
+
+function iconActionStyle(): React.CSSProperties {
+  return {
+    width: 30, height: 30, borderRadius: 15,
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(160,160,180,0.2)',
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: 'rgba(220,220,235,0.85)',
+  };
+}
+
+/* ─── Expanded report (used for the latest, rendered inline in drawer) ─── */
+function ExpandedReport({ report, isFirst }: { report: SeoCampaignReport; isFirst?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const body = report.body_md || report.summary || '(no content)';
+  const confHue = report.confidence_rating === 'high' ? '152 70% 50%' : report.confidence_rating === 'medium' ? '38 92% 55%' : '0 75% 55%';
+
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(body); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+  };
+  const handleDownload = () => {
+    const safeTitle = report.title.replace(/[^a-z0-9-_]/gi, '_').slice(0, 80);
+    const blob = new Blob([body], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${safeTitle}.md`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div style={{
+      borderRadius: 12, padding: 16,
+      background: `linear-gradient(180deg, hsla(${confHue} / 0.04) 0%, rgba(15,16,24,0.5) 100%)`,
+      border: `1px solid hsla(${confHue} / 0.2)`,
+      marginBottom: 6,
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid rgba(160,160,180,0.1)' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            {isFirst && (
+              <span style={{
+                padding: '2px 8px', borderRadius: 4, fontSize: 9, fontWeight: 700,
+                background: `hsla(${confHue} / 0.18)`, color: `hsl(${confHue})`,
+                letterSpacing: '0.06em', textTransform: 'uppercase',
+              }}>Latest</span>
+            )}
+            {report.confidence_rating && (
+              <StatusBadge value={report.confidence_rating} hue={confHue} />
+            )}
+            <span style={{ fontSize: 10, color: 'rgba(150,150,170,0.6)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              {PILLAR_LABEL[report.pillar] || report.pillar} · {report.report_kind.replace(/_/g, ' ')}
+            </span>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{report.title}</div>
+          <div style={{ fontSize: 10.5, color: 'rgba(150,150,170,0.7)', marginTop: 3 }}>
+            {new Date(report.created_at).toLocaleString()} · by {report.generated_by}
+            {report.llm_calls_used !== undefined && report.llm_calls_used > 0 && ` · ${report.llm_calls_used} LLM calls`}
+            {(report.data_sources?.length || 0) > 0 && ` · sources: ${(report.data_sources || []).join(', ')}`}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+          <button onClick={handleCopy} style={iconActionStyle()} title="Copy markdown">
+            {copied ? <Check size={13} color="#34d399" /> : <Copy size={13} />}
+          </button>
+          <button onClick={handleDownload} style={iconActionStyle()} title="Download .md">
+            <Download size={13} />
+          </button>
+          <button onClick={() => setCollapsed(!collapsed)} style={iconActionStyle()} title={collapsed ? 'Expand' : 'Collapse'}>
+            <ChevronRight size={13} style={{ transform: collapsed ? 'rotate(90deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />
+          </button>
+        </div>
+      </div>
+
+      {/* Body */}
+      {!collapsed && (
+        <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
+          <SimpleMarkdown text={body} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SimpleMarkdown — rich markdown renderer for campaign documents.
+   Supports: H1-H3, bold, italic, inline code, code blocks, blockquotes,
+   bullet lists, numbered lists, links, tables, checkboxes.
+
+   Same shape as the pipeline dashboard's renderer plus tables + checkboxes
+   for the brief artifact's quality checklist.
+═══════════════════════════════════════════════════════════════ */
+export function SimpleMarkdown({ text }: { text: string }) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  const blocks: any[] = [];
+  let inCodeBlock = false;
+  let codeBuffer: string[] = [];
+  let listBuffer: { text: string; checked?: boolean | null }[] = [];
+  let numberedBuffer: string[] = [];
+  let tableRows: string[][] | null = null;
+  let tableHasHeader = false;
+
+  const flushList = () => {
+    if (listBuffer.length > 0) { blocks.push({ type: 'ul', items: [...listBuffer] }); listBuffer = []; }
+    if (numberedBuffer.length > 0) { blocks.push({ type: 'ol', items: [...numberedBuffer] }); numberedBuffer = []; }
+  };
+  const flushTable = () => {
+    if (tableRows && tableRows.length > 0) {
+      blocks.push({ type: 'table', rows: tableRows, hasHeader: tableHasHeader });
+      tableRows = null;
+      tableHasHeader = false;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.startsWith('```')) {
+      if (inCodeBlock) {
+        blocks.push({ type: 'code', text: codeBuffer.join('\n') });
+        codeBuffer = [];
+        inCodeBlock = false;
+      } else {
+        flushList(); flushTable();
+        inCodeBlock = true;
+      }
+      continue;
+    }
+    if (inCodeBlock) { codeBuffer.push(line); continue; }
+
+    /* Table detection — a line that's `| ... | ... |` is part of a table */
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      flushList();
+      const cells = line.trim().slice(1, -1).split('|').map(c => c.trim());
+      /* Separator row like `| --- | --- |` */
+      if (cells.every(c => /^:?-+:?$/.test(c))) {
+        if (tableRows && tableRows.length > 0) tableHasHeader = true;
+        continue;
+      }
+      if (!tableRows) tableRows = [];
+      tableRows.push(cells);
+      continue;
+    } else if (tableRows) {
+      flushTable();
+    }
+
+    if (line.startsWith('### ')) { flushList(); flushTable(); blocks.push({ type: 'h3', text: line.slice(4) }); continue; }
+    if (line.startsWith('## '))  { flushList(); flushTable(); blocks.push({ type: 'h2', text: line.slice(3) }); continue; }
+    if (line.startsWith('# '))   { flushList(); flushTable(); blocks.push({ type: 'h1', text: line.slice(2) }); continue; }
+    if (line.startsWith('> '))   { flushList(); flushTable(); blocks.push({ type: 'quote', text: line.slice(2) }); continue; }
+
+    /* Checkbox: `- [ ] item` or `- [x] item` */
+    const checkMatch = /^[-*]\s+\[([ xX])\]\s+(.+)$/.exec(line);
+    if (checkMatch) {
+      listBuffer.push({ text: checkMatch[2], checked: checkMatch[1].toLowerCase() === 'x' });
+      continue;
+    }
+    /* Bullet list */
+    if (/^[-*]\s+/.test(line)) {
+      listBuffer.push({ text: line.replace(/^[-*]\s+/, ''), checked: null });
+      continue;
+    }
+    /* Numbered list */
+    const numMatch = /^\s*(\d+)\.\s+(.+)$/.exec(line);
+    if (numMatch) {
+      numberedBuffer.push(numMatch[2]);
+      continue;
+    }
+
+    if (line.trim() === '') { flushList(); flushTable(); blocks.push({ type: 'br' }); continue; }
+    flushList(); flushTable();
+    blocks.push({ type: 'p', text: line });
+  }
+  flushList(); flushTable();
+  if (codeBuffer.length > 0) blocks.push({ type: 'code', text: codeBuffer.join('\n') });
+
+  return (
+    <div style={{ color: 'rgba(220,220,235,0.9)', fontSize: 13, lineHeight: 1.7 }}>
+      {blocks.map((b, i) => {
+        if (b.type === 'h1') return <h1 key={i} style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginTop: i === 0 ? 0 : 20, marginBottom: 12 }}>{renderInlineMd(b.text)}</h1>;
+        if (b.type === 'h2') return <h2 key={i} style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginTop: 18, marginBottom: 10 }}>{renderInlineMd(b.text)}</h2>;
+        if (b.type === 'h3') return <h3 key={i} style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.92)', marginTop: 14, marginBottom: 8 }}>{renderInlineMd(b.text)}</h3>;
+        if (b.type === 'p')  return <p key={i} style={{ margin: '0 0 10px' }}>{renderInlineMd(b.text)}</p>;
+        if (b.type === 'br') return <div key={i} style={{ height: 6 }} />;
+        if (b.type === 'quote') return (
+          <blockquote key={i} style={{
+            margin: '8px 0', paddingLeft: 12,
+            borderLeft: '3px solid rgba(255,255,255,0.2)',
+            color: 'rgba(220,220,235,0.7)', fontStyle: 'italic',
+          }}>{renderInlineMd(b.text)}</blockquote>
+        );
+        if (b.type === 'ul') return (
+          <ul key={i} style={{ margin: '6px 0 12px', paddingLeft: 4, listStyle: 'none' }}>
+            {b.items.map((it: any, j: number) => (
+              <li key={j} style={{ marginBottom: 5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                {it.checked === null || it.checked === undefined ? (
+                  <span style={{ color: 'rgba(160,160,180,0.7)', marginTop: 2, flexShrink: 0 }}>•</span>
+                ) : it.checked ? (
+                  <span style={{
+                    width: 14, height: 14, borderRadius: 3, marginTop: 2, flexShrink: 0,
+                    background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#34d399', fontSize: 9, fontWeight: 900,
+                  }}>✓</span>
+                ) : (
+                  <span style={{
+                    width: 14, height: 14, borderRadius: 3, marginTop: 2, flexShrink: 0,
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(160,160,180,0.3)',
+                  }} />
+                )}
+                <span>{renderInlineMd(it.text)}</span>
+              </li>
+            ))}
+          </ul>
+        );
+        if (b.type === 'ol') return (
+          <ol key={i} style={{ margin: '6px 0 12px', paddingLeft: 22 }}>
+            {b.items.map((it: string, j: number) => (
+              <li key={j} style={{ marginBottom: 5 }}>{renderInlineMd(it)}</li>
+            ))}
+          </ol>
+        );
+        if (b.type === 'code') return (
+          <pre key={i} style={{
+            margin: '10px 0', padding: 12, borderRadius: 8,
+            background: 'rgba(0,0,0,0.4)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            fontFamily: 'ui-monospace, "SF Mono", monospace',
+            fontSize: 12, lineHeight: 1.55,
+            overflow: 'auto', whiteSpace: 'pre-wrap',
+          }}>{b.text}</pre>
+        );
+        if (b.type === 'table') return (
+          <div key={i} style={{ margin: '10px 0', overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <tbody>
+                {b.rows.map((row: string[], rIdx: number) => {
+                  const isHeader = b.hasHeader && rIdx === 0;
+                  const Tag = isHeader ? 'th' : 'td';
+                  return (
+                    <tr key={rIdx} style={{ borderBottom: '1px solid rgba(160,160,180,0.12)' }}>
+                      {row.map((cell, cIdx) => (
+                        <Tag key={cIdx} style={{
+                          padding: '8px 10px', textAlign: 'left' as const,
+                          fontWeight: isHeader ? 700 : 400,
+                          color: isHeader ? '#fff' : 'rgba(220,220,235,0.85)',
+                          background: isHeader ? 'rgba(255,255,255,0.04)' : 'transparent',
+                          verticalAlign: 'top',
+                        }}>{renderInlineMd(cell)}</Tag>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+        return null;
+      })}
+    </div>
+  );
+}
+
+function renderInlineMd(text: string): React.ReactNode {
+  if (!text) return text;
+  const parts: React.ReactNode[] = [];
+  let lastIdx = 0;
+  const regex = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
+  let match;
+  let key = 0;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIdx) parts.push(text.slice(lastIdx, match.index));
+    if (match[2])      parts.push(<strong key={key++}>{match[2]}</strong>);
+    else if (match[3]) parts.push(<em key={key++}>{match[3]}</em>);
+    else if (match[4]) parts.push(<code key={key++} style={{
+      padding: '2px 5px', borderRadius: 4,
+      background: 'rgba(186,200,255,0.10)',
+      color: '#a5f3fc', fontSize: '0.92em', fontFamily: 'ui-monospace, monospace',
+    }}>{match[4]}</code>);
+    else if (match[5]) parts.push(
+      <a key={key++} href={match[6]} target="_blank" rel="noreferrer" style={{ color: '#7dd3fc', textDecoration: 'underline' }}>{match[5]}</a>
+    );
+    lastIdx = match.index + match[0].length;
+  }
+  if (lastIdx < text.length) parts.push(text.slice(lastIdx));
+  return parts;
 }
