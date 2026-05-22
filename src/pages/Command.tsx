@@ -32,6 +32,7 @@ import CampaignPreviewInline from '@/components/season/CampaignPreviewInline';
 import ModeToggle, { readSavedMode, saveMode, type CommandMode } from '@/components/season/ModeToggle';
 import ActionDeck from '@/components/season/ActionDeck';
 import ProjectPulse from '@/components/season/ProjectPulse';
+import CasualDigest from '@/components/season/CasualDigest';
 import { consumeHandoff } from '@/components/season/ChatHandoff';
 import { DURATION, FEATHER_EASE, modeSwitchVariants } from '@/components/season/warRoomAnimations';
 import {
@@ -628,8 +629,8 @@ function CommandInner() {
 
         <div className={`relative mx-auto px-4 sm:px-6 py-10 sm:py-12 transition-all duration-500 ${
           mode === 'pro'
-            ? 'max-w-7xl'
-            : 'max-w-3xl lg:max-w-4xl'
+            ? 'max-w-[1600px]'
+            : 'max-w-3xl lg:max-w-5xl'
         }`}>
 
           {/* Phase 21 Block 2.11 Phase A — mode toggle pinned top-right */}
@@ -1061,9 +1062,10 @@ function CommandInner() {
             </motion.div>
           )}
 
-          {/* Phase 21 Block 2.11 Phase A — mode-aware layout.
-              CASUAL: existing WhatNeedsYou hero + WarRoomSection stack (calm, centered).
-              PRO: 2-column ActionDeck (LEFT 58%) + ProjectPulse (RIGHT 42%). */}
+          {/* Phase 21 Block 2.11 — mode-aware layout.
+              CASUAL: editorial reading digest (Pick of the day + In your world)
+                       above the existing calm WhatNeedsYou + WarRoom.
+              PRO: full-width 2-column ActionDeck + ProjectPulse. */}
           <AnimatePresence mode="wait">
             {mode === 'casual' ? (
               <motion.div
@@ -1072,6 +1074,14 @@ function CommandInner() {
                 initial="hidden"
                 animate="visible"
                 exit="exit">
+                {/* The pre-coffee read */}
+                {!response && !explorationResponse && !pendingStructure && (
+                  <CasualDigest
+                    projectId={selectedProjectId}
+                    onLaunchCommand={runChatCommand}
+                  />
+                )}
+                {/* Existing calm priority view continues below the digest */}
                 {!loading && briefing && !response && !pendingStructure && !explorationResponse && (
                   <WhatNeedsYou
                     attentionItems={briefing.attention}
@@ -1107,11 +1117,13 @@ function CommandInner() {
                     />
                   )}
                 </div>
-                {/* RIGHT — Project Pulse */}
+                {/* RIGHT — Project Pulse with real panels */}
                 <div className="min-w-0">
                   <ProjectPulse
+                    projectId={selectedProjectId}
                     scorecard={scorecard}
                     loading={warRoomLoading}
+                    onLaunchCommand={runChatCommand}
                   />
                 </div>
               </motion.div>

@@ -3291,3 +3291,134 @@ export async function seoWarRoomBriefingV2(opts: {
   if (!r?.success) return { error: r?.error };
   return { briefing: r.briefing };
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 21 Block 2.11 Pass 1 — real panel data clients
+══════════════════════════════════════════════════════════════════════ */
+
+export interface PillarHealthCardClient {
+  kind:                'technical_audit' | 'cluster_map' | 'internal_linking' | 'off_page' | 'monitoring' | 'inbox';
+  label:               string;
+  last_run:            string | null;
+  last_run_relative:   string | null;
+  status:              'fresh' | 'aging' | 'overdue' | 'failed' | 'never_run';
+  critical_findings:   number;
+  warning_findings:    number;
+  info_findings:       number;
+  next_recheck_at:     string | null;
+  next_recheck_label:  string | null;
+  campaign_count:      number;
+  action_path:         string;
+}
+
+export async function seoPillarHealthMatrix(opts: { projectId: string }): Promise<{
+  cards?: PillarHealthCardClient[]; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_pillar_health_matrix', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { cards: r.cards };
+}
+
+export interface PerformancePulseItemClient {
+  query:                string;
+  current_position:     number;
+  previous_position:    number | null;
+  delta:                number | null;
+  impressions:          number;
+  clicks:               number;
+  trend:                'rising' | 'falling' | 'stable' | 'unknown';
+  landing_url?:         string;
+}
+
+export interface PerformancePulseClient {
+  top_performers:       PerformancePulseItemClient[];
+  rising_stars:         PerformancePulseItemClient[];
+  falling_stars:        PerformancePulseItemClient[];
+  source_label:         string;
+  source_refreshed:     string | null;
+}
+
+export async function seoPerformancePulse(opts: { projectId: string }): Promise<{
+  pulse?: PerformancePulseClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_performance_pulse', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { pulse: r.pulse };
+}
+
+export interface DecisionLogEntryClient {
+  id:                   string;
+  campaign_id:          string;
+  campaign_keyword:     string;
+  timestamp:            string;
+  decision_type:        string;
+  original_intent:      string;
+  redirected_to:        string | null;
+  reasoning:            string;
+}
+
+export async function seoDecisionsLog(opts: { projectId: string; limit?: number }): Promise<{
+  entries?: DecisionLogEntryClient[]; total?: number; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_decisions_log', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { entries: r.entries, total: r.total };
+}
+
+export interface VelocityStatsClient {
+  this_week: { campaigns_updated: number; pillar_runs: number; opportunities_open: number; decisions_avoided: number };
+  last_week: { campaigns_updated: number; pillar_runs: number; opportunities_open: number; decisions_avoided: number };
+  deltas:    { campaigns_updated: number; pillar_runs: number; opportunities_open: number; decisions_avoided: number };
+}
+
+export async function seoVelocityStats(opts: { projectId: string }): Promise<{
+  stats?: VelocityStatsClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_velocity_stats', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { stats: r.stats };
+}
+
+export interface NoticedObservationClient {
+  id:                   string;
+  observation:          string;
+  reasoning:            string;
+  sources:              string[];
+  suggested_action:     string | null;
+}
+
+export async function seoNoticedObservations(opts: { projectId: string; force?: boolean }): Promise<{
+  observations?: NoticedObservationClient[]; cached_at?: string; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_noticed_observations', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { observations: r.observations, cached_at: r.cached_at };
+}
+
+export interface CasualDigestItemClient {
+  id:                   string;
+  kind:                 'pillar_finding' | 'trend' | 'opportunity' | 'observation';
+  headline:             string;
+  body:                 string;
+  source_label:         string;
+  source_refreshed:     string | null;
+  suggested_action:     {
+    label:   string;
+    kind:    'chat_command' | 'navigate';
+    payload: any;
+  } | null;
+}
+
+export interface CasualDigestClient {
+  pick_of_the_day:      CasualDigestItemClient | null;
+  in_your_world:        CasualDigestItemClient[];
+  generated_at:         string;
+}
+
+export async function seoCasualDigest(opts: { projectId: string }): Promise<{
+  digest?: CasualDigestClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_casual_digest', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { digest: r.digest };
+}

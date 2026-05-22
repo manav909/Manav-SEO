@@ -360,3 +360,46 @@ export async function bsSeoWarRoomBriefingV2(body: any): Promise<any> {
     ? getWarRoomBriefingCasualV2({ projectId })
     : getWarRoomBriefingV2({ projectId });
 }
+
+/* Phase 21 Block 2.11 Pass 1 — real panel data + Casual reading digest. */
+export async function bsSeoPillarHealthMatrix(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getPillarHealthMatrix } = await import("./season-war-room-extras.js");
+  return getPillarHealthMatrix({ projectId });
+}
+
+export async function bsSeoPerformancePulse(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getPerformancePulse } = await import("./season-war-room-extras.js");
+  return getPerformancePulse({ projectId });
+}
+
+export async function bsSeoDecisionsLog(body: any): Promise<any> {
+  const { projectId, limit } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getDecisionsLog } = await import("./season-war-room-extras.js");
+  return getDecisionsLog({ projectId, limit });
+}
+
+export async function bsSeoVelocityStats(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getVelocityStats } = await import("./season-war-room-extras.js");
+  return getVelocityStats({ projectId });
+}
+
+export async function bsSeoNoticedObservations(body: any): Promise<any> {
+  const { projectId, force } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getNoticedObservations } = await import("./season-war-room-extras.js");
+  return getNoticedObservations({ projectId, force: !!force });
+}
+
+export async function bsSeoCasualDigest(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getCasualDigest } = await import("./season-war-room-extras.js");
+  return getCasualDigest({ projectId });
+}
