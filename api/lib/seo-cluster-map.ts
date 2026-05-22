@@ -103,49 +103,23 @@ export async function runClusterMap(opts: {
       readCompetitorSnapshot(opts.campaignId),
     ]);
 
-    if (queries.length === 0) {
-      await writeReportToPanel({
-        campaignId:       opts.campaignId,
-        projectId:        c.project_id,
-        pillar:           'cluster_map',
-        panelId,
-        reportKind:       triggeredBy === 'cron' ? 'scheduled_recheck' : 'manual_refresh',
-        generatedBy:      triggeredBy,
-        dataSources:      [],
-        confidenceRating: 'low',
-        confidenceReason: 'No GSC query data available — cluster map needs query history.',
-        title:            `Cluster map pending — no GSC data`,
-        bodyMd:           `# Cluster map pending\n\nNo GSC query data is available for this project yet.\n\nConnect GSC in **Data Room → Integrations**, then re-run the cluster map. The pillar needs query-impression data to identify topical clusters.\n\nNothing else has been mapped.`,
-        summary:          'Awaiting GSC data.',
-        tags:             ['cluster_map', 'pending', 'no_gsc'],
-        updatePanelStatus: true,
-        newPanelStatus:    'amber',
-      });
-      return { success: true, cluster_count: 0, gap_count: 0 };
-    }
-
     /* 2. Filter to keyword-related queries */
     const relatedQueries = filterRelatedQueries(queries, c.keyword);
 
+    /* If we don't have enough actual GSC data on this topic, fall through to
+       the aspirational path: cluster the topical universe from competitors +
+       LLM reasoning. This is what a real SEO strategist does at campaign
+       inception — map what SHOULD exist before content does. */
     if (relatedQueries.length < 3) {
-      await writeReportToPanel({
-        campaignId:       opts.campaignId,
-        projectId:        c.project_id,
-        pillar:           'cluster_map',
+      return runAspirationalClusterMap({
+        campaign: c,
         panelId,
-        reportKind:       triggeredBy === 'cron' ? 'scheduled_recheck' : 'manual_refresh',
-        generatedBy:      triggeredBy,
-        dataSources:      ['gsc'],
-        confidenceRating: 'low',
-        confidenceReason: `Only ${relatedQueries.length} queries semantically related to "${c.keyword}" — too few to cluster meaningfully.`,
-        title:            `Cluster map sparse — limited GSC presence`,
-        bodyMd:           `# Cluster map sparse for "${c.keyword}"\n\nFound only **${relatedQueries.length} GSC queries** semantically related to "${c.keyword}" out of ${queries.length} total project queries.\n\nThis means one of:\n\n- Project hasn't yet ranked for this topic universe\n- Topic is too niche for meaningful clustering\n- GSC data window is too short\n\nThe cluster map will become more useful after the campaign produces content that starts ranking. Re-run in a few weeks once new pages have impression history.\n\n## Related queries found (${relatedQueries.length})\n\n${relatedQueries.map(q => `- **${q.query}** — pos ${q.position.toFixed(1)}, ${q.impressions} impr, ${q.clicks} clicks`).join('\n')}`,
-        summary:          `Only ${relatedQueries.length} related queries — sparse.`,
-        tags:             ['cluster_map', 'sparse', `keyword:${c.keyword.toLowerCase()}`],
-        updatePanelStatus: true,
-        newPanelStatus:    'amber',
+        triggeredBy,
+        totalGscQueries: queries.length,
+        relatedCount: relatedQueries.length,
+        projectActualTopQueries: queries.slice(0, 10),
+        competitors,
       });
-      return { success: true, cluster_count: 0, gap_count: 0 };
     }
 
     /* 3. Cluster lexically */
@@ -275,6 +249,389 @@ export async function runClusterMap(opts: {
   } catch (e: any) {
     return { success: false, error: e?.message || 'cluster map failed' };
   }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ASPIRATIONAL CLUSTER MAP
+   Used when GSC has too little data for the campaign keyword.
+   Generates a topical universe from competitors + LLM reasoning.
+   Honestly labeled as aspirational — these are content gaps the
+   site should fill, not coverage assessments of existing pages.
+═══════════════════════════════════════════════════════════════ */
+
+async function runAspirationalClusterMap(opts: {
+  campaign:                any;
+  panelId:                 string;
+  triggeredBy:             'cron' | 'manual';
+  totalGscQueries:         number;
+  relatedCount:            number;
+  projectActualTopQueries: GscQueryRow[];
+  competitors:             any[];
+}): Promise<{ success: boolean; audit_run_id?: string; cluster_count?: number; gap_count?: number; report_id?: string; error?: string }> {
+  const c = opts.campaign;
+  try {
+    /* Build clusters from competitors + LLM. One LLM call total. */
+    const aspirationalClusters = await buildAspirationalClusters({
+      keyword:    c.keyword,
+      competitors: opts.competitors,
+    });
+
+    if (aspirationalClusters.length === 0) {
+      /* Even the LLM couldn't produce anything — honest pending report */
+      const reportR = await writeReportToPanel({
+        campaignId:       c.id,
+        projectId:        c.project_id,
+        pillar:           'cluster_map',
+        panelId:          opts.panelId,
+        reportKind:       opts.triggeredBy === 'cron' ? 'scheduled_recheck' : 'manual_refresh',
+        generatedBy:      opts.triggeredBy,
+        dataSources:      ['llm'],
+        confidenceRating: 'low',
+        confidenceReason: 'Could not generate a topical map. LLM returned no clusters.',
+        title:            `Cluster map could not be generated for "${c.keyword}"`,
+        bodyMd:           buildEmptyAspirationalReport(c.keyword, opts),
+        summary:          'No clusters could be generated.',
+        tags:             ['cluster_map', 'empty', `keyword:${c.keyword.toLowerCase()}`],
+        updatePanelStatus: true,
+        newPanelStatus:    'amber',
+      });
+      return { success: true, cluster_count: 0, gap_count: 0, report_id: reportR.report_id };
+    }
+
+    /* Persist clusters as gap-status entries */
+    const auditRunId = crypto.randomUUID();
+    const clusterRows = aspirationalClusters.map(cl => ({
+      campaign_id:        c.id,
+      panel_id:           opts.panelId,
+      project_id:         c.project_id,
+      cluster_name:       cl.cluster_name.slice(0, 240),
+      primary_intent:     cl.primary_intent,
+      topic_summary:      cl.topic_summary?.slice(0, 500) || null,
+      queries:            cl.queries,
+      query_count:        cl.queries.length,
+      hub_page_url:       null,                       // aspirational — no hub exists yet
+      spoke_pages:        [],
+      total_clicks:       0,
+      total_impressions:  0,
+      avg_position:       0,
+      coverage_status:    'gap',                      // all aspirational clusters are gaps
+      recommendation:     cl.recommendation?.slice(0, 1000) || null,
+      audit_run_id:       auditRunId,
+    }));
+    await db().from("cluster_map_clusters").insert(clusterRows);
+
+    /* Write the report */
+    const dataSources: string[] = ['llm'];
+    if (opts.competitors.length > 0) dataSources.push('pipeline_research');
+
+    const reportR = await writeReportToPanel({
+      campaignId:       c.id,
+      projectId:        c.project_id,
+      pillar:           'cluster_map',
+      panelId:          opts.panelId,
+      reportKind:       opts.triggeredBy === 'cron' ? 'scheduled_recheck' : 'manual_refresh',
+      generatedBy:      opts.triggeredBy,
+      llmCallsUsed:     1,
+      dataSources,
+      confidenceRating: 'medium',
+      confidenceReason: `Aspirational map: built from ${opts.competitors.length > 0 ? `${opts.competitors.length} competitor pages + ` : ''}LLM topical reasoning. No GSC grounding for "${c.keyword}". Confidence is medium because the universe shape is conventional; specific query examples are illustrative, not measured.`,
+      title:            `Aspirational cluster map: "${c.keyword}" topical universe`,
+      bodyMd:           renderAspirationalReport({
+        keyword:                 c.keyword,
+        clusters:                aspirationalClusters,
+        competitors:             opts.competitors,
+        totalGscQueries:         opts.totalGscQueries,
+        relatedCount:            opts.relatedCount,
+        projectActualTopQueries: opts.projectActualTopQueries,
+        runId:                   auditRunId,
+      }),
+      summary:          `${aspirationalClusters.length} aspirational cluster${aspirationalClusters.length === 1 ? '' : 's'} mapped — no GSC presence yet on this topic.`,
+      tags:             ['cluster_map', 'aspirational', `keyword:${c.keyword.toLowerCase()}`,
+                         ...aspirationalClusters.slice(0, 8).map(cl => `cluster:${cl.cluster_name.toLowerCase().slice(0, 40)}`)],
+      metricSnapshot:   {
+        cluster_count: aspirationalClusters.length,
+        gap_count:     aspirationalClusters.length,
+        kind:          'aspirational',
+        competitors_analyzed: opts.competitors.length,
+      },
+      updatePanelStatus: true,
+      newPanelStatus:    'amber',                     // amber, not green — no actual coverage yet
+    });
+
+    /* Backfill report_id */
+    if (reportR.report_id) {
+      await db().from("cluster_map_clusters")
+        .update({ report_id: reportR.report_id })
+        .eq("audit_run_id", auditRunId);
+    }
+
+    /* Surface every aspirational cluster as a content roadmap opportunity */
+    for (const cl of aspirationalClusters) {
+      await recordOpportunity({
+        projectId:        c.project_id,
+        sourceKind:       'manual',
+        sourceCampaignId: c.id,
+        sourcePanelId:    opts.panelId,
+        sourceStepId:     'cluster_map_aspirational',
+        kind:             'content_gap',
+        title:            `Content roadmap: build coverage for "${cl.cluster_name}"`,
+        description:      cl.recommendation || `Aspirational cluster — competitors cover this topical area but project has no content yet. ${cl.topic_summary}`,
+        evidence:         {
+          cluster_name:        cl.cluster_name,
+          intent:              cl.primary_intent,
+          sample_queries:      cl.queries.slice(0, 5).map(q => q.query),
+          audit_run_id:        auditRunId,
+          aspirational:        true,
+        },
+        estimatedValue:   'high',
+        estimatedEffort:  'medium',
+        suggestedAction:  'investigate',
+        suggestedKeyword: cl.queries[0]?.query || cl.cluster_name,
+      });
+    }
+
+    /* Update panel recheck */
+    const { data: panelRow } = await db().from("seo_campaign_panels")
+      .select("recheck_cadence_days").eq("id", opts.panelId).maybeSingle();
+    const cadence = (panelRow as any)?.recheck_cadence_days || 30;
+    await db().from("seo_campaign_panels").update({
+      last_assessed_at: new Date().toISOString(),
+      next_recheck_at:  new Date(Date.now() + cadence * 86_400_000).toISOString(),
+    }).eq("id", opts.panelId);
+
+    return {
+      success: true,
+      audit_run_id:  auditRunId,
+      cluster_count: aspirationalClusters.length,
+      gap_count:     aspirationalClusters.length,
+      report_id:     reportR.report_id,
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'aspirational cluster map failed' };
+  }
+}
+
+/* Build 4-6 aspirational clusters using LLM + optional competitor context. */
+async function buildAspirationalClusters(opts: {
+  keyword:     string;
+  competitors: any[];
+}): Promise<Cluster[]> {
+  const competitorContext = opts.competitors.length > 0
+    ? `Top competing pages for this keyword (from a prior rank pipeline):\n${opts.competitors.slice(0, 5).map((cp: any, i: number) => {
+        const url = cp.url || cp.page || '(unknown url)';
+        const title = cp.title || cp.angle || '';
+        return `${i + 1}. ${url}${title ? ` — ${title}` : ''}`;
+      }).join('\n')}`
+    : `(No competitor data available for this campaign — base your clustering on topical reasoning alone.)`;
+
+  const sys = `You are a senior SEO content strategist mapping the topical universe around the keyword "${opts.keyword}". The project has NO GSC ranking history for this topic yet — they're starting from zero.
+
+Your job: produce 4-6 topical clusters that represent the full topical universe a competitive site would need to cover. These are CONTENT CATEGORIES, not individual page recommendations. Think hub-and-spoke: each cluster should be coherent enough that a single pillar page + 5-15 supporting articles could cover it.
+
+For each cluster:
+- cluster_name: 3-6 word clear topical name (NOT generic — name the actual user need)
+- primary_intent: one of "informational" | "navigational" | "commercial" | "transactional" | "mixed"
+- topic_summary: ONE sentence describing what users in this cluster are looking for
+- sample_queries: 6-10 realistic queries users would search in this cluster (real search behavior, not made-up phrases)
+- recommendation: 2-3 sentences. What content should the project build to win this cluster? Be specific about format (pillar page / comparison / guide / list / tool) and angle.
+
+Lead with the highest-leverage clusters (the ones most worth building first). Reply with ONLY valid JSON, no preamble:
+{
+  "clusters": [
+    {
+      "cluster_name": "...",
+      "primary_intent": "...",
+      "topic_summary": "...",
+      "sample_queries": ["...", "..."],
+      "recommendation": "..."
+    }
+  ]
+}`;
+
+  const user = `Campaign keyword: "${opts.keyword}"
+
+${competitorContext}
+
+Generate 4-6 aspirational topical clusters. Each cluster should be a content category the project should build coverage for.`;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model:       MODEL,
+        max_tokens:  3500,
+        system:      sys,
+        messages:    [{ role: "user", content: user }],
+      }),
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+    const data = await res.json();
+    const text = (data?.content?.[0]?.text || '').trim();
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+    const parsed = JSON.parse(cleaned);
+    const llmClusters = Array.isArray(parsed?.clusters) ? parsed.clusters : [];
+
+    /* Convert into our Cluster shape */
+    return llmClusters.map((lc: any): Cluster => {
+      const sampleQueries: string[] = Array.isArray(lc.sample_queries) ? lc.sample_queries : [];
+      /* Fake GscQueryRow stubs for sample queries — values are 0 because we have no data */
+      const queries: GscQueryRow[] = sampleQueries.slice(0, 12).map((q: any) => ({
+        query:       String(q).slice(0, 200),
+        clicks:      0,
+        impressions: 0,
+        ctr:         0,
+        position:    0,
+      }));
+      return {
+        cluster_name:    String(lc.cluster_name || 'Unnamed cluster').slice(0, 200),
+        primary_intent:  validateIntent(lc.primary_intent),
+        topic_summary:   String(lc.topic_summary || '').slice(0, 500),
+        queries,
+        query_count:     queries.length,
+        hub_page_url:    null,
+        spoke_pages:     [],
+        total_clicks:    0,
+        total_impressions: 0,
+        avg_position:    0,
+        coverage_status: 'gap',
+        recommendation:  String(lc.recommendation || '').slice(0, 1000),
+        shared_tokens:   [],
+      };
+    }).filter((cl: Cluster) => cl.cluster_name && cl.queries.length > 0);
+  } catch (e: any) {
+    console.log(`[buildAspirationalClusters] LLM failed: ${e?.message}`);
+    return [];
+  }
+}
+
+function buildEmptyAspirationalReport(keyword: string, opts: {
+  totalGscQueries:         number;
+  relatedCount:            number;
+  projectActualTopQueries: GscQueryRow[];
+  competitors:             any[];
+}): string {
+  const lines: string[] = [];
+  lines.push(`# Cluster map could not be generated for "${keyword}"`);
+  lines.push('');
+  lines.push(`The system tried to produce an aspirational topical map for "${keyword}" but the LLM returned no clusters. This is rare — usually it means the keyword is ambiguous (could mean many things), too short, or returned a malformed response.`);
+  lines.push('');
+  lines.push(`## What I tried`);
+  lines.push('');
+  lines.push(`- **GSC data:** ${opts.totalGscQueries} project queries total, ${opts.relatedCount} semantically related to "${keyword}".`);
+  lines.push(`- **Competitor data:** ${opts.competitors.length > 0 ? `${opts.competitors.length} competing pages from a prior rank pipeline` : 'none available — no rank pipeline has run for this campaign yet'}.`);
+  lines.push(`- **LLM clustering:** attempted, returned 0 clusters.`);
+  lines.push('');
+  lines.push(`## What to try`);
+  lines.push('');
+  lines.push(`- Run \`rank me for "${keyword}"\` first if no rank pipeline has run. The competitor_snapshot step seeds the cluster map.`);
+  lines.push(`- Make the keyword more specific. "${keyword}" may be too broad — try "${keyword} for [audience]" or "[adjective] ${keyword}".`);
+  lines.push(`- Re-run after a few days. If it persists, share the keyword and I can investigate.`);
+  return lines.join('\n');
+}
+
+function renderAspirationalReport(opts: {
+  keyword:                 string;
+  clusters:                Cluster[];
+  competitors:             any[];
+  totalGscQueries:         number;
+  relatedCount:            number;
+  projectActualTopQueries: GscQueryRow[];
+  runId:                   string;
+}): string {
+  const { keyword, clusters, competitors, totalGscQueries, relatedCount, projectActualTopQueries } = opts;
+  const lines: string[] = [];
+
+  lines.push(`# Aspirational cluster map: "${keyword}"`);
+  lines.push('');
+  lines.push(`> **Aspirational map** — the project has no GSC ranking history for "${keyword}" yet (${relatedCount} of ${totalGscQueries} project queries matched). This map shows what the topical universe **should** look like, based on competitor coverage and topical reasoning. It's a content roadmap, not a coverage assessment.`);
+  lines.push('');
+  lines.push(`**Campaign keyword:** "${keyword}"  `);
+  lines.push(`**GSC queries on this topic:** ${relatedCount} (out of ${totalGscQueries} total project queries)  `);
+  lines.push(`**Competitor pages analyzed:** ${competitors.length}  `);
+  lines.push(`**Aspirational clusters generated:** ${clusters.length}  `);
+  lines.push(`**Audit run id:** \`${opts.runId.slice(0, 8)}\`  `);
+  lines.push(`**Generated at:** ${new Date().toISOString()}`);
+  lines.push('');
+
+  /* Context section — what the project IS ranking for */
+  lines.push('## Where the project currently ranks (context)');
+  lines.push('');
+  if (projectActualTopQueries.length === 0) {
+    lines.push(`_No GSC query data available at all — either GSC isn't connected, or the project is brand new._`);
+  } else {
+    lines.push(`The project currently ranks for these queries (top 10 by impressions). None are about "${keyword}" — this confirms the campaign is targeting a topic outside the site's current presence.`);
+    lines.push('');
+    lines.push(`| Query | Position | Impressions | Clicks |`);
+    lines.push(`|---|---:|---:|---:|`);
+    for (const q of projectActualTopQueries.slice(0, 10)) {
+      lines.push(`| ${q.query} | ${q.position.toFixed(1)} | ${q.impressions.toLocaleString()} | ${q.clicks.toLocaleString()} |`);
+    }
+    lines.push('');
+    lines.push(`**Strategic question:** Does "${keyword}" align with the site's existing topical authority? If the site is about something different, ranking for "${keyword}" will be harder — you'll be building topical relevance from scratch.`);
+    lines.push('');
+  }
+
+  /* Competitor reference */
+  if (competitors.length > 0) {
+    lines.push('## Competitor reference (top pages from rank pipeline)');
+    lines.push('');
+    for (let i = 0; i < Math.min(competitors.length, 5); i++) {
+      const cp = competitors[i] as any;
+      const url = cp.url || cp.page || '';
+      const title = cp.title || cp.angle || '';
+      lines.push(`${i + 1}. ${url ? `[${title || url}](${url})` : title}${title && cp.angle && title !== cp.angle ? ` — _${cp.angle}_` : ''}`);
+    }
+    lines.push('');
+  }
+
+  /* The aspirational clusters themselves */
+  lines.push(`## ${clusters.length} aspirational clusters — content roadmap`);
+  lines.push('');
+  lines.push(`These are the topical areas a competitive site needs to cover. Build them in order of priority (top first).`);
+  lines.push('');
+
+  for (let i = 0; i < clusters.length; i++) {
+    const cl = clusters[i];
+    lines.push(`### ${i + 1}. ${cl.cluster_name}`);
+    lines.push('');
+    if (cl.topic_summary) lines.push(`_${cl.topic_summary}_`);
+    lines.push('');
+    lines.push(`**Intent:** ${cl.primary_intent} · **Status:** aspirational (no current coverage)`);
+    lines.push('');
+    if (cl.recommendation) {
+      lines.push(`**Recommendation:** ${cl.recommendation}`);
+      lines.push('');
+    }
+    if (cl.queries.length > 0) {
+      lines.push(`**Sample queries** users would search in this cluster:`);
+      lines.push('');
+      for (const q of cl.queries.slice(0, 10)) {
+        lines.push(`- ${q.query}`);
+      }
+      lines.push('');
+    }
+  }
+
+  lines.push('## Methodology + caveats');
+  lines.push('');
+  lines.push(`**How this was built:** One LLM call to a senior-strategist persona, given the keyword and ${competitors.length > 0 ? `${competitors.length} competitor pages from the most recent rank pipeline` : 'no competitor data'}. The LLM returned topical clusters representing what a competitive site would need to cover.`);
+  lines.push('');
+  lines.push(`**Why "aspirational":** Sample queries are illustrative — the LLM proposed realistic queries based on topical knowledge, but they aren't measured. Real query volumes, intents, and SERP shapes need to be validated with keyword research tools (Ahrefs, Semrush, GSC) before committing to content.`);
+  lines.push('');
+  lines.push(`**Next steps:**`);
+  lines.push(`1. Validate the highest-priority clusters with keyword research data (search volume, difficulty)`);
+  lines.push(`2. Each cluster has been auto-added to the Opportunities inbox — promote ones you want to pursue into their own campaigns`);
+  lines.push(`3. Re-run this cluster map in 2-3 months after content launches — at that point GSC data will exist and the map flips from aspirational to a real coverage assessment`);
+  lines.push('');
+  lines.push(`**Limitations:** Sample queries weren't validated against real search data. Cluster prioritization is based on LLM judgment, not measured competition or volume. Treat this as a starting roadmap, not a final plan.`);
+
+  return lines.join('\n');
 }
 
 export async function getPanelClusters(opts: {
