@@ -442,3 +442,39 @@ export async function bsSeoClientRecap(body: any): Promise<any> {
   const { getClientRecap } = await import("./season-llm-precomputes.js");
   return getClientRecap({ projectId, force: !!force });
 }
+
+/* Phase 21 Block 2.13 — Manav's Pick Intelligence Engine */
+
+export async function bsSeoPickEngineGet(body: any): Promise<any> {
+  const { projectId, force } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getCurrentPick } = await import("./season-pick-engine.js");
+  return getCurrentPick({ projectId, force: !!force });
+}
+
+export async function bsSeoPickEngineArchive(body: any): Promise<any> {
+  const { projectId, limit, before } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getPickArchive } = await import("./season-pick-engine.js");
+  return getPickArchive({ projectId, limit, before });
+}
+
+export async function bsSeoPickEngineRegenerate(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { regeneratePickNow } = await import("./season-pick-engine.js");
+  return regeneratePickNow(projectId);
+}
+
+export async function bsSeoCorpusEnrichBatch(body: any): Promise<any> {
+  const { limit } = body || {};
+  const { enrichCorpusBatch } = await import("./season-corpus-enrichment.js");
+  return enrichCorpusBatch({ limit });
+}
+
+export async function bsSeoProjectSnapshotRefresh(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { refreshSnapshotNow } = await import("./season-project-snapshot.js");
+  return refreshSnapshotNow(projectId);
+}

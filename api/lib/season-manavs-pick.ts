@@ -127,8 +127,9 @@ export async function pullGlobalFeed(): Promise<{ pulled: number; failed: number
           failed++;
           continue;
         }
+        const newItemIds: string[] = [];
         for (const it of items.slice(0, MAX_ITEMS_PER_SOURCE)) {
-          await upsertGlobalItem({
+          const upsertResult = await upsertGlobalItem({
             source_id:     src.id,
             guid:          it.guid,
             url:           it.url,
@@ -140,19 +141,30 @@ export async function pullGlobalFeed(): Promise<{ pulled: number; failed: number
             category:      src.category,
             content_hash:  hashContent(it.title + '|' + it.url),
           });
+          if (upsertResult?.was_new) newItemIds.push(upsertResult.id);
         }
         await markSourcePull(src.id, 'ok', null);
         pulled++;
+
+        /* Phase 21 Block 2.13 — enrich newly-ingested items.
+           Don't block the pull loop on enrichment failures. */
+        if (newItemIds.length > 0) {
+          try {
+            const { enrichFeedItem } = await import('./season-corpus-enrichment.js');
+            for (const id of newItemIds) {
+              await enrichFeedItem(id);
+            }
+          } catch { /* swallow — backfill will catch up later */ }
+        }
       } catch (e: any) {
         await markSourcePull(src.id, 'failed', String(e?.message || 'unknown').slice(0, 200));
         failed++;
       }
     }
 
-    /* Garbage-collect expired items */
-    await db().from('global_feed_items')
-      .delete()
-      .lt('expires_at', new Date().toISOString());
+    /* Phase 21 Block 2.13 — TTL removed. Corpus is permanent.
+       The pick engine values old articles too if their cross-connection
+       to current project state is strong. No garbage collection. */
 
   } catch { /* swallow */ }
   return { pulled, failed };
@@ -201,7 +213,8 @@ function parseRss(xml: string): RawRssItem[] {
     const author      = unescapeXml(extractTag(b, 'dc:creator') || extractTag(b, 'author') || '').trim() || null;
     const pubDate     = extractTag(b, 'pubDate') || extractTag(b, 'published') || extractTag(b, 'updated') || '';
     const publishedIso = pubDate ? safeParseDate(pubDate) : null;
-    if (publishedIso && (Date.now() - new Date(publishedIso).getTime()) > MAX_FEED_AGE_DAYS * 86400000) continue;
+    /* Phase 21 Block 2.13 — corpus is permanent. Older articles are kept
+       and can still be picked if their cross-connection score is high. */
     const excerptWords = description.split(/\s+/).filter(Boolean);
     const excerpt = excerptWords.slice(0, MAX_SNIPPET_WORDS).join(' ') + (excerptWords.length > MAX_SNIPPET_WORDS ? '…' : '');
     items.push({
@@ -272,9 +285,20 @@ async function upsertGlobalItem(item: {
   trust_tier:   string;
   category:     string | null;
   content_hash: string;
-}): Promise<void> {
+}): Promise<{ id: string; was_new: boolean } | null> {
   try {
-    await db().from('global_feed_items').upsert({
+    /* Check if existing — we want to only enrich new items */
+    const { data: existing } = await db().from('global_feed_items')
+      .select('id, processed_at')
+      .eq('source_id', item.source_id)
+      .eq('guid', item.guid)
+      .maybeSingle();
+
+    const wasNew = !existing;
+    /* expires_at is kept far in the future (corpus is now permanent — Block 2.13) */
+    const farFuture = new Date(Date.now() + 365 * 86400000 * 10).toISOString();
+
+    const { data: upserted } = await db().from('global_feed_items').upsert({
       source_id:    item.source_id,
       guid:         item.guid,
       url:          item.url,
@@ -286,9 +310,17 @@ async function upsertGlobalItem(item: {
       category:     item.category,
       content_hash: item.content_hash,
       ingested_at:  new Date().toISOString(),
-      expires_at:   new Date(Date.now() + MAX_FEED_AGE_DAYS * 86400000).toISOString(),
-    }, { onConflict: 'source_id,guid' });
-  } catch { /* swallow individual upsert failures */ }
+      expires_at:   farFuture,
+    }, { onConflict: 'source_id,guid' })
+      .select('id, processed_at')
+      .single();
+
+    if (!upserted) return null;
+    const needsEnrichment = wasNew || !(upserted as any).processed_at;
+    return { id: (upserted as any).id, was_new: needsEnrichment };
+  } catch {
+    return null;
+  }
 }
 
 async function markSourcePull(sourceId: string, status: 'ok' | 'failed', error: string | null): Promise<void> {
@@ -369,8 +401,7 @@ async function readActiveGlobalItems(): Promise<ItemRow[]> {
   try {
     const { data } = await db().from('global_feed_items')
       .select('id, url, title, excerpt, author, published_at, trust_tier, category, source_id, feed_sources_whitelist!inner(publisher, domain)')
-      .gt('expires_at', new Date().toISOString())
-      .order('published_at', { ascending: false })
+      .order('published_at', { ascending: false, nullsFirst: false })
       .limit(50);
     return (data as any[] || []).map((r: any) => ({
       id:               r.id,

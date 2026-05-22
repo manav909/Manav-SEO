@@ -3517,3 +3517,86 @@ export async function seoClientRecap(opts: { projectId: string; force?: boolean 
   if (!r?.success) return { error: r?.error };
   return { data: r.data };
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 21 Block 2.13 — Manav's Pick Intelligence Engine
+══════════════════════════════════════════════════════════════════════ */
+
+export type PickRoleKey = 'sales' | 'hod' | 'pm' | 'content_writer' | 'seo_executive';
+
+export interface ManavsPickFrameClient {
+  role:     PickRoleKey;
+  headline: string;
+  body:     string;
+}
+
+export interface PickExternalCitation {
+  feed_item_id:  string;
+  url:           string;
+  publisher:     string;
+  title:         string;
+  ingested_at:   string;
+}
+
+export interface PickInternalCitation {
+  source_table: string;
+  source_field: string;
+  value:        string;
+  captured_at:  string;
+  label:        string;
+}
+
+export interface ManavsPickRowClient {
+  id:                  string;
+  project_id:          string;
+  picked_at:           string;
+  insight_headline:    string;
+  insight_body:        string;
+  frames:              ManavsPickFrameClient[];
+  external_citations:  PickExternalCitation[];
+  internal_citations:  PickInternalCitation[];
+  connection_score:    number;
+  relevance_score:     number;
+  is_current:          boolean;
+  superseded_by:       string | null;
+  superseded_at:       string | null;
+  generated_by_model:  string | null;
+  generation_cost:     number | null;
+  created_at:          string;
+}
+
+export async function seoPickEngineGet(opts: { projectId: string; force?: boolean }): Promise<{
+  pick?: ManavsPickRowClient | null;
+  honest_note?: string;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_pick_engine_get', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { pick: r.pick, honest_note: r.honest_note };
+}
+
+export async function seoPickEngineArchive(opts: { projectId: string; limit?: number; before?: string }): Promise<{
+  picks?: ManavsPickRowClient[]; total?: number; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_pick_engine_archive', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { picks: r.picks, total: r.total };
+}
+
+export async function seoPickEngineRegenerate(opts: { projectId: string }): Promise<{
+  pick?: ManavsPickRowClient | null;
+  honest_note?: string;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_pick_engine_regenerate', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { pick: r.pick, honest_note: r.honest_note };
+}
+
+export async function seoCorpusEnrichBatch(opts?: { limit?: number }): Promise<{
+  enriched?: number; failed?: number; remaining?: number; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_corpus_enrich_batch', ...(opts || {}) });
+  if (!r?.success) return { error: r?.error };
+  return { enriched: r.enriched, failed: r.failed, remaining: r.remaining };
+}
