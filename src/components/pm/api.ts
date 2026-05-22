@@ -3116,3 +3116,112 @@ export type CampaignStructureRecommendationV2 = CampaignStructureRecommendation 
   url_warnings?:        string[];
   url_blocking_issue?:  boolean;
 };
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 21 — Block 2.6: Strategic War Room client API
+═══════════════════════════════════════════════════════════════ */
+
+export interface WarRoomSourceClient {
+  kind:           'gsc' | 'campaign' | 'opportunity' | 'page_fetch' | 'ga4' | 'inferred' | 'positioning';
+  label:          string;
+  last_refresh?:  string;
+  table?:         string;
+  detail?:        string;
+}
+
+export interface RecoverableOpportunityClient {
+  query:           string;
+  position:        number;
+  impressions:     number;
+  clicks:          number;
+  landing_url?:    string;
+  source:          WarRoomSourceClient;
+}
+
+export interface TopPerformerClient {
+  query:           string;
+  position:        number;
+  impressions:     number;
+  clicks:          number;
+  landing_url?:    string;
+  source:          WarRoomSourceClient;
+}
+
+export interface ExistingCampaignSummaryClient {
+  id:                  string;
+  keyword:             string;
+  keyword_group:       string[];
+  status:              string;
+  current_position:    number | null;
+  last_pillar_run_at:  string | null;
+  source:              WarRoomSourceClient;
+}
+
+export interface InboxOpportunitySummaryClient {
+  id:                  string;
+  title:               string;
+  kind:                string;
+  suggested_keyword:   string | null;
+  suggested_action:    string | null;
+  estimated_value:     string | null;
+  created_at:          string;
+  source:              WarRoomSourceClient;
+}
+
+export interface WorthExploringItemClient {
+  keyword:             string;
+  reasoning:           string;
+  confidence:          'low' | 'medium';
+  positioning_citations: string[];
+  source:              WarRoomSourceClient;
+}
+
+export interface PositioningGapClient {
+  topical_area:        string;
+  reasoning:           string;
+  positioning_citations: string[];
+  gsc_absence_note:    string;
+  source:              WarRoomSourceClient;
+}
+
+export interface LockedItemClient {
+  label:           string;
+  description:     string;
+  unlock_via:      string;
+  unlock_path:     string;
+}
+
+export interface WarRoomBriefingClient {
+  grounded: {
+    recoverable_opportunities: RecoverableOpportunityClient[];
+    top_performers:            TopPerformerClient[];
+    existing_campaigns:        ExistingCampaignSummaryClient[];
+    inbox_opportunities:       InboxOpportunitySummaryClient[];
+  };
+  exploratory: {
+    worth_exploring:           WorthExploringItemClient[];
+    positioning_gaps:          PositioningGapClient[];
+  };
+  locked: {
+    items:                     LockedItemClient[];
+  };
+  tools_status: {
+    gsc_connected:            boolean;
+    gsc_last_refresh:         string | null;
+    ga4_connected:            boolean;
+    ga4_last_refresh:         string | null;
+    positioning_resolved:     boolean;
+    positioning_last_refresh: string | null;
+  };
+  honest_note?: string;
+  generated_at: string;
+}
+
+export async function seoWarRoomBriefing(opts: { projectId: string }): Promise<{
+  briefing?: WarRoomBriefingClient;
+  error?:    string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_war_room_briefing', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { briefing: r.briefing };
+}

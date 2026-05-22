@@ -337,3 +337,14 @@ export async function bsSeoToolsStatus(body: any): Promise<any> {
   const r = await getCampaignSuggestions({ projectId, partialInput: '' });
   return { success: true, tools_status: r.tools_status };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 21 — Block 2.6: Strategic War Room
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoWarRoomBriefing(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getWarRoomBriefing } = await import("./seo-war-room.js");
+  return getWarRoomBriefing({ projectId });
+}

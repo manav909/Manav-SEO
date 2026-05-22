@@ -881,6 +881,12 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoToolsStatus(body);
     }
 
+    /* Phase 21 — Block 2.6: Strategic War Room */
+    case "bs_seo_war_room_briefing": {
+      const { bsSeoWarRoomBriefing } = await import("./seo-campaign-routes.js");
+      return bsSeoWarRoomBriefing(body);
+    }
+
     /* Phase 14.1 — unification adapters */
     case "bs_seo_opportunity_from_alert": {
       const { bsSeoOpportunityFromAlert } = await import("./seo-campaign-routes.js");

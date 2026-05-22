@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, Component, type ReactNode, type ErrorInfo 
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, AlertCircle, CheckCircle2, Activity, ArrowRight,
-  X, Send, RefreshCw, Database, Building2,
+  X, Send, RefreshCw, Database, Building2, ExternalLink, Lightbulb,
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,11 +24,34 @@ import { subscribeAction } from '@/lib/season-actions/bus';
 import SmartSidebar from '@/components/SmartSidebar';
 import SmartTopBar from '@/components/SmartTopBar';
 import CapabilitiesPanel from '@/components/season/CapabilitiesPanel';
+import WarRoomSection from '@/components/season/WarRoomSection';
 import {
   seasonBriefing, seasonCommand, seasonActivity,
   type BriefingClient, type BriefingItemClient,
   type CommandResponseClient, type ActivityEvent,
+  /* Phase 21 Block 2.5 — grounded chat */
+  seoClassifyIntent, seoChatSuggestions, seoExploreKeyword,
+  type ChatSuggestion, type ToolsStatus, type ExplorationResponseClient,
 } from '@/components/pm/api';
+
+/* Phase 21 Block 2.5 — relative time display for source freshness */
+function formatRelativeShort(iso?: string | null): string {
+  if (!iso) return '';
+  try {
+    const then = new Date(iso).getTime();
+    const now = Date.now();
+    if (isNaN(then)) return '';
+    const sec = Math.max(0, Math.floor((now - then) / 1000));
+    if (sec < 60) return 'just now';
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const d = Math.floor(hr / 24);
+    if (d < 30) return `${d}d ago`;
+    return new Date(iso).toLocaleDateString();
+  } catch { return ''; }
+}
 
 function useTypewriter(text: string, speedMs = 18): string {
   const [displayed, setDisplayed] = useState('');
@@ -181,6 +204,13 @@ function CommandInner() {
   const [activityOpen, setActivityOpen]   = useState(false);
   const [activity, setActivity]            = useState<ActivityEvent[]>([]);
 
+  /* Phase 21 Block 2.5/2.6 — grounded chat state shared with the modal */
+  const [chatSuggestions, setChatSuggestions]         = useState<ChatSuggestion[]>([]);
+  const [suggestionsNote, setSuggestionsNote]         = useState<string | null>(null);
+  const [toolsStatus, setToolsStatus]                 = useState<ToolsStatus | null>(null);
+  const [explorationResponse, setExplorationResponse] = useState<ExplorationResponseClient | null>(null);
+  const [loadingExploration, setLoadingExploration]   = useState(false);
+
   /* Capabilities panel state + ? keyboard shortcut */
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   useEffect(() => {
@@ -237,6 +267,35 @@ function CommandInner() {
     else                                 setMood('calm');
   }, [briefing, setMood]);
 
+  /* Phase 21 Block 2.5 — debounced grounded suggestions on rank-related typing.
+     Same logic as the modal: surfaces GSC opportunities, existing campaigns,
+     and inbox opportunities. Source-cited. No fabrication. */
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setChatSuggestions([]);
+      setSuggestionsNote(null);
+      return;
+    }
+    const looksRankRelated = /\b(rank|target|campaign)\b/i.test(input);
+    if (!looksRankRelated || input.length < 4) {
+      setChatSuggestions([]);
+      setSuggestionsNote(null);
+      return;
+    }
+    if (explorationResponse || response) return;
+    const handle = setTimeout(async () => {
+      try {
+        const r = await seoChatSuggestions({ projectId: selectedProjectId, partialInput: input });
+        if (r.error) return;
+        setChatSuggestions(r.suggestions || []);
+        setSuggestionsNote(r.honest_note || null);
+        if (r.tools_status) setToolsStatus(r.tools_status);
+      } catch { /* swallow */ }
+    }, 380);
+    return () => clearTimeout(handle);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [input, selectedProjectId, explorationResponse, response]);
+
   const handleSubmit = async (e?: React.FormEvent, override?: string) => {
     e?.preventDefault();
     const text = (override ?? input).trim();
@@ -248,6 +307,45 @@ function CommandInner() {
     setSubmitting(true);
     setResponse(null);
     setCommandError(null);
+    setExplorationResponse(null);
+    setChatSuggestions([]);
+
+    /* Phase 21 Block 2.5 — classify intent first. Exploration goes to a
+       grounded read; commitment to the standard chat brain (which handles
+       rank-for-keyword via the existing season pipeline). */
+    let routedAsExploration = false;
+    try {
+      const classification = await seoClassifyIntent({ text });
+      if (classification.intent === 'exploration') routedAsExploration = true;
+    } catch {
+      /* swallow — fall through to standard brain */
+    }
+
+    if (routedAsExploration) {
+      setLoadingExploration(true);
+      const explKw = text
+        .replace(/^(?:what\s+about|should\s+(?:i|we)\s+(?:rank|target|pursue|go\s+after)|(?:can|could)\s+(?:i|we)\s+rank\s+for|is|tell\s+me\s+about|show\s+me\s+about|explore\s+(?:ranking\s+for|the\s+keyword)|worth\s+ranking\s+for)\s+/i, '')
+        .replace(/^["']?|["'?.!]+$/g, '')
+        .trim()
+        .toLowerCase();
+      if (!explKw || explKw.length < 2) {
+        setCommandError('Tell me which keyword you want to explore (e.g. "what about app maker?").');
+        setLoadingExploration(false);
+        setSubmitting(false);
+        return;
+      }
+      const r = await seoExploreKeyword({ projectId: selectedProjectId, keyword: explKw });
+      setLoadingExploration(false);
+      setSubmitting(false);
+      if (r.error || !r.response) {
+        setCommandError(`Couldn't explore "${explKw}" — ${r.error || 'no response'}.`);
+        return;
+      }
+      setExplorationResponse(r.response);
+      return;
+    }
+
+    /* Standard brain — same as before */
     const r = await seasonCommand({ projectId: selectedProjectId, input: text });
     setSubmitting(false);
     if (r.error) { setCommandError(r.error); return; }
@@ -391,6 +489,179 @@ function CommandInner() {
                 <button onClick={() => setCommandError(null)}><X className="h-3 w-3" /></button>
               </motion.div>
             )}
+
+            {/* Phase 21 Block 2.5 — grounded suggestions panel (same as modal) */}
+            {chatSuggestions.length > 0 && !response && !explorationResponse && (
+              <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                className="mt-3">
+                <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-cyan-400 mb-2 flex items-center gap-1.5">
+                  <Sparkles className="h-3 w-3" /> Grounded suggestions
+                </div>
+                <div className="space-y-1.5">
+                  {chatSuggestions.map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => { setInput(s.command); setTimeout(() => handleSubmit(undefined, s.command), 50); }}
+                      className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
+                        s.kind === 'existing_campaign_match'
+                          ? 'border-rose-500/30 bg-rose-500/[0.05] hover:bg-rose-500/[0.08]'
+                          : s.kind === 'gsc_opportunity'
+                            ? 'border-cyan-500/30 bg-cyan-500/[0.06] hover:bg-cyan-500/[0.10]'
+                            : 'border-border/40 bg-card/40 hover:bg-card/60'
+                      }`}>
+                      <div className="text-xs text-foreground/90 leading-relaxed">{s.text}</div>
+                      <div className="text-[9px] text-muted-foreground/60 mt-1 flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded bg-card/60 border border-border/40 uppercase tracking-wider font-semibold">
+                          source: {s.source.kind === 'gsc' ? 'GSC' : s.source.kind}
+                        </span>
+                        <span>·</span>
+                        <span>{s.source.label}</span>
+                        {s.source.last_refresh && (
+                          <>
+                            <span>·</span>
+                            <span>refreshed {formatRelativeShort(s.source.last_refresh)}</span>
+                          </>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {suggestionsNote && (
+                  <div className="text-[10px] text-muted-foreground/55 mt-2 italic">{suggestionsNote}</div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Phase 21 Block 2.5 — tools status banner when GSC/GA4 not connected */}
+            {toolsStatus && !chatSuggestions.length && !explorationResponse && !response && (!toolsStatus.gsc_connected || !toolsStatus.ga4_connected) && (
+              <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3 text-xs text-muted-foreground/85 leading-relaxed">
+                <span className="text-amber-400 font-bold">Connect for richer guidance:</span>{' '}
+                {!toolsStatus.gsc_connected && 'GSC '}
+                {!toolsStatus.gsc_connected && !toolsStatus.ga4_connected && '+ '}
+                {!toolsStatus.ga4_connected && 'GA4 '}
+                not connected. Suggestions degrade gracefully — but real data unlocks honest source-cited recommendations.
+              </div>
+            )}
+
+            {/* Phase 21 Block 2.5 — exploration response */}
+            {explorationResponse && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                className="mt-4 rounded-2xl border border-cyan-500/30 bg-cyan-500/[0.04] p-5">
+                <div className="text-[10px] uppercase tracking-[0.15em] font-bold text-cyan-400 mb-3 flex items-center gap-1.5">
+                  <Lightbulb className="h-3 w-3" /> Exploring "{explorationResponse.keyword}"
+                </div>
+
+                {explorationResponse.gsc_snapshot && (
+                  <div className="mb-3 rounded-lg border border-border/40 bg-card/30 p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-2 font-bold">Current GSC state</div>
+                    <div className="flex flex-wrap gap-4 mb-1.5">
+                      <div className="text-xs text-foreground/90">
+                        Position: <strong className="text-cyan-400">{explorationResponse.gsc_snapshot.position?.toFixed(1) ?? 'n/a'}</strong>
+                      </div>
+                      <div className="text-xs text-foreground/90">Impressions: <strong>{explorationResponse.gsc_snapshot.impressions ?? 0}</strong></div>
+                      <div className="text-xs text-foreground/90">Clicks: <strong>{explorationResponse.gsc_snapshot.clicks ?? 0}</strong></div>
+                    </div>
+                    <div className="text-[9px] text-muted-foreground/55">
+                      Source: {explorationResponse.gsc_snapshot.source.label}
+                      {explorationResponse.gsc_snapshot.source.last_refresh && ` · refreshed ${formatRelativeShort(explorationResponse.gsc_snapshot.source.last_refresh)}`}
+                    </div>
+                  </div>
+                )}
+                {!explorationResponse.gsc_snapshot && (
+                  <div className="mb-3 rounded-lg border border-dashed border-border/40 bg-card/20 p-3 text-xs text-muted-foreground/80 leading-relaxed">
+                    {explorationResponse.has_gsc_data
+                      ? 'No GSC row matched this exact keyword — your site may not appear for it yet.'
+                      : 'No GSC data available — either the query has no impressions yet, or GSC isn\'t connected.'}
+                  </div>
+                )}
+
+                {explorationResponse.duplicate_check?.is_duplicate && explorationResponse.duplicate_check.existing_campaign && (
+                  <div className="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/[0.05] p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-rose-400 font-bold mb-1">Already in your campaigns</div>
+                    <div className="text-xs text-foreground/90">
+                      You have an {explorationResponse.duplicate_check.existing_campaign.status} campaign for "{explorationResponse.duplicate_check.existing_campaign.keyword}".
+                    </div>
+                  </div>
+                )}
+
+                {explorationResponse.positioning_read && (
+                  <div className={`mb-3 rounded-lg p-3 border ${
+                    explorationResponse.positioning_read.aligned === 'no'
+                      ? 'border-rose-500/30 bg-rose-500/[0.05]'
+                      : explorationResponse.positioning_read.aligned === 'partial'
+                        ? 'border-amber-500/30 bg-amber-500/[0.05]'
+                        : 'border-emerald-500/30 bg-emerald-500/[0.05]'
+                  }`}>
+                    <div className={`text-[10px] uppercase tracking-wider font-bold mb-1.5 ${
+                      explorationResponse.positioning_read.aligned === 'no' ? 'text-rose-400'
+                      : explorationResponse.positioning_read.aligned === 'partial' ? 'text-amber-400'
+                      : 'text-emerald-400'
+                    }`}>
+                      Positioning alignment: {explorationResponse.positioning_read.aligned}
+                    </div>
+                    <div className="text-xs text-foreground/85 leading-relaxed">{explorationResponse.positioning_read.reasoning}</div>
+                    {explorationResponse.positioning_read.citations.length > 0 && (
+                      <div className="text-[9px] text-muted-foreground/55 mt-2 italic">
+                        From positioning: {explorationResponse.positioning_read.citations.map(c => `"${c}"`).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="mb-3 rounded-lg border border-border/40 bg-card/30 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1.5 font-bold">Strategic read</div>
+                  <div className="text-sm text-foreground/90 leading-relaxed">{explorationResponse.strategic_read}</div>
+                  {explorationResponse.strategic_read_sources.length > 0 && (
+                    <div className="text-[9px] text-muted-foreground/55 mt-2">
+                      Built from: {explorationResponse.strategic_read_sources.map(s => s.label).join(' · ')}
+                    </div>
+                  )}
+                </div>
+
+                {explorationResponse.honest_note && (
+                  <div className="text-[11px] text-muted-foreground/65 mb-3 italic">{explorationResponse.honest_note}</div>
+                )}
+
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-2 font-bold">Next steps</div>
+                <div className="space-y-1.5">
+                  {explorationResponse.next_step_options.map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => {
+                        if (opt.id === 'tell_more') {
+                          setExplorationResponse(null);
+                          setTimeout(() => inputRef.current?.focus(), 100);
+                        } else {
+                          const cmd = `rank me for "${explorationResponse.keyword}"`;
+                          setInput(cmd);
+                          setExplorationResponse(null);
+                          setTimeout(() => handleSubmit(undefined, cmd), 50);
+                        }
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
+                        opt.id === 'run_feasibility'
+                          ? 'border-cyan-500/30 bg-cyan-500/[0.08] hover:bg-cyan-500/[0.12]'
+                          : 'border-border/40 bg-card/30 hover:bg-card/50'
+                      }`}>
+                      <div className="text-xs font-bold text-foreground/95">{opt.label}</div>
+                      <div className="text-[11px] text-muted-foreground/75 mt-0.5 leading-relaxed">{opt.description}</div>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setExplorationResponse(null)}
+                  className="mt-3 text-[10px] px-2 py-1 rounded-md border border-border/50 bg-card/30 text-muted-foreground hover:text-foreground">
+                  Close exploration
+                </button>
+              </motion.div>
+            )}
+
+            {loadingExploration && !explorationResponse && (
+              <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] p-3 text-xs text-muted-foreground/75 flex items-center gap-2">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                Pulling real data — checking GSC, positioning, existing campaigns…
+              </div>
+            )}
           </motion.div>
 
           {showProjectPicker && safeProjects.length > 0 && (
@@ -421,6 +692,14 @@ function CommandInner() {
               <AttentionPanel items={briefing.attention} />
               <QuietWinsPanel items={briefing.quiet_wins} />
             </div>
+          )}
+
+          {/* Phase 21 Block 2.6 — Strategic War Room three-tier intelligence */}
+          {!response && !explorationResponse && (
+            <WarRoomSection
+              projectId={selectedProjectId}
+              onLaunchCommand={(cmd) => { setInput(cmd); setTimeout(() => handleSubmit(undefined, cmd), 50); }}
+            />
           )}
 
           {!loading && briefing && briefing.honest_gaps.length > 0 && !response && (
