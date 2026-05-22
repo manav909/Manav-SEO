@@ -400,60 +400,55 @@ export async function writeReportToPanel(opts: {
 }
 
 /* ─── generateLivingOverview ────────────────────────────────
-   Synthesize an executive summary across all panels.
-   Called when campaign is created, after major reports, or manually. */
+   Phase 20 — LLM-synthesized executive summary across all pillars.
+
+   Pulls each pillar's current_status + latest report summary + open
+   opportunities, then makes ONE Claude call that produces a strategic
+   synthesis: headline + momentum + top 3 priorities + cross-pillar
+   insights + 90-day arc + risks.
+
+   Fallback: if the LLM call fails or there's not enough data yet, falls
+   back to the template version (same as Phase 14 behavior). Callers
+   don't break.
+
+   Cost: ~1 LLM call per refresh (~$0.05). Called from campaign creation,
+   post-pipeline auto-refresh, and the manual Refresh button. */
+
+const ANTHROPIC_API_KEY_LO = process.env.ANTHROPIC_API_KEY || "";
+const MODEL_LO = "claude-sonnet-4-6";
 
 export async function generateLivingOverview(opts: {
   campaignId: string;
 }): Promise<{ success: boolean; overview_md?: string; error?: string }> {
   try {
-    const { campaign, panels, recent_reports } = await getCampaignDetail({ campaignId: opts.campaignId });
+    const { campaign, panels, recent_reports, open_opportunities } = await getCampaignDetail({ campaignId: opts.campaignId });
     if (!campaign) return { success: false, error: 'campaign not found' };
 
-    /* Build the overview — currently template-based (Phase 14 honest scope).
-       LLM synthesis can come in later phase when more pillars are active. */
-    const activePanels    = (panels || []).filter((p: any) => p.status === 'active');
-    const scheduledPanels = (panels || []).filter((p: any) => p.status === 'scheduled');
-    const reportCount     = (recent_reports || []).length;
+    const activePanels = (panels || []).filter((p: any) => p.status === 'active');
+    const hasReports   = (recent_reports || []).length > 0;
 
-    const lines: string[] = [];
-    lines.push(`# Campaign: ${campaign.keyword}\n`);
-    lines.push(`**Goal:** ${campaign.goal || `Rank for "${campaign.keyword}"`}\n`);
-    lines.push(`**Status:** ${campaign.status}${campaign.health ? ` (${campaign.health})` : ''}\n`);
-    lines.push(`**Started:** ${new Date(campaign.started_at).toLocaleDateString()}\n`);
-    if (campaign.current_position && campaign.target_position) {
-      lines.push(`**Current → Target:** position ${campaign.current_position} → ${campaign.target_position}\n`);
-    }
-
-    lines.push(`\n## Active pillars (${activePanels.length})\n`);
-    if (activePanels.length === 0) {
-      lines.push(`_No pillars active yet._`);
+    /* Decide synthesis path. */
+    let overviewMd: string;
+    let usedLlm = false;
+    if (hasReports && activePanels.length >= 2) {
+      /* Try LLM synthesis. Fallback to template on any failure. */
+      try {
+        const synthesis = await synthesizeOverviewWithLlm({
+          campaign,
+          panels:     panels || [],
+          reports:    recent_reports || [],
+          opportunities: open_opportunities || [],
+        });
+        overviewMd = renderSynthesizedOverview(campaign, panels || [], recent_reports || [], synthesis);
+        usedLlm = true;
+      } catch (e: any) {
+        console.log(`[generateLivingOverview] LLM synthesis failed, falling back to template: ${e?.message}`);
+        overviewMd = renderTemplateOverview(campaign, panels || [], recent_reports || []);
+      }
     } else {
-      for (const p of activePanels) {
-        const status = p.current_status ? ` (${p.current_status})` : '';
-        const summary = p.current_summary || p.goal_summary || '_(no summary yet)_';
-        lines.push(`- **${prettyPillar(p.pillar)}**${status}: ${summary}`);
-      }
+      /* Not enough data for meaningful synthesis — template only. */
+      overviewMd = renderTemplateOverview(campaign, panels || [], recent_reports || []);
     }
-
-    if (scheduledPanels.length > 0) {
-      lines.push(`\n## Pillars activating in future releases (${scheduledPanels.length})\n`);
-      for (const p of scheduledPanels) {
-        lines.push(`- **${prettyPillar(p.pillar)}**: ${p.scheduled_note || '(activation note pending)'}`);
-      }
-    }
-
-    lines.push(`\n## Recent activity\n`);
-    if (reportCount === 0) {
-      lines.push(`_No reports yet._`);
-    } else {
-      lines.push(`${reportCount} reports in the last 20 entries. Most recent:\n`);
-      for (const r of (recent_reports || []).slice(0, 5)) {
-        lines.push(`- _${new Date(r.created_at).toLocaleString()}_ — **${r.title}** (${prettyPillar(r.pillar)})${r.summary ? `: ${r.summary}` : ''}`);
-      }
-    }
-
-    const overviewMd = lines.join('\n');
 
     await db().from("seo_campaigns").update({
       living_overview_md: overviewMd,
@@ -466,6 +461,345 @@ export async function generateLivingOverview(opts: {
     return { success: false, error: e?.message || 'overview gen failed' };
   }
 }
+
+/* ─── Template overview (fallback) ──────────────────────── */
+
+function renderTemplateOverview(campaign: any, panels: any[], reports: any[]): string {
+  const activePanels    = panels.filter(p => p.status === 'active');
+  const scheduledPanels = panels.filter(p => p.status === 'scheduled');
+  const reportCount     = reports.length;
+
+  const lines: string[] = [];
+  lines.push(`# Campaign: ${campaign.keyword}\n`);
+  lines.push(`**Goal:** ${campaign.goal || `Rank for "${campaign.keyword}"`}\n`);
+  lines.push(`**Status:** ${campaign.status}${campaign.health ? ` (${campaign.health})` : ''}\n`);
+  lines.push(`**Started:** ${new Date(campaign.started_at).toLocaleDateString()}\n`);
+  if (campaign.current_position && campaign.target_position) {
+    lines.push(`**Current → Target:** position ${campaign.current_position} → ${campaign.target_position}\n`);
+  }
+
+  lines.push(`\n## Active pillars (${activePanels.length})\n`);
+  if (activePanels.length === 0) {
+    lines.push(`_No pillars active yet._`);
+  } else {
+    for (const p of activePanels) {
+      const status = p.current_status ? ` (${p.current_status})` : '';
+      const summary = p.current_summary || p.goal_summary || '_(no summary yet)_';
+      lines.push(`- **${prettyPillar(p.pillar)}**${status}: ${summary}`);
+    }
+  }
+
+  if (scheduledPanels.length > 0) {
+    lines.push(`\n## Pillars activating in future releases (${scheduledPanels.length})\n`);
+    for (const p of scheduledPanels) {
+      lines.push(`- **${prettyPillar(p.pillar)}**: ${p.scheduled_note || '(activation note pending)'}`);
+    }
+  }
+
+  lines.push(`\n## Recent activity\n`);
+  if (reportCount === 0) {
+    lines.push(`_No reports yet._`);
+  } else {
+    lines.push(`${reportCount} reports in the last 20 entries. Most recent:\n`);
+    for (const r of reports.slice(0, 5)) {
+      lines.push(`- _${new Date(r.created_at).toLocaleString()}_ — **${r.title}** (${prettyPillar(r.pillar)})${r.summary ? `: ${r.summary}` : ''}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/* ─── LLM synthesis ────────────────────────────────────── */
+
+interface SynthesisOutput {
+  headline:               string;
+  momentum:               'gaining' | 'stalled' | 'losing' | 'early';
+  top_priorities:         { title: string; pillar: string; rationale: string; effort_estimate: 'low' | 'medium' | 'high' }[];
+  cross_pillar_insights:  { insight: string; pillars_involved: string[] }[];
+  ninety_day_arc:         string;
+  risks:                  { risk: string; mitigation: string }[];
+  confidence:             'high' | 'medium' | 'low';
+  confidence_reason:      string;
+}
+
+async function synthesizeOverviewWithLlm(opts: {
+  campaign: any;
+  panels:   any[];
+  reports:  any[];
+  opportunities: any[];
+}): Promise<SynthesisOutput> {
+  const { campaign, panels, reports, opportunities } = opts;
+
+  /* Build per-pillar context: status + summary + latest report */
+  const activePanels = panels.filter(p => p.status === 'active');
+  const pillarContexts = activePanels.map(p => {
+    const latestReport = reports.find(r => r.pillar === p.pillar);
+    return {
+      pillar:          p.pillar,
+      current_status:  p.current_status || 'unknown',
+      current_summary: p.current_summary || p.goal_summary || '',
+      latest_report:   latestReport ? {
+        title:      latestReport.title,
+        summary:    latestReport.summary || '',
+        confidence: latestReport.confidence_rating || 'unknown',
+        kind:       latestReport.report_kind,
+        age_days:   Math.round((Date.now() - new Date(latestReport.created_at).getTime()) / 86_400_000),
+      } : null,
+    };
+  });
+
+  /* Aggregate opportunities by kind */
+  const opportunitiesByKind: Record<string, number> = {};
+  for (const o of opportunities) {
+    opportunitiesByKind[o.kind] = (opportunitiesByKind[o.kind] || 0) + 1;
+  }
+  const topOpportunities = opportunities.slice(0, 5).map(o => ({
+    kind:  o.kind,
+    title: o.title,
+    value: o.estimated_value || 'unknown',
+    effort: o.estimated_effort || 'unknown',
+  }));
+
+  const campaignAgeDays = Math.round((Date.now() - new Date(campaign.started_at).getTime()) / 86_400_000);
+
+  const sys = `You are a senior digital marketing strategist synthesizing the strategic state of an SEO campaign. You read each pillar's current status + latest report + open opportunities, then produce ONE coherent strategic synthesis.
+
+Your output MUST be honest. Failure modes to avoid:
+- Don't say "everything looks great" if any pillar is amber/red — surface the weakness
+- Don't generate generic platitudes ("keep optimizing!") — be specific and operational
+- Don't ignore the data — every claim in your output must trace to a pillar report or opportunity
+- If you see cross-pillar patterns (e.g., the same URL flagged by both Technical Audit AND Internal Linking), connect them — that's the highest-value insight type
+- "Confidence" should reflect data quality. Sparse reports + few opportunities → low confidence. Comprehensive recent reports → high.
+
+Output structure (JSON only, no preamble):
+{
+  "headline": "ONE sentence — the strategic state of this campaign right now. Specific. NOT 'campaign is progressing.'",
+  "momentum": "gaining" | "stalled" | "losing" | "early",
+  "top_priorities": [
+    { "title": "...", "pillar": "...", "rationale": "1 sentence why this is the top priority", "effort_estimate": "low|medium|high" }
+  ],
+  "cross_pillar_insights": [
+    { "insight": "...", "pillars_involved": ["pillar1", "pillar2"] }
+  ],
+  "ninety_day_arc": "2-3 sentences. What does success look like in 90 days IF the priorities above are executed? What does failure look like?",
+  "risks": [
+    { "risk": "...", "mitigation": "..." }
+  ],
+  "confidence": "high" | "medium" | "low",
+  "confidence_reason": "1-2 sentences"
+}
+
+Rules:
+- top_priorities: exactly 3 items, ordered by urgency. Each must reference a specific pillar.
+- cross_pillar_insights: 0-3 items. ONLY include if you genuinely see a cross-pillar pattern. Empty array is better than forced.
+- risks: 0-3 items. ONLY surface real risks, not theoretical ones.
+- Keep total output under ~800 words. Tight beats verbose.`;
+
+  const user = `Campaign: "${campaign.keyword}"
+Goal: ${campaign.goal || `Rank for "${campaign.keyword}"`}
+Status: ${campaign.status}${campaign.health ? ` (health: ${campaign.health})` : ''}
+Age: ${campaignAgeDays} days
+${campaign.current_position ? `Current position: ${campaign.current_position}` : ''}${campaign.target_position ? ` → Target: ${campaign.target_position}` : ''}
+
+Active pillars (${activePanels.length}):
+${JSON.stringify(pillarContexts, null, 2)}
+
+Open opportunities (${opportunities.length} total):
+- By kind: ${JSON.stringify(opportunitiesByKind)}
+- Top 5:
+${JSON.stringify(topOpportunities, null, 2)}
+
+Recent reports count: ${reports.length} (last 20)
+
+Synthesize the strategic state.`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key":         ANTHROPIC_API_KEY_LO,
+      "anthropic-version": "2023-06-01",
+      "content-type":      "application/json",
+    },
+    body: JSON.stringify({
+      model:      MODEL_LO,
+      max_tokens: 2500,
+      system:     sys,
+      messages:   [{ role: "user", content: user }],
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+  const data = await res.json();
+  const text = (data?.content?.[0]?.text || '').trim();
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  const parsed = JSON.parse(cleaned);
+
+  /* Validate + sanitize */
+  return {
+    headline:    String(parsed.headline || 'Campaign state synthesis').slice(0, 500),
+    momentum:    validateMomentum(parsed.momentum),
+    top_priorities: Array.isArray(parsed.top_priorities)
+      ? parsed.top_priorities.slice(0, 3).map((p: any) => ({
+          title:           String(p.title || '').slice(0, 200),
+          pillar:          String(p.pillar || '').slice(0, 50),
+          rationale:       String(p.rationale || '').slice(0, 500),
+          effort_estimate: validateEffortEstimate(p.effort_estimate),
+        })).filter((p: any) => p.title && p.pillar)
+      : [],
+    cross_pillar_insights: Array.isArray(parsed.cross_pillar_insights)
+      ? parsed.cross_pillar_insights.slice(0, 3).map((i: any) => ({
+          insight:          String(i.insight || '').slice(0, 800),
+          pillars_involved: Array.isArray(i.pillars_involved)
+                              ? i.pillars_involved.filter((x: any) => typeof x === 'string').slice(0, 6)
+                              : [],
+        })).filter((i: any) => i.insight && i.pillars_involved.length > 0)
+      : [],
+    ninety_day_arc:    String(parsed.ninety_day_arc || '').slice(0, 1000),
+    risks: Array.isArray(parsed.risks)
+      ? parsed.risks.slice(0, 3).map((r: any) => ({
+          risk:       String(r.risk || '').slice(0, 400),
+          mitigation: String(r.mitigation || '').slice(0, 400),
+        })).filter((r: any) => r.risk && r.mitigation)
+      : [],
+    confidence:        validateOverviewConfidence(parsed.confidence),
+    confidence_reason: String(parsed.confidence_reason || '').slice(0, 500),
+  };
+}
+
+function validateMomentum(raw: any): 'gaining' | 'stalled' | 'losing' | 'early' {
+  const valid = ['gaining', 'stalled', 'losing', 'early'];
+  const lc = String(raw).toLowerCase();
+  return (valid.includes(lc) ? lc : 'early') as any;
+}
+
+function validateEffortEstimate(raw: any): 'low' | 'medium' | 'high' {
+  const valid = ['low', 'medium', 'high'];
+  const lc = String(raw).toLowerCase();
+  return (valid.includes(lc) ? lc : 'medium') as any;
+}
+
+function validateOverviewConfidence(raw: any): 'high' | 'medium' | 'low' {
+  const valid = ['high', 'medium', 'low'];
+  const lc = String(raw).toLowerCase();
+  return (valid.includes(lc) ? lc : 'medium') as any;
+}
+
+/* ─── Render synthesis to markdown ────────────────────── */
+
+function renderSynthesizedOverview(
+  campaign: any,
+  panels: any[],
+  reports: any[],
+  s: SynthesisOutput,
+): string {
+  const activePanels    = panels.filter(p => p.status === 'active');
+  const scheduledPanels = panels.filter(p => p.status === 'scheduled');
+  const lines: string[] = [];
+
+  /* Header */
+  lines.push(`# Campaign: ${campaign.keyword}`);
+  lines.push('');
+
+  /* Momentum badge + headline */
+  const momentumIcon = s.momentum === 'gaining'  ? '📈'
+                     : s.momentum === 'stalled'  ? '➡️'
+                     : s.momentum === 'losing'   ? '📉'
+                     : '🌱';
+  lines.push(`## ${momentumIcon} ${s.headline}`);
+  lines.push('');
+  lines.push(`**Momentum:** ${s.momentum} · **Goal:** ${campaign.goal || `Rank for "${campaign.keyword}"`} · **Started:** ${new Date(campaign.started_at).toLocaleDateString()}`);
+  if (campaign.current_position && campaign.target_position) {
+    lines.push(`**Position:** ${campaign.current_position} → target ${campaign.target_position}`);
+  }
+  lines.push('');
+
+  /* Top priorities */
+  if (s.top_priorities.length > 0) {
+    lines.push(`## 🎯 Top priorities this week`);
+    lines.push('');
+    for (let i = 0; i < s.top_priorities.length; i++) {
+      const p = s.top_priorities[i];
+      const effortIcon = p.effort_estimate === 'low' ? '🟢' : p.effort_estimate === 'medium' ? '🟡' : '🔴';
+      lines.push(`${i + 1}. **${p.title}** _(${prettyPillar(p.pillar)} · ${effortIcon} ${p.effort_estimate} effort)_`);
+      lines.push(`   ${p.rationale}`);
+      lines.push('');
+    }
+  }
+
+  /* Cross-pillar insights — the most valuable section */
+  if (s.cross_pillar_insights.length > 0) {
+    lines.push(`## 🔗 Cross-pillar connections`);
+    lines.push('');
+    lines.push(`_Patterns that span multiple pillars — these are usually the highest-leverage signals._`);
+    lines.push('');
+    for (const i of s.cross_pillar_insights) {
+      const pillarList = i.pillars_involved.map(p => `**${prettyPillar(p)}**`).join(' + ');
+      lines.push(`- ${i.insight}`);
+      lines.push(`  _Pillars involved: ${pillarList}_`);
+      lines.push('');
+    }
+  }
+
+  /* 90-day arc */
+  if (s.ninety_day_arc) {
+    lines.push(`## 🗺️ 90-day arc`);
+    lines.push('');
+    lines.push(s.ninety_day_arc);
+    lines.push('');
+  }
+
+  /* Risks */
+  if (s.risks.length > 0) {
+    lines.push(`## ⚠️ Risks`);
+    lines.push('');
+    for (const r of s.risks) {
+      lines.push(`- **${r.risk}**`);
+      lines.push(`  _Mitigation:_ ${r.mitigation}`);
+      lines.push('');
+    }
+  }
+
+  /* Pillar status grid (compact) */
+  lines.push(`## Pillar status`);
+  lines.push('');
+  if (activePanels.length === 0) {
+    lines.push(`_No pillars active yet._`);
+  } else {
+    lines.push(`| Pillar | Status | Summary |`);
+    lines.push(`|---|---|---|`);
+    for (const p of activePanels) {
+      const status = p.current_status ? p.current_status : 'pending';
+      const icon   = status === 'green' ? '🟢' : status === 'amber' ? '🟡' : status === 'red' ? '🔴' : '⚪';
+      const summary = (p.current_summary || p.goal_summary || '').replace(/\|/g, '\\|').slice(0, 120);
+      lines.push(`| ${prettyPillar(p.pillar)} | ${icon} ${status} | ${summary} |`);
+    }
+  }
+  if (scheduledPanels.length > 0) {
+    lines.push('');
+    lines.push(`_${scheduledPanels.length} pillar${scheduledPanels.length === 1 ? '' : 's'} scheduled for future activation._`);
+  }
+  lines.push('');
+
+  /* Recent reports */
+  if (reports.length > 0) {
+    lines.push(`## Recent reports`);
+    lines.push('');
+    for (const r of reports.slice(0, 5)) {
+      lines.push(`- _${new Date(r.created_at).toLocaleString()}_ — **${r.title}** (${prettyPillar(r.pillar)})${r.summary ? `: ${r.summary}` : ''}`);
+    }
+    lines.push('');
+  }
+
+  /* Methodology */
+  lines.push(`---`);
+  lines.push('');
+  lines.push(`_**Synthesis confidence:** ${s.confidence} — ${s.confidence_reason}_`);
+  lines.push('');
+  lines.push(`_This overview is LLM-synthesized from ${activePanels.length} active pillar${activePanels.length === 1 ? '' : 's'}. Each claim traces to a pillar report or opportunity. Re-run the Refresh button after major changes to update the synthesis._`);
+
+  return lines.join('\n');
+}
+
 
 /* ─── helpers ──────────────────────────────────────────────── */
 
