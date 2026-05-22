@@ -54,9 +54,11 @@ interface Cluster {
   total_clicks:     number;
   total_impressions: number;
   avg_position:     number;
-  coverage_status:  'covered' | 'partial' | 'gap' | 'unknown';
+  coverage_status:  'covered' | 'partial' | 'partial_losing' | 'gap' | 'unknown';
   recommendation:   string;
   shared_tokens:    string[];          // tokens that defined this cluster
+  /* Phase 16.0.2 — competitive ownership */
+  competitor_owners: string[];          // domains/URLs that own this cluster
 }
 
 interface ClusterFinding {
@@ -135,9 +137,12 @@ export async function runClusterMap(opts: {
     /* 5. Hub/spoke inference for each cluster */
     const enriched = labeled.map(cluster => enrichWithPages(cluster, pages));
 
-    /* 6. Gap detection */
+    /* 5b. Phase 16.0.2 — per-cluster competitor ownership (parallelized LLM calls) */
+    const withOwnership = await enrichWithCompetitorOwnership(enriched, c.keyword, competitors);
+
+    /* 6. Gap + dominance detection */
     const competitorTopics = extractCompetitorTopics(competitors);
-    const withCoverage = enriched.map(cluster => assessCoverage(cluster, competitorTopics));
+    const withCoverage = withOwnership.map(cluster => assessCoverage(cluster, competitorTopics));
 
     /* 7. Persist clusters + write report */
     const auditRunId = crypto.randomUUID();
@@ -158,6 +163,7 @@ export async function runClusterMap(opts: {
         avg_position:       cl.avg_position,
         coverage_status:    cl.coverage_status,
         recommendation:     cl.recommendation?.slice(0, 1000) || null,
+        competitor_owners:  cl.competitor_owners || [],     // Phase 16.0.2
         audit_run_id:       auditRunId,
       }));
       await db().from("cluster_map_clusters").insert(clusterRows);
@@ -166,6 +172,10 @@ export async function runClusterMap(opts: {
     const findings = computeFindings(withCoverage, c.keyword, queries.length, relatedQueries.length);
     const gapCount = withCoverage.filter(cl => cl.coverage_status === 'gap').length;
     const partialCount = withCoverage.filter(cl => cl.coverage_status === 'partial').length;
+    const partialLosingCount = withCoverage.filter(cl => cl.coverage_status === 'partial_losing').length;
+
+    /* LLM call accounting: 1 for labelAndLabelClusters + 1 per cluster for ownership */
+    const llmCallsUsed = 1 + withCoverage.length;
 
     const reportR = await writeReportToPanel({
       campaignId:       opts.campaignId,
@@ -174,10 +184,10 @@ export async function runClusterMap(opts: {
       panelId,
       reportKind:       triggeredBy === 'cron' ? 'scheduled_recheck' : 'manual_refresh',
       generatedBy:      triggeredBy,
-      llmCallsUsed:     1,
+      llmCallsUsed,
       dataSources:      ['gsc', 'llm', ...(competitors.length > 0 ? ['pipeline_research' as const] : [])],
-      confidenceRating: gapCount > 0 || partialCount > 0 ? 'high' : 'medium',
-      confidenceReason: `Clustered ${relatedQueries.length} GSC queries into ${withCoverage.length} clusters. Hub/spoke inference uses URL-slug heuristic (GSC doesn't expose query-page mapping at scale).`,
+      confidenceRating: gapCount > 0 || partialCount > 0 || partialLosingCount > 0 ? 'high' : 'medium',
+      confidenceReason: `Clustered ${relatedQueries.length} GSC queries into ${withCoverage.length} clusters. Hub/spoke inference uses URL-slug heuristic. Per-cluster competitor ownership identified via ${withCoverage.length} LLM calls.`,
       title:            `Cluster map: ${withCoverage.length} clusters for "${c.keyword}"`,
       bodyMd:           renderClusterMapReport({
         keyword: c.keyword, clusters: withCoverage, findings,
@@ -187,15 +197,18 @@ export async function runClusterMap(opts: {
       summary:          buildHeadline(withCoverage),
       tags:             ['cluster_map', `keyword:${c.keyword.toLowerCase()}`,
                          ...(gapCount > 0 ? [`gaps:${gapCount}`] : []),
+                         ...(partialLosingCount > 0 ? [`losing:${partialLosingCount}`] : []),
                          ...withCoverage.slice(0, 8).map(cl => `cluster:${cl.cluster_name.toLowerCase().slice(0, 40)}`)],
       metricSnapshot:   {
         cluster_count: withCoverage.length,
         gap_count: gapCount,
         partial_count: partialCount,
+        partial_losing_count: partialLosingCount,
         covered_count: withCoverage.filter(cl => cl.coverage_status === 'covered').length,
+        llm_calls: llmCallsUsed,
       },
       updatePanelStatus: true,
-      newPanelStatus:    gapCount > 0 ? 'amber' : 'green',
+      newPanelStatus:    gapCount > 0 || partialLosingCount > 0 ? 'amber' : 'green',
     });
 
     /* Update report_id back onto cluster rows (best-effort) */
@@ -316,6 +329,7 @@ async function runAspirationalClusterMap(opts: {
       avg_position:       0,
       coverage_status:    'gap',                      // all aspirational clusters are gaps
       recommendation:     cl.recommendation?.slice(0, 1000) || null,
+      competitor_owners:  cl.competitor_owners || [], // Phase 16.0.2 — LLM-cited owners
       audit_run_id:       auditRunId,
     }));
     await db().from("cluster_map_clusters").insert(clusterRows);
@@ -434,8 +448,11 @@ For each cluster:
 - topic_summary: ONE sentence describing what users in this cluster are looking for
 - sample_queries: 6-10 realistic queries users would search in this cluster (real search behavior, not made-up phrases)
 - recommendation: 2-3 sentences. What content should the project build to win this cluster? Be specific about format (pillar page / comparison / guide / list / tool) and angle.
+- competitor_owners: 2-5 domains (NOT full URLs — just domain names like "bubble.io", "adalo.com") that currently own or strongly compete in this cluster. Base these on the competitor pages provided AND your knowledge of who ranks for this topic class. If unsure, return [] — never invent.
 
-Lead with the highest-leverage clusters (the ones most worth building first). Reply with ONLY valid JSON, no preamble:
+Lead with the highest-leverage clusters (the ones most worth building first). Be honest about who owns the topical real estate today — that's critical context for the project to weigh effort vs upside.
+
+Reply with ONLY valid JSON, no preamble:
 {
   "clusters": [
     {
@@ -443,7 +460,8 @@ Lead with the highest-leverage clusters (the ones most worth building first). Re
       "primary_intent": "...",
       "topic_summary": "...",
       "sample_queries": ["...", "..."],
-      "recommendation": "..."
+      "recommendation": "...",
+      "competitor_owners": ["domain1.com", "domain2.com"]
     }
   ]
 }`;
@@ -488,6 +506,11 @@ Generate 4-6 aspirational topical clusters. Each cluster should be a content cat
         ctr:         0,
         position:    0,
       }));
+      /* Phase 16.0.2 — extract competitor_owners that the LLM cited as basis for this cluster */
+      const ownersRaw: any = lc.competitor_owners || lc.competitors_owning_cluster || [];
+      const competitor_owners: string[] = Array.isArray(ownersRaw)
+        ? ownersRaw.filter((o: any) => typeof o === 'string').map((o: string) => o.trim().slice(0, 200)).slice(0, 8)
+        : [];
       return {
         cluster_name:    String(lc.cluster_name || 'Unnamed cluster').slice(0, 200),
         primary_intent:  validateIntent(lc.primary_intent),
@@ -502,6 +525,7 @@ Generate 4-6 aspirational topical clusters. Each cluster should be a content cat
         coverage_status: 'gap',
         recommendation:  String(lc.recommendation || '').slice(0, 1000),
         shared_tokens:   [],
+        competitor_owners,
       };
     }).filter((cl: Cluster) => cl.cluster_name && cl.queries.length > 0);
   } catch (e: any) {
@@ -547,25 +571,39 @@ function renderAspirationalReport(opts: {
   const { keyword, clusters, competitors, totalGscQueries, relatedCount, projectActualTopQueries } = opts;
   const lines: string[] = [];
 
-  lines.push(`# Aspirational cluster map: "${keyword}"`);
+  lines.push(`# Cluster map: "${keyword}"`);
   lines.push('');
-  lines.push(`> **Aspirational map** — the project has no GSC ranking history for "${keyword}" yet (${relatedCount} of ${totalGscQueries} project queries matched). This map shows what the topical universe **should** look like, based on competitor coverage and topical reasoning. It's a content roadmap, not a coverage assessment.`);
+  lines.push(`This report has two distinct sections. Read them as separate things, not as one fused conclusion:`);
   lines.push('');
-  lines.push(`**Campaign keyword:** "${keyword}"  `);
-  lines.push(`**GSC queries on this topic:** ${relatedCount} (out of ${totalGscQueries} total project queries)  `);
-  lines.push(`**Competitor pages analyzed:** ${competitors.length}  `);
-  lines.push(`**Aspirational clusters generated:** ${clusters.length}  `);
-  lines.push(`**Audit run id:** \`${opts.runId.slice(0, 8)}\`  `);
-  lines.push(`**Generated at:** ${new Date().toISOString()}`);
+  lines.push(`1. **Section 1 — Current state (empirical):** what GSC says about your actual presence on this topic. Hard data, no interpretation.`);
+  lines.push(`2. **Section 2 — Aspirational roadmap (strategic projection):** what the topical universe looks like based on competitor coverage and topical reasoning. LLM-generated. Useful as a starting roadmap, not a finished plan.`);
+  lines.push('');
+  lines.push(`**Audit run id:** \`${opts.runId.slice(0, 8)}\` · **Generated at:** ${new Date().toISOString()}`);
+  lines.push('');
+  lines.push(`---`);
   lines.push('');
 
-  /* Context section — what the project IS ranking for */
-  lines.push('## Where the project currently ranks (context)');
+  /* ════════════════════════════════════════════════════════════
+     SECTION 1 — CURRENT STATE (EMPIRICAL)
+  ═══════════════════════════════════════════════════════════ */
+  lines.push(`# Section 1 — Current state (empirical)`);
+  lines.push('');
+  lines.push(`**GSC queries semantically related to "${keyword}":** ${relatedCount} (out of ${totalGscQueries} total project queries)`);
+  lines.push('');
+  if (relatedCount === 0) {
+    lines.push(`**Bottom line:** The project has **no measurable presence** on the "${keyword}" topic in GSC. The cluster map cannot be built from your data — there is no data on this topic to cluster.`);
+  } else {
+    lines.push(`**Bottom line:** The project has **${relatedCount} measurable queries** related to "${keyword}" — too few to form meaningful clusters, but not zero. The clusters below are still drawn from competitor analysis, not your data.`);
+  }
+  lines.push('');
+
+  /* What the project IS ranking for */
+  lines.push('## What the project currently ranks for');
   lines.push('');
   if (projectActualTopQueries.length === 0) {
     lines.push(`_No GSC query data available at all — either GSC isn't connected, or the project is brand new._`);
   } else {
-    lines.push(`The project currently ranks for these queries (top 10 by impressions). None are about "${keyword}" — this confirms the campaign is targeting a topic outside the site's current presence.`);
+    lines.push(`Top 10 queries by impressions (these are about other topics, not "${keyword}"):`);
     lines.push('');
     lines.push(`| Query | Position | Impressions | Clicks |`);
     lines.push(`|---|---:|---:|---:|`);
@@ -573,13 +611,28 @@ function renderAspirationalReport(opts: {
       lines.push(`| ${q.query} | ${q.position.toFixed(1)} | ${q.impressions.toLocaleString()} | ${q.clicks.toLocaleString()} |`);
     }
     lines.push('');
-    lines.push(`**Strategic question:** Does "${keyword}" align with the site's existing topical authority? If the site is about something different, ranking for "${keyword}" will be harder — you'll be building topical relevance from scratch.`);
-    lines.push('');
+    lines.push(`**Strategic question to weigh before acting on Section 2:** Does "${keyword}" align with the topical authority your site already has? If your existing presence is in a different topic class, ranking for "${keyword}" means building topical relevance from scratch — slower and harder than reinforcing what you already partially own.`);
   }
+  lines.push('');
+  lines.push(`---`);
+  lines.push('');
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 2 — ASPIRATIONAL ROADMAP (STRATEGIC PROJECTION)
+  ═══════════════════════════════════════════════════════════ */
+  lines.push(`# Section 2 — Aspirational roadmap (strategic projection)`);
+  lines.push('');
+  lines.push(`> ⚠️ **These clusters are not measurements of your site.** They are LLM-generated content categories derived from competitor coverage + topical reasoning. The cluster names, sample queries, and recommendations were inferred from how the topical universe is structured competitively — they describe what content **should** exist to compete for "${keyword}", not what your site currently has. Treat as a starting roadmap; validate with keyword research tools before committing.`);
+  lines.push('');
+  lines.push(`**Competitor pages used as basis:** ${competitors.length}`);
+  lines.push(`**Aspirational clusters generated:** ${clusters.length}`);
+  lines.push('');
 
   /* Competitor reference */
   if (competitors.length > 0) {
-    lines.push('## Competitor reference (top pages from rank pipeline)');
+    lines.push('## Competitor pages that informed this roadmap');
+    lines.push('');
+    lines.push(`These are the pages from your most recent rank pipeline's competitor_snapshot step. The aspirational clusters below are derived from analyzing how these pages divide up the topical universe.`);
     lines.push('');
     for (let i = 0; i < Math.min(competitors.length, 5); i++) {
       const cp = competitors[i] as any;
@@ -588,12 +641,17 @@ function renderAspirationalReport(opts: {
       lines.push(`${i + 1}. ${url ? `[${title || url}](${url})` : title}${title && cp.angle && title !== cp.angle ? ` — _${cp.angle}_` : ''}`);
     }
     lines.push('');
+  } else {
+    lines.push('## How this roadmap was built');
+    lines.push('');
+    lines.push(`No competitor data was available for this campaign (run a rank pipeline first to capture competitors). The clusters below were generated from LLM topical reasoning alone, without grounding in specific competitor pages. Treat with extra caution — the clusters are reasonable categories but specific competitor-ownership claims aren't anchored to anything concrete.`);
+    lines.push('');
   }
 
   /* The aspirational clusters themselves */
   lines.push(`## ${clusters.length} aspirational clusters — content roadmap`);
   lines.push('');
-  lines.push(`These are the topical areas a competitive site needs to cover. Build them in order of priority (top first).`);
+  lines.push(`Numbered by suggested priority (highest-leverage first). Each cluster is a content category, not a single page — think pillar page + 5-15 supporting articles to "own" a cluster.`);
   lines.push('');
 
   for (let i = 0; i < clusters.length; i++) {
@@ -602,14 +660,26 @@ function renderAspirationalReport(opts: {
     lines.push('');
     if (cl.topic_summary) lines.push(`_${cl.topic_summary}_`);
     lines.push('');
-    lines.push(`**Intent:** ${cl.primary_intent} · **Status:** aspirational (no current coverage)`);
+    lines.push(`**Intent:** ${cl.primary_intent} · **Status:** aspirational (no current coverage on your site)`);
     lines.push('');
+
+    /* Phase 16.0.2 — source attribution per cluster */
+    if (cl.competitor_owners && cl.competitor_owners.length > 0) {
+      lines.push(`**This cluster is currently owned by:** ${cl.competitor_owners.map(d => `\`${d}\``).join(', ')}`);
+      lines.push('');
+      lines.push(`> **Source attribution:** This cluster's structure and naming was derived from analyzing how these domains organize coverage of the "${keyword}" topic. Credit for the topical real-estate division goes to them — your roadmap is to build a competitive alternative or carve out an underserved angle within this cluster.`);
+      lines.push('');
+    } else {
+      lines.push(`**Cluster owners:** _LLM couldn't identify specific competitor domains with confidence. The cluster was generated from topical reasoning alone — verify the cluster exists by running a SERP search for the sample queries below._`);
+      lines.push('');
+    }
+
     if (cl.recommendation) {
       lines.push(`**Recommendation:** ${cl.recommendation}`);
       lines.push('');
     }
     if (cl.queries.length > 0) {
-      lines.push(`**Sample queries** users would search in this cluster:`);
+      lines.push(`**Sample queries** users would search in this cluster (LLM-proposed, not measured):`);
       lines.push('');
       for (const q of cl.queries.slice(0, 10)) {
         lines.push(`- ${q.query}`);
@@ -618,18 +688,24 @@ function renderAspirationalReport(opts: {
     }
   }
 
+  /* Methodology */
+  lines.push(`---`);
+  lines.push('');
   lines.push('## Methodology + caveats');
   lines.push('');
-  lines.push(`**How this was built:** One LLM call to a senior-strategist persona, given the keyword and ${competitors.length > 0 ? `${competitors.length} competitor pages from the most recent rank pipeline` : 'no competitor data'}. The LLM returned topical clusters representing what a competitive site would need to cover.`);
+  lines.push(`**How Section 1 was built:** Direct GSC query data from project_knowledge. No interpretation.`);
   lines.push('');
-  lines.push(`**Why "aspirational":** Sample queries are illustrative — the LLM proposed realistic queries based on topical knowledge, but they aren't measured. Real query volumes, intents, and SERP shapes need to be validated with keyword research tools (Ahrefs, Semrush, GSC) before committing to content.`);
+  lines.push(`**How Section 2 was built:** One LLM call to a senior-strategist persona. Input: the campaign keyword + ${competitors.length > 0 ? `${competitors.length} competitor pages from the most recent rank pipeline` : 'no competitor data — pure topical reasoning'}. Output: 4-6 topical clusters, each with intent, topic_summary, sample queries, recommendation, and the LLM\'s best guess at which domains currently own the cluster.`);
+  lines.push('');
+  lines.push(`**Why competitor_owners are LLM-cited, not measured:** Running real SERPs per cluster would require an external SERP API or web search calls — significant cost increase. Currently the LLM is asked to cite domains it's confident own each cluster, with explicit instructions to return [] if unsure. Honest "[]" is better than invented domains.`);
   lines.push('');
   lines.push(`**Next steps:**`);
-  lines.push(`1. Validate the highest-priority clusters with keyword research data (search volume, difficulty)`);
-  lines.push(`2. Each cluster has been auto-added to the Opportunities inbox — promote ones you want to pursue into their own campaigns`);
-  lines.push(`3. Re-run this cluster map in 2-3 months after content launches — at that point GSC data will exist and the map flips from aspirational to a real coverage assessment`);
+  lines.push(`1. Validate the highest-priority clusters with real keyword research (search volume, difficulty) before committing engineering/content effort`);
+  lines.push(`2. For clusters with named competitor_owners, run a SERP check on 2-3 sample queries to verify those domains actually rank — confirms the LLM's call`);
+  lines.push(`3. Each cluster has been auto-added to the Opportunities inbox — promote ones you want to pursue into their own campaigns`);
+  lines.push(`4. Re-run this cluster map in 2-3 months after content launches — at that point GSC data will exist and Section 1 becomes a real coverage assessment`);
   lines.push('');
-  lines.push(`**Limitations:** Sample queries weren't validated against real search data. Cluster prioritization is based on LLM judgment, not measured competition or volume. Treat this as a starting roadmap, not a final plan.`);
+  lines.push(`**Limitations:** Sample queries are LLM-proposed, not measured volume. competitor_owners are LLM-cited based on the model's knowledge, not SERP-verified. Cluster prioritization is LLM judgment, not measured competition.`);
 
   return lines.join('\n');
 }
@@ -879,6 +955,7 @@ ${JSON.stringify(clustersForPrompt, null, 2)}`;
       coverage_status: 'unknown',
       recommendation:  `(LLM labeling failed: ${e?.message || 'unknown'}. Review queries manually.)`,
       shared_tokens:   cl.shared_tokens,
+      competitor_owners: [],
     }));
   }
 
@@ -901,6 +978,7 @@ ${JSON.stringify(clustersForPrompt, null, 2)}`;
       coverage_status: 'unknown',
       recommendation:  llmCl.recommendation?.toString().slice(0, 1000) || '',
       shared_tokens:   cl.shared_tokens,
+      competitor_owners: [],     // populated separately via enrichWithCompetitorOwnership
     };
   });
 
@@ -952,18 +1030,115 @@ function enrichWithPages(cluster: Cluster, pages: GscPageRow[]): Cluster {
 function assessCoverage(cluster: Cluster, competitorTokens: Set<string>): Cluster {
   const hasHub = !!cluster.hub_page_url;
   const hasGoodPosition = cluster.avg_position > 0 && cluster.avg_position <= 20;
+  const hasStrongPosition = cluster.avg_position > 0 && cluster.avg_position <= 5;
 
   /* If competitor URLs contain cluster tokens but we don't have a hub, it's a gap */
   const clusterTokens = new Set(cluster.shared_tokens);
   const competitorOverlap = [...clusterTokens].some(t => competitorTokens.has(t));
 
-  let status: 'covered' | 'partial' | 'gap' | 'unknown' = 'unknown';
-  if (hasHub && hasGoodPosition) status = 'covered';
-  else if (hasHub && !hasGoodPosition) status = 'partial';
-  else if (!hasHub && competitorOverlap) status = 'gap';
-  else if (!hasHub) status = 'partial';
+  /* Phase 16.0.2 — competitor_owners is the per-cluster competitive map (populated
+     by enrichWithCompetitorOwnership). If you have a hub AND decent position BUT
+     3+ competitors own the cluster and your position is mid-pack (not top-3),
+     you're "covered but losing." */
+  const competitorOwnerCount = cluster.competitor_owners?.length || 0;
+  const isDominated = competitorOwnerCount >= 3 && !hasStrongPosition;
+
+  let status: 'covered' | 'partial' | 'partial_losing' | 'gap' | 'unknown' = 'unknown';
+  if (hasHub && hasGoodPosition && isDominated)         status = 'partial_losing';
+  else if (hasHub && hasGoodPosition)                   status = 'covered';
+  else if (hasHub && !hasGoodPosition)                  status = 'partial';
+  else if (!hasHub && competitorOverlap)                status = 'gap';
+  else if (!hasHub)                                     status = 'partial';
 
   return { ...cluster, coverage_status: status };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   PER-CLUSTER COMPETITOR OWNERSHIP (Phase 16.0.2)
+
+   For each actual cluster (already named + populated), ask the LLM
+   which 3-5 domains currently own this cluster's topical real estate.
+   Parallelized across all clusters. Honest "[]" if the LLM is unsure.
+═══════════════════════════════════════════════════════════════ */
+
+async function enrichWithCompetitorOwnership(
+  clusters: Cluster[],
+  campaignKeyword: string,
+  competitors: any[],
+): Promise<Cluster[]> {
+  if (clusters.length === 0) return clusters;
+
+  /* Build competitor context once (same for all clusters) */
+  const competitorContext = competitors.length > 0
+    ? competitors.slice(0, 5).map((cp: any, i: number) => {
+        const url   = cp.url || cp.page || '';
+        const title = cp.title || cp.angle || '';
+        return `${i + 1}. ${url}${title ? ` — ${title}` : ''}`;
+      }).join('\n')
+    : '(no competitor data available for this campaign)';
+
+  /* One LLM call per cluster, in parallel */
+  const enriched = await Promise.all(clusters.map(async (cluster) => {
+    try {
+      const topQueries = [...cluster.queries].sort((a, b) => b.impressions - a.impressions).slice(0, 8);
+      const sys = `You identify which domains own a topical cluster's search real estate. The user gives you a cluster (name + sample queries) for a campaign targeting "${campaignKeyword}". You return 3-5 domain names (NOT full URLs — just domains like "bubble.io", "adalo.com") that you believe currently rank well or dominate this specific cluster's queries.
+
+Base your answer on:
+- The competitor pages provided for the parent campaign
+- Your knowledge of which sites typically rank for this query class
+- The cluster's intent and topic
+
+If you're not confident in specific domains for this cluster, return an empty array — never invent. Honest "[]" is better than guessing.
+
+Reply with ONLY valid JSON:
+{ "competitor_owners": ["domain1.com", "domain2.com", "domain3.com"] }`;
+
+      const user = `Campaign keyword: "${campaignKeyword}"
+Cluster name: "${cluster.cluster_name}"
+Cluster intent: ${cluster.primary_intent}
+Topic summary: ${cluster.topic_summary || '(none)'}
+
+Top queries in this cluster (by impressions):
+${topQueries.map(q => `- ${q.query} (pos ${q.position.toFixed(1)}, ${q.impressions} impr)`).join('\n')}
+
+Parent campaign competitors (for context — these compete for the keyword broadly, NOT necessarily this specific cluster):
+${competitorContext}
+
+Which 3-5 domains own this specific cluster's topical real estate today?`;
+
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model:       MODEL,
+          max_tokens:  300,
+          system:      sys,
+          messages:    [{ role: "user", content: user }],
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const text = (data?.content?.[0]?.text || '').trim();
+      const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+      const parsed = JSON.parse(cleaned);
+      const ownersRaw = parsed?.competitor_owners;
+      const owners: string[] = Array.isArray(ownersRaw)
+        ? ownersRaw.filter((o: any) => typeof o === 'string').map((o: string) => o.trim().slice(0, 200)).slice(0, 8)
+        : [];
+      return { ...cluster, competitor_owners: owners };
+    } catch (e: any) {
+      /* Per-cluster failure — keep [], don't fail the whole map */
+      console.log(`[enrichWithCompetitorOwnership] failed for "${cluster.cluster_name}": ${e?.message}`);
+      return { ...cluster, competitor_owners: [] };
+    }
+  }));
+
+  return enriched;
 }
 
 function extractCompetitorTopics(competitors: any[]): Set<string> {
@@ -999,15 +1174,29 @@ function summarizeCompetitors(competitors: any[]): string {
 function computeFindings(clusters: Cluster[], keyword: string, totalGscQueries: number, relatedCount: number): ClusterFinding[] {
   const findings: ClusterFinding[] = [];
 
-  const gapCount = clusters.filter(c => c.coverage_status === 'gap').length;
-  const partialCount = clusters.filter(c => c.coverage_status === 'partial').length;
-  const coveredCount = clusters.filter(c => c.coverage_status === 'covered').length;
+  const gapCount           = clusters.filter(c => c.coverage_status === 'gap').length;
+  const partialCount       = clusters.filter(c => c.coverage_status === 'partial').length;
+  const partialLosingCount = clusters.filter(c => c.coverage_status === 'partial_losing').length;
+  const coveredCount       = clusters.filter(c => c.coverage_status === 'covered').length;
 
   if (gapCount > 0) {
     findings.push({
       severity: 'amber',
       title:    `${gapCount} gap cluster${gapCount === 1 ? '' : 's'} detected`,
       detail:   `Competitors rank for queries in ${gapCount} cluster${gapCount === 1 ? '' : 's'} where this project has no hub page. Each becomes a content opportunity.`,
+    });
+  }
+
+  /* Phase 16.0.2 — partial_losing finding (the big new one) */
+  if (partialLosingCount > 0) {
+    const losingClusters = clusters
+      .filter(c => c.coverage_status === 'partial_losing')
+      .map(c => `"${c.cluster_name}" (owned by ${c.competitor_owners.slice(0, 3).join(', ')})`)
+      .join('; ');
+    findings.push({
+      severity: 'amber',
+      title:    `${partialLosingCount} cluster${partialLosingCount === 1 ? '' : 's'} where you have a hub but are losing competitively`,
+      detail:   `${partialLosingCount === 1 ? 'This cluster has' : 'These clusters have'} hub pages on your site BUT 3+ competitor domains dominate the topical real estate and your average position isn't top-3. Strategic decision: ${losingClusters}. Either invest hard (links, depth, freshness) to beat them, or accept the position and reallocate effort to gap clusters where you can establish first-mover advantage.`,
     });
   }
 
@@ -1023,7 +1212,7 @@ function computeFindings(clusters: Cluster[], keyword: string, totalGscQueries: 
     findings.push({
       severity: 'green',
       title:    `${coveredCount} cluster${coveredCount === 1 ? '' : 's'} well-covered`,
-      detail:   `These clusters have a clear hub page ranking on page 1-2.`,
+      detail:   `These clusters have a clear hub page ranking on page 1-2, and no significant competitor dominance was detected.`,
     });
   }
 
@@ -1056,10 +1245,12 @@ function computeFindings(clusters: Cluster[], keyword: string, totalGscQueries: 
 }
 
 function buildHeadline(clusters: Cluster[]): string {
-  const gap = clusters.filter(c => c.coverage_status === 'gap').length;
-  const partial = clusters.filter(c => c.coverage_status === 'partial').length;
-  const covered = clusters.filter(c => c.coverage_status === 'covered').length;
-  return `${clusters.length} cluster${clusters.length === 1 ? '' : 's'} mapped — ${covered} covered, ${partial} partial, ${gap} gap${gap === 1 ? '' : 's'}.`;
+  const gap           = clusters.filter(c => c.coverage_status === 'gap').length;
+  const partialLosing = clusters.filter(c => c.coverage_status === 'partial_losing').length;
+  const partial       = clusters.filter(c => c.coverage_status === 'partial').length;
+  const covered       = clusters.filter(c => c.coverage_status === 'covered').length;
+  const losingBit = partialLosing > 0 ? `, ${partialLosing} losing` : '';
+  return `${clusters.length} cluster${clusters.length === 1 ? '' : 's'} mapped — ${covered} covered${losingBit}, ${partial} partial, ${gap} gap${gap === 1 ? '' : 's'}.`;
 }
 
 function renderClusterMapReport(opts: {
@@ -1087,16 +1278,18 @@ function renderClusterMapReport(opts: {
   /* Summary */
   lines.push('## Summary');
   lines.push('');
-  const covered = clusters.filter(c => c.coverage_status === 'covered').length;
-  const partial = clusters.filter(c => c.coverage_status === 'partial').length;
-  const gap     = clusters.filter(c => c.coverage_status === 'gap').length;
-  const unknown = clusters.filter(c => c.coverage_status === 'unknown').length;
-  lines.push(`| Coverage | Count |`);
-  lines.push(`|---|---|`);
-  lines.push(`| 🟢 Covered (clear hub, good position) | ${covered} |`);
-  lines.push(`| 🟡 Partial (hub unclear or weak position) | ${partial} |`);
-  lines.push(`| 🔴 Gap (competitor ranks, we don't) | ${gap} |`);
-  lines.push(`| ❔ Unknown | ${unknown} |`);
+  const covered       = clusters.filter(c => c.coverage_status === 'covered').length;
+  const partial       = clusters.filter(c => c.coverage_status === 'partial').length;
+  const partialLosing = clusters.filter(c => c.coverage_status === 'partial_losing').length;
+  const gap           = clusters.filter(c => c.coverage_status === 'gap').length;
+  const unknown       = clusters.filter(c => c.coverage_status === 'unknown').length;
+  lines.push(`| Coverage | Count | Meaning |`);
+  lines.push(`|---|---|---|`);
+  lines.push(`| 🟢 Covered | ${covered} | Clear hub, decent position, no significant competitor dominance |`);
+  lines.push(`| 🟠 Partial-losing | ${partialLosing} | You have a hub BUT competitors dominate the cluster |`);
+  lines.push(`| 🟡 Partial | ${partial} | Hub unclear or position weak |`);
+  lines.push(`| 🔴 Gap | ${gap} | No hub, competitors rank |`);
+  lines.push(`| ❔ Unknown | ${unknown} | Insufficient data to assess |`);
   lines.push('');
 
   /* Findings */
@@ -1111,8 +1304,8 @@ function renderClusterMapReport(opts: {
     }
   }
 
-  /* Clusters — gaps first, then partial, then covered */
-  const order = ['gap', 'partial', 'covered', 'unknown'];
+  /* Clusters — order: gap → partial_losing → partial → covered → unknown */
+  const order = ['gap', 'partial_losing', 'partial', 'covered', 'unknown'];
   const sorted = [...clusters].sort((a, b) => {
     const oa = order.indexOf(a.coverage_status);
     const ob = order.indexOf(b.coverage_status);
@@ -1123,9 +1316,10 @@ function renderClusterMapReport(opts: {
   lines.push('## Clusters');
   lines.push('');
   for (const cl of sorted) {
-    const icon = cl.coverage_status === 'covered' ? '🟢'
-              : cl.coverage_status === 'partial' ? '🟡'
-              : cl.coverage_status === 'gap'     ? '🔴' : '❔';
+    const icon = cl.coverage_status === 'covered'        ? '🟢'
+              : cl.coverage_status === 'partial_losing'  ? '🟠'
+              : cl.coverage_status === 'partial'         ? '🟡'
+              : cl.coverage_status === 'gap'             ? '🔴' : '❔';
     lines.push(`### ${icon} ${cl.cluster_name}`);
     lines.push('');
     if (cl.topic_summary) lines.push(`_${cl.topic_summary}_`);
@@ -1142,6 +1336,20 @@ function renderClusterMapReport(opts: {
       lines.push(`**Spoke pages:**`);
       for (const sp of cl.spoke_pages) lines.push(`- [${sp}](${sp})`);
     }
+
+    /* Phase 16.0.2 — competitor ownership prominently shown */
+    if (cl.competitor_owners && cl.competitor_owners.length > 0) {
+      lines.push('');
+      lines.push(`**Domains currently owning this cluster:** ${cl.competitor_owners.map(d => `\`${d}\``).join(', ')}`);
+      if (cl.coverage_status === 'partial_losing') {
+        lines.push('');
+        lines.push(`⚠️ **You have a hub for this cluster, but ${cl.competitor_owners.length} competitors dominate it.** Beating them requires either dramatically better content, link equity, or a niche-down angle. Consider whether the effort is worth it vs investing in gap clusters where you can establish first-mover advantage.`);
+      }
+    } else {
+      lines.push('');
+      lines.push(`**Domains owning this cluster:** _LLM couldn't identify with confidence — investigate manually via SERP check._`);
+    }
+
     if (cl.recommendation) {
       lines.push('');
       lines.push(`**Recommendation:** ${cl.recommendation}`);
@@ -1161,13 +1369,15 @@ function renderClusterMapReport(opts: {
   /* Honest scope */
   lines.push('## Methodology + caveats');
   lines.push('');
-  lines.push('**How clusters were formed:** Lexical similarity (shared non-stopword, non-keyword tokens) on GSC queries semantically related to the campaign keyword. The clusters were then LLM-labeled with names, intents, and recommendations using a single batched API call.');
+  lines.push('**How clusters were formed:** Lexical similarity (shared non-stopword, non-keyword tokens) on GSC queries semantically related to the campaign keyword. Clusters were LLM-labeled with names, intents, and recommendations in a single batched API call.');
+  lines.push('');
+  lines.push('**How competitor ownership was identified:** One LLM call per cluster, asking which domains own this specific cluster\'s topical real estate. Based on competitor_snapshot data + LLM\'s knowledge of common ranking patterns. If unsure, the LLM returns an empty list rather than inventing domains.');
   lines.push('');
   lines.push('**How hub/spoke was inferred:** URL-slug token matching against GSC top_pages. This is a heuristic — GSC does not expose query→page mapping at scale. If a cluster\'s queries don\'t match any URL token, hub will be null.');
   lines.push('');
-  lines.push('**How gaps were detected:** Cluster has no inferred hub AND competitor URLs from the most recent `competitor_snapshot` step contain matching tokens. Soft signal — competitors might be ranking but the heuristic could miss matches.');
+  lines.push('**How `partial_losing` is detected:** Cluster has a hub AND decent average position, BUT 3+ competitor domains were identified for the cluster AND your average position isn\'t top-3. This means you\'re technically covered but losing the cluster competitively. Worth surfacing because it\'s a strategic decision point: invest more here, or pivot to gap clusters where you can dominate.');
   lines.push('');
-  lines.push('**Not yet covered:** Semantic similarity via embeddings, project-wide cluster maps across campaigns, automatic content-roadmap generation as kanban tasks, visual graph rendering. Coming in 16.1+.');
+  lines.push('**Not yet covered:** Real SERP fetch per cluster (currently competitor_owners is LLM-cited, not measured), semantic similarity via embeddings, project-wide cluster maps across campaigns, automatic content-roadmap generation as kanban tasks, visual graph rendering.');
 
   return lines.join('\n');
 }
