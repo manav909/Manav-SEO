@@ -58,8 +58,7 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
     display_order: 4,
     goal_summary: 'Map the topical cluster; identify hub-and-spoke structure; surface coverage gaps.',
     recheck_cadence_days: 30,
-    initial_status: 'scheduled',
-    scheduled_note: 'Activates in Phase 16 — GSC query clustering, semantic grouping, gap analysis, content roadmap.',
+    initial_status: 'active',                   // Phase 16 — maps GSC query universe into clusters
   },
   {
     pillar: 'internal_linking',

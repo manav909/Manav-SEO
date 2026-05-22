@@ -2674,3 +2674,37 @@ export async function seoTechnicalAuditFindings(opts: {
   if (!r?.success) return { error: r?.error };
   return { findings: r.findings };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 16 — Cluster Map client methods
+═══════════════════════════════════════════════════════════════ */
+
+export async function seoClusterMapRun(opts: {
+  campaignId: string;
+  panelId?:   string;
+}): Promise<{
+  success?: boolean;
+  audit_run_id?: string;
+  cluster_count?: number;
+  gap_count?: number;
+  report_id?: string;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_cluster_map_run', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    success: true,
+    audit_run_id:  r.audit_run_id,
+    cluster_count: r.cluster_count,
+    gap_count:     r.gap_count,
+    report_id:     r.report_id,
+  };
+}
+
+export async function seoClusterMapClusters(opts: {
+  panelId: string; limit?: number;
+}): Promise<{ clusters?: any[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_cluster_map_clusters', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { clusters: r.clusters };
+}

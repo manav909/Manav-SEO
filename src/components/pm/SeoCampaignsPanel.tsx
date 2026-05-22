@@ -20,6 +20,7 @@ import {
   seoCampaignArchive, seoCampaignOverviewRefresh,
   seoOpportunityList, seoOpportunityPromoteToCampaign, seoOpportunityDismiss,
   seoTechnicalAuditRun, seoTechnicalAuditSetTargetUrl,
+  seoClusterMapRun,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
 } from './api';
 
@@ -513,6 +514,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   /* Phase 15 — audit state */
   const [auditBusyPanel, setAuditBusyPanel] = useState<string | null>(null);
   const [urlPromptPanel, setUrlPromptPanel] = useState<SeoCampaignPanel | null>(null);
+  /* Phase 16 — cluster map state */
+  const [clusterBusyPanel, setClusterBusyPanel] = useState<string | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -580,6 +583,33 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     await load();
   };
 
+  /* Phase 16 — cluster map handler */
+  const handleRunClusterMap = async (panel: SeoCampaignPanel) => {
+    setClusterBusyPanel(panel.id);
+    try {
+      const r = await seoClusterMapRun({ campaignId, panelId: panel.id });
+      if (r.error) {
+        toast({ title: 'Cluster map failed', description: r.error, variant: 'destructive' });
+        return;
+      }
+      const clusters = r.cluster_count || 0;
+      const gaps = r.gap_count || 0;
+      if (clusters === 0) {
+        toast({ title: 'Cluster map empty', description: 'Not enough GSC data — see the report for details.' });
+      } else {
+        toast({
+          title: `${clusters} cluster${clusters === 1 ? '' : 's'} mapped`,
+          description: gaps > 0
+            ? `${gaps} coverage gap${gaps === 1 ? '' : 's'} surfaced as opportunities.`
+            : `No gaps detected. Open the report below for the full breakdown.`,
+        });
+      }
+      await load();
+    } finally {
+      setClusterBusyPanel(null);
+    }
+  };
+
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 9100,
@@ -626,7 +656,9 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                   key={p.id} panel={p}
                   onRunAudit={handleRunAudit}
                   onSetTargetUrl={handleSetTargetUrl}
+                  onRunClusterMap={handleRunClusterMap}
                   auditBusy={auditBusyPanel === p.id}
+                  clusterBusy={clusterBusyPanel === p.id}
                 />
               ))}
             </div>
@@ -850,17 +882,20 @@ function lifecycleBtnStyle(hue: string): React.CSSProperties {
   };
 }
 
-function PanelCard({ panel, onRunAudit, onSetTargetUrl, auditBusy }: {
+function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, auditBusy, clusterBusy }: {
   panel: SeoCampaignPanel;
-  onRunAudit?:     (panel: SeoCampaignPanel) => void;
-  onSetTargetUrl?: (panel: SeoCampaignPanel) => void;
-  auditBusy?:      boolean;
+  onRunAudit?:        (panel: SeoCampaignPanel) => void;
+  onSetTargetUrl?:    (panel: SeoCampaignPanel) => void;
+  onRunClusterMap?:   (panel: SeoCampaignPanel) => void;
+  auditBusy?:         boolean;
+  clusterBusy?:       boolean;
 }) {
   const Icon = PILLAR_ICON[panel.pillar] || FileText;
   const isActive = panel.status === 'active';
   const isScheduled = panel.status === 'scheduled';
   const statusHue = STATUS_HUE[panel.current_status || panel.status] || STATUS_HUE.scheduled;
   const isTechnicalAudit = panel.pillar === 'technical_audit';
+  const isClusterMap     = panel.pillar === 'cluster_map';
 
   return (
     <div style={{
@@ -925,6 +960,28 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, auditBusy }: {
               }}>
               <Target size={9} />
               {panel.target_url ? 'Change URL' : 'Set URL'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 16 — Cluster map affordances */}
+      {isClusterMap && isActive && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(160,160,180,0.08)' }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRunClusterMap?.(panel); }}
+              disabled={clusterBusy}
+              title="Cluster GSC queries into topical themes and identify coverage gaps"
+              style={{
+                padding: '4px 8px', borderRadius: 5, fontSize: 9.5, fontWeight: 700,
+                border: `1px solid hsla(${statusHue} / 0.35)`,
+                background: `hsla(${statusHue} / 0.10)`, color: `hsl(${statusHue})`,
+                cursor: clusterBusy ? 'wait' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+              {clusterBusy ? <Loader2 size={9} className="animate-spin" /> : <Layers size={9} />}
+              {clusterBusy ? 'Mapping…' : 'Generate cluster map'}
             </button>
           </div>
         </div>

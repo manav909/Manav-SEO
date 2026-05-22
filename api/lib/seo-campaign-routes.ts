@@ -150,3 +150,21 @@ export async function bsSeoTechnicalAuditFindings(body: any): Promise<any> {
   const { getPanelFindings } = await import("./seo-technical-audit.js");
   return getPanelFindings({ panelId, limit });
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 16 — Cluster Map routes
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoClusterMapRun(body: any): Promise<any> {
+  const { campaignId, panelId } = body || {};
+  if (!campaignId) return { success: false, error: "campaignId required" };
+  const { runClusterMap } = await import("./seo-cluster-map.js");
+  return runClusterMap({ campaignId, panelId, triggeredBy: 'manual' });
+}
+
+export async function bsSeoClusterMapClusters(body: any): Promise<any> {
+  const { panelId, limit } = body || {};
+  if (!panelId) return { success: false, error: "panelId required" };
+  const { getPanelClusters } = await import("./seo-cluster-map.js");
+  return getPanelClusters({ panelId, limit });
+}

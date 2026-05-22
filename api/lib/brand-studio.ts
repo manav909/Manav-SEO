@@ -863,6 +863,16 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoTechnicalAuditFindings(body);
     }
 
+    /* Phase 16 — cluster map pillar */
+    case "bs_seo_cluster_map_run": {
+      const { bsSeoClusterMapRun } = await import("./seo-campaign-routes.js");
+      return bsSeoClusterMapRun(body);
+    }
+    case "bs_seo_cluster_map_clusters": {
+      const { bsSeoClusterMapClusters } = await import("./seo-campaign-routes.js");
+      return bsSeoClusterMapClusters(body);
+    }
+
     /* Phase 12.5a — forecasts + monitoring */
     case "bs_season_forecast_list": {
       const { bsSeasonForecastList } = await import("./season-forecast-routes.js");
