@@ -211,3 +211,21 @@ export async function bsSeoOffPageData(body: any): Promise<any> {
   const { getPanelOffPageData } = await import("./seo-off-page.js");
   return getPanelOffPageData({ panelId, limit });
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 19 — Monitoring routes
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoMonitoringRun(body: any): Promise<any> {
+  const { campaignId, panelId, windowDays } = body || {};
+  if (!campaignId) return { success: false, error: "campaignId required" };
+  const { runMonitoringCheck } = await import("./seo-monitoring.js");
+  return runMonitoringCheck({ campaignId, panelId, windowDays, triggeredBy: 'manual' });
+}
+
+export async function bsSeoMonitoringData(body: any): Promise<any> {
+  const { panelId, limit } = body || {};
+  if (!panelId) return { success: false, error: "panelId required" };
+  const { getPanelMonitoringData } = await import("./seo-monitoring.js");
+  return getPanelMonitoringData({ panelId, limit });
+}

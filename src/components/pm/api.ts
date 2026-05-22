@@ -2793,3 +2793,43 @@ export async function seoOffPageData(opts: {
   if (!r?.success) return { error: r?.error };
   return { assets: r.assets, prospects: r.prospects, findings: r.findings };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 19 — Monitoring client methods
+═══════════════════════════════════════════════════════════════ */
+
+export async function seoMonitoringRun(opts: {
+  campaignId:  string;
+  panelId?:    string;
+  windowDays?: number;
+}): Promise<{
+  success?:              boolean;
+  run_id?:               string;
+  changes_detected?:     number;
+  red_count?:            number;
+  amber_count?:          number;
+  baseline_established?: boolean;
+  report_id?:            string;
+  error?:                string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_monitoring_run', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    success:              true,
+    run_id:               r.run_id,
+    changes_detected:     r.changes_detected,
+    red_count:            r.red_count,
+    amber_count:          r.amber_count,
+    baseline_established: r.baseline_established,
+    report_id:            r.report_id,
+  };
+}
+
+export async function seoMonitoringData(opts: {
+  panelId: string;
+  limit?:  number;
+}): Promise<{ runs?: any[]; findings?: any[]; latest_snapshot?: any; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_monitoring_data', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { runs: r.runs, findings: r.findings, latest_snapshot: r.latest_snapshot };
+}

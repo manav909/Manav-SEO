@@ -897,6 +897,16 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoOffPageData(body);
     }
 
+    /* Phase 19 — monitoring pillar */
+    case "bs_seo_monitoring_run": {
+      const { bsSeoMonitoringRun } = await import("./seo-campaign-routes.js");
+      return bsSeoMonitoringRun(body);
+    }
+    case "bs_seo_monitoring_data": {
+      const { bsSeoMonitoringData } = await import("./seo-campaign-routes.js");
+      return bsSeoMonitoringData(body);
+    }
+
     /* Phase 12.5a — forecasts + monitoring */
     case "bs_season_forecast_list": {
       const { bsSeasonForecastList } = await import("./season-forecast-routes.js");

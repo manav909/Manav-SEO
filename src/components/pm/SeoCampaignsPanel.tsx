@@ -23,6 +23,7 @@ import {
   seoClusterMapRun,
   seoInternalLinkingRun,
   seoOffPageRun,
+  seoMonitoringRun,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
 } from './api';
 
@@ -522,6 +523,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [linkingBusyPanel, setLinkingBusyPanel] = useState<string | null>(null);
   /* Phase 18 — off-page state */
   const [offPageBusyPanel, setOffPageBusyPanel] = useState<string | null>(null);
+  /* Phase 19 — monitoring state */
+  const [monitoringBusyPanel, setMonitoringBusyPanel] = useState<string | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -674,6 +677,35 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     }
   };
 
+  /* Phase 19 — monitoring handler */
+  const handleRunMonitoring = async (panel: SeoCampaignPanel) => {
+    setMonitoringBusyPanel(panel.id);
+    try {
+      const r = await seoMonitoringRun({ campaignId, panelId: panel.id });
+      if (r.error) {
+        toast({ title: 'Monitoring check failed', description: r.error, variant: 'destructive' });
+        return;
+      }
+      if (r.baseline_established) {
+        toast({
+          title: '🌱 Baseline established',
+          description: 'First snapshot captured. Next monitoring check will compare against this baseline.',
+        });
+      } else {
+        const changes = r.changes_detected || 0;
+        const red     = r.red_count || 0;
+        const amber   = r.amber_count || 0;
+        toast({
+          title: red > 0 ? `🔴 ${red} critical change${red === 1 ? '' : 's'}` : amber > 0 ? `🟡 ${amber} warning${amber === 1 ? '' : 's'}` : `🟢 ${changes} change${changes === 1 ? '' : 's'}`,
+          description: 'Open the monitoring report below for the full delta breakdown.',
+        });
+      }
+      await load();
+    } finally {
+      setMonitoringBusyPanel(null);
+    }
+  };
+
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 9100,
@@ -723,10 +755,12 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                   onRunClusterMap={handleRunClusterMap}
                   onRunInternalLinking={handleRunInternalLinking}
                   onRunOffPage={handleRunOffPage}
+                  onRunMonitoring={handleRunMonitoring}
                   auditBusy={auditBusyPanel === p.id}
                   clusterBusy={clusterBusyPanel === p.id}
                   linkingBusy={linkingBusyPanel === p.id}
                   offPageBusy={offPageBusyPanel === p.id}
+                  monitoringBusy={monitoringBusyPanel === p.id}
                 />
               ))}
             </div>
@@ -950,17 +984,19 @@ function lifecycleBtnStyle(hue: string): React.CSSProperties {
   };
 }
 
-function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunInternalLinking, onRunOffPage, auditBusy, clusterBusy, linkingBusy, offPageBusy }: {
+function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunInternalLinking, onRunOffPage, onRunMonitoring, auditBusy, clusterBusy, linkingBusy, offPageBusy, monitoringBusy }: {
   panel: SeoCampaignPanel;
   onRunAudit?:           (panel: SeoCampaignPanel) => void;
   onSetTargetUrl?:       (panel: SeoCampaignPanel) => void;
   onRunClusterMap?:      (panel: SeoCampaignPanel) => void;
   onRunInternalLinking?: (panel: SeoCampaignPanel) => void;
   onRunOffPage?:         (panel: SeoCampaignPanel) => void;
+  onRunMonitoring?:      (panel: SeoCampaignPanel) => void;
   auditBusy?:            boolean;
   clusterBusy?:          boolean;
   linkingBusy?:          boolean;
   offPageBusy?:          boolean;
+  monitoringBusy?:       boolean;
 }) {
   const Icon = PILLAR_ICON[panel.pillar] || FileText;
   const isActive = panel.status === 'active';
@@ -970,6 +1006,7 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
   const isClusterMap      = panel.pillar === 'cluster_map';
   const isInternalLinking = panel.pillar === 'internal_linking';
   const isOffPage         = panel.pillar === 'off_page';
+  const isMonitoring      = panel.pillar === 'monitoring';
 
   return (
     <div style={{
@@ -1100,6 +1137,28 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
               }}>
               {offPageBusy ? <Loader2 size={9} className="animate-spin" /> : <ExternalLink size={9} />}
               {offPageBusy ? 'Generating…' : 'Generate off-page strategy'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 19 — Monitoring affordances */}
+      {isMonitoring && isActive && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(160,160,180,0.08)' }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRunMonitoring?.(panel); }}
+              disabled={monitoringBusy}
+              title="Capture snapshot + compare against prior snapshot. Surfaces meaningful changes since last check."
+              style={{
+                padding: '4px 8px', borderRadius: 5, fontSize: 9.5, fontWeight: 700,
+                border: `1px solid hsla(${statusHue} / 0.35)`,
+                background: `hsla(${statusHue} / 0.10)`, color: `hsl(${statusHue})`,
+                cursor: monitoringBusy ? 'wait' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+              {monitoringBusy ? <Loader2 size={9} className="animate-spin" /> : <TrendingUp size={9} />}
+              {monitoringBusy ? 'Checking…' : 'Run monitoring check'}
             </button>
           </div>
         </div>
