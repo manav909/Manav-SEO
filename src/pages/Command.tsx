@@ -289,6 +289,19 @@ function CommandInner() {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [selectedProjectId]);
 
+  /* Phase 21 Block 2.9 — listen for query-refire bus events from try_* actions */
+  useEffect(() => {
+    const unsub = subscribeAction('season_refire_query', (payload?: any) => {
+      const q = payload?.query;
+      if (typeof q === 'string' && q.trim().length > 0) {
+        setInput(q);
+        setTimeout(() => handleSubmit(undefined, q), 50);
+      }
+    });
+    return unsub;
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [selectedProjectId]);
+
   /* Derive S.E.A.S.O.N. mood from briefing state — drives orb color globally */
   useEffect(() => {
     if (!briefing) { setMood('quiet'); return; }
@@ -815,11 +828,19 @@ function CommandInner() {
                 key={response.intent + Date.now()}
                 response={response}
                 onClose={() => setResponse(null)}
-                onAction={async (actionId, payload) => {
+                onAction={async (actionId, payload, label) => {
                   const r = await runAction(actionId, payload);
                   if (r.ok && !(r as any).awaiting_confirm) {
-                    /* Action ran cleanly — close the response if it navigated us elsewhere */
                     if ((r as any).navigated) setResponse(null);
+                    return;
+                  }
+                  /* Phase 21 Block 2.9 — unknown-action fallback.
+                     If the LLM invented an action ID outside the registry,
+                     refire the button label as a chat query so the brain
+                     handles the intent. Never let a click silently fail. */
+                  if (!r.ok && /unknown action/i.test(r.message || '') && label) {
+                    setResponse(null);
+                    setTimeout(() => handleSubmit(undefined, label), 50);
                   }
                 }}
                 actionRunning={actionRunning}
@@ -1148,16 +1169,16 @@ function SeverityDot({ severity }: { severity: string }) {
 function ResponsePanel({ response, onClose, onAction, actionRunning }: {
   response: CommandResponseClient;
   onClose: () => void;
-  onAction?: (actionId: string, payload?: any) => void | Promise<void>;
+  onAction?: (actionId: string, payload?: any, label?: string) => void | Promise<void>;
   actionRunning?: boolean;
 }) {
   const [busyActionId, setBusyActionId] = useState<string | null>(null);
 
-  async function handleClick(actionId: string, payload?: any) {
+  async function handleClick(actionId: string, payload?: any, label?: string) {
     if (!onAction) return;
     setBusyActionId(actionId);
     try {
-      await onAction(actionId, payload);
+      await onAction(actionId, payload, label);
     } finally {
       setBusyActionId(null);
     }
@@ -1198,7 +1219,7 @@ function ResponsePanel({ response, onClose, onAction, actionRunning }: {
             return (
               <motion.button
                 key={a.id}
-                onClick={() => handleClick(a.id, a.payload)}
+                onClick={() => handleClick(a.id, a.payload, a.label)}
                 disabled={disabled}
                 whileHover={!disabled ? { scale: 1.03 } : undefined}
                 whileTap={!disabled ? { scale: 0.97 } : undefined}

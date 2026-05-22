@@ -80,6 +80,26 @@ export interface ActionDef {
 
 const REGISTRY = new Map<string, ActionDef>();
 
+/* LLM-prompt action ID aliases — the LLM is told to emit short IDs like
+   'open_planning' but the registry uses 'navigate_planning'. Map them. */
+const ACTION_ID_ALIASES: Record<string, string> = {
+  open_planning:    'navigate_planning',
+  open_data_room:   'navigate_data_room',
+  open_dashboard:   'navigate_dashboard',
+  open_audit:       'navigate_audit',
+  open_settings:    'navigate_season_settings',
+  open_command:     'navigate_command',
+  open_kanban:      'navigate_planning',
+  open_strategy:    'planning_open_strategy',
+  open_provenance:  'open_provenance_detail',
+  copy_artifact:    'copy_artifact_noop',
+  create_strategy:  'create_strategy_stub',
+};
+
+function resolveActionId(actionId: string): string {
+  return ACTION_ID_ALIASES[actionId] || actionId;
+}
+
 export function register(def: ActionDef) {
   /* Enforce the hard boundary: destructive actions ALWAYS confirm. */
   if (def.permission === 'destructive' && !def.confirm) {
@@ -95,7 +115,10 @@ export function register(def: ActionDef) {
 }
 
 export function getAction(id: string): ActionDef | undefined {
-  return REGISTRY.get(id);
+  /* Resolve through the LLM-prompt alias map first so callers that look up
+     by the prompt-emitted ID (e.g. useSeasonAction) still find the action. */
+  const resolved = ACTION_ID_ALIASES[id] || id;
+  return REGISTRY.get(resolved);
 }
 
 export function listActions(opts?: { scope?: ActionScope }): ActionDef[] {
@@ -173,7 +196,8 @@ export async function runAction(
   ctx: ActionContext,
   settings: SeasonSettings,
 ): Promise<ActionResult> {
-  const def = REGISTRY.get(actionId);
+  const resolvedId = resolveActionId(actionId);
+  const def = REGISTRY.get(resolvedId);
   if (!def) {
     return { ok: false, message: `Unknown action: "${actionId}".` };
   }
@@ -575,5 +599,115 @@ register({
     } catch (e: any) {
       return { ok: false, message: e?.message || 'Note add failed.' };
     }
+  },
+});
+
+/* ─── Phase 21 Block 2.9 — query-refire + summarize artifact actions ─── */
+
+register({
+  id:           'try_diagnose',
+  label:        'Diagnose the system',
+  description:  'Re-fire the "diagnose" command to surface bottlenecks and risks.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches:      [],
+  examples:     ['diagnose system', 'diagnose'],
+  handler:      async (ctx) => {
+    publishAction('season_refire_query', { query: 'diagnose' });
+    ctx.toast?.('Diagnosing…');
+    return { ok: true, message: 'Diagnosing…' };
+  },
+});
+
+register({
+  id:           'try_summarize',
+  label:        'Summarize this week',
+  description:  'Re-fire the weekly summary command.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches:      [],
+  examples:     ['summarize this week'],
+  handler:      async (ctx) => {
+    publishAction('season_refire_query', { query: 'Summarize this week' });
+    ctx.toast?.('Summarizing…');
+    return { ok: true, message: 'Summarizing…' };
+  },
+});
+
+register({
+  id:           'try_attention',
+  label:        'What needs me today?',
+  description:  'Re-fire the attention command.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches:      [],
+  examples:     ['what needs me today'],
+  handler:      async (ctx) => {
+    publishAction('season_refire_query', { query: 'What needs me today?' });
+    return { ok: true, message: 'Checking…' };
+  },
+});
+
+register({
+  id:           'try_help',
+  label:        'Help',
+  description:  'Re-fire the help command.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches:      [],
+  examples:     ['help'],
+  handler:      async () => {
+    publishAction('season_refire_query', { query: 'help' });
+    return { ok: true, message: 'Loading help…' };
+  },
+});
+
+register({
+  id:           'draft_client_recap',
+  label:        'Draft a client recap I can send',
+  description:  'Re-fire a command asking the chat brain to draft a weekly client recap.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches:      [],
+  examples:     ['draft a client recap'],
+  handler:      async (ctx) => {
+    publishAction('season_refire_query', { query: 'Draft a client recap I can send this week' });
+    ctx.toast?.('Drafting recap…');
+    return { ok: true, message: 'Drafting recap…' };
+  },
+});
+
+register({
+  id:           'copy_artifact_noop',
+  label:        'Copy artifact',
+  description:  'No-op placeholder — artifact panels already have their own Copy buttons. This exists so LLM-emitted "copy_artifact" actions resolve cleanly.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches:      [],
+  examples:     [],
+  handler:      async (ctx) => {
+    ctx.toast?.('Use the Copy button on the artifact panel above.');
+    return { ok: true, message: 'Use the Copy button on the artifact panel.' };
+  },
+});
+
+register({
+  id:           'create_strategy_stub',
+  label:        'Create a strategy',
+  description:  'Open the planning page where new strategies are created.',
+  permission:   'ui_only',
+  scope:        'global',
+  confirm:      false,
+  matches:      [],
+  examples:     [],
+  handler:      async (ctx) => {
+    ctx.navigate?.('/planning');
+    return { ok: true, navigated: true, message: 'Open the planning board to create a strategy.' };
   },
 });
