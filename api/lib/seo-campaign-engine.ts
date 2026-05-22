@@ -72,8 +72,7 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
     display_order: 6,
     goal_summary: 'Identify linkable assets, outreach targets, broken-link opportunities, brand mentions.',
     recheck_cadence_days: 14,
-    initial_status: 'scheduled',
-    scheduled_note: 'Activates in Phase 18 — linkable asset identification, prospect lists, outreach drafts.',
+    initial_status: 'active',                   // Phase 18 — linkable assets + prospect strategy
   },
   {
     pillar: 'monitoring',

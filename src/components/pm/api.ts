@@ -2756,3 +2756,40 @@ export async function seoInternalLinkingUpdateStatus(opts: {
   if (!r?.success) return { error: r?.error };
   return { success: true };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 18 — Off-Page Strategy client methods
+═══════════════════════════════════════════════════════════════ */
+
+export async function seoOffPageRun(opts: {
+  campaignId: string;
+  panelId?:   string;
+}): Promise<{
+  success?:             boolean;
+  audit_run_id?:        string;
+  existing_assets?:     number;
+  aspirational_assets?: number;
+  prospect_categories?: number;
+  report_id?:           string;
+  error?:               string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_off_page_run', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    success:              true,
+    audit_run_id:         r.audit_run_id,
+    existing_assets:      r.existing_assets,
+    aspirational_assets:  r.aspirational_assets,
+    prospect_categories:  r.prospect_categories,
+    report_id:            r.report_id,
+  };
+}
+
+export async function seoOffPageData(opts: {
+  panelId: string;
+  limit?:  number;
+}): Promise<{ assets?: any[]; prospects?: any[]; findings?: any[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_off_page_data', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { assets: r.assets, prospects: r.prospects, findings: r.findings };
+}

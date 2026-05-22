@@ -22,6 +22,7 @@ import {
   seoTechnicalAuditRun, seoTechnicalAuditSetTargetUrl,
   seoClusterMapRun,
   seoInternalLinkingRun,
+  seoOffPageRun,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
 } from './api';
 
@@ -519,6 +520,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [clusterBusyPanel, setClusterBusyPanel] = useState<string | null>(null);
   /* Phase 17 — internal linking state */
   const [linkingBusyPanel, setLinkingBusyPanel] = useState<string | null>(null);
+  /* Phase 18 — off-page state */
+  const [offPageBusyPanel, setOffPageBusyPanel] = useState<string | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -642,6 +645,35 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     }
   };
 
+  /* Phase 18 — off-page strategy handler */
+  const handleRunOffPage = async (panel: SeoCampaignPanel) => {
+    setOffPageBusyPanel(panel.id);
+    try {
+      const r = await seoOffPageRun({ campaignId, panelId: panel.id });
+      if (r.error) {
+        toast({ title: 'Off-page strategy failed', description: r.error, variant: 'destructive' });
+        return;
+      }
+      const existing = r.existing_assets || 0;
+      const aspirational = r.aspirational_assets || 0;
+      const prospects = r.prospect_categories || 0;
+      if (existing === 0 && aspirational === 0 && prospects === 0) {
+        toast({
+          title: 'Off-page strategy pending',
+          description: 'Not enough input data — see the report for what to run first.',
+        });
+      } else {
+        toast({
+          title: `${existing} existing + ${aspirational} to build`,
+          description: `${prospects} prospect categor${prospects === 1 ? 'y' : 'ies'} mapped with outreach angles. Open the report below.`,
+        });
+      }
+      await load();
+    } finally {
+      setOffPageBusyPanel(null);
+    }
+  };
+
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 9100,
@@ -690,9 +722,11 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                   onSetTargetUrl={handleSetTargetUrl}
                   onRunClusterMap={handleRunClusterMap}
                   onRunInternalLinking={handleRunInternalLinking}
+                  onRunOffPage={handleRunOffPage}
                   auditBusy={auditBusyPanel === p.id}
                   clusterBusy={clusterBusyPanel === p.id}
                   linkingBusy={linkingBusyPanel === p.id}
+                  offPageBusy={offPageBusyPanel === p.id}
                 />
               ))}
             </div>
@@ -916,15 +950,17 @@ function lifecycleBtnStyle(hue: string): React.CSSProperties {
   };
 }
 
-function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunInternalLinking, auditBusy, clusterBusy, linkingBusy }: {
+function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunInternalLinking, onRunOffPage, auditBusy, clusterBusy, linkingBusy, offPageBusy }: {
   panel: SeoCampaignPanel;
   onRunAudit?:           (panel: SeoCampaignPanel) => void;
   onSetTargetUrl?:       (panel: SeoCampaignPanel) => void;
   onRunClusterMap?:      (panel: SeoCampaignPanel) => void;
   onRunInternalLinking?: (panel: SeoCampaignPanel) => void;
+  onRunOffPage?:         (panel: SeoCampaignPanel) => void;
   auditBusy?:            boolean;
   clusterBusy?:          boolean;
   linkingBusy?:          boolean;
+  offPageBusy?:          boolean;
 }) {
   const Icon = PILLAR_ICON[panel.pillar] || FileText;
   const isActive = panel.status === 'active';
@@ -933,6 +969,7 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
   const isTechnicalAudit  = panel.pillar === 'technical_audit';
   const isClusterMap      = panel.pillar === 'cluster_map';
   const isInternalLinking = panel.pillar === 'internal_linking';
+  const isOffPage         = panel.pillar === 'off_page';
 
   return (
     <div style={{
@@ -1041,6 +1078,28 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
               }}>
               {linkingBusy ? <Loader2 size={9} className="animate-spin" /> : <Link2 size={9} />}
               {linkingBusy ? 'Auditing…' : 'Run linking audit'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 18 — Off-page strategy affordances */}
+      {isOffPage && isActive && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(160,160,180,0.08)' }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRunOffPage?.(panel); }}
+              disabled={offPageBusy}
+              title="Generate off-page strategy: linkable assets, asset gaps, prospect categories, outreach angles"
+              style={{
+                padding: '4px 8px', borderRadius: 5, fontSize: 9.5, fontWeight: 700,
+                border: `1px solid hsla(${statusHue} / 0.35)`,
+                background: `hsla(${statusHue} / 0.10)`, color: `hsl(${statusHue})`,
+                cursor: offPageBusy ? 'wait' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+              {offPageBusy ? <Loader2 size={9} className="animate-spin" /> : <ExternalLink size={9} />}
+              {offPageBusy ? 'Generating…' : 'Generate off-page strategy'}
             </button>
           </div>
         </div>

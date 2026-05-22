@@ -193,3 +193,21 @@ export async function bsSeoInternalLinkingUpdateStatus(body: any): Promise<any> 
   const { updateRecommendationStatus } = await import("./seo-internal-linking.js");
   return updateRecommendationStatus({ recommendationId, status, note });
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 18 — Off-page strategy routes
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoOffPageRun(body: any): Promise<any> {
+  const { campaignId, panelId } = body || {};
+  if (!campaignId) return { success: false, error: "campaignId required" };
+  const { runOffPageStrategy } = await import("./seo-off-page.js");
+  return runOffPageStrategy({ campaignId, panelId, triggeredBy: 'manual' });
+}
+
+export async function bsSeoOffPageData(body: any): Promise<any> {
+  const { panelId, limit } = body || {};
+  if (!panelId) return { success: false, error: "panelId required" };
+  const { getPanelOffPageData } = await import("./seo-off-page.js");
+  return getPanelOffPageData({ panelId, limit });
+}
