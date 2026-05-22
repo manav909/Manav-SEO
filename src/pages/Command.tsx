@@ -1084,7 +1084,7 @@ function GreetingBlock({ briefing, project }: { briefing: BriefingClient; projec
     <div className="pt-8 pb-2">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
         className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground/60 mb-2 flex items-center gap-2">
-        <Building2 className="h-3 w-3" />{project?.project_name || briefing.project_name}
+        <Building2 className="h-3 w-3" />{project?.project_name || project?.name || briefing.project_name}
         <span className="text-cyan-400/60">·</span><span className="text-cyan-400">S.E.A.S.O.N.</span>
       </motion.div>
       <h1 className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight leading-tight min-h-[2.5rem]">
