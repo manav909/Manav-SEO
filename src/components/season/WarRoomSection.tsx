@@ -94,10 +94,26 @@ export default function WarRoomSection({ projectId, onLaunchCommand }: Props) {
     );
   }
 
-  const g = briefing.grounded;
-  const e = briefing.exploratory;
+  /* Defensive defaults — backend always returns these, but guard against
+     payload-shape surprises so the page never crashes the whole UI. */
+  const g = {
+    recoverable_opportunities: Array.isArray(briefing.grounded?.recoverable_opportunities) ? briefing.grounded.recoverable_opportunities : [],
+    top_performers:            Array.isArray(briefing.grounded?.top_performers)            ? briefing.grounded.top_performers            : [],
+    existing_campaigns:        Array.isArray(briefing.grounded?.existing_campaigns)        ? briefing.grounded.existing_campaigns        : [],
+    inbox_opportunities:       Array.isArray(briefing.grounded?.inbox_opportunities)       ? briefing.grounded.inbox_opportunities       : [],
+  };
+  const exp = {
+    worth_exploring:           Array.isArray(briefing.exploratory?.worth_exploring)        ? briefing.exploratory.worth_exploring        : [],
+    positioning_gaps:          Array.isArray(briefing.exploratory?.positioning_gaps)       ? briefing.exploratory.positioning_gaps       : [],
+  };
+  const lockedItems = Array.isArray(briefing.locked?.items) ? briefing.locked.items : [];
+  const toolsStatus = briefing.tools_status || {
+    gsc_connected: false, gsc_last_refresh: null,
+    ga4_connected: false, ga4_last_refresh: null,
+    positioning_resolved: false, positioning_last_refresh: null,
+  };
   const groundedCount = g.recoverable_opportunities.length + g.top_performers.length + g.existing_campaigns.length + g.inbox_opportunities.length;
-  const exploratoryCount = e.worth_exploring.length + e.positioning_gaps.length;
+  const exploratoryCount = exp.worth_exploring.length + exp.positioning_gaps.length;
 
   return (
     <div className="mt-10 space-y-6">
@@ -140,7 +156,7 @@ export default function WarRoomSection({ projectId, onLaunchCommand }: Props) {
           tone="cyan">
           {g.recoverable_opportunities.length === 0 && (
             <EmptyState
-              text={briefing.tools_status.gsc_connected
+              text={toolsStatus.gsc_connected
                 ? 'No queries in the recoverable zone (pos 10–30, ≥20 imp/mo) right now.'
                 : 'GSC not connected.'}
             />
@@ -170,7 +186,7 @@ export default function WarRoomSection({ projectId, onLaunchCommand }: Props) {
           subtitle={`${g.top_performers.length} queries already ranking strong`}
           tone="emerald">
           {g.top_performers.length === 0 && (
-            <EmptyState text={briefing.tools_status.gsc_connected ? 'No queries ranking ≤ 10 with ≥ 50 imp/mo yet.' : 'GSC not connected.'} />
+            <EmptyState text={toolsStatus.gsc_connected ? 'No queries ranking ≤ 10 with ≥ 50 imp/mo yet.' : 'GSC not connected.'} />
           )}
           {g.top_performers.map((o, i) => (
             <Row
@@ -204,7 +220,7 @@ export default function WarRoomSection({ projectId, onLaunchCommand }: Props) {
               <RowLine main={
                 <>
                   <span className="text-foreground">"{c.keyword}"</span>
-                  {c.keyword_group.length > 1 && (
+                  {Array.isArray(c.keyword_group) && c.keyword_group.length > 1 && (
                     <span className="text-muted-foreground"> + {c.keyword_group.length - 1} more</span>
                   )}
                   <span className="text-muted-foreground"> · {c.status}{c.current_position ? ` · pos ${Number(c.current_position).toFixed(1)}` : ''}</span>
@@ -258,24 +274,24 @@ export default function WarRoomSection({ projectId, onLaunchCommand }: Props) {
         count={exploratoryCount}
       />
 
-      {!briefing.tools_status.positioning_resolved && (
+      {!toolsStatus.positioning_resolved && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3 text-xs text-muted-foreground/80">
           Project positioning hasn't been resolved yet — the exploratory tier appears after the first campaign triggers the positioning resolver.
         </div>
       )}
 
-      {briefing.tools_status.positioning_resolved && (
+      {toolsStatus.positioning_resolved && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Worth exploring */}
           <Panel
             icon={<Compass className="h-3.5 w-3.5" />}
             title="Worth exploring"
-            subtitle={`${e.worth_exploring.length} keywords adjacent to your positioning (not yet in GSC)`}
+            subtitle={`${exp.worth_exploring.length} keywords adjacent to your positioning (not yet in GSC)`}
             tone="amber-soft">
-            {e.worth_exploring.length === 0 && (
+            {exp.worth_exploring.length === 0 && (
               <EmptyState text="LLM didn't find strong adjacent keywords beyond what you already have signal for." />
             )}
-            {e.worth_exploring.map((x, i) => (
+            {exp.worth_exploring.map((x, i) => (
               <Row
                 key={i}
                 onClick={onLaunchCommand ? () => onLaunchCommand(`what about ${x.keyword}?`) : undefined}>
@@ -294,7 +310,7 @@ export default function WarRoomSection({ projectId, onLaunchCommand }: Props) {
                 <div className="text-[11px] text-muted-foreground/80 mt-1 leading-relaxed">
                   {x.reasoning}
                 </div>
-                {x.positioning_citations.length > 0 && (
+                {Array.isArray(x.positioning_citations) && x.positioning_citations.length > 0 && (
                   <div className="text-[9px] text-muted-foreground/55 mt-1 italic">
                     From positioning: {x.positioning_citations.map(c => `"${c}"`).join(', ')}
                   </div>
@@ -308,30 +324,30 @@ export default function WarRoomSection({ projectId, onLaunchCommand }: Props) {
           <Panel
             icon={<MapPin className="h-3.5 w-3.5" />}
             title="Positioning gaps"
-            subtitle={`${e.positioning_gaps.length} claimed strengths with no GSC presence`}
+            subtitle={`${exp.positioning_gaps.length} claimed strengths with no GSC presence`}
             tone="rose">
-            {e.positioning_gaps.length === 0 && (
+            {exp.positioning_gaps.length === 0 && (
               <EmptyState text="Your positioning claims are all backed by at least some GSC signal — no blind spots flagged." />
             )}
-            {e.positioning_gaps.map((g, i) => (
+            {exp.positioning_gaps.map((gap, i) => (
               <Row key={i}>
                 <RowLine main={
-                  <span className="text-foreground">{g.topical_area}</span>
+                  <span className="text-foreground">{gap.topical_area}</span>
                 } />
                 <div className="text-[11px] text-muted-foreground/80 mt-1 leading-relaxed">
-                  {g.reasoning}
+                  {gap.reasoning}
                 </div>
-                {g.gsc_absence_note && (
+                {gap.gsc_absence_note && (
                   <div className="text-[9px] text-rose-300/70 mt-1">
-                    Absence check: {g.gsc_absence_note}
+                    Absence check: {gap.gsc_absence_note}
                   </div>
                 )}
-                {g.positioning_citations.length > 0 && (
+                {Array.isArray(gap.positioning_citations) && gap.positioning_citations.length > 0 && (
                   <div className="text-[9px] text-muted-foreground/55 mt-1 italic">
-                    Claimed in positioning: {g.positioning_citations.map(c => `"${c}"`).join(', ')}
+                    Claimed in positioning: {gap.positioning_citations.map(c => `"${c}"`).join(', ')}
                   </div>
                 )}
-                <SourceBadge source={g.source} />
+                <SourceBadge source={gap.source} />
               </Row>
             ))}
           </Panel>
@@ -346,12 +362,12 @@ export default function WarRoomSection({ projectId, onLaunchCommand }: Props) {
         kind="locked"
         label="LOCKED"
         sublabel="requires external integrations"
-        count={briefing.locked.items.length}
+        count={lockedItems.length}
       />
 
       <div className="rounded-xl border border-border/50 bg-card/30 p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {briefing.locked.items.map((item, i) => (
+          {lockedItems.map((item, i) => (
             <div key={i} className="rounded-lg border border-border/40 bg-card/40 p-3">
               <div className="text-xs font-semibold text-foreground/90">{item.label}</div>
               <div className="text-[11px] text-muted-foreground/80 mt-1 leading-relaxed">{item.description}</div>
