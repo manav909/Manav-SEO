@@ -849,6 +849,20 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoReportSearch(body);
     }
 
+    /* Phase 15 — technical audit pillar */
+    case "bs_seo_technical_audit_run": {
+      const { bsSeoTechnicalAuditRun } = await import("./seo-campaign-routes.js");
+      return bsSeoTechnicalAuditRun(body);
+    }
+    case "bs_seo_technical_audit_set_target_url": {
+      const { bsSeoTechnicalAuditSetTargetUrl } = await import("./seo-campaign-routes.js");
+      return bsSeoTechnicalAuditSetTargetUrl(body);
+    }
+    case "bs_seo_technical_audit_findings": {
+      const { bsSeoTechnicalAuditFindings } = await import("./seo-campaign-routes.js");
+      return bsSeoTechnicalAuditFindings(body);
+    }
+
     /* Phase 12.5a — forecasts + monitoring */
     case "bs_season_forecast_list": {
       const { bsSeasonForecastList } = await import("./season-forecast-routes.js");

@@ -2412,6 +2412,9 @@ export interface SeoCampaignPanel {
   current_summary:     string | null;
   current_findings:    any | null;
   scheduled_note:      string | null;
+  /* Phase 15 — technical audit target URL fields */
+  target_url?:         string | null;
+  target_url_source?:  string | null;
 }
 
 export interface SeoCampaignReport {
@@ -2623,4 +2626,51 @@ export async function seasonPipelineSkipStep(opts: {
   const r = await post(ENGINE, { action: 'bs_season_pipeline_skip_step', ...opts });
   if (!r?.success) return { error: r?.error };
   return { success: true };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 15 — Technical Audit client methods
+═══════════════════════════════════════════════════════════════ */
+
+export async function seoTechnicalAuditRun(opts: {
+  campaignId: string;
+  panelId?:   string;
+  manualUrl?: string;
+}): Promise<{
+  success?: boolean;
+  audit_run_id?: string;
+  audited_url?:  string;
+  findings_count?: number;
+  red_count?: number;
+  amber_count?: number;
+  report_id?: string;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_technical_audit_run', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    success: true,
+    audit_run_id:   r.audit_run_id,
+    audited_url:    r.audited_url,
+    findings_count: r.findings_count,
+    red_count:      r.red_count,
+    amber_count:    r.amber_count,
+    report_id:      r.report_id,
+  };
+}
+
+export async function seoTechnicalAuditSetTargetUrl(opts: {
+  panelId: string; url: string;
+}): Promise<{ success?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_technical_audit_set_target_url', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
+}
+
+export async function seoTechnicalAuditFindings(opts: {
+  panelId: string; limit?: number;
+}): Promise<{ findings?: any[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_technical_audit_findings', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { findings: r.findings };
 }

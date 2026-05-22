@@ -51,8 +51,7 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
     display_order: 3,
     goal_summary: 'Audit target page on-page, indexability, Core Web Vitals; recommend prioritized fixes.',
     recheck_cadence_days: 7,
-    initial_status: 'scheduled',
-    scheduled_note: 'Activates in Phase 15 — page crawl + GSC indexability + GA4 engagement + CWV audit + prioritized recommendations.',
+    initial_status: 'active',                  // Phase 15 — audits target page when one exists
   },
   {
     pillar: 'cluster_map',

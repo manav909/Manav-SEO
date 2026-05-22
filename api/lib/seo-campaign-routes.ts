@@ -125,3 +125,28 @@ export async function bsSeoReportSearch(body: any): Promise<any> {
   const { searchReportsAcrossCampaigns } = await import("./seo-campaign-engine.js");
   return searchReportsAcrossCampaigns({ projectId, query, pillar, reportKind, tag, limit });
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 15 — Technical Audit routes
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoTechnicalAuditRun(body: any): Promise<any> {
+  const { campaignId, panelId, manualUrl } = body || {};
+  if (!campaignId) return { success: false, error: "campaignId required" };
+  const { runTechnicalAudit } = await import("./seo-technical-audit.js");
+  return runTechnicalAudit({ campaignId, panelId, manualUrl, triggeredBy: 'manual' });
+}
+
+export async function bsSeoTechnicalAuditSetTargetUrl(body: any): Promise<any> {
+  const { panelId, url } = body || {};
+  if (!panelId || !url) return { success: false, error: "panelId and url required" };
+  const { setPanelTargetUrl } = await import("./seo-technical-audit.js");
+  return setPanelTargetUrl({ panelId, url });
+}
+
+export async function bsSeoTechnicalAuditFindings(body: any): Promise<any> {
+  const { panelId, limit } = body || {};
+  if (!panelId) return { success: false, error: "panelId required" };
+  const { getPanelFindings } = await import("./seo-technical-audit.js");
+  return getPanelFindings({ panelId, limit });
+}

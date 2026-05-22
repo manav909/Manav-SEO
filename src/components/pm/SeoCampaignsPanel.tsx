@@ -19,6 +19,7 @@ import {
   seoCampaignList, seoCampaignGet, seoCampaignPause, seoCampaignResume,
   seoCampaignArchive, seoCampaignOverviewRefresh,
   seoOpportunityList, seoOpportunityPromoteToCampaign, seoOpportunityDismiss,
+  seoTechnicalAuditRun, seoTechnicalAuditSetTargetUrl,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
 } from './api';
 
@@ -509,6 +510,9 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [error, setError] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<SeoCampaignReport | null>(null);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
+  /* Phase 15 — audit state */
+  const [auditBusyPanel, setAuditBusyPanel] = useState<string | null>(null);
+  const [urlPromptPanel, setUrlPromptPanel] = useState<SeoCampaignPanel | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -533,6 +537,47 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     else toast({ title: 'Overview regenerated' });
     await load();
     setRefreshingOverview(false);
+  };
+
+  /* Phase 15 — audit handlers */
+  const handleRunAudit = async (panel: SeoCampaignPanel) => {
+    setAuditBusyPanel(panel.id);
+    try {
+      const r = await seoTechnicalAuditRun({ campaignId, panelId: panel.id });
+      if (r.error) {
+        toast({ title: 'Audit failed', description: r.error, variant: 'destructive' });
+        return;
+      }
+      if (!r.audited_url) {
+        toast({ title: 'Audit pending', description: 'No target URL — set one to enable audits.' });
+      } else {
+        const critical = (r.red_count || 0);
+        const warnings = (r.amber_count || 0);
+        toast({
+          title: critical > 0 ? `🔴 ${critical} critical issue${critical === 1 ? '' : 's'} found` : warnings > 0 ? `🟡 ${warnings} warning${warnings === 1 ? '' : 's'} found` : `🟢 Page passed`,
+          description: `${r.findings_count || 0} total findings. Open the report below to review.`,
+        });
+      }
+      await load();
+    } finally {
+      setAuditBusyPanel(null);
+    }
+  };
+
+  const handleSetTargetUrl = async (panel: SeoCampaignPanel) => {
+    setUrlPromptPanel(panel);
+  };
+
+  const handleSubmitTargetUrl = async (url: string) => {
+    if (!urlPromptPanel) return;
+    const r = await seoTechnicalAuditSetTargetUrl({ panelId: urlPromptPanel.id, url });
+    if (r.error) {
+      toast({ title: 'Set URL failed', description: r.error, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Target URL saved' });
+    setUrlPromptPanel(null);
+    await load();
   };
 
   return (
@@ -577,7 +622,12 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
               marginBottom: 20,
             }}>
               {(data.panels || []).map((p: SeoCampaignPanel) => (
-                <PanelCard key={p.id} panel={p} />
+                <PanelCard
+                  key={p.id} panel={p}
+                  onRunAudit={handleRunAudit}
+                  onSetTargetUrl={handleSetTargetUrl}
+                  auditBusy={auditBusyPanel === p.id}
+                />
               ))}
             </div>
 
@@ -709,8 +759,81 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
             {selectedReport && (
               <ReportViewer report={selectedReport} onClose={() => setSelectedReport(null)} />
             )}
+
+            {/* Phase 15 — Set target URL modal */}
+            {urlPromptPanel && (
+              <SetTargetUrlModal
+                panel={urlPromptPanel}
+                onSubmit={handleSubmitTargetUrl}
+                onCancel={() => setUrlPromptPanel(null)}
+              />
+            )}
           </>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Phase 15 — Set Target URL modal ─────────────────────── */
+function SetTargetUrlModal({ panel, onSubmit, onCancel }: {
+  panel: SeoCampaignPanel;
+  onSubmit: (url: string) => void;
+  onCancel: () => void;
+}) {
+  const [url, setUrl] = useState<string>(panel.target_url || '');
+  const isValid = /^https?:\/\/.+/i.test(url.trim());
+  return (
+    <div onClick={onCancel} style={{
+      position: 'fixed', inset: 0, zIndex: 9200,
+      background: 'rgba(0,0,0,0.65)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        maxWidth: 520, width: '100%',
+        background: 'linear-gradient(180deg, #1a1b27 0%, #0f1018 100%)',
+        border: '1px solid rgba(160,160,180,0.2)', borderRadius: 14, padding: 22,
+      }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, marginBottom: 6 }}>
+          Set target URL for technical audit
+        </h3>
+        <p style={{ fontSize: 12, color: 'rgba(150,150,170,0.85)', marginBottom: 14, lineHeight: 1.5 }}>
+          This is the URL the technical audit will check (HTTP status, on-page elements, Core Web Vitals, schema, etc.). Use the full URL including https://.
+        </p>
+        <input
+          type="text"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="https://example.com/your-page"
+          autoFocus
+          onKeyDown={e => { if (e.key === 'Enter' && isValid) onSubmit(url.trim()); }}
+          style={{
+            width: '100%', padding: '10px 12px', borderRadius: 8,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(160,160,180,0.2)',
+            color: 'rgba(220,220,235,0.95)',
+            fontSize: 13, outline: 'none',
+            marginBottom: 14,
+          }}
+        />
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} style={{
+            padding: '8px 14px', borderRadius: 7,
+            border: '1px solid rgba(160,160,180,0.2)',
+            background: 'transparent', color: 'rgba(150,150,170,0.85)',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>Cancel</button>
+          <button
+            onClick={() => isValid && onSubmit(url.trim())}
+            disabled={!isValid}
+            style={{
+              padding: '8px 14px', borderRadius: 7,
+              border: `1px solid rgba(186,200,255,${isValid ? 0.35 : 0.15})`,
+              background: `rgba(186,200,255,${isValid ? 0.15 : 0.05})`,
+              color: '#a5f3fc', fontSize: 12, fontWeight: 700,
+              cursor: isValid ? 'pointer' : 'not-allowed',
+            }}>Save URL</button>
+        </div>
       </div>
     </div>
   );
@@ -727,11 +850,18 @@ function lifecycleBtnStyle(hue: string): React.CSSProperties {
   };
 }
 
-function PanelCard({ panel }: { panel: SeoCampaignPanel }) {
+function PanelCard({ panel, onRunAudit, onSetTargetUrl, auditBusy }: {
+  panel: SeoCampaignPanel;
+  onRunAudit?:     (panel: SeoCampaignPanel) => void;
+  onSetTargetUrl?: (panel: SeoCampaignPanel) => void;
+  auditBusy?:      boolean;
+}) {
   const Icon = PILLAR_ICON[panel.pillar] || FileText;
   const isActive = panel.status === 'active';
   const isScheduled = panel.status === 'scheduled';
   const statusHue = STATUS_HUE[panel.current_status || panel.status] || STATUS_HUE.scheduled;
+  const isTechnicalAudit = panel.pillar === 'technical_audit';
+
   return (
     <div style={{
       padding: 12, borderRadius: 10,
@@ -750,6 +880,53 @@ function PanelCard({ panel }: { panel: SeoCampaignPanel }) {
       {isActive && panel.next_recheck_at && (
         <div style={{ fontSize: 9.5, color: 'rgba(120,120,140,0.7)', marginTop: 5, display: 'flex', alignItems: 'center', gap: 3 }}>
           <Clock size={9} /> Next: {new Date(panel.next_recheck_at).toLocaleDateString()}
+        </div>
+      )}
+
+      {/* Phase 15 — Technical audit affordances */}
+      {isTechnicalAudit && isActive && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(160,160,180,0.08)' }}>
+          {panel.target_url ? (
+            <div style={{ fontSize: 9.5, color: 'rgba(150,150,170,0.85)', marginBottom: 6, wordBreak: 'break-all' }}>
+              <span style={{ opacity: 0.6 }}>URL:</span> {panel.target_url}
+              {panel.target_url_source && (
+                <span style={{ opacity: 0.5, marginLeft: 4 }}>({panel.target_url_source})</span>
+              )}
+            </div>
+          ) : (
+            <div style={{ fontSize: 9.5, color: 'rgba(251, 146, 60, 0.85)', marginBottom: 6 }}>
+              No target URL set — audits will be pending.
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRunAudit?.(panel); }}
+              disabled={auditBusy}
+              title="Run a technical audit now"
+              style={{
+                padding: '4px 8px', borderRadius: 5, fontSize: 9.5, fontWeight: 700,
+                border: `1px solid hsla(${statusHue} / 0.35)`,
+                background: `hsla(${statusHue} / 0.10)`, color: `hsl(${statusHue})`,
+                cursor: auditBusy ? 'wait' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+              {auditBusy ? <Loader2 size={9} className="animate-spin" /> : <Activity size={9} />}
+              {auditBusy ? 'Running…' : 'Run audit now'}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onSetTargetUrl?.(panel); }}
+              title="Set a target URL manually"
+              style={{
+                padding: '4px 8px', borderRadius: 5, fontSize: 9.5, fontWeight: 700,
+                border: '1px solid rgba(160,160,180,0.25)',
+                background: 'transparent', color: 'rgba(180,180,200,0.85)',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+              <Target size={9} />
+              {panel.target_url ? 'Change URL' : 'Set URL'}
+            </button>
+          </div>
         </div>
       )}
     </div>
