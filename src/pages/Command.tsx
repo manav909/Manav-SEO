@@ -33,6 +33,8 @@ import ModeToggle, { readSavedMode, saveMode, type CommandMode } from '@/compone
 import ActionDeck from '@/components/season/ActionDeck';
 import ProjectPulse from '@/components/season/ProjectPulse';
 import CasualDigest from '@/components/season/CasualDigest';
+import ManavsPick from '@/components/season/ManavsPick';
+import StatusStrip from '@/components/season/StatusStrip';
 import { consumeHandoff } from '@/components/season/ChatHandoff';
 import { DURATION, FEATHER_EASE, modeSwitchVariants } from '@/components/season/warRoomAnimations';
 import {
@@ -49,6 +51,7 @@ import {
   /* Phase 21 Block 2.11 Phase A — unified war room v2 */
   seoWarRoomBriefingV2,
   type UnifiedPriorityItemClient, type ScorecardCellClient,
+  type WarRoomBriefingV2Client,
 } from '@/components/pm/api';
 
 /* Phase 21 Block 2.5 — relative time display for source freshness */
@@ -260,6 +263,7 @@ function CommandInner() {
   const [mode, setMode] = useState<CommandMode>(() => readSavedMode());
   const [unifiedFeed, setUnifiedFeed]   = useState<UnifiedPriorityItemClient[]>([]);
   const [scorecard, setScorecard]       = useState<ScorecardCellClient[]>([]);
+  const [warRoomBriefing, setWarRoomBriefing] = useState<WarRoomBriefingV2Client | null>(null);
   const [warRoomLoading, setWarRoomLoading] = useState<boolean>(false);
   const [handoffNotice, setHandoffNotice]   = useState<string | null>(null);
 
@@ -456,6 +460,7 @@ function CommandInner() {
     if (!selectedProjectId) {
       setUnifiedFeed([]);
       setScorecard([]);
+      setWarRoomBriefing(null);
       return;
     }
     let cancelled = false;
@@ -467,14 +472,17 @@ function CommandInner() {
         if (r.briefing) {
           setUnifiedFeed(r.briefing.unified_feed || []);
           setScorecard(r.briefing.scorecard || []);
+          setWarRoomBriefing(r.briefing);
         } else {
           setUnifiedFeed([]);
           setScorecard([]);
+          setWarRoomBriefing(null);
         }
       } catch {
         if (!cancelled) {
           setUnifiedFeed([]);
           setScorecard([]);
+          setWarRoomBriefing(null);
         }
       } finally {
         if (!cancelled) setWarRoomLoading(false);
@@ -1062,10 +1070,9 @@ function CommandInner() {
             </motion.div>
           )}
 
-          {/* Phase 21 Block 2.11 — mode-aware layout.
-              CASUAL: editorial reading digest (Pick of the day + In your world)
-                       above the existing calm WhatNeedsYou + WarRoom.
-              PRO: full-width 2-column ActionDeck + ProjectPulse. */}
+          {/* Phase 21 Block 2.12 — mode-aware layout.
+              CASUAL: Manav's Pick external reading feed above WhatNeedsYou + WarRoom.
+              PRO: StatusStrip + 2-column ActionDeck + ProjectPulse. */}
           <AnimatePresence mode="wait">
             {mode === 'casual' ? (
               <motion.div
@@ -1074,14 +1081,14 @@ function CommandInner() {
                 initial="hidden"
                 animate="visible"
                 exit="exit">
-                {/* The pre-coffee read */}
+                {/* The pre-coffee read — external editorial feed */}
                 {!response && !explorationResponse && !pendingStructure && (
-                  <CasualDigest
+                  <ManavsPick
                     projectId={selectedProjectId}
                     onLaunchCommand={runChatCommand}
                   />
                 )}
-                {/* Existing calm priority view continues below the digest */}
+                {/* Existing calm priority view continues below */}
                 {!loading && briefing && !response && !pendingStructure && !explorationResponse && (
                   <WhatNeedsYou
                     attentionItems={briefing.attention}
@@ -1103,28 +1110,35 @@ function CommandInner() {
                 variants={modeSwitchVariants}
                 initial="hidden"
                 animate="visible"
-                exit="exit"
-                className="mt-8 grid grid-cols-1 lg:grid-cols-[58fr_42fr] gap-6">
-                {/* LEFT — Action Deck */}
-                <div className="min-w-0">
-                  {!response && !explorationResponse && !pendingStructure && (
-                    <ActionDeck
+                exit="exit">
+                {/* Status strip at top of Pro — cockpit row, always visible */}
+                <StatusStrip
+                  briefing={warRoomBriefing}
+                  loading={warRoomLoading}
+                  onLaunchCommand={runChatCommand}
+                />
+                <div className="mt-8 grid grid-cols-1 lg:grid-cols-[58fr_42fr] gap-6">
+                  {/* LEFT — Action Deck */}
+                  <div className="min-w-0">
+                    {!response && !explorationResponse && !pendingStructure && (
+                      <ActionDeck
+                        projectId={selectedProjectId}
+                        unifiedFeed={unifiedFeed}
+                        loading={warRoomLoading}
+                        filterTerm={extractKeywordFragment(input)}
+                        onLaunchCommand={runChatCommand}
+                      />
+                    )}
+                  </div>
+                  {/* RIGHT — Project Pulse with real panels */}
+                  <div className="min-w-0">
+                    <ProjectPulse
                       projectId={selectedProjectId}
-                      unifiedFeed={unifiedFeed}
+                      scorecard={scorecard}
                       loading={warRoomLoading}
-                      filterTerm={extractKeywordFragment(input)}
                       onLaunchCommand={runChatCommand}
                     />
-                  )}
-                </div>
-                {/* RIGHT — Project Pulse with real panels */}
-                <div className="min-w-0">
-                  <ProjectPulse
-                    projectId={selectedProjectId}
-                    scorecard={scorecard}
-                    loading={warRoomLoading}
-                    onLaunchCommand={runChatCommand}
-                  />
+                  </div>
                 </div>
               </motion.div>
             )}

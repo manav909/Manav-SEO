@@ -403,3 +403,42 @@ export async function bsSeoCasualDigest(body: any): Promise<any> {
   const { getCasualDigest } = await import("./season-war-room-extras.js");
   return getCasualDigest({ projectId });
 }
+
+/* Phase 21 Block 2.12 — Manav's Pick external feed + LLM pre-computes */
+
+export async function bsSeoManavsPick(body: any): Promise<any> {
+  const { projectId, force } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getProjectFeed } = await import("./season-manavs-pick.js");
+  return getProjectFeed({ projectId, force: !!force });
+}
+
+export async function bsSeoManavsPickAction(body: any): Promise<any> {
+  const { projectId, feedItemId, action, reason } = body || {};
+  if (!projectId)  return { success: false, error: "projectId required" };
+  if (!feedItemId) return { success: false, error: "feedItemId required" };
+  if (!action)     return { success: false, error: "action required" };
+  const { recordFeedAction } = await import("./season-manavs-pick.js");
+  return recordFeedAction({ projectId, feedItemId, action, reason });
+}
+
+export async function bsSeoManavsPickPull(_body: any): Promise<any> {
+  /* Admin-style force-pull. Useful for testing. */
+  const { pullGlobalFeed } = await import("./season-manavs-pick.js");
+  const r = await pullGlobalFeed();
+  return { success: true, pulled: r.pulled, failed: r.failed };
+}
+
+export async function bsSeoClientQuestions(body: any): Promise<any> {
+  const { projectId, force } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getClientQuestions } = await import("./season-llm-precomputes.js");
+  return getClientQuestions({ projectId, force: !!force });
+}
+
+export async function bsSeoClientRecap(body: any): Promise<any> {
+  const { projectId, force } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getClientRecap } = await import("./season-llm-precomputes.js");
+  return getClientRecap({ projectId, force: !!force });
+}

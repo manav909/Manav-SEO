@@ -922,6 +922,31 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoCasualDigest(body);
     }
 
+    case "bs_seo_manavs_pick": {
+      const { bsSeoManavsPick } = await import("./seo-campaign-routes.js");
+      return bsSeoManavsPick(body);
+    }
+
+    case "bs_seo_manavs_pick_action": {
+      const { bsSeoManavsPickAction } = await import("./seo-campaign-routes.js");
+      return bsSeoManavsPickAction(body);
+    }
+
+    case "bs_seo_manavs_pick_pull": {
+      const { bsSeoManavsPickPull } = await import("./seo-campaign-routes.js");
+      return bsSeoManavsPickPull(body);
+    }
+
+    case "bs_seo_client_questions": {
+      const { bsSeoClientQuestions } = await import("./seo-campaign-routes.js");
+      return bsSeoClientQuestions(body);
+    }
+
+    case "bs_seo_client_recap": {
+      const { bsSeoClientRecap } = await import("./seo-campaign-routes.js");
+      return bsSeoClientRecap(body);
+    }
+
     /* Phase 14.1 — unification adapters */
     case "bs_seo_opportunity_from_alert": {
       const { bsSeoOpportunityFromAlert } = await import("./seo-campaign-routes.js");

@@ -19,13 +19,16 @@ import {
   Activity, BarChart3, FileCheck, Eye, Timer, FileText,
   TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown, ArrowRight,
   CheckCircle2, AlertTriangle, Clock, XCircle, Sparkles, ExternalLink,
+  MessageCircleQuestion, Copy, Mail,
 } from 'lucide-react';
 import {
   seoPillarHealthMatrix, seoPerformancePulse, seoDecisionsLog,
   seoVelocityStats, seoNoticedObservations,
+  seoClientQuestions, seoClientRecap,
   type ScorecardCellClient, type PillarHealthCardClient,
   type PerformancePulseClient, type DecisionLogEntryClient,
   type VelocityStatsClient, type NoticedObservationClient,
+  type ClientQuestionClient, type ClientRecapClient,
 } from '@/components/pm/api';
 import { cascadeContainerVariants, cascadeItemVariants, DURATION, FEATHER_EASE } from './warRoomAnimations';
 
@@ -44,26 +47,33 @@ export default function ProjectPulse({ projectId, scorecard, loading, onLaunchCo
   const [decisionsTotal, setDecisionsTotal] = useState(0);
   const [velocity, setVelocity]           = useState<VelocityStatsClient | null>(null);
   const [noticed, setNoticed]             = useState<NoticedObservationClient[]>([]);
+  const [questions, setQuestions]         = useState<ClientQuestionClient[]>([]);
+  const [recap, setRecap]                 = useState<ClientRecapClient | null>(null);
   const [pillarLoading, setPillarLoading]     = useState(false);
   const [pulseLoading, setPulseLoading]       = useState(false);
   const [decisionsLoading, setDecisionsLoading] = useState(false);
   const [velocityLoading, setVelocityLoading]   = useState(false);
   const [noticedLoading, setNoticedLoading]     = useState(false);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [recapLoading, setRecapLoading]         = useState(false);
 
   useEffect(() => {
     if (!projectId) {
-      setPillarCards([]); setPulse(null); setDecisions([]); setVelocity(null); setNoticed([]);
+      setPillarCards([]); setPulse(null); setDecisions([]); setVelocity(null); setNoticed([]); setQuestions([]); setRecap(null);
       return;
     }
     let cancelled = false;
-    setPillarLoading(true); setPulseLoading(true); setDecisionsLoading(true); setVelocityLoading(true); setNoticedLoading(true);
+    setPillarLoading(true); setPulseLoading(true); setDecisionsLoading(true); setVelocityLoading(true);
+    setNoticedLoading(true); setQuestionsLoading(true); setRecapLoading(true);
     (async () => {
-      const [matrixR, pulseR, decisionsR, velocityR, noticedR] = await Promise.all([
+      const [matrixR, pulseR, decisionsR, velocityR, noticedR, questionsR, recapR] = await Promise.all([
         seoPillarHealthMatrix({ projectId }),
         seoPerformancePulse({ projectId }),
         seoDecisionsLog({ projectId, limit: 5 }),
         seoVelocityStats({ projectId }),
         seoNoticedObservations({ projectId }),
+        seoClientQuestions({ projectId }),
+        seoClientRecap({ projectId }),
       ]);
       if (cancelled) return;
       if (matrixR.cards) setPillarCards(matrixR.cards);
@@ -71,7 +81,10 @@ export default function ProjectPulse({ projectId, scorecard, loading, onLaunchCo
       if (decisionsR.entries) { setDecisions(decisionsR.entries); setDecisionsTotal(decisionsR.total || 0); }
       if (velocityR.stats) setVelocity(velocityR.stats);
       if (noticedR.observations) setNoticed(noticedR.observations);
-      setPillarLoading(false); setPulseLoading(false); setDecisionsLoading(false); setVelocityLoading(false); setNoticedLoading(false);
+      if (questionsR.data?.questions) setQuestions(questionsR.data.questions);
+      if (recapR.data) setRecap(recapR.data);
+      setPillarLoading(false); setPulseLoading(false); setDecisionsLoading(false); setVelocityLoading(false);
+      setNoticedLoading(false); setQuestionsLoading(false); setRecapLoading(false);
     })();
     return () => { cancelled = true; };
   }, [projectId]);
@@ -82,8 +95,10 @@ export default function ProjectPulse({ projectId, scorecard, loading, onLaunchCo
       <PerformancePulsePanel pulse={pulse} loading={pulseLoading} onLaunchCommand={onLaunchCommand} />
       <PillarHealthMatrixPanel cards={pillarCards} loading={pillarLoading} onNavigate={onNavigate} />
       <INoticedPanel observations={noticed} loading={noticedLoading} onLaunchCommand={onLaunchCommand} />
+      <ClientQuestionsPanel questions={questions} loading={questionsLoading} />
       <DecisionsLogPanel entries={decisions} total={decisionsTotal} loading={decisionsLoading} />
       <VelocityPanel stats={velocity} loading={velocityLoading} />
+      <ClientRecapPanel recap={recap} loading={recapLoading} />
     </div>
   );
 }
@@ -507,4 +522,185 @@ function relTime(iso?: string | null): string {
     const d = Math.floor(hr / 24);    if (d < 30)   return `${d}d ago`;
     return new Date(iso).toLocaleDateString();
   } catch { return ''; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CLIENT QUESTIONS — LLM pre-compute
+══════════════════════════════════════════════════════════════════════ */
+
+function ClientQuestionsPanel({ questions, loading }: { questions: ClientQuestionClient[]; loading: boolean }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function copy(text: string, id: string) {
+    try {
+      navigator.clipboard?.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch { /* swallow */ }
+  }
+
+  return (
+    <section>
+      <SectionHeader
+        icon={<MessageCircleQuestion className="h-3.5 w-3.5" />}
+        tone="amber"
+        label="Things the client might ask"
+        sublabel={loading ? 'anticipating questions…' : questions.length > 0 ? `${questions.length} grounded answer${questions.length === 1 ? '' : 's'} ready` : 'all clear for now'} />
+      {loading && questions.length === 0 ? (
+        <LoadingCard label="Anticipating questions…" />
+      ) : questions.length === 0 ? (
+        <EmptyCard text="Nothing the client is likely to ask right now. Calm week." />
+      ) : (
+        <motion.div variants={cascadeContainerVariants} initial="hidden" animate="visible" className="mt-3 space-y-2">
+          {questions.map(q => (
+            <motion.div key={q.id} variants={cascadeItemVariants} className="rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-3">
+              <button
+                onClick={() => setExpanded(expanded === q.id ? null : q.id)}
+                className="w-full text-left text-[12.5px] font-semibold text-foreground/95 leading-tight flex items-start gap-2">
+                <span className="text-amber-400 mt-0.5">{expanded === q.id ? '▾' : '▸'}</span>
+                <span className="flex-1">{q.question}</span>
+              </button>
+              {expanded === q.id && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  transition={{ duration: DURATION.short, ease: FEATHER_EASE }}
+                  className="mt-2 pl-4">
+                  <p className="text-[12px] text-muted-foreground/90 leading-relaxed mb-2">{q.answer}</p>
+                  {q.grounded_in.length > 0 && (
+                    <div className="text-[9px] text-muted-foreground/55 italic mb-2">
+                      Grounded in: {q.grounded_in.join(' · ')}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => copy(q.answer, q.id)}
+                    className={`text-[10px] px-2.5 py-1 rounded-md border transition-colors font-bold inline-flex items-center gap-1 ${
+                      copiedId === q.id
+                        ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                        : 'border-amber-500/30 bg-amber-500/[0.05] text-amber-300 hover:bg-amber-500/15'
+                    }`}>
+                    {copiedId === q.id ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+                    {copiedId === q.id ? 'Copied' : 'Copy answer'}
+                  </button>
+                </motion.div>
+              )}
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
+    </section>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CLIENT RECAP — LLM pre-computed weekly recap with email-ready export
+══════════════════════════════════════════════════════════════════════ */
+
+function ClientRecapPanel({ recap, loading }: { recap: ClientRecapClient | null; loading: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function copyEmail() {
+    if (!recap) return;
+    try {
+      navigator.clipboard?.writeText(recap.email_body);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* swallow */ }
+  }
+
+  function openMail() {
+    if (!recap) return;
+    const subject = encodeURIComponent('Weekly recap');
+    const body    = encodeURIComponent(recap.email_body);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  }
+
+  return (
+    <section>
+      <SectionHeader
+        icon={<FileText className="h-3.5 w-3.5" />}
+        tone="emerald"
+        label="Client recap"
+        sublabel={loading ? 'drafting this week…' : recap ? 'drafted — click to expand, copy, or send' : 'no draft yet'} />
+      {loading && !recap ? (
+        <LoadingCard label="Drafting this week's recap…" />
+      ) : !recap ? (
+        <EmptyCard text="Not enough activity yet to recap." />
+      ) : (
+        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DURATION.major, ease: FEATHER_EASE }}
+          className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.03] p-4">
+          {!expanded && (
+            <>
+              <p className="text-[12.5px] text-foreground/90 leading-relaxed mb-3 italic">
+                {recap.intro}
+              </p>
+              <button onClick={() => setExpanded(true)} className="text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors">
+                ▸ Expand full draft
+              </button>
+            </>
+          )}
+          {expanded && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              transition={{ duration: DURATION.short, ease: FEATHER_EASE }}>
+              <p className="text-[12.5px] text-foreground/90 leading-relaxed mb-3 italic">
+                {recap.intro}
+              </p>
+              {recap.sections.map((sec, i) => (
+                <div key={i} className="mb-3">
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-400/85 mb-1.5">{sec.heading}</div>
+                  <ul className="space-y-1">
+                    {sec.bullets.map((b, j) => (
+                      <li key={j} className="text-[11.5px] text-foreground/85 leading-relaxed flex items-start gap-1.5">
+                        <span className="text-emerald-400/60 mt-0.5">·</span><span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {recap.next_week.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-400/85 mb-1.5">Next week</div>
+                  <ul className="space-y-1">
+                    {recap.next_week.map((b, j) => (
+                      <li key={j} className="text-[11.5px] text-foreground/85 leading-relaxed flex items-start gap-1.5">
+                        <span className="text-emerald-400/60 mt-0.5">·</span><span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <button onClick={() => setExpanded(false)} className="text-[10px] text-muted-foreground/55 hover:text-foreground transition-colors mb-3">
+                ▴ Collapse
+              </button>
+              {recap.honest_note && (
+                <div className="text-[10px] text-muted-foreground/55 italic mb-3">{recap.honest_note}</div>
+              )}
+            </motion.div>
+          )}
+          <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-emerald-500/15">
+            <button
+              onClick={copyEmail}
+              className={`text-[10px] px-2.5 py-1.5 rounded-md border transition-colors font-bold inline-flex items-center gap-1 ${
+                copied
+                  ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
+                  : 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-300 hover:bg-emerald-500/15'
+              }`}>
+              {copied ? <CheckCircle2 className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+              {copied ? 'Copied' : 'Copy as email'}
+            </button>
+            <button
+              onClick={openMail}
+              className="text-[10px] px-2.5 py-1.5 rounded-md border border-border/40 bg-card/30 text-muted-foreground/85 hover:text-foreground hover:bg-card/60 transition-colors font-bold inline-flex items-center gap-1">
+              <Mail className="h-2.5 w-2.5" />
+              Open in mail
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </section>
+  );
 }

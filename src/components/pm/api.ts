@@ -3422,3 +3422,98 @@ export async function seoCasualDigest(opts: { projectId: string }): Promise<{
   if (!r?.success) return { error: r?.error };
   return { digest: r.digest };
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 21 Block 2.12 — Manav's Pick external feed + LLM pre-computes
+══════════════════════════════════════════════════════════════════════ */
+
+export type FeedTrustTier = 'T1' | 'T2' | 'T3' | 'T4';
+
+export interface ManavsPickItemClient {
+  id:                 string;
+  title:              string;
+  excerpt:            string;
+  url:                string;
+  publisher:          string;
+  publisher_domain:   string;
+  trust_tier:         FeedTrustTier;
+  published_at:       string;
+  published_relative: string;
+  why_this_matters:   string;
+  relevance_score:    number;
+  category:           string | null;
+}
+
+export interface ProjectFeedClient {
+  pick_of_the_day:  ManavsPickItemClient | null;
+  in_your_world:    ManavsPickItemClient[];
+  cached_at:        string;
+  generated_at:     string;
+  source_count:     number;
+  honest_note?:     string;
+}
+
+export async function seoManavsPick(opts: {
+  projectId: string;
+  force?:    boolean;
+}): Promise<{ feed?: ProjectFeedClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_manavs_pick', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { feed: r.feed };
+}
+
+export async function seoManavsPickAction(opts: {
+  projectId:   string;
+  feedItemId:  string;
+  action:      'saved' | 'dismissed' | 'skipped' | 'asked_chat';
+  reason?:     string;
+}): Promise<{ success?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_manavs_pick_action', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
+}
+
+export interface ClientQuestionClient {
+  id:           string;
+  question:     string;
+  answer:       string;
+  grounded_in:  string[];
+  tone:         'reassuring' | 'transparent' | 'strategic';
+}
+
+export interface ClientQuestionsClient {
+  questions:    ClientQuestionClient[];
+  cached_at:    string;
+  generated_at: string;
+}
+
+export async function seoClientQuestions(opts: { projectId: string; force?: boolean }): Promise<{
+  data?: ClientQuestionsClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_client_questions', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { data: r.data };
+}
+
+export interface ClientRecapSectionClient {
+  heading: string;
+  bullets: string[];
+}
+
+export interface ClientRecapClient {
+  intro:        string;
+  sections:     ClientRecapSectionClient[];
+  next_week:    string[];
+  email_body:   string;
+  cached_at:    string;
+  generated_at: string;
+  honest_note?: string;
+}
+
+export async function seoClientRecap(opts: { projectId: string; force?: boolean }): Promise<{
+  data?: ClientRecapClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_client_recap', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { data: r.data };
+}
