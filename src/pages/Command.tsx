@@ -28,6 +28,12 @@ import CapabilitiesPanel from '@/components/season/CapabilitiesPanel';
 import WarRoomSection from '@/components/season/WarRoomSection';
 import WhatNeedsYou from '@/components/season/WhatNeedsYou';
 import CampaignPreviewInline from '@/components/season/CampaignPreviewInline';
+/* Phase 21 Block 2.11 Phase A — two-mode war room */
+import ModeToggle, { readSavedMode, saveMode, type CommandMode } from '@/components/season/ModeToggle';
+import ActionDeck from '@/components/season/ActionDeck';
+import ProjectPulse from '@/components/season/ProjectPulse';
+import { consumeHandoff } from '@/components/season/ChatHandoff';
+import { DURATION, FEATHER_EASE, modeSwitchVariants } from '@/components/season/warRoomAnimations';
 import {
   seasonBriefing, seasonCommand, seasonActivity,
   type BriefingClient, type BriefingItemClient,
@@ -39,6 +45,9 @@ import {
   seoRecommendCampaignStructure, seoWarRoomBriefing,
   type CampaignStructureRecommendation, type ProjectPositioning,
   type RecoverableOpportunityClient,
+  /* Phase 21 Block 2.11 Phase A — unified war room v2 */
+  seoWarRoomBriefingV2,
+  type UnifiedPriorityItemClient, type ScorecardCellClient,
 } from '@/components/pm/api';
 
 /* Phase 21 Block 2.5 — relative time display for source freshness */
@@ -246,6 +255,13 @@ function CommandInner() {
   /* Phase 21 Block 2.7 — recoverable opportunities for WhatNeedsYou hero */
   const [recoverableTop, setRecoverableTop]           = useState<RecoverableOpportunityClient[]>([]);
 
+  /* Phase 21 Block 2.11 Phase A — two-mode foundation */
+  const [mode, setMode] = useState<CommandMode>(() => readSavedMode());
+  const [unifiedFeed, setUnifiedFeed]   = useState<UnifiedPriorityItemClient[]>([]);
+  const [scorecard, setScorecard]       = useState<ScorecardCellClient[]>([]);
+  const [warRoomLoading, setWarRoomLoading] = useState<boolean>(false);
+  const [handoffNotice, setHandoffNotice]   = useState<string | null>(null);
+
   /* Capabilities panel state + ? keyboard shortcut */
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   useEffect(() => {
@@ -433,6 +449,65 @@ function CommandInner() {
     })();
   }, [selectedProjectId]);
 
+  /* Phase 21 Block 2.11 Phase A — fetch unified war room briefing v2.
+     Mode-aware: casual gets 5 items, pro gets 10. Re-fetches on mode switch. */
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setUnifiedFeed([]);
+      setScorecard([]);
+      return;
+    }
+    let cancelled = false;
+    setWarRoomLoading(true);
+    (async () => {
+      try {
+        const r = await seoWarRoomBriefingV2({ projectId: selectedProjectId, mode });
+        if (cancelled) return;
+        if (r.briefing) {
+          setUnifiedFeed(r.briefing.unified_feed || []);
+          setScorecard(r.briefing.scorecard || []);
+        } else {
+          setUnifiedFeed([]);
+          setScorecard([]);
+        }
+      } catch {
+        if (!cancelled) {
+          setUnifiedFeed([]);
+          setScorecard([]);
+        }
+      } finally {
+        if (!cancelled) setWarRoomLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedProjectId, mode]);
+
+  /* Phase 21 Block 2.11 Phase A — persist mode preference */
+  useEffect(() => { saveMode(mode); }, [mode]);
+
+  /* Phase 21 Block 2.11 Phase A — restore chat handoff from modal (one-shot on mount).
+     If the user was working in the modal and clicked "Full briefing", restore
+     their in-flight state and show a subtle "Continuing from quick chat →" badge. */
+  useEffect(() => {
+    const handoff = consumeHandoff();
+    if (!handoff) return;
+    if (handoff.input) setInput(handoff.input);
+    if (handoff.response) setResponse(handoff.response);
+    if (handoff.exploration) setExplorationResponse(handoff.exploration);
+    if (handoff.pending_structure) {
+      setPendingStructure(handoff.pending_structure);
+      setPendingPositioning(handoff.pending_positioning || null);
+      setPendingOriginalInput(handoff.pending_original || '');
+    }
+    if (Array.isArray(handoff.chat_suggestions)) setChatSuggestions(handoff.chat_suggestions);
+    if (handoff.suggestions_note) setSuggestionsNote(handoff.suggestions_note);
+    setHandoffNotice('Continuing from quick chat');
+    /* Fade the notice out after 6 seconds */
+    const t = setTimeout(() => setHandoffNotice(null), 6000);
+    return () => clearTimeout(t);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+
   useEffect(() => {
     if (!activityOpen || !selectedProjectId) return;
     (async () => {
@@ -551,7 +626,30 @@ function CommandInner() {
           />
         </div>
 
-        <div className="relative max-w-3xl lg:max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
+        <div className={`relative mx-auto px-4 sm:px-6 py-10 sm:py-12 transition-all duration-500 ${
+          mode === 'pro'
+            ? 'max-w-7xl'
+            : 'max-w-3xl lg:max-w-4xl'
+        }`}>
+
+          {/* Phase 21 Block 2.11 Phase A — mode toggle pinned top-right */}
+          <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10">
+            <ModeToggle mode={mode} onChange={setMode} />
+          </div>
+
+          {/* Phase 21 Block 2.11 Phase A — handoff notice */}
+          <AnimatePresence>
+            {handoffNotice && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: DURATION.major, ease: FEATHER_EASE }}
+                className="mb-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[10px] text-cyan-300 uppercase tracking-wider font-bold">
+                <ArrowRight className="h-3 w-3" /> {handoffNotice} →
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {loading && <LoadingHero />}
 
@@ -963,23 +1061,62 @@ function CommandInner() {
             </motion.div>
           )}
 
-          {/* Phase 21 Block 2.7 — WhatNeedsYou hero replaces the old 2-col Attention/QuietWins grid */}
-          {!loading && briefing && !response && !pendingStructure && !explorationResponse && (
-            <WhatNeedsYou
-              attentionItems={briefing.attention}
-              recoverableTop={recoverableTop}
-              onLaunchCommand={runChatCommand}
-            />
-          )}
-
-          {/* Phase 21 Block 2.6/2.7 — Strategic War Room three-tier intelligence with filter-on-type */}
-          {!response && !explorationResponse && !pendingStructure && (
-            <WarRoomSection
-              projectId={selectedProjectId}
-              filterTerm={extractKeywordFragment(input)}
-              onLaunchCommand={runChatCommand}
-            />
-          )}
+          {/* Phase 21 Block 2.11 Phase A — mode-aware layout.
+              CASUAL: existing WhatNeedsYou hero + WarRoomSection stack (calm, centered).
+              PRO: 2-column ActionDeck (LEFT 58%) + ProjectPulse (RIGHT 42%). */}
+          <AnimatePresence mode="wait">
+            {mode === 'casual' ? (
+              <motion.div
+                key="casual-layout"
+                variants={modeSwitchVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit">
+                {!loading && briefing && !response && !pendingStructure && !explorationResponse && (
+                  <WhatNeedsYou
+                    attentionItems={briefing.attention}
+                    recoverableTop={recoverableTop}
+                    onLaunchCommand={runChatCommand}
+                  />
+                )}
+                {!response && !explorationResponse && !pendingStructure && (
+                  <WarRoomSection
+                    projectId={selectedProjectId}
+                    filterTerm={extractKeywordFragment(input)}
+                    onLaunchCommand={runChatCommand}
+                  />
+                )}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="pro-layout"
+                variants={modeSwitchVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="mt-8 grid grid-cols-1 lg:grid-cols-[58fr_42fr] gap-6">
+                {/* LEFT — Action Deck */}
+                <div className="min-w-0">
+                  {!response && !explorationResponse && !pendingStructure && (
+                    <ActionDeck
+                      projectId={selectedProjectId}
+                      unifiedFeed={unifiedFeed}
+                      loading={warRoomLoading}
+                      filterTerm={extractKeywordFragment(input)}
+                      onLaunchCommand={runChatCommand}
+                    />
+                  )}
+                </div>
+                {/* RIGHT — Project Pulse */}
+                <div className="min-w-0">
+                  <ProjectPulse
+                    scorecard={scorecard}
+                    loading={warRoomLoading}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {!loading && briefing && briefing.honest_gaps.length > 0 && !response && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}

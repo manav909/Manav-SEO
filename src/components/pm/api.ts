@@ -3225,3 +3225,69 @@ export async function seoWarRoomBriefing(opts: { projectId: string }): Promise<{
   if (!r?.success) return { error: r?.error };
   return { briefing: r.briefing };
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 21 Block 2.11 Phase A — War Room v2 (unified feed + scorecard)
+══════════════════════════════════════════════════════════════════════ */
+
+export type UnifiedSeverity = 'critical' | 'warning' | 'info' | 'celebrate';
+export type UnifiedCategory = 'pm' | 'pillar' | 'gsc' | 'ga4' | 'inbox' | 'integration' | 'campaign';
+
+export interface UnifiedSourceClient {
+  kind:           'briefing' | 'pillar_report' | 'panel_recheck' | 'gsc' | 'opportunity' | 'analytics_intel' | 'integration';
+  label:          string;
+  last_refresh?:  string;
+  table?:         string;
+  detail?:        string;
+}
+
+export interface UnifiedPriorityItemClient {
+  id:              string;
+  category:        UnifiedCategory;
+  severity:        UnifiedSeverity;
+  title:           string;
+  detail:          string;
+  source:          UnifiedSourceClient;
+  action: {
+    label:          string;
+    kind:           'chat_command' | 'navigate' | 'rerun_pillar' | 'open_inbox' | 'open_campaign';
+    payload:        any;
+  };
+  priority_score:  number;
+  computed_at:     string;
+}
+
+export interface ScorecardCellClient {
+  key:             'health' | 'velocity' | 'quality' | 'risk' | 'roi_hint';
+  label:           string;
+  value:           string;
+  numeric_value:   number;
+  delta_this_week: number | null;
+  delta_label:     string | null;
+  sparkline:       number[] | null;
+  contributing:    string[];
+}
+
+export interface WarRoomBriefingV2Client {
+  unified_feed:    UnifiedPriorityItemClient[];
+  scorecard:       ScorecardCellClient[];
+  tools_status: {
+    gsc_connected:           boolean;
+    gsc_last_refresh:        string | null;
+    ga4_connected:           boolean;
+    ga4_last_refresh:        string | null;
+    positioning_resolved:    boolean;
+    positioning_last_refresh: string | null;
+  };
+  honest_note?:    string;
+  generated_at:    string;
+}
+
+export async function seoWarRoomBriefingV2(opts: {
+  projectId: string;
+  mode?:     'casual' | 'pro';
+}): Promise<{ briefing?: WarRoomBriefingV2Client; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_war_room_briefing_v2', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { briefing: r.briefing };
+}

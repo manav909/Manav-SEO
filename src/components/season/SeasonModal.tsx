@@ -41,6 +41,7 @@ import {
   type UrlFitAnalysis,
 } from '@/components/pm/api';
 import SeasonPipelineDashboard from './SeasonPipelineDashboard';
+import { writeHandoff } from './ChatHandoff';
 
 /* Mood → color (matches the Orb's profile) */
 const MOOD_HSL: Record<SeasonMood, string> = {
@@ -664,8 +665,25 @@ export default function SeasonModal() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
-                  onClick={() => { close(); setTimeout(() => navigate('/command'), 100); }}
-                  title="Open the full briefing page"
+                  onClick={() => {
+                    /* Phase 21 Block 2.11 Phase A — chat-as-bridge.
+                       Capture in-flight state so /command can restore it. */
+                    writeHandoff({
+                      source:               'modal_orb',
+                      source_project_id:    selectedProjectId || undefined,
+                      input:                input,
+                      response:             response,
+                      exploration:          explorationResponse,
+                      pending_structure:    pendingStructure,
+                      pending_positioning:  pendingPositioning,
+                      pending_original:     pendingOriginalInput,
+                      chat_suggestions:     chatSuggestions,
+                      suggestions_note:     suggestionsNote,
+                    });
+                    close();
+                    setTimeout(() => navigate('/command'), 100);
+                  }}
+                  title="Open the full briefing page — your chat state will follow"
                   style={{
                     fontSize: 10, padding: '5px 9px', borderRadius: 6,
                     border: '1px solid rgba(255,255,255,0.1)',

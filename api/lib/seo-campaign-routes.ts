@@ -348,3 +348,15 @@ export async function bsSeoWarRoomBriefing(body: any): Promise<any> {
   const { getWarRoomBriefing } = await import("./seo-war-room.js");
   return getWarRoomBriefing({ projectId });
 }
+
+/* Phase 21 Block 2.11 Phase A — Unified War Room briefing v2.
+   Aggregates 9 sources into one ranked priority feed + 5-cell scorecard.
+   Powers both Casual and Pro modes (different cap on feed items). */
+export async function bsSeoWarRoomBriefingV2(body: any): Promise<any> {
+  const { projectId, mode } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getWarRoomBriefingV2, getWarRoomBriefingCasualV2 } = await import("./season-war-room.js");
+  return mode === 'casual'
+    ? getWarRoomBriefingCasualV2({ projectId })
+    : getWarRoomBriefingV2({ projectId });
+}
