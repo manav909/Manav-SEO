@@ -65,8 +65,7 @@ const RANK_CAMPAIGN_PILLARS: PillarSpec[] = [
     display_order: 5,
     goal_summary: 'Identify authority pages, suggest internal links, track link execution and impact.',
     recheck_cadence_days: 30,
-    initial_status: 'scheduled',
-    scheduled_note: 'Activates in Phase 17 — site-wide authority analysis, anchor text plan, link execution tracking.',
+    initial_status: 'active',                  // Phase 17 — link graph audit + recommendations
   },
   {
     pillar: 'off_page',

@@ -21,6 +21,7 @@ import {
   seoOpportunityList, seoOpportunityPromoteToCampaign, seoOpportunityDismiss,
   seoTechnicalAuditRun, seoTechnicalAuditSetTargetUrl,
   seoClusterMapRun,
+  seoInternalLinkingRun,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
 } from './api';
 
@@ -516,6 +517,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [urlPromptPanel, setUrlPromptPanel] = useState<SeoCampaignPanel | null>(null);
   /* Phase 16 — cluster map state */
   const [clusterBusyPanel, setClusterBusyPanel] = useState<string | null>(null);
+  /* Phase 17 — internal linking state */
+  const [linkingBusyPanel, setLinkingBusyPanel] = useState<string | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -610,6 +613,35 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     }
   };
 
+  /* Phase 17 — internal linking handler */
+  const handleRunInternalLinking = async (panel: SeoCampaignPanel) => {
+    setLinkingBusyPanel(panel.id);
+    try {
+      const r = await seoInternalLinkingRun({ campaignId, panelId: panel.id });
+      if (r.error) {
+        toast({ title: 'Linking audit failed', description: r.error, variant: 'destructive' });
+        return;
+      }
+      const pages = r.pages_fetched || 0;
+      const recs = r.recommendation_count || 0;
+      const findings = r.findings_count || 0;
+      if (pages === 0) {
+        toast({
+          title: 'Linking audit pending',
+          description: 'No pages could be fetched — see the report for details.',
+        });
+      } else {
+        toast({
+          title: `Audited ${pages} page${pages === 1 ? '' : 's'}`,
+          description: `${findings} finding${findings === 1 ? '' : 's'}, ${recs} link recommendation${recs === 1 ? '' : 's'} ready. Open the report below.`,
+        });
+      }
+      await load();
+    } finally {
+      setLinkingBusyPanel(null);
+    }
+  };
+
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 9100,
@@ -657,8 +689,10 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                   onRunAudit={handleRunAudit}
                   onSetTargetUrl={handleSetTargetUrl}
                   onRunClusterMap={handleRunClusterMap}
+                  onRunInternalLinking={handleRunInternalLinking}
                   auditBusy={auditBusyPanel === p.id}
                   clusterBusy={clusterBusyPanel === p.id}
+                  linkingBusy={linkingBusyPanel === p.id}
                 />
               ))}
             </div>
@@ -882,20 +916,23 @@ function lifecycleBtnStyle(hue: string): React.CSSProperties {
   };
 }
 
-function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, auditBusy, clusterBusy }: {
+function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunInternalLinking, auditBusy, clusterBusy, linkingBusy }: {
   panel: SeoCampaignPanel;
-  onRunAudit?:        (panel: SeoCampaignPanel) => void;
-  onSetTargetUrl?:    (panel: SeoCampaignPanel) => void;
-  onRunClusterMap?:   (panel: SeoCampaignPanel) => void;
-  auditBusy?:         boolean;
-  clusterBusy?:       boolean;
+  onRunAudit?:           (panel: SeoCampaignPanel) => void;
+  onSetTargetUrl?:       (panel: SeoCampaignPanel) => void;
+  onRunClusterMap?:      (panel: SeoCampaignPanel) => void;
+  onRunInternalLinking?: (panel: SeoCampaignPanel) => void;
+  auditBusy?:            boolean;
+  clusterBusy?:          boolean;
+  linkingBusy?:          boolean;
 }) {
   const Icon = PILLAR_ICON[panel.pillar] || FileText;
   const isActive = panel.status === 'active';
   const isScheduled = panel.status === 'scheduled';
   const statusHue = STATUS_HUE[panel.current_status || panel.status] || STATUS_HUE.scheduled;
-  const isTechnicalAudit = panel.pillar === 'technical_audit';
-  const isClusterMap     = panel.pillar === 'cluster_map';
+  const isTechnicalAudit  = panel.pillar === 'technical_audit';
+  const isClusterMap      = panel.pillar === 'cluster_map';
+  const isInternalLinking = panel.pillar === 'internal_linking';
 
   return (
     <div style={{
@@ -982,6 +1019,28 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, auditBu
               }}>
               {clusterBusy ? <Loader2 size={9} className="animate-spin" /> : <Layers size={9} />}
               {clusterBusy ? 'Mapping…' : 'Generate cluster map'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 17 — Internal linking affordances */}
+      {isInternalLinking && isActive && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(160,160,180,0.08)' }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRunInternalLinking?.(panel); }}
+              disabled={linkingBusy}
+              title="Audit the internal link graph: find orphans, generate source→target link recommendations"
+              style={{
+                padding: '4px 8px', borderRadius: 5, fontSize: 9.5, fontWeight: 700,
+                border: `1px solid hsla(${statusHue} / 0.35)`,
+                background: `hsla(${statusHue} / 0.10)`, color: `hsl(${statusHue})`,
+                cursor: linkingBusy ? 'wait' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+              {linkingBusy ? <Loader2 size={9} className="animate-spin" /> : <Link2 size={9} />}
+              {linkingBusy ? 'Auditing…' : 'Run linking audit'}
             </button>
           </div>
         </div>

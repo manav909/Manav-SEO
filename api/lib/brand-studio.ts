@@ -873,6 +873,20 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoClusterMapClusters(body);
     }
 
+    /* Phase 17 — internal linking pillar */
+    case "bs_seo_internal_linking_run": {
+      const { bsSeoInternalLinkingRun } = await import("./seo-campaign-routes.js");
+      return bsSeoInternalLinkingRun(body);
+    }
+    case "bs_seo_internal_linking_data": {
+      const { bsSeoInternalLinkingData } = await import("./seo-campaign-routes.js");
+      return bsSeoInternalLinkingData(body);
+    }
+    case "bs_seo_internal_linking_update_status": {
+      const { bsSeoInternalLinkingUpdateStatus } = await import("./seo-campaign-routes.js");
+      return bsSeoInternalLinkingUpdateStatus(body);
+    }
+
     /* Phase 12.5a — forecasts + monitoring */
     case "bs_season_forecast_list": {
       const { bsSeasonForecastList } = await import("./season-forecast-routes.js");

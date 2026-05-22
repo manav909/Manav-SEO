@@ -168,3 +168,28 @@ export async function bsSeoClusterMapClusters(body: any): Promise<any> {
   const { getPanelClusters } = await import("./seo-cluster-map.js");
   return getPanelClusters({ panelId, limit });
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 17 — Internal linking routes
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoInternalLinkingRun(body: any): Promise<any> {
+  const { campaignId, panelId, pageLimit } = body || {};
+  if (!campaignId) return { success: false, error: "campaignId required" };
+  const { runInternalLinkingAudit } = await import("./seo-internal-linking.js");
+  return runInternalLinkingAudit({ campaignId, panelId, pageLimit, triggeredBy: 'manual' });
+}
+
+export async function bsSeoInternalLinkingData(body: any): Promise<any> {
+  const { panelId, limit } = body || {};
+  if (!panelId) return { success: false, error: "panelId required" };
+  const { getPanelLinkAuditData } = await import("./seo-internal-linking.js");
+  return getPanelLinkAuditData({ panelId, limit });
+}
+
+export async function bsSeoInternalLinkingUpdateStatus(body: any): Promise<any> {
+  const { recommendationId, status, note } = body || {};
+  if (!recommendationId || !status) return { success: false, error: "recommendationId and status required" };
+  const { updateRecommendationStatus } = await import("./seo-internal-linking.js");
+  return updateRecommendationStatus({ recommendationId, status, note });
+}

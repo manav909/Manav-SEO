@@ -2708,3 +2708,51 @@ export async function seoClusterMapClusters(opts: {
   if (!r?.success) return { error: r?.error };
   return { clusters: r.clusters };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 17 — Internal Linking client methods
+═══════════════════════════════════════════════════════════════ */
+
+export async function seoInternalLinkingRun(opts: {
+  campaignId: string;
+  panelId?:   string;
+  pageLimit?: number;
+}): Promise<{
+  success?:             boolean;
+  audit_run_id?:        string;
+  pages_fetched?:       number;
+  findings_count?:      number;
+  recommendation_count?: number;
+  report_id?:           string;
+  error?:               string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_internal_linking_run', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    success:              true,
+    audit_run_id:         r.audit_run_id,
+    pages_fetched:        r.pages_fetched,
+    findings_count:       r.findings_count,
+    recommendation_count: r.recommendation_count,
+    report_id:            r.report_id,
+  };
+}
+
+export async function seoInternalLinkingData(opts: {
+  panelId: string;
+  limit?:  number;
+}): Promise<{ findings?: any[]; recommendations?: any[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_internal_linking_data', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { findings: r.findings, recommendations: r.recommendations };
+}
+
+export async function seoInternalLinkingUpdateStatus(opts: {
+  recommendationId: string;
+  status:           'pending' | 'in_progress' | 'completed' | 'dismissed';
+  note?:            string;
+}): Promise<{ success?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_internal_linking_update_status', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
+}
