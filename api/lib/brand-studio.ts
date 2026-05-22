@@ -775,6 +775,48 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeasonPipelineInterrupt(body);
     }
 
+    /* Phase 14 — campaigns + opportunities */
+    case "bs_seo_campaign_list": {
+      const { bsSeoCampaignList } = await import("./seo-campaign-routes.js");
+      return bsSeoCampaignList(body);
+    }
+    case "bs_seo_campaign_get": {
+      const { bsSeoCampaignGet } = await import("./seo-campaign-routes.js");
+      return bsSeoCampaignGet(body);
+    }
+    case "bs_seo_campaign_pause": {
+      const { bsSeoCampaignPause } = await import("./seo-campaign-routes.js");
+      return bsSeoCampaignPause(body);
+    }
+    case "bs_seo_campaign_resume": {
+      const { bsSeoCampaignResume } = await import("./seo-campaign-routes.js");
+      return bsSeoCampaignResume(body);
+    }
+    case "bs_seo_campaign_archive": {
+      const { bsSeoCampaignArchive } = await import("./seo-campaign-routes.js");
+      return bsSeoCampaignArchive(body);
+    }
+    case "bs_seo_campaign_overview_refresh": {
+      const { bsSeoCampaignOverviewRefresh } = await import("./seo-campaign-routes.js");
+      return bsSeoCampaignOverviewRefresh(body);
+    }
+    case "bs_seo_opportunity_list": {
+      const { bsSeoOpportunityList } = await import("./seo-campaign-routes.js");
+      return bsSeoOpportunityList(body);
+    }
+    case "bs_seo_opportunity_update": {
+      const { bsSeoOpportunityUpdate } = await import("./seo-campaign-routes.js");
+      return bsSeoOpportunityUpdate(body);
+    }
+    case "bs_seo_opportunity_promote_to_campaign": {
+      const { bsSeoOpportunityPromoteToCampaign } = await import("./seo-campaign-routes.js");
+      return bsSeoOpportunityPromoteToCampaign(body);
+    }
+    case "bs_seo_opportunity_dismiss": {
+      const { bsSeoOpportunityDismiss } = await import("./seo-campaign-routes.js");
+      return bsSeoOpportunityDismiss(body);
+    }
+
     /* Phase 12.5a — forecasts + monitoring */
     case "bs_season_forecast_list": {
       const { bsSeasonForecastList } = await import("./season-forecast-routes.js");

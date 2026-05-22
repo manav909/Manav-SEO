@@ -757,11 +757,20 @@ export async function executeNextPendingStep(opts: {
       const outputWithBody = (result.output && typeof result.output === 'object' && !Array.isArray(result.output))
         ? { ...result.output, _artifact_body: result.artifact?.body || null }
         : { value: result.output, _artifact_body: result.artifact?.body || null };
+
+      /* Phase 14 — add storage_location tail to honest_note so the user knows
+         where to find this output AFTER the dashboard closes. */
+      const isCampaignLinked = !!(run as any).campaign_id;
+      const storageNote = isCampaignLinked
+        ? `\n\n_Stored at: season_pipeline_steps (step_id="${stepDef.id}") + linked to Campaign ${(run as any).campaign_id.slice(0,8)}. Re-open this run from the Campaign's content panel, or from PM → SEO Campaigns._`
+        : `\n\n_Stored at: season_pipeline_steps (step_id="${stepDef.id}") in run ${opts.runId.slice(0,8)}. Re-open this run from PM → Pipelines history (when that surface ships) or query the DB directly._`;
+      const finalHonestNote = (result.honest_note || '') + storageNote;
+
       await db().from("season_pipeline_steps").update({
         status: 'completed',
         output: outputWithBody,
         output_artifact_kind: result.artifact?.kind || null,
-        honest_note: result.honest_note || null,
+        honest_note: finalHonestNote,
         llm_calls: result.llm_calls || 0,
         web_searches: result.web_searches || 0,
         duration_ms: stepElapsed,
@@ -932,8 +941,199 @@ export async function finalizeRun(opts: {
       honestSummary.slice(0, 500),
     );
 
+    /* Phase 14 — if this run is linked to a campaign, write the artifact report
+       to the content panel and refresh the living overview. Best-effort. */
+    if ((run as any).campaign_id) {
+      try {
+        const briefArtifact = artifacts.find(a => a.kind === 'brief');
+        if (briefArtifact) {
+          const { writeReportToPanel, generateLivingOverview } = await import("./seo-campaign-engine.js");
+          await writeReportToPanel({
+            campaignId:        (run as any).campaign_id,
+            projectId:         (run as any).project_id,
+            pillar:             'content',
+            panelId:            (run as any).panel_id || undefined,
+            reportKind:         'pipeline_artifact',
+            generatedBy:        'pipeline',
+            pipelineRunId:      opts.runId,
+            llmCallsUsed:       (run as any).llm_calls_used || 0,
+            webSearchesUsed:    (run as any).web_searches_used || 0,
+            dataSources:        ['web_search', 'gsc', 'pipeline_research'],
+            confidenceRating:   stepsFailed === 0 ? 'high' : (stepsCompleted >= 5 ? 'medium' : 'low'),
+            confidenceReason:   stepsFailed === 0
+              ? 'All pipeline steps completed; brief produced with verified facts and internal link suggestions.'
+              : `${stepsCompleted} of ${opts.definition.steps.length} steps completed; ${stepsFailed} failed.`,
+            title:              briefArtifact.title || `Content brief for "${(run as any).scope?.keyword || ''}"`,
+            bodyMd:             briefArtifact.body,
+            summary:            `Pipeline produced ${artifacts.length} artifacts in ${stepsCompleted} steps.`,
+            updatePanelStatus:  true,
+            newPanelStatus:     stepsFailed === 0 ? 'green' : 'amber',
+          });
+          await generateLivingOverview({ campaignId: (run as any).campaign_id });
+        }
+
+        /* Phase 14 — scan step outputs for opportunities. Pure, deterministic,
+           data-driven (not LLM-imagined). Five concrete trigger patterns. */
+        await scanForOpportunities({
+          projectId:     (run as any).project_id,
+          campaignId:    (run as any).campaign_id,
+          panelId:       (run as any).panel_id || undefined,
+          runId:         opts.runId,
+          keyword:       (run as any).scope?.keyword || '',
+          stepOutputs:   stepRows.reduce((acc: any, s: any) => { if (s.status === 'completed') acc[s.step_id] = s.output; return acc; }, {}),
+        });
+      } catch (e: any) {
+        console.log(`[finalizeRun] campaign report write failed: ${e?.message}`);
+      }
+    }
+
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e?.message || 'finalize failed' };
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Opportunity scanner — Phase 14
+   Reads completed step outputs and emits opportunities for things
+   S.E.A.S.O.N. noticed off-scope. Pure data-driven heuristics, no LLM.
+═══════════════════════════════════════════════════════════════ */
+async function scanForOpportunities(opts: {
+  projectId:    string;
+  campaignId?:  string;
+  panelId?:     string;
+  runId:        string;
+  keyword:      string;
+  stepOutputs:  Record<string, any>;
+}): Promise<void> {
+  try {
+    const { recordOpportunity } = await import("./seo-campaign-engine.js");
+    const research    = opts.stepOutputs.keyword_research || {};
+    const gsc         = opts.stepOutputs.gsc_context       || {};
+    const competitors = opts.stepOutputs.competitor_snapshot || {};
+    const strategy    = opts.stepOutputs.strategy_plan     || {};
+
+    /* Trigger 1: related queries that look easier to rank for than the target.
+       Heuristic: research.related_queries contains entries; if any look like
+       lower-difficulty or more specific long-tail variants, flag. */
+    if (Array.isArray(research.related_queries) && research.related_queries.length > 0) {
+      const longTail = research.related_queries.filter((q: string) =>
+        typeof q === 'string' && q.split(' ').length >= 4 && !q.toLowerCase().includes(opts.keyword.toLowerCase().slice(0, 12)),
+      ).slice(0, 3);
+      for (const q of longTail) {
+        await recordOpportunity({
+          projectId:        opts.projectId,
+          sourcePipelineRunId: opts.runId,
+          sourceCampaignId: opts.campaignId,
+          sourcePanelId:    opts.panelId,
+          sourceStepId:     'keyword_research',
+          sourceKind:       'pipeline_step',
+          kind:             'keyword',
+          title:            `Consider also targeting "${q}"`,
+          description:      `This long-tail variant surfaced during keyword research for "${opts.keyword}". Long-tail queries with 4+ words typically have lower difficulty and clearer intent — worth a separate campaign if traffic data confirms volume.`,
+          evidence:         { source_keyword: opts.keyword, related_query: q, surfaced_at: new Date().toISOString() },
+          estimatedValue:   'medium',
+          estimatedEffort:  'medium',
+          suggestedAction:  'new_campaign',
+          suggestedCampaignKind: 'rank_for_keyword',
+          suggestedKeyword: q,
+        });
+      }
+    }
+
+    /* Trigger 2: neighboring queries in GSC at page-2 positions (4-20)
+       with meaningful impressions — quick wins. */
+    if (Array.isArray(gsc.neighboring_queries)) {
+      const quickWins = (gsc.neighboring_queries as any[]).filter(nq =>
+        nq && typeof nq.position === 'number' && nq.position >= 4 && nq.position <= 20
+        && (nq.impressions || 0) >= 50,
+      ).slice(0, 3);
+      for (const qw of quickWins) {
+        await recordOpportunity({
+          projectId:        opts.projectId,
+          sourcePipelineRunId: opts.runId,
+          sourceCampaignId: opts.campaignId,
+          sourcePanelId:    opts.panelId,
+          sourceStepId:     'gsc_context',
+          sourceKind:       'pipeline_step',
+          kind:             'quick_win',
+          title:            `Quick-win opportunity: "${qw.query}" is at position ${Number(qw.position).toFixed(1)}`,
+          description:      `Already ranking on page 2 with ${qw.impressions || 0} impressions/month. Minor on-page improvements or internal links could push to page 1 fast.`,
+          evidence:         { query: qw.query, current_position: qw.position, impressions: qw.impressions, clicks: qw.clicks, ctr: qw.ctr },
+          estimatedValue:   'high',
+          estimatedEffort:  'low',
+          suggestedAction:  'new_campaign',
+          suggestedCampaignKind: 'rank_for_keyword',
+          suggestedKeyword: qw.query,
+        });
+      }
+    }
+
+    /* Trigger 3: a competitor domain dominates the SERP (appears in top 3 of top_pages multiple times). */
+    if (Array.isArray(competitors.top_pages) && competitors.top_pages.length >= 3) {
+      const domainCounts: Record<string, number> = {};
+      for (const p of competitors.top_pages as any[]) {
+        if (p?.domain) domainCounts[p.domain] = (domainCounts[p.domain] || 0) + 1;
+      }
+      const dominators = Object.entries(domainCounts).filter(([, n]) => n >= 2).map(([d]) => d);
+      for (const dom of dominators.slice(0, 2)) {
+        await recordOpportunity({
+          projectId:        opts.projectId,
+          sourcePipelineRunId: opts.runId,
+          sourceCampaignId: opts.campaignId,
+          sourcePanelId:    opts.panelId,
+          sourceStepId:     'competitor_snapshot',
+          sourceKind:       'pipeline_step',
+          kind:             'competitor_move',
+          title:            `Competitor "${dom}" dominates this SERP (${domainCounts[dom]} pages in top 5)`,
+          description:      `When the same domain holds multiple top positions, ranking against them requires more than content quality — it requires authority and depth at the topic-cluster level. A deeper competitor intel deep-dive is worth running.`,
+          evidence:         { dominant_domain: dom, top_page_count: domainCounts[dom], all_domains: domainCounts },
+          estimatedValue:   'medium',
+          estimatedEffort:  'medium',
+          suggestedAction:  'investigate',
+        });
+      }
+    }
+
+    /* Trigger 4: strategy plan mentions backlink/internal-link/technical-fix as critical.
+       String-search the strategy approach text. */
+    const strategyText = JSON.stringify(strategy).toLowerCase();
+    if (/backlink|link build|off.page|outreach/.test(strategyText)) {
+      await recordOpportunity({
+        projectId:        opts.projectId,
+        sourcePipelineRunId: opts.runId,
+        sourceCampaignId: opts.campaignId,
+        sourcePanelId:    opts.panelId,
+        sourceStepId:     'strategy_plan',
+        sourceKind:       'pipeline_step',
+        kind:             'backlink',
+        title:            `Strategy requires off-page work — needs the Off-Page pillar`,
+        description:      `The strategy for "${opts.keyword}" mentions backlinks or outreach. This depends on the Off-Page Strategy pillar, which activates in a future release. Note this dependency now so it isn't forgotten when the pillar ships.`,
+        evidence:         { strategy_excerpt: String(strategy.approach || '').slice(0, 500) },
+        estimatedValue:   'high',
+        estimatedEffort:  'high',
+        suggestedAction:  'investigate',
+      });
+    }
+
+    if (/internal link|internal-link|site structure|hub.spoke/.test(strategyText)) {
+      await recordOpportunity({
+        projectId:        opts.projectId,
+        sourcePipelineRunId: opts.runId,
+        sourceCampaignId: opts.campaignId,
+        sourcePanelId:    opts.panelId,
+        sourceStepId:     'strategy_plan',
+        sourceKind:       'pipeline_step',
+        kind:             'content_gap',
+        title:            `Strategy requires internal linking work — needs the Internal Linking pillar`,
+        description:      `Strategy mentions internal linking or site structure. The Internal Linking pillar will surface specific page-to-page link plans when it activates.`,
+        evidence:         { strategy_excerpt: String(strategy.approach || '').slice(0, 500) },
+        estimatedValue:   'medium',
+        estimatedEffort:  'low',
+        suggestedAction:  'investigate',
+      });
+    }
+  } catch (e: any) {
+    console.log(`[scanForOpportunities] failed: ${e?.message}`);
   }
 }

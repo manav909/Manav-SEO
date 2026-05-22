@@ -283,7 +283,49 @@ export async function bsSeasonPipelineCreate(body: any): Promise<any> {
     if (result.error || !result.run_id) {
       return { success: false, error: result.error || 'create failed' };
     }
-    return { success: true, run_id: result.run_id, step_count: result.step_count };
+
+    /* Phase 14 — wire the run to a campaign + content panel.
+       Best-effort: if campaign creation fails, the run still proceeds without
+       campaign linkage. We don't want to block a pipeline on campaign infrastructure. */
+    let campaignId: string | undefined;
+    let panelId:    string | undefined;
+    let campaignNote = '';
+    try {
+      const keyword = (scope?.keyword as string) || '';
+      if (keyword && pipelineType === 'rank_for_keyword') {
+        const { createOrFindCampaign, getContentPanelId } = await import("./seo-campaign-engine.js");
+        const camp = await createOrFindCampaign({
+          projectId,
+          keyword,
+          campaignKind: 'rank_for_keyword',
+          goal: `Rank for "${keyword}"`,
+        });
+        if (camp.success && camp.campaign_id) {
+          campaignId = camp.campaign_id;
+          panelId = (await getContentPanelId(camp.campaign_id)) || undefined;
+          campaignNote = camp.created ? 'new_campaign' : 'reused_campaign';
+
+          /* Stamp the run with campaign_id + panel_id */
+          const { db } = await import("./db.js");
+          await db().from("season_pipeline_runs").update({
+            campaign_id: campaignId,
+            panel_id:    panelId,
+          }).eq("id", result.run_id);
+        }
+      }
+    } catch (e: any) {
+      /* Log but don't block */
+      console.log(`[bs_season_pipeline_create] campaign linkage failed: ${e?.message}`);
+    }
+
+    return {
+      success: true,
+      run_id: result.run_id,
+      step_count: result.step_count,
+      campaign_id: campaignId,
+      panel_id:    panelId,
+      campaign_state: campaignNote,
+    };
   } catch (e: any) {
     return { success: false, error: e?.message || "create failed" };
   }

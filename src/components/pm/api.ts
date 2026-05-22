@@ -2369,3 +2369,177 @@ export async function seasonPipelineExecuteNext(opts: {
     run_status:    r.run_status,
   };
 }
+
+/* ═════════════════════════════════════════════════════════
+   Phase 14 — Campaigns + Opportunities (PM client methods)
+═════════════════════════════════════════════════════════ */
+
+export interface SeoCampaign {
+  id:                 string;
+  keyword:            string;
+  goal:               string | null;
+  campaign_kind:      string;
+  status:             string;
+  health:             string | null;
+  current_position:   number | null;
+  target_position:    number | null;
+  started_at:         string;
+  target_due_at:      string | null;
+  last_assessed_at:   string | null;
+  paused_at:          string | null;
+  updated_at:         string;
+  living_overview_md?: string | null;
+}
+
+export interface SeoCampaignPanel {
+  id:                  string;
+  campaign_id:         string;
+  project_id:          string;
+  pillar:              string;
+  display_order:       number;
+  status:              string;
+  goal_summary:        string | null;
+  recheck_cadence_days: number;
+  next_recheck_at:     string | null;
+  last_assessed_at:    string | null;
+  current_status:      string | null;
+  current_summary:     string | null;
+  current_findings:    any | null;
+  scheduled_note:      string | null;
+}
+
+export interface SeoCampaignReport {
+  id:                  string;
+  panel_id:            string | null;
+  pillar:              string;
+  report_kind:         string;
+  title:               string;
+  summary:             string | null;
+  confidence_rating:   string | null;
+  generated_by:        string;
+  created_at:          string;
+  body_md?:            string;
+}
+
+export interface SeoOpportunity {
+  id:                      string;
+  project_id:              string;
+  source_kind:             string;
+  source_pipeline_run_id:  string | null;
+  source_campaign_id:      string | null;
+  source_panel_id:         string | null;
+  source_step_id:          string | null;
+  kind:                    string;
+  title:                   string;
+  description:             string | null;
+  evidence:                any | null;
+  estimated_value:         string | null;
+  estimated_effort:        string | null;
+  suggested_action:        string;
+  suggested_campaign_kind: string | null;
+  suggested_keyword:       string | null;
+  status:                  string;
+  promoted_to_kind:        string | null;
+  promoted_to_id:          string | null;
+  dismissed_reason:        string | null;
+  notes:                   string | null;
+  discovered_at:           string;
+  reviewed_at:             string | null;
+  expires_at:              string;
+}
+
+export async function seoCampaignList(opts: { projectId: string; statusFilter?: string }):
+  Promise<{ campaigns?: SeoCampaign[]; error?: string }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_campaign_list', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { campaigns: r.campaigns };
+}
+
+export async function seoCampaignGet(opts: { campaignId: string }):
+  Promise<{
+    campaign?: SeoCampaign;
+    panels?: SeoCampaignPanel[];
+    recent_reports?: SeoCampaignReport[];
+    open_opportunities?: SeoOpportunity[];
+    pipeline_runs?: any[];
+    error?: string;
+  }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_campaign_get', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    campaign:           r.campaign,
+    panels:             r.panels,
+    recent_reports:     r.recent_reports,
+    open_opportunities: r.open_opportunities,
+    pipeline_runs:      r.pipeline_runs,
+  };
+}
+
+export async function seoCampaignPause(opts: { campaignId: string; reason?: string }):
+  Promise<{ success?: boolean; error?: string }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_campaign_pause', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
+}
+
+export async function seoCampaignResume(opts: { campaignId: string }):
+  Promise<{ success?: boolean; resumed_after_days?: number; error?: string }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_campaign_resume', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true, resumed_after_days: r.resumed_after_days };
+}
+
+export async function seoCampaignArchive(opts: { campaignId: string }):
+  Promise<{ success?: boolean; error?: string }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_campaign_archive', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
+}
+
+export async function seoCampaignOverviewRefresh(opts: { campaignId: string }):
+  Promise<{ overview_md?: string; error?: string }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_campaign_overview_refresh', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { overview_md: r.overview_md };
+}
+
+export async function seoOpportunityList(opts: { projectId: string; status?: string; limit?: number }):
+  Promise<{ opportunities?: SeoOpportunity[]; counts?: any; error?: string }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_opportunity_list', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { opportunities: r.opportunities, counts: r.counts };
+}
+
+export async function seoOpportunityUpdate(opts: {
+  opportunityId: string;
+  status?: string;
+  notes?: string;
+  dismissedReason?: string;
+}): Promise<{ success?: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_opportunity_update', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
+}
+
+export async function seoOpportunityPromoteToCampaign(opts: { opportunityId: string }):
+  Promise<{ campaign_id?: string; error?: string }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_opportunity_promote_to_campaign', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { campaign_id: r.campaign_id };
+}
+
+export async function seoOpportunityDismiss(opts: { opportunityId: string; reason?: string }):
+  Promise<{ success?: boolean; error?: string }>
+{
+  const r = await post(ENGINE, { action: 'bs_seo_opportunity_dismiss', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { success: true };
+}

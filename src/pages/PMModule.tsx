@@ -20,8 +20,9 @@ import RequirementsPanel from '@/components/pm/RequirementsPanel';
 import CardBoard from '@/components/pm/CardBoard';
 import ReportsPanel from '@/components/pm/ReportsPanel';
 import AutopilotPanel from '@/components/pm/AutopilotPanel';
+import SeoCampaignsPanel from '@/components/pm/SeoCampaignsPanel';
 
-type Tab = 'requirements' | 'board' | 'reports' | 'autopilot';
+type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns';
 
 export default function PMModule() {
   const { selectedProject, selectedProjectId } = useProject();
@@ -52,10 +53,11 @@ export default function PMModule() {
   const doneCount   = cards.filter(c => ['done', 'verified'].includes(c.status)).length;
 
   const TABS: { id: Tab; label: string; badge?: number }[] = [
-    { id: 'requirements', label: 'Requirements' },
-    { id: 'board',        label: 'Board', badge: cards.length || undefined },
-    { id: 'reports',      label: 'Reports', badge: doneCount || undefined },
-    { id: 'autopilot',    label: 'Auto-pilot' },
+    { id: 'requirements',   label: 'Requirements' },
+    { id: 'board',          label: 'Board', badge: cards.length || undefined },
+    { id: 'reports',        label: 'Reports', badge: doneCount || undefined },
+    { id: 'autopilot',      label: 'Auto-pilot' },
+    { id: 'seo_campaigns',  label: 'SEO Campaigns' },
   ];
 
   return (
@@ -149,6 +151,9 @@ export default function PMModule() {
             )}
             {tab === 'autopilot' && (
               <AutopilotPanel projectId={selectedProjectId} />
+            )}
+            {tab === 'seo_campaigns' && (
+              <SeoCampaignsPanel projectId={selectedProjectId} />
             )}
           </>
         )}
