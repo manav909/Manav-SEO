@@ -867,31 +867,87 @@ export async function recordOpportunity(opts: {
 export async function listOpportunities(opts: {
   projectId: string;
   status?: 'open' | 'reviewed' | 'dismissed' | 'promoted' | 'expired' | 'all';
+  /* Phase 22 — additional filters for the operator inbox */
+  kind?:            'keyword' | 'traffic' | 'content_gap' | 'quick_win' | 'technical' | 'competitor_move' | 'backlink' | 'cluster_expansion' | 'all';
+  estimatedValue?:  'high' | 'medium' | 'low' | 'all';
+  sourceCampaignId?: string;
+  discoveredSince?:  string;       // ISO datetime — only opportunities discovered at-or-after this
   limit?: number;
-}): Promise<{ success: boolean; opportunities?: any[]; counts?: any; error?: string }> {
+}): Promise<{ success: boolean; opportunities?: any[]; counts?: any; counts_by_kind?: any; counts_by_value?: any; counts_by_campaign?: any; error?: string }> {
   try {
     let q = db().from("seo_opportunities")
       .select("*")
       .eq("project_id", opts.projectId)
       .order("discovered_at", { ascending: false })
       .limit(Math.min(opts.limit || 50, 200));
-    if (opts.status && opts.status !== 'all') q = q.eq("status", opts.status);
+    if (opts.status && opts.status !== 'all')                 q = q.eq("status", opts.status);
+    if (opts.kind && opts.kind !== 'all')                     q = q.eq("kind", opts.kind);
+    if (opts.estimatedValue && opts.estimatedValue !== 'all') q = q.eq("estimated_value", opts.estimatedValue);
+    if (opts.sourceCampaignId)                                q = q.eq("source_campaign_id", opts.sourceCampaignId);
+    if (opts.discoveredSince)                                 q = q.gte("discovered_at", opts.discoveredSince);
 
     const { data, error } = await q;
     if (error) return { success: false, error: error.message };
 
-    /* Also include counts by status for the badge UI */
+    /* Include cross-filter counts for the inbox sidebar badges */
     const { data: countsRaw } = await db().from("seo_opportunities")
-      .select("status")
+      .select("status, kind, estimated_value, source_campaign_id")
       .eq("project_id", opts.projectId);
-    const counts: any = { open: 0, reviewed: 0, dismissed: 0, promoted: 0, expired: 0 };
+
+    const counts: any              = { open: 0, reviewed: 0, dismissed: 0, promoted: 0, expired: 0 };
+    const counts_by_kind: any      = {};
+    const counts_by_value: any     = { high: 0, medium: 0, low: 0 };
+    const counts_by_campaign: any  = {};
     for (const r of (countsRaw || []) as any[]) {
       if (counts[r.status] !== undefined) counts[r.status]++;
+      /* Phase 22 counts only count OPEN opportunities (inbox is what's pending) */
+      if (r.status === 'open') {
+        counts_by_kind[r.kind]               = (counts_by_kind[r.kind] || 0) + 1;
+        if (counts_by_value[r.estimated_value] !== undefined) counts_by_value[r.estimated_value]++;
+        if (r.source_campaign_id) {
+          counts_by_campaign[r.source_campaign_id] = (counts_by_campaign[r.source_campaign_id] || 0) + 1;
+        }
+      }
     }
 
-    return { success: true, opportunities: data || [], counts };
+    return { success: true, opportunities: data || [], counts, counts_by_kind, counts_by_value, counts_by_campaign };
   } catch (e: any) {
     return { success: false, error: e?.message || 'list opps failed' };
+  }
+}
+
+/* Phase 22 — Bulk-update many opportunities in a single call. */
+export async function bulkUpdateOpportunities(opts: {
+  opportunityIds:    string[];
+  status?:           'open' | 'reviewed' | 'dismissed' | 'promoted';
+  dismissedReason?:  string;
+}): Promise<{ success: boolean; updated_count?: number; error?: string }> {
+  try {
+    if (!Array.isArray(opts.opportunityIds) || opts.opportunityIds.length === 0) {
+      return { success: false, error: 'opportunityIds required (non-empty array)' };
+    }
+    if (opts.opportunityIds.length > 100) {
+      return { success: false, error: 'bulk update limited to 100 opportunities per call' };
+    }
+    if (!opts.status) {
+      return { success: false, error: 'status required' };
+    }
+    const update: any = { status: opts.status };
+    if (opts.status === 'dismissed') {
+      update.dismissed_at = new Date().toISOString();
+      if (opts.dismissedReason) update.dismissed_reason = opts.dismissedReason.slice(0, 500);
+    }
+    if (opts.status === 'reviewed' || opts.status === 'promoted') {
+      update.reviewed_at = new Date().toISOString();
+    }
+    const { error, count } = await db().from("seo_opportunities")
+      .update(update)
+      .in("id", opts.opportunityIds)
+      .select("id", { count: 'exact', head: true });
+    if (error) return { success: false, error: error.message };
+    return { success: true, updated_count: count || opts.opportunityIds.length };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'bulk update failed' };
   }
 }
 

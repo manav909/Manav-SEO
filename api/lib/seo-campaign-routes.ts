@@ -65,9 +65,20 @@ export async function bsSeoCampaignOverviewRefresh(body: any): Promise<any> {
 }
 
 export async function bsSeoOpportunityList(body: any): Promise<any> {
-  const { projectId, status, limit } = body || {};
+  const { projectId, status, kind, estimatedValue, sourceCampaignId, discoveredSince, limit } = body || {};
   if (!projectId) return { success: false, error: "projectId required" };
-  return listOpportunities({ projectId, status, limit });
+  return listOpportunities({ projectId, status, kind, estimatedValue, sourceCampaignId, discoveredSince, limit });
+}
+
+/* Phase 22 — bulk update */
+export async function bsSeoOpportunityBulkUpdate(body: any): Promise<any> {
+  const { opportunityIds, status, dismissedReason } = body || {};
+  if (!Array.isArray(opportunityIds) || opportunityIds.length === 0) {
+    return { success: false, error: "opportunityIds required (non-empty array)" };
+  }
+  if (!status) return { success: false, error: "status required" };
+  const { bulkUpdateOpportunities } = await import("./seo-campaign-engine.js");
+  return bulkUpdateOpportunities({ opportunityIds, status, dismissedReason });
 }
 
 export async function bsSeoOpportunityUpdate(body: any): Promise<any> {

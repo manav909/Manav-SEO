@@ -21,8 +21,9 @@ import CardBoard from '@/components/pm/CardBoard';
 import ReportsPanel from '@/components/pm/ReportsPanel';
 import AutopilotPanel from '@/components/pm/AutopilotPanel';
 import SeoCampaignsPanel from '@/components/pm/SeoCampaignsPanel';
+import SeoInboxPanel from '@/components/pm/SeoInboxPanel';
 
-type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns';
+type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox';
 
 export default function PMModule() {
   const { selectedProject, selectedProjectId } = useProject();
@@ -58,6 +59,7 @@ export default function PMModule() {
     { id: 'reports',        label: 'Reports', badge: doneCount || undefined },
     { id: 'autopilot',      label: 'Auto-pilot' },
     { id: 'seo_campaigns',  label: 'SEO Campaigns' },
+    { id: 'seo_inbox',      label: 'SEO Inbox' },
   ];
 
   return (
@@ -154,6 +156,9 @@ export default function PMModule() {
             )}
             {tab === 'seo_campaigns' && (
               <SeoCampaignsPanel projectId={selectedProjectId} />
+            )}
+            {tab === 'seo_inbox' && (
+              <SeoInboxPanel projectId={selectedProjectId} />
             )}
           </>
         )}

@@ -831,6 +831,12 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoOpportunityDismiss(body);
     }
 
+    /* Phase 22 — bulk update */
+    case "bs_seo_opportunity_bulk_update": {
+      const { bsSeoOpportunityBulkUpdate } = await import("./seo-campaign-routes.js");
+      return bsSeoOpportunityBulkUpdate(body);
+    }
+
     /* Phase 14.1 — unification adapters */
     case "bs_seo_opportunity_from_alert": {
       const { bsSeoOpportunityFromAlert } = await import("./seo-campaign-routes.js");

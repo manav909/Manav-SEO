@@ -2521,12 +2521,45 @@ export async function seoCampaignOverviewRefresh(opts: { campaignId: string }):
   return { overview_md: r.overview_md };
 }
 
-export async function seoOpportunityList(opts: { projectId: string; status?: string; limit?: number }):
-  Promise<{ opportunities?: SeoOpportunity[]; counts?: any; error?: string }>
+export async function seoOpportunityList(opts: {
+  projectId: string;
+  status?: string;
+  /* Phase 22 — extended filters */
+  kind?:            string;
+  estimatedValue?:  string;
+  sourceCampaignId?: string;
+  discoveredSince?:  string;
+  limit?: number;
+}):
+  Promise<{
+    opportunities?: SeoOpportunity[];
+    counts?: any;
+    counts_by_kind?: Record<string, number>;
+    counts_by_value?: Record<string, number>;
+    counts_by_campaign?: Record<string, number>;
+    error?: string;
+  }>
 {
   const r = await post(ENGINE, { action: 'bs_seo_opportunity_list', ...opts });
   if (!r?.success) return { error: r?.error };
-  return { opportunities: r.opportunities, counts: r.counts };
+  return {
+    opportunities:      r.opportunities,
+    counts:             r.counts,
+    counts_by_kind:     r.counts_by_kind,
+    counts_by_value:    r.counts_by_value,
+    counts_by_campaign: r.counts_by_campaign,
+  };
+}
+
+/* Phase 22 — bulk update */
+export async function seoOpportunityBulkUpdate(opts: {
+  opportunityIds:   string[];
+  status:           'open' | 'reviewed' | 'dismissed' | 'promoted';
+  dismissedReason?: string;
+}): Promise<{ updated_count?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_opportunity_bulk_update', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { updated_count: r.updated_count };
 }
 
 export async function seoOpportunityUpdate(opts: {
