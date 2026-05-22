@@ -761,14 +761,18 @@ Identify better-target redirects. Return [] if none.`;
 
 /** Top-level orchestrator. Takes raw user input + project, returns the full
     campaign structure recommendation. This is what Block 2 will call from
-    SeasonModal when the user types "rank me for app maker, no code app builder, …". */
+    SeasonModal when the user types "rank me for app maker, no code app builder, …".
+
+    Phase 21 Block 2.5 — now also extracts target URLs + runs grounded fit
+    analysis on each URL when the user provides hub-and-spoke mapping. */
 export async function recommendCampaignStructure(opts: {
   projectId:  string;
   rawInput:   string;
-}): Promise<{ success: boolean; structure?: KeywordGroup; positioning?: ProjectPositioning; error?: string }> {
+}): Promise<{ success: boolean; structure?: KeywordGroup & { target_urls?: string[]; keyword_url_mapping?: Record<string, string>; url_fit_analysis?: Record<string, any>; url_warnings?: string[]; url_blocking_issue?: boolean }; positioning?: ProjectPositioning; error?: string }> {
   try {
-    /* Step 1: extract keywords from raw input */
-    const extracted = await extractKeywordsFromText(opts.rawInput);
+    /* Step 1: extract keywords AND target URLs from raw input */
+    const { extractCampaignIntent } = await import("./seo-url-targeting.js");
+    const extracted = await extractCampaignIntent(opts.rawInput);
     if (extracted.keywords.length === 0) {
       return { success: false, error: 'no keywords extracted from input — please rephrase' };
     }
@@ -780,12 +784,23 @@ export async function recommendCampaignStructure(opts: {
     }
     const positioning = posResult.positioning;
 
-    /* Step 3-5: run grouping, duplicate detection, better-target detection in parallel */
-    const [grouping, duplicates, betterTargets] = await Promise.all([
+    /* Step 3-5: run grouping, duplicate detection, better-target detection in parallel.
+       If target URLs were provided, also run URL fit validation in parallel. */
+    const promises: Array<Promise<any>> = [
       groupKeywordsByIntentCoherence({ keywords: extracted.keywords, positioning }),
       detectDuplicateCampaigns({ projectId: opts.projectId, keywords: extracted.keywords }),
       detectBetterTargets({ projectId: opts.projectId, keywords: extracted.keywords, positioning }),
-    ]);
+    ];
+    const hasUrls = Object.keys(extracted.keyword_url_mapping).length > 0;
+    if (hasUrls) {
+      const { validateAndAnalyzeTargetUrls } = await import("./seo-url-targeting.js");
+      promises.push(validateAndAnalyzeTargetUrls({
+        projectId:         opts.projectId,
+        urlKeywordMapping: extracted.keyword_url_mapping,
+        positioning,
+      }));
+    }
+    const [grouping, duplicates, betterTargets, urlValidation] = await Promise.all(promises) as any;
 
     /* Step 6: assemble decisions_avoided log */
     const decisionsAvoided: KeywordGroup['decisions_avoided'] = [];
@@ -819,10 +834,28 @@ export async function recommendCampaignStructure(opts: {
         reasoning:       `Coherence score ${grouping.primary_campaign.coherence_score.toFixed(2)} — keywords had mixed intent. System split them into a tighter primary group plus follow-ups to preserve quality.`,
       });
     }
+    /* URL-keyword fit warnings → decisions_avoided */
+    if (hasUrls && urlValidation) {
+      for (const [url, analysis] of Object.entries(urlValidation.fit_analyses || {})) {
+        const a = analysis as any;
+        for (const [kw, fit] of Object.entries(a.fit_per_keyword || {})) {
+          const f = fit as any;
+          if (f.verdict === 'poor_fit') {
+            decisionsAvoided.push({
+              timestamp:       new Date().toISOString(),
+              decision_type:   'misalignment_warned',
+              original_intent: `target ${url} for "${kw}"`,
+              redirected_to:   null,
+              reasoning:       `Grounded fit analysis: page content does not serve the keyword's intent. ${f.reasoning}`,
+            });
+          }
+        }
+      }
+    }
 
-    /* Step 7: build honest_note summarizing what happened */
+    /* Step 7: build honest_note */
     const honestNoteParts: string[] = [];
-    honestNoteParts.push(`Extracted ${extracted.keywords.length} keyword(s) from input${extracted.used_llm_fallback ? ' (LLM-assisted extraction)' : ''}.`);
+    honestNoteParts.push(`Extracted ${extracted.keywords.length} keyword(s)${hasUrls ? ` and ${Object.keys(extracted.keyword_url_mapping).length} URL mapping(s)` : ''} from input${extracted.used_llm_fallback ? ' (LLM-assisted extraction)' : ''}.`);
     honestNoteParts.push(`Primary campaign: ${grouping.primary_campaign.keywords.length} keywords, coherence ${grouping.primary_campaign.coherence_score.toFixed(2)}.`);
     if (grouping.suggested_followup_campaigns.length > 0) {
       honestNoteParts.push(`${grouping.suggested_followup_campaigns.length} followup campaign(s) suggested for keywords with different intent.`);
@@ -836,11 +869,18 @@ export async function recommendCampaignStructure(opts: {
     if (betterTargets.length > 0) {
       honestNoteParts.push(`${betterTargets.length} keyword group(s) flagged as better-served by existing campaigns.`);
     }
+    if (hasUrls && urlValidation) {
+      const totalUrls = Object.keys(urlValidation.fit_analyses || {}).length;
+      const poorFits = Object.values(urlValidation.fit_analyses || {}).reduce((sum: number, a: any) => {
+        return sum + Object.values(a.fit_per_keyword || {}).filter((f: any) => f.verdict === 'poor_fit').length;
+      }, 0);
+      honestNoteParts.push(`Validated ${totalUrls} target URL(s) via real page fetch${poorFits > 0 ? `; ${poorFits} URL-keyword pair(s) flagged as poor fit` : ''}.`);
+    }
     if (positioning.confidence === 'low') {
       honestNoteParts.push(`Project positioning confidence is LOW — recommendations may need manual review.`);
     }
 
-    const structure: KeywordGroup = {
+    const structure: any = {
       primary_campaign:             grouping.primary_campaign,
       suggested_followup_campaigns: grouping.suggested_followup_campaigns,
       opportunities_to_create:      grouping.opportunities_to_create,
@@ -849,6 +889,14 @@ export async function recommendCampaignStructure(opts: {
       decisions_avoided:            decisionsAvoided,
       honest_note:                  honestNoteParts.join(' '),
     };
+
+    if (hasUrls) {
+      structure.target_urls          = Array.from(new Set(Object.values(extracted.keyword_url_mapping)));
+      structure.keyword_url_mapping  = extracted.keyword_url_mapping;
+      structure.url_fit_analysis     = urlValidation?.fit_analyses || {};
+      structure.url_warnings         = urlValidation?.warnings || [];
+      structure.url_blocking_issue   = !!urlValidation?.any_blocking_issue;
+    }
 
     return { success: true, structure, positioning };
   } catch (e: any) {
@@ -951,6 +999,12 @@ export async function commitCampaignStructure(opts: {
     better_target_detected:       Array<{ keywords: string[]; existing_campaign_id: string; existing_campaign_keyword: string; reasoning: string }>;
     decisions_avoided:            Array<{ timestamp: string; decision_type: string; original_intent: string; redirected_to: string | null; reasoning: string }>;
     honest_note:                  string;
+    /* Phase 21 Block 2.5 — URL targeting fields (optional) */
+    target_urls?:                 string[];
+    keyword_url_mapping?:         Record<string, string>;
+    url_fit_analysis?:            Record<string, any>;
+    url_warnings?:                string[];
+    url_blocking_issue?:          boolean;
   };
   positioning?: any;
   /* User's choices — which suggested entities to actually create */
@@ -996,6 +1050,10 @@ export async function commitCampaignStructure(opts: {
       excludedKeywords:    excludedKeywords.length > 0 ? excludedKeywords : undefined,
       decisionsAvoided:    structure.decisions_avoided,
       campaignType:        opts.campaignType || 'standard',
+      /* Phase 21 Block 2.5 — URL targeting */
+      targetUrls:          structure.target_urls,
+      keywordUrlMapping:   structure.keyword_url_mapping,
+      urlFitAnalysis:      structure.url_fit_analysis,
     });
 
     if (!primaryResult.success || !primaryResult.campaign_id) {

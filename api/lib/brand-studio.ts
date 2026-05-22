@@ -855,6 +855,32 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoCommitCampaignStructure(body);
     }
 
+    /* Phase 21 — Block 2.5: URL targeting + grounded chat */
+    case "bs_seo_classify_intent": {
+      const { bsSeoClassifyIntent } = await import("./seo-campaign-routes.js");
+      return bsSeoClassifyIntent(body);
+    }
+    case "bs_seo_extract_campaign_intent": {
+      const { bsSeoExtractCampaignIntent } = await import("./seo-campaign-routes.js");
+      return bsSeoExtractCampaignIntent(body);
+    }
+    case "bs_seo_validate_target_urls": {
+      const { bsSeoValidateTargetUrls } = await import("./seo-campaign-routes.js");
+      return bsSeoValidateTargetUrls(body);
+    }
+    case "bs_seo_chat_suggestions": {
+      const { bsSeoChatSuggestions } = await import("./seo-campaign-routes.js");
+      return bsSeoChatSuggestions(body);
+    }
+    case "bs_seo_explore_keyword": {
+      const { bsSeoExploreKeyword } = await import("./seo-campaign-routes.js");
+      return bsSeoExploreKeyword(body);
+    }
+    case "bs_seo_tools_status": {
+      const { bsSeoToolsStatus } = await import("./seo-campaign-routes.js");
+      return bsSeoToolsStatus(body);
+    }
+
     /* Phase 14.1 — unification adapters */
     case "bs_seo_opportunity_from_alert": {
       const { bsSeoOpportunityFromAlert } = await import("./seo-campaign-routes.js");

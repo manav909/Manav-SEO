@@ -283,3 +283,57 @@ export async function bsSeoCommitCampaignStructure(body: any): Promise<any> {
     campaignType,
   });
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 21 — Block 2.5: URL targeting + grounded chat
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoClassifyIntent(body: any): Promise<any> {
+  const { text } = body || {};
+  if (!text || typeof text !== 'string') return { success: false, error: "text required" };
+  const { classifyCampaignIntent } = await import("./seo-url-targeting.js");
+  const result = await classifyCampaignIntent(text);
+  return { success: true, ...result };
+}
+
+export async function bsSeoExtractCampaignIntent(body: any): Promise<any> {
+  const { rawInput } = body || {};
+  if (!rawInput || typeof rawInput !== 'string') return { success: false, error: "rawInput required" };
+  const { extractCampaignIntent } = await import("./seo-url-targeting.js");
+  const result = await extractCampaignIntent(rawInput);
+  return { success: true, ...result };
+}
+
+export async function bsSeoValidateTargetUrls(body: any): Promise<any> {
+  const { projectId, urlKeywordMapping, positioning } = body || {};
+  if (!projectId)         return { success: false, error: "projectId required" };
+  if (!urlKeywordMapping) return { success: false, error: "urlKeywordMapping required" };
+  const { validateAndAnalyzeTargetUrls } = await import("./seo-url-targeting.js");
+  const result = await validateAndAnalyzeTargetUrls({ projectId, urlKeywordMapping, positioning });
+  return { success: true, ...result };
+}
+
+export async function bsSeoChatSuggestions(body: any): Promise<any> {
+  const { projectId, partialInput } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { getCampaignSuggestions } = await import("./seo-chat-suggestions.js");
+  const result = await getCampaignSuggestions({ projectId, partialInput: partialInput || '' });
+  return { success: true, ...result };
+}
+
+export async function bsSeoExploreKeyword(body: any): Promise<any> {
+  const { projectId, keyword } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  if (!keyword)   return { success: false, error: "keyword required" };
+  const { produceExplorationResponse } = await import("./seo-chat-suggestions.js");
+  return produceExplorationResponse({ projectId, keyword });
+}
+
+export async function bsSeoToolsStatus(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  /* readToolsStatus is internal — replicate via getCampaignSuggestions which exposes tools_status */
+  const { getCampaignSuggestions } = await import("./seo-chat-suggestions.js");
+  const r = await getCampaignSuggestions({ projectId, partialInput: '' });
+  return { success: true, tools_status: r.tools_status };
+}

@@ -2985,3 +2985,134 @@ export async function seoCommitCampaignStructure(opts: {
     excluded_keywords:        r.excluded_keywords,
   };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 21 — Block 2.5: URL targeting + grounded chat client methods
+═══════════════════════════════════════════════════════════════ */
+
+export interface UrlFitAnalysis {
+  url:               string;
+  fetched_at:        string;
+  status_code:       number | null;
+  status_text:       string;
+  is_indexable:      boolean;
+  h1:                string;
+  title:             string;
+  word_count:        number;
+  body_snippet:      string;
+  schema_types:      string[];
+  fit_per_keyword:   Record<string, {
+    verdict:         'strong_fit' | 'partial_fit' | 'poor_fit' | 'cannot_analyze';
+    reasoning:       string;
+    citations:       string[];
+  }>;
+  honest_note?:      string;
+}
+
+export interface ChatSource {
+  kind:           'gsc' | 'campaign' | 'opportunity' | 'page_fetch' | 'ga4' | 'inferred';
+  label:          string;
+  last_refresh?:  string;
+  table?:         string;
+  detail?:        string;
+}
+
+export interface ChatSuggestion {
+  id:            string;
+  kind:          'existing_campaign_match' | 'gsc_opportunity' | 'gsc_top_performer' | 'inbox_opportunity_promote';
+  text:          string;
+  command:       string;
+  source:        ChatSource;
+  detail?:       Record<string, any>;
+}
+
+export interface ToolsStatus {
+  gsc_connected:            boolean;
+  gsc_last_refresh:         string | null;
+  ga4_connected:            boolean;
+  ga4_last_refresh:         string | null;
+  positioning_resolved:     boolean;
+  positioning_last_refresh: string | null;
+}
+
+export interface ExplorationResponseClient {
+  keyword:               string;
+  has_gsc_data:          boolean;
+  gsc_snapshot?:         {
+    position:           number | null;
+    impressions:        number | null;
+    clicks:             number | null;
+    source:             ChatSource;
+  };
+  positioning_read?:     {
+    aligned:             'yes' | 'partial' | 'no';
+    reasoning:           string;
+    citations:           string[];
+    source:              ChatSource;
+  };
+  duplicate_check?:      {
+    is_duplicate:        boolean;
+    existing_campaign?:  { id: string; keyword: string; status: string };
+    source:              ChatSource;
+  };
+  strategic_read:        string;
+  strategic_read_sources: ChatSource[];
+  next_step_options:     Array<{
+    id:                  'run_feasibility' | 'run_full_campaign' | 'tell_more';
+    label:               string;
+    description:         string;
+  }>;
+  honest_note?:          string;
+}
+
+export async function seoClassifyIntent(opts: { text: string }): Promise<{
+  intent?:           'commitment' | 'exploration' | 'question';
+  confidence?:       'high' | 'medium' | 'low';
+  used_llm?:         boolean;
+  matched_pattern?:  string;
+  error?:            string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_classify_intent', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { intent: r.intent, confidence: r.confidence, used_llm: r.used_llm, matched_pattern: r.matched_pattern };
+}
+
+export async function seoChatSuggestions(opts: {
+  projectId:    string;
+  partialInput: string;
+}): Promise<{
+  suggestions?:  ChatSuggestion[];
+  tools_status?: ToolsStatus;
+  honest_note?:  string;
+  error?:        string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_chat_suggestions', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { suggestions: r.suggestions, tools_status: r.tools_status, honest_note: r.honest_note };
+}
+
+export async function seoExploreKeyword(opts: {
+  projectId: string;
+  keyword:   string;
+}): Promise<{ response?: ExplorationResponseClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_explore_keyword', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { response: r.response };
+}
+
+export async function seoToolsStatus(opts: { projectId: string }): Promise<{
+  tools_status?: ToolsStatus; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_tools_status', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { tools_status: r.tools_status };
+}
+
+/* Extend CampaignStructureRecommendation type with URL targeting fields */
+export type CampaignStructureRecommendationV2 = CampaignStructureRecommendation & {
+  target_urls?:         string[];
+  keyword_url_mapping?: Record<string, string>;
+  url_fit_analysis?:    Record<string, UrlFitAnalysis>;
+  url_warnings?:        string[];
+  url_blocking_issue?:  boolean;
+};

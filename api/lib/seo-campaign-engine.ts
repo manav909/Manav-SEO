@@ -101,6 +101,10 @@ export async function createOrFindCampaign(opts: {
   decisionsAvoided?:    any[];                       // array of decision_avoided entries
   campaignType?:        'standard' | 'feasibility_exploration' | 'merged_with';
   parentCampaignId?:    string;
+  /* Phase 21 Block 2.5 — URL targeting */
+  targetUrls?:          string[];
+  keywordUrlMapping?:   Record<string, string>;
+  urlFitAnalysis?:      Record<string, any>;
 }): Promise<{ success: boolean; campaign_id?: string; created?: boolean; reused?: boolean; error?: string }> {
   const kind = opts.campaignKind || 'rank_for_keyword';
   const keywordSlim = opts.keyword.trim().toLowerCase().slice(0, 240);
@@ -168,6 +172,17 @@ export async function createOrFindCampaign(opts: {
     }
     if (opts.campaignType) insertRow.campaign_type = opts.campaignType;
     if (opts.parentCampaignId) insertRow.parent_campaign_id = opts.parentCampaignId;
+
+    /* Phase 21 Block 2.5 — URL targeting persistence */
+    if (Array.isArray(opts.targetUrls) && opts.targetUrls.length > 0) {
+      insertRow.target_urls = opts.targetUrls.slice(0, 20);
+    }
+    if (opts.keywordUrlMapping && Object.keys(opts.keywordUrlMapping).length > 0) {
+      insertRow.keyword_url_mapping = opts.keywordUrlMapping;
+    }
+    if (opts.urlFitAnalysis && Object.keys(opts.urlFitAnalysis).length > 0) {
+      insertRow.url_fit_analysis = opts.urlFitAnalysis;
+    }
 
     const { data: inserted, error: insertErr } = await db().from("seo_campaigns").insert(insertRow).select("id").maybeSingle();
 

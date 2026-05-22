@@ -35,6 +35,10 @@ import {
   /* Phase 21 Block 2 — quality foundation chat integration */
   seoRecommendCampaignStructure, seoCommitCampaignStructure,
   type CampaignStructureRecommendation, type ProjectPositioning,
+  /* Phase 21 Block 2.5 — URL targeting + grounded chat */
+  seoClassifyIntent, seoChatSuggestions, seoExploreKeyword,
+  type ChatSuggestion, type ToolsStatus, type ExplorationResponseClient,
+  type UrlFitAnalysis,
 } from '@/components/pm/api';
 import SeasonPipelineDashboard from './SeasonPipelineDashboard';
 
@@ -159,6 +163,13 @@ export default function SeasonModal() {
   const [structureAcceptFollowups, setStructureAcceptFollowups] = useState<Set<number>>(new Set());
   const [structureAcceptOpps, setStructureAcceptOpps]     = useState<Set<number>>(new Set());
 
+  /* Phase 21 Block 2.5 — grounded chat state */
+  const [chatSuggestions, setChatSuggestions]             = useState<ChatSuggestion[]>([]);
+  const [suggestionsNote, setSuggestionsNote]             = useState<string | null>(null);
+  const [toolsStatus, setToolsStatus]                     = useState<ToolsStatus | null>(null);
+  const [explorationResponse, setExplorationResponse]     = useState<ExplorationResponseClient | null>(null);
+  const [loadingExploration, setLoadingExploration]       = useState(false);
+
   const moodHsl       = MOOD_HSL[mood] || MOOD_HSL.quiet;
   const isMac         = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
@@ -195,6 +206,11 @@ export default function SeasonModal() {
       setStructureAcceptFollowups(new Set());
       setStructureAcceptOpps(new Set());
       setCommittingStructure(false);
+      /* Phase 21 Block 2.5 — clear suggestions + exploration */
+      setChatSuggestions([]);
+      setSuggestionsNote(null);
+      setExplorationResponse(null);
+      setLoadingExploration(false);
     } else {
       /* Focus input shortly after open */
       const t = setTimeout(() => inputRef.current?.focus(), 220);
@@ -202,6 +218,38 @@ export default function SeasonModal() {
     }
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [isOpen]);
+
+  /* Phase 21 Block 2.5 — debounced suggestions when typing rank intent.
+     Surfaces GSC opportunities, existing campaigns, and inbox opportunities.
+     Every suggestion carries a source citation. No fabrication. */
+  useEffect(() => {
+    if (!isOpen || !selectedProjectId) {
+      setChatSuggestions([]);
+      setSuggestionsNote(null);
+      return;
+    }
+    /* Only query when input looks rank-related AND has at least a few chars */
+    const looksRankRelated = /\b(rank|target|campaign)\b/i.test(input);
+    if (!looksRankRelated || input.length < 4) {
+      setChatSuggestions([]);
+      setSuggestionsNote(null);
+      return;
+    }
+    /* Skip if a structure preview or exploration response is open */
+    if (pendingStructure || explorationResponse) return;
+
+    const handle = setTimeout(async () => {
+      try {
+        const r = await seoChatSuggestions({ projectId: selectedProjectId, partialInput: input });
+        if (r.error) return;
+        setChatSuggestions(r.suggestions || []);
+        setSuggestionsNote(r.honest_note || null);
+        if (r.tools_status) setToolsStatus(r.tools_status);
+      } catch { /* swallow — UX-only feature */ }
+    }, 380);   // debounce so we don't query every keystroke
+    return () => clearTimeout(handle);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [input, isOpen, selectedProjectId, pendingStructure, explorationResponse]);
 
   /* Phase 21 Block 2 — commit the campaign structure and launch the pipeline.
      This is what fires when the user clicks "Yes, set it up" in the preview
@@ -312,14 +360,26 @@ export default function SeasonModal() {
     setError(null);
     setMood('thinking');
 
-    /* Phase 12 → Phase 13a → Phase 21 Block 2 pipeline intent: "rank me for X[, Y, Z, …]".
-       Phase 21 changes:
-         - Detect rank-intent broadly (no longer just one keyword)
-         - Run the structure recommendation orchestrator (positioning + grouping + dedup)
-         - Show conversational preview with personality
-         - User confirms → commit structure → launch pipeline with the keyword_group */
-    const rankIntentRe = /(?:^|\s)(rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keywords?|seo\s+for)\b/i;
-    if (rankIntentRe.test(q)) {
+    /* Phase 12 → Phase 13a → Phase 21 Block 2 → Block 2.5 pipeline intent.
+       Block 2.5 changes:
+         - Classify intent first (commitment | exploration | question)
+         - Commitment → run orchestrator → preview → confirm → launch
+         - Exploration → produce grounded read with sources → next-step options
+         - Question → falls through to the existing LLM brain */
+    let routedAsCommitment = false;
+    let routedAsExploration = false;
+    try {
+      const classification = await seoClassifyIntent({ text: q });
+      if (classification.intent === 'commitment') routedAsCommitment = true;
+      else if (classification.intent === 'exploration') routedAsExploration = true;
+    } catch {
+      /* Fallback to a fast regex if classification API fails */
+      if (/(?:^|\s)(rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keywords?|seo\s+for)\b/i.test(q)) {
+        routedAsCommitment = true;
+      }
+    }
+
+    if (routedAsCommitment) {
       try {
         setMood('thinking');
         const recResult = await seoRecommendCampaignStructure({
@@ -339,12 +399,52 @@ export default function SeasonModal() {
         /* By default, accept all suggested followups + opportunities (user can deselect) */
         setStructureAcceptFollowups(new Set(recResult.structure.suggested_followup_campaigns.map((_, i) => i)));
         setStructureAcceptOpps(new Set(recResult.structure.opportunities_to_create.map((_, i) => i)));
+        setChatSuggestions([]);   // clear suggestions while preview is shown
         setMood('focused');
         setSubmitting(false);
         return;
       } catch (e: any) {
         setError(`Couldn't analyze that — ${e?.message || 'unknown error'}. Try with simpler input.`);
         setMood('alert');
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    if (routedAsExploration) {
+      try {
+        setMood('thinking');
+        setLoadingExploration(true);
+        /* Extract keyword from exploration input — strip leading "what about" / "should I rank for" etc. */
+        const explKw = q
+          .replace(/^(?:what\s+about|should\s+(?:i|we)\s+(?:rank|target|pursue|go\s+after)|(?:can|could)\s+(?:i|we)\s+rank\s+for|is|tell\s+me\s+about|show\s+me\s+about|explore\s+(?:ranking\s+for|the\s+keyword)|worth\s+ranking\s+for)\s+/i, '')
+          .replace(/^["']?|["'?.!]+$/g, '')
+          .trim()
+          .toLowerCase();
+        if (!explKw || explKw.length < 2) {
+          setError('Tell me which keyword you want to explore (e.g. "what about app maker?").');
+          setMood('alert');
+          setLoadingExploration(false);
+          setSubmitting(false);
+          return;
+        }
+        const r = await seoExploreKeyword({ projectId: selectedProjectId, keyword: explKw });
+        setLoadingExploration(false);
+        if (r.error || !r.response) {
+          setError(`Couldn't explore "${explKw}" — ${r.error || 'no response'}.`);
+          setMood('alert');
+          setSubmitting(false);
+          return;
+        }
+        setExplorationResponse(r.response);
+        setChatSuggestions([]);
+        setMood('focused');
+        setSubmitting(false);
+        return;
+      } catch (e: any) {
+        setError(`Exploration failed — ${e?.message || 'unknown'}.`);
+        setMood('alert');
+        setLoadingExploration(false);
         setSubmitting(false);
         return;
       }
@@ -870,6 +970,100 @@ export default function SeasonModal() {
                       )}
                     </div>
 
+                    {/* ──────────────────────────────────────────────────
+                        Phase 21 Block 2.5 — URL fit analysis
+                        Renders when user provided per-keyword URL mapping.
+                        Each URL shows real fetch result + grounded fit verdict
+                        per keyword, with citations from real page content.
+                    ────────────────────────────────────────────────── */}
+                    {(pendingStructure as any).url_fit_analysis && Object.keys((pendingStructure as any).url_fit_analysis).length > 0 && (
+                      <div style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: 'rgba(255,255,255,0.02)',
+                        marginBottom: 10,
+                      }}>
+                        <div style={{
+                          fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em',
+                          color: 'rgba(255,255,255,0.55)', marginBottom: 6,
+                          display: 'flex', alignItems: 'center', gap: 5,
+                        }}>
+                          <ExternalLink size={11} /> Target URL fit · {Object.keys((pendingStructure as any).url_fit_analysis).length}
+                        </div>
+                        {Object.entries((pendingStructure as any).url_fit_analysis as Record<string, UrlFitAnalysis>).map(([url, analysis], i) => (
+                          <div key={i} style={{
+                            padding: '8px 0',
+                            borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                          }}>
+                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)', fontWeight: 600, marginBottom: 3 }}>
+                              {url}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginBottom: 5, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {analysis.status_text === 'ok'
+                                ? <span style={{ color: 'hsl(152 70% 60%)' }}>✓ Fetched live ({analysis.status_code}, {analysis.word_count} words)</span>
+                                : <span style={{ color: 'hsl(0 75% 65%)' }}>✗ Fetch failed: {analysis.status_text}</span>}
+                              {!analysis.is_indexable && <span style={{ color: 'hsl(0 75% 65%)' }}>⚠ Not indexable</span>}
+                              {analysis.h1 && <span>H1: "{analysis.h1.slice(0, 60)}"</span>}
+                            </div>
+                            {Object.entries(analysis.fit_per_keyword).map(([kw, fit], j) => (
+                              <div key={j} style={{
+                                padding: '6px 9px',
+                                borderRadius: 6,
+                                marginTop: 4,
+                                background: fit.verdict === 'strong_fit'
+                                  ? 'hsla(152 70% 50% / 0.08)'
+                                  : fit.verdict === 'partial_fit'
+                                    ? 'hsla(38 92% 55% / 0.08)'
+                                    : fit.verdict === 'poor_fit'
+                                      ? 'hsla(0 75% 55% / 0.08)'
+                                      : 'rgba(255,255,255,0.03)',
+                                border: `1px solid ${
+                                  fit.verdict === 'strong_fit'
+                                    ? 'hsla(152 70% 50% / 0.2)'
+                                    : fit.verdict === 'partial_fit'
+                                      ? 'hsla(38 92% 55% / 0.2)'
+                                      : fit.verdict === 'poor_fit'
+                                        ? 'hsla(0 75% 55% / 0.2)'
+                                        : 'rgba(255,255,255,0.08)'
+                                }`,
+                              }}>
+                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginBottom: 2 }}>
+                                  <strong>"{kw}"</strong>
+                                  <span style={{
+                                    marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 4,
+                                    background: 'rgba(255,255,255,0.06)',
+                                    color: fit.verdict === 'strong_fit'
+                                      ? 'hsl(152 70% 60%)'
+                                      : fit.verdict === 'partial_fit'
+                                        ? 'hsl(38 92% 60%)'
+                                        : fit.verdict === 'poor_fit'
+                                          ? 'hsl(0 75% 65%)'
+                                          : 'rgba(255,255,255,0.55)',
+                                  }}>
+                                    {fit.verdict.replace(/_/g, ' ')}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)', lineHeight: 1.4 }}>
+                                  {fit.reasoning}
+                                </div>
+                                {fit.citations.length > 0 && (
+                                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', marginTop: 3, lineHeight: 1.3, fontStyle: 'italic' }}>
+                                    Cited from page: {fit.citations.map(c => `"${c}"`).join(', ')}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {analysis.honest_note && (
+                              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 4, fontStyle: 'italic' }}>
+                                {analysis.honest_note}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Warnings — better-target redirect */}
                     {pendingStructure.better_target_detected.length > 0 && (
                       <div style={{
@@ -1106,8 +1300,8 @@ export default function SeasonModal() {
                 )}
               </AnimatePresence>
 
-              {/* Quick chips — only show when no response yet AND no pending structure */}
-              {!response && !submitting && !pendingConfirm && !pendingStructure && (
+              {/* Quick chips — only show when no response yet AND no pending structure AND no exploration AND no suggestions */}
+              {!response && !submitting && !pendingConfirm && !pendingStructure && !explorationResponse && chatSuggestions.length === 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
                   {chipsForAwareness(awareness).map((c, i) => (
                     <motion.button
@@ -1135,6 +1329,322 @@ export default function SeasonModal() {
                       {c.label}
                     </motion.button>
                   ))}
+                </div>
+              )}
+
+              {/* ════════════════════════════════════════════════════════════
+                  Phase 21 Block 2.5 — GSC-grounded chat suggestions
+                  Renders when user types rank-related input. Every suggestion
+                  cites its source (GSC, existing campaign, opportunities inbox).
+              ════════════════════════════════════════════════════════════ */}
+              {!response && !submitting && !pendingConfirm && !pendingStructure && !explorationResponse && chatSuggestions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ marginTop: 12 }}>
+                  <div style={{
+                    fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.15em',
+                    fontWeight: 700, color: `hsl(${moodHsl})`, marginBottom: 6,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}>
+                    <Sparkles size={11} /> Grounded suggestions
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {chatSuggestions.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => { setInput(s.command); setTimeout(() => submit(s.command), 50); }}
+                        style={{
+                          textAlign: 'left',
+                          padding: '8px 11px',
+                          borderRadius: 8,
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          background: s.kind === 'existing_campaign_match'
+                            ? 'hsla(0 75% 55% / 0.05)'
+                            : s.kind === 'gsc_opportunity'
+                              ? `hsla(${moodHsl} / 0.06)`
+                              : 'rgba(255,255,255,0.02)',
+                          color: 'rgba(255,255,255,0.85)',
+                          cursor: 'pointer',
+                        }}>
+                        <div style={{ fontSize: 12, lineHeight: 1.4, marginBottom: 3 }}>
+                          {s.text}
+                        </div>
+                        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{
+                            padding: '1px 5px', borderRadius: 4,
+                            background: 'rgba(255,255,255,0.06)',
+                            textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600,
+                          }}>
+                            source: {s.source.kind === 'gsc' ? 'GSC' : s.source.kind}
+                          </span>
+                          <span>·</span>
+                          <span>{s.source.label}</span>
+                          {s.source.last_refresh && (
+                            <>
+                              <span>·</span>
+                              <span>refreshed {formatRelative(s.source.last_refresh)}</span>
+                            </>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  {suggestionsNote && (
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 6, fontStyle: 'italic' }}>
+                      {suggestionsNote}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Tools status banner — when GSC/GA4 not connected */}
+              {!response && !submitting && !pendingConfirm && !pendingStructure && !explorationResponse && toolsStatus && (!toolsStatus.gsc_connected || !toolsStatus.ga4_connected) && chatSuggestions.length === 0 && (
+                <div style={{
+                  marginTop: 10,
+                  padding: '8px 11px',
+                  borderRadius: 8,
+                  background: 'hsla(38 92% 55% / 0.05)',
+                  border: '1px solid hsla(38 92% 55% / 0.2)',
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.7)',
+                  lineHeight: 1.4,
+                }}>
+                  <strong style={{ color: 'hsl(38 92% 60%)' }}>Connect for richer guidance:</strong>{' '}
+                  {!toolsStatus.gsc_connected && 'GSC '}
+                  {!toolsStatus.gsc_connected && !toolsStatus.ga4_connected && '+ '}
+                  {!toolsStatus.ga4_connected && 'GA4 '}
+                  not connected. Suggestions degrade gracefully — but real data unlocks honest source-cited recommendations.
+                </div>
+              )}
+
+              {/* ════════════════════════════════════════════════════════════
+                  Phase 21 Block 2.5 — Exploration response panel
+                  Shows GSC snapshot + positioning read + strategic narrative
+                  with source citations + next-step options.
+              ════════════════════════════════════════════════════════════ */}
+              {explorationResponse && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25 }}
+                  style={{
+                    marginTop: 12,
+                    padding: '14px 16px',
+                    borderRadius: 14,
+                    border: `1px solid hsla(${moodHsl} / 0.3)`,
+                    background: `hsla(${moodHsl} / 0.04)`,
+                    maxHeight: '65vh',
+                    overflowY: 'auto',
+                  }}>
+                  <div style={{
+                    fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.15em',
+                    fontWeight: 700, color: `hsl(${moodHsl})`, marginBottom: 8,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}>
+                    <Lightbulb size={11} /> Exploring "{explorationResponse.keyword}"
+                  </div>
+
+                  {/* GSC snapshot — real data */}
+                  {explorationResponse.gsc_snapshot && (
+                    <div style={{
+                      padding: '10px 12px', borderRadius: 10, marginBottom: 10,
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                    }}>
+                      <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', marginBottom: 5 }}>
+                        Current GSC state
+                      </div>
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 5 }}>
+                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)' }}>
+                          Position: <strong style={{ color: `hsl(${moodHsl})` }}>{explorationResponse.gsc_snapshot.position?.toFixed(1) ?? 'n/a'}</strong>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)' }}>
+                          Impressions: <strong>{explorationResponse.gsc_snapshot.impressions ?? 0}</strong>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)' }}>
+                          Clicks: <strong>{explorationResponse.gsc_snapshot.clicks ?? 0}</strong>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)' }}>
+                        Source: {explorationResponse.gsc_snapshot.source.label}
+                        {explorationResponse.gsc_snapshot.source.last_refresh && ` · refreshed ${formatRelative(explorationResponse.gsc_snapshot.source.last_refresh)}`}
+                      </div>
+                    </div>
+                  )}
+                  {!explorationResponse.gsc_snapshot && (
+                    <div style={{
+                      padding: '10px 12px', borderRadius: 10, marginBottom: 10,
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px dashed rgba(255,255,255,0.1)',
+                      fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5,
+                    }}>
+                      {explorationResponse.has_gsc_data
+                        ? 'No GSC row matched this exact keyword — your site may not appear for it yet.'
+                        : 'No GSC data available — either the query has no impressions in your account yet, or GSC isn\'t connected.'}
+                    </div>
+                  )}
+
+                  {/* Duplicate check */}
+                  {explorationResponse.duplicate_check?.is_duplicate && explorationResponse.duplicate_check.existing_campaign && (
+                    <div style={{
+                      padding: '8px 11px', borderRadius: 8, marginBottom: 10,
+                      background: 'hsla(0 75% 55% / 0.05)',
+                      border: '1px solid hsla(0 75% 55% / 0.25)',
+                      fontSize: 12, color: 'rgba(255,255,255,0.9)', lineHeight: 1.4,
+                    }}>
+                      <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'hsl(0 75% 65%)', marginBottom: 3, fontWeight: 700 }}>
+                        Already in your campaigns
+                      </div>
+                      You have an {explorationResponse.duplicate_check.existing_campaign.status} campaign for "{explorationResponse.duplicate_check.existing_campaign.keyword}".
+                    </div>
+                  )}
+
+                  {/* Positioning alignment */}
+                  {explorationResponse.positioning_read && (
+                    <div style={{
+                      padding: '10px 12px', borderRadius: 10, marginBottom: 10,
+                      background: explorationResponse.positioning_read.aligned === 'no'
+                        ? 'hsla(0 75% 55% / 0.05)'
+                        : explorationResponse.positioning_read.aligned === 'partial'
+                          ? 'hsla(38 92% 55% / 0.05)'
+                          : 'hsla(152 70% 50% / 0.05)',
+                      border: `1px solid ${
+                        explorationResponse.positioning_read.aligned === 'no'
+                          ? 'hsla(0 75% 55% / 0.25)'
+                          : explorationResponse.positioning_read.aligned === 'partial'
+                            ? 'hsla(38 92% 55% / 0.25)'
+                            : 'hsla(152 70% 50% / 0.25)'
+                      }`,
+                    }}>
+                      <div style={{
+                        fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em',
+                        marginBottom: 4, fontWeight: 700,
+                        color: explorationResponse.positioning_read.aligned === 'no'
+                          ? 'hsl(0 75% 65%)'
+                          : explorationResponse.positioning_read.aligned === 'partial'
+                            ? 'hsl(38 92% 60%)'
+                            : 'hsl(152 70% 60%)',
+                      }}>
+                        Positioning alignment: {explorationResponse.positioning_read.aligned}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', lineHeight: 1.5 }}>
+                        {explorationResponse.positioning_read.reasoning}
+                      </div>
+                      {explorationResponse.positioning_read.citations.length > 0 && (
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 5, lineHeight: 1.4 }}>
+                          From positioning: {explorationResponse.positioning_read.citations.map(c => `"${c}"`).join(', ')}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', marginTop: 5 }}>
+                        Source: {explorationResponse.positioning_read.source.label}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Strategic read */}
+                  <div style={{
+                    padding: '10px 12px', borderRadius: 10, marginBottom: 10,
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                  }}>
+                    <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.55)', marginBottom: 5, fontWeight: 700 }}>
+                      Strategic read
+                    </div>
+                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 1.55 }}>
+                      {explorationResponse.strategic_read}
+                    </div>
+                    {explorationResponse.strategic_read_sources.length > 0 && (
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', marginTop: 6, lineHeight: 1.4 }}>
+                        Built from: {explorationResponse.strategic_read_sources.map(s => s.label).join(' · ')}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Honest note about tool gaps */}
+                  {explorationResponse.honest_note && (
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5, marginBottom: 10, fontStyle: 'italic' }}>
+                      {explorationResponse.honest_note}
+                    </div>
+                  )}
+
+                  {/* Next-step options */}
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.6)', marginBottom: 6, fontWeight: 700 }}>
+                    Next steps
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {explorationResponse.next_step_options.map(opt => (
+                      <button
+                        key={opt.id}
+                        onClick={() => {
+                          if (opt.id === 'run_full_campaign') {
+                            /* Convert exploration into a commit flow — fire the rank command */
+                            const cmd = `rank me for "${explorationResponse.keyword}"`;
+                            setInput(cmd);
+                            setExplorationResponse(null);
+                            setTimeout(() => submit(cmd), 50);
+                          } else if (opt.id === 'tell_more') {
+                            setExplorationResponse(null);
+                            setMood('quiet');
+                            setTimeout(() => inputRef.current?.focus(), 100);
+                          } else if (opt.id === 'run_feasibility') {
+                            /* For now treat feasibility same as full campaign — Block 5 builds the
+                               feasibility-exploration campaign_type fully */
+                            const cmd = `rank me for "${explorationResponse.keyword}"`;
+                            setInput(cmd);
+                            setExplorationResponse(null);
+                            setTimeout(() => submit(cmd), 50);
+                          }
+                        }}
+                        style={{
+                          textAlign: 'left',
+                          padding: '8px 11px',
+                          borderRadius: 8,
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          background: opt.id === 'run_feasibility' ? `hsla(${moodHsl} / 0.08)` : 'rgba(255,255,255,0.02)',
+                          color: 'rgba(255,255,255,0.85)',
+                          cursor: 'pointer',
+                        }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{opt.label}</div>
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>{opt.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 10 }}>
+                    <button
+                      onClick={() => { setExplorationResponse(null); setMood('quiet'); }}
+                      style={{
+                        fontSize: 11, padding: '5px 10px', borderRadius: 7,
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: 'transparent',
+                        color: 'rgba(255,255,255,0.55)',
+                        cursor: 'pointer',
+                      }}>
+                      Close exploration
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {loadingExploration && !explorationResponse && (
+                <div style={{
+                  marginTop: 12, padding: '14px 16px', borderRadius: 12,
+                  border: `1px solid hsla(${moodHsl} / 0.2)`,
+                  background: `hsla(${moodHsl} / 0.05)`,
+                  fontSize: 12, color: 'rgba(255,255,255,0.7)',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
+                    style={{
+                      width: 12, height: 12, borderRadius: '50%',
+                      border: `2px solid hsla(${moodHsl} / 0.2)`,
+                      borderTopColor: `hsl(${moodHsl})`,
+                    }}
+                  />
+                  Pulling real data — checking GSC, positioning, existing campaigns…
                 </div>
               )}
 
@@ -1420,6 +1930,25 @@ export default function SeasonModal() {
 }
 
 /* ─── Artifact box (lightweight, no external deps) ─── */
+
+/* ─── Block 2.5 helper: relative time display for source freshness ─── */
+
+function formatRelative(iso: string): string {
+  try {
+    const then = new Date(iso).getTime();
+    const now = Date.now();
+    if (isNaN(then)) return '';
+    const sec = Math.max(0, Math.floor((now - then) / 1000));
+    if (sec < 60) return 'just now';
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const d = Math.floor(hr / 24);
+    if (d < 30) return `${d}d ago`;
+    return new Date(iso).toLocaleDateString();
+  } catch { return ''; }
+}
 
 function ArtifactBox({ artifact, moodHsl }: { artifact: { kind: string; title: string; body: string }; moodHsl: string }) {
   const [copied, setCopied] = useState(false);
