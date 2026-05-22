@@ -319,9 +319,13 @@ register({
   matches:      [/compute intel/i, /refresh intel/i, /recompute analytics/i, /run analysis/i, /make it/i],
   examples:     ['compute intelligence', 'refresh analytics'],
   handler:      async (ctx) => {
-    /* This is dispatched via the existing seasonCommand path. The handler
-       just navigates if needed — the real work is the keyword router. */
-    return { ok: true, message: 'Use "compute intelligence" in the S.E.A.S.O.N. input box to run this.' };
+    /* Phase 21 Block 2.10 — fix the previous no-op handler.
+       The real compute pipeline lives in season-orchestrator's keyword router
+       (matches /compute|recompute|refresh/i + intelligence keywords). Publish
+       a refire so the same orchestrator path runs that handles direct typing. */
+    publishAction('season_refire_query', { query: 'compute analytics intelligence' });
+    ctx.toast?.('Computing analytics intelligence — this can take 8-20 seconds…');
+    return { ok: true, message: 'Computing analytics intelligence…' };
   },
 });
 

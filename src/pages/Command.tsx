@@ -294,8 +294,7 @@ function CommandInner() {
     const unsub = subscribeAction('season_refire_query', (payload?: any) => {
       const q = payload?.query;
       if (typeof q === 'string' && q.trim().length > 0) {
-        setInput(q);
-        setTimeout(() => handleSubmit(undefined, q), 50);
+        runChatCommand(q);
       }
     });
     return unsub;
@@ -455,14 +454,84 @@ function CommandInner() {
     }
   }, [briefingError, safeProjects.length, selectedProjectId, setSelectedProjectId]);
 
-  const handleQuickAction = (q: string) => {
+  /* Phase 21 Block 2.10 — unified chat command runner.
+     ANY button or chip that wants to fire a chat command goes through here.
+     Guarantees: all transient state cleared, input set, submit fired. */
+  const runChatCommand = (q: string) => {
+    /* Clear every transient output panel + every error/loader */
+    setResponse(null);
+    setExplorationResponse(null);
+    setPendingStructure(null);
+    setPendingPositioning(null);
+    setPendingOriginalInput('');
+    setCommandError(null);
+    setChatSuggestions([]);
+    setSuggestionsNote(null);
+    setLoadingExploration(false);
+    setLoadingStructure(false);
+    cancelAction();   // dismiss any pending confirm
     setInput(q);
-    /* Pass q directly — don't rely on setInput having propagated to the
-       handleSubmit closure. Previously this set input then called
-       handleSubmit, which closed over the stale empty input value and
-       silently bailed. */
     handleSubmit(undefined, q);
   };
+
+  /* Phase 21 Block 2.10 — return to default page state.
+     No submission, just clear everything visible. Triggered on:
+       • Escape key (unless typing in an input)
+       • Outside-click of any open card (handled by individual card X buttons) */
+  const resetToDefault = () => {
+    setResponse(null);
+    setExplorationResponse(null);
+    setPendingStructure(null);
+    setPendingPositioning(null);
+    setPendingOriginalInput('');
+    setCommandError(null);
+    setChatSuggestions([]);
+    setSuggestionsNote(null);
+    setLoadingExploration(false);
+    setLoadingStructure(false);
+    cancelAction();
+    setInput('');
+  };
+
+  /* Legacy alias — kept so older callsites in the file still work. */
+  const handleQuickAction = (q: string) => runChatCommand(q);
+
+  /* Phase 21 Block 2.10 — input-clear watcher.
+     When the input drops to empty AND no submitted panel is open, soft-reset
+     the transient state. Lets the user "delete the query to start over". */
+  useEffect(() => {
+    if (input.trim().length === 0 && !response && !explorationResponse && !pendingStructure) {
+      if (commandError) setCommandError(null);
+      if (suggestionsNote) setSuggestionsNote(null);
+    }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [input, response, explorationResponse, pendingStructure]);
+
+  /* Phase 21 Block 2.10 — Escape key returns to default state.
+     Skip when typing inside the chat input itself (Esc clears native focus). */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA';
+      if (isTyping) {
+        /* If the chat input is focused and has text, clear text first.
+           If already empty, fall through to full reset. */
+        if (e.target === inputRef.current && input.trim().length > 0) {
+          e.preventDefault();
+          setInput('');
+          return;
+        }
+      }
+      if (response || explorationResponse || pendingStructure || commandError) {
+        e.preventDefault();
+        resetToDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [input, response, explorationResponse, pendingStructure, commandError]);
 
   const showProjectPicker =
     !loading && (!selectedProjectId || briefingError === "Project not found" || (briefingError && !briefing));
@@ -642,7 +711,7 @@ function CommandInner() {
                   {chatSuggestions.map(s => (
                     <button
                       key={s.id}
-                      onClick={() => { setInput(s.command); setTimeout(() => handleSubmit(undefined, s.command), 50); }}
+                      onClick={() => { runChatCommand(s.command); }}
                       className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
                         s.kind === 'existing_campaign_match'
                           ? 'border-rose-500/30 bg-rose-500/[0.05] hover:bg-rose-500/[0.08]'
@@ -776,7 +845,7 @@ function CommandInner() {
                           const cmd = `rank me for "${explorationResponse.keyword}"`;
                           setInput(cmd);
                           setExplorationResponse(null);
-                          setTimeout(() => handleSubmit(undefined, cmd), 50);
+                          runChatCommand(cmd);
                         }
                       }}
                       className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
@@ -834,13 +903,10 @@ function CommandInner() {
                     if ((r as any).navigated) setResponse(null);
                     return;
                   }
-                  /* Phase 21 Block 2.9 — unknown-action fallback.
-                     If the LLM invented an action ID outside the registry,
-                     refire the button label as a chat query so the brain
-                     handles the intent. Never let a click silently fail. */
+                  /* Phase 21 Block 2.9 — unknown-action fallback. */
                   if (!r.ok && /unknown action/i.test(r.message || '') && label) {
                     setResponse(null);
-                    setTimeout(() => handleSubmit(undefined, label), 50);
+                    runChatCommand(label);
                   }
                 }}
                 actionRunning={actionRunning}
@@ -848,27 +914,53 @@ function CommandInner() {
             )}
           </AnimatePresence>
 
-          {/* Phase 21 Block 2.7 — inline campaign preview when commitment intent submitted */}
-          {pendingStructure && selectedProjectId && (
-            <CampaignPreviewInline
-              structure={pendingStructure}
-              positioning={pendingPositioning}
-              projectId={selectedProjectId}
-              originalInput={pendingOriginalInput}
-              onClose={() => {
-                setPendingStructure(null);
-                setPendingPositioning(null);
-                setPendingOriginalInput('');
-              }}
-              onLaunched={() => { loadBriefing(); }}
-            />
-          )}
+          {/* Phase 21 Block 2.7/2.10 — inline campaign preview wrapped in AnimatePresence */}
+          <AnimatePresence>
+            {pendingStructure && selectedProjectId && (
+              <CampaignPreviewInline
+                key="campaign-preview"
+                structure={pendingStructure}
+                positioning={pendingPositioning}
+                projectId={selectedProjectId}
+                originalInput={pendingOriginalInput}
+                onClose={() => {
+                  setPendingStructure(null);
+                  setPendingPositioning(null);
+                  setPendingOriginalInput('');
+                }}
+                onLaunched={() => { loadBriefing(); }}
+              />
+            )}
+          </AnimatePresence>
 
-          {loadingStructure && !pendingStructure && (
-            <div className="mt-4 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] p-3 text-xs text-muted-foreground/75 flex items-center gap-2">
-              <RefreshCw className="h-3.5 w-3.5 animate-spin text-cyan-400" />
-              Reading positioning + grouping keywords + checking for duplicates…
-            </div>
+          <AnimatePresence>
+            {loadingStructure && !pendingStructure && (
+              <motion.div
+                key="loading-structure"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                className="mt-4 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] p-3 text-xs text-muted-foreground/75 flex items-center gap-2">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                Reading positioning + grouping keywords + checking for duplicates…
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Phase 21 Block 2.10 — "Back to overview" hint shown when ANY output panel is open */}
+          {(response || explorationResponse || pendingStructure) && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.6 }}
+              className="mt-3 text-center">
+              <button
+                onClick={resetToDefault}
+                className="text-[10px] text-muted-foreground/55 hover:text-cyan-400 transition-colors flex items-center gap-1 mx-auto">
+                <X className="h-2.5 w-2.5" />
+                Back to overview · Esc
+              </button>
+            </motion.div>
           )}
 
           {/* Phase 21 Block 2.7 — WhatNeedsYou hero replaces the old 2-col Attention/QuietWins grid */}
@@ -876,7 +968,7 @@ function CommandInner() {
             <WhatNeedsYou
               attentionItems={briefing.attention}
               recoverableTop={recoverableTop}
-              onLaunchCommand={(cmd) => { setInput(cmd); setTimeout(() => handleSubmit(undefined, cmd), 50); }}
+              onLaunchCommand={runChatCommand}
             />
           )}
 
@@ -885,7 +977,7 @@ function CommandInner() {
             <WarRoomSection
               projectId={selectedProjectId}
               filterTerm={extractKeywordFragment(input)}
-              onLaunchCommand={(cmd) => { setInput(cmd); setTimeout(() => handleSubmit(undefined, cmd), 50); }}
+              onLaunchCommand={runChatCommand}
             />
           )}
 
