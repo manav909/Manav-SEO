@@ -121,7 +121,59 @@ function extractJson(text: string): any | null {
     try { return JSON.parse(slice); } catch { /* fall through */ }
   }
 
+  /* Strategy 4: JSON repair — fix common LLM mistakes before giving up.
+     Most failures from LLMs are: trailing commas, smart quotes, unescaped
+     newlines inside strings, and unbalanced brackets. Try repairs on the
+     largest brace/bracket region we found. */
+  const candidate = (firstBrace !== -1 && lastBrace > firstBrace)
+    ? text.slice(firstBrace, lastBrace + 1)
+    : (firstBracket !== -1 && lastBracket > firstBracket)
+      ? text.slice(firstBracket, lastBracket + 1)
+      : null;
+  if (candidate) {
+    const repaired = repairJson(candidate);
+    if (repaired) {
+      try { return JSON.parse(repaired); } catch { /* still bad — give up */ }
+    }
+  }
+
   return null;
+}
+
+/* Common-mistake repairs for LLM-produced JSON. Returns the repaired string
+   or null if we can't make it valid. Conservative — only fixes things that
+   are unambiguous. */
+function repairJson(s: string): string | null {
+  let out = s;
+
+  /* 1. Replace smart quotes with straight quotes */
+  out = out.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+
+  /* 2. Strip trailing commas before } or ] */
+  out = out.replace(/,(\s*[}\]])/g, '$1');
+
+  /* 3. Try to balance brackets — count and append missing closers.
+     ONLY safe if the open/close counts are off by a small amount. */
+  let braceDepth = 0, bracketDepth = 0, inString = false, escape = false;
+  for (let i = 0; i < out.length; i++) {
+    const c = out[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\' && inString) { escape = true; continue; }
+    if (c === '"' && !escape) { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '{') braceDepth++;
+    else if (c === '}') braceDepth--;
+    else if (c === '[') bracketDepth++;
+    else if (c === ']') bracketDepth--;
+  }
+  /* Close unterminated string */
+  if (inString) out += '"';
+  /* Append missing closers */
+  while (bracketDepth-- > 0) out += ']';
+  while (braceDepth-- > 0)   out += '}';
+
+  /* 4. Final sanity: try parse. If still bad, return null. */
+  try { JSON.parse(out); return out; } catch { return null; }
 }
 
 /* ─── Helper: call LLM with web search ───────────────────────── */
@@ -639,49 +691,25 @@ ${risks || '(none flagged)'}
 const stepContentBrief = {
   id: 'content_brief',
   label: 'Generate the full content brief',
-  description: 'Two-pass: outline first, then expand sections',
+  description: 'Five-stage sub-pipeline: skeleton + per-section expansion + facts research + internal links + writer brief',
   artifact_kind: 'brief',
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const keyword = ctx.scope.keyword as string;
-    const research    = ctx.prior.keyword_research || {};
-    const strategy    = ctx.prior.strategy_plan    || {};
+    const keyword    = ctx.scope.keyword as string;
+    const research   = ctx.prior.keyword_research || {};
+    const strategy   = ctx.prior.strategy_plan    || {};
     const competitors = ctx.prior.competitor_snapshot || {};
-    const gsc         = ctx.prior.gsc_context      || {};
+    const gsc        = ctx.prior.gsc_context      || {};
 
-    /* ── PASS 1: outline + meta ──────────────────────────────────
-       Smaller JSON, asks for the structural skeleton only.
-       Should complete in 20-40s. */
-    /* ── PASS 1: skeleton — kept genuinely small for speed.
-       We only ask for the highest-value fields: title, meta, intent, headings,
-       unique angle, schema. Other fields (secondary_keywords, internal_link_targets)
-       move to a fast PASS 1b or are filled later, so PASS 1 always finishes fast.
+    let totalLlm = 0;
+    let totalWeb = 0;
+    const stepNotes: string[] = [];
 
-       Token math: typical output ~600-900 tokens. Sonnet 4.6 at ~70 tok/sec ≈
-       10-15s of generation. Comfortably under any timeout. */
-    const outlineSys = `You output ONLY valid JSON for an SEO content brief skeleton. No prose. No fences. Just the JSON.
-
-Required shape:
-{
-  "title": "H1 (60-70 chars)",
-  "meta_description": "140-160 chars",
-  "search_intent": "informational|commercial|transactional|navigational",
-  "target_word_count": 2500,
-  "section_headings": ["H2 1", "H2 2", "H2 3", "H2 4", "H2 5", "H2 6", "H2 7", "H2 8"],
-  "unique_angle": "1 sentence",
-  "schema_recommendation": "Article|FAQ|HowTo|... + 5-word why"
-}
-
-Rules:
-- 6-10 H2 headings, ordered for reader flow
-- Headings are specific, not generic
-- unique_angle ties to the strategy + competitor gap`;
-
-    /* Lean input — just the keyword + a one-line summary of each prior step.
-       Stuffing full JSON into the prompt slows generation AND increases prompt
-       processing time. Keep it short. */
+    /* ════════ STAGE 1 — SKELETON ═════════════════════════════════
+       Title, meta, intent, H2 headings, unique angle, schema.
+       Kept lean — small input, low token cap. */
     const stratLine = strategy.strategy_name
-      ? `Strategy: ${strategy.strategy_name} — ${(strategy.approach || '').slice(0, 200)}`
+      ? `Strategy: ${strategy.strategy_name} \u2014 ${(strategy.approach || '').slice(0, 200)}`
       : '';
     const compLine = competitors.top_pages?.length
       ? `Top competitors: ${competitors.top_pages.slice(0, 5).map((p: any) => p.domain).filter(Boolean).join(', ')}`
@@ -693,7 +721,26 @@ Rules:
       ? `Intent: ${research.primary_intent}. ${research.intent_explanation || ''}`
       : '';
 
-    const outlineUsr = `Keyword: "${keyword}"
+    const skelSys = `You output ONLY valid JSON for an SEO content brief skeleton. No prose, no fences.
+
+Required shape:
+{
+  "title": "H1 (60-70 chars)",
+  "meta_description": "140-160 chars",
+  "search_intent": "informational|commercial|transactional|navigational",
+  "target_word_count": 2500,
+  "section_headings": ["H2 1", "H2 2", "H2 3", "H2 4", "H2 5", "H2 6", "H2 7", "H2 8"],
+  "secondary_keywords": ["3-7 supporting phrases"],
+  "unique_angle": "1 sentence",
+  "schema_recommendation": "Article|FAQ|HowTo + 5-word why"
+}
+
+Rules:
+- 6-10 H2 headings, ordered for reader flow
+- Headings are specific, not generic
+- Secondary keywords are real variations searchers use, not synonyms`;
+
+    const skelUsr = `Keyword: "${keyword}"
 ${intentLine}
 ${gscLine}
 ${compLine}
@@ -701,124 +748,274 @@ ${stratLine}
 
 Produce the JSON skeleton.`;
 
-    let outlineR = await callLlmJson({ systemPrompt: outlineSys, userMessage: outlineUsr, maxTokens: 1200, timeoutMs: 90_000 });
-    let callsMade = 1;
-
-    /* Retry outline once on failure */
-    if (!outlineR.ok) {
-      const strict = outlineSys + `\n\nCRITICAL: Reply with ONLY the JSON object — no fences, no prose before or after.`;
-      outlineR = await callLlmJson({ systemPrompt: strict, userMessage: outlineUsr, maxTokens: 1200, timeoutMs: 90_000 });
-      callsMade = 2;
+    let skelR = await callLlmJson({ systemPrompt: skelSys, userMessage: skelUsr, maxTokens: 1200, timeoutMs: 90_000 });
+    totalLlm++;
+    if (!skelR.ok) {
+      const strict = skelSys + `\n\nCRITICAL: ONLY the JSON object. No fences. No prose.`;
+      skelR = await callLlmJson({ systemPrompt: strict, userMessage: skelUsr, maxTokens: 1200, timeoutMs: 90_000 });
+      totalLlm++;
+    }
+    if (!skelR.ok || !skelR.parsed) {
+      return { ok: false, error: `Skeleton stage failed: ${skelR.error || 'no response'}`, llm_calls: totalLlm };
+    }
+    const skel: any = skelR.parsed;
+    const headings: string[] = Array.isArray(skel.section_headings) ? skel.section_headings.filter((h: any) => typeof h === 'string' && h.length > 0) : [];
+    if (!skel.title || headings.length < 3) {
+      return { ok: false, error: `Skeleton missing structure (title="${skel.title}", ${headings.length} headings)`, llm_calls: totalLlm };
     }
 
-    if (!outlineR.ok || !outlineR.parsed) {
-      return { ok: false, error: outlineR.error || 'outline failed', llm_calls: callsMade };
-    }
+    /* ════════ STAGE 2 \u2014 PER-SECTION EXPANSION ══════════════
+       One LLM call per H2 heading. Tiny output per call (200-300 tokens).
+       Sequential to avoid Vercel concurrent-fetch issues. If one fails,
+       we record the section without key_points and continue. */
+    const expanded: any[] = [];
+    let sectionsFullyExpanded = 0;
+    let sectionsPartial       = 0;
 
-    const skeleton: any = outlineR.parsed;
-    const headings: string[] = Array.isArray(skeleton.section_headings) ? skeleton.section_headings : [];
-    if (!skeleton.title || headings.length < 3) {
-      return {
-        ok: false,
-        error: `Outline missing required structure. Got title="${skeleton.title}", ${headings.length} headings.`,
-        llm_calls: callsMade,
-      };
-    }
+    for (let i = 0; i < headings.length; i++) {
+      const h = headings[i];
+      const expSys = `You output ONLY valid JSON expanding ONE section of an SEO content brief. No prose, no fences.
 
-    /* ── PASS 2: expand the sections in ONE call ──────────────────
-       Asks for key_points + intent + word_target per heading.
-       Inputs are now lean (we don't re-send all research, just headings).
-       Should complete in 30-60s. */
-    const expandSys = `You are S.E.A.S.O.N. expanding the BODY of a content brief. For each H2 heading provided, produce specific key points the writer must cover. Reply with ONLY valid JSON:
+Required shape:
 {
-  "sections": [
-    {
-      "h2": "(matches input heading exactly)",
-      "intent": "what this section answers (1 sentence)",
-      "key_points": ["3-6 specific points — facts, claims, comparisons, examples"],
-      "word_target": 300
-    }
-  ],
-  "must_include_facts": ["3-7 specific facts/stats the article must contain"],
-  "writer_brief": "150-word note to the writer on tone, depth, examples, and what NOT to do"
+  "intent": "what this section answers (1 sentence)",
+  "key_points": ["4-6 specific points \u2014 facts, claims, comparisons, examples, NOT generic SEO advice"],
+  "word_target": 300,
+  "examples_to_cite": ["1-3 concrete examples or scenarios writer should include"],
+  "suggested_subheadings": ["1-3 H3 subheadings if depth warrants"]
 }
 
-Quality bar:
-- Key points must be SPECIFIC (not generic SEO advice)
-- Together the word_targets should approximate the overall target_word_count
-- The writer_brief must reference the unique_angle and the strategy`;
+Rules:
+- key_points must be SPECIFIC to this section's heading
+- Reference the unique_angle where relevant
+- examples_to_cite must be concrete (real scenarios, real comparisons), not abstract`;
 
-    const expandUsr = `Expand these sections for the article on "${keyword}".
+      const expUsr = `Article: "${skel.title}"
+Article unique angle: ${skel.unique_angle}
+Article target word count: ${skel.target_word_count}
 
-TARGET WORD COUNT: ${skeleton.target_word_count || 2500}
-UNIQUE ANGLE: ${skeleton.unique_angle || '(none)'}
-STRATEGY: ${strategy.strategy_name || '(unnamed)'} — ${strategy.approach || '(no approach captured)'}
+Expand THIS section: "${h}"
+(It is section ${i + 1} of ${headings.length} in the article.)
 
-H2 HEADINGS TO EXPAND (in order):
-${headings.map((h, i) => `${i + 1}. ${h}`).join('\n')}
+Other sections in the article (for context, don't duplicate their content):
+${headings.map((other, idx) => idx === i ? null : `- ${other}`).filter(Boolean).join('\n')}
 
-Produce one entry per heading, in the same order.`;
+Produce JSON for this one section only.`;
 
-    let expandR = await callLlmJson({ systemPrompt: expandSys, userMessage: expandUsr, maxTokens: 2500, timeoutMs: 150_000 });
-    callsMade += 1;
+      let r = await callLlmJson({ systemPrompt: expSys, userMessage: expUsr, maxTokens: 700, timeoutMs: 30_000 });
+      totalLlm++;
+      if (!r.ok) {
+        /* One retry with stricter framing */
+        const strict = expSys + `\n\nCRITICAL: ONLY the JSON object. Start with { and end with }.`;
+        r = await callLlmJson({ systemPrompt: strict, userMessage: expUsr, maxTokens: 700, timeoutMs: 30_000 });
+        totalLlm++;
+      }
+      if (r.ok && r.parsed) {
+        expanded.push({
+          h2: h,
+          intent: r.parsed.intent || '',
+          key_points: Array.isArray(r.parsed.key_points) ? r.parsed.key_points : [],
+          word_target: r.parsed.word_target || Math.round((skel.target_word_count || 2500) / headings.length),
+          examples_to_cite: Array.isArray(r.parsed.examples_to_cite) ? r.parsed.examples_to_cite : [],
+          suggested_subheadings: Array.isArray(r.parsed.suggested_subheadings) ? r.parsed.suggested_subheadings : [],
+        });
+        sectionsFullyExpanded++;
+      } else {
+        expanded.push({
+          h2: h,
+          intent: '',
+          key_points: [],
+          word_target: Math.round((skel.target_word_count || 2500) / headings.length),
+          examples_to_cite: [],
+          suggested_subheadings: [],
+          _expansion_failed: r.error || 'unknown',
+        });
+        sectionsPartial++;
+      }
+    }
+    if (sectionsPartial > 0) stepNotes.push(`${sectionsPartial} of ${headings.length} sections only have heading-level info (expansion failed); ${sectionsFullyExpanded} are fully expanded.`);
 
-    if (!expandR.ok) {
-      /* Retry once with stricter framing */
-      const strict = expandSys + `\n\nCRITICAL: Reply with ONLY the JSON object — no fences, no prose. Sections array length MUST match the number of input headings.`;
-      expandR = await callLlmJson({ systemPrompt: strict, userMessage: expandUsr, maxTokens: 2500, timeoutMs: 150_000 });
-      callsMade += 1;
+    /* ════════ STAGE 3 \u2014 FACTS RESEARCH (with web_search) ═══
+       Verify 5-8 must-include facts with real sources.
+       This is the one place we pay for web search in the brief generation. */
+    const factsSys = `You output ONLY valid JSON. No prose, no fences.
+
+Use web_search to verify each fact you propose. Every fact MUST have a real source URL you actually retrieved.
+
+Required shape:
+{
+  "must_include_facts": [
+    {
+      "fact": "the specific claim/statistic/quote",
+      "source_url": "https://...",
+      "source_title": "page title",
+      "why_it_matters": "why this fact strengthens the article"
+    }
+  ]
+}
+
+Rules:
+- 5-8 facts total
+- Facts must be SPECIFIC (numbers, dates, named entities, official standards) \u2014 not generic claims
+- If you cannot verify a fact, do NOT include it. Better fewer real facts than padded ones.`;
+
+    const factsUsr = `Article: "${skel.title}"
+Article topic: "${keyword}"
+Article angle: ${skel.unique_angle}
+
+Section headings (so you know what the article will cover):
+${headings.map((h, idx) => `${idx + 1}. ${h}`).join('\n')}
+
+Find 5-8 specific verifiable facts the writer must include. Use web_search to get real sources for each.`;
+
+    const factsR = await callLlmWeb({ systemPrompt: factsSys, userMessage: factsUsr, maxTokens: 2000, maxUses: 6, timeoutMs: 90_000 });
+    totalLlm++;
+    if (factsR.webUsed) totalWeb += factsR.citations?.length || 0;
+
+    let mustIncludeFacts: any[] = [];
+    if (factsR.ok && factsR.parsed?.must_include_facts) {
+      mustIncludeFacts = Array.isArray(factsR.parsed.must_include_facts) ? factsR.parsed.must_include_facts : [];
+    } else {
+      stepNotes.push(`Facts research returned no verified facts: ${factsR.error || 'no parse'}. Brief will need facts added manually.`);
     }
 
-    /* If expansion failed, we still have a usable skeleton — return that. */
-    if (!expandR.ok || !expandR.parsed) {
-      const fallbackBrief: any = {
-        ...skeleton,
-        outline: headings.map((h: string) => ({ h2: h, intent: '', key_points: [], word_target: Math.round((skeleton.target_word_count || 2500) / headings.length) })),
-        must_include_facts: [],
-        writer_brief: '(expansion failed — outline-only brief)',
-      };
-      return {
-        ok: true,
-        output: fallbackBrief,
-        artifact: {
-          kind: 'brief',
-          title: `Content brief: "${keyword}" (outline only)`,
-          body: renderBriefArtifact(keyword, fallbackBrief),
-        },
-        honest_note: `Outline produced, but section expansion failed: ${expandR.error}. Brief contains H2 headings only — writer will need to flesh out the key points.`,
-        llm_calls: callsMade,
-      };
+    /* ════════ STAGE 4 \u2014 INTERNAL LINK ANALYSIS ═════════════
+       Read project GSC top_pages (cached) + suggest internal links.
+       If no GSC data, output suggestions of anchor concepts only. */
+    let internalLinks: any[] = [];
+    let internalLinkNote = '';
+    try {
+      const { data: gscPages } = await db().from("project_knowledge")
+        .select("field_value")
+        .eq("project_id", ctx.projectId)
+        .eq("category", "analytics")
+        .eq("field_key", "gsc_top_pages")
+        .maybeSingle();
+
+      const pages: any[] = (gscPages as any)?.field_value
+        ? (typeof (gscPages as any).field_value === 'string'
+            ? JSON.parse((gscPages as any).field_value)
+            : (gscPages as any).field_value)
+        : [];
+
+      if (pages.length > 0) {
+        const linkSys = `You output ONLY valid JSON. No prose, no fences.
+
+The user gives you (a) the new article being briefed, and (b) a list of EXISTING pages on the project's site (from GSC).
+
+Suggest 3-6 INTERNAL LINKS \u2014 specific pages from the list that should link IN to the new article, OR pages the new article should link OUT to.
+
+Required shape:
+{
+  "internal_links": [
+    {
+      "direction": "in" | "out",
+      "from_or_to_url": "https://...",
+      "anchor_text": "natural anchor text",
+      "rationale": "why this link helps ranking or UX"
+    }
+  ]
+}
+
+Rules:
+- Choose pages where the topical relevance is genuine, not forced
+- "in" = existing page links TO the new article (passes authority)
+- "out" = new article links TO an existing page (helps navigation + relevance)
+- Anchor text must read naturally, contain relevant terms, NOT exact-match spammy`;
+
+        const linkUsr = `NEW ARTICLE being briefed:
+- Title: "${skel.title}"
+- Keyword: "${keyword}"
+- Sections: ${headings.join(' | ')}
+
+EXISTING PAGES on the site (with their current GSC top queries):
+${pages.slice(0, 30).map((p: any) => `- ${p.page || p.url}  (top queries: ${(p.top_queries || []).slice(0, 3).join(', ')})`).join('\n')}
+
+Suggest internal links.`;
+
+        const linkR = await callLlmJson({ systemPrompt: linkSys, userMessage: linkUsr, maxTokens: 1500, timeoutMs: 45_000 });
+        totalLlm++;
+        if (linkR.ok && Array.isArray(linkR.parsed?.internal_links)) {
+          internalLinks = linkR.parsed.internal_links;
+        } else {
+          internalLinkNote = `Internal link analysis returned no suggestions: ${linkR.error || 'no parse'}.`;
+        }
+      } else {
+        internalLinkNote = 'No GSC top_pages available for this project \u2014 connect GSC for site-aware link suggestions.';
+      }
+    } catch (e: any) {
+      internalLinkNote = `Internal link analysis failed: ${e?.message || 'unknown'}`;
+    }
+    if (internalLinkNote) stepNotes.push(internalLinkNote);
+
+    /* ════════ STAGE 5 \u2014 WRITER BRIEF SYNTHESIS ════════════
+       Take everything above + write the strategic note to the writer. */
+    const writerSys = `You output ONLY valid JSON. No prose, no fences.
+
+Required shape:
+{
+  "writer_brief": "200-250 word strategic note covering: tone, persona/reader, what NOT to do, quality bar, reference materials",
+  "tone_descriptor": "3-5 words (e.g. 'authoritative but accessible')",
+  "reader_persona": "who this article is for (specific persona)",
+  "things_to_avoid": ["3-5 specific things the writer must NOT do"],
+  "quality_checklist": ["4-6 checks the writer/editor should run before publishing"]
+}
+
+Rules:
+- The writer_brief must reference the unique_angle and how to land it
+- things_to_avoid must be specific (e.g. "Don't say 'always check your local laws' \u2014 instead cite specific jurisdictional examples")
+- quality_checklist must be auditable (each item is a yes/no question)`;
+
+    const writerUsr = `Synthesize the writer brief for this article.
+
+TITLE: ${skel.title}
+ANGLE: ${skel.unique_angle}
+INTENT: ${skel.search_intent}
+TARGET WORDS: ${skel.target_word_count}
+
+SECTIONS:
+${expanded.map((s: any, i: number) => `${i + 1}. ${s.h2}\n   Intent: ${s.intent || '(not expanded)'}\n   Key points: ${(s.key_points || []).slice(0, 2).join('; ') || '(not expanded)'}`).join('\n')}
+
+MUST-INCLUDE FACTS (${mustIncludeFacts.length}):
+${mustIncludeFacts.slice(0, 3).map((f: any) => `\u2022 ${f.fact}`).join('\n')}
+
+STRATEGY CONTEXT: ${strategy.strategy_name || ''} \u2014 ${(strategy.approach || '').slice(0, 200)}
+
+Now write the writer's strategic brief.`;
+
+    const writerR = await callLlmJson({ systemPrompt: writerSys, userMessage: writerUsr, maxTokens: 1200, timeoutMs: 45_000 });
+    totalLlm++;
+
+    let writerBriefData: any = {};
+    if (writerR.ok && writerR.parsed) {
+      writerBriefData = writerR.parsed;
+    } else {
+      stepNotes.push(`Writer brief synthesis failed: ${writerR.error || 'no parse'}. Outputting brief without writer note.`);
     }
 
-    /* Merge skeleton + expanded sections into the final brief shape */
-    const expanded: any = expandR.parsed;
-    const sections: any[] = Array.isArray(expanded.sections) ? expanded.sections : [];
-
-    /* Match expanded sections to headings by index (best-effort) */
-    const fullOutline = headings.map((h: string, i: number) => {
-      const match = sections[i] || sections.find((s: any) => (s.h2 || '').toLowerCase().includes(h.toLowerCase().slice(0, 20)));
-      return {
-        h2: h,
-        intent: match?.intent || '',
-        key_points: Array.isArray(match?.key_points) ? match.key_points : [],
-        word_target: match?.word_target || Math.round((skeleton.target_word_count || 2500) / headings.length),
-      };
-    });
-
+    /* ════════ ASSEMBLE FINAL BRIEF ═══════════════════════════════ */
     const brief: any = {
-      title:                  skeleton.title,
-      meta_description:       skeleton.meta_description,
-      primary_keyword:        skeleton.primary_keyword || keyword,
-      secondary_keywords:     skeleton.secondary_keywords || [],
-      search_intent:          skeleton.search_intent,
-      target_word_count:      skeleton.target_word_count,
-      unique_angle:           skeleton.unique_angle,
-      schema_recommendation:  skeleton.schema_recommendation,
-      internal_link_targets:  skeleton.internal_link_targets || [],
-      outline:                fullOutline,
-      must_include_facts:     expanded.must_include_facts || [],
-      writer_brief:           expanded.writer_brief || '',
+      title:                  skel.title,
+      meta_description:       skel.meta_description,
+      primary_keyword:        keyword,
+      secondary_keywords:     skel.secondary_keywords || [],
+      search_intent:          skel.search_intent,
+      target_word_count:      skel.target_word_count,
+      unique_angle:           skel.unique_angle,
+      schema_recommendation:  skel.schema_recommendation,
+      outline:                expanded,
+      must_include_facts:     mustIncludeFacts,
+      internal_links:         internalLinks,
+      writer_brief:           writerBriefData.writer_brief || '',
+      tone_descriptor:        writerBriefData.tone_descriptor || '',
+      reader_persona:         writerBriefData.reader_persona || '',
+      things_to_avoid:        writerBriefData.things_to_avoid || [],
+      quality_checklist:      writerBriefData.quality_checklist || [],
     };
+
+    const honestNote = stepNotes.length === 0
+      ? `Five-stage brief complete: ${headings.length} sections (${sectionsFullyExpanded} fully expanded), ${mustIncludeFacts.length} verified facts, ${internalLinks.length} internal link suggestions. Used ${totalLlm} LLM calls.`
+      : `Brief produced with ${stepNotes.length} caveat(s): ${stepNotes.join(' ')} Used ${totalLlm} LLM calls.`;
 
     return {
       ok: true,
@@ -828,46 +1025,114 @@ Produce one entry per heading, in the same order.`;
         title: `Content brief: "${keyword}"`,
         body: renderBriefArtifact(keyword, brief),
       },
-      honest_note: `Two-pass brief produced (outline + expansion). ${fullOutline.length} H2 sections, target ${brief.target_word_count || 'unspecified'} words.`,
-      llm_calls: callsMade,
+      honest_note: honestNote,
+      llm_calls: totalLlm,
+      web_searches: totalWeb,
     };
   },
 };
 
+
 function renderBriefArtifact(keyword: string, brief: any): string {
+  /* Outline with full per-section detail */
   const outline = (brief.outline || []).map((s: any, i: number) => {
-    const points = (s.key_points || []).map((p: string) => `  - ${p}`).join('\n');
+    const kp = (s.key_points || []).length > 0
+      ? (s.key_points || []).map((p: string) => `  - ${p}`).join('\n')
+      : (s._expansion_failed ? `  - _(section expansion failed: ${s._expansion_failed})_` : '  - _(no key points)_');
+    const examples = (s.examples_to_cite || []).length > 0
+      ? `\n  **Examples to cite:**\n${(s.examples_to_cite || []).map((e: string) => `  - ${e}`).join('\n')}`
+      : '';
+    const subs = (s.suggested_subheadings || []).length > 0
+      ? `\n  **Suggested H3s:** ${(s.suggested_subheadings || []).join(' · ')}`
+      : '';
     return `### ${i + 1}. ${s.h2 || 'untitled section'}${s.word_target ? ` _(${s.word_target}w)_` : ''}
 ${s.intent ? `> ${s.intent}` : ''}
-${points || '  - (no key points specified)'}`;
+
+  **Key points:**
+${kp}${examples}${subs}`;
   }).join('\n\n');
+
+  /* Must-include facts with verified sources */
+  const facts = (brief.must_include_facts || []).length > 0
+    ? (brief.must_include_facts || []).map((f: any, i: number) => {
+        if (typeof f === 'string') return `${i + 1}. ${f}`;
+        const src = f.source_url ? ` — [${f.source_title || 'source'}](${f.source_url})` : '';
+        const why = f.why_it_matters ? `\n   _Why it matters:_ ${f.why_it_matters}` : '';
+        return `${i + 1}. **${f.fact || '(no fact)'}**${src}${why}`;
+      }).join('\n\n')
+    : '_(no facts verified — writer should add)_';
+
+  /* Internal links with direction + anchor + rationale */
+  const links = (brief.internal_links || []).length > 0
+    ? (brief.internal_links || []).map((l: any, i: number) => {
+        const dir = l.direction === 'in' ? '← link IN from' : l.direction === 'out' ? '→ link OUT to' : '↔';
+        const anchor = l.anchor_text ? `\n   _Anchor text:_ "${l.anchor_text}"` : '';
+        const why = l.rationale ? `\n   _Rationale:_ ${l.rationale}` : '';
+        return `${i + 1}. ${dir} \`${l.from_or_to_url || '(no url)'}\`${anchor}${why}`;
+      }).join('\n\n')
+    : '_(no internal link suggestions — connect GSC to enable)_';
+
+  /* Things to avoid */
+  const avoid = (brief.things_to_avoid || []).length > 0
+    ? (brief.things_to_avoid || []).map((t: string) => `- ${t}`).join('\n')
+    : '_(none specified)_';
+
+  /* Quality checklist */
+  const checks = (brief.quality_checklist || []).length > 0
+    ? (brief.quality_checklist || []).map((q: string) => `- [ ] ${q}`).join('\n')
+    : '_(none specified)_';
+
+  /* Secondary keywords */
+  const secondary = (brief.secondary_keywords || []).length > 0
+    ? (brief.secondary_keywords || []).join(', ')
+    : '_(none specified)_';
 
   return `# Content Brief: "${keyword}"
 
-**Title (H1):** ${brief.title || '—'}
-**Meta description:** ${brief.meta_description || '—'}
-**Target word count:** ${brief.target_word_count || '—'}
-**Search intent:** ${brief.search_intent || '—'}
-**Schema type:** ${brief.schema_recommendation || '—'}
+## Top-line specs
 
-**Primary keyword:** ${brief.primary_keyword || keyword}
-**Secondary keywords:** ${(brief.secondary_keywords || []).join(', ') || '—'}
+| Field | Value |
+|---|---|
+| **H1 (Title)** | ${brief.title || '—'} |
+| **Meta description** | ${brief.meta_description || '—'} |
+| **Target word count** | ${brief.target_word_count || '—'} |
+| **Search intent** | ${brief.search_intent || '—'} |
+| **Schema type** | ${brief.schema_recommendation || '—'} |
+| **Primary keyword** | ${brief.primary_keyword || keyword} |
+| **Tone** | ${brief.tone_descriptor || '—'} |
+| **Reader persona** | ${brief.reader_persona || '—'} |
+
+**Secondary keywords:** ${secondary}
 
 ## Unique angle
-${brief.unique_angle || '—'}
+
+${brief.unique_angle || '_(none specified)_'}
 
 ## Outline
 
 ${outline}
 
-## Must-include facts
-${(brief.must_include_facts || []).map((f: string) => `- ${f}`).join('\n') || '(none specified)'}
+## Must-include facts (verified)
 
-## Internal link targets
-${(brief.internal_link_targets || []).map((l: string) => `- ${l}`).join('\n') || '(none specified)'}
+${facts}
+
+## Internal link plan
+
+${links}
 
 ## Writer brief
-${brief.writer_brief || '—'}
+
+${brief.writer_brief || '_(writer brief synthesis failed)_'}
+
+### Tone & persona
+- **Tone:** ${brief.tone_descriptor || '—'}
+- **Reader:** ${brief.reader_persona || '—'}
+
+### Things to avoid
+${avoid}
+
+### Pre-publish quality checklist
+${checks}
 `;
 }
 
