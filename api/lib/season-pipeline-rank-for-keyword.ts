@@ -293,7 +293,11 @@ async function readGscQueries(projectId: string): Promise<any[]> {
 export function buildRankForKeywordPipeline(): PipelineDefinition {
   return {
     type: 'rank_for_keyword',
-    llm_call_cap: 12,
+    /* Phase 13a-v4: brief sub-pipeline can use up to 12 LLM calls on its own
+       (skeleton + 8 section expansions + facts + internal links + writer synthesis).
+       Other steps use 3-4 between them. 25 gives comfortable headroom for
+       retries without runaway cost. */
+    llm_call_cap: 25,
     steps: [
       stepKeywordResearch,
       stepGscContext,
