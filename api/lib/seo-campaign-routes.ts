@@ -87,3 +87,41 @@ export async function bsSeoOpportunityDismiss(body: any): Promise<any> {
   if (!opportunityId) return { success: false, error: "opportunityId required" };
   return updateOpportunity({ opportunityId, status: 'dismissed', dismissedReason: reason });
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 14.1 — Unification routes
+═══════════════════════════════════════════════════════════════ */
+
+export async function bsSeoOpportunityFromAlert(body: any): Promise<any> {
+  const { projectId, alertId, alertType, severity, title, detail } = body || {};
+  if (!projectId || !alertId || !alertType || !title) {
+    return { success: false, error: "projectId, alertId, alertType, title required" };
+  }
+  const { recordOpportunityFromAlert } = await import("./seo-campaign-engine.js");
+  return recordOpportunityFromAlert({ projectId, alertId, alertType, severity: severity || 'warn', title, detail });
+}
+
+export async function bsSeoOpportunityFromAnalytics(body: any): Promise<any> {
+  const { projectId, findingKind, query, position, impressions, clicks, lift_pct, reason, raw } = body || {};
+  if (!projectId || !findingKind || !query) {
+    return { success: false, error: "projectId, findingKind, query required" };
+  }
+  const { recordOpportunityFromAnalyticsFinding } = await import("./seo-campaign-engine.js");
+  return recordOpportunityFromAnalyticsFinding({ projectId, findingKind, query, position, impressions, clicks, lift_pct, reason, raw });
+}
+
+export async function bsSeoCampaignLinkReport(body: any): Promise<any> {
+  const { projectId, campaignId, sourceTable, sourceId, sourceTitle, sourceBodyMd, sourceSummary, pillar, reportKind, llmCallsUsed, webSearchesUsed, dataSources, tags } = body || {};
+  if (!projectId || !campaignId || !sourceTable || !sourceId || !sourceTitle) {
+    return { success: false, error: "projectId, campaignId, sourceTable, sourceId, sourceTitle required" };
+  }
+  const { linkReportFromOtherSource } = await import("./seo-campaign-engine.js");
+  return linkReportFromOtherSource({ projectId, campaignId, sourceTable, sourceId, sourceTitle, sourceBodyMd, sourceSummary, pillar, reportKind, llmCallsUsed, webSearchesUsed, dataSources, tags });
+}
+
+export async function bsSeoReportSearch(body: any): Promise<any> {
+  const { projectId, query, pillar, reportKind, tag, limit } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { searchReportsAcrossCampaigns } = await import("./seo-campaign-engine.js");
+  return searchReportsAcrossCampaigns({ projectId, query, pillar, reportKind, tag, limit });
+}

@@ -2546,3 +2546,47 @@ export async function seoOpportunityDismiss(opts: { opportunityId: string; reaso
   if (!r?.success) return { error: r?.error };
   return { success: true };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 14.1 — Unification client methods
+═══════════════════════════════════════════════════════════════ */
+
+export async function seoOpportunityFromAlert(opts: {
+  projectId: string; alertId: string; alertType: string; severity?: string;
+  title: string; detail?: any;
+}): Promise<{ opportunity_id?: string; campaign_id?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_opportunity_from_alert', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { opportunity_id: r.opportunity_id, campaign_id: r.campaign_id };
+}
+
+export async function seoOpportunityFromAnalytics(opts: {
+  projectId: string;
+  findingKind: 'rising_star' | 'falling_star' | 'query_velocity_gain' | 'query_velocity_loss';
+  query: string; position?: number; impressions?: number; clicks?: number;
+  lift_pct?: number; reason?: string; raw?: any;
+}): Promise<{ opportunity_id?: string; campaign_id?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_opportunity_from_analytics', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { opportunity_id: r.opportunity_id, campaign_id: r.campaign_id };
+}
+
+export async function seoCampaignLinkReport(opts: {
+  projectId: string; campaignId: string;
+  sourceTable: string; sourceId: string; sourceTitle: string;
+  sourceBodyMd?: string; sourceSummary?: string;
+  pillar?: string; reportKind?: string;
+  tags?: string[];
+}): Promise<{ report_id?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_campaign_link_report', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { report_id: r.report_id };
+}
+
+export async function seoReportSearch(opts: {
+  projectId: string; query?: string; pillar?: string; reportKind?: string; tag?: string; limit?: number;
+}): Promise<{ reports?: any[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_report_search', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { reports: r.reports };
+}

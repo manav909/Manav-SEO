@@ -21,8 +21,10 @@ import DataProvenanceBanner from './DataProvenanceBanner';
 import {
   TrendingUp, TrendingDown, Activity, Shield, RefreshCw, AlertCircle, BarChart3,
   ChevronDown, ChevronRight, Info, Sparkles, Zap, Globe, Smartphone, Target,
-  ArrowUpRight, ArrowDownRight, Minus, ExternalLink,
+  ArrowUpRight, ArrowDownRight, Minus, ExternalLink, Lightbulb, Check,
 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import * as pmApi from './api';
 import {
   getAnalyticsIntel,
   recomputeAnalyticsIntel,
@@ -179,7 +181,7 @@ export default function AnalyticsIntelPanel({ projectId, defaultCollapsed }: Pro
               onToggle={() => setShowRising(!showRising)}
               subtitle="Queries gaining impressions — one push from page 1"
             >
-              <RisingStarsTable items={intel.risingStars} />
+              <RisingStarsTable items={intel.risingStars} projectId={projectId} />
             </CollapsibleSection>
           )}
 
@@ -194,7 +196,7 @@ export default function AnalyticsIntelPanel({ projectId, defaultCollapsed }: Pro
               onToggle={() => setShowFalling(!showFalling)}
               subtitle="Queries losing clicks — investigate cause"
             >
-              <FallingStarsTable items={intel.fallingStars} />
+              <FallingStarsTable items={intel.fallingStars} projectId={projectId} />
             </CollapsibleSection>
           )}
 
@@ -500,7 +502,36 @@ const OPPORTUNITY_LABELS: Record<string, { label: string; color: string }> = {
   ranking_climber:   { label: 'Climbing',         color: 'text-blue-400 bg-blue-500/15'       },
 };
 
-function RisingStarsTable({ items }: { items: RisingStarClient[] }) {
+function RisingStarsTable({ items, projectId }: { items: RisingStarClient[]; projectId: string }) {
+  const { toast } = useToast();
+  const [noted, setNoted] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const noteOpportunity = async (r: RisingStarClient) => {
+    if (noted.has(r.query)) return;
+    setBusy(r.query);
+    const result = await pmApi.seoOpportunityFromAnalytics({
+      projectId,
+      findingKind: 'rising_star',
+      query:       r.query,
+      position:    r.position,
+      impressions: r.currentImpr,
+      lift_pct:    r.impressionLift,
+      reason:      r.reason,
+      raw:         r,
+    });
+    setBusy(null);
+    if (result.error) {
+      toast({ title: 'Could not note opportunity', description: result.error, variant: 'destructive' });
+      return;
+    }
+    setNoted(prev => new Set(prev).add(r.query));
+    toast({
+      title: result.campaign_id ? 'Noted — added to existing campaign' : 'Noted as project opportunity',
+      description: `Visible in PM → SEO Campaigns → Opportunities`,
+    });
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[11px]">
@@ -512,11 +543,14 @@ function RisingStarsTable({ items }: { items: RisingStarClient[] }) {
             <th className="text-right py-2 px-2">Impressions</th>
             <th className="text-right py-2 px-2">Lift</th>
             <th className="text-left py-2 pl-2">Why</th>
+            <th className="text-right py-2 pl-2 pr-1">Note</th>
           </tr>
         </thead>
         <tbody>
           {items.slice(0, 15).map((r, i) => {
             const opp = OPPORTUNITY_LABELS[r.opportunity] || OPPORTUNITY_LABELS.ranking_climber;
+            const isNoted = noted.has(r.query);
+            const isBusy = busy === r.query;
             return (
               <tr key={i} className="border-b border-border/40 hover:bg-muted/10">
                 <td className="py-2 pr-3 font-semibold text-foreground">{r.query}</td>
@@ -529,6 +563,20 @@ function RisingStarsTable({ items }: { items: RisingStarClient[] }) {
                 </td>
                 <td className="py-2 px-2 text-right text-emerald-400 font-bold">+{r.impressionLift.toFixed(0)}%</td>
                 <td className="py-2 pl-2 text-muted-foreground text-[10px] max-w-xs">{r.reason}</td>
+                <td className="py-2 pl-2 pr-1 text-right">
+                  <button
+                    onClick={() => noteOpportunity(r)}
+                    disabled={isNoted || isBusy}
+                    title={isNoted ? 'Already noted' : 'Note as opportunity'}
+                    className={`p-1 rounded ${
+                      isNoted
+                        ? 'text-emerald-400'
+                        : 'text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10'
+                    }`}
+                  >
+                    {isNoted ? <Check className="h-3 w-3" /> : <Lightbulb className="h-3 w-3" />}
+                  </button>
+                </td>
               </tr>
             );
           })}
@@ -540,7 +588,36 @@ function RisingStarsTable({ items }: { items: RisingStarClient[] }) {
 
 /* ─── Falling stars table ───────────────────────────────────────── */
 
-function FallingStarsTable({ items }: { items: FallingStarClient[] }) {
+function FallingStarsTable({ items, projectId }: { items: FallingStarClient[]; projectId: string }) {
+  const { toast } = useToast();
+  const [noted, setNoted] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const noteOpportunity = async (r: FallingStarClient) => {
+    if (noted.has(r.query)) return;
+    setBusy(r.query);
+    const result = await pmApi.seoOpportunityFromAnalytics({
+      projectId,
+      findingKind: 'falling_star',
+      query:       r.query,
+      position:    r.position > 0 ? r.position : r.positionPrevious,
+      clicks:      r.currentClicks,
+      lift_pct:    -r.clickLoss,
+      reason:      r.reason,
+      raw:         r,
+    });
+    setBusy(null);
+    if (result.error) {
+      toast({ title: 'Could not note opportunity', description: result.error, variant: 'destructive' });
+      return;
+    }
+    setNoted(prev => new Set(prev).add(r.query));
+    toast({
+      title: result.campaign_id ? 'Noted — added to existing campaign' : 'Noted as project opportunity',
+      description: `Visible in PM → SEO Campaigns → Opportunities`,
+    });
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[11px]">
@@ -552,27 +629,46 @@ function FallingStarsTable({ items }: { items: FallingStarClient[] }) {
             <th className="text-right py-2 px-2">Clicks</th>
             <th className="text-right py-2 px-2">Loss</th>
             <th className="text-left py-2 pl-2">Why</th>
+            <th className="text-right py-2 pl-2 pr-1">Note</th>
           </tr>
         </thead>
         <tbody>
-          {items.slice(0, 15).map((r, i) => (
-            <tr key={i} className="border-b border-border/40 hover:bg-muted/10">
-              <td className="py-2 pr-3 font-semibold text-foreground">{r.query}</td>
-              <td className="py-2 px-2">
-                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                  r.severity === 'critical' ? 'text-red-400 bg-red-500/15' : 'text-amber-400 bg-amber-500/15'
-                }`}>{r.severity}</span>
-              </td>
-              <td className="py-2 px-2 text-right text-foreground/80">
-                {r.positionPrevious.toFixed(1)} → {r.position > 0 ? r.position.toFixed(1) : 'lost'}
-              </td>
-              <td className="py-2 px-2 text-right text-foreground/80">
-                {r.previousClicks.toLocaleString()} → <span className="text-foreground font-semibold">{r.currentClicks.toLocaleString()}</span>
-              </td>
-              <td className="py-2 px-2 text-right text-red-400 font-bold">-{r.clickLoss.toFixed(0)}%</td>
-              <td className="py-2 pl-2 text-muted-foreground text-[10px] max-w-xs">{r.reason}</td>
-            </tr>
-          ))}
+          {items.slice(0, 15).map((r, i) => {
+            const isNoted = noted.has(r.query);
+            const isBusy = busy === r.query;
+            return (
+              <tr key={i} className="border-b border-border/40 hover:bg-muted/10">
+                <td className="py-2 pr-3 font-semibold text-foreground">{r.query}</td>
+                <td className="py-2 px-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                    r.severity === 'critical' ? 'text-red-400 bg-red-500/15' : 'text-amber-400 bg-amber-500/15'
+                  }`}>{r.severity}</span>
+                </td>
+                <td className="py-2 px-2 text-right text-foreground/80">
+                  {r.positionPrevious.toFixed(1)} → {r.position > 0 ? r.position.toFixed(1) : 'lost'}
+                </td>
+                <td className="py-2 px-2 text-right text-foreground/80">
+                  {r.previousClicks.toLocaleString()} → <span className="text-foreground font-semibold">{r.currentClicks.toLocaleString()}</span>
+                </td>
+                <td className="py-2 px-2 text-right text-red-400 font-bold">-{r.clickLoss.toFixed(0)}%</td>
+                <td className="py-2 pl-2 text-muted-foreground text-[10px] max-w-xs">{r.reason}</td>
+                <td className="py-2 pl-2 pr-1 text-right">
+                  <button
+                    onClick={() => noteOpportunity(r)}
+                    disabled={isNoted || isBusy}
+                    title={isNoted ? 'Already noted' : 'Note as opportunity'}
+                    className={`p-1 rounded ${
+                      isNoted
+                        ? 'text-emerald-400'
+                        : 'text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10'
+                    }`}
+                  >
+                    {isNoted ? <Check className="h-3 w-3" /> : <Lightbulb className="h-3 w-3" />}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

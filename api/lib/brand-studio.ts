@@ -817,6 +817,24 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoOpportunityDismiss(body);
     }
 
+    /* Phase 14.1 — unification adapters */
+    case "bs_seo_opportunity_from_alert": {
+      const { bsSeoOpportunityFromAlert } = await import("./seo-campaign-routes.js");
+      return bsSeoOpportunityFromAlert(body);
+    }
+    case "bs_seo_opportunity_from_analytics": {
+      const { bsSeoOpportunityFromAnalytics } = await import("./seo-campaign-routes.js");
+      return bsSeoOpportunityFromAnalytics(body);
+    }
+    case "bs_seo_campaign_link_report": {
+      const { bsSeoCampaignLinkReport } = await import("./seo-campaign-routes.js");
+      return bsSeoCampaignLinkReport(body);
+    }
+    case "bs_seo_report_search": {
+      const { bsSeoReportSearch } = await import("./seo-campaign-routes.js");
+      return bsSeoReportSearch(body);
+    }
+
     /* Phase 12.5a — forecasts + monitoring */
     case "bs_season_forecast_list": {
       const { bsSeasonForecastList } = await import("./season-forecast-routes.js");

@@ -144,7 +144,26 @@ async function upsertAlert(opts: {
     console.error("[pm-rules] alert insert failed:", error.message);
     return { created: false };
   }
-  return { created: true, alertId: (data as any).id };
+  const alertId = (data as any).id;
+
+  /* Phase 14.1 — best-effort: also create an opportunity tied to this alert.
+     If a campaign already exists for the alert's keyword, the opportunity gets
+     linked to that campaign automatically. Failures here NEVER block the alert. */
+  try {
+    const { recordOpportunityFromAlert } = await import("./seo-campaign-engine.js");
+    await recordOpportunityFromAlert({
+      projectId: opts.projectId,
+      alertId,
+      alertType: opts.alertType,
+      severity:  opts.severity,
+      title:     opts.title,
+      detail:    opts.detail,
+    });
+  } catch (e: any) {
+    console.log(`[pm-rules] opportunity creation from alert failed (non-fatal): ${e?.message}`);
+  }
+
+  return { created: true, alertId };
 }
 
 /* ── rule: rank_drop_alert ────────────────────────────────── */

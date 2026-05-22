@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, FileText, Share2, Save, Download, Trash2, Camera,
   ChevronLeft, Loader2, Sliders as SlidersIcon, ListChecks, Check,
+  Target, X,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import * as pmApi from './api';
@@ -72,6 +73,12 @@ export default function ReportsPanel({ projectId, projectName }: {
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [snapping, setSnapping] = useState(false);
+
+  /* Phase 14.1 — save-to-campaign modal state */
+  const [saveToCampaignFor, setSaveToCampaignFor] = useState<ReportSummary | null>(null);
+  const [campaignsForLink, setCampaignsForLink] = useState<any[]>([]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
+  const [linking, setLinking] = useState(false);
 
   const loadList = useCallback(async () => {
     setLoadingList(true);
@@ -195,6 +202,48 @@ export default function ReportsPanel({ projectId, projectName }: {
     loadList();
   };
 
+  /* Phase 14.1 — open the save-to-campaign modal for a given report.
+     Loads the project's active campaigns so user can pick one. */
+  const openSaveToCampaign = async (r: ReportSummary) => {
+    setSaveToCampaignFor(r);
+    setLoadingCampaigns(true);
+    const result = await pmApi.seoCampaignList({ projectId, statusFilter: 'active' });
+    setCampaignsForLink(result.campaigns || []);
+    setLoadingCampaigns(false);
+    if (result.error) {
+      toast({ title: 'Could not load campaigns', description: result.error, variant: 'destructive' });
+    }
+  };
+
+  /* Phase 14.1 — execute the link */
+  const confirmSaveToCampaign = async (campaignId: string) => {
+    if (!saveToCampaignFor) return;
+    setLinking(true);
+    /* Fetch the full report so we have body to copy */
+    const full = await pmApi.getReport(saveToCampaignFor.id);
+    const bodyMd = full?.report ? buildMarkdownFromReport(full.report) : '';
+    const result = await pmApi.seoCampaignLinkReport({
+      projectId,
+      campaignId,
+      sourceTable:   'report_generations',
+      sourceId:      saveToCampaignFor.id,
+      sourceTitle:   saveToCampaignFor.title,
+      sourceBodyMd:  bodyMd,
+      sourceSummary: `Client report covering ${saveToCampaignFor.period_start || ''} → ${saveToCampaignFor.period_end || ''}.`,
+      pillar:        'content',
+      reportKind:    'manual_refresh',
+      tags:          ['client_report', `period:${saveToCampaignFor.period_start || ''}_to_${saveToCampaignFor.period_end || ''}`],
+    });
+    setLinking(false);
+    if (result.error) {
+      toast({ title: 'Link failed', description: result.error, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Linked to campaign', description: 'Report is now visible in the campaign drawer.' });
+    setSaveToCampaignFor(null);
+    setCampaignsForLink([]);
+  };
+
   const remove = async (id: string) => {
     if (!confirm('Delete this report?')) return;
     const { error } = await pmApi.deleteReport(id);
@@ -233,6 +282,7 @@ export default function ReportsPanel({ projectId, projectName }: {
 
   /* ── LIST MODE ── */
   if (mode === 'list') return (
+    <>
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-card p-5 flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -276,6 +326,10 @@ export default function ReportsPanel({ projectId, projectName }: {
                   <Share2 className="h-3 w-3" /> Open share
                 </a>
               )}
+              <button onClick={() => openSaveToCampaign(r)}
+                className="p-1.5 rounded hover:bg-primary/15 text-muted-foreground hover:text-primary" title="Save to campaign">
+                <Target className="h-3.5 w-3.5" />
+              </button>
               <button onClick={() => remove(r.id)}
                 className="p-1.5 rounded hover:bg-destructive/15 text-muted-foreground hover:text-destructive" title="Delete">
                 <Trash2 className="h-3.5 w-3.5" />
@@ -285,6 +339,17 @@ export default function ReportsPanel({ projectId, projectName }: {
         ))}
       </div>
     </div>
+    {saveToCampaignFor && (
+      <SaveToCampaignModal
+        report={saveToCampaignFor}
+        campaigns={campaignsForLink}
+        loading={loadingCampaigns}
+        linking={linking}
+        onConfirm={confirmSaveToCampaign}
+        onCancel={() => { setSaveToCampaignFor(null); setCampaignsForLink([]); }}
+      />
+    )}
+    </>
   );
 
   /* ── BUILDER MODE ── */
@@ -502,4 +567,135 @@ export default function ReportsPanel({ projectId, projectName }: {
   );
 
   return null;
+}
+
+/* ─── Phase 14.1 helpers ─────────────────────────────────── */
+
+/** Convert a block-based FullReport into a single markdown body for storage
+ *  in seo_campaign_reports. Narrative blocks keep their content, structured
+ *  blocks (charts/tables/kpis) become brief textual placeholders. */
+function buildMarkdownFromReport(r: FullReport): string {
+  const lines: string[] = [];
+  lines.push(`# ${r.title}`);
+  lines.push('');
+  lines.push(`**Period:** ${r.period_start || ''} → ${r.period_end || ''}  `);
+  lines.push(`**Status:** ${r.status}  `);
+  lines.push(`**Created:** ${new Date(r.created_at).toLocaleDateString()}`);
+  lines.push('');
+
+  /* Group blocks by category */
+  const cats: Record<string, ReportBlock[]> = {};
+  for (const id of r.selected_blocks || []) {
+    const b = r.blocks.find(x => x.id === id);
+    if (!b) continue;
+    if (!cats[b.category]) cats[b.category] = [];
+    cats[b.category].push(b);
+  }
+  const order = ['summary', 'performance', 'delivery', 'competitive', 'next'];
+  for (const cat of order) {
+    if (!cats[cat] || cats[cat].length === 0) continue;
+    const label = ({ summary: 'Summary', performance: 'Performance', delivery: 'Delivery',
+                     competitive: 'Competitive', next: "What's Next" } as Record<string, string>)[cat] || cat;
+    lines.push('');
+    lines.push(`## ${label}`);
+    lines.push('');
+    for (const b of cats[cat]) {
+      lines.push(`### ${b.title}`);
+      if (b.content) {
+        lines.push(b.content);
+      } else if (b.data) {
+        lines.push(`_(Structured block — ${b.type}. See original report at ${window.location.origin}/pm for visualization.)_`);
+      }
+      lines.push('');
+    }
+  }
+  return lines.join('\n');
+}
+
+/* ─── Phase 14.1 Save-to-Campaign modal ──────────────────── */
+
+function SaveToCampaignModal({
+  report, campaigns, loading, linking, onConfirm, onCancel,
+}: {
+  report: ReportSummary;
+  campaigns: any[];
+  loading: boolean;
+  linking: boolean;
+  onConfirm: (campaignId: string) => void;
+  onCancel: () => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  return (
+    <div onClick={onCancel} style={{
+      position: 'fixed', inset: 0, zIndex: 9000,
+      background: 'rgba(0,0,0,0.6)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        maxWidth: 480, width: '100%',
+        background: 'linear-gradient(180deg, #1a1b27 0%, #0f1018 100%)',
+        border: '1px solid rgba(160,160,180,0.2)', borderRadius: 14,
+        padding: 20,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Save report to a campaign</h3>
+          <button onClick={onCancel} style={{
+            width: 28, height: 28, borderRadius: 14, border: '1px solid rgba(160,160,180,0.2)',
+            background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}><X size={13} /></button>
+        </div>
+        <div style={{ fontSize: 12, color: 'rgba(150,150,170,0.85)', marginBottom: 14, lineHeight: 1.5 }}>
+          <strong>"{report.title}"</strong> will be linked to the chosen campaign's content panel. The original report stays untouched.
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 30, textAlign: 'center', color: 'rgba(120,120,140,0.7)' }}>
+            <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Loading campaigns…
+          </div>
+        ) : campaigns.length === 0 ? (
+          <div style={{
+            padding: 20, textAlign: 'center', fontSize: 12, color: 'rgba(150,150,170,0.7)',
+            border: '1px dashed rgba(160,160,180,0.2)', borderRadius: 10,
+          }}>
+            No active campaigns yet. Create one first by typing <code>rank me for "..."</code> in S.E.A.S.O.N.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
+            {campaigns.map(c => (
+              <button key={c.id} onClick={() => setSelected(c.id)} style={{
+                padding: 10, borderRadius: 8, textAlign: 'left', cursor: 'pointer',
+                background: selected === c.id ? 'rgba(186,200,255,0.1)' : 'rgba(255,255,255,0.03)',
+                border: selected === c.id ? '1px solid rgba(186,200,255,0.3)' : '1px solid rgba(160,160,180,0.15)',
+                color: 'inherit',
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>"{c.keyword}"</div>
+                <div style={{ fontSize: 11, color: 'rgba(150,150,170,0.7)', marginTop: 2 }}>
+                  {c.goal} · Started {new Date(c.started_at).toLocaleDateString()}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button onClick={onCancel} style={{
+            padding: '8px 14px', borderRadius: 7, border: '1px solid rgba(160,160,180,0.2)',
+            background: 'transparent', color: 'rgba(150,150,170,0.85)',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>Cancel</button>
+          <button onClick={() => selected && onConfirm(selected)} disabled={!selected || linking} style={{
+            padding: '8px 14px', borderRadius: 7, border: '1px solid rgba(186,200,255,0.3)',
+            background: selected ? 'rgba(186,200,255,0.15)' : 'rgba(186,200,255,0.05)',
+            color: '#a5f3fc', fontSize: 12, fontWeight: 700,
+            cursor: selected && !linking ? 'pointer' : 'not-allowed',
+            opacity: linking ? 0.6 : 1,
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            {linking ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            Save to this campaign
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

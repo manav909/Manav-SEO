@@ -644,3 +644,250 @@ export async function expireStaleOpportunities(): Promise<{ success: boolean; ex
     return { success: false, error: e?.message || 'expire failed' };
   }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 14.1 — Unification adapters
+
+   These helpers let OTHER surfaces (Autopilot alerts, Analytics Intel,
+   Reports panel) write into the campaign + opportunity stores without
+   re-implementing the same boilerplate.
+
+   Three adapters:
+     1. recordOpportunityFromAlert — convert a project_alert into an opportunity
+     2. recordOpportunityFromAnalyticsFinding — convert a rising/falling star into one
+     3. linkReportFromOtherSource — copy a report_generation into a campaign panel
+
+   Plus one search helper:
+     4. searchReportsAcrossCampaigns — project-level full-text + tag filter
+═══════════════════════════════════════════════════════════════ */
+
+/* Look up an active campaign by keyword (case-insensitive) so we can auto-link.
+   Returns the campaign_id + content panel_id if a match exists. */
+async function findActiveCampaignByKeyword(opts: {
+  projectId: string;
+  keyword: string;
+}): Promise<{ campaign_id?: string; content_panel_id?: string }> {
+  if (!opts.keyword) return {};
+  const norm = opts.keyword.trim().toLowerCase().slice(0, 240);
+  const { data } = await db().from("seo_campaigns")
+    .select("id").eq("project_id", opts.projectId).eq("keyword", norm)
+    .eq("status", 'active').maybeSingle();
+  if (!data) return {};
+  const campaignId = (data as any).id;
+  const { data: panel } = await db().from("seo_campaign_panels")
+    .select("id").eq("campaign_id", campaignId).eq("pillar", 'content').maybeSingle();
+  return { campaign_id: campaignId, content_panel_id: (panel as any)?.id };
+}
+
+/* ─── Adapter 1: alert → opportunity ─────────────────────── */
+
+export async function recordOpportunityFromAlert(opts: {
+  projectId:   string;
+  alertId:     string;
+  alertType:   'rank_drop' | 'click_drop' | 'audit_score_drop' | string;
+  severity:    'info' | 'warn' | 'critical' | string;
+  title:       string;
+  detail:      any;        // alert.detail JSON (may include keyword, page, deltas)
+}): Promise<{ success: boolean; opportunity_id?: string; campaign_id?: string; error?: string }> {
+  try {
+    /* Try to infer a keyword from the alert detail */
+    const keyword = (opts.detail?.keyword as string)
+                    || (opts.detail?.query as string)
+                    || '';
+
+    /* If there's an active campaign for this keyword, link the opportunity */
+    const { campaign_id, content_panel_id } = keyword
+      ? await findActiveCampaignByKeyword({ projectId: opts.projectId, keyword })
+      : {};
+
+    /* Map alert type → opportunity kind */
+    const oppKind = opts.alertType === 'rank_drop'         ? 'quick_win'
+                  : opts.alertType === 'click_drop'        ? 'traffic'
+                  : opts.alertType === 'audit_score_drop'  ? 'technical'
+                  :                                          'investigate' as any;
+    const oppKindFinal = oppKind === 'investigate' ? 'technical' : oppKind;
+
+    /* Severity → value/effort heuristic */
+    const value: 'high' | 'medium' | 'low' =
+      opts.severity === 'critical' ? 'high' :
+      opts.severity === 'warn'     ? 'medium' : 'low';
+
+    const r = await recordOpportunity({
+      projectId:        opts.projectId,
+      sourceKind:       'monitor_drift',
+      sourceCampaignId: campaign_id,
+      sourcePanelId:    content_panel_id,
+      sourceStepId:     opts.alertId,       // store alert id here for traceback
+      kind:             oppKindFinal as any,
+      title:            opts.title,
+      description:      buildAlertOpportunityDescription(opts),
+      evidence:         { alert_id: opts.alertId, alert_type: opts.alertType, ...opts.detail },
+      estimatedValue:   value,
+      estimatedEffort:  opts.alertType === 'audit_score_drop' ? 'medium' : 'low',
+      suggestedAction:  campaign_id ? 'add_to_existing_campaign' : (keyword ? 'new_campaign' : 'investigate'),
+      suggestedKeyword: keyword || undefined,
+    });
+
+    return { success: r.success, opportunity_id: r.opportunity_id, campaign_id, error: r.error };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'alert → opportunity failed' };
+  }
+}
+
+function buildAlertOpportunityDescription(opts: {
+  alertType: string; detail: any;
+}): string {
+  const d = opts.detail || {};
+  if (opts.alertType === 'rank_drop') {
+    const drop = d.position_drop || d.delta || 'significant';
+    return `Average position dropped by ${drop} positions over the comparison window. Investigate the page, check recent algo changes, and consider refreshing the content or strengthening internal links.`;
+  }
+  if (opts.alertType === 'click_drop') {
+    const drop = d.click_drop_pct || d.delta_pct || '';
+    return `Clicks dropped ${drop ? `${drop}% ` : ''}period-over-period. May indicate SERP feature changes, seasonality, or a competitor move. Review GSC for the affected queries.`;
+  }
+  if (opts.alertType === 'audit_score_drop') {
+    return `Page audit score declined. Run the technical audit pillar (when it activates) or manually review on-page, indexability, and CWV signals.`;
+  }
+  return `Autopilot detected an anomaly. Review the alert details for context.`;
+}
+
+/* ─── Adapter 2: analytics finding → opportunity ─────────── */
+
+export async function recordOpportunityFromAnalyticsFinding(opts: {
+  projectId:    string;
+  findingKind:  'rising_star' | 'falling_star' | 'query_velocity_gain' | 'query_velocity_loss';
+  query:        string;
+  position?:    number;
+  impressions?: number;
+  clicks?:      number;
+  lift_pct?:    number;
+  reason?:      string;
+  /* the raw analytics row, for the evidence field */
+  raw?:         any;
+}): Promise<{ success: boolean; opportunity_id?: string; campaign_id?: string; error?: string }> {
+  try {
+    const { campaign_id, content_panel_id } = await findActiveCampaignByKeyword({
+      projectId: opts.projectId,
+      keyword:   opts.query,
+    });
+
+    const isPositive = opts.findingKind === 'rising_star' || opts.findingKind === 'query_velocity_gain';
+
+    const oppKind = isPositive ? 'quick_win' : 'traffic';
+
+    let title: string;
+    let description: string;
+    if (opts.findingKind === 'rising_star') {
+      title = `Rising query: "${opts.query}" — push it onto page 1`;
+      description = `Query gaining traction: position ${opts.position?.toFixed(1) || '?'}, ${opts.impressions || 0} impressions, +${opts.lift_pct || 0}% lift. ${opts.reason || ''}`.trim();
+    } else if (opts.findingKind === 'falling_star') {
+      title = `Falling query: "${opts.query}" — investigate decline`;
+      description = `Query losing clicks. Position ${opts.position?.toFixed(1) || '?'}, ${opts.clicks || 0} clicks, ${opts.lift_pct ? `${opts.lift_pct}%` : 'declining'}. ${opts.reason || ''}`.trim();
+    } else if (opts.findingKind === 'query_velocity_gain') {
+      title = `New query emerged: "${opts.query}"`;
+      description = `This query started appearing in GSC during the comparison window. Worth tracking — could become a future ranking target.`;
+    } else {
+      title = `Query lost: "${opts.query}"`;
+      description = `This query disappeared from GSC. Either Google stopped showing your site for it, or impressions fell below GSC's reporting threshold.`;
+    }
+
+    const r = await recordOpportunity({
+      projectId:        opts.projectId,
+      sourceKind:       'manual',
+      sourceCampaignId: campaign_id,
+      sourcePanelId:    content_panel_id,
+      kind:             oppKind,
+      title,
+      description,
+      evidence:         { finding_kind: opts.findingKind, query: opts.query, position: opts.position, impressions: opts.impressions, clicks: opts.clicks, lift_pct: opts.lift_pct, raw: opts.raw },
+      estimatedValue:   isPositive ? 'high' : 'medium',
+      estimatedEffort:  'low',
+      suggestedAction:  campaign_id ? 'add_to_existing_campaign' : 'new_campaign',
+      suggestedKeyword: opts.query,
+    });
+
+    return { success: r.success, opportunity_id: r.opportunity_id, campaign_id, error: r.error };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'analytics → opportunity failed' };
+  }
+}
+
+/* ─── Adapter 3: existing report → campaign panel report ─── */
+
+export async function linkReportFromOtherSource(opts: {
+  projectId:        string;
+  campaignId:       string;
+  sourceTable:      string;      // 'report_generations' | 'audit_reports' | etc
+  sourceId:         string;
+  sourceTitle:      string;
+  sourceBodyMd?:    string;
+  sourceSummary?:   string;
+  pillar?:          string;      // defaults to 'content'
+  reportKind?:      ReportKind;  // defaults to 'manual_refresh'
+  llmCallsUsed?:    number;
+  webSearchesUsed?: number;
+  dataSources?:     string[];
+  tags?:            string[];
+}): Promise<{ success: boolean; report_id?: string; error?: string }> {
+  try {
+    /* Prefix the title so users know it's a linked artifact from another source */
+    const prefixedTitle = `[Linked from ${opts.sourceTable}] ${opts.sourceTitle}`;
+
+    /* Build a body if none provided — store the linkage at minimum */
+    const bodyMd = opts.sourceBodyMd
+      || `_(Linked report from \`${opts.sourceTable}\`, id=\`${opts.sourceId}\`.\nThe original artifact remains in its source table. This entry exists so the report is findable from the campaign drawer.)_`;
+
+    return writeReportToPanel({
+      campaignId:       opts.campaignId,
+      projectId:        opts.projectId,
+      pillar:           opts.pillar || 'content',
+      reportKind:       opts.reportKind || 'manual_refresh',
+      generatedBy:      'manual',
+      llmCallsUsed:     opts.llmCallsUsed,
+      webSearchesUsed:  opts.webSearchesUsed,
+      dataSources:      opts.dataSources || ['external'],
+      title:            prefixedTitle.slice(0, 240),
+      bodyMd,
+      summary:          opts.sourceSummary || `Linked from ${opts.sourceTable}.`,
+      tags:             [...(opts.tags || []), `source:${opts.sourceTable}`, `source_id:${opts.sourceId}`],
+      searchableText:   `${prefixedTitle}\n${opts.sourceSummary || ''}\n${(opts.sourceBodyMd || '').slice(0, 3000)}`,
+    });
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'link report failed' };
+  }
+}
+
+/* ─── Search helper: cross-campaign report search ────────── */
+
+export async function searchReportsAcrossCampaigns(opts: {
+  projectId:   string;
+  query?:      string;       // free-text — searches title, summary, searchable_text
+  pillar?:     string;
+  reportKind?: ReportKind | string;
+  tag?:        string;       // exact tag match
+  limit?:      number;
+}): Promise<{ success: boolean; reports?: any[]; error?: string }> {
+  try {
+    let q = db().from("seo_campaign_reports")
+      .select("id, campaign_id, panel_id, pillar, report_kind, title, summary, confidence_rating, tags, generated_by, llm_calls_used, web_searches_used, data_sources, created_at")
+      .eq("project_id", opts.projectId)
+      .order("created_at", { ascending: false })
+      .limit(Math.min(opts.limit || 50, 200));
+
+    if (opts.pillar)     q = q.eq("pillar", opts.pillar);
+    if (opts.reportKind) q = q.eq("report_kind", opts.reportKind);
+    if (opts.tag)        q = q.contains("tags", [opts.tag]);
+    if (opts.query) {
+      /* ILIKE on title + summary (no Postgres full-text yet — keep simple) */
+      const term = opts.query.trim().replace(/[%_]/g, '');
+      q = q.or(`title.ilike.%${term}%,summary.ilike.%${term}%,searchable_text.ilike.%${term}%`);
+    }
+
+    const { data, error } = await q;
+    if (error) return { success: false, error: error.message };
+    return { success: true, reports: data || [] };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'search failed' };
+  }
+}
