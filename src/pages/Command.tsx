@@ -21,6 +21,7 @@ import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSeason } from '@/contexts/SeasonContext';
 import { subscribeAction } from '@/lib/season-actions/bus';
+import { useSeasonAction } from '@/hooks/useSeasonAction';
 import SmartSidebar from '@/components/SmartSidebar';
 import SmartTopBar from '@/components/SmartTopBar';
 import CapabilitiesPanel from '@/components/season/CapabilitiesPanel';
@@ -212,6 +213,9 @@ function CommandInner() {
   const { projects } = useAuth() as any;
   const { setMood } = useSeason();
   const safeProjects = (projects || []).filter((p: any) => p && p.id);
+
+  /* Phase 21 Block 2.8 — action runner for ResponsePanel buttons */
+  const { run: runAction, confirm: confirmAction, cancel: cancelAction, pendingConfirm, running: actionRunning } = useSeasonAction();
 
   const [briefing, setBriefing] = useState<BriefingClient | null>(null);
   const [loading, setLoading]   = useState(true);
@@ -487,10 +491,16 @@ function CommandInner() {
             <form onSubmit={handleSubmit}>
               <div className="relative group">
                 <motion.div
-                  className="absolute -inset-0.5 rounded-2xl bg-gradient-to-r from-cyan-500/40 via-violet-500/40 to-cyan-500/40 opacity-50 group-focus-within:opacity-100 transition-opacity duration-500 blur-md"
-                  animate={{ backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'] }}
-                  transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
-                  style={{ backgroundSize: '200% 200%' }}
+                  className="absolute -inset-0.5 rounded-2xl bg-gradient-to-r from-cyan-500/40 via-violet-500/40 to-cyan-500/40 transition-opacity duration-500 blur-md"
+                  animate={submitting
+                    ? { backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'], opacity: [0.6, 1, 0.6] }
+                    : { backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'] }
+                  }
+                  transition={submitting
+                    ? { duration: 1.8, repeat: Infinity, ease: 'linear' }
+                    : { duration: 6, repeat: Infinity, ease: 'linear' }
+                  }
+                  style={{ backgroundSize: '200% 200%', opacity: submitting ? 0.85 : undefined }}
                 />
                 <div className="relative rounded-2xl border border-border bg-card/80 backdrop-blur-sm">
                   <input
@@ -552,6 +562,59 @@ function CommandInner() {
                 <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <div className="flex-1">{commandError}</div>
                 <button onClick={() => setCommandError(null)}><X className="h-3 w-3" /></button>
+              </motion.div>
+            )}
+
+            {/* Phase 21 Block 2.8 — pending action confirmation prompt */}
+            {pendingConfirm && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/[0.08] p-3 flex items-start gap-3">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-400" />
+                <div className="flex-1 text-xs text-foreground/90 leading-relaxed">
+                  Confirm: <strong>{pendingConfirm.action.label}</strong> — {pendingConfirm.action.description}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={async () => {
+                      const r = await confirmAction();
+                      if (r.ok && (r as any).navigated) setResponse(null);
+                    }}
+                    disabled={actionRunning}
+                    className="text-[11px] px-3 py-1.5 rounded-md border border-cyan-500/40 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 disabled:opacity-50 font-bold flex items-center gap-1.5">
+                    {actionRunning && <RefreshCw className="h-3 w-3 animate-spin" />}
+                    Confirm
+                  </button>
+                  <button
+                    onClick={cancelAction}
+                    disabled={actionRunning}
+                    className="text-[11px] px-3 py-1.5 rounded-md border border-border bg-card/40 text-muted-foreground hover:text-foreground disabled:opacity-50">
+                    Cancel
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Phase 21 Block 2.8 — submitting indicator (right after input, before any output) */}
+            {submitting && !response && !explorationResponse && !pendingStructure && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="mt-3 flex items-center gap-2 text-xs text-muted-foreground/80">
+                <motion.span
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.4, repeat: Infinity }}
+                  className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                <motion.span
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: 0.2 }}
+                  className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                <motion.span
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.4, repeat: Infinity, delay: 0.4 }}
+                  className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                <span className="ml-1">Reading the data — one moment…</span>
               </motion.div>
             )}
 
@@ -748,7 +811,19 @@ function CommandInner() {
 
           <AnimatePresence mode="wait">
             {response && (
-              <ResponsePanel key={response.intent + Date.now()} response={response} onClose={() => setResponse(null)} />
+              <ResponsePanel
+                key={response.intent + Date.now()}
+                response={response}
+                onClose={() => setResponse(null)}
+                onAction={async (actionId, payload) => {
+                  const r = await runAction(actionId, payload);
+                  if (r.ok && !(r as any).awaiting_confirm) {
+                    /* Action ran cleanly — close the response if it navigated us elsewhere */
+                    if ((r as any).navigated) setResponse(null);
+                  }
+                }}
+                actionRunning={actionRunning}
+              />
             )}
           </AnimatePresence>
 
@@ -1070,7 +1145,24 @@ function SeverityDot({ severity }: { severity: string }) {
   );
 }
 
-function ResponsePanel({ response, onClose }: { response: CommandResponseClient; onClose: () => void }) {
+function ResponsePanel({ response, onClose, onAction, actionRunning }: {
+  response: CommandResponseClient;
+  onClose: () => void;
+  onAction?: (actionId: string, payload?: any) => void | Promise<void>;
+  actionRunning?: boolean;
+}) {
+  const [busyActionId, setBusyActionId] = useState<string | null>(null);
+
+  async function handleClick(actionId: string, payload?: any) {
+    if (!onAction) return;
+    setBusyActionId(actionId);
+    try {
+      await onAction(actionId, payload);
+    } finally {
+      setBusyActionId(null);
+    }
+  }
+
   return (
     <motion.div initial={{ opacity: 0, y: 30, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 20, scale: 0.97 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
@@ -1100,12 +1192,22 @@ function ResponsePanel({ response, onClose }: { response: CommandResponseClient;
       )}
       {response.actions && response.actions.length > 0 && (
         <div className="px-4 py-3 border-t border-border bg-card/40 flex flex-wrap gap-2">
-          {response.actions.map((a) => (
-            <motion.button key={a.id} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-              className="text-[11px] px-3 py-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition-colors">
-              {a.label}
-            </motion.button>
-          ))}
+          {response.actions.map((a) => {
+            const isBusy = busyActionId === a.id || (actionRunning && busyActionId === a.id);
+            const disabled = !onAction || actionRunning;
+            return (
+              <motion.button
+                key={a.id}
+                onClick={() => handleClick(a.id, a.payload)}
+                disabled={disabled}
+                whileHover={!disabled ? { scale: 1.03 } : undefined}
+                whileTap={!disabled ? { scale: 0.97 } : undefined}
+                className="text-[11px] px-3 py-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                {isBusy && <RefreshCw className="h-3 w-3 animate-spin" />}
+                {a.label}
+              </motion.button>
+            );
+          })}
         </div>
       )}
     </motion.div>
