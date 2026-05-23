@@ -479,26 +479,27 @@ export async function bsSeoProjectSnapshotRefresh(body: any): Promise<any> {
   return refreshSnapshotNow(projectId);
 }
 
-/* Phase 21 Block 2.14 — user preferences (widget layouts, density, defaults) */
+/* Phase 21 Block 2.14 — user preferences (widget layouts, density, defaults)
+   Block 2.6b — per-project layout scoping (projectId optional; null = user-level default) */
 
 export async function bsSeoUserPrefsGet(body: any): Promise<any> {
-  const { userId } = body || {};
+  const { userId, projectId } = body || {};
   if (!userId) return { success: false, error: "userId required" };
   const { getUserPrefs } = await import("./season-user-prefs.js");
-  return getUserPrefs({ userId });
+  return getUserPrefs({ userId, projectId: projectId || null });
 }
 
 export async function bsSeoUserPrefsSet(body: any): Promise<any> {
-  const { userId, partial } = body || {};
+  const { userId, projectId, partial } = body || {};
   if (!userId) return { success: false, error: "userId required" };
   if (!partial || typeof partial !== 'object') return { success: false, error: "partial required" };
   const { setUserPrefs } = await import("./season-user-prefs.js");
-  return setUserPrefs({ userId, partial });
+  return setUserPrefs({ userId, projectId: projectId || null, partial });
 }
 
 export async function bsSeoUserPrefsReset(body: any): Promise<any> {
-  const { userId } = body || {};
+  const { userId, projectId } = body || {};
   if (!userId) return { success: false, error: "userId required" };
   const { resetUserPrefs } = await import("./season-user-prefs.js");
-  return resetUserPrefs({ userId });
+  return resetUserPrefs({ userId, projectId: projectId || null });
 }

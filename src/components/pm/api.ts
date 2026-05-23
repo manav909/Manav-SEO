@@ -3620,7 +3620,7 @@ export interface UserPrefsClient {
   loaded_from_db:      boolean;
 }
 
-export async function seoUserPrefsGet(opts: { userId: string }): Promise<{
+export async function seoUserPrefsGet(opts: { userId: string; projectId?: string | null }): Promise<{
   prefs?: UserPrefsClient; error?: string;
 }> {
   const r = await post(ENGINE, { action: 'bs_seo_user_prefs_get', ...opts });
@@ -3629,15 +3629,16 @@ export async function seoUserPrefsGet(opts: { userId: string }): Promise<{
 }
 
 export async function seoUserPrefsSet(opts: {
-  userId:  string;
-  partial: Partial<UserPrefsClient>;
+  userId:     string;
+  projectId?: string | null;
+  partial:    Partial<UserPrefsClient>;
 }): Promise<{ prefs?: UserPrefsClient; error?: string }> {
   const r = await post(ENGINE, { action: 'bs_seo_user_prefs_set', ...opts });
   if (!r?.success) return { error: r?.error };
   return { prefs: r.prefs };
 }
 
-export async function seoUserPrefsReset(opts: { userId: string }): Promise<{
+export async function seoUserPrefsReset(opts: { userId: string; projectId?: string | null }): Promise<{
   prefs?: UserPrefsClient; error?: string;
 }> {
   const r = await post(ENGINE, { action: 'bs_seo_user_prefs_reset', ...opts });

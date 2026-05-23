@@ -1,6 +1,9 @@
 /* ════════════════════════════════════════════════════════════════════
    src/components/season/widgets/useUserPrefs.ts
    Phase 21 — Block 2.14 — User prefs hook
+   Block 2.6b — Per-project layouts. Pass projectId to scope reads/writes
+   to that project. Reads fall back to user-level if no per-project row
+   exists, so new projects inherit the user's default layout.
 
    Reads on mount, caches in state, persists debounced on change.
    Loading state separate so the page can render skeleton-correct layout
@@ -32,12 +35,14 @@ function buildDefaults(): UserPrefsClient {
   };
 }
 
-export function useUserPrefs(userId: string | null) {
+export function useUserPrefs(userId: string | null, projectId: string | null = null) {
   const [prefs, setPrefs] = useState<UserPrefsClient>(buildDefaults());
   const [loading, setLoading] = useState(true);
   const saveTimer = useRef<number | null>(null);
 
-  /* Load on mount / userId change */
+  /* Load on mount / userId / projectId change.
+     Switching projects re-fetches that project's prefs (or falls back to
+     user-level if the project has no override yet). */
   useEffect(() => {
     if (!userId) {
       setPrefs(buildDefaults());
@@ -47,23 +52,24 @@ export function useUserPrefs(userId: string | null) {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const r = await seoUserPrefsGet({ userId });
+      const r = await seoUserPrefsGet({ userId, projectId });
       if (cancelled) return;
       if (r.prefs) setPrefs(r.prefs);
       else setPrefs(buildDefaults());
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, projectId]);
 
-  /* Debounced persist */
+  /* Debounced persist. Writes scope to the current projectId — so editing
+     widgets on project A only changes project A's saved layout. */
   const persist = useCallback((next: UserPrefsClient) => {
     if (!userId) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      seoUserPrefsSet({ userId, partial: next }).catch(() => { /* swallow */ });
+      seoUserPrefsSet({ userId, projectId, partial: next }).catch(() => { /* swallow */ });
     }, SAVE_DEBOUNCE_MS);
-  }, [userId]);
+  }, [userId, projectId]);
 
   /* Setter that updates local + queues persist */
   const updatePrefs = useCallback((updater: (prev: UserPrefsClient) => UserPrefsClient) => {

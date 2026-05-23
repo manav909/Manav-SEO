@@ -243,9 +243,12 @@ function CommandInner() {
   const { setMood } = useSeason();
   const safeProjects = (projects || []).filter((p: any) => p && p.id);
 
-  /* Phase 21 Block 2.14 — user preferences (widget layouts, density, default mode) */
+  /* Phase 21 Block 2.14 — user preferences (widget layouts, density, default mode)
+     Block 2.6b — Layout prefs now scoped per project; falls back to the user-level
+     default for projects without explicit customization. Switching projects loads
+     that project's saved layout (or the user-level default). */
   const userId: string | null = user?.id || null;
-  const { prefs, setPrefs: setUserPrefs, loading: prefsLoading } = useUserPrefs(userId);
+  const { prefs, setPrefs: setUserPrefs, loading: prefsLoading } = useUserPrefs(userId, selectedProjectId || null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   /* Phase 21 Block 2.16 — global ⌘. / Ctrl+. opens drawer (floating button removed) */

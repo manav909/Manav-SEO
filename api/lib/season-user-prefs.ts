@@ -73,10 +73,27 @@ export interface UserPrefs {
    PUBLIC ENTRIES
 ══════════════════════════════════════════════════════════════════════ */
 
-export async function getUserPrefs(opts: { userId: string }): Promise<{
+export async function getUserPrefs(opts: {
+  userId:     string;
+  projectId?: string | null;
+}): Promise<{
   success: boolean; prefs?: UserPrefs; error?: string;
 }> {
   try {
+    /* 1. Try per-project row first if projectId is given.
+       This is the user's customized layout for THIS specific project. */
+    if (opts.projectId) {
+      const { data: projRow } = await db().from('season_user_preferences')
+        .select('*')
+        .eq('user_id', opts.userId)
+        .eq('project_id', opts.projectId)
+        .maybeSingle();
+      if (projRow) return { success: true, prefs: rowToPrefs(projRow as any) };
+    }
+
+    /* 2. Fall back to user-level row (project_id IS NULL).
+       This is the "default for all projects" — used when this project
+       hasn't been customized yet, or when no projectId was provided. */
     const { data } = await db().from('season_user_preferences')
       .select('*')
       .eq('user_id', opts.userId)
@@ -92,11 +109,14 @@ export async function getUserPrefs(opts: { userId: string }): Promise<{
 
 export async function setUserPrefs(opts: {
   userId:     string;
+  projectId?: string | null;
   partial:    Partial<UserPrefs>;
 }): Promise<{ success: boolean; prefs?: UserPrefs; error?: string }> {
   try {
-    /* Read current */
-    const cur = await getUserPrefs({ userId: opts.userId });
+    /* Read current — uses the per-project → user-level → defaults fallback
+       chain. The merge happens against whichever layer the user is
+       currently editing from. */
+    const cur = await getUserPrefs({ userId: opts.userId, projectId: opts.projectId });
     const base = cur.prefs || buildDefaultPrefs();
 
     /* Merge */
@@ -114,10 +134,13 @@ export async function setUserPrefs(opts: {
       loaded_from_db:      true,
     };
 
-    /* Upsert */
+    /* Upsert to the appropriate scope. If projectId is provided, this
+       creates/updates a per-project row. The user-level row (project_id=null)
+       stays untouched as the fallback default. */
+    const targetProjectId = opts.projectId || null;
     const { data } = await db().from('season_user_preferences').upsert({
       user_id:             opts.userId,
-      project_id:          null,
+      project_id:          targetProjectId,
       layout_casual:       merged.layout_casual,
       layout_pro_left:     merged.layout_pro_left,
       layout_pro_right:    merged.layout_pro_right,
@@ -136,13 +159,23 @@ export async function setUserPrefs(opts: {
   }
 }
 
-export async function resetUserPrefs(opts: { userId: string }): Promise<{ success: boolean; prefs?: UserPrefs; error?: string }> {
+export async function resetUserPrefs(opts: {
+  userId:     string;
+  projectId?: string | null;
+}): Promise<{ success: boolean; prefs?: UserPrefs; error?: string }> {
   try {
-    await db().from('season_user_preferences')
-      .delete()
-      .eq('user_id', opts.userId)
-      .is('project_id', null);
-    return { success: true, prefs: buildDefaultPrefs() };
+    /* Delete the row at the requested scope. If projectId is provided,
+       only the per-project override is removed — the user-level default
+       row stays intact and now becomes the effective layout for this
+       project. If no projectId, the user-level row is removed. */
+    let q = db().from('season_user_preferences').delete().eq('user_id', opts.userId);
+    if (opts.projectId) q = q.eq('project_id', opts.projectId);
+    else q = q.is('project_id', null);
+    await q;
+
+    /* Return the layout that's now in effect after the reset */
+    const after = await getUserPrefs({ userId: opts.userId, projectId: opts.projectId });
+    return { success: true, prefs: after.prefs || buildDefaultPrefs() };
   } catch (e: any) {
     return { success: false, error: e?.message || 'user prefs reset failed' };
   }

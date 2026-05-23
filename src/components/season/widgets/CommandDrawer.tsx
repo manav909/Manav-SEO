@@ -27,6 +27,7 @@ import {
 import type { UserPrefsClient, ActivityEvent, BriefingClient } from '@/components/pm/api';
 import {
   seoPickEngineArchive, seoPickEngineRegenerate, seoCorpusEnrichBatch, seoPickEngineGet,
+  seoUserPrefsReset,
   type ManavsPickRowClient,
 } from '@/components/pm/api';
 
@@ -92,7 +93,7 @@ export default function CommandDrawer({ open, onClose, mode, prefs, setPrefs, pr
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {tab === 'layout'   && <LayoutTab   mode={mode} prefs={prefs} setPrefs={setPrefs} />}
+              {tab === 'layout'   && <LayoutTab   mode={mode} prefs={prefs} setPrefs={setPrefs} projectId={projectId} />}
               {tab === 'gallery'  && <GalleryTab  mode={mode} prefs={prefs} setPrefs={setPrefs} />}
               {tab === 'saved'    && <SavedTab    projectId={projectId} />}
               {tab === 'engine'   && <EngineTab   projectId={projectId} />}
@@ -126,32 +127,85 @@ function TabBtn({ active, onClick, icon, label }: {
    TAB 1 — LAYOUT
 ══════════════════════════════════════════════════════════════════════ */
 
-function LayoutTab({ mode, prefs, setPrefs }: {
+function LayoutTab({ mode, prefs, setPrefs, projectId }: {
   mode: WidgetMode;
   prefs: UserPrefsClient;
   setPrefs: (u: (p: UserPrefsClient) => UserPrefsClient) => void;
+  projectId: string | null;
 }) {
+  /* Per-project layout indicator + reset affordance (Block 2.6b).
+     Layouts are stored per-project; this strip makes that explicit so
+     users understand changes are scoped to the current project. The
+     "Reset to default" link deletes the per-project override and falls
+     back to the user-level default. */
+  const [resetting, setResetting] = useState(false);
+  const [user] = useState(() => {
+    /* Pull user id from supabase auth cache — same source useUserPrefs uses.
+       Local-only read; if missing, the reset button is hidden. */
+    try { return JSON.parse(localStorage.getItem('sb-auth-token') || 'null'); }
+    catch { return null; }
+  });
+  const userId: string | null = (user as any)?.user?.id || (user as any)?.currentSession?.user?.id || null;
+
+  async function handleReset() {
+    if (!userId || !projectId) return;
+    if (!window.confirm('Reset this project\'s layout to your default? Your other projects are not affected.')) return;
+    setResetting(true);
+    try {
+      const r = await seoUserPrefsReset({ userId, projectId });
+      if (r.prefs) {
+        const fresh = r.prefs;
+        setPrefs(_ => fresh);
+      }
+    } finally { setResetting(false); }
+  }
+
+  const projectScopeStrip = (
+    <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border/30 bg-card/30">
+      <div className="text-[10px] text-muted-foreground/70">
+        {projectId
+          ? <>Layout scope: <span className="text-cyan-400/80 font-medium">this project</span> · changes are saved per project</>
+          : <>Layout scope: <span className="text-muted-foreground/80 font-medium">user default</span> · no project selected</>}
+      </div>
+      {projectId && userId && (
+        <button
+          onClick={handleReset}
+          disabled={resetting}
+          className="text-[10px] text-muted-foreground/70 hover:text-foreground transition-colors disabled:opacity-50"
+          title="Delete this project's saved layout — falls back to your user-level default"
+        >
+          {resetting ? 'Resetting…' : 'Reset to default'}
+        </button>
+      )}
+    </div>
+  );
+
   if (mode === 'casual') {
     return (
-      <div className="p-4">
-        <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/65 mb-2">Casual mode layout</div>
-        <WidgetList
-          ids={prefs.layout_casual}
-          onMove={(id, dir) => setPrefs(p => ({ ...p, layout_casual: moveInList(p.layout_casual, id, dir) }))}
-          onHide={(id) => setPrefs(p => ({
-            ...p,
-            layout_casual:  p.layout_casual.filter(x => x !== id),
-            hidden_widgets: [...new Set([...p.hidden_widgets, id])],
-          }))}
-        />
-        <p className="text-[10px] text-muted-foreground/55 italic mt-3">
-          Hidden widgets can be added back from the Gallery tab.
-        </p>
-      </div>
+      <>
+        {projectScopeStrip}
+        <div className="p-4">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/65 mb-2">Casual mode layout</div>
+          <WidgetList
+            ids={prefs.layout_casual}
+            onMove={(id, dir) => setPrefs(p => ({ ...p, layout_casual: moveInList(p.layout_casual, id, dir) }))}
+            onHide={(id) => setPrefs(p => ({
+              ...p,
+              layout_casual:  p.layout_casual.filter(x => x !== id),
+              hidden_widgets: [...new Set([...p.hidden_widgets, id])],
+            }))}
+          />
+          <p className="text-[10px] text-muted-foreground/55 italic mt-3">
+            Hidden widgets can be added back from the Gallery tab.
+          </p>
+        </div>
+      </>
     );
   }
   return (
-    <div className="p-4 space-y-5">
+    <>
+      {projectScopeStrip}
+      <div className="p-4 space-y-5">
       <div>
         <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/65 mb-2">Pro mode · Left column</div>
         <WidgetList
@@ -180,6 +234,7 @@ function LayoutTab({ mode, prefs, setPrefs }: {
         Hidden widgets can be added back from the Gallery tab.
       </p>
     </div>
+    </>
   );
 }
 
