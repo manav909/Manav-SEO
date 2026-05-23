@@ -1,6 +1,6 @@
 /* ════════════════════════════════════════════════════════════════════
    src/pages/manifesto/chapters.ts
-   The thirteen-chapter narrative arc across seven seasons.
+   The fourteen-chapter narrative arc across seven seasons.
 
    00 Cold Open       → Eternal Spring (the brand reveal)
    01 The Problem     → Winter (cold pain)
@@ -14,7 +14,8 @@
    09 Data Doctrine   → Autumn (continuing truth)
    10 For Whom        → Harvest (the yield, named)
    11 Founder Letter  → Harvest (continuing harvest)
-   12 The Future      → Eternal Spring (compounding forward)
+   12 Doubts Resolved → Harvest (the reckoning before signing)
+   13 The Future      → Eternal Spring (compounding forward)
 
    The arc traverses each season twice (except Winter, which is the
    single, painful entry point) — creating a year-shaped journey that
@@ -36,5 +37,6 @@ export const CHAPTERS: ChapterDef[] = [
   { id: 'data',       no: '09', season: 'autumn',         titleKey: 'ch09' },
   { id: 'whom',       no: '10', season: 'harvest',        titleKey: 'ch10' },
   { id: 'founder',    no: '11', season: 'harvest',        titleKey: 'ch11' },
-  { id: 'future',     no: '12', season: 'eternal-spring', titleKey: 'ch12' },
+  { id: 'faq',        no: '12', season: 'harvest',        titleKey: 'ch12' },
+  { id: 'future',     no: '13', season: 'eternal-spring', titleKey: 'ch13' },
 ];

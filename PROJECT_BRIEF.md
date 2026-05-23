@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `c269beb` (post-regression, awaiting repair)
+**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `b2b9300` (ChColdOpen regression repaired)
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -188,35 +188,36 @@ Changes analytical lens, not just tone.
 
 **Route**: `/manifesto` · **Entry**: emerald "The Codex" pill in `Command.tsx` top bar (Book icon, always visible, before project-conditional pills)
 
-### 12.1 Architecture — 27 files total
+### 12.1 Architecture — 28 files total
 
 ```
-src/pages/Manifesto.tsx                   root orchestrator (~110 lines)
+src/pages/Manifesto.tsx                   root orchestrator (~115 lines)
 src/pages/manifesto/                      foundation + infrastructure (11 files)
   types.ts                                Lang, SeasonId, Season, ChapterDef, TFn, FEATHER
   copy.ts                                 5-language COPY (EN/HI/ES/FR/DE)
   seasons.tsx                             SEASONS tokens × 7 seasons
-  chapters.ts                             13-chapter narrative manifest
+  chapters.ts                             14-chapter narrative manifest
   shared.tsx                              ChapterShell, ChapterHeader, Prose, Statement, FoundingQuote, TextReveal, CounterNumber, ScrollHint
   styles.tsx                              global CSS (~480 lines)
   AmbientCanvas.tsx                       7 distinct particle systems
   ProgressBar.tsx                         top rail hue-morphing scroll progress
   TopBar.tsx                              brand wordmark + language picker + close
-  FloatingNav.tsx                         13 chapter dots, IntersectionObserver
+  FloatingNav.tsx                         14 chapter dots, IntersectionObserver
   FooterMark.tsx                          closing brand line
-  chapters/                               13 chapter files
+  chapters/                               14 chapter files
     ChColdOpen.tsx                        Eternal Spring · Cold Open
     ChProblem.tsx                         Winter · Agency black-box pain
     ChVision.tsx                          Spring · Founding quote
     ChHowSearch.tsx                       Spring · Compounds vs dead grid
     ChPillars.tsx                         Summer · Five growing pillars
     ChJourney.tsx                         Summer · Day 0 to Month 12 timeline
-    ChEngine.tsx                          Monsoon · V12 capability spec
+    ChEngine.tsx                          Monsoon · V12 spec + Live Ops panel
     ChCompare.tsx                         Monsoon · Three-column comparison
     ChEthics.tsx                          Autumn · Will/won't constraints
     ChData.tsx                            Autumn · GSC + GA4 only
     ChWhom.tsx                            Harvest · Five client archetypes
     ChFounder.tsx                         Harvest · Founder letter
+    ChFAQ.tsx                             Harvest · Doubts, Resolved (NEW)
     ChFuture.tsx                          Eternal Spring · Selective close
 ```
 
@@ -291,6 +292,39 @@ Five archetypes covering ~20+ business types. Content hardcoded English (matches
 
 Intro Prose: *"Five archetypes — from the founder funding growth on limited runway to the consultancy delivering client work on borrowed infrastructure. The system underneath is the same; what shifts is the goal it serves. Find the one closest to your situation; the rest will still hold."*
 
+## 13.6 Chapter 12 — Doubts, Resolved (NEW, shipped 2026-05-23)
+
+The FAQ chapter, reimagined. Each doubt appears word-by-word as if forming in thought, then a brand-cyan line traces left-to-right *across* it — the cinematic resolution gesture — then the answer fades in below in upright serif. Click any doubt to replay the resolution.
+
+Triggered per-pair via `IntersectionObserver` at 30% visibility threshold. The strike line is a CSS-animated pseudo-element with a glowing leading-edge "spark." Words reveal with blur-clear + y-translate motion at 75ms per-word stagger.
+
+Six doubts addressing the questions a serious prospect carries but doesn't ask in the first call:
+
+1. *Why one person? Doesn't this scale poorly?*
+2. *What happens if you get sick or take a holiday?*
+3. *What's the minimum engagement?*
+4. *Can you guarantee rankings?*
+5. *How is this different from hiring a senior SEO consultant?*
+6. *Why no monthly retainer?*
+
+Each answer ~50–80 words. Hardcoded English (matches the chapter content pattern for Whom + Engine).
+
+## 13.7 Chapter 06 — Engine Room Live Ops Panel (NEW, added 2026-05-23)
+
+A system-status console inserted between the V12 spec grid and the architect-attribution prose. Distinct visual register from the spec cards above — monospaced row labels, pulsing live indicator with expanding ring, animated counter values that ease-out from 0 to target on scroll-in.
+
+Six stats:
+- **Engines** — `12 Active` (architectural truth)
+- **Search Surfaces** — `5 Indexed` (Google, ChatGPT, Claude, Perplexity, Gemini)
+- **Refresh Cadence** — `< 4 Minutes` (system pull cadence)
+- **Continuous Since** — `Q4 2025` (◆ TBD placeholder — Manav updates)
+- **Data Points / Day** — `~184K Events` (◆ TBD placeholder — Manav updates)
+- **Audit Retention** — `100 Percent` (architectural truth)
+
+Footer chips: `VERTICALS · SaaS · DTC · Legal · Local · B2B`
+
+Placeholders are flagged with `◆ TBD` comments inline so Manav can find/edit in 30 seconds.
+
 ---
 
 ## 14. In-flight / open backlog
@@ -335,4 +369,4 @@ Intro Prose: *"Five archetypes — from the founder funding growth on limited ru
 
 ## 17. Session handoff prompt for next chat
 
-> "Continuing SEO SEASON. Brief attached. Cold open is era-centered Arc Reactor framing with humble Manav + interactive recital. ChWhom (Chapter 10) is five client archetypes. Repaired a ChColdOpen.tsx regression from commit c269beb (older Downloads version overwrote the good one) — fixed by recovering from git history. Layout work paused. Don't change anything without confirming."
+> "Continuing SEO SEASON. Brief attached. Manifesto now 14 chapters with new ChFAQ (Doubts Resolved) inserted as Ch12 + Live Ops panel added to ChEngine. Cold open era-centered + humble Manav + interactive recital. ChWhom is five client archetypes. Layout work paused. Don't change anything without confirming."

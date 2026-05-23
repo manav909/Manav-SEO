@@ -41,6 +41,7 @@ import { ChEthics }    from './manifesto/chapters/ChEthics';
 import { ChData }      from './manifesto/chapters/ChData';
 import { ChWhom }      from './manifesto/chapters/ChWhom';
 import { ChFounder }   from './manifesto/chapters/ChFounder';
+import { ChFAQ }       from './manifesto/chapters/ChFAQ';
 import { ChFuture }    from './manifesto/chapters/ChFuture';
 
 export default function Manifesto() {
@@ -117,6 +118,7 @@ export default function Manifesto() {
           <ChData      t={t} />
           <ChWhom      t={t} />
           <ChFounder   t={t} />
+          <ChFAQ       t={t} />
           <ChFuture    t={t} />
         </main>
 

@@ -81,7 +81,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch09:                       'Authentic Data Doctrine',
     ch10:                       'For Whom This Was Built',
     ch11:                       'A Letter from the Founder',
-    ch12:                       'The Future Belongs to Builders',
+    ch12:                       'Doubts, Resolved',
+    ch13:                       'The Future Belongs to Builders',
 
     join_cta:                   'Become a client',
     closing_cta:                'You can join now, while the curve is still gentle.',
@@ -150,7 +151,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch09:                       'प्रामाणिक डेटा सिद्धांत',
     ch10:                       'किसके लिए यह बनाया गया था',
     ch11:                       'संस्थापक का पत्र',
-    ch12:                       'भविष्य निर्माताओं का है',
+    ch12:                       'संदेह, सुलझाए गए',
+    ch13:                       'भविष्य निर्माताओं का है',
 
     join_cta:                   'ग्राहक बनें',
     closing_cta:                'आप अभी शामिल हो सकते हैं, जब वक्र अभी भी कोमल है।',
@@ -219,7 +221,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch09:                       'Doctrina de datos auténticos',
     ch10:                       'Para quién se construyó esto',
     ch11:                       'Una carta del fundador',
-    ch12:                       'El futuro pertenece a los constructores',
+    ch12:                       'Dudas, Resueltas',
+    ch13:                       'El futuro pertenece a los constructores',
 
     join_cta:                   'Conviértete en cliente',
     closing_cta:                'Puedes unirte ahora, mientras la curva aún es suave.',
@@ -288,7 +291,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch09:                       'Doctrine des données authentiques',
     ch10:                       'Pour qui cela a été construit',
     ch11:                       'Une lettre du fondateur',
-    ch12:                       "L'avenir appartient aux bâtisseurs",
+    ch12:                       'Doutes, Résolus',
+    ch13:                       "L'avenir appartient aux bâtisseurs",
 
     join_cta:                   'Devenez client',
     closing_cta:                'Vous pouvez rejoindre maintenant, tant que la courbe reste douce.',
@@ -357,7 +361,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch09:                       'Doktrin authentischer Daten',
     ch10:                       'Für wen das gebaut wurde',
     ch11:                       'Ein Brief vom Gründer',
-    ch12:                       'Die Zukunft gehört den Erbauern',
+    ch12:                       'Zweifel, Aufgelöst',
+    ch13:                       'Die Zukunft gehört den Erbauern',
 
     join_cta:                   'Kunde werden',
     closing_cta:                'Sie können jetzt beitreten, solange die Kurve noch sanft ist.',
