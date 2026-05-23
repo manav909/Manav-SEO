@@ -607,13 +607,13 @@ function composeWins(activity: any[]): ShowcaseData['wins'] {
     const sev = (a.severity || '').toLowerCase();
     const head = (a.headline || '').toLowerCase();
     if (sev === 'success' || sev === 'win') return true;
-    return /improved|gained|climbed|won|achieved|hit target|published|ranked|breakthrough|+|jumped/i.test(a.headline || '');
+    return /improved|gained|climbed|won|achieved|hit target|published|ranked|breakthrough|\+|jumped/i.test(a.headline || '');
   });
 
   return winLike.map(a => {
     const intensity = ((a.severity || '').toLowerCase() === 'success' || /breakthrough|hit target|jumped/i.test(a.headline || ''))
       ? 'dramatic' as const
-      : /improved|gained|climbed|+/i.test(a.headline || '')
+      : /improved|gained|climbed|\+/i.test(a.headline || '')
         ? 'moderate' as const
         : 'subtle' as const;
     return {
