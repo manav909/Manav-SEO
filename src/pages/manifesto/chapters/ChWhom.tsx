@@ -2,17 +2,22 @@
    src/pages/manifesto/chapters/ChWhom.tsx
    Chapter 10 — For Whom This Was Built. Harvest.
 
-   Five audiences, each gets a paragraph naming what they get out
-   of SEO SEASON specifically. Rendered as a vertical stack of
-   blocks; each block has a small marker (an opening punctuation
-   echo) and the audience's title in serif.
+   Five client archetypes. Different scales, different business
+   models, different goals. The infrastructure underneath is the
+   same; what shifts is the lens the client brings to it.
 
-   The audiences appear in the order their stake compounds:
-     Clients          (pay for it)
-     Your customers   (benefit from it)
-     Investors        (verify it)
-     Stakeholders     (extract value from it)
-     The team         (build inside it)
+   Reframed from a role-based audience map (clients / customers /
+   investors / stakeholders / team) to a client-archetype map that
+   helps a prospect identify themselves and see how SEASON serves
+   their specific situation.
+
+   Ordered by recognition speed — most readers find themselves in
+   1 or 2 before continuing:
+     1. The founder building organic on limited runway
+     2. The marketing leader who reports to a board
+     3. The local business that has to be the obvious choice
+     4. The ecommerce operator competing in the AI-search era
+     5. The agency or consultancy that needs operating infrastructure
 ══════════════════════════════════════════════════════════════════════ */
 
 import { motion } from 'framer-motion';
@@ -20,31 +25,31 @@ import { ChapterShell, Prose } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-interface Audience {
+interface ClientArchetype {
   title: string;
   body:  string;
 }
 
-const AUDIENCES: Audience[] = [
+const ARCHETYPES: ClientArchetype[] = [
   {
-    title: 'Clients',
-    body:  "See exactly what you're paying for. Every action timestamped. Every metric source-cited. Every gap acknowledged. Open the dashboard your account manager opens — same view, same data, same hour of the day.",
+    title: 'The founder building organic on limited runway',
+    body:  "You can't gamble on six-month retainers that ship PDFs instead of progress. SEASON shows every task done this week, every metric refreshed today, every gap acknowledged. SEO becomes an asset on your balance sheet — spend defensible to you, your team, and the next round of investors.",
   },
   {
-    title: 'Your customers',
-    body:  'Find your pages because the pages answer their question, not because we tricked the algorithm. Trust earned upstream becomes conversion downstream. The work is invisible to them; the benefit is not.',
+    title: 'The marketing leader who reports to a board',
+    body:  "Your CFO asks where the number came from. SEASON's answer is: from this source, at this timestamp, traceable to this action. Every chart cites itself. Every metric is defensible. Channel-of-record reporting, not retrospective storytelling. The board update writes itself; you frame the narrative.",
   },
   {
-    title: 'Investors',
-    body:  'Verify operational rigor through audit logs, monitoring cadence, and methodology that can be reproduced by anyone with read access to the system. No founder story required to interpret the dashboard.',
+    title: 'The local business that has to be the obvious choice',
+    body:  "Your customers find you through \u201cnear me,\u201d map packs, voice queries, AI-generated answers \u2014 usually before they ever land on your site. SEASON treats local search with the same rigor as enterprise organic: entity consistency, schema correctness, review velocity, citation density. With weekly visibility into where you rank against the firms you actually compete with.",
   },
   {
-    title: 'Stakeholders',
-    body:  'Request a custom view. Get one in twenty-four hours. Every page in this software is a query away from a shareable, sourced report — for boards, for press, for partners, for compliance.',
+    title: 'The ecommerce operator competing in the AI-search era',
+    body:  "When ChatGPT names brands in your category, is yours among them? When Google's AI Overview compiles \u201cbest [your product]\u201d guides, are your pages cited? Commercial intent is increasingly resolved before the click. SEASON tracks AI-engine citation alongside traditional rankings and structures your pages for what AI engines actually consume.",
   },
   {
-    title: 'The team',
-    body:  "Work in a system that respects the time it took to build. Architectural rigor isn't a tax. It's the asset that makes everything else cheap. New hires read the codebase and understand the company in a week.",
+    title: 'The agency or consultancy that needs operating infrastructure',
+    body:  "You sold the engagement on strategy and judgment. You don't want to build a crawl orchestration, a data layer, or an audit framework to deliver it. SEASON is the substrate \u2014 white-label or co-branded. You bring the client relationship; SEASON brings the always-on intelligence. Your client sees one consistent operation.",
   },
 ];
 
@@ -54,21 +59,23 @@ export function ChWhom({ t }: { t: TFn }) {
       <WhomStyles />
 
       <Prose delay={0.4}>
-        Five audiences. Each gets a different surface, but all the same
-        underlying truth. The software wasn't built around a buyer persona —
-        it was built around the work, and the audiences are downstream of that.
+        Five archetypes &mdash; from the founder funding growth on limited
+        runway to the consultancy delivering client work on borrowed
+        infrastructure. The system underneath is the same; what shifts
+        is the goal it serves. Find the one closest to your situation;
+        the rest will still hold.
       </Prose>
 
       <div className="whom-stack mt-14">
-        {AUDIENCES.map((a, i) => (
-          <WhomBlock key={i} audience={a} index={i} />
+        {ARCHETYPES.map((a, i) => (
+          <WhomBlock key={i} archetype={a} index={i} />
         ))}
       </div>
     </ChapterShell>
   );
 }
 
-function WhomBlock({ audience, index }: { audience: Audience; index: number }) {
+function WhomBlock({ archetype, index }: { archetype: ClientArchetype; index: number }) {
   return (
     <motion.div
       className="whom-block"
@@ -79,8 +86,8 @@ function WhomBlock({ audience, index }: { audience: Audience; index: number }) {
     >
       <div className="whom-marker" />
       <div className="whom-body">
-        <div className="whom-title">{audience.title}</div>
-        <div className="whom-text">{audience.body}</div>
+        <div className="whom-title">{archetype.title}</div>
+        <div className="whom-text">{archetype.body}</div>
       </div>
     </motion.div>
   );
@@ -101,7 +108,7 @@ function WhomStyles() {
         grid-template-columns: 28px 1fr;
         gap: 1.4rem;
         align-items: flex-start;
-        padding: 1.2rem 0;
+        padding: 1.4rem 0;
         border-top: 0.5px solid var(--m-hairline);
       }
       .whom-block:first-of-type {
@@ -112,7 +119,7 @@ function WhomStyles() {
         border-radius: 50%;
         background: hsla(var(--ch-hue), var(--ch-sat), var(--ch-light), 0.95);
         box-shadow: 0 0 14px hsla(var(--ch-hue), var(--ch-sat), var(--ch-light), 0.5);
-        margin-top: 0.6rem;
+        margin-top: 0.7rem;
         margin-left: 8px;
       }
       .whom-title {
@@ -122,17 +129,20 @@ function WhomStyles() {
         color: var(--m-ink-strong);
         font-weight: 500;
         letter-spacing: -0.015em;
-        margin-bottom: 0.6rem;
+        margin-bottom: 0.7rem;
+        max-width: 52ch;
       }
       .whom-text {
         font-family: ui-serif, Georgia, serif;
         font-size: 1.08rem;
         line-height: 1.65;
         color: var(--m-ink-medium);
-        max-width: 60ch;
+        max-width: 64ch;
       }
       @media (max-width: 720px) {
         .whom-block { grid-template-columns: 20px 1fr; gap: 1rem; }
+        .whom-title { font-size: 1.18rem; }
+        .whom-text  { font-size: 1rem; }
       }
     `}</style>
   );

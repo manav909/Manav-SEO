@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `58d31ec`
+**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `73d0302`
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -174,7 +174,7 @@ Changes analytical lens, not just tone.
 
 ## 11. Phase 21 + 22 state
 
-**Live main HEAD before this turn**: `58d31ec` (Cold open interactive recital + humble Manav reveal, credit-centered framing)
+**Live main HEAD before this turn**: `73d0302` (Cold open era-centered Arc Reactor framing)
 
 **Shipped 2.13–2.22**: Pick engine · widget gallery + drawer · layout polish · gear removed · readable markdown chat · cite-tag strip · AIConcierge hidden on Season pages · JARVIS mood freshness · continuous ticker ~85 lines
 
@@ -215,7 +215,7 @@ src/pages/manifesto/                      foundation + infrastructure (11 files)
     ChCompare.tsx                         Monsoon · Three-column comparison
     ChEthics.tsx                          Autumn · Will/won't constraints
     ChData.tsx                            Autumn · GSC + GA4 only
-    ChWhom.tsx                            Harvest · 5 audience blocks
+    ChWhom.tsx                            Harvest · Five client archetypes
     ChFounder.tsx                         Harvest · Founder letter
     ChFuture.tsx                          Eternal Spring · Selective close
 ```
@@ -275,6 +275,24 @@ The era claim ("AI changed search; the agency model built for the old era hasn't
 
 ---
 
+## 13.5 Chapter 10 — For Whom This Was Built (rewritten 2026-05-23)
+
+Reframed from a role-based audience map (clients / customers / investors / stakeholders / team) to a client-archetype map. Each block names a specific archetype, the goal/need they carry, and how SEASON serves their situation.
+
+The five archetypes, in recognition order:
+
+1. **The founder building organic on limited runway** — bootstrapped/seed-stage owner-operators
+2. **The marketing leader who reports to a board** — VP/CMO at Series A+ B2B/SaaS/marketplace
+3. **The local business that has to be the obvious choice** — legal, dental, medical, contractor, multi-location retail, services
+4. **The ecommerce operator competing in the AI-search era** — DTC, niche ecom, marketplaces, retail
+5. **The agency or consultancy that needs operating infrastructure** — digital agencies, consultants, fractional CMOs
+
+Five archetypes covering ~20+ business types. Content hardcoded English (matches existing chapter pattern). Full localization is open backlog if needed.
+
+Intro Prose: *"Five archetypes — from the founder funding growth on limited runway to the consultancy delivering client work on borrowed infrastructure. The system underneath is the same; what shifts is the goal it serves. Find the one closest to your situation; the rest will still hold."*
+
+---
+
 ## 14. In-flight / open backlog
 
 🟡 **Layout PAUSED as of 2026-05-23** — Manav explicitly asked to stop layout iteration after 10+ blocks of UX thrashing. Default response to layout complaints: acknowledge, log to backlog, do not build. Layout backlog (frozen):
@@ -284,6 +302,8 @@ The era claim ("AI changed search; the agency model built for the old era hasn't
 🟡 **AIConcierge + profile avatar visible on `/manifesto`** — visual clutter on cinematic page. The Block 2.16 "AIConcierge hidden on Season pages" fix didn't cover the manifesto route. Optional fix: route check + skip render for `pathname === '/manifesto'`. Awaiting Manav's go-ahead.
 
 🟡 **`extractAndSaveLearning` dead imports** in `algorithm-intel.ts`, `seo-agent.ts`, `crawl.ts`, `run-analysis.ts` — cosmetic cleanup.
+
+🟡 **ChWhom full localization** — chapter currently has hardcoded English archetype titles + bodies (matches the chapter's existing pattern). If multi-language manifesto is a priority for non-EN prospects, the 5 titles + 5 bodies + intro Prose need to move into `copy.ts` across all 5 langs. Estimated ~15 new keys.
 
 ---
 
@@ -307,4 +327,4 @@ The era claim ("AI changed search; the agency model built for the old era hasn't
 
 ## 17. Session handoff prompt for next chat
 
-> "Continuing SEO SEASON. Brief attached. Cold open is now era-centered (Arc Reactor framing) — setup names AI changing search, pivot names SEASON as what the moment demands, Manav reveal stays quiet and humble. Interactive recital still in place. Layout work paused. Don't change anything without confirming."
+> "Continuing SEO SEASON. Brief attached. Cold open is era-centered Arc Reactor framing. ChWhom (Chapter 10) reframed to 5 client archetypes — founder, marketing lead, local business, ecommerce operator, agency/consultancy. Layout work paused. Don't change anything without confirming."
