@@ -24,7 +24,7 @@
 ══════════════════════════════════════════════════════════════════════ */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ChapterShell, Prose } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
@@ -173,15 +173,24 @@ function FAQPair({ doubt, index }: { doubt: Doubt; index: number }) {
         {phase === 'done' && <span className="faq-affordance-text">↻ TAP TO REPLAY</span>}
       </div>
 
-      <motion.div
-        key={`answer-${resolveKey}`}
-        className="faq-answer"
-        initial={{ opacity: 0, y: 14 }}
-        animate={showAnswer ? { opacity: 0.92, y: 0 } : { opacity: 0, y: 14 }}
-        transition={{ duration: 1.2, ease: FEATHER }}
-      >
-        {doubt.answer}
-      </motion.div>
+      <AnimatePresence initial={false} mode="wait">
+        {showAnswer && (
+          <motion.div
+            key={`answer-${resolveKey}`}
+            className="faq-answer-wrap"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{    opacity: 0, height: 0 }}
+            transition={{
+              height:  { duration: 0.7, ease: FEATHER },
+              opacity: { duration: 0.9, ease: FEATHER, delay: 0.15 },
+            }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="faq-answer">{doubt.answer}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="faq-divider" aria-hidden />
     </div>
@@ -194,7 +203,7 @@ function FAQStyles() {
       .faq-stack {
         display: flex;
         flex-direction: column;
-        gap: 5.5rem;
+        gap: 2.4rem;
       }
 
       /* ── PAIR CONTAINER ── */
@@ -348,9 +357,22 @@ function FAQStyles() {
         50%      { opacity: 1;    }
       }
 
-      /* ── ANSWER ── */
+      /* ── ANSWER ──
+         Two-layer structure:
+           .faq-answer-wrap  outer motion element that AnimatePresence
+                             mounts/unmounts. Animates height 0 → auto
+                             and opacity 0 → 1 with overflow:hidden,
+                             so hidden answers occupy zero layout space.
+           .faq-answer       inner static element with the actual
+                             typography. Margin-top here so the spacing
+                             expands and collapses together with the
+                             height animation.
+      */
+      .faq-answer-wrap {
+        width: 100%;
+      }
       .faq-answer {
-        margin-top: 1.8rem;
+        margin-top: 1.4rem;
         font-family: ui-serif, Georgia, serif;
         font-size: clamp(1.0rem, 1.4vw, 1.12rem);
         line-height: 1.7;
@@ -361,7 +383,7 @@ function FAQStyles() {
 
       /* ── DIVIDER ── */
       .faq-divider {
-        margin-top: 3rem;
+        margin-top: 2rem;
         height: 1px;
         width: 80px;
         background: linear-gradient(90deg, transparent, var(--m-hairline-s), transparent);
@@ -371,11 +393,11 @@ function FAQStyles() {
 
       /* ── RESPONSIVE ── */
       @media (max-width: 720px) {
-        .faq-stack          { gap: 4rem; }
+        .faq-stack          { gap: 1.8rem; }
         .faq-doubt          { font-size: 1.18rem; }
         .faq-number         { font-size: 0.58rem; margin-bottom: 1rem; }
-        .faq-answer         { font-size: 0.98rem; margin-top: 1.6rem; }
-        .faq-divider        { margin-top: 2.2rem; }
+        .faq-answer         { font-size: 0.98rem; margin-top: 1.2rem; }
+        .faq-divider        { margin-top: 1.5rem; }
         .faq-affordance     { font-size: 0.52rem; letter-spacing: 0.28em; }
       }
     `}</style>

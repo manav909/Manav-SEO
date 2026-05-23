@@ -314,6 +314,8 @@ Intro Prose: *"Five archetypes — from the founder funding growth on limited ru
 
 The FAQ chapter, reimagined. Doubts sit in their initial state — italic serif, plain, fully visible from the moment the chapter renders. The cinematic resolution is INVITED, not forced: the reader taps a doubt, and a brand-cyan line traces left-to-right *across* it (the resolution gesture, with a glowing leading-edge "spark"), then the answer fades in below in upright serif.
 
+**Layout discipline (fixed 2026-05-23 v2)**: hidden answers occupy **zero** layout space. The answer is wrapped in an `AnimatePresence` block that conditionally mounts/unmounts the element. When tapped, the wrapper animates `height: 0 → auto` (via framer-motion's measured ResizeObserver) and `opacity: 0 → 1` simultaneously over 0.7s with `overflow: hidden`. When tapped again to replay, the wrapper exits with the inverse animation. This eliminates the prior bug where invisible answers (six × ~200px) created ~1200px of phantom empty space between doubts in their unresolved state. Stack gap tightened from 5.5rem to 2.4rem (desktop) / 1.8rem (mobile) now that the visual rhythm is anchored on actual rendered content.
+
 **Interaction**: tap-to-resolve only. No auto-firing on scroll. Each doubt shows a monospaced affordance hint beneath it that toggles through three states: `↳ TAP TO RESOLVE` (idle) → `RESOLVING…` (in progress, with a soft pulsing animation) → `↻ TAP TO REPLAY` (done). Tap again to replay the resolution sequence — strike + answer re-mount via a bumped `resolveKey` for clean DOM state.
 
 **Voice**: all six answers are rewritten operator-first. The framing centers Manav as the operator and his designed system as his instrument — not an autonomous SaaS, not an automated agent. The leverage is the system; the judgment is his. Authentic data sources (Google Search Console + Google Analytics 4 only) named explicitly where relevant.
@@ -328,6 +330,14 @@ Six doubts addressed:
 6. *Why no monthly retainer?* — "Every line item defensible because every line item is a thing I did, on a date I logged, against a baseline neither of us can quietly rewrite."
 
 Hardcoded English (matches Whom + Engine pattern).
+
+## 13.8 Active-chapter detection — scrollspy (REPLACED IntersectionObserver 2026-05-23 v2)
+
+The prior implementation used `IntersectionObserver` with `rootMargin: '-25% 0px -25% 0px'` and a 0.25 intersection-ratio threshold. As chapters grew in length (ChEngine + Live Ops panel, ChFAQ with six answer expansions), long chapters could remain in the trimmed band without ever exceeding the 0.25 ratio — the season state would stick on a stale chapter, and the ambient cross-fade would lag or miss entirely.
+
+The replacement is a **scroll-spy**: a `requestAnimationFrame`-throttled `scroll` listener computes which chapter is active by finding the one whose `top` is the highest above a fixed trigger line at **35% from the top of the viewport**. Equivalently: the chapter whose top has just passed the trigger is active. Height-agnostic. Deterministic. Smooth in both directions — scrolling up unwinds the seasons in reverse, exactly mirroring the descent. Also listens to `resize` events so the trigger line stays correct on orientation change.
+
+Edge case handled: at the very top of the page (before the first chapter's top crosses the trigger line), the active chapter defaults to `cold-open` so the ambient season matches the title sequence immediately.
 
 ## 13.7 Chapter 06 — Engine Room Live Ops Panel (NEW, added 2026-05-23)
 

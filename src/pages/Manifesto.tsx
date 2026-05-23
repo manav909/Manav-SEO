@@ -57,27 +57,65 @@ export default function Manifesto() {
     [lang]
   );
 
-  /* Active-chapter detection. Observe all 14 chapter sections; the
-     section with the highest intersectionRatio above 0.25 wins. Margin
-     rule trims the trigger band so the active state changes near the
-     vertical center of the viewport rather than on first touch. */
+  /* Active-chapter detection. A scroll-spy (rAF-throttled) replaces the
+     prior IntersectionObserver, which became unreliable as chapters grew
+     in length — long chapters could never cross a 25% intersection ratio
+     threshold, leaving the season state stale.
+
+     The rule is now simple and height-agnostic: at any scroll position,
+     the active chapter is the one whose top edge is the highest above
+     (or at) a fixed trigger line 35% from the top of the viewport. As
+     the user scrolls down, each chapter's top eventually crosses this
+     line — that's the moment the chapter becomes active, and the
+     ambient season cross-fades. As they scroll back up, the trigger
+     line passes back over earlier chapters in reverse, so the seasons
+     unwind in the same order they arrived. Smooth in both directions. */
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible.length > 0 && visible[0].intersectionRatio > 0.25) {
-          setActiveChapter(visible[0].target.id);
+    let rafId: number | null = null;
+
+    const computeActive = () => {
+      const triggerY = window.innerHeight * 0.35;
+      let candidate: string | null = null;
+      let candidateTop = -Infinity;
+
+      for (const c of CHAPTERS) {
+        const el = document.getElementById(c.id);
+        if (!el) continue;
+        const top = el.getBoundingClientRect().top;
+        /* The chapter we want is the one whose top has just passed the
+           trigger line. Among all chapters with top <= triggerY, pick
+           the one with the LARGEST top (the most recent to cross). */
+        if (top <= triggerY && top > candidateTop) {
+          candidate = c.id;
+          candidateTop = top;
         }
-      },
-      { rootMargin: '-25% 0px -25% 0px', threshold: [0, 0.25, 0.5, 0.75, 1] }
-    );
-    CHAPTERS.forEach((c) => {
-      const el = document.getElementById(c.id);
-      if (el) observer.observe(el);
-    });
-    return () => observer.disconnect();
+      }
+
+      /* Edge case at the very top of the page (before the first chapter
+         crosses the trigger). Default to the first chapter so the
+         ambient season matches the cold open immediately. */
+      if (!candidate) candidate = CHAPTERS[0]?.id ?? null;
+
+      if (candidate) {
+        setActiveChapter((prev) => (prev === candidate ? prev : candidate));
+      }
+      rafId = null;
+    };
+
+    const onScroll = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(computeActive);
+    };
+
+    window.addEventListener('scroll',  onScroll, { passive: true });
+    window.addEventListener('resize',  onScroll, { passive: true });
+    computeActive();   // initial computation
+
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const jumpToChapter = useCallback((id: string) => {
