@@ -235,7 +235,7 @@ FEATHER curve `[0.16, 1, 0.3, 1]`, soft springs (stiffness 60, damping 18), 1.0�
 
 ## 13. Cold Open — current composition (SHIPPED 2026-05-23)
 
-**Total reveal pacing**: ~13s title-sequence cadence (signature draw extends ACT 5 by ~2s).
+**Total reveal pacing**: ~14.7s title-sequence cadence (stroke-drawn signature extends ACT 5 by ~3.7s).
 
 | Act | Timing | Element |
 |---|---|---|
@@ -248,9 +248,9 @@ FEATHER curve `[0.16, 1, 0.3, 1]`, soft springs (stiffness 60, damping 18), 1.0�
 | 3 | 6.0s | Setup: *"AI changed search. The agency model built for the old era hasn't caught up."* |
 | 4 | 7.0s | **Pivot** (dramatic hinge): ***"SEASON is what the moment demands."*** italic display cyan glow |
 | 5 | 8.4s | `── by ──` small mark |
-| 5 | 8.9s | **Signature: "Manav Sharma"** — SVG with Allison handwriting font, drawn by mask reveal with glowing pen tip (1.9s write, ~2.8s total) |
-| 5 | 11.4s | Close: *"State-of-the-art for the era of AI search. He answers when called."* |
-| — | 12.7s | Scroll hint `BEGIN ↓` |
+| 5 | 8.9s | **Signature: "Manav Sharma"** — SVG stroke-drawn in Pinyon Script with -2.5° slant (2.7s write, 0.7s ink soak, ~3.4s total) |
+| 5 | 12.2s | Close: *"State-of-the-art for the era of AI search. He answers when called."* |
+| — | 13.5s | Scroll hint `BEGIN ↓` |
 
 ### 13.1 Interactive recital mechanics
 
@@ -270,14 +270,19 @@ Same here. The cold open names the era (AI changed search), names the gap (the a
 
 ### 13.3 Animated Signature — implementation spec (SHIPPED 2026-05-23)
 
-The Manav reveal at ACT 5 is no longer a plain italic text. It is an SVG signature that **draws itself**:
+The Manav reveal at ACT 5 is an SVG signature that is **actually drawn**, not unmasked. The cinematic spec:
 
-- **Font**: `Allison` from Google Fonts — a handwriting font specifically designed for signature-style rendering. Falls back to `Homemade Apple`, `Caveat`, `Dancing Script`, then generic `cursive`.
-- **Reveal mechanism**: a `clipPath` rectangle grows from `width: 0` to `width: 720` over **1.9s** using a custom ease `[0.45, 0.05, 0.2, 1]` that mimics writing motion (gentle initiation, smooth glide middle, soft landing).
-- **Pen tip**: a small glowing `<circle>` (r=3.2) rides along the leading edge of the clip, perfectly synchronized. Cyan fill (`hsla(188, 100%, 92%, 1)`) with a triple drop-shadow filter (6px / 18px / 32px) for a luminous halo. Fades in 0.25s before writing starts, holds 0.2s at the right edge after writing ends, fades out 0.5s.
-- **Accessibility**: `role="img"`, `aria-label="Manav Sharma, founder signature"`. Respects `prefers-reduced-motion` via `useReducedMotion()` — when active, signature appears fully visible immediately with no writing animation and no pen tip.
-- **Responsive**: `max-width: 580px` desktop · `420px` ≤880px · `300px` ≤560px. SVG viewBox 720×200 scales inside the wrapper.
-- **Font loading**: Google Fonts `<link>` elements (preconnect + stylesheet with `display=swap`) injected into the head. The 0.6s container fade-in gives the font time to load before writing begins; if it hasn't loaded, the generic cursive fallback writes instead and Allison swaps in later.
+- **Font**: `Pinyon Script` from Google Fonts — a formal calligraphic typeface with thin, elegant, authoritative letterforms (Mr Dafoe / Allura / Allison / Sacramento as fallbacks). Sized small and refined: `fontSize: 92px` inside a 500×130 viewBox, scaled to `max-width: 340px` desktop / `280px` ≤880px / `230px` ≤560px.
+- **Slant**: the SVG wrapper is rotated `-2.5deg` so the signature lands naturally angled — the way a real signature sits on paper, not perfectly horizontal.
+- **Drawing technique**: the text is rendered with `fill: none` and a thin white stroke (`stroke-width: 0.85`, `stroke-linecap: round`, `stroke-linejoin: round`). SVG's `stroke-dasharray` (set to 3200, larger than total glyph path length) and `stroke-dashoffset` (animated from 3200 → 0) are then used to progressively trace each glyph outline from left to right — as if a pen is actually moving across the page. This is the same technique used in motion-graphics hand-drawn animations.
+- **Writing curve**: `cubic-bezier(0.18, 0.35, 0.78, 1)` — a steady-paced writing rhythm with very gentle ends. **Writing duration**: 2.7 seconds — matches a deliberate signature signed by hand.
+- **Ink soak**: after the strokes finish drawing, `fillOpacity` fades 0 → 0.96 over 0.7s (starts 0.15s before the stroke completes for natural overlap) and `strokeOpacity` softens 1 → 0.35 — together producing an "ink soaks into paper" effect. The final state is a filled, slightly slanted, signed name with a thin residual outline glow.
+- **Ambient glow**: a double drop-shadow filter (4px close + 14px far) provides subtle ink-on-premium-paper luminance throughout.
+- **No pen-tip dot**: the stroke is the pen now. Removed entirely.
+- **Accessibility**: `role="img"`, `aria-label="Manav Sharma, founder signature"`. Respects `prefers-reduced-motion` via `useReducedMotion()` — when active, signature renders fully visible immediately, no drawing animation.
+- **Font loading**: Google Fonts `<link>` elements (preconnect + stylesheet with `display=swap`) injected. The 0.5s container fade-in gives the font time to load before drawing begins.
+
+**Timing in the cold-open arc**: signature container fade-in at 8.9s. Stroke drawing starts at 9.35s. Drawing completes at 12.05s. Ink soaks 11.9–12.6s. Hero-close lands at 12.2s (overlaps the final ink-soak phase, lands as the signature settles). Scroll hint at 13.5s.
 
 ### 13.4 Honest call-out
 
