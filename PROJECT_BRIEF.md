@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `73d0302`
+**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `c269beb` (post-regression, awaiting repair)
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -313,6 +313,14 @@ Intro Prose: *"Five archetypes — from the founder funding growth on limited ru
 - After Step 2 force-rebuild (commit `0da2d35`), the journey-arc deploy DID succeed but edge cache served stale HTML for ~15 min before clearing
 - Manav confirmed live site showing the journey-arc content correctly via screenshot before requesting the humble + interactive iteration
 
+### 15.1 ChColdOpen regression 2026-05-23 (commit `c269beb`)
+
+**What happened**: deploying ChWhom + brief, the deploy chain also cp'd `~/Downloads/ChColdOpen.tsx` "for safety." Manav's Downloads folder had an older version of ChColdOpen.tsx (the V5 grand-entry-MANAV-at-top version from commit `1bac046`, which had been explicitly rejected). The cp overwrote the live humble+interactive version with the old rejected one. Got committed and deployed as `c269beb`.
+
+**Repaired by**: recovering ChColdOpen.tsx from git history at `58d31ec` (the original humble + interactive ship) and force-deploying it. The era-centered copy.ts changes from `73d0302` were unaffected (regression was ChColdOpen.tsx only), so post-repair the file renders the era-centered copy correctly via the t() keys.
+
+**Prevention rule**: when a deploy chain re-cp's a file "for safety" that's supposedly unchanged from main, ALWAYS verify the local Downloads version matches by hash before adding/committing. Better — only cp files that have actual changes. The "re-cp for safety" pattern carries silent regression risk if Downloads is older than main.
+
 ---
 
 ## 16. Honest call-outs (carried forward)
@@ -327,4 +335,4 @@ Intro Prose: *"Five archetypes — from the founder funding growth on limited ru
 
 ## 17. Session handoff prompt for next chat
 
-> "Continuing SEO SEASON. Brief attached. Cold open is era-centered Arc Reactor framing. ChWhom (Chapter 10) reframed to 5 client archetypes — founder, marketing lead, local business, ecommerce operator, agency/consultancy. Layout work paused. Don't change anything without confirming."
+> "Continuing SEO SEASON. Brief attached. Cold open is era-centered Arc Reactor framing with humble Manav + interactive recital. ChWhom (Chapter 10) is five client archetypes. Repaired a ChColdOpen.tsx regression from commit c269beb (older Downloads version overwrote the good one) — fixed by recovering from git history. Layout work paused. Don't change anything without confirming."
