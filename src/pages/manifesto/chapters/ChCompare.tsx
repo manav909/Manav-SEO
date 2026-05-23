@@ -34,11 +34,13 @@ const ROWS: Row[] = [
   { capability: 'Per-campaign baselines',                season: 'yes', agency: 'no',     diy: 'no'      },
   { capability: 'Honest gap acknowledgment',             season: 'yes', agency: 'no',     diy: 'no'      },
   { capability: 'Client audits every action',            season: 'yes', agency: 'no',     diy: 'no'      },
-  { capability: 'AI-era ready (LLM visibility)',         season: 'yes', agency: 'rare',   diy: 'no'      },
+  { capability: 'AI-era ready (LLM visibility)',         season: 'yes', agency: 'rare',   diy: 'yes'     },
   { capability: 'No black-box reports',                  season: 'yes', agency: 'no',     diy: 'partial' },
   { capability: 'Pillar-based architecture',             season: 'yes', agency: 'ad hoc', diy: 'no'      },
-  { capability: 'Source-cited recommendations',          season: 'yes', agency: 'rare',   diy: 'partial' },
-  { capability: 'Charges for work done, not retainer',   season: 'yes', agency: 'no',     diy: 'n/a'     },
+  { capability: 'Source-cited recommendations',          season: 'yes', agency: 'rare',   diy: 'no'      },
+  { capability: 'Human accountability',                  season: 'yes', agency: 'yes',    diy: 'no'      },
+  { capability: 'Years of operator experience',          season: 'yes', agency: 'yes',    diy: 'no'      },
+  { capability: 'Charges for work done, not retainer',   season: 'yes', agency: 'no',     diy: 'monthly' },
 ];
 
 export function ChCompare({ t }: { t: TFn }) {
@@ -47,8 +49,16 @@ export function ChCompare({ t }: { t: TFn }) {
       <CompareStyles />
 
       <Prose delay={0.4}>
-        Direct comparison. No softening. The question isn't whether SEO SEASON is
-        "good" — it's whether the alternatives are doing what they should.
+        Three ways a serious brand can do SEO today. Pick a traditional agency
+        and accept the opacity. Pick an AI-only platform and accept that
+        nobody is accountable. Or hire an agency that runs on its own
+        verifiable infrastructure.
+      </Prose>
+
+      <Prose delay={0.6}>
+        Direct comparison below. No softening. The question isn't whether
+        SEO SEASON is "good" — it's whether the alternatives can do what a
+        serious brand needs in 2026.
       </Prose>
 
       <motion.div
@@ -62,7 +72,7 @@ export function ChCompare({ t }: { t: TFn }) {
           <div className="compare-cell compare-cell-cap">Capability</div>
           <div className="compare-cell compare-cell-season">SEO SEASON</div>
           <div className="compare-cell">Traditional Agency</div>
-          <div className="compare-cell">DIY Tool</div>
+          <div className="compare-cell">AI-Only Platform</div>
         </div>
 
         {ROWS.map((r, i) => (
@@ -83,9 +93,10 @@ export function ChCompare({ t }: { t: TFn }) {
       </motion.div>
 
       <Prose delay={1.4} className="mt-12">
-        Pricing footnote: SEO SEASON charges for actual work shipped, not
-        retainer hours billed against unverifiable activity. The architecture
-        makes that possible because every action is timestamped and counted.
+        Pricing note: traditional agencies charge a retainer regardless of
+        work shipped. AI-only platforms charge a subscription regardless of
+        work shipped. SEO SEASON charges for actual work — every action
+        timestamped, every line item counted, every invoice defensible.
       </Prose>
     </ChapterShell>
   );

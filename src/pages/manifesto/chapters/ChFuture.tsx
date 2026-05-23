@@ -43,9 +43,17 @@ export function ChFuture({ t }: { t: TFn }) {
 
       <Prose delay={1.0}>
         The market will consolidate. Agencies running on PDF decks and
-        rank-tracker screenshots will not survive 2027. The agencies that
+        rank-tracker screenshots will not survive 2027. AI-only platforms
+        with no human accountability will be exposed by the first client
+        who can't reach anyone when their traffic dips. The agencies that
         survive will look more like SEO SEASON — verifiable, auditable,
-        transparent — and less like 2019.
+        accountable, with operators behind the work.
+      </Prose>
+
+      <Prose delay={1.2}>
+        Few agencies are positioned for this era. Fewer are operating from
+        infrastructure built to last it. We are taking on new clients while
+        the curve is still gentle.
       </Prose>
 
       <motion.div

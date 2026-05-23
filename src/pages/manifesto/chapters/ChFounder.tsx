@@ -18,15 +18,16 @@ import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
 const PARAS: string[] = [
-  'I built SEO SEASON because I lived the problem from every side.',
-  "As a client who couldn't tell what had been done. As an operator who couldn't prove what I'd done. As an observer of an industry that had quietly accepted opacity as a price of doing business.",
-  "The fix wasn't more reports. More dashboards. More charts. The fix was a different shape of business — one where the work is verifiable as it happens. Where the data and the narrative are the same artifact. Where the client and the operator look at the same screen at the same hour.",
-  'Two years of architecting. Twelve API functions. Fifty tables. Forty-two pages. Hundreds of decisions. One commitment.',
+  "I've spent years inside the SEO industry — as an operator, as a consultant, as someone who watched the work happen from every side that exists.",
+  "I built SEO SEASON because the problem I kept seeing wasn't a tooling problem. It was a trust problem.",
+  "As a client who couldn't tell what had been done. As an operator who couldn't prove what I'd done. As someone who watched an industry quietly accept opacity as the price of doing business.",
+  "The fix wasn't more reports. More dashboards. More AI. The fix was a different shape of agency — one where the work is verifiable as it happens. Where the data and the narrative are the same artifact. Where the client and the operator look at the same screen at the same hour.",
+  "Two years building the infrastructure that makes this kind of agency possible. Twelve intelligence engines. Fifty live data streams. Hundreds of decisions encoded as system constraints. One commitment, made operational.",
 ];
 
 const PARAS_FINAL: string[] = [
   'This is what I wanted to exist.',
-  'So I built it.',
+  'So I built it — and now I run an agency on it.',
 ];
 
 export function ChFounder({ t }: { t: TFn }) {

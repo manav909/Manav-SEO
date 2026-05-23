@@ -86,15 +86,17 @@ export function ChEngine({ t }: { t: TFn }) {
       <EngineStyles />
 
       <Prose delay={0.4}>
-        Under every dashboard, twelve specialized intelligence engines run
-        continuously — like cylinders firing in sequence inside a precision
-        powerplant. Each handles one class of decision; together they carry
-        the full operating load of an enterprise SEO program.
+        Behind every campaign we run for a client, twelve specialized
+        intelligence engines fire continuously — like cylinders firing in
+        sequence inside a precision powerplant. Each handles one class of
+        decision; together they carry the full operating load of an
+        enterprise SEO program.
       </Prose>
 
       <Prose delay={0.6}>
-        Below, the spec sheet. What this engine delivers — not how it's
-        wired underneath.
+        This is the infrastructure our agency runs on. You don't license it.
+        You hire us, and we run it on your behalf. The spec sheet below
+        describes what that buys you — not what we sell.
       </Prose>
 
       <div className="engine-spec-grid mt-14">
@@ -111,7 +113,9 @@ export function ChEngine({ t }: { t: TFn }) {
 
       <Prose delay={0.6} className="mt-10">
         The agency next door still operates on slide decks and rank-tracker
-        screenshots. Yours operates on telemetry.
+        screenshots. We operate on telemetry. The AI-only platforms operate
+        on a single prompt and a confident tone. We operate on a team, on
+        evidence, on a system that won't lie even if we wanted it to.
       </Prose>
     </ChapterShell>
   );
