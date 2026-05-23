@@ -353,111 +353,129 @@ function InteractiveRecital({
 /* ═══════════════════════════════════════════════════════════════
    ANIMATED SIGNATURE — "Manav Sharma"
 
-   A signature that is actually DRAWN, not unmasked. The cinematic
-   spec:
+   Hand-authored SVG signature paths. Not a font. Real signing
+   animation: four pen strokes with natural pen-lifts between
+   them, ending with two final ink dots — the way a person
+   actually signs a name.
 
-     · "Manav Sharma" rendered in Pinyon Script — a formal
-       calligraphic font with thin, elegant, authoritative
-       letterforms. (Mr Dafoe / Allura / Allison as fallbacks
-       in case the primary font fails to load.) Sized small and
-       refined — this is a signature, not a header.
+     · Stroke 1  Capital M — three peaks, drawn in one motion
+     · Stroke 2  "anav" — flowing lowercase as 4 wave humps
+     · Pen lift  (gap between first and last name)
+     · Stroke 3  Capital S — three arcs in one motion
+     · Stroke 4  "harma" — h ascender + flowing humps + tail
+     · Pen lift
+     · Dot 1     Small ink dot beneath the signature
+     · Dot 2     Second dot, slightly offset — the autograph
+                 punctuation that says "this is final"
 
-     · The text is rendered with `fill: none` and a thin white
-       stroke. SVG's `stroke-dasharray` and `stroke-dashoffset`
-       are then animated, which traces each glyph outline
-       progressively from left to right — as if a pen is actually
-       moving across the page. This is the same technique used
-       for hand-drawn animations in motion-graphics; applied to
-       text, it produces an authentic writing reveal.
+   Each path uses `pathLength=100` so we can animate
+   `strokeDashoffset` from 100 → 0 with consistent timing
+   regardless of actual path length.
 
-     · A subtle slant transform (-2.5deg) is applied to the SVG so
-       the signature sits naturally angled — the way a real
-       signature lands on paper, not perfectly horizontal.
+   Total runtime ~2.7s from the inner start. Slight container
+   rotation (-2°) so the signature lands naturally on the page.
 
-     · After the strokes finish drawing (~2.7s), the fill fades
-       in over 0.7s and the stroke softens — "the ink soaks
-       into the paper." The final state is a filled, slightly
-       slanted, signed name with a thin residual outline glow.
-
-     · A soft white drop-shadow filter provides a subtle ink-glow
-       throughout — the visual signature of pen on premium paper.
-
-   No pen-tip dot needed. The stroke is the pen now.
-
-   Respects prefers-reduced-motion. If active, the signature
-   renders fully visible immediately with no draw animation.
+   Respects prefers-reduced-motion.
 ═══════════════════════════════════════════════════════════════ */
+
+const M_PATH     = "M 20,90 C 18,75 22,30 30,22 C 38,18 50,72 55,75 C 60,78 70,30 75,22 C 82,18 90,72 95,75 C 100,78 108,30 115,22 C 122,18 125,80 130,90";
+const ANAV_PATH  = "M 130,90 C 138,90 138,55 148,55 C 158,55 158,90 165,90 C 175,90 175,55 185,55 C 195,55 195,90 200,90 C 210,90 210,55 220,55 C 230,55 230,90 235,90 C 245,90 245,55 250,55 C 258,55 258,75 260,80";
+const S_PATH     = "M 315,30 C 312,22 290,18 285,38 C 282,50 320,52 315,60 C 310,68 282,72 285,82 C 290,90 315,88 320,82";
+const HARMA_PATH = "M 325,82 C 332,80 332,30 335,25 C 338,22 340,30 340,55 C 342,75 345,90 348,90 C 358,90 358,55 365,55 C 375,55 378,90 382,90 C 392,90 392,60 395,60 C 402,60 402,90 408,90 C 418,90 418,55 425,55 C 435,55 435,75 440,75 C 445,75 448,55 455,55 C 465,55 463,88 470,85";
+const DOT1       = { cx: 462, cy: 105 };
+const DOT2       = { cx: 474, cy: 108 };
 
 function AnimatedSignature({ delay }: { delay: number }) {
   const reducedMotion = useReducedMotion();
 
-  /* Total stroke-dasharray value. Must be larger than the rendered
-     total path length of "Manav Sharma" in Pinyon Script at the
-     fontSize we use. For an SVG viewBox of 500x130 and fontSize
-     around 92px, total path length is approximately 1800-2400
-     user units across all glyph outlines. 3200 gives safe headroom. */
-  const DASH = 3200;
+  const writeCurve = [0.4, 0.05, 0.25, 1] as const;
 
-  /* Animation timing */
-  const writeS     = 2.7;   // stroke draws letterforms
-  const inkSoakS   = 0.7;   // fill fades in after strokes complete
-  const writeCurve = [0.18, 0.35, 0.78, 1] as const;  // steady-paced writing
-  const startDelay = delay + 0.45;
+  /* Stroke durations */
+  const dM   = 0.42;
+  const dA   = 0.55;
+  const dS   = 0.42;
+  const dH   = 0.70;
+  const dDot = 0.18;
+
+  /* Pen-lift gaps — tiny within a word, larger between names */
+  const liftM_A   = 0.03;
+  const liftA_S   = 0.18;
+  const liftS_H   = 0.03;
+  const liftH_dot = 0.12;
+  const dotGap    = 0.08;
+
+  /* Cumulative start times relative to component delay */
+  const t0    = delay + 0.45;       // wait for container fade-in
+  const tM    = t0;
+  const tA    = tM + dM   + liftM_A;
+  const tS    = tA + dA   + liftA_S;
+  const tH    = tS + dS   + liftS_H;
+  const tDot1 = tH + dH   + liftH_dot;
+  const tDot2 = tDot1 + dotGap;
+
+  const strokes = [
+    { d: M_PATH,     dur: dM, start: tM },
+    { d: ANAV_PATH,  dur: dA, start: tA },
+    { d: S_PATH,     dur: dS, start: tS },
+    { d: HARMA_PATH, dur: dH, start: tH },
+  ];
 
   return (
-    <>
-      {/* Pinyon Script + Mr Dafoe — formal calligraphic / signature fonts.
-          font-display: swap shows a cursive fallback if not yet loaded. */}
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Pinyon+Script&family=Mr+Dafoe&display=swap"
-      />
-
-      <motion.div
-        className="hero-signature-wrap mt-3"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay, ease: FEATHER }}
-        role="img"
-        aria-label="Manav Sharma, founder signature"
+    <motion.div
+      className="hero-signature-wrap mt-3"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5, delay, ease: FEATHER }}
+      role="img"
+      aria-label="Manav Sharma, founder signature"
+    >
+      <svg
+        viewBox="0 0 500 130"
+        className="hero-signature-svg"
+        preserveAspectRatio="xMidYMid meet"
       >
-        <svg
-          viewBox="0 0 500 130"
-          className="hero-signature-svg"
-          preserveAspectRatio="xMidYMid meet"
-        >
-          {reducedMotion ? (
-            <text
-              x="250"
-              y="85"
-              textAnchor="middle"
-              className="hero-signature-text-static"
-            >
-              Manav Sharma
-            </text>
+        {strokes.map((s, i) =>
+          reducedMotion ? (
+            <path key={i} d={s.d} className="hero-sig-stroke" />
           ) : (
-            <motion.text
-              x="250"
-              y="85"
-              textAnchor="middle"
-              className="hero-signature-text-draw"
-              strokeDasharray={DASH}
-              initial={{ strokeDashoffset: DASH, fillOpacity: 0, strokeOpacity: 1 }}
-              animate={{ strokeDashoffset: 0,    fillOpacity: 0.96, strokeOpacity: 0.35 }}
-              transition={{
-                strokeDashoffset: { duration: writeS,   ease: writeCurve, delay: startDelay },
-                fillOpacity:      { duration: inkSoakS, ease: 'easeOut',  delay: startDelay + writeS - 0.15 },
-                strokeOpacity:    { duration: inkSoakS, ease: 'easeOut',  delay: startDelay + writeS - 0.15 },
-              }}
-            >
-              Manav Sharma
-            </motion.text>
-          )}
-        </svg>
-      </motion.div>
-    </>
+            <motion.path
+              key={i}
+              d={s.d}
+              className="hero-sig-stroke"
+              pathLength={100}
+              strokeDasharray={100}
+              initial={{ strokeDashoffset: 100 }}
+              animate={{ strokeDashoffset: 0 }}
+              transition={{ duration: s.dur, ease: writeCurve, delay: s.start }}
+            />
+          )
+        )}
+
+        {reducedMotion ? (
+          <>
+            <circle cx={DOT1.cx} cy={DOT1.cy} r="2.4" className="hero-sig-dot" />
+            <circle cx={DOT2.cx} cy={DOT2.cy} r="2.4" className="hero-sig-dot" />
+          </>
+        ) : (
+          <>
+            <motion.circle
+              cx={DOT1.cx} cy={DOT1.cy} r="2.4"
+              className="hero-sig-dot"
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: dDot, ease: 'backOut', delay: tDot1 }}
+            />
+            <motion.circle
+              cx={DOT2.cx} cy={DOT2.cy} r="2.4"
+              className="hero-sig-dot"
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: dDot, ease: 'backOut', delay: tDot2 }}
+            />
+          </>
+        )}
+      </svg>
+    </motion.div>
   );
 }
 
@@ -667,9 +685,10 @@ function ColdOpenStyles() {
         background: linear-gradient(90deg, transparent, var(--m-hairline-s), transparent);
       }
       /* ─── ANIMATED SIGNATURE ──────────────────────────────────
-         Signature draws stroke-first, then fill soaks in. The SVG
-         is slightly rotated (-2.5deg) to land naturally — the way
-         a real signature sits on paper, not perfectly horizontal.
+         Hand-authored SVG paths. Each path is a real pen stroke,
+         drawn with stroke-dasharray animation. Two final dots are
+         the signature punctuation. Slight rotation makes it land
+         naturally on the page rather than perfectly horizontal.
       */
       .hero-signature-wrap {
         width: 100%;
@@ -678,7 +697,7 @@ function ColdOpenStyles() {
         display: flex;
         justify-content: center;
         align-items: center;
-        transform: rotate(-2.5deg);
+        transform: rotate(-2deg);
         transform-origin: center center;
       }
       .hero-signature-svg {
@@ -687,50 +706,21 @@ function ColdOpenStyles() {
         display: block;
         overflow: visible;
       }
-
-      /* Static fallback (used when prefers-reduced-motion is set) */
-      .hero-signature-text-static {
-        font-family: 'Pinyon Script', 'Mr Dafoe', 'Allura', 'Allison', 'Sacramento', cursive;
-        font-size: 92px;
-        font-weight: 400;
-        letter-spacing: 0.005em;
-        fill: rgba(255, 255, 255, 0.96);
-        filter:
-          drop-shadow(0 0 4px hsla(0, 0%, 100%, 0.35))
-          drop-shadow(0 0 14px hsla(0, 0%, 100%, 0.15));
-      }
-
-      /* Animated: starts stroke-only with no fill, then ink soaks in */
-      .hero-signature-text-draw {
-        font-family: 'Pinyon Script', 'Mr Dafoe', 'Allura', 'Allison', 'Sacramento', cursive;
-        font-size: 92px;
-        font-weight: 400;
-        letter-spacing: 0.005em;
-        fill: rgba(255, 255, 255, 1);
+      .hero-sig-stroke {
+        fill: none;
         stroke: rgba(255, 255, 255, 0.96);
-        stroke-width: 0.85;
+        stroke-width: 1.6;
         stroke-linecap: round;
         stroke-linejoin: round;
-        paint-order: stroke fill;
         filter:
-          drop-shadow(0 0 4px hsla(0, 0%, 100%, 0.4))
-          drop-shadow(0 0 14px hsla(0, 0%, 100%, 0.18));
+          drop-shadow(0 0 3px hsla(0, 0%, 100%, 0.5))
+          drop-shadow(0 0 10px hsla(0, 0%, 100%, 0.2));
       }
-
-      /* Legacy classes — kept in case anything else references them */
-      .hero-name-humble {
-        font-family: ui-serif, Georgia, serif;
-        font-size: clamp(2.5rem, 5vw, 4rem);
-        line-height: 1.05;
-        font-style: italic;
-        font-weight: 400;
-        color: rgba(255, 255, 255, 0.96);
-        text-align: center;
-      }
-      .hero-signature-text,
-      .hero-signature-pen {
-        /* legacy from prior animation iteration — no longer rendered */
-        display: none;
+      .hero-sig-dot {
+        fill: rgba(255, 255, 255, 0.96);
+        filter:
+          drop-shadow(0 0 4px hsla(0, 0%, 100%, 0.6))
+          drop-shadow(0 0 10px hsla(0, 0%, 100%, 0.25));
       }
       .hero-close {
         font-family: ui-serif, Georgia, serif;
