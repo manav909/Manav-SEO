@@ -71,7 +71,6 @@ export default function AIConcierge() {
     '/dashboard',
     '/admin',
   ]);
-  if (HIDE_ON_PATHS.has(currentPath)) return null;
 
   // Pulse when page changes to suggest help
   useEffect(() => {
@@ -95,6 +94,12 @@ export default function AIConcierge() {
       }]);
     }
   }, [open]);
+
+  /* React Rules of Hooks — ALL hooks must be called before any early return.
+     Hook count must be constant across renders. Previously this `return null`
+     sat above the useEffects, so navigating between HIDE_ON_PATHS and
+     non-hidden routes flipped the hook count and threw React error #310. */
+  if (HIDE_ON_PATHS.has(currentPath)) return null;
 
   async function ask(q?: string) {
     const question = (q || input).trim();

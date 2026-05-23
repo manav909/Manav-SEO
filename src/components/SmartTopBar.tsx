@@ -71,9 +71,6 @@ export default function SmartTopBar(){
   const[tickerVisible,setTickerVisible]=useState(true);
   const[tickerPaused,setTickerPaused]=useState(false);
 
-  // Hide on original PortalNav pages to avoid double navigation
-  if (PORTAL_NAV_PAGES.has(location.pathname)) return null;
-
   useEffect(()=>{const id=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(id);},[]);
 
   /* Drive the ticker — fade out, advance, fade in */
@@ -110,6 +107,11 @@ export default function SmartTopBar(){
     window.addEventListener("keydown",handler);
     return()=>window.removeEventListener("keydown",handler);
   },[sidebarOpen]);
+
+  // Hide on original PortalNav pages to avoid double navigation.
+  // MUST come AFTER all hooks — early returns before hooks throw React #310
+  // when navigating between PortalNav and non-PortalNav routes (hook count flips).
+  if (PORTAL_NAV_PAGES.has(location.pathname)) return null;
 
   const bc=BREADCRUMBS[location.pathname];
   const parent=bc?.parent?BREADCRUMBS[bc.parent]:null;
