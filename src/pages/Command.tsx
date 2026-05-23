@@ -15,11 +15,12 @@ import { useEffect, useRef, useState, Component, type ReactNode, type ErrorInfo 
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import {
   Sparkles, AlertCircle, CheckCircle2, Activity, ArrowRight,
-  X, Send, RefreshCw, Database, Building2, ExternalLink, Lightbulb, Settings,
+  X, Send, RefreshCw, Database, Building2, ExternalLink, Lightbulb, Settings, Eye, Film,
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSeason } from '@/contexts/SeasonContext';
+import { useNav } from '@/contexts/NavContext';
 import { subscribeAction } from '@/lib/season-actions/bus';
 import { useSeasonAction } from '@/hooks/useSeasonAction';
 import SmartSidebar from '@/components/SmartSidebar';
@@ -239,6 +240,7 @@ export default function Command() {
 
 function CommandInner() {
   const { selectedProjectId, selectedProject, setSelectedProjectId } = useProject() as any;
+  const { navigate } = useNav();
   const { projects, user } = useAuth() as any;
   const { setMood } = useSeason();
   const safeProjects = (projects || []).filter((p: any) => p && p.id);
@@ -775,6 +777,22 @@ function CommandInner() {
               </motion.div>
               <div className="flex items-center gap-2 shrink-0">
                 <ModeToggle mode={mode} onChange={setMode} />
+                {selectedProjectId && (
+                  <>
+                    <button
+                      onClick={() => navigate(`/client/${selectedProjectId}`)}
+                      title="Open Client Lens (existing)"
+                      className="px-3 h-9 rounded-full bg-card/40 border border-border/50 flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-muted-foreground/85 hover:text-cyan-400 hover:border-cyan-500/40 hover:bg-cyan-500/[0.05] transition-colors">
+                      <Eye className="h-3.5 w-3.5" /> Client Lens
+                    </button>
+                    <button
+                      onClick={() => navigate(`/client-lens-v2/${selectedProjectId}`)}
+                      title="Open Client Lens v2 (Phase 22 — new cinematic version)"
+                      className="px-3 h-9 rounded-full bg-violet-500/[0.08] border border-violet-500/40 flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-violet-300 hover:text-violet-200 hover:border-violet-400/60 hover:bg-violet-500/[0.15] transition-colors">
+                      <Film className="h-3.5 w-3.5" /> Lens v2
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => setDrawerOpen(true)}
                   title="Command Settings (⌘.)"
