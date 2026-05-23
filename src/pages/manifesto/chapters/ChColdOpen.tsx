@@ -1,19 +1,45 @@
 /* ════════════════════════════════════════════════════════════════════
    src/pages/manifesto/chapters/ChColdOpen.tsx
-   Chapter 00 — the opening. Eternal Spring.
+   Chapter 00 — Cold Open. Eternal Spring.
 
-   Visual moments:
-     1. "Meet" overline drifts in with letter-spacing easing.
-     2. S.E.A.S.O.N. letters reveal one-by-one, each fading in
-        from below with a slight upward translate + blur clear.
-     3. The acronym expand grid appears, mapping each letter to
-        its localized word (re-keys on language change).
-     4. Hero kicker (one sentence) + sub (second sentence).
-     5. Scroll hint pulses at the foot of the viewport.
+   Rebuilt for psychological impact. The original version was passive
+   — "MEET" as a greeting, six tiny acronym pairs in a 2×3 grid, kicker
+   too small to anchor the eye after the brand. This version is a
+   typographic crescendo, not a checkbox.
 
-   3D interaction: the entire stage receives a soft mouse-tracked
-   tilt (rotateX/rotateY via spring) on devices with a pointer.
-   Reduced-motion users get a static, fully-rendered version.
+   New composition (top to bottom):
+     1. COORDINATE MARK
+        SEO SEASON · VOL. I · 2026
+        Tiny, tracked wide. Positions this as a document of substance,
+        not a marketing page. (Replaces the soft "MEET".)
+
+     2. BRAND REVEAL
+        S.E.A.S.O.N. letter-by-letter, same animation as before.
+        Hero element. Still the visual peak.
+
+     3. ACRONYM RECITAL (the centerpiece)
+        Three weighty manifesto-style declarations, each on its own line:
+            S.E.   STRATEGIC EXECUTION
+            A.S.   ANALYSIS SUPPORT
+            O.N.   OPERATOR'S NETWORK
+        Each line reveals sequentially with a 0.18s stagger. The phrases
+        are rendered in display caps with a gradient (white → eternal-
+        spring cyan), giving them their own visual weight.
+
+     4. KICKER (scaled up 1.6×)
+        "An operating system for search that thinks in seasons."
+        Italic display serif. Now actually unmissable.
+
+     5. SUB (parallel statement, kept)
+        "Built for the moment search itself changed."
+        Sans, slightly larger than before. Holds its own weight.
+
+     6. SCROLL HINT
+        Pulsing "BEGIN" + arrow at foot. Same.
+
+   Crescendo shape:
+     light → PEAK → heavy → medium-heavy → medium → light
+   Resolves the eye into the scroll cue. No equal-weight plateau.
 ══════════════════════════════════════════════════════════════════════ */
 
 import { useRef } from 'react';
@@ -39,8 +65,8 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
     if (!rect) return;
     const x = (e.clientX - rect.left - rect.width / 2) / rect.width;
     const y = (e.clientY - rect.top - rect.height / 2) / rect.height;
-    mouseX.set(x * 7);
-    mouseY.set(-y * 7);
+    mouseX.set(x * 6);
+    mouseY.set(-y * 6);
   };
 
   const handleLeave = () => {
@@ -56,52 +82,65 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
       onMouseMove={handleMouse}
       onMouseLeave={handleLeave}
     >
+      <ColdOpenStyles />
+
       <motion.div
         className="cold-open-stage"
         style={{ rotateX: tiltX, rotateY: tiltY, transformPerspective: 1400 }}
       >
+        {/* ─── COORDINATE MARK ─────────────────────────────────── */}
         <motion.div
-          className="overline mb-8 cold-open-meet"
-          initial={{ opacity: 0, letterSpacing: '0.5em' }}
-          animate={{ opacity: 0.7, letterSpacing: '0.32em' }}
+          className="coord-mark"
+          initial={{ opacity: 0, letterSpacing: '0.55em' }}
+          animate={{ opacity: 0.7, letterSpacing: '0.34em' }}
           transition={{ duration: 1.8, ease: FEATHER }}
         >
-          {t('meet')}
+          <span className="coord-rule" />
+          <span className="coord-segment">SEO SEASON</span>
+          <span className="coord-dot">·</span>
+          <span className="coord-segment">VOL. I</span>
+          <span className="coord-dot">·</span>
+          <span className="coord-segment">2026</span>
+          <span className="coord-rule" />
         </motion.div>
 
-        <div className="cold-open-brand">
-          <BrandReveal delay={0.4} />
+        {/* ─── BRAND REVEAL ────────────────────────────────────── */}
+        <div className="cold-open-brand mt-12">
+          <BrandReveal delay={0.6} />
         </div>
 
+        {/* ─── ACRONYM RECITAL — three manifesto declarations ──── */}
         <motion.div
-          className="cold-open-expand mt-10"
+          className="recital mt-16"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 1.8, delay: 2.4, ease: FEATHER }}
-          key={lang} // re-trigger AcronymExpand stagger on lang switch
+          transition={{ duration: 1.4, delay: 2.6, ease: FEATHER }}
+          key={lang}
         >
-          <AcronymExpand t={t} />
+          <AcronymRecital t={t} />
         </motion.div>
 
+        {/* ─── KICKER (scaled up) ──────────────────────────────── */}
         <motion.div
-          className="cold-open-kicker mt-14"
-          initial={{ opacity: 0, y: 16 }}
+          className="cold-open-kicker-xl mt-20"
+          initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.6, delay: 3.4, ease: FEATHER }}
+          transition={{ duration: 1.7, delay: 4.0, ease: FEATHER }}
         >
           {t('hero_kicker')}
         </motion.div>
 
+        {/* ─── SUB (parallel statement) ────────────────────────── */}
         <motion.div
-          className="cold-open-sub mt-4"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 0.7, y: 0 }}
-          transition={{ duration: 1.4, delay: 3.9, ease: FEATHER }}
+          className="cold-open-sub-xl mt-5"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 0.82, y: 0 }}
+          transition={{ duration: 1.4, delay: 4.6, ease: FEATHER }}
         >
           {t('hero_sub')}
         </motion.div>
 
-        <ScrollHint label={t('scroll_hint')} delay={4.6} />
+        <ScrollHint label={t('scroll_hint')} delay={5.4} />
       </motion.div>
     </section>
   );
@@ -132,31 +171,166 @@ function BrandReveal({ delay = 0 }: { delay?: number }) {
   );
 }
 
-/* ─── Acronym expand grid (3-column) ──────────────────────────── */
+/* ─── Acronym recital — three weighty declarations ────────────── */
 
-function AcronymExpand({ t }: { t: TFn }) {
-  const pairs: Array<{ letter: string; word: string }> = [
-    { letter: 'S', word: t('s_letter')  },
-    { letter: 'E', word: t('e_letter')  },
-    { letter: 'A', word: t('a_letter')  },
-    { letter: 'S', word: t('s2_letter') },
-    { letter: 'O', word: t('o_letter')  },
-    { letter: 'N', word: t('n_letter')  },
+function AcronymRecital({ t }: { t: TFn }) {
+  const lines: Array<{ prefix: string; phrase: string }> = [
+    { prefix: 'S.E.',  phrase: t('phrase_strat_exec') },
+    { prefix: 'A.S.',  phrase: t('phrase_anal_supp')  },
+    { prefix: 'O.N.',  phrase: t('phrase_op_net')     },
   ];
   return (
-    <div className="acronym-expand">
-      {pairs.map((p, i) => (
+    <div className="recital-stack">
+      {lines.map((l, i) => (
         <motion.div
           key={i}
-          className="acronym-pair"
-          initial={{ opacity: 0, x: -8 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.9, ease: FEATHER, delay: i * 0.1 }}
+          className="recital-line"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.1, ease: FEATHER, delay: i * 0.22 }}
         >
-          <span className="acronym-letter">{p.letter}</span>
-          <span className="acronym-word">{p.word}</span>
+          <span className="recital-prefix">{l.prefix}</span>
+          <span className="recital-rule" />
+          <span className="recital-phrase">{l.phrase}</span>
         </motion.div>
       ))}
     </div>
+  );
+}
+
+/* ─── Inline styles ──────────────────────────────────────────── */
+
+function ColdOpenStyles() {
+  return (
+    <style>{`
+      /* ─── COORDINATE MARK ─────────────────────────────────── */
+      .coord-mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.85rem;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--m-ink-soft);
+      }
+      .coord-segment {
+        white-space: nowrap;
+      }
+      .coord-dot {
+        color: hsla(188, 70%, 65%, 0.75);
+        font-weight: 400;
+        letter-spacing: 0;
+      }
+      .coord-rule {
+        display: inline-block;
+        width: 30px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--m-hairline-s), transparent);
+      }
+
+      /* ─── RECITAL ──────────────────────────────────────────── */
+      .recital-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.85rem;
+      }
+      .recital-line {
+        display: grid;
+        grid-template-columns: 5rem 32px 1fr;
+        gap: 1.1rem;
+        align-items: baseline;
+        max-width: 620px;
+        width: 100%;
+      }
+      .recital-prefix {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        color: hsla(188, 75%, 70%, 0.85);
+        text-align: right;
+      }
+      .recital-rule {
+        height: 1px;
+        background: linear-gradient(90deg,
+          transparent,
+          hsla(188, 60%, 70%, 0.35),
+          transparent);
+        align-self: center;
+      }
+      .recital-phrase {
+        font-family: ui-serif, Georgia, serif;
+        font-size: clamp(1.45rem, 2.6vw, 2.0rem);
+        font-weight: 400;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        line-height: 1;
+        color: var(--m-ink-strong);
+        background: linear-gradient(180deg,
+          rgba(255, 255, 255, 1),
+          hsla(188, 65%, 78%, 0.72));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      /* ─── KICKER (scaled up from original) ─────────────────── */
+      .cold-open-kicker-xl {
+        font-family: ui-serif, Georgia, serif;
+        font-size: clamp(1.65rem, 3vw, 2.25rem);
+        line-height: 1.35;
+        color: var(--m-ink-strong);
+        font-style: italic;
+        letter-spacing: -0.01em;
+        max-width: 42ch;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* ─── SUB (parallel statement) ─────────────────────────── */
+      .cold-open-sub-xl {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: clamp(0.95rem, 1.5vw, 1.1rem);
+        color: var(--m-ink-medium);
+        letter-spacing: 0.04em;
+        max-width: 42ch;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* ─── RESPONSIVE ───────────────────────────────────────── */
+      @media (max-width: 720px) {
+        .coord-mark {
+          font-size: 0.55rem;
+          gap: 0.45rem;
+          letter-spacing: 0.24em;
+          flex-wrap: wrap;
+        }
+        .coord-rule { width: 18px; }
+
+        .recital-line {
+          grid-template-columns: 3.4rem 18px 1fr;
+          gap: 0.7rem;
+        }
+        .recital-prefix { font-size: 0.65rem; }
+        .recital-phrase { font-size: 1.1rem; white-space: normal; }
+      }
+
+      @media (max-width: 480px) {
+        .recital-line {
+          grid-template-columns: 1fr;
+          gap: 0.15rem;
+        }
+        .recital-prefix { text-align: center; }
+        .recital-rule { display: none; }
+        .recital-phrase { text-align: center; }
+      }
+    `}</style>
   );
 }

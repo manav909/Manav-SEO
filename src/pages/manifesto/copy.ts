@@ -39,6 +39,10 @@ export const COPY: Record<Lang, Record<string, string>> = {
     o_letter:                   "Operator's",
     n_letter:                   'Network',
 
+    phrase_strat_exec:          'Strategic Execution',
+    phrase_anal_supp:           'Analysis Support',
+    phrase_op_net:              "Operator's Network",
+
     season_winter:              'Winter',
     season_spring:              'Spring',
     season_summer:              'Summer',
@@ -93,6 +97,10 @@ export const COPY: Record<Lang, Record<string, string>> = {
     s2_letter:                  'समर्थन',
     o_letter:                   'ऑपरेटर का',
     n_letter:                   'नेटवर्क',
+
+    phrase_strat_exec:          'रणनीतिक निष्पादन',
+    phrase_anal_supp:           'विश्लेषण समर्थन',
+    phrase_op_net:              'ऑपरेटर का नेटवर्क',
 
     season_winter:              'शीत',
     season_spring:              'वसंत',
@@ -149,6 +157,10 @@ export const COPY: Record<Lang, Record<string, string>> = {
     o_letter:                   'Operativa',
     n_letter:                   'Red',
 
+    phrase_strat_exec:          'Ejecución Estratégica',
+    phrase_anal_supp:           'Soporte de Análisis',
+    phrase_op_net:              'Red Operativa',
+
     season_winter:              'Invierno',
     season_spring:              'Primavera',
     season_summer:              'Verano',
@@ -204,6 +216,10 @@ export const COPY: Record<Lang, Record<string, string>> = {
     o_letter:                   'Opérationnel',
     n_letter:                   'Réseau',
 
+    phrase_strat_exec:          'Exécution Stratégique',
+    phrase_anal_supp:           "Support d'Analyse",
+    phrase_op_net:              'Réseau Opérationnel',
+
     season_winter:              'Hiver',
     season_spring:              'Printemps',
     season_summer:              'Été',
@@ -258,6 +274,10 @@ export const COPY: Record<Lang, Record<string, string>> = {
     s2_letter:                  'Unterstützung',
     o_letter:                   'Betreiber',
     n_letter:                   'Netzwerk',
+
+    phrase_strat_exec:          'Strategische Ausführung',
+    phrase_anal_supp:           'Analyse-Unterstützung',
+    phrase_op_net:              'Betreiber-Netzwerk',
 
     season_winter:              'Winter',
     season_spring:              'Frühling',
