@@ -1,6 +1,6 @@
 /* ════════════════════════════════════════════════════════════════════
    src/pages/manifesto/chapters/ChFuture.tsx
-   Chapter 12 — The Future Belongs to Builders. Eternal Spring.
+   Chapter 13 — The Future Belongs to Builders. Eternal Spring.
 
    The closing chapter. Four prose blocks land in sequence, each
    slightly more forward-looking than the last. Then the closing CTA
@@ -18,7 +18,7 @@ import { FEATHER } from '../types';
 
 export function ChFuture({ t }: { t: TFn }) {
   return (
-    <ChapterShell id="future" no="12" season="eternal-spring" titleKey="ch12" t={t}>
+    <ChapterShell id="future" no="13" season="eternal-spring" titleKey="ch13" t={t}>
       <FutureStyles />
 
       <Prose delay={0.4}>

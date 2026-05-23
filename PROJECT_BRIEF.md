@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `b2b9300` (ChColdOpen regression repaired)
+**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `b2b9300` (ChColdOpen regression repaired) — Pending deploy: ChFAQ click-only + operator-first rewrite, ChFuture numbering fix, "The Codex" → "The Method" rename, animated signature in cold open
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -184,9 +184,11 @@ Changes analytical lens, not just tone.
 
 ---
 
-## 12. Manifesto / Season Codex — current state
+## 12. Manifesto / The Method — current state
 
-**Route**: `/manifesto` · **Entry**: emerald "The Codex" pill in `Command.tsx` top bar (Book icon, always visible, before project-conditional pills)
+**Route**: `/manifesto` · **Entry**: emerald "The Method" pill in `Command.tsx` top bar (Book icon, always visible, before project-conditional pills). Tooltip: *"Open The Method — the SEO SEASON operating manifesto."* Localized as `nav_label` across 5 languages: EN `The Method` · HI `विधि` · ES `El Método` · FR `La Méthode` · DE `Die Methode`.
+
+(Previously called "The Codex" — renamed 2026-05-23 because "method" reads more operator-grade and accessible, matches the JARVIS voice throughout the document, and signals what the click actually delivers: a documented operating method.)
 
 ### 12.1 Architecture — 28 files total
 
@@ -303,22 +305,24 @@ Five archetypes covering ~20+ business types. Content hardcoded English (matches
 
 Intro Prose: *"Five archetypes — from the founder funding growth on limited runway to the consultancy delivering client work on borrowed infrastructure. The system underneath is the same; what shifts is the goal it serves. Find the one closest to your situation; the rest will still hold."*
 
-## 13.6 Chapter 12 — Doubts, Resolved (NEW, shipped 2026-05-23)
+## 13.6 Chapter 12 — Doubts, Resolved (SHIPPED 2026-05-23)
 
-The FAQ chapter, reimagined. Each doubt appears word-by-word as if forming in thought, then a brand-cyan line traces left-to-right *across* it — the cinematic resolution gesture — then the answer fades in below in upright serif. Click any doubt to replay the resolution.
+The FAQ chapter, reimagined. Doubts sit in their initial state — italic serif, plain, fully visible from the moment the chapter renders. The cinematic resolution is INVITED, not forced: the reader taps a doubt, and a brand-cyan line traces left-to-right *across* it (the resolution gesture, with a glowing leading-edge "spark"), then the answer fades in below in upright serif.
 
-Triggered per-pair via `IntersectionObserver` at 30% visibility threshold. The strike line is a CSS-animated pseudo-element with a glowing leading-edge "spark." Words reveal with blur-clear + y-translate motion at 75ms per-word stagger.
+**Interaction**: tap-to-resolve only. No auto-firing on scroll. Each doubt shows a monospaced affordance hint beneath it that toggles through three states: `↳ TAP TO RESOLVE` (idle) → `RESOLVING…` (in progress, with a soft pulsing animation) → `↻ TAP TO REPLAY` (done). Tap again to replay the resolution sequence — strike + answer re-mount via a bumped `resolveKey` for clean DOM state.
 
-Six doubts addressing the questions a serious prospect carries but doesn't ask in the first call:
+**Voice**: all six answers are rewritten operator-first. The framing centers Manav as the operator and his designed system as his instrument — not an autonomous SaaS, not an automated agent. The leverage is the system; the judgment is his. Authentic data sources (Google Search Console + Google Analytics 4 only) named explicitly where relevant.
 
-1. *Why one person? Doesn't this scale poorly?*
-2. *What happens if you get sick or take a holiday?*
-3. *What's the minimum engagement?*
-4. *Can you guarantee rankings?*
-5. *How is this different from hiring a senior SEO consultant?*
-6. *Why no monthly retainer?*
+Six doubts addressed:
 
-Each answer ~50–80 words. Hardcoded English (matches the chapter content pattern for Whom + Engine).
+1. *Why one person? Doesn't this scale poorly?* — "I built a system that gives one operator the visibility of fifteen. The leverage is the system; the judgment is mine."
+2. *What happens if you get sick or take a holiday?* — "The system I built keeps the data pulling… What pauses is the next strategy decision — and strategy decisions do not need to happen every day."
+3. *What's the minimum engagement?* — "Three months. SEO compounds; one month produces nothing I would defend."
+4. *Can you guarantee rankings?* — "No. Anyone guaranteeing rankings is either lying or about to break the promise… every metric I show you sourced from GSC and GA4 only — no synthesis, no third-party rank databases, no estimates dressed as data."
+5. *How is this different from a senior SEO consultant?* — "A consultant gives you opinion and a slide, then hands the implementation to a team that may or may not get it right. I give you the opinion, the implementation, and the operating system I built to make every step verifiable."
+6. *Why no monthly retainer?* — "Every line item defensible because every line item is a thing I did, on a date I logged, against a baseline neither of us can quietly rewrite."
+
+Hardcoded English (matches Whom + Engine pattern).
 
 ## 13.7 Chapter 06 — Engine Room Live Ops Panel (NEW, added 2026-05-23)
 

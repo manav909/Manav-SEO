@@ -39,7 +39,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     hero_close:                 'State-of-the-art for the era of AI search. He answers when called.',
     hero_sub:                   'Thinks in seasons. Verified in minutes.',
     scroll_hint:                'Begin',
-    nav_label:                  'The Codex',
+    nav_label:                  'The Method',
     chapter:                    'Chapter',
 
     s_letter:                   'Strategic',
@@ -109,7 +109,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     hero_close:                 'AI सर्च के युग के लिए अत्याधुनिक। बुलाए जाने पर वह जवाब देता है।',
     hero_sub:                   'ऋतुओं में सोचता है। मिनटों में सत्यापित।',
     scroll_hint:                'शुरू करें',
-    nav_label:                  'पुस्तिका',
+    nav_label:                  'विधि',
     chapter:                    'अध्याय',
 
     s_letter:                   'रणनीतिक',
@@ -179,7 +179,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     hero_close:                 'Estado del arte para la era de la búsqueda con IA. Responde cuando lo llaman.',
     hero_sub:                   'Piensa en estaciones. Verificada en minutos.',
     scroll_hint:                'Comenzar',
-    nav_label:                  'El Códice',
+    nav_label:                  'El Método',
     chapter:                    'Capítulo',
 
     s_letter:                   'Estratégica',
@@ -249,7 +249,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     hero_close:                 "État de l'art pour l'ère de la recherche par IA. Il répond quand on l'appelle.",
     hero_sub:                   'Pense en saisons. Vérifiée en minutes.',
     scroll_hint:                'Commencer',
-    nav_label:                  'Le Codex',
+    nav_label:                  'La Méthode',
     chapter:                    'Chapitre',
 
     s_letter:                   'Stratégique',
@@ -319,7 +319,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     hero_close:                 'State-of-the-Art für die Ära der KI-Suche. Er antwortet, wenn er gerufen wird.',
     hero_sub:                   'Denkt in Jahreszeiten. Verifiziert in Minuten.',
     scroll_hint:                'Beginnen',
-    nav_label:                  'Der Codex',
+    nav_label:                  'Die Methode',
     chapter:                    'Kapitel',
 
     s_letter:                   'Strategisch',

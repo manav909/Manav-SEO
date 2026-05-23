@@ -1,11 +1,11 @@
 /* ════════════════════════════════════════════════════════════════════
    src/pages/Manifesto.tsx
-   THE SEASON CODEX — root orchestrator.
+   THE METHOD — root orchestrator for the SEO SEASON operating manifesto.
 
    Thin file by design. Owns:
      - Active language state (persists for this page session).
      - Active chapter state, driven by an IntersectionObserver
-       watching all 13 chapter sections.
+       watching all 14 chapter sections.
      - Jump-to-chapter callback for the floating nav.
 
    Everything else lives in /pages/manifesto/. Each chapter is a
@@ -57,7 +57,7 @@ export default function Manifesto() {
     [lang]
   );
 
-  /* Active-chapter detection. Observe all 13 chapter sections; the
+  /* Active-chapter detection. Observe all 14 chapter sections; the
      section with the highest intersectionRatio above 0.25 wins. Margin
      rule trims the trigger band so the active state changes near the
      vertical center of the viewport rather than on first touch. */

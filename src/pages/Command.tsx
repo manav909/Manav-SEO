@@ -779,9 +779,9 @@ function CommandInner() {
                 <ModeToggle mode={mode} onChange={setMode} />
                 <button
                   onClick={() => navigate('/manifesto')}
-                  title="Open The Season Codex — the SEO SEASON manifesto"
+                  title="Open The Method — the SEO SEASON operating manifesto"
                   className="px-3 h-9 rounded-full bg-emerald-500/[0.08] border border-emerald-500/40 flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-emerald-300 hover:text-emerald-200 hover:border-emerald-400/60 hover:bg-emerald-500/[0.15] transition-colors">
-                  <Book className="h-3.5 w-3.5" /> The Codex
+                  <Book className="h-3.5 w-3.5" /> The Method
                 </button>
                 {selectedProjectId && (
                   <>
