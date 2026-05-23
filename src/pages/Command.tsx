@@ -1627,8 +1627,10 @@ function ArtifactPanel({ artifact, delay }: { artifact: { kind: string; title: s
 }
 
 function StreamingChunk({ chunk, delay }: { chunk: any; delay: number }) {
-  const text = useTypewriterWithDelay(chunk.content, delay, 10);
-  const isDone = text.length >= chunk.content.length && chunk.content.length > 0;
+  /* Phase 21 Block 2.19 — strip cite XML tags BEFORE typewriter, so they never appear */
+  const cleanContent = stripCitationTags(chunk.content || '');
+  const text = useTypewriterWithDelay(cleanContent, delay, 10);
+  const isDone = text.length >= cleanContent.length && cleanContent.length > 0;
 
   if (chunk.kind === 'verify') {
     return (
@@ -1636,7 +1638,7 @@ function StreamingChunk({ chunk, delay }: { chunk: any; delay: number }) {
         <summary className="text-cyan-400/70 cursor-pointer hover:text-cyan-400 flex items-center gap-1">
           <Database className="h-2.5 w-2.5" />Verification trail
         </summary>
-        <div className="mt-1 pl-3 text-muted-foreground/80">{text}</div>
+        <div className="mt-1 pl-3 text-muted-foreground/80">{stripCitationTags(text)}</div>
         {chunk.detail && (
           <pre className="mt-1 pl-3 text-[9px] text-muted-foreground/60 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
             {JSON.stringify(chunk.detail, null, 2)}
@@ -1646,13 +1648,11 @@ function StreamingChunk({ chunk, delay }: { chunk: any; delay: number }) {
     );
   }
 
-  /* Phase 21 Block 2.17 — once typing completes, swap raw text for formatted markdown.
-     Walls of dense text with **1. **2. inline markers become readable sectioned output. */
   if (!isDone) {
     return (
       <div className="text-[12.5px] text-foreground/85 leading-relaxed min-h-[1.2rem] whitespace-pre-wrap">
         {text}
-        {text.length > 0 && text.length < chunk.content.length && (
+        {text.length > 0 && text.length < cleanContent.length && (
           <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.6, repeat: Infinity }}
             className="inline-block w-0.5 h-3 ml-0.5 bg-cyan-400 align-middle" />
         )}
@@ -1663,45 +1663,55 @@ function StreamingChunk({ chunk, delay }: { chunk: any; delay: number }) {
   return (
     <motion.div
       initial={{ opacity: 0.8 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}
-      className="space-y-3.5">
-      {renderFormattedChunk(chunk.content)}
+      className="space-y-3">
+      {renderFormattedChunk(cleanContent)}
     </motion.div>
   );
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   Markdown rendering helpers — Phase 21 Block 2.17
-   Lightweight inline parser. Handles bold, inline numbered sections,
-   em-dash separated lists, and paragraph breaks. No external dependency.
+   Markdown rendering — Phase 21 Block 2.19
 ══════════════════════════════════════════════════════════════════════ */
+
+/* Anthropic's web_search tool auto-wraps cited segments in <cite index="...">
+   XML tags. Those leak into the chunk content as literal text. Strip them
+   entirely — the Verification trail at the bottom already shows sources. */
+function stripCitationTags(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/<cite\s+index="[^"]*"\s*>/gi, '')
+    .replace(/<\/cite>/gi, '')
+    /* Belt-and-suspenders: catch any stray cite-related artifacts */
+    .replace(/<cite[^>]*>/gi, '')
+    /* Italic stars in markdown like *can't* — preserve them */
+    /* But strip stray double-underscore that some LLMs emit for italic */
+    .trim();
+}
 
 function renderFormattedChunk(raw: string): React.ReactNode[] {
   if (!raw || !raw.trim()) return [];
 
-  /* Pre-process: force a paragraph break BEFORE every inline "**N." marker.
-     LLMs often pack the whole numbered list into one paragraph; we want each
-     numbered item to stand alone as a sub-section. */
   let text = raw;
+  /* Force paragraph break before each inline "**N." numbered marker. */
   text = text.replace(/\s+(\*\*\d+\.\s)/g, '\n\n$1');
-
-  /* Also force a break before "**The short version:**" or similar trailing summaries. */
+  /* Force paragraph break before "**The short version:**" etc. */
   text = text.replace(/\s+(\*\*The short version[:\s])/gi, '\n\n$1');
 
   const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
 
   return paragraphs.map((para, i) => {
-    /* Numbered section header — "**N. Title** body text..." */
-    const numbered = para.match(/^\*\*(\d+)\.\s+([^*]+?)\*\*\s*(.*)$/s);
-    if (numbered) {
-      const [, num, header, body] = numbered;
+    /* Numbered section header — "**N. Title**" on its own line OR with inline body */
+    const numberedFull = para.match(/^\*\*(\d+)\.\s+(.+?)\*\*\s*(.*)$/s);
+    if (numberedFull) {
+      const [, num, title, body] = numberedFull;
       return (
-        <div key={i} className="rounded-lg border border-border/30 bg-card/20 p-3">
-          <div className="flex items-baseline gap-2 mb-1.5">
-            <span className="text-[11px] font-bold text-cyan-400 shrink-0 tabular-nums">{num}.</span>
-            <span className="text-[13px] font-bold text-foreground leading-snug">{renderInline(header.trim())}</span>
+        <div key={i} className="mt-5 first:mt-0">
+          <div className="flex items-baseline gap-2.5 pb-2 border-b border-cyan-500/20">
+            <span className="text-[15px] font-bold text-cyan-400 shrink-0 tabular-nums">{num}.</span>
+            <h3 className="text-[15px] font-bold text-foreground leading-snug">{renderInline(title.trim())}</h3>
           </div>
           {body.trim() && (
-            <div className="ml-5 text-[12.5px] text-foreground/85 leading-relaxed">
+            <div className="mt-2.5 text-[12.5px] text-foreground/90 leading-relaxed">
               {renderBodyContent(body.trim())}
             </div>
           )}
@@ -1709,16 +1719,26 @@ function renderFormattedChunk(raw: string): React.ReactNode[] {
       );
     }
 
-    /* "Short version" callout */
+    /* "In short" callout — TL;DR / Bottom line / Short version */
     if (/^\*\*(The short version|Short version|Bottom line|TL;DR)[:\s*]/i.test(para)) {
       const cleaned = para.replace(/\*\*/g, '').trim();
       return (
-        <div key={i} className="rounded-lg border border-amber-500/25 bg-amber-500/[0.04] p-3">
-          <div className="text-[10px] uppercase tracking-wider font-bold text-amber-400 mb-1">In short</div>
+        <div key={i} className="mt-5 rounded-lg border border-amber-500/25 bg-amber-500/[0.04] p-3.5">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-amber-400 mb-1.5">In short</div>
           <p className="text-[12.5px] text-foreground/90 leading-relaxed">
             {renderInline(cleaned.replace(/^(The short version|Short version|Bottom line|TL;DR)[:\s]+/i, ''))}
           </p>
         </div>
+      );
+    }
+
+    /* Standalone bold paragraph (just "**Header text**" or "**Header text?**") → sub-header */
+    const headerOnly = para.match(/^\*\*([^*]+?)\*\*\s*$/);
+    if (headerOnly && headerOnly[1].length <= 90) {
+      return (
+        <h4 key={i} className="text-[13px] font-bold text-foreground/95 leading-snug mt-4 first:mt-0">
+          {headerOnly[1]}
+        </h4>
       );
     }
 
@@ -1738,7 +1758,6 @@ function renderFormattedChunk(raw: string): React.ReactNode[] {
       );
     }
 
-    /* Regular paragraph */
     return (
       <p key={i} className="text-[12.5px] text-foreground/90 leading-relaxed">
         {renderInline(para)}
@@ -1747,10 +1766,7 @@ function renderFormattedChunk(raw: string): React.ReactNode[] {
   });
 }
 
-/* Body content under a numbered heading — if it contains em-dash separated
-   items (LLM's common pattern), render as a bullet list for readability. */
 function renderBodyContent(body: string): React.ReactNode {
-  /* Split on " — " when it appears 2+ times, suggesting list-like structure */
   const emDashItems = body.split(/\s+—\s+/).map(s => s.trim()).filter(Boolean);
   if (emDashItems.length >= 3) {
     return (
@@ -1767,17 +1783,21 @@ function renderBodyContent(body: string): React.ReactNode {
   return <span>{renderInline(body)}</span>;
 }
 
-/* Inline formatting — handles **bold** within a paragraph. */
 function renderInline(text: string): React.ReactNode[] {
   if (!text) return [];
   const out: React.ReactNode[] = [];
-  const regex = /\*\*([^*]+)\*\*/g;
+  /* Match **bold** OR *italic* (single-star italics for emphasis) */
+  const regex = /\*\*([^*]+)\*\*|\*([^*\s][^*]*?)\*/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let key = 0;
   while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIndex) out.push(text.slice(lastIndex, match.index));
-    out.push(<strong key={`b${key++}`} className="font-bold text-foreground">{match[1]}</strong>);
+    if (match[1]) {
+      out.push(<strong key={`b${key++}`} className="font-bold text-foreground">{match[1]}</strong>);
+    } else if (match[2]) {
+      out.push(<em key={`i${key++}`} className="italic text-foreground/95">{match[2]}</em>);
+    }
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) out.push(text.slice(lastIndex));
