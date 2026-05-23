@@ -534,7 +534,7 @@ export async function bsClientLensLoad(body: any): Promise<any> {
       gscPagesRow,
       ga4SummaryRow,
     ] = await Promise.all([
-      db().from("projects").select("id,project_name,client_url,status,created_at").eq("id", projectId).maybeSingle(),
+      db().from("projects").select("id,name,url,status,created_at").eq("id", projectId).maybeSingle(),
       db().from("clients").select("id,client_name,client_url,company_name,brand_name").eq("id", projectId).maybeSingle(),
       db().from("seo_campaigns")
         .select("id,keyword,status,started_at,current_position,target_position,health,living_overview_md,last_assessed_at")
@@ -555,8 +555,8 @@ export async function bsClientLensLoad(body: any): Promise<any> {
     /* Identity — prefer client row over project row for naming */
     const proj = (projectRow as any)?.data;
     const cli  = (clientRow as any)?.data;
-    const displayName = cli?.brand_name || cli?.company_name || cli?.client_name || proj?.project_name || "Untitled project";
-    const displayDomain = cli?.client_url || proj?.client_url || null;
+    const displayName = cli?.brand_name || cli?.company_name || cli?.client_name || proj?.name || "Untitled project";
+    const displayDomain = cli?.client_url || proj?.url || null;
     const startedAt = proj?.created_at || null;
     const daysActive = startedAt
       ? Math.floor((Date.now() - new Date(startedAt).getTime()) / 86_400_000)
