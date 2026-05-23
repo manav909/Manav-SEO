@@ -137,10 +137,11 @@ export async function runOffPageStrategy(opts: {
     if (!panelId) return { success: false, error: 'no off_page panel found for this campaign' };
 
     /* 1. Gather context */
-    const [gscPages, clusters, competitors] = await Promise.all([
+    const [gscPages, clusters, competitors, gscFreshnessAt] = await Promise.all([
       readGscPages(c.project_id),
       readClusters(opts.campaignId),
       readCompetitorSnapshot(opts.campaignId),
+      readGscFreshness(c.project_id),
     ]);
 
     /* If we have NO data at all, write a pending report */
@@ -310,6 +311,7 @@ export async function runOffPageStrategy(opts: {
         competitorCount: competitors.length,
         runId: auditRunId,
         durationMs,
+        gscUpdatedAt: gscFreshnessAt,
       }),
       summary:           buildHeadline({
         existing: existingAssets.length,
@@ -450,6 +452,29 @@ async function readGscPages(projectId: string): Promise<GscPageRow[]> {
     if (!raw) return [];
     return JSON.parse(raw);
   } catch { return []; }
+}
+
+async function readGscFreshness(projectId: string): Promise<string | null> {
+  try {
+    const { data } = await db().from("project_knowledge")
+      .select("updated_at")
+      .eq("project_id", projectId)
+      .eq("category", "analytics")
+      .eq("field_key", "gsc_top_pages")
+      .maybeSingle();
+    return (data as any)?.updated_at || null;
+  } catch { return null; }
+}
+
+function formatGscFreshnessLine(updatedAt: string | null): string {
+  if (!updatedAt) return `> ⚠️ **GSC data freshness unknown** — connect GSC in Data Room → Integrations to enable automatic daily pulls.`;
+  try {
+    const ageDays = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+    if (ageDays > 14) {
+      return `> ⚠️ **GSC data is ${ageDays} days old** (last synced: ${updatedAt.slice(0, 10)}). These findings may be stale — refresh GSC in Data Room → Integrations.`;
+    }
+    return `**GSC data as of:** ${updatedAt.slice(0, 10)} (${ageDays === 0 ? 'today' : `${ageDays} day${ageDays === 1 ? '' : 's'} ago`})`;
+  } catch { return ''; }
 }
 
 async function readClusters(campaignId: string): Promise<ClusterRow[]> {
@@ -803,6 +828,7 @@ function renderReport(opts: {
   competitorCount:    number;
   runId:              string;
   durationMs:         number;
+  gscUpdatedAt?:      string | null;
 }): string {
   const lines: string[] = [];
   const { existingAssets, aspirationalAssets, prospects, findings } = opts;
@@ -811,6 +837,15 @@ function renderReport(opts: {
   lines.push('');
   lines.push(`> **Honest scope.** This pillar generates *strategy* — what linkable assets you have, what to build, and who would link. It does NOT analyze your actual backlink profile (that requires paid external APIs like Ahrefs/Moz which are not integrated). All recommendations are LLM-generated based on your GSC data, cluster map, and competitor pages. Treat as a strategic starting point.`);
   lines.push('');
+
+  /* Sparse-data warning — surfaces before the user reads anything else */
+  if (opts.gscPageCount < 5 && opts.clusterCount === 0 && opts.competitorCount === 0) {
+    lines.push(`> ⚠️ **Sparse input data.** Only ${opts.gscPageCount} GSC page${opts.gscPageCount === 1 ? '' : 's'} available, no cluster map, and no competitor data. The recommendations below are LLM-generated from very limited context — they represent reasonable starting points for this topic but are NOT grounded in your site's specific content profile. Run a rank pipeline first to seed competitor data, and let GSC populate more pages before treating this output as definitive.`);
+    lines.push('');
+  } else if (opts.gscPageCount < 5) {
+    lines.push(`> ℹ️ **Limited GSC data.** Only ${opts.gscPageCount} GSC page${opts.gscPageCount === 1 ? '' : 's'} available. Asset identification is based on a small sample — re-run after GSC populates more top_pages for a fuller picture.`);
+    lines.push('');
+  }
   lines.push(`**Campaign keyword:** "${opts.keyword}"  `);
   lines.push(`**Data sources used:** ${opts.gscPageCount} GSC pages · ${opts.clusterCount} topical clusters · ${opts.competitorCount} competitor pages  `);
   lines.push(`**Existing linkable assets:** ${existingAssets.length}  `);
@@ -818,6 +853,7 @@ function renderReport(opts: {
   lines.push(`**Prospect categories:** ${prospects.length}  `);
   lines.push(`**Audit run id:** \`${opts.runId.slice(0, 8)}\`  `);
   lines.push(`**Generated at:** ${new Date().toISOString()}`);
+  lines.push(formatGscFreshnessLine(opts.gscUpdatedAt ?? null));
   lines.push('');
 
   /* Summary */

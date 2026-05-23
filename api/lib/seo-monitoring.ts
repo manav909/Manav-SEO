@@ -116,12 +116,15 @@ export async function runMonitoringCheck(opts: {
     if (!panelId) return { success: false, error: 'no monitoring panel found for this campaign' };
 
     /* 1. Capture current snapshot */
-    const currentSnap = await captureSnapshot({
-      campaignId: opts.campaignId,
-      panelId,
-      projectId:  c.project_id,
-      keyword:    c.keyword,
-    });
+    const [currentSnap, gscFreshnessAt] = await Promise.all([
+      captureSnapshot({
+        campaignId: opts.campaignId,
+        panelId,
+        projectId:  c.project_id,
+        keyword:    c.keyword,
+      }),
+      readGscFreshness(c.project_id),
+    ]);
 
     /* 2. Load baseline (most recent snapshot ≥ windowDays old) */
     const baselineSnap = await loadBaselineSnapshot({
@@ -266,6 +269,7 @@ export async function runMonitoringCheck(opts: {
         durationMs,
         runId,
         baselineEstablished,
+        gscUpdatedAt:  gscFreshnessAt,
       }),
       summary:           buildHeadline({
         keyword: c.keyword,
@@ -749,6 +753,7 @@ Rules:
 - Honest. If the picture is mixed (some gains + some drops), say so. Don't varnish.
 - Tight. 200-350 words total.
 - No platitudes. No "keep optimizing."
+- Data gaps: If a metric shows N/A, it means that data was not available for this campaign — no target URL set, no GSC data for that dimension, etc. Do NOT interpret N/A values, infer a trend from them, or treat absence as a signal. Explicitly acknowledge the gap: "target URL data was not available for this period."
 
 Reply with the narrative only — no JSON, no headers, just paragraphs.`;
 
@@ -819,6 +824,7 @@ function renderMonitoringReport(opts: {
   durationMs:           number;
   runId:                string;
   baselineEstablished:  boolean;
+  gscUpdatedAt?:        string | null;
 }): string {
   const lines: string[] = [];
   const { findings, currentSnap, baselineSnap, narrative, baselineEstablished } = opts;
@@ -837,6 +843,7 @@ function renderMonitoringReport(opts: {
   lines.push(`**Snapshot ID:** \`${opts.runId.slice(0, 8)}\`  `);
   lines.push(`**Generated at:** ${new Date().toISOString()}  `);
   lines.push(`**Duration:** ${(opts.durationMs / 1000).toFixed(1)}s`);
+  lines.push(formatGscFreshnessLine(opts.gscUpdatedAt ?? null));
   lines.push('');
 
   /* Current snapshot metrics */
@@ -1031,6 +1038,29 @@ async function readGscPages(projectId: string): Promise<GscPageRow[]> {
     const raw = (data as any)?.field_value;
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
+}
+
+async function readGscFreshness(projectId: string): Promise<string | null> {
+  try {
+    const { data } = await db().from("project_knowledge")
+      .select("updated_at")
+      .eq("project_id", projectId)
+      .eq("category", "analytics")
+      .eq("field_key", "gsc_top_queries")
+      .maybeSingle();
+    return (data as any)?.updated_at || null;
+  } catch { return null; }
+}
+
+function formatGscFreshnessLine(updatedAt: string | null): string {
+  if (!updatedAt) return `> ⚠️ **GSC data freshness unknown** — connect GSC in Data Room → Integrations to enable automatic daily pulls.`;
+  try {
+    const ageDays = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+    if (ageDays > 14) {
+      return `> ⚠️ **GSC data is ${ageDays} days old** (last synced: ${updatedAt.slice(0, 10)}). These findings may be stale — refresh GSC in Data Room → Integrations.`;
+    }
+    return `**GSC data as of:** ${updatedAt.slice(0, 10)} (${ageDays === 0 ? 'today' : `${ageDays} day${ageDays === 1 ? '' : 's'} ago`})`;
+  } catch { return ''; }
 }
 
 function prettyPillar(p: string): string {

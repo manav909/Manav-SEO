@@ -99,10 +99,11 @@ export async function runClusterMap(opts: {
     if (!panelId) return { success: false, error: 'no cluster_map panel found for this campaign' };
 
     /* 1. Fetch GSC data */
-    const [queries, pages, competitors] = await Promise.all([
+    const [queries, pages, competitors, gscFreshnessAt] = await Promise.all([
       readGscQueries(c.project_id),
       readGscPages(c.project_id),
       readCompetitorSnapshot(opts.campaignId),
+      readGscFreshness(c.project_id),
     ]);
 
     /* 2. Filter to keyword-related queries */
@@ -121,6 +122,7 @@ export async function runClusterMap(opts: {
         relatedCount: relatedQueries.length,
         projectActualTopQueries: queries.slice(0, 10),
         competitors,
+        gscFreshnessAt,
       });
     }
 
@@ -193,6 +195,7 @@ export async function runClusterMap(opts: {
         keyword: c.keyword, clusters: withCoverage, findings,
         totalQueries: queries.length, relatedCount: relatedQueries.length,
         competitorsAnalyzed: competitors.length, runId: auditRunId,
+        gscUpdatedAt: gscFreshnessAt,
       }),
       summary:          buildHeadline(withCoverage),
       tags:             ['cluster_map', `keyword:${c.keyword.toLowerCase()}`,
@@ -280,6 +283,7 @@ async function runAspirationalClusterMap(opts: {
   relatedCount:            number;
   projectActualTopQueries: GscQueryRow[];
   competitors:             any[];
+  gscFreshnessAt?:         string | null;
 }): Promise<{ success: boolean; audit_run_id?: string; cluster_count?: number; gap_count?: number; report_id?: string; error?: string }> {
   const c = opts.campaign;
   try {
@@ -358,6 +362,7 @@ async function runAspirationalClusterMap(opts: {
         relatedCount:            opts.relatedCount,
         projectActualTopQueries: opts.projectActualTopQueries,
         runId:                   auditRunId,
+        gscUpdatedAt:            opts.gscFreshnessAt ?? null,
       }),
       summary:          `${aspirationalClusters.length} aspirational cluster${aspirationalClusters.length === 1 ? '' : 's'} mapped — no GSC presence yet on this topic.`,
       tags:             ['cluster_map', 'aspirational', `keyword:${c.keyword.toLowerCase()}`,
@@ -567,6 +572,7 @@ function renderAspirationalReport(opts: {
   relatedCount:            number;
   projectActualTopQueries: GscQueryRow[];
   runId:                   string;
+  gscUpdatedAt?:           string | null;
 }): string {
   const { keyword, clusters, competitors, totalGscQueries, relatedCount, projectActualTopQueries } = opts;
   const lines: string[] = [];
@@ -579,6 +585,7 @@ function renderAspirationalReport(opts: {
   lines.push(`2. **Section 2 — Aspirational roadmap (strategic projection):** what the topical universe looks like based on competitor coverage and topical reasoning. LLM-generated. Useful as a starting roadmap, not a finished plan.`);
   lines.push('');
   lines.push(`**Audit run id:** \`${opts.runId.slice(0, 8)}\` · **Generated at:** ${new Date().toISOString()}`);
+  lines.push(formatGscFreshnessLine(opts.gscUpdatedAt ?? null));
   lines.push('');
   lines.push(`---`);
   lines.push('');
@@ -749,6 +756,29 @@ async function readGscPages(projectId: string): Promise<GscPageRow[]> {
     if (!raw) return [];
     return JSON.parse(raw);
   } catch { return []; }
+}
+
+async function readGscFreshness(projectId: string): Promise<string | null> {
+  try {
+    const { data } = await db().from("project_knowledge")
+      .select("updated_at")
+      .eq("project_id", projectId)
+      .eq("category", "analytics")
+      .eq("field_key", "gsc_top_queries")
+      .maybeSingle();
+    return (data as any)?.updated_at || null;
+  } catch { return null; }
+}
+
+function formatGscFreshnessLine(updatedAt: string | null): string {
+  if (!updatedAt) return `> ⚠️ **GSC data freshness unknown** — connect GSC in Data Room → Integrations to enable automatic daily pulls.`;
+  try {
+    const ageDays = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+    if (ageDays > 14) {
+      return `> ⚠️ **GSC data is ${ageDays} days old** (last synced: ${updatedAt.slice(0, 10)}). These findings may be stale — refresh GSC in Data Room → Integrations.`;
+    }
+    return `**GSC data as of:** ${updatedAt.slice(0, 10)} (${ageDays === 0 ? 'today' : `${ageDays} day${ageDays === 1 ? '' : 's'} ago`})`;
+  } catch { return ''; }
 }
 
 async function readCompetitorSnapshot(campaignId: string): Promise<any[]> {
@@ -1261,6 +1291,7 @@ function renderClusterMapReport(opts: {
   relatedCount: number;
   competitorsAnalyzed: number;
   runId: string;
+  gscUpdatedAt?: string | null;
 }): string {
   const { keyword, clusters, findings } = opts;
   const lines: string[] = [];
@@ -1273,6 +1304,7 @@ function renderClusterMapReport(opts: {
   lines.push(`**Competitor pages analyzed:** ${opts.competitorsAnalyzed}  `);
   lines.push(`**Audit run id:** \`${opts.runId.slice(0, 8)}\`  `);
   lines.push(`**Generated at:** ${new Date().toISOString()}`);
+  lines.push(formatGscFreshnessLine(opts.gscUpdatedAt ?? null));
   lines.push('');
 
   /* Summary */

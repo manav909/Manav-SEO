@@ -147,7 +147,10 @@ export async function runInternalLinkingAudit(opts: {
     if (!panelId) return { success: false, error: 'no internal_linking panel found for this campaign' };
 
     /* 1. Pull GSC top_pages (audit universe) */
-    const gscPages = await readGscPages(c.project_id);
+    const [gscPages, gscFreshnessAt] = await Promise.all([
+      readGscPages(c.project_id),
+      readGscFreshness(c.project_id),
+    ]);
     if (gscPages.length === 0) {
       return await writePendingReport(c, opts.campaignId, panelId, triggeredBy,
         `No GSC top_pages data available — internal linking audit needs the page universe.`,
@@ -293,6 +296,7 @@ export async function runInternalLinkingAudit(opts: {
         totalLinks,
         durationMs,
         runId:           auditRunId,
+        gscUpdatedAt:    gscFreshnessAt,
       }),
       summary:           buildHeadline({
         fetchedCount, orphanCount, recCount: recommendations.length, redCount, amberCount,
@@ -940,7 +944,7 @@ async function enrichTargetWithLlm(
 
   const sys = `You are an SEO internal linking strategist. The user gives you a target URL (a page that should receive more internal links) and 5 candidate source pages from their site. For each candidate, you produce:
 - suggested_anchor: 4-9 words, descriptive and natural — what humans would actually click. Use keyword phrasing where it fits the candidate's content. Do NOT recommend generic anchors like "click here" or "read more".
-- placement_hint: WHERE on the source page to add this link. Be specific: "in the intro paragraph", "near the H2 about X", "in the related-tools list", "in a callout box at the top", etc.
+- placement_hint: WHERE on the source page to add this link. IMPORTANT CONSTRAINT: you only have the page URL, title, and H1 — you do NOT have the full body text, H2/H3 headings, or paragraph content. Base your suggestion on the page type and topic as inferred from these signals. Use phrasing that reflects what you can infer, not assert: "in the opening paragraph (intro context, inferred from page type)", "near the end as a related resource", "in a tools or comparison section if one exists (inferred from page topic)". Do NOT reference specific headings, sections, or content that you cannot see — they may not exist.
 - rationale: ONE sentence why this candidate→target link is high-value. Reference the topical match and the strategic role of the target.
 
 If a candidate is a bad fit despite having token overlap (e.g., the topic is too tangential, or the link would feel forced), DROP it from your response. Honest "this isn't a fit" is better than a contrived recommendation. Return only the candidates worth recommending.
@@ -1044,6 +1048,7 @@ function renderReport(opts: {
   totalLinks:       number;
   durationMs:       number;
   runId:            string;
+  gscUpdatedAt?:    string | null;
 }): string {
   const lines: string[] = [];
   const { findings, recommendations, fetchedCount, failedCount, totalLinks } = opts;
@@ -1058,6 +1063,7 @@ function renderReport(opts: {
   lines.push(`**Audit duration:** ${(opts.durationMs / 1000).toFixed(1)}s  `);
   lines.push(`**Audit run id:** \`${opts.runId.slice(0, 8)}\`  `);
   lines.push(`**Generated at:** ${new Date().toISOString()}`);
+  lines.push(formatGscFreshnessLine(opts.gscUpdatedAt ?? null));
   lines.push('');
 
   /* Summary */
@@ -1204,11 +1210,13 @@ function renderReport(opts: {
   lines.push('');
   lines.push('**How recommendations were generated:** For each target (cluster hub / campaign target / orphan), the engine heuristically shortlists 5 audited pages by topic-token overlap with the target. Then one LLM call per target generates specific anchor + placement + rationale for each candidate. LLM is explicitly instructed to drop candidates that aren\'t a genuine fit — returning fewer recommendations is preferred over forced ones.');
   lines.push('');
+  lines.push('**Placement hint accuracy:** The LLM receives each source page\'s URL, title, and H1 only — it does NOT read the full page body, H2/H3 headings, or paragraph content. Placement hints are inferences from page type and topic signals, not verified observations of actual page structure. Treat them as a starting point. Before inserting a link, open the source page and find the section that best matches the hint\'s intent.');
+  lines.push('');
   lines.push(`**LLM cost:** ${opts.clusterTargets.length + opts.campaignTargets.length + opts.orphanTargets.length} calls (~$0.30-0.50). Each call is short (max 1500 tokens response).`);
   lines.push('');
   lines.push('**What this won\'t catch:** Internal links to pages NOT in GSC top_pages (untracked corners of the site), 301/302 redirect chains, broken internal links to nonexistent URLs, anchor diversity on a per-page basis, nofollow attributes. These are deferred to Phase 17.1+.');
   lines.push('');
-  lines.push('**Treat anchor suggestions as starting points** — the LLM has no access to your site\'s voice/style. Adjust the suggested anchors to fit your tone before insertion.');
+  lines.push('**Treat recommendations as starting points.** Anchor text: adjust to fit your site\'s voice before inserting. Placement hints: these are inferred from page URL, title, and H1 — the engine has not read the full page. Before adding a link, open the source page and confirm the suggested section exists and makes sense contextually.');
 
   return lines.join('\n');
 }
@@ -1238,6 +1246,29 @@ async function readGscPages(projectId: string): Promise<GscPageRow[]> {
     if (!raw) return [];
     return JSON.parse(raw);
   } catch { return []; }
+}
+
+async function readGscFreshness(projectId: string): Promise<string | null> {
+  try {
+    const { data } = await db().from("project_knowledge")
+      .select("updated_at")
+      .eq("project_id", projectId)
+      .eq("category", "analytics")
+      .eq("field_key", "gsc_top_pages")
+      .maybeSingle();
+    return (data as any)?.updated_at || null;
+  } catch { return null; }
+}
+
+function formatGscFreshnessLine(updatedAt: string | null): string {
+  if (!updatedAt) return `> ⚠️ **GSC data freshness unknown** — connect GSC in Data Room → Integrations to enable automatic daily pulls.`;
+  try {
+    const ageDays = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+    if (ageDays > 14) {
+      return `> ⚠️ **GSC data is ${ageDays} days old** (last synced: ${updatedAt.slice(0, 10)}). These findings may be stale — refresh GSC in Data Room → Integrations.`;
+    }
+    return `**GSC data as of:** ${updatedAt.slice(0, 10)} (${ageDays === 0 ? 'today' : `${ageDays} day${ageDays === 1 ? '' : 's'} ago`})`;
+  } catch { return ''; }
 }
 
 const STOPWORDS = new Set([
