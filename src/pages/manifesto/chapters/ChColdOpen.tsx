@@ -2,46 +2,73 @@
    src/pages/manifesto/chapters/ChColdOpen.tsx
    Chapter 00 — Cold Open. Eternal Spring.
 
-   The grand entry, properly staged. Trust is earned by the company
-   first, then transferred to the founder via a deliberate reveal.
+   The grand entry, properly staged. Trust earned by the company first,
+   then transferred to the founder via a deliberate, *quiet* reveal.
 
-   Architecture: a five-act journey
-     ACT 1  Coordinate mark                  document framing
-     ACT 2  S.E.A.S.O.N. (PEAK 1)            the company arrives
-              + acronym recital               what it stands for
-              + kicker + sub                  agency positioning
-              + intel callout                 proof of capability
-     ACT 3  Pause + setup line                "infrastructure of this
-                                                depth is usually a
-                                                team's work."
-     ACT 4  Pivot                             "This is one person's."
-                                                — cyan italic display,
-                                                the dramatic hinge
-     ACT 5  MANAV (PEAK 2 — THE REVEAL)        the Iron Man moment
-              + role triplet                  architect · engineer · operator
-              + close                         "He designed it. He
-                                                shipped it. He runs it."
+   INTERACTIVITY
+   Each letter of S.E.A.S.O.N. is a hover target. The three recital
+   rows below remain visible as the persistent structure; hovering any
+   letter brightens its pair and expands its row with the SEO-context
+   paragraph. The other two pairs dim. Touch devices toggle on tap.
 
-   The audience meets the entity they may already trust, sees what
-   it's built, hits the question implicit in "this is one person's,"
-   and then meets the architect as the answer. Trust earned, then
-   transferred.
+   Letter → pair mapping:
+     S₁, E  →  se   (Strategic Execution)
+     A,  S₂ →  as   (Analysis Support)
+     O,  N  →  on   (Operator's Network)
 
-   Total pacing: ~11s reveal sequence. A real title-sequence cadence.
+   Rows themselves are also hoverable for users who don't think to
+   touch the letters.
+
+   ARCHITECTURE — five-act journey
+     ACT 1  Coordinate mark           document framing
+     ACT 2  S.E.A.S.O.N. (PEAK 1)     the company arrives
+              + interactive recital    explore the meaning
+              + kicker + sub           agency positioning
+              + intel callout          proof of capability
+     ACT 3  Pause + setup line         "infrastructure of this depth
+                                         is usually a team's work."
+     ACT 4  Pivot                      "This is one person's."
+                                         the dramatic hinge
+     ACT 5  Humble Manav reveal        smaller, italic, no peacock
+              + "── by ──" mark        signature attribution
+              + close                  "Architect of the system above.
+                                         He answers when called."
+
+   The reveal is *quiet*. Tony Stark says "I am Iron Man" into a
+   microphone, not into a megaphone. Confidence is calm.
+
+   Total reveal pacing: ~11s. Title-sequence cadence.
 ══════════════════════════════════════════════════════════════════════ */
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import {
-  motion, useMotionValue, useSpring, useReducedMotion,
+  motion, useMotionValue, useSpring, useReducedMotion, AnimatePresence,
 } from 'framer-motion';
 import type { Lang, TFn } from '../types';
 import { FEATHER } from '../types';
 import { ScrollHint } from '../shared';
 
+type Pair = 'se' | 'as' | 'on' | null;
+
 export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
   const reduce = useReducedMotion();
   const ref    = useRef<HTMLElement>(null);
 
+  /* hover state — debounce clears by 150ms to avoid flicker when
+     moving between letters of the same pair */
+  const [hoveredPair, setHoveredPairRaw] = useState<Pair>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setHoveredPair = (p: Pair) => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (p === null) {
+      timerRef.current = setTimeout(() => setHoveredPairRaw(null), 150);
+    } else {
+      setHoveredPairRaw(p);
+    }
+  };
+
+  /* 3D mouse tilt on the whole stage */
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   const tiltX  = useSpring(mouseY, { stiffness: 60, damping: 18, mass: 1.1 });
@@ -88,20 +115,29 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
           <span className="coord-rule" />
         </motion.div>
 
-        {/* ─── ACT 2a. BRAND REVEAL (PEAK 1) ───────────────── */}
+        {/* ─── ACT 2a. BRAND REVEAL (PEAK 1) — interactive ─── */}
         <div className="cold-open-brand mt-12">
-          <BrandReveal delay={0.6} />
+          <BrandReveal
+            delay={0.6}
+            hoveredPair={hoveredPair}
+            setHoveredPair={setHoveredPair}
+          />
         </div>
 
-        {/* ─── ACT 2b. RECITAL ────────────────────────────── */}
+        {/* ─── ACT 2b. INTERACTIVE RECITAL ─────────────────── */}
         <motion.div
-          className="recital mt-12"
+          className="recital mt-10"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 1.2, delay: 2.2, ease: FEATHER }}
           key={lang}
         >
-          <AcronymRecital t={t} delay={2.2} />
+          <InteractiveRecital
+            t={t}
+            delay={2.2}
+            hoveredPair={hoveredPair}
+            setHoveredPair={setHoveredPair}
+          />
         </motion.div>
 
         {/* ─── ACT 2c. KICKER (agency positioning) ─────────── */}
@@ -124,7 +160,7 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
           {t('hero_sub')}
         </motion.div>
 
-        {/* ─── ACT 2e. INTEL CALLOUT (proof of capability) ── */}
+        {/* ─── ACT 2e. INTEL CALLOUT ───────────────────────── */}
         <motion.div
           className="hero-intel-callout mt-10"
           initial={{ opacity: 0, y: 10 }}
@@ -144,7 +180,7 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
           {t('hero_reveal_setup')}
         </motion.div>
 
-        {/* ─── ACT 4. PIVOT (the dramatic hinge) ───────────── */}
+        {/* ─── ACT 4. PIVOT (dramatic hinge) ──────────────── */}
         <motion.div
           className="hero-reveal-pivot mt-6"
           initial={{ opacity: 0, y: 14, scale: 0.98 }}
@@ -154,27 +190,32 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
           {t('hero_reveal_pivot')}
         </motion.div>
 
-        {/* ─── ACT 5a. MANAV REVEAL (PEAK 2) ───────────────── */}
-        <div className="hero-name-wrap mt-20">
-          <NameReveal name={t('hero_founder_name')} delay={8.4} />
-        </div>
-
-        {/* ─── ACT 5b. ROLE TRIPLET ────────────────────────── */}
+        {/* ─── ACT 5. HUMBLE MANAV REVEAL ─────────────────── */}
         <motion.div
-          className="hero-roles mt-6"
-          initial={{ opacity: 0, letterSpacing: '0.45em' }}
-          animate={{ opacity: 0.92, letterSpacing: '0.22em' }}
-          transition={{ duration: 1.4, delay: 9.6, ease: FEATHER }}
+          className="hero-by-mark mt-20"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.55 }}
+          transition={{ duration: 1.0, delay: 8.4, ease: FEATHER }}
         >
-          {t('hero_roles')}
+          <span className="by-rule" />
+          <span className="by-word">{t('hero_by_mark')}</span>
+          <span className="by-rule" />
         </motion.div>
 
-        {/* ─── ACT 5c. CLOSE ──────────────────────────────── */}
         <motion.div
-          className="hero-close mt-6"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 0.85, y: 0 }}
-          transition={{ duration: 1.3, delay: 10.2, ease: FEATHER }}
+          className="hero-name-humble mt-4"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.4, delay: 8.9, ease: FEATHER }}
+        >
+          {t('hero_founder_name')}
+        </motion.div>
+
+        <motion.div
+          className="hero-close mt-5"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 0.82, y: 0 }}
+          transition={{ duration: 1.2, delay: 9.8, ease: FEATHER }}
         >
           {t('hero_close')}
         </motion.div>
@@ -186,81 +227,132 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   NAME REVEAL — the Iron Man moment. Each character takes 1.4s
-   with a 0.20s stagger, blur-clears from 14px. Dominant typography.
+   BRAND REVEAL — S.E.A.S.O.N. letter-by-letter, with each non-dot
+   letter encoded as a member of one of three pairs (se/as/on).
 ═══════════════════════════════════════════════════════════════ */
-function NameReveal({ name, delay = 0 }: { name: string; delay?: number }) {
-  return (
-    <div className="name-reveal" aria-label={name}>
-      {Array.from(name).map((ch, i) => (
-        <motion.span
-          key={i}
-          className="name-letter"
-          initial={{ opacity: 0, y: 44, filter: 'blur(14px)' }}
-          animate={{ opacity: 1, y: 0,  filter: 'blur(0px)'  }}
-          transition={{
-            duration: 1.4,
-            ease: FEATHER,
-            delay: delay + i * 0.2,
-          }}
-        >
-          {ch}
-        </motion.span>
-      ))}
-    </div>
-  );
-}
+function BrandReveal({
+  delay = 0,
+  hoveredPair,
+  setHoveredPair,
+}: {
+  delay?: number;
+  hoveredPair: Pair;
+  setHoveredPair: (p: Pair) => void;
+}) {
+  const letters: Array<{ ch: string; pair: Pair }> = [
+    { ch: 'S', pair: 'se' },
+    { ch: '.', pair: null },
+    { ch: 'E', pair: 'se' },
+    { ch: '.', pair: null },
+    { ch: 'A', pair: 'as' },
+    { ch: '.', pair: null },
+    { ch: 'S', pair: 'as' },
+    { ch: '.', pair: null },
+    { ch: 'O', pair: 'on' },
+    { ch: '.', pair: null },
+    { ch: 'N', pair: 'on' },
+    { ch: '.', pair: null },
+  ];
 
-/* ═══════════════════════════════════════════════════════════════
-   BRAND REVEAL — S.E.A.S.O.N. letter-by-letter, peak 1.
-═══════════════════════════════════════════════════════════════ */
-function BrandReveal({ delay = 0 }: { delay?: number }) {
-  const letters = ['S', '.', 'E', '.', 'A', '.', 'S', '.', 'O', '.', 'N', '.'];
   return (
     <div className="brand-reveal" aria-label="S.E.A.S.O.N.">
-      {letters.map((ch, i) => (
-        <motion.span
-          key={i}
-          className={ch === '.' ? 'brand-dot' : 'brand-letter'}
-          initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
-          animate={{ opacity: 1, y: 0,  filter: 'blur(0px)' }}
-          transition={{
-            duration: 1.1,
-            ease: FEATHER,
-            delay: delay + i * 0.1,
-          }}
-        >
-          {ch}
-        </motion.span>
-      ))}
+      {letters.map((l, i) => {
+        const isDot     = l.ch === '.';
+        const isActive  = !!l.pair && l.pair === hoveredPair;
+        const isDimmed  = !isDot && hoveredPair !== null && l.pair !== hoveredPair;
+        const className = [
+          isDot ? 'brand-dot' : 'brand-letter',
+          isActive ? 'brand-active' : '',
+          isDimmed ? 'brand-dimmed' : '',
+        ].filter(Boolean).join(' ');
+
+        return (
+          <motion.span
+            key={i}
+            className={className}
+            initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, y: 0,  filter: 'blur(0px)' }}
+            transition={{
+              duration: 1.1,
+              ease: FEATHER,
+              delay: delay + i * 0.1,
+            }}
+            onMouseEnter={() => l.pair && setHoveredPair(l.pair)}
+            onMouseLeave={() => l.pair && setHoveredPair(null)}
+            onClick={() => {
+              if (!l.pair) return;
+              setHoveredPair(hoveredPair === l.pair ? null : l.pair);
+            }}
+          >
+            {l.ch}
+          </motion.span>
+        );
+      })}
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   ACRONYM RECITAL — three weighty declarations.
+   INTERACTIVE RECITAL — three rows persistent.
+   Hovered row brightens + expands its SEO-context paragraph.
+   Inactive rows dim. Rows themselves are hoverable.
 ═══════════════════════════════════════════════════════════════ */
-function AcronymRecital({ t, delay = 0 }: { t: TFn; delay?: number }) {
-  const lines: Array<{ prefix: string; phrase: string }> = [
-    { prefix: 'S.E.', phrase: t('phrase_strat_exec') },
-    { prefix: 'A.S.', phrase: t('phrase_anal_supp')  },
-    { prefix: 'O.N.', phrase: t('phrase_op_net')     },
+function InteractiveRecital({
+  t,
+  delay = 0,
+  hoveredPair,
+  setHoveredPair,
+}: {
+  t: TFn;
+  delay?: number;
+  hoveredPair: Pair;
+  setHoveredPair: (p: Pair) => void;
+}) {
+  const rows: Array<{
+    pair: Pair; prefix: string; phrase: string; context: string;
+  }> = [
+    { pair: 'se', prefix: 'S.E.', phrase: t('phrase_strat_exec'), context: t('hero_se_context') },
+    { pair: 'as', prefix: 'A.S.', phrase: t('phrase_anal_supp'),  context: t('hero_as_context') },
+    { pair: 'on', prefix: 'O.N.', phrase: t('phrase_op_net'),     context: t('hero_on_context') },
   ];
+
   return (
     <div className="recital-stack">
-      {lines.map((l, i) => (
-        <motion.div
-          key={i}
-          className="recital-line"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.0, ease: FEATHER, delay: delay + i * 0.22 }}
-        >
-          <span className="recital-prefix">{l.prefix}</span>
-          <span className="recital-rule" />
-          <span className="recital-phrase">{l.phrase}</span>
-        </motion.div>
-      ))}
+      {rows.map((r, i) => {
+        const isActive = r.pair === hoveredPair;
+        const isDimmed = hoveredPair !== null && !isActive;
+        return (
+          <motion.div
+            key={r.pair}
+            className={`recital-line ${isActive ? 'recital-active' : ''} ${isDimmed ? 'recital-dimmed' : ''}`}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1.0, ease: FEATHER, delay: delay + i * 0.22 }}
+            onMouseEnter={() => setHoveredPair(r.pair)}
+            onMouseLeave={() => setHoveredPair(null)}
+            onClick={() => setHoveredPair(hoveredPair === r.pair ? null : r.pair)}
+          >
+            <div className="recital-row-main">
+              <span className="recital-prefix">{r.prefix}</span>
+              <span className="recital-rule" />
+              <span className="recital-phrase">{r.phrase}</span>
+            </div>
+            <AnimatePresence initial={false}>
+              {isActive && (
+                <motion.div
+                  className="recital-context"
+                  initial={{ opacity: 0, height: 0, y: -4 }}
+                  animate={{ opacity: 1, height: 'auto', y: 0 }}
+                  exit={{ opacity: 0, height: 0, y: -4 }}
+                  transition={{ duration: 0.45, ease: FEATHER }}
+                >
+                  <div className="recital-context-inner">{r.context}</div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        );
+      })}
     </div>
   );
 }
@@ -297,25 +389,47 @@ function ColdOpenStyles() {
         background: linear-gradient(90deg, transparent, var(--m-hairline-s), transparent);
       }
 
-      /* ─── BRAND (PEAK 1) ──────────────────────────────────── */
+      /* ─── BRAND (PEAK 1) — interactive ────────────────────── */
       .cold-open-stage-journey .brand-reveal {
         font-size: clamp(3.5rem, 10vw, 9rem);
       }
+      .cold-open-stage-journey .brand-letter,
+      .cold-open-stage-journey .brand-dot {
+        cursor: pointer;
+        transition: opacity 0.35s ease, filter 0.35s ease, text-shadow 0.35s ease;
+      }
+      .cold-open-stage-journey .brand-active {
+        text-shadow: 0 0 32px hsla(188, 80%, 65%, 0.55);
+        filter: brightness(1.18);
+      }
+      .cold-open-stage-journey .brand-dimmed {
+        opacity: 0.38;
+      }
 
-      /* ─── RECITAL ─────────────────────────────────────────── */
+      /* ─── INTERACTIVE RECITAL ─────────────────────────────── */
       .recital-stack {
         display: flex;
         flex-direction: column;
-        align-items: center;
-        gap: 0.85rem;
+        align-items: stretch;
+        gap: 0.6rem;
+        max-width: 680px;
+        margin: 0 auto;
       }
       .recital-line {
+        cursor: pointer;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        transition: opacity 0.35s ease, background 0.35s ease;
+      }
+      .recital-line:hover { background: hsla(188, 50%, 50%, 0.03); }
+      .recital-active     { background: hsla(188, 50%, 50%, 0.05); }
+      .recital-dimmed     { opacity: 0.38; }
+
+      .recital-row-main {
         display: grid;
         grid-template-columns: 5rem 32px 1fr;
         gap: 1.1rem;
         align-items: baseline;
-        max-width: 620px;
-        width: 100%;
       }
       .recital-prefix {
         font-family: ui-sans-serif, system-ui, sans-serif;
@@ -324,11 +438,17 @@ function ColdOpenStyles() {
         letter-spacing: 0.22em;
         color: hsla(188, 75%, 70%, 0.85);
         text-align: right;
+        transition: color 0.35s ease;
       }
+      .recital-active .recital-prefix { color: hsla(188, 90%, 80%, 1); }
       .recital-rule {
         height: 1px;
         background: linear-gradient(90deg, transparent, hsla(188, 60%, 70%, 0.35), transparent);
         align-self: center;
+        transition: background 0.35s ease;
+      }
+      .recital-active .recital-rule {
+        background: linear-gradient(90deg, transparent, hsla(188, 80%, 70%, 0.7), transparent);
       }
       .recital-phrase {
         font-family: ui-serif, Georgia, serif;
@@ -344,9 +464,26 @@ function ColdOpenStyles() {
         -webkit-text-fill-color: transparent;
         text-align: left;
         white-space: nowrap;
+        transition: filter 0.35s ease;
+      }
+      .recital-active .recital-phrase { filter: brightness(1.18); }
+
+      .recital-context {
+        overflow: hidden;
+      }
+      .recital-context-inner {
+        margin-top: 0.7rem;
+        padding-left: 6.1rem;  /* aligns under the phrase column */
+        font-family: ui-serif, Georgia, serif;
+        font-size: clamp(0.92rem, 1.3vw, 1.05rem);
+        line-height: 1.65;
+        font-style: italic;
+        color: var(--m-ink-medium);
+        max-width: 56ch;
+        letter-spacing: 0.005em;
       }
 
-      /* ─── KICKER ──────────────────────────────────────────── */
+      /* ─── KICKER + SUB + INTEL ─────────────────────────────── */
       .cold-open-kicker-xl {
         font-family: ui-serif, Georgia, serif;
         font-size: clamp(1.5rem, 2.7vw, 2.05rem);
@@ -358,8 +495,6 @@ function ColdOpenStyles() {
         margin-left: auto;
         margin-right: auto;
       }
-
-      /* ─── SUB ─────────────────────────────────────────────── */
       .cold-open-sub-xl {
         font-family: ui-sans-serif, system-ui, sans-serif;
         font-size: clamp(0.92rem, 1.4vw, 1.05rem);
@@ -369,8 +504,6 @@ function ColdOpenStyles() {
         margin-left: auto;
         margin-right: auto;
       }
-
-      /* ─── INTEL CALLOUT (capability proof) ───────────────── */
       .hero-intel-callout {
         font-family: ui-sans-serif, system-ui, sans-serif;
         font-size: clamp(0.78rem, 1.1vw, 0.9rem);
@@ -384,7 +517,7 @@ function ColdOpenStyles() {
         font-weight: 600;
       }
 
-      /* ─── REVEAL SETUP (the buildup line) ───────────────── */
+      /* ─── REVEAL SETUP + PIVOT ─────────────────────────────── */
       .hero-reveal-setup {
         font-family: ui-serif, Georgia, serif;
         font-size: clamp(1.05rem, 1.6vw, 1.3rem);
@@ -395,8 +528,6 @@ function ColdOpenStyles() {
         margin-left: auto;
         margin-right: auto;
       }
-
-      /* ─── REVEAL PIVOT (the dramatic hinge) ─────────────── */
       .hero-reveal-pivot {
         font-family: ui-serif, Georgia, serif;
         font-size: clamp(1.7rem, 3.4vw, 2.55rem);
@@ -410,70 +541,68 @@ function ColdOpenStyles() {
         margin-right: auto;
       }
 
-      /* ─── MANAV (PEAK 2 — the reveal) ──────────────────── */
-      .hero-name-wrap {
+      /* ─── HUMBLE MANAV REVEAL ──────────────────────────────── */
+      .hero-by-mark {
         display: flex;
+        align-items: center;
         justify-content: center;
+        gap: 1rem;
       }
-      .name-reveal {
-        display: flex;
-        justify-content: center;
+      .by-word {
         font-family: ui-serif, Georgia, serif;
-        font-size: clamp(5rem, 13vw, 12rem);
-        line-height: 0.94;
-        letter-spacing: -0.045em;
-        font-weight: 400;
+        font-size: 0.78rem;
+        font-style: italic;
+        color: var(--m-ink-soft);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
       }
-      .name-letter {
+      .by-rule {
         display: inline-block;
-        background: linear-gradient(180deg,
-          rgba(255, 255, 255, 1) 0%,
-          rgba(255, 255, 255, 0.95) 35%,
-          hsla(188, 80%, 78%, 0.85) 100%);
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-transform: uppercase;
+        width: 56px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--m-hairline-s), transparent);
       }
-
-      /* ─── ROLE TRIPLET ────────────────────────────────── */
-      .hero-roles {
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(0.72rem, 1.05vw, 0.92rem);
-        font-weight: 700;
-        text-transform: uppercase;
-        color: hsla(188, 75%, 72%, 0.95);
+      .hero-name-humble {
+        font-family: ui-serif, Georgia, serif;
+        font-size: clamp(2.5rem, 5vw, 4rem);
+        line-height: 1.05;
+        font-style: italic;
+        font-weight: 400;
+        letter-spacing: -0.01em;
+        color: rgba(255, 255, 255, 0.96);
         text-align: center;
+        /* no gradient — humble pure white signature feel */
       }
-
-      /* ─── CLOSE LINE ─────────────────────────────────── */
       .hero-close {
         font-family: ui-serif, Georgia, serif;
-        font-size: clamp(1.05rem, 1.5vw, 1.25rem);
-        line-height: 1.5;
+        font-size: clamp(1.0rem, 1.45vw, 1.2rem);
+        line-height: 1.55;
         font-style: italic;
-        color: var(--m-ink-strong);
-        letter-spacing: 0.01em;
+        color: var(--m-ink-medium);
+        letter-spacing: 0.005em;
         max-width: 44ch;
         margin-left: auto;
         margin-right: auto;
       }
 
-      /* ─── RESPONSIVE ───────────────────────────────────── */
+      /* ─── RESPONSIVE ───────────────────────────────────────── */
       @media (max-width: 880px) {
         .cold-open-stage-journey .brand-reveal { font-size: clamp(2.4rem, 12vw, 4.5rem); }
-        .name-reveal     { font-size: clamp(3.4rem, 15vw, 6rem); }
-        .recital-phrase  { font-size: 1.1rem; white-space: normal; }
-        .recital-line    { grid-template-columns: 3.4rem 18px 1fr; gap: 0.7rem; }
+        .hero-name-humble { font-size: clamp(2rem, 7vw, 3rem); }
+        .recital-phrase   { font-size: 1.1rem; white-space: normal; }
+        .recital-row-main { grid-template-columns: 3.4rem 18px 1fr; gap: 0.7rem; }
+        .recital-context-inner { padding-left: 4.1rem; font-size: 0.92rem; }
         .hero-reveal-pivot { font-size: clamp(1.4rem, 5vw, 2rem); }
       }
       @media (max-width: 560px) {
         .coord-mark      { font-size: 0.55rem; gap: 0.45rem; letter-spacing: 0.22em; flex-wrap: wrap; }
         .coord-rule      { width: 18px; }
-        .recital-line    { grid-template-columns: 1fr; gap: 0.15rem; }
-        .recital-prefix  { text-align: center; }
-        .recital-rule    { display: none; }
-        .recital-phrase  { text-align: center; }
+        .recital-row-main { grid-template-columns: 1fr; gap: 0.15rem; }
+        .recital-prefix   { text-align: center; }
+        .recital-rule     { display: none; }
+        .recital-phrase   { text-align: center; }
+        .recital-context-inner { padding-left: 0; text-align: center; }
+        .by-rule { width: 36px; }
       }
     `}</style>
   );
