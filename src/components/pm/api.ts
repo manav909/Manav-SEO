@@ -2120,6 +2120,51 @@ export interface ShowcaseDataClient {
       underperforming:    string;
     };
   };
+
+  /* Phase 22.3 — Campaign Report v3 narrative fields (project-wide, all nullable) */
+  research_findings: null | {
+    discoveries: Array<{
+      kind:        'market' | 'audience' | 'content' | 'technical' | 'opportunity';
+      headline:    string;
+      narrative:   string;
+      data_point?: string;
+      confidence:  'high' | 'medium' | 'observational';
+    }>;
+    research_period:   string;
+    sources_consulted: string[];
+  };
+  execution_stats: null | {
+    content_pieces:    number;
+    internal_links:    number;
+    off_page_actions:  number;
+    technical_fixes:   number;
+    monitoring_checks: number;
+    pillar_runs:       number;
+    days_active:       number;
+    total_actions:     number;
+    cadence_per_week:  number;
+  };
+  weekly_journey: null | {
+    weeks: Array<{
+      week_label:    string;
+      week_start:    string;
+      action_count:  number;
+      milestone:     string | null;
+      severity_mix:  { success: number; info: number; warning: number; alert: number };
+    }>;
+    streak_label:    string;
+  };
+  opportunities_detailed: null | {
+    items: Array<{
+      title:        string;
+      rationale:    string;
+      effort:       'small' | 'medium' | 'large';
+      impact:       'incremental' | 'meaningful' | 'transformational';
+      time_horizon: string;
+      data_basis:   string;
+    }>;
+    methodology:   string;
+  };
 }
 
 export async function getClientShowcase(opts: { projectId: string }): Promise<{
@@ -2129,6 +2174,129 @@ export async function getClientShowcase(opts: { projectId: string }): Promise<{
   if (!r?.success) return { error: r?.error };
   return { showcase: r.showcase };
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   Phase 22.3 — Campaign Report v3 client contract
+══════════════════════════════════════════════════════════════════════ */
+
+export type CampaignPillarClient = 'cluster_map' | 'internal_linking' | 'off_page' | 'monitoring' | 'content';
+export type CampaignMoodClient   = 'discovery' | 'building' | 'climbing' | 'winning' | 'defending';
+
+export interface CampaignReportDataClient {
+  meta: {
+    project_name:          string;
+    project_domain:        string;
+    campaign_id:           string;
+    last_refreshed_at:     string;
+    report_period:         string;
+  };
+  identity: {
+    keyword:               string;
+    intent:                'informational' | 'commercial' | 'transactional' | 'branded' | 'unknown';
+    intent_confidence:     'high' | 'medium' | 'low';
+    market_context:        string;
+    started_at:            string;
+    days_active:           number;
+    status:                string;
+    health:                string | null;
+    mood:                  CampaignMoodClient;
+    mood_color_hue:        number;
+  };
+  journey: {
+    position_history: Array<{ date: string; position: number; source: 'monitoring' | 'campaign_init' | 'campaign_now' }>;
+    milestones: Array<{ date: string; title: string; kind: 'launch' | 'pillar_complete' | 'win' | 'pivot' | 'checkpoint'; detail: string }>;
+    starting_position:     number | null;
+    current_position:      number | null;
+    target_position:       number | null;
+    progress_pct:          number;
+  };
+  discovery: {
+    cluster_keywords: Array<{ keyword: string; relation: 'core' | 'supporting' | 'long_tail' | 'related'; volume_estimate?: number }>;
+    intent_breakdown: { primary: string; secondary: string | null; note: string };
+    surprising_findings: Array<{ title: string; detail: string; source_pillar: CampaignPillarClient }>;
+    competitor_signals: Array<{ competitor: string; position_estimate?: number; note: string }>;
+  };
+  strategy: {
+    thesis: string;
+    pillars: Array<{
+      pillar:           CampaignPillarClient;
+      label:            string;
+      status:           'green' | 'amber' | 'red' | 'pending';
+      action_taken:     string;
+      rationale:        string;
+      report_count:     number;
+      last_report_at:   string | null;
+    }>;
+    reinforcement_map: Array<{ from: CampaignPillarClient; to: CampaignPillarClient; strength: 'strong' | 'moderate' | 'weak' }>;
+  };
+  position_now: {
+    current_position:      number | null;
+    target_position:       number | null;
+    position_change:       number | null;
+    impressions_30d:       number | null;
+    clicks_30d:            number | null;
+    ctr_pct:               number | null;
+    benchmark_note:        string;
+    freshness:             string | null;
+  };
+  competitive: {
+    above_us: Array<{ domain: string; estimated_position?: number; note?: string }>;
+    we_passed: Array<{ domain: string; when_relative?: string; note?: string }>;
+    catching_up: Array<{ domain: string; note?: string }>;
+    moat_assessment: string;
+  };
+  findings: Array<{
+    title: string;
+    insight: string;
+    evidence: string;
+    source_pillar: CampaignPillarClient;
+    weight: 'high' | 'medium' | 'low';
+  }>;
+  opportunities: Array<{
+    title: string;
+    detail: string;
+    estimated_impact: 'high' | 'medium' | 'low';
+    estimated_effort: 'low' | 'medium' | 'high';
+    dependencies: string[];
+    priority_rank: number;
+  }>;
+  risks: Array<{
+    title: string;
+    detail: string;
+    severity: 'high' | 'medium' | 'low';
+    mitigation: string | null;
+  }>;
+  forecast: {
+    horizons: Array<{
+      label: string;
+      projected_position: number;
+      confidence: 'high' | 'medium' | 'low';
+      assumptions: string;
+    }>;
+    path_forward: string;
+    next_review_at: string | null;
+  };
+  transparency: {
+    data_sources: Array<{
+      name: string;
+      status: 'fresh' | 'stale' | 'missing';
+      last_synced: string | null;
+      note?: string;
+    }>;
+    methodology_notes: string[];
+    honest_gaps: string[];
+    audit_count: number;
+  };
+}
+
+export async function getCampaignReport(opts: { projectId: string; campaignId?: string }): Promise<{
+  report?: CampaignReportDataClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_campaign_report_load', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { report: r.report };
+}
+
 
 export async function seasonCommand(opts: {
   projectId:    string;

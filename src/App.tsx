@@ -28,6 +28,7 @@ import Planning       from './pages/Planning';
 import Command        from './pages/Command';
 import ClientLens     from './pages/ClientLens';
 import ClientShowcase from './pages/ClientShowcase';
+import ClientCampaignReport from './pages/ClientCampaignReport';
 import SeasonSettings from './pages/SeasonSettings';
 import Dashboard      from "./pages/Dashboard";
 import Launchpad      from "./pages/Launchpad";
@@ -126,6 +127,7 @@ const AppRoutes = () => {
         <Route path="/command"         element={<B name="command">        <StaffGuard perm="data_room">      <Command />        </StaffGuard></B>} />
         <Route path="/client/:projectId" element={<B name="client-lens">    <StaffGuard perm="data_room">      <ClientLens />     </StaffGuard></B>} />
         <Route path="/client-lens-v2/:projectId" element={<B name="client-lens-v2"><StaffGuard perm="data_room">      <ClientShowcase /> </StaffGuard></B>} />
+        <Route path="/campaign-report/:projectId" element={<B name="campaign-report"><StaffGuard perm="data_room">      <ClientCampaignReport /> </StaffGuard></B>} />
         <Route path="/season-settings"  element={<B name="season-settings"><StaffGuard perm="data_room">      <SeasonSettings />  </StaffGuard></B>} />
         <Route path="/dashboard"       element={<B name="dashboard">      <StaffGuard perm="dashboard">      <Dashboard />      </StaffGuard></B>} />
         <Route path="/launchpad"       element={<B name="launchpad">      <StaffGuard perm="playground">     <Launchpad />      </StaffGuard></B>} />

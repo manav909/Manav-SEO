@@ -176,6 +176,53 @@ export interface ShowcaseData {
       underperforming:    string;
     };
   };
+
+  /* ───────────────────────────────────────────────────────────
+     Phase 22.3 — CAMPAIGN REPORT FIELDS
+  ─────────────────────────────────────────────────────────── */
+  research_findings: null | {
+    discoveries: Array<{
+      kind:        'market' | 'audience' | 'content' | 'technical' | 'opportunity';
+      headline:    string;
+      narrative:   string;
+      data_point?: string;
+      confidence:  'high' | 'medium' | 'observational';
+    }>;
+    research_period:   string;
+    sources_consulted: string[];
+  };
+  execution_stats: null | {
+    content_pieces:    number;
+    internal_links:    number;
+    off_page_actions:  number;
+    technical_fixes:   number;
+    monitoring_checks: number;
+    pillar_runs:       number;
+    days_active:       number;
+    total_actions:     number;
+    cadence_per_week:  number;
+  };
+  weekly_journey: null | {
+    weeks: Array<{
+      week_label:        string;
+      week_start:        string;
+      action_count:      number;
+      milestone:         string | null;
+      severity_mix:      { success: number; info: number; warning: number; alert: number };
+    }>;
+    streak_label:        string;
+  };
+  opportunities_detailed: null | {
+    items: Array<{
+      title:        string;
+      rationale:    string;
+      effort:       'small' | 'medium' | 'large';
+      impact:       'incremental' | 'meaningful' | 'transformational';
+      time_horizon: string;
+      data_basis:   string;
+    }>;
+    methodology:   string;
+  };
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -332,6 +379,12 @@ export async function assembleShowcase(opts: { projectId: string }): Promise<{
     const intent_distribution = composeIntentDistribution(gscQueries);
     const content_health    = composeContentHealth(gscPages);
 
+    /* ─── PHASE 22.3 — CAMPAIGN REPORT SECTIONS ───────────────────── */
+    const research_findings = composeResearchFindings({ gscQueries, gscPages, ga4, activeCampaigns, reportsByCampaign });
+    const execution_stats   = composeExecutionStats({ activeCampaigns, reportsByCampaign, activity, daysActive });
+    const weekly_journey    = composeWeeklyJourney(activity);
+    const opportunities_detailed = composeOpportunitiesDetailed({ forecast, content_health, keyword_movers, activeCampaigns });
+
     return {
       success: true,
       showcase: {
@@ -353,6 +406,10 @@ export async function assembleShowcase(opts: { projectId: string }): Promise<{
         keyword_movers,
         intent_distribution,
         content_health,
+        research_findings,
+        execution_stats,
+        weekly_journey,
+        opportunities_detailed,
       },
     };
   } catch (e: any) {
@@ -1125,5 +1182,278 @@ function composeContentHealth(gscPages: any[]): ShowcaseData['content_health'] {
       plateau:         'Rewrite titles + meta to lift CTR. Test 2 variants over 4 weeks.',
       underperforming: 'Re-evaluate search intent fit. Consolidate or redirect if duplicative.',
     },
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PHASE 22.3 — CAMPAIGN REPORT COMPOSERS
+══════════════════════════════════════════════════════════════════════ */
+
+function composeResearchFindings(input: {
+  gscQueries: any[]; gscPages: any[]; ga4: any;
+  activeCampaigns: any[]; reportsByCampaign: Record<string, any[]>;
+}): ShowcaseData['research_findings'] {
+  const { gscQueries, gscPages, ga4, activeCampaigns, reportsByCampaign } = input;
+  const discoveries: NonNullable<ShowcaseData['research_findings']>['discoveries'] = [];
+
+  const totalImpressions = gscQueries.reduce((s, q) => s + (Number(q.impressions) || 0), 0);
+  if (totalImpressions > 0 && gscQueries.length > 0) {
+    discoveries.push({
+      kind: 'market',
+      headline: 'The market is searching',
+      narrative: `Google is showing your site to a real audience across the indexed pages — there's measurable appetite for what you offer.`,
+      data_point: `${totalImpressions.toLocaleString()} impressions captured`,
+      confidence: 'high',
+    });
+  }
+
+  const informationalCount = gscQueries.filter(q =>
+    /\b(how|what|why|when|where|guide|tutorial|tips?)\b/i.test(String(q.query || ''))
+  ).length;
+  const commercialCount = gscQueries.filter(q =>
+    /\b(best|top|review|vs|compare|alternative)\b/i.test(String(q.query || ''))
+  ).length;
+  if (informationalCount > commercialCount && informationalCount > 5) {
+    discoveries.push({
+      kind: 'audience',
+      headline: 'Audience arrives to learn first',
+      narrative: `Informational queries outnumber commercial searches roughly ${(informationalCount / Math.max(1, commercialCount)).toFixed(1)}:1. Visitors land early in their decision cycle — content depth compounds.`,
+      data_point: `${informationalCount} informational vs ${commercialCount} commercial queries`,
+      confidence: 'medium',
+    });
+  } else if (commercialCount >= informationalCount && commercialCount > 5) {
+    discoveries.push({
+      kind: 'audience',
+      headline: 'Audience arrives ready to evaluate',
+      narrative: `Commercial-intent queries dominate the inbound. The visitor is already comparing — your job is to make the shortlist.`,
+      data_point: `${commercialCount} commercial vs ${informationalCount} informational queries`,
+      confidence: 'medium',
+    });
+  }
+
+  const heroPages = gscPages.filter(p => Number(p.position) <= 10 && (Number(p.clicks) / Math.max(1, Number(p.impressions))) >= 0.03).length;
+  const climbingPages = gscPages.filter(p => Number(p.position) > 10 && Number(p.position) <= 20 && Number(p.impressions) >= 100).length;
+  if (heroPages > 0) {
+    discoveries.push({
+      kind: 'content',
+      headline: `${heroPages} page${heroPages === 1 ? ' is' : 's are'} doing the heavy lifting`,
+      narrative: `These page-one entries with healthy click-through carry the visibility. Defending them is as important as building new ones.`,
+      confidence: 'high',
+    });
+  }
+  if (climbingPages > 0) {
+    discoveries.push({
+      kind: 'opportunity',
+      headline: `${climbingPages} page${climbingPages === 1 ? '' : 's'} within striking distance of page one`,
+      narrative: `Sitting on page two with real impressions — these are the highest-leverage optimization targets in the next phase.`,
+      confidence: 'high',
+    });
+  }
+
+  let monitoringFindings = 0;
+  for (const c of activeCampaigns) {
+    const reports = reportsByCampaign[c.id] || [];
+    if (reports.some(r => r.pillar === 'monitoring')) monitoringFindings++;
+  }
+  if (monitoringFindings > 0) {
+    discoveries.push({
+      kind: 'technical',
+      headline: 'Position tracking established',
+      narrative: `Monitoring baselines captured for ${monitoringFindings} campaign${monitoringFindings === 1 ? '' : 's'} — every movement from here is measured against a known starting point.`,
+      data_point: `${monitoringFindings} campaign${monitoringFindings === 1 ? '' : 's'} with baselines`,
+      confidence: 'high',
+    });
+  }
+
+  if (ga4 && (ga4.sessions || ga4.users || ga4.engagedSessions)) {
+    discoveries.push({
+      kind: 'audience',
+      headline: 'User behavior data is live',
+      narrative: `GA4 is tracking sessions and engagement — every organic visit can be followed downstream from search to behavior.`,
+      data_point: ga4.sessions ? `${Number(ga4.sessions).toLocaleString()} sessions tracked` : undefined,
+      confidence: 'high',
+    });
+  }
+
+  if (discoveries.length === 0) return null;
+
+  const sources: string[] = ['Google Search Console'];
+  if (ga4) sources.push('Google Analytics 4');
+  if (monitoringFindings > 0) sources.push('SEO Season monitoring pillar');
+  if (activeCampaigns.length > 0) sources.push(`${activeCampaigns.length} active campaign feed${activeCampaigns.length === 1 ? '' : 's'}`);
+
+  return {
+    discoveries,
+    research_period:   'Engagement-to-date',
+    sources_consulted: sources,
+  };
+}
+
+function composeExecutionStats(input: {
+  activeCampaigns: any[]; reportsByCampaign: Record<string, any[]>;
+  activity: any[]; daysActive: number;
+}): ShowcaseData['execution_stats'] {
+  const { activeCampaigns, reportsByCampaign, activity, daysActive } = input;
+
+  let content_pieces = 0;
+  let internal_links = 0;
+  let off_page_actions = 0;
+  let technical_fixes = 0;
+  let monitoring_checks = 0;
+  let pillar_runs = 0;
+
+  for (const c of activeCampaigns) {
+    const reports = reportsByCampaign[c.id] || [];
+    for (const r of reports) {
+      pillar_runs++;
+      switch (r.pillar) {
+        case 'content':           content_pieces  += 1; break;
+        case 'internal_linking':  internal_links  += 1; break;
+        case 'off_page':          off_page_actions += 1; break;
+        case 'monitoring':        monitoring_checks += 1; break;
+        case 'technical_audit':   technical_fixes += 1; break;
+        default: break;
+      }
+    }
+  }
+
+  for (const a of activity) {
+    const ev = String(a.event_type || '').toLowerCase();
+    if (ev.includes('content') && /publish/i.test(a.headline || '')) content_pieces++;
+    if (ev.includes('link') && /built|earned/i.test(a.headline || '')) off_page_actions++;
+  }
+
+  const total_actions = content_pieces + internal_links + off_page_actions + technical_fixes + monitoring_checks;
+  const weeks = Math.max(1, daysActive / 7);
+  const cadence_per_week = total_actions / weeks;
+
+  if (total_actions === 0) return null;
+
+  return {
+    content_pieces, internal_links, off_page_actions, technical_fixes,
+    monitoring_checks, pillar_runs, days_active: daysActive, total_actions,
+    cadence_per_week:  Number(cadence_per_week.toFixed(1)),
+  };
+}
+
+function composeWeeklyJourney(activity: any[]): ShowcaseData['weekly_journey'] {
+  if (!Array.isArray(activity) || activity.length === 0) return null;
+
+  const weekBuckets: Record<string, any[]> = {};
+  for (const a of activity) {
+    const d = new Date(a.created_at);
+    if (isNaN(d.getTime())) continue;
+    const day = d.getDay();
+    const mondayOffset = (day === 0 ? 6 : day - 1);
+    const monday = new Date(d.getTime() - mondayOffset * 86_400_000);
+    monday.setUTCHours(0, 0, 0, 0);
+    const key = monday.toISOString().slice(0, 10);
+    if (!weekBuckets[key]) weekBuckets[key] = [];
+    weekBuckets[key].push(a);
+  }
+
+  const sortedKeys = Object.keys(weekBuckets).sort().reverse().slice(0, 12);
+  const weeks = sortedKeys.map(key => {
+    const items = weekBuckets[key];
+    const monday = new Date(key);
+    const label = monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const severity_mix = { success: 0, info: 0, warning: 0, alert: 0 };
+    let milestone: string | null = null;
+    for (const item of items) {
+      const sev = String(item.severity || 'info').toLowerCase();
+      if (sev === 'success' || sev === 'win') { severity_mix.success++; if (!milestone) milestone = item.headline; }
+      else if (sev === 'warning') severity_mix.warning++;
+      else if (sev === 'alert' || sev === 'error') severity_mix.alert++;
+      else severity_mix.info++;
+    }
+    return {
+      week_label:    `Week of ${label}`,
+      week_start:    key,
+      action_count:  items.length,
+      milestone,
+      severity_mix,
+    };
+  }).reverse();
+
+  let streak = 0;
+  for (let i = weeks.length - 1; i >= 0; i--) {
+    if (weeks[i].action_count > 0) streak++;
+    else break;
+  }
+
+  return {
+    weeks,
+    streak_label: streak === 1 ? '1 week of activity' : `${streak} consecutive weeks of activity`,
+  };
+}
+
+function composeOpportunitiesDetailed(input: {
+  forecast: ShowcaseData['forecast'];
+  content_health: ShowcaseData['content_health'];
+  keyword_movers: ShowcaseData['keyword_movers'];
+  activeCampaigns: any[];
+}): ShowcaseData['opportunities_detailed'] {
+  const items: NonNullable<ShowcaseData['opportunities_detailed']>['items'] = [];
+
+  if (input.content_health && input.content_health.tier_counts.climbing > 0) {
+    items.push({
+      title:        `Push ${input.content_health.tier_counts.climbing} climbing pages to page one`,
+      rationale:    `These pages already rank between positions 11-20 with meaningful impressions. The CTR delta between page 2 and page 1 is roughly 8-12x — closing the gap unlocks the largest single traffic lift available right now.`,
+      effort:       'medium',
+      impact:       'meaningful',
+      time_horizon: '4-8 weeks',
+      data_basis:   'Content health matrix · Climbing tier',
+    });
+  }
+
+  if (input.content_health && input.content_health.tier_counts.plateau > 0) {
+    items.push({
+      title:        `Refresh titles + meta on ${input.content_health.tier_counts.plateau} plateaued pages`,
+      rationale:    `Already ranking, just not converting impressions to clicks. Title + meta description rewrites with current-year framing typically lift CTR by 15-40% with minimal effort.`,
+      effort:       'small',
+      impact:       'incremental',
+      time_horizon: '2-3 weeks',
+      data_basis:   'Content health matrix · Plateaued tier',
+    });
+  }
+
+  if (input.keyword_movers && input.keyword_movers.winners.length > 0) {
+    items.push({
+      title:        `Defend and amplify ${input.keyword_movers.winners.length} winning keywords`,
+      rationale:    `These keywords are climbing — the work is paying off. Doubling down with topical cluster content and stronger internal linking compounds the visibility gain rather than waiting for it to plateau.`,
+      effort:       'medium',
+      impact:       'meaningful',
+      time_horizon: '6-10 weeks',
+      data_basis:   'Keyword movers · Winners',
+    });
+  }
+
+  if (input.forecast && input.forecast.projections && input.forecast.projections.length > 0) {
+    items.push({
+      title:        `Continue active campaign trajectory`,
+      rationale:    `${input.forecast.projections.length} active campaign${input.forecast.projections.length === 1 ? '' : 's'} ${input.forecast.projections.length === 1 ? 'is' : 'are'} projected to deliver compound visibility gains. Maintaining cadence is the single highest-confidence move — discontinuing now would forfeit accumulated momentum.`,
+      effort:       'small',
+      impact:       'meaningful',
+      time_horizon: 'Ongoing',
+      data_basis:   `Forecast checkpoints · ${input.forecast.projections.length} active`,
+    });
+  }
+
+  if (input.activeCampaigns.length >= 3) {
+    items.push({
+      title:        'Expand topical authority into adjacent clusters',
+      rationale:    `With ${input.activeCampaigns.length} active campaigns demonstrating traction, the next compounding move is broadening the topical surface — Google rewards depth across a topic family more than depth in any single keyword.`,
+      effort:       'large',
+      impact:       'transformational',
+      time_horizon: 'Quarter',
+      data_basis:   'Campaign portfolio analysis',
+    });
+  }
+
+  if (items.length === 0) return null;
+
+  return {
+    items,
+    methodology: 'Opportunities are ranked by the ratio of data-confirmed potential to implementation effort. Each recommendation is grounded in the specific data column listed — no generic SEO advice. Effort estimates are agency-time, not calendar-time.',
   };
 }

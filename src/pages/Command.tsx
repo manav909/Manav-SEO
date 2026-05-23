@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, Component, type ReactNode, type ErrorInfo 
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import {
   Sparkles, AlertCircle, CheckCircle2, Activity, ArrowRight,
-  X, Send, RefreshCw, Database, Building2, ExternalLink, Lightbulb, Settings, Eye, Film,
+  X, Send, RefreshCw, Database, Building2, ExternalLink, Lightbulb, Settings, Eye, Film, BookOpen,
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -790,6 +790,12 @@ function CommandInner() {
                       title="Open Client Lens v2 (Phase 22 — new cinematic version)"
                       className="px-3 h-9 rounded-full bg-violet-500/[0.08] border border-violet-500/40 flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-violet-300 hover:text-violet-200 hover:border-violet-400/60 hover:bg-violet-500/[0.15] transition-colors">
                       <Film className="h-3.5 w-3.5" /> Lens v2
+                    </button>
+                    <button
+                      onClick={() => navigate(`/campaign-report/${selectedProjectId}`)}
+                      title="Open Campaign Report (Phase 22.3 — deep narrative report)"
+                      className="px-3 h-9 rounded-full bg-amber-500/[0.08] border border-amber-500/40 flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-amber-300 hover:text-amber-200 hover:border-amber-400/60 hover:bg-amber-500/[0.15] transition-colors">
+                      <BookOpen className="h-3.5 w-3.5" /> Report v3
                     </button>
                   </>
                 )}
