@@ -1879,6 +1879,21 @@ Return ONLY raw JSON:
     }
   }
 
+  /* ── CLIENT SHOWCASE — composite cinematic data contract (Phase 22).
+       Every animation parameter, color anchor, mood, and intensity on the
+       /showcase/:projectId page flows from this single payload. */
+  if (action === "bs_client_showcase_data") {
+    const { projectId } = body;
+    if (!projectId) return ok(res, { success: false, error: "projectId required" });
+    try {
+      const { assembleShowcase } = await import("./lib/client-showcase-engine.js");
+      const r = await assembleShowcase({ projectId });
+      return ok(res, r);
+    } catch (e: any) {
+      return ok(res, { success: false, error: e?.message || "showcase assembly failed" });
+    }
+  }
+
   /* ── HEALTH DIAGNOSTIC (full env + connectivity + Anthropic live test) ──
      Merged from former api/health-diagnostic.ts. Call: POST /api/task-engine
      with { action: "health_diagnostic" } ── */

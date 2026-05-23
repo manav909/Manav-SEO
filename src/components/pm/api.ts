@@ -1991,6 +1991,102 @@ export async function seasonBriefing(projectId: string): Promise<{ briefing?: Br
   return { briefing: r.briefing };
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   Phase 22 — Client Showcase
+   Cinematic client-facing page. Single composite endpoint returns
+   everything needed: hero metric, scenes with animation params, wins,
+   forecast, next chapter, transparency. Every animation flows from data.
+══════════════════════════════════════════════════════════════════════ */
+
+export type ShowcaseMoodClient        = 'ascending' | 'steady' | 'turbulent' | 'breakthrough' | 'foundation';
+export type ShowcaseSceneMoodClient   = 'win' | 'progress' | 'pivot' | 'foundation';
+export type ShowcaseColorAnchorClient = 'gold' | 'cyan' | 'magenta' | 'emerald' | 'amethyst';
+export type ShowcaseVisualizationKindClient =
+  | 'orbital' | 'ascending_bars' | 'flowing_lines' | 'rank_climb' | 'pulse_stack' | 'particle_burst';
+export type ShowcaseDataSourceStatusClient = 'fresh' | 'stale' | 'missing';
+export type ShowcaseConfidenceClient       = 'low' | 'medium' | 'high';
+
+export interface ShowcaseSceneClient {
+  id:                  string;
+  pillar:              string;
+  title:               string;
+  subtitle:            string;
+  primary_metric: {
+    label:             string;
+    value:             number | string;
+    delta?:            number;
+    unit?:             string;
+    transform:         'count_up' | 'percent' | 'rank_climb' | 'literal';
+  };
+  secondary_metrics?:  Array<{ label: string; value: string }>;
+  narrative_short:     string;
+  proof:               string[];
+  visualization: {
+    kind:              ShowcaseVisualizationKindClient;
+    params:            Record<string, any>;
+  };
+  mood:                ShowcaseSceneMoodClient;
+}
+
+export interface ShowcaseDataClient {
+  meta: {
+    project_name:       string;
+    project_domain:     string;
+    started_at:         string;
+    days_active:        number;
+    last_refreshed_at:  string;
+    mood_dominant:      ShowcaseMoodClient;
+  };
+  hero: {
+    headline_label:     string;
+    headline_value:     number;
+    headline_unit:      string;
+    headline_delta_pct: number;
+    headline_horizon:   string;
+    narrative:          string;
+    color_anchor:       ShowcaseColorAnchorClient;
+  };
+  scenes:               ShowcaseSceneClient[];
+  wins: Array<{
+    title:              string;
+    metric_text:        string;
+    when_relative:      string;
+    intensity:          'subtle' | 'moderate' | 'dramatic';
+  }>;
+  forecast: null | {
+    metric_label:       string;
+    projected_value:    number;
+    projected_horizon:  string;
+    confidence:         ShowcaseConfidenceClient;
+    assumption:         string;
+    curve_points?:      number[];
+  };
+  next_chapter: Array<{
+    title:              string;
+    impact_estimate:    string;
+    timing:             string;
+  }>;
+  transparency: {
+    data_sources: Array<{
+      name:             string;
+      status:           ShowcaseDataSourceStatusClient;
+      last_synced:      string | null;
+      note?:            string;
+    }>;
+    honest_gaps:        string[];
+    audit_run_count:    number;
+    audit_period:       string;
+  };
+}
+
+export async function getClientShowcase(opts: { projectId: string }): Promise<{
+  showcase?: ShowcaseDataClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_showcase_data', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { showcase: r.showcase };
+}
+
 export async function seasonCommand(opts: {
   projectId:    string;
   input:        string;
@@ -3653,4 +3749,87 @@ export async function seoUserPrefsReset(opts: { userId: string; projectId?: stri
   const r = await post(ENGINE, { action: 'bs_seo_user_prefs_reset', ...opts });
   if (!r?.success) return { error: r?.error };
   return { prefs: r.prefs };
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Phase 21 Block 2.7 — Client Lens cinematic page
+   
+   One aggregator call returns everything the page needs. All animations
+   are driven by this single payload — no further round trips required.
+══════════════════════════════════════════════════════════════════════ */
+
+export interface ClientLensIdentity {
+  display_name:   string;
+  domain:         string | null;
+  started_at:     string | null;
+  days_active:    number | null;
+  campaign_count: number;
+}
+
+export interface ClientLensHeadline {
+  kind:   'page_one' | 'page_two' | 'impressions' | 'starting';
+  value:  number;
+  label:  string;
+  detail: string;
+}
+
+export interface ClientLensRanking {
+  keyword:     string;
+  position:    number | null;
+  impressions: number;
+  clicks:      number;
+  ctr:         number;
+}
+
+export interface ClientLensPillar {
+  pillar:       string;
+  label:        string;
+  status:       'green' | 'amber' | 'red' | 'pending';
+  active_count: number;
+  total_count:  number;
+  summary:      string | null;
+  last_update:  string | null;
+}
+
+export interface ClientLensWin {
+  title:   string;
+  summary: string;
+  pillar:  string;
+  when:    string | null;
+}
+
+export interface ClientLensData {
+  identity:  ClientLensIdentity;
+  headline:  ClientLensHeadline;
+  rankings: {
+    top:           ClientLensRanking[];
+    page_1_count:  number;
+    page_2_count:  number;
+    total_queries: number;
+    freshness:     string | null;
+  };
+  traffic: {
+    impressions:   number;
+    clicks:        number;
+    ctr:           number;
+    top_pages:     Array<{ page: string; clicks: number; impressions: number }>;
+    ga4_connected: boolean;
+    ga4_summary:   any;
+  };
+  pillars:  ClientLensPillar[];
+  wins:     ClientLensWin[];
+  forecast: {
+    active_campaigns: number;
+    targeting:        Array<{ keyword: string; current_position: number | null; target_position: number | null }>;
+  } | null;
+  living_overview_md: string | null;
+  generated_at: string;
+}
+
+export async function seoClientLensLoad(opts: { projectId: string }): Promise<{
+  lens?: ClientLensData; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_client_lens_load', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { lens: r.lens };
 }
