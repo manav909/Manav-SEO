@@ -2,30 +2,32 @@
    src/pages/manifesto/chapters/ChColdOpen.tsx
    Chapter 00 — Cold Open. Eternal Spring.
 
-   Grand entry. The founder arrives as the protagonist of the document
-   — not as a footnote on the brand.
+   The grand entry, properly staged. Trust is earned by the company
+   first, then transferred to the founder via a deliberate reveal.
 
-   Two visual peaks, in order:
-     PEAK 1 — MANAV (the human, the architect, the operator)
-     PEAK 2 — S.E.A.S.O.N. (his work, the artifact)
+   Architecture: a five-act journey
+     ACT 1  Coordinate mark                  document framing
+     ACT 2  S.E.A.S.O.N. (PEAK 1)            the company arrives
+              + acronym recital               what it stands for
+              + kicker + sub                  agency positioning
+              + intel callout                 proof of capability
+     ACT 3  Pause + setup line                "infrastructure of this
+                                                depth is usually a
+                                                team's work."
+     ACT 4  Pivot                             "This is one person's."
+                                                — cyan italic display,
+                                                the dramatic hinge
+     ACT 5  MANAV (PEAK 2 — THE REVEAL)        the Iron Man moment
+              + role triplet                  architect · engineer · operator
+              + close                         "He designed it. He
+                                                shipped it. He runs it."
 
-   Between them, a theatrical "— presents —" transition that makes the
-   relationship explicit. The eye lands on the founder before the brand,
-   every time the page loads.
+   The audience meets the entity they may already trust, sees what
+   it's built, hits the question implicit in "this is one person's,"
+   and then meets the architect as the answer. Trust earned, then
+   transferred.
 
-   Composition top-to-bottom:
-     1. Coordinate mark      SEO SEASON · VOL. I · 2026
-     2. Epigraph             "Every system. Every line. One architect."
-     3. M A N A V            Letter-by-letter, the dominant typography
-     4. Role triplet         ARCHITECT · OPERATOR · FOUNDER
-     5. Transition           — presents —
-     6. S.E.A.S.O.N.         Letter-by-letter, scaled down from prior
-     7. Acronym recital      Three weighty manifesto declarations
-     8. Agency positioning   An SEO agency that operates on its own...
-     9. Sub                  Thinks in seasons. Verified in minutes.
-    10. Scroll cue           BEGIN ↓
-
-   Total reveal pacing: ~8.5s. A real title-sequence cadence.
+   Total pacing: ~11s reveal sequence. A real title-sequence cadence.
 ══════════════════════════════════════════════════════════════════════ */
 
 import { useRef } from 'react';
@@ -67,15 +69,15 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
       <ColdOpenStyles />
 
       <motion.div
-        className="cold-open-stage cold-open-stage-grand"
+        className="cold-open-stage cold-open-stage-journey"
         style={{ rotateX: tiltX, rotateY: tiltY, transformPerspective: 1400 }}
       >
-        {/* ─── 1. COORDINATE MARK ────────────────────────────── */}
+        {/* ─── ACT 1. COORDINATE MARK ──────────────────────── */}
         <motion.div
           className="coord-mark"
           initial={{ opacity: 0, letterSpacing: '0.55em' }}
           animate={{ opacity: 0.7, letterSpacing: '0.34em' }}
-          transition={{ duration: 1.6, ease: FEATHER }}
+          transition={{ duration: 1.4, ease: FEATHER }}
         >
           <span className="coord-rule" />
           <span className="coord-segment">SEO SEASON</span>
@@ -86,88 +88,107 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
           <span className="coord-rule" />
         </motion.div>
 
-        {/* ─── 2. EPIGRAPH ───────────────────────────────────── */}
-        <motion.div
-          className="hero-epigraph mt-10"
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 0.82, y: 0 }}
-          transition={{ duration: 1.5, delay: 0.8, ease: FEATHER }}
-        >
-          {t('hero_epigraph')}
-        </motion.div>
-
-        {/* ─── 3. MANAV NAME — PEAK 1 ────────────────────────── */}
-        <div className="hero-name-wrap mt-10">
-          <NameReveal name={t('hero_founder_name')} delay={1.7} />
+        {/* ─── ACT 2a. BRAND REVEAL (PEAK 1) ───────────────── */}
+        <div className="cold-open-brand mt-12">
+          <BrandReveal delay={0.6} />
         </div>
 
-        {/* ─── 4. ROLE TRIPLET ───────────────────────────────── */}
-        <motion.div
-          className="hero-roles mt-6"
-          initial={{ opacity: 0, letterSpacing: '0.45em' }}
-          animate={{ opacity: 0.9, letterSpacing: '0.22em' }}
-          transition={{ duration: 1.6, delay: 3.6, ease: FEATHER }}
-        >
-          {t('hero_roles')}
-        </motion.div>
-
-        {/* ─── 5. PRESENTS TRANSITION ────────────────────────── */}
-        <motion.div
-          className="hero-presents mt-12"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.7 }}
-          transition={{ duration: 1.2, delay: 4.4, ease: FEATHER }}
-        >
-          <span className="presents-rule" />
-          <span className="presents-word">{t('hero_transition')}</span>
-          <span className="presents-rule" />
-        </motion.div>
-
-        {/* ─── 6. BRAND REVEAL — PEAK 2 ──────────────────────── */}
-        <div className="cold-open-brand mt-8">
-          <BrandReveal delay={5.0} />
-        </div>
-
-        {/* ─── 7. ACRONYM RECITAL ────────────────────────────── */}
+        {/* ─── ACT 2b. RECITAL ────────────────────────────── */}
         <motion.div
           className="recital mt-12"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 1.2, delay: 6.4, ease: FEATHER }}
+          transition={{ duration: 1.2, delay: 2.2, ease: FEATHER }}
           key={lang}
         >
-          <AcronymRecital t={t} delay={6.4} />
+          <AcronymRecital t={t} delay={2.2} />
         </motion.div>
 
-        {/* ─── 8. KICKER (AGENCY POSITIONING) ────────────────── */}
+        {/* ─── ACT 2c. KICKER (agency positioning) ─────────── */}
         <motion.div
-          className="cold-open-kicker-xl mt-16"
+          className="cold-open-kicker-xl mt-14"
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.4, delay: 7.6, ease: FEATHER }}
+          transition={{ duration: 1.3, delay: 3.4, ease: FEATHER }}
         >
           {t('hero_kicker')}
         </motion.div>
 
-        {/* ─── 9. SUB ────────────────────────────────────────── */}
+        {/* ─── ACT 2d. SUB ─────────────────────────────────── */}
         <motion.div
-          className="cold-open-sub-xl mt-4"
+          className="cold-open-sub-xl mt-3"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 0.78, y: 0 }}
-          transition={{ duration: 1.2, delay: 8.1, ease: FEATHER }}
+          transition={{ duration: 1.1, delay: 3.9, ease: FEATHER }}
         >
           {t('hero_sub')}
         </motion.div>
 
-        <ScrollHint label={t('scroll_hint')} delay={9.0} />
+        {/* ─── ACT 2e. INTEL CALLOUT (proof of capability) ── */}
+        <motion.div
+          className="hero-intel-callout mt-10"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 0.7, y: 0 }}
+          transition={{ duration: 1.1, delay: 4.5, ease: FEATHER }}
+        >
+          {t('hero_intel_callout')}
+        </motion.div>
+
+        {/* ─── ACT 3. SETUP LINE ───────────────────────────── */}
+        <motion.div
+          className="hero-reveal-setup mt-24"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 0.7, y: 0 }}
+          transition={{ duration: 1.4, delay: 6.0, ease: FEATHER }}
+        >
+          {t('hero_reveal_setup')}
+        </motion.div>
+
+        {/* ─── ACT 4. PIVOT (the dramatic hinge) ───────────── */}
+        <motion.div
+          className="hero-reveal-pivot mt-6"
+          initial={{ opacity: 0, y: 14, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0,  scale: 1     }}
+          transition={{ duration: 1.6, delay: 7.0, ease: FEATHER }}
+        >
+          {t('hero_reveal_pivot')}
+        </motion.div>
+
+        {/* ─── ACT 5a. MANAV REVEAL (PEAK 2) ───────────────── */}
+        <div className="hero-name-wrap mt-20">
+          <NameReveal name={t('hero_founder_name')} delay={8.4} />
+        </div>
+
+        {/* ─── ACT 5b. ROLE TRIPLET ────────────────────────── */}
+        <motion.div
+          className="hero-roles mt-6"
+          initial={{ opacity: 0, letterSpacing: '0.45em' }}
+          animate={{ opacity: 0.92, letterSpacing: '0.22em' }}
+          transition={{ duration: 1.4, delay: 9.6, ease: FEATHER }}
+        >
+          {t('hero_roles')}
+        </motion.div>
+
+        {/* ─── ACT 5c. CLOSE ──────────────────────────────── */}
+        <motion.div
+          className="hero-close mt-6"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 0.85, y: 0 }}
+          transition={{ duration: 1.3, delay: 10.2, ease: FEATHER }}
+        >
+          {t('hero_close')}
+        </motion.div>
+
+        <ScrollHint label={t('scroll_hint')} delay={11.0} />
       </motion.div>
     </section>
   );
 }
 
-/* ─── NAME REVEAL — slower & weightier than the brand letters ────
-   Each character takes 1.4s with a 0.18s stagger, blur-clears from
-   10px. Visual peak of the entire document. */
+/* ═══════════════════════════════════════════════════════════════
+   NAME REVEAL — the Iron Man moment. Each character takes 1.4s
+   with a 0.20s stagger, blur-clears from 14px. Dominant typography.
+═══════════════════════════════════════════════════════════════ */
 function NameReveal({ name, delay = 0 }: { name: string; delay?: number }) {
   return (
     <div className="name-reveal" aria-label={name}>
@@ -175,12 +196,12 @@ function NameReveal({ name, delay = 0 }: { name: string; delay?: number }) {
         <motion.span
           key={i}
           className="name-letter"
-          initial={{ opacity: 0, y: 40, filter: 'blur(12px)' }}
+          initial={{ opacity: 0, y: 44, filter: 'blur(14px)' }}
           animate={{ opacity: 1, y: 0,  filter: 'blur(0px)'  }}
           transition={{
             duration: 1.4,
             ease: FEATHER,
-            delay: delay + i * 0.18,
+            delay: delay + i * 0.2,
           }}
         >
           {ch}
@@ -190,8 +211,9 @@ function NameReveal({ name, delay = 0 }: { name: string; delay?: number }) {
   );
 }
 
-/* ─── BRAND REVEAL — slightly faster and smaller now that MANAV
-   is the primary peak. */
+/* ═══════════════════════════════════════════════════════════════
+   BRAND REVEAL — S.E.A.S.O.N. letter-by-letter, peak 1.
+═══════════════════════════════════════════════════════════════ */
 function BrandReveal({ delay = 0 }: { delay?: number }) {
   const letters = ['S', '.', 'E', '.', 'A', '.', 'S', '.', 'O', '.', 'N', '.'];
   return (
@@ -200,10 +222,10 @@ function BrandReveal({ delay = 0 }: { delay?: number }) {
         <motion.span
           key={i}
           className={ch === '.' ? 'brand-dot' : 'brand-letter'}
-          initial={{ opacity: 0, y: 26, filter: 'blur(7px)' }}
+          initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
           animate={{ opacity: 1, y: 0,  filter: 'blur(0px)' }}
           transition={{
-            duration: 1.0,
+            duration: 1.1,
             ease: FEATHER,
             delay: delay + i * 0.1,
           }}
@@ -215,7 +237,9 @@ function BrandReveal({ delay = 0 }: { delay?: number }) {
   );
 }
 
-/* ─── ACRONYM RECITAL ─────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   ACRONYM RECITAL — three weighty declarations.
+═══════════════════════════════════════════════════════════════ */
 function AcronymRecital({ t, delay = 0 }: { t: TFn; delay?: number }) {
   const lines: Array<{ prefix: string; phrase: string }> = [
     { prefix: 'S.E.', phrase: t('phrase_strat_exec') },
@@ -241,17 +265,17 @@ function AcronymRecital({ t, delay = 0 }: { t: TFn; delay?: number }) {
   );
 }
 
-/* ─── STYLES ──────────────────────────────────────────────────── */
-
+/* ═══════════════════════════════════════════════════════════════
+   STYLES
+═══════════════════════════════════════════════════════════════ */
 function ColdOpenStyles() {
   return (
     <style>{`
-      /* ─── STAGE ────────────────────────────────────────────── */
-      .cold-open-stage-grand {
-        padding: 4rem 0 2rem 0;
+      .cold-open-stage-journey {
+        padding: 3rem 0 4rem 0;
       }
 
-      /* ─── 1. COORDINATE MARK ───────────────────────────────── */
+      /* ─── COORDINATE MARK ─────────────────────────────────── */
       .coord-mark {
         display: flex;
         align-items: center;
@@ -273,82 +297,12 @@ function ColdOpenStyles() {
         background: linear-gradient(90deg, transparent, var(--m-hairline-s), transparent);
       }
 
-      /* ─── 2. EPIGRAPH ──────────────────────────────────────── */
-      .hero-epigraph {
-        font-family: ui-serif, Georgia, serif;
-        font-size: clamp(1.1rem, 1.7vw, 1.5rem);
-        line-height: 1.5;
-        font-style: italic;
-        letter-spacing: -0.005em;
-        color: var(--m-ink-medium);
-        max-width: 36ch;
-        margin-left: auto;
-        margin-right: auto;
+      /* ─── BRAND (PEAK 1) ──────────────────────────────────── */
+      .cold-open-stage-journey .brand-reveal {
+        font-size: clamp(3.5rem, 10vw, 9rem);
       }
 
-      /* ─── 3. MANAV NAME — PEAK 1 ───────────────────────────── */
-      .hero-name-wrap {
-        display: flex;
-        justify-content: center;
-      }
-      .name-reveal {
-        display: flex;
-        justify-content: center;
-        font-family: ui-serif, Georgia, serif;
-        font-size: clamp(4.8rem, 12vw, 11.5rem);
-        line-height: 0.94;
-        letter-spacing: -0.045em;
-        font-weight: 400;
-      }
-      .name-letter {
-        display: inline-block;
-        background: linear-gradient(180deg,
-          rgba(255, 255, 255, 1) 0%,
-          rgba(255, 255, 255, 0.95) 35%,
-          hsla(188, 80%, 78%, 0.85) 100%);
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-transform: uppercase;
-      }
-
-      /* ─── 4. ROLE TRIPLET ─────────────────────────────────── */
-      .hero-roles {
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        font-size: clamp(0.72rem, 1.05vw, 0.92rem);
-        font-weight: 700;
-        text-transform: uppercase;
-        color: hsla(188, 75%, 72%, 0.95);
-        text-align: center;
-      }
-
-      /* ─── 5. PRESENTS TRANSITION ──────────────────────────── */
-      .hero-presents {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 1.2rem;
-      }
-      .presents-word {
-        font-family: ui-serif, Georgia, serif;
-        font-size: 0.92rem;
-        font-style: italic;
-        color: var(--m-ink-soft);
-        letter-spacing: 0.06em;
-      }
-      .presents-rule {
-        display: inline-block;
-        width: 48px;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, var(--m-hairline-s), transparent);
-      }
-
-      /* ─── 6. BRAND — PEAK 2 (scaled down from prior version) ── */
-      .cold-open-stage-grand .brand-reveal {
-        font-size: clamp(2.8rem, 7.5vw, 7rem);
-      }
-
-      /* ─── 7. RECITAL ──────────────────────────────────────── */
+      /* ─── RECITAL ─────────────────────────────────────────── */
       .recital-stack {
         display: flex;
         flex-direction: column;
@@ -392,20 +346,20 @@ function ColdOpenStyles() {
         white-space: nowrap;
       }
 
-      /* ─── 8. KICKER ───────────────────────────────────────── */
+      /* ─── KICKER ──────────────────────────────────────────── */
       .cold-open-kicker-xl {
         font-family: ui-serif, Georgia, serif;
-        font-size: clamp(1.55rem, 2.8vw, 2.1rem);
+        font-size: clamp(1.5rem, 2.7vw, 2.05rem);
         line-height: 1.35;
         color: var(--m-ink-strong);
         font-style: italic;
         letter-spacing: -0.01em;
-        max-width: 44ch;
+        max-width: 42ch;
         margin-left: auto;
         margin-right: auto;
       }
 
-      /* ─── 9. SUB ──────────────────────────────────────────── */
+      /* ─── SUB ─────────────────────────────────────────────── */
       .cold-open-sub-xl {
         font-family: ui-sans-serif, system-ui, sans-serif;
         font-size: clamp(0.92rem, 1.4vw, 1.05rem);
@@ -416,12 +370,102 @@ function ColdOpenStyles() {
         margin-right: auto;
       }
 
-      /* ─── RESPONSIVE ──────────────────────────────────────── */
+      /* ─── INTEL CALLOUT (capability proof) ───────────────── */
+      .hero-intel-callout {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: clamp(0.78rem, 1.1vw, 0.9rem);
+        line-height: 1.55;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: hsla(188, 60%, 75%, 0.95);
+        max-width: 56ch;
+        margin-left: auto;
+        margin-right: auto;
+        font-weight: 600;
+      }
+
+      /* ─── REVEAL SETUP (the buildup line) ───────────────── */
+      .hero-reveal-setup {
+        font-family: ui-serif, Georgia, serif;
+        font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+        line-height: 1.5;
+        font-style: italic;
+        color: var(--m-ink-medium);
+        max-width: 38ch;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* ─── REVEAL PIVOT (the dramatic hinge) ─────────────── */
+      .hero-reveal-pivot {
+        font-family: ui-serif, Georgia, serif;
+        font-size: clamp(1.7rem, 3.4vw, 2.55rem);
+        line-height: 1.25;
+        font-style: italic;
+        letter-spacing: -0.015em;
+        color: hsla(188, 80%, 78%, 0.97);
+        text-shadow: 0 0 28px hsla(188, 75%, 60%, 0.25);
+        max-width: 30ch;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* ─── MANAV (PEAK 2 — the reveal) ──────────────────── */
+      .hero-name-wrap {
+        display: flex;
+        justify-content: center;
+      }
+      .name-reveal {
+        display: flex;
+        justify-content: center;
+        font-family: ui-serif, Georgia, serif;
+        font-size: clamp(5rem, 13vw, 12rem);
+        line-height: 0.94;
+        letter-spacing: -0.045em;
+        font-weight: 400;
+      }
+      .name-letter {
+        display: inline-block;
+        background: linear-gradient(180deg,
+          rgba(255, 255, 255, 1) 0%,
+          rgba(255, 255, 255, 0.95) 35%,
+          hsla(188, 80%, 78%, 0.85) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-transform: uppercase;
+      }
+
+      /* ─── ROLE TRIPLET ────────────────────────────────── */
+      .hero-roles {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: clamp(0.72rem, 1.05vw, 0.92rem);
+        font-weight: 700;
+        text-transform: uppercase;
+        color: hsla(188, 75%, 72%, 0.95);
+        text-align: center;
+      }
+
+      /* ─── CLOSE LINE ─────────────────────────────────── */
+      .hero-close {
+        font-family: ui-serif, Georgia, serif;
+        font-size: clamp(1.05rem, 1.5vw, 1.25rem);
+        line-height: 1.5;
+        font-style: italic;
+        color: var(--m-ink-strong);
+        letter-spacing: 0.01em;
+        max-width: 44ch;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* ─── RESPONSIVE ───────────────────────────────────── */
       @media (max-width: 880px) {
-        .name-reveal     { font-size: clamp(3.2rem, 14vw, 5.5rem); }
-        .cold-open-stage-grand .brand-reveal { font-size: clamp(2.2rem, 9vw, 4rem); }
-        .recital-phrase  { font-size: 1.15rem; white-space: normal; }
+        .cold-open-stage-journey .brand-reveal { font-size: clamp(2.4rem, 12vw, 4.5rem); }
+        .name-reveal     { font-size: clamp(3.4rem, 15vw, 6rem); }
+        .recital-phrase  { font-size: 1.1rem; white-space: normal; }
         .recital-line    { grid-template-columns: 3.4rem 18px 1fr; gap: 0.7rem; }
+        .hero-reveal-pivot { font-size: clamp(1.4rem, 5vw, 2rem); }
       }
       @media (max-width: 560px) {
         .coord-mark      { font-size: 0.55rem; gap: 0.45rem; letter-spacing: 0.22em; flex-wrap: wrap; }
@@ -430,8 +474,6 @@ function ColdOpenStyles() {
         .recital-prefix  { text-align: center; }
         .recital-rule    { display: none; }
         .recital-phrase  { text-align: center; }
-        .hero-presents   { gap: 0.8rem; }
-        .presents-rule   { width: 28px; }
       }
     `}</style>
   );
