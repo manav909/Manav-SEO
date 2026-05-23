@@ -2540,6 +2540,17 @@ Return ONLY raw JSON:
       forecastSweepSummary = { error: e?.message || "forecast sweep failed" };
     }
 
+    /* ── Living Overview cron — refresh executive summaries for active
+       campaigns that have had new pillar reports since their last
+       assessment. Hard-capped at 50 campaigns per tick. Best-effort. */
+    let livingOverviewSummary: any = null;
+    try {
+      const { livingOverviewCronTick } = await import("./lib/seo-campaign-engine.js");
+      livingOverviewSummary = await livingOverviewCronTick();
+    } catch (e: any) {
+      livingOverviewSummary = { error: e?.message || "living overview cron failed" };
+    }
+
     const now = new Date().toISOString();
 
     /* Get all pending verifications due now */
@@ -2551,7 +2562,7 @@ Return ONLY raw JSON:
       .limit(10);
 
     if (!due || due.length === 0) {
-      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary, rulesCron: rulesCronSummary, monitorsCron: monitorsCronSummary, forecastSweep: forecastSweepSummary });
+      return ok(res, { success: true, processed: 0, message: "No verifications due", pmCron: pmCronSummary, gscCron: gscCronSummary, ga4Cron: ga4CronSummary, rulesCron: rulesCronSummary, monitorsCron: monitorsCronSummary, forecastSweep: forecastSweepSummary, livingOverview: livingOverviewSummary });
     }
 
     const results: any[] = [];
@@ -2692,6 +2703,7 @@ Respond with JSON only:
       rulesCron:      rulesCronSummary,
       monitorsCron:   monitorsCronSummary,
       forecastSweep:  forecastSweepSummary,
+      livingOverview: livingOverviewSummary,
       timestamp:      new Date().toISOString(),
     });
   }

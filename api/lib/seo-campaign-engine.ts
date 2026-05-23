@@ -1336,3 +1336,86 @@ export async function searchReportsAcrossCampaigns(opts: {
     return { success: false, error: e?.message || 'search failed' };
   }
 }
+
+/* ─── livingOverviewCronTick ─────────────────────────────────────
+   Phase 20+ — Daily cron entry point for Living Overview refresh.
+
+   Iterates every active campaign and refreshes its synthesized
+   executive summary IF there's been a new pillar report since the
+   last assessment. Campaigns with no new data are skipped (no LLM
+   call, no cost).
+
+   Called from task-engine.ts run_scheduled_verifications chain.
+   Hard cap of 50 campaigns per tick for predictable cost.
+
+   Cost model:
+     • Each refresh = ~1 LLM call = ~$0.05
+     • Skipped campaigns = $0
+     • Worst-case 50 active campaigns with all-new data: ~$2.50/day
+     • Typical case (5-15 campaigns, half with new data): <$0.50/day
+══════════════════════════════════════════════════════════════════ */
+
+export async function livingOverviewCronTick(): Promise<{
+  swept:          number;
+  refreshed:      number;
+  skipped_fresh:  number;
+  failed:         number;
+  errors:         string[];
+}> {
+  try {
+    const { data: campaigns } = await db().from("seo_campaigns")
+      .select("id, keyword, last_assessed_at")
+      .eq("status", "active")
+      .limit(50);
+
+    if (!campaigns || (campaigns as any[]).length === 0) {
+      return { swept: 0, refreshed: 0, skipped_fresh: 0, failed: 0, errors: [] };
+    }
+
+    let refreshed = 0;
+    let skipped_fresh = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const c of (campaigns as any[])) {
+      try {
+        /* Skip if no new pillar reports since the last overview generation */
+        if (c.last_assessed_at) {
+          const { data: newerReports } = await db().from("seo_campaign_reports")
+            .select("id")
+            .eq("campaign_id", c.id)
+            .gt("created_at", c.last_assessed_at)
+            .limit(1);
+          if (!newerReports || (newerReports as any[]).length === 0) {
+            skipped_fresh++;
+            continue;
+          }
+        }
+
+        const r = await generateLivingOverview({ campaignId: c.id });
+        if (r.success) {
+          refreshed++;
+        } else {
+          failed++;
+          if (r.error) errors.push(`${c.keyword}: ${r.error}`);
+        }
+      } catch (e: any) {
+        failed++;
+        errors.push(`${c.keyword}: ${e?.message || 'unknown'}`);
+      }
+    }
+
+    return {
+      swept:         (campaigns as any[]).length,
+      refreshed,
+      skipped_fresh,
+      failed,
+      errors:        errors.slice(0, 5),
+    };
+  } catch (e: any) {
+    return {
+      swept: 0, refreshed: 0, skipped_fresh: 0, failed: 0,
+      errors: [e?.message || 'cron tick failed'],
+    };
+  }
+}
