@@ -127,7 +127,7 @@ export default function ClientShowcase() {
         <X className="h-4 w-4" />
       </button>
 
-      <main className="showcase-stage">
+      <main className="showcase-stage stage-3d">
         <OpeningTitle meta={data.meta} />
         <HeroMetric hero={data.hero} mood={data.meta.mood_dominant} />
         {data.scenes.map((scene, i) => (
@@ -385,7 +385,261 @@ function ShowcaseStyles() {
       .source-dot[data-status="missing"] { background: rgba(255,255,255,0.25); }
 
       /* Reduced motion */
+      /* ════════════════════════════════════════════════════════════════
+         PHASE 22.2 — 3D / VOLUMETRIC / CINEMATIC EFFECT LAYER
+         CSS-only 3D using perspective + transform-style: preserve-3d.
+         No external libraries. GPU-accelerated. Reduced-motion respected.
+      ════════════════════════════════════════════════════════════════ */
+
+      /* Page-wide perspective container so children can use translateZ */
+      .stage-3d {
+        perspective: 1400px;
+        perspective-origin: 50% 45%;
+        transform-style: preserve-3d;
+      }
+
+      /* Volumetric background — multi-layer depth + light cone */
+      .vol-bg {
+        position: fixed; inset: 0; z-index: 1; pointer-events: none;
+        overflow: hidden;
+        perspective: 1200px;
+      }
+      .vol-layer {
+        position: absolute; inset: 0;
+        transform-style: preserve-3d;
+        will-change: transform;
+      }
+      .vol-light-cone {
+        position: absolute; inset: -30%;
+        background:
+          conic-gradient(from 210deg at 50% 30%,
+            transparent 0deg,
+            hsla(var(--anchor-h), var(--anchor-s), 65%, 0.06) 50deg,
+            hsla(var(--anchor-h), var(--anchor-s), 80%, 0.16) 70deg,
+            hsla(var(--anchor-h), var(--anchor-s), 65%, 0.06) 90deg,
+            transparent 140deg);
+        animation: coneSweep 22s linear infinite;
+        filter: blur(60px);
+        opacity: 0.85;
+      }
+      @keyframes coneSweep {
+        0%   { transform: rotate(0deg) scale(1); }
+        50%  { transform: rotate(20deg) scale(1.08); }
+        100% { transform: rotate(0deg) scale(1); }
+      }
+      .vol-haze {
+        position: absolute; inset: -10%;
+        background:
+          radial-gradient(ellipse 70% 50% at 20% 30%, hsla(var(--anchor-h), var(--anchor-s), 70%, 0.18), transparent 65%),
+          radial-gradient(ellipse 50% 70% at 80% 70%, hsla(var(--anchor-h), var(--anchor-s), 60%, 0.13), transparent 65%);
+        filter: blur(40px);
+        animation: hazeDrift 26s ease-in-out infinite alternate;
+      }
+      @keyframes hazeDrift {
+        0%   { transform: translate(0,0) scale(1); }
+        100% { transform: translate(-3%, 2%) scale(1.07); }
+      }
+      .vol-vignette {
+        position: absolute; inset: 0;
+        background:
+          radial-gradient(ellipse at center, transparent 30%, rgb(var(--bg-deep)) 110%);
+        opacity: 0.65;
+      }
+      .vol-grid {
+        position: absolute; inset: 0;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+        background-size: 80px 80px;
+        transform: perspective(800px) rotateX(60deg) translateY(20%) translateZ(-200px);
+        transform-origin: 50% 100%;
+        mask-image: linear-gradient(180deg, transparent 0%, black 30%, black 70%, transparent 100%);
+        opacity: 0.5;
+      }
+
+      /* 3D Hero number — depth via stacked text shadows simulating extrusion */
+      .hero-3d {
+        position: relative;
+        transform-style: preserve-3d;
+        will-change: transform;
+      }
+      .hero-3d-text {
+        font-size: clamp(5rem, 16vw, 14rem);
+        line-height: 0.9;
+        letter-spacing: -0.06em;
+        font-weight: 200;
+        color: var(--anchor);
+        font-feature-settings: 'tnum' 1;
+        text-shadow:
+          0 1px 0 hsla(var(--anchor-h), var(--anchor-s), 30%, 0.5),
+          0 2px 0 hsla(var(--anchor-h), var(--anchor-s), 28%, 0.4),
+          0 3px 0 hsla(var(--anchor-h), var(--anchor-s), 26%, 0.3),
+          0 4px 0 hsla(var(--anchor-h), var(--anchor-s), 24%, 0.25),
+          0 5px 0 hsla(var(--anchor-h), var(--anchor-s), 22%, 0.2),
+          0 6px 0 hsla(var(--anchor-h), var(--anchor-s), 20%, 0.15),
+          0 8px 16px hsla(var(--anchor-h), var(--anchor-s), 15%, 0.5),
+          0 0 60px var(--anchor-glow),
+          0 0 120px hsla(var(--anchor-h), var(--anchor-s), 60%, 0.25);
+        transform: translateZ(20px);
+      }
+
+      /* 3D card with mouse-tracked tilt */
+      .card-3d {
+        transform-style: preserve-3d;
+        transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.5s ease, border-color 0.5s ease;
+        will-change: transform;
+        perspective: 800px;
+      }
+      .card-3d:hover {
+        transform: rotateY(-3deg) rotateX(2.5deg) translateZ(12px) scale(1.015);
+        box-shadow:
+          0 24px 60px rgba(0,0,0,0.45),
+          0 0 40px var(--anchor-glow),
+          inset 0 1px 0 hsla(var(--anchor-h), 90%, 85%, 0.18);
+        border-color: hsla(var(--anchor-h), 90%, 70%, 0.55) !important;
+      }
+      .card-3d-inner {
+        transform: translateZ(20px);
+      }
+      /* Sheen layer overlay for cards */
+      .card-3d::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(135deg, hsla(var(--anchor-h), 90%, 75%, 0.08) 0%, transparent 40%);
+        opacity: 0;
+        transition: opacity 0.5s ease;
+        pointer-events: none;
+      }
+      .card-3d:hover::before {
+        opacity: 1;
+      }
+
+      /* Specular highlight on chart bars / 3D objects */
+      .bar-3d-stage {
+        perspective: 800px;
+        transform-style: preserve-3d;
+      }
+      .bar-specular {
+        background: linear-gradient(180deg,
+          hsla(var(--anchor-h), 90%, 85%, 0.5) 0%,
+          hsla(var(--anchor-h), 85%, 70%, 0.35) 8%,
+          transparent 35%);
+        pointer-events: none;
+      }
+
+      /* Orbital 3D container */
+      .orbital-3d {
+        position: relative;
+        width: 100%; height: 100%;
+        transform-style: preserve-3d;
+        perspective: 900px;
+      }
+      .orbital-stage {
+        position: absolute; inset: 0;
+        transform-style: preserve-3d;
+        animation: orbitalSpin 32s linear infinite;
+      }
+      @keyframes orbitalSpin {
+        0%   { transform: rotateY(0deg) rotateX(15deg); }
+        100% { transform: rotateY(360deg) rotateX(15deg); }
+      }
+      .orbital-node {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform-style: preserve-3d;
+      }
+      .orbital-dot {
+        position: absolute;
+        top: 50%; left: 50%;
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%,
+          hsla(var(--anchor-h), 90%, 88%, 1) 0%,
+          hsla(var(--anchor-h), 80%, 65%, 1) 50%,
+          hsla(var(--anchor-h), 70%, 40%, 0.95) 100%);
+        box-shadow:
+          0 0 12px var(--anchor-glow),
+          0 0 24px hsla(var(--anchor-h), 80%, 60%, 0.4),
+          inset 0 0 6px hsla(var(--anchor-h), 90%, 90%, 0.6);
+        transform: translate(-50%, -50%);
+      }
+      .orbital-core {
+        position: absolute;
+        top: 50%; left: 50%;
+        width: 56px; height: 56px;
+        margin: -28px 0 0 -28px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%,
+          hsla(var(--anchor-h), 95%, 92%, 1) 0%,
+          var(--anchor) 35%,
+          hsla(var(--anchor-h), 70%, 30%, 1) 100%);
+        box-shadow:
+          0 0 30px var(--anchor-glow),
+          0 0 60px hsla(var(--anchor-h), 80%, 60%, 0.5),
+          0 0 100px hsla(var(--anchor-h), 80%, 60%, 0.25),
+          inset 0 0 20px hsla(var(--anchor-h), 90%, 85%, 0.45);
+        animation: corePulse 3s ease-in-out infinite;
+      }
+      @keyframes corePulse {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.08); }
+      }
+      .orbital-ring {
+        position: absolute;
+        top: 50%; left: 50%;
+        border: 1px dashed hsla(var(--anchor-h), var(--anchor-s), 65%, 0.18);
+        border-radius: 50%;
+        transform-style: preserve-3d;
+      }
+
+      /* Traveling particle along path */
+      .traveler-particle {
+        fill: var(--anchor);
+        filter: drop-shadow(0 0 6px var(--anchor-glow));
+      }
+
+      /* Bloom layer for emphasis on critical elements */
+      .bloom {
+        position: relative;
+      }
+      .bloom::after {
+        content: '';
+        position: absolute; inset: -20%;
+        background: radial-gradient(circle at center, var(--anchor-glow), transparent 60%);
+        filter: blur(20px);
+        pointer-events: none;
+        z-index: -1;
+      }
+
+      /* Glass surface — for cards that should feel like they're floating */
+      .surface-glass {
+        background:
+          linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)),
+          rgba(0,0,0,0.15);
+        border: 0.5px solid rgba(255,255,255,0.12);
+        backdrop-filter: blur(14px) saturate(140%);
+        box-shadow:
+          0 8px 32px rgba(0,0,0,0.3),
+          inset 0 1px 0 rgba(255,255,255,0.08),
+          inset 0 -1px 0 rgba(0,0,0,0.2);
+      }
+
+      /* Tilted donut — gives intent chart depth */
+      .donut-3d {
+        transform: rotateX(28deg) rotateZ(-2deg);
+        transform-origin: center center;
+        filter: drop-shadow(0 12px 24px rgba(0,0,0,0.4));
+      }
+
+      /* Reduced motion: kill all infinite 3D rotations */
       @media (prefers-reduced-motion: reduce) {
+        .vol-light-cone, .vol-haze, .orbital-stage, .orbital-core { animation: none !important; }
+        .stage-3d, .hero-3d, .card-3d { transform: none !important; transition: none !important; }
+      }
+
+
         .showcase-bg::before { animation: none; }
         .showcase-root, .showcase-root * { transition: none !important; }
       }
@@ -399,39 +653,87 @@ function ShowcaseStyles() {
 
 function CinematicBackground() {
   const reduce = useReducedMotion();
+
+  /* Mouse parallax for atmosphere — drives subtle drift on layer transforms */
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+  const driftX = useTransform(mouseX, [-1, 1], [-12, 12]);
+  const driftY = useTransform(mouseY, [-1, 1], [-8, 8]);
+  const driftXSlow = useTransform(mouseX, [-1, 1], [-5, 5]);
+  const driftYSlow = useTransform(mouseY, [-1, 1], [-3, 3]);
+
+  useEffect(() => {
+    if (reduce) return;
+    const onMove = (e: MouseEvent) => {
+      const x = (e.clientX / window.innerWidth)  * 2 - 1;
+      const y = (e.clientY / window.innerHeight) * 2 - 1;
+      mouseX.set(x);
+      mouseY.set(y);
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [reduce, mouseX, mouseY]);
+
   const particles = useMemo(() => {
-    const arr: Array<{ x: number; y: number; size: number; delay: number; duration: number }> = [];
-    for (let i = 0; i < 18; i++) {
+    const arr: Array<{ x: number; y: number; size: number; delay: number; duration: number; depth: number }> = [];
+    for (let i = 0; i < 32; i++) {
       arr.push({
         x: Math.random() * 100,
         y: Math.random() * 100,
-        size: 2 + Math.random() * 4,
-        delay: Math.random() * 20,
-        duration: 18 + Math.random() * 22,
+        size: 1.5 + Math.random() * 4,
+        delay: Math.random() * 24,
+        duration: 22 + Math.random() * 26,
+        depth: Math.random(), // 0 = far, 1 = near (drives parallax + size)
       });
     }
     return arr;
   }, []);
 
   return (
-    <div className="showcase-bg" aria-hidden>
-      {!reduce && particles.map((p, i) => (
-        <motion.div
-          key={i}
-          className="showcase-particle"
-          style={{ width: p.size, height: p.size, left: `${p.x}%`, top: `${p.y}%` }}
-          animate={{
-            y: [0, -40, 0],
-            opacity: [0.2, 0.6, 0.2],
-          }}
-          transition={{
-            duration: p.duration,
-            delay: p.delay,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-      ))}
+    <div className="vol-bg" aria-hidden>
+      {/* Subtle 3D floor grid — establishes depth in the lower half */}
+      <div className="vol-grid" />
+
+      {/* Drifting volumetric haze (back) */}
+      <motion.div className="vol-layer" style={{ x: driftXSlow, y: driftYSlow }}>
+        <div className="vol-haze" />
+      </motion.div>
+
+      {/* Rotating cone of anchor-colored light (mid) */}
+      <motion.div className="vol-layer" style={{ x: driftX, y: driftY }}>
+        <div className="vol-light-cone" />
+      </motion.div>
+
+      {/* Floating depth particles (foreground) */}
+      <motion.div className="vol-layer" style={{ x: useTransform(mouseX, [-1, 1], [-20, 20]) }}>
+        {!reduce && particles.map((p, i) => (
+          <motion.div
+            key={i}
+            className="showcase-particle"
+            style={{
+              width: p.size * (0.6 + p.depth * 0.7),
+              height: p.size * (0.6 + p.depth * 0.7),
+              left: `${p.x}%`,
+              top: `${p.y}%`,
+              opacity: 0.3 + p.depth * 0.5,
+              filter: `blur(${(1 - p.depth) * 2}px)`,
+            }}
+            animate={{
+              y: [0, -50 - p.depth * 30, 0],
+              opacity: [0.2 + p.depth * 0.3, 0.5 + p.depth * 0.5, 0.2 + p.depth * 0.3],
+            }}
+            transition={{
+              duration: p.duration,
+              delay: p.delay,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
+          />
+        ))}
+      </motion.div>
+
+      {/* Final vignette darkens the edges — keeps focus center */}
+      <div className="vol-vignette" />
     </div>
   );
 }
@@ -489,6 +791,30 @@ function HeroMetric({ hero, mood }: { hero: ShowcaseDataClient['hero']; mood: Sh
   const reduce = useReducedMotion();
   const anchor = COLOR_ANCHORS[hero.color_anchor];
 
+  /* Mouse-tracked 3D tilt on the hero number */
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const rotateY = useTransform(mx, [-1, 1], [-7, 7]);
+  const rotateX = useTransform(my, [-1, 1], [4, -4]);
+  const heroRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (reduce) return;
+    const onMove = (e: MouseEvent) => {
+      const el = heroRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const x = (e.clientX - cx) / (r.width / 2);
+      const y = (e.clientY - cy) / (r.height / 2);
+      mx.set(Math.max(-1, Math.min(1, x)));
+      my.set(Math.max(-1, Math.min(1, y)));
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [reduce, mx, my]);
+
   /* Apply this hero's anchor as override while in view */
   return (
     <section
@@ -505,11 +831,19 @@ function HeroMetric({ hero, mood }: { hero: ShowcaseDataClient['hero']; mood: Sh
         whileInView={{ opacity: 1 }}
         viewport={{ once: true, margin: '-20%' }}
         transition={{ duration: 0.9 }}
+        className="stage-3d"
       >
         <div className="label-tiny mb-6">{hero.headline_label}</div>
-        <div className="hero-number">
-          <AnimatedNumber value={hero.headline_value} duration={reduce ? 0 : 2.0} />
-        </div>
+        <motion.div
+          ref={heroRef}
+          className="hero-3d bloom"
+          style={{ rotateY, rotateX }}
+          transition={{ type: 'spring', stiffness: 60, damping: 18 }}
+        >
+          <div className="hero-3d-text">
+            <AnimatedNumber value={hero.headline_value} duration={reduce ? 0 : 2.0} />
+          </div>
+        </motion.div>
         <div className="display-md mt-6" style={{ color: 'rgba(245,247,255,0.7)', fontWeight: 300 }}>
           {hero.headline_unit}
         </div>
@@ -646,7 +980,7 @@ function Visualization({ kind, params }: { kind: ShowcaseSceneClient['visualizat
   }
 }
 
-/* ─── Orbital — center label, dots in rings ──────────────────────── */
+/* ─── Orbital — true 3D CSS perspective, dots at varying depth ───── */
 function OrbitalViz({ params }: { params: any }) {
   const count = Math.max(3, Math.min(12, Number(params.cluster_count || 6)));
   const rings = Math.max(1, Math.min(2, Number(params.ring_count || 1)));
@@ -654,50 +988,71 @@ function OrbitalViz({ params }: { params: any }) {
   const reduce = useReducedMotion();
 
   return (
-    <svg viewBox="-100 -100 200 200" style={{ width: '100%', height: '100%' }}>
-      {/* Background ring */}
-      <circle cx={0} cy={0} r={70} fill="none" stroke="hsla(var(--anchor-h), var(--anchor-s), 70%, 0.15)" strokeWidth={0.5} strokeDasharray="2,4" />
-      {rings === 2 && (
-        <circle cx={0} cy={0} r={45} fill="none" stroke="hsla(var(--anchor-h), var(--anchor-s), 70%, 0.18)" strokeWidth={0.5} strokeDasharray="2,4" />
-      )}
-      {/* Glowing center node */}
-      <motion.circle
-        cx={0} cy={0} r={10}
-        fill="var(--anchor)"
-        animate={reduce ? {} : { r: [10, 12, 10], opacity: [0.9, 1, 0.9] }}
-        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-        style={{ filter: 'drop-shadow(0 0 12px var(--anchor-glow))' }}
-      />
-      <text x={0} y={4} textAnchor="middle" fontSize={5} fill="rgba(255,255,255,0.85)" fontWeight={600} style={{ pointerEvents: 'none' }}>
-        {String(params.center_label || '').slice(0, 18)}
-      </text>
-      {/* Orbiting cluster nodes */}
-      {items.map(i => {
-        const ringIndex = rings === 2 ? (i % 2) : 0;
-        const radius = rings === 2 ? (ringIndex === 0 ? 45 : 70) : 60;
-        const ringItems = rings === 2 ? items.filter(x => (x % 2) === ringIndex).length : count;
-        const ringPosition = rings === 2 ? Math.floor(i / 2) : i;
-        const angle = (ringPosition / ringItems) * Math.PI * 2 - Math.PI / 2;
-        const x = Math.cos(angle) * radius;
-        const y = Math.sin(angle) * radius;
-        return (
-          <motion.g key={i}
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.5 + i * 0.08, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <line x1={0} y1={0} x2={x} y2={y} stroke="hsla(var(--anchor-h), var(--anchor-s), 70%, 0.18)" strokeWidth={0.3} />
-            <motion.circle
-              cx={x} cy={y} r={4}
-              fill="hsla(var(--anchor-h), var(--anchor-s), 75%, 0.9)"
-              animate={reduce ? {} : { r: [4, 5, 4] }}
-              transition={{ duration: 2.5 + (i % 3) * 0.3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.2 }}
-              style={{ filter: 'drop-shadow(0 0 6px var(--anchor-glow))' }}
-            />
-          </motion.g>
-        );
-      })}
-    </svg>
+    <div className="orbital-3d">
+      <div
+        className="orbital-stage"
+        style={reduce ? { animation: 'none', transform: 'rotateY(20deg) rotateX(15deg)' } : undefined}
+      >
+        {/* Glowing core */}
+        <div className="orbital-core" />
+
+        {/* Ring tracks — tilted in 3D */}
+        <div className="orbital-ring" style={{
+          width: 280, height: 280,
+          margin: '-140px 0 0 -140px',
+          transform: 'rotateX(70deg)',
+        }} />
+        {rings === 2 && (
+          <div className="orbital-ring" style={{
+            width: 180, height: 180,
+            margin: '-90px 0 0 -90px',
+            transform: 'rotateX(70deg)',
+          }} />
+        )}
+
+        {/* Cluster nodes — positioned via translate3d, each at its own Z */}
+        {items.map(i => {
+          const ringIndex = rings === 2 ? (i % 2) : 0;
+          const radius = rings === 2 ? (ringIndex === 0 ? 90 : 140) : 130;
+          const ringItems = rings === 2 ? items.filter(x => (x % 2) === ringIndex).length : count;
+          const ringPosition = rings === 2 ? Math.floor(i / 2) : i;
+          const angle = (ringPosition / ringItems) * Math.PI * 2 - Math.PI / 2;
+          const x = Math.cos(angle) * radius;
+          const z = Math.sin(angle) * radius;
+          return (
+            <motion.div
+              key={i}
+              className="orbital-node"
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.7, delay: 0.4 + i * 0.08, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                transform: `translate3d(${x}px, 0px, ${z}px)`,
+              }}
+            >
+              <div className="orbital-dot" />
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Centered label — sits ABOVE the rotation, doesn't spin */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'none',
+      }}>
+        <div style={{
+          fontSize: 11, fontWeight: 600,
+          color: 'rgba(255,255,255,0.95)',
+          textShadow: '0 0 12px var(--anchor-glow)',
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+        }}>
+          {String(params.center_label || '').slice(0, 22)}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -708,53 +1063,177 @@ function RankClimbViz({ params }: { params: any }) {
   const target = Number(params.target_position || 1);
   /* Position 1 = best (top of page). Visualize as height: lower position = taller bar. */
   const maxPos = Math.max(start, target, current, 10);
-  const heightFor = (pos: number) => Math.max(20, 100 - (pos / maxPos) * 80);
   const reduce = useReducedMotion();
 
+  const bars = [
+    { label: 'Started', pos: start,   state: 'past' as const,    delay: 0.0, x: 110 },
+    { label: 'Now',     pos: current, state: 'current' as const, delay: 0.3, x: 260 },
+    { label: 'Target',  pos: target,  state: 'future' as const,  delay: 0.6, x: 410 },
+  ];
+  const W = 560, H = 320;
+  const barWidth = 70;
+  const baseY = H - 60;
+
   return (
-    <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%' }}>
-      {/* Baseline */}
-      <line x1={20} y1={170} x2={180} y2={170} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
+    <div className="bar-3d-stage" style={{ width: '100%', height: '100%' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+        <defs>
+          {bars.map((b, i) => (
+            <linearGradient key={`grad-${i}`} id={`bar-grad-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%"   stopColor="hsla(var(--anchor-h), 95%, 90%, 1)" />
+              <stop offset="12%"  stopColor={b.state === 'past' ? 'rgba(255,255,255,0.55)' : 'hsla(var(--anchor-h), 90%, 78%, 1)'} />
+              <stop offset="100%" stopColor={b.state === 'past' ? 'rgba(255,255,255,0.18)' : 'hsla(var(--anchor-h), 70%, 35%, 0.92)'} />
+            </linearGradient>
+          ))}
+          <linearGradient id="rc-floor-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
+            <stop offset="100%" stopColor="transparent" />
+          </linearGradient>
+          <linearGradient id="rc-sheen" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stopColor="rgba(255,255,255,0)" />
+            <stop offset="48%"  stopColor="rgba(255,255,255,0)" />
+            <stop offset="50%"  stopColor="rgba(255,255,255,0.4)" />
+            <stop offset="52%"  stopColor="rgba(255,255,255,0)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+          </linearGradient>
+          <filter id="rc-bloom">
+            <feGaussianBlur stdDeviation="6" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
 
-      {[{ pos: start, label: 'started', x: 50 }, { pos: current, label: 'now', x: 100 }, { pos: target, label: 'target', x: 150 }].map((b, i) => {
-        const h = heightFor(b.pos);
-        const isCurrent = i === 1;
-        const isTarget = i === 2;
-        return (
-          <motion.g key={i}
-            initial={{ scaleY: 0 }}
-            animate={{ scaleY: 1 }}
-            style={{ transformOrigin: `${b.x}px 170px` }}
-            transition={{ duration: 1.0, delay: 0.3 + i * 0.2, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <rect
-              x={b.x - 12} y={170 - h} width={24} height={h}
-              rx={2}
-              fill={isCurrent ? 'var(--anchor)' : isTarget ? 'hsla(var(--anchor-h), var(--anchor-s), 75%, 0.35)' : 'rgba(255,255,255,0.15)'}
-              style={isCurrent ? { filter: 'drop-shadow(0 0 16px var(--anchor-glow))' } : undefined}
-            />
-            <text x={b.x} y={186} textAnchor="middle" fontSize={7} fill="rgba(255,255,255,0.55)" fontWeight={500}>
-              {b.label}
-            </text>
-            <text x={b.x} y={170 - h - 6} textAnchor="middle" fontSize={9} fill={isCurrent ? 'var(--anchor)' : 'rgba(255,255,255,0.75)'} fontWeight={600}>
-              #{b.pos.toFixed(0)}
-            </text>
-          </motion.g>
-        );
-      })}
+        {/* Ground reflection / floor shadow band */}
+        <rect x={0} y={baseY} width={W} height={H - baseY} fill="url(#rc-floor-grad)" opacity={0.6} />
+        <line x1={40} y1={baseY} x2={W - 40} y2={baseY} stroke="rgba(255,255,255,0.18)" strokeWidth={0.5} />
 
-      {/* Progress arc */}
-      <motion.path
-        d="M 50 80 Q 100 30 150 50"
-        fill="none"
-        stroke="hsla(var(--anchor-h), var(--anchor-s), 75%, 0.35)"
-        strokeWidth={0.8}
-        strokeDasharray="2,3"
-        initial={{ pathLength: 0 }}
-        animate={{ pathLength: 1 }}
-        transition={{ duration: 1.5, delay: 1.0, ease: 'easeInOut' }}
-      />
-    </svg>
+        {bars.map((b, i) => {
+          const h = ((maxPos - b.pos) / maxPos) * (baseY - 30);
+          const y = baseY - h;
+          const depth = 18;
+          const x = b.x - barWidth / 2;
+
+          return (
+            <g key={i}>
+              {/* Ground shadow ellipse */}
+              <motion.ellipse
+                cx={x + barWidth / 2 + depth / 2} cy={baseY + 5}
+                rx={barWidth / 2 + 8} ry={4}
+                fill="rgba(0,0,0,0.45)"
+                initial={{ opacity: 0 }}
+                whileInView={{ opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: b.delay + 0.4 }}
+              />
+
+              <motion.g
+                initial={{ y: 80, opacity: 0 }}
+                whileInView={{ y: 0, opacity: 1 }}
+                viewport={{ once: true, margin: '-15%' }}
+                transition={{ type: 'spring', stiffness: 70, damping: 18, delay: b.delay }}
+              >
+                {/* Right face — isometric side */}
+                <path
+                  d={`M ${x + barWidth} ${y} L ${x + barWidth + depth} ${y - depth * 0.5} L ${x + barWidth + depth} ${baseY - depth * 0.5} L ${x + barWidth} ${baseY} Z`}
+                  fill={b.state === 'past' ? 'rgba(255,255,255,0.16)' : 'hsla(var(--anchor-h), 65%, 25%, 0.95)'}
+                  stroke="rgba(0,0,0,0.25)"
+                  strokeWidth={0.3}
+                />
+                {/* Top face — isometric top */}
+                <path
+                  d={`M ${x} ${y} L ${x + depth} ${y - depth * 0.5} L ${x + barWidth + depth} ${y - depth * 0.5} L ${x + barWidth} ${y} Z`}
+                  fill={b.state === 'past' ? 'rgba(255,255,255,0.55)' : 'hsla(var(--anchor-h), 95%, 85%, 0.98)'}
+                  stroke="hsla(var(--anchor-h), 95%, 92%, 0.6)"
+                  strokeWidth={0.4}
+                />
+                {/* Front face — gradient + bloom on current */}
+                <rect
+                  x={x} y={y}
+                  width={barWidth}
+                  height={h}
+                  fill={`url(#bar-grad-${i})`}
+                  filter={b.state === 'current' ? 'url(#rc-bloom)' : undefined}
+                />
+                {/* Vertical edges — left bright, right dark */}
+                <line x1={x} y1={y} x2={x} y2={baseY} stroke="rgba(255,255,255,0.42)" strokeWidth={1} />
+                <line x1={x + barWidth} y1={y} x2={x + barWidth} y2={baseY} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
+
+                {/* Specular sweep on current bar */}
+                {b.state === 'current' && !reduce && (
+                  <motion.rect
+                    x={x} y={y}
+                    width={barWidth}
+                    height={h}
+                    fill="url(#rc-sheen)"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: [0, 0.8, 0] }}
+                    transition={{ duration: 3.5, repeat: Infinity, delay: 1.4, ease: 'easeInOut' }}
+                  />
+                )}
+
+                {/* Crown bloom on current bar tip */}
+                {b.state === 'current' && !reduce && (
+                  <motion.circle
+                    cx={x + barWidth / 2}
+                    cy={y - 4}
+                    r={10}
+                    fill="hsla(var(--anchor-h), 95%, 88%, 0.9)"
+                    filter="url(#rc-bloom)"
+                    animate={{ opacity: [0.5, 1, 0.5], r: [10, 14, 10] }}
+                    transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                )}
+
+                {/* Position number floating above */}
+                <text
+                  x={x + barWidth / 2 + depth / 2}
+                  y={y - depth - 12}
+                  textAnchor="middle"
+                  fontSize={22}
+                  fontWeight={300}
+                  fill="rgba(245,247,255,0.92)"
+                  style={{ fontFeatureSettings: '"tnum" 1' }}
+                >
+                  #{b.pos.toFixed(b.pos < 10 ? 1 : 0)}
+                </text>
+                {/* Label below baseline */}
+                <text
+                  x={x + barWidth / 2}
+                  y={baseY + 28}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fontWeight={600}
+                  fill={b.state === 'current' ? 'var(--anchor)' : 'rgba(245,247,255,0.65)'}
+                  style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
+                >
+                  {b.label}
+                </text>
+              </motion.g>
+            </g>
+          );
+        })}
+
+        {/* Curved trajectory arc connecting bar tops */}
+        {!reduce && (
+          <motion.path
+            d={`M ${bars[0].x} ${baseY - ((maxPos - start) / maxPos) * (baseY - 30) - 32}
+                C ${(bars[0].x + bars[2].x) / 2} ${baseY - ((maxPos - current) / maxPos) * (baseY - 30) - 90},
+                  ${(bars[0].x + bars[2].x) / 2} ${baseY - ((maxPos - target) / maxPos) * (baseY - 30) - 90},
+                  ${bars[2].x} ${baseY - ((maxPos - target) / maxPos) * (baseY - 30) - 32}`}
+            fill="none"
+            stroke="hsla(var(--anchor-h), 90%, 75%, 0.45)"
+            strokeWidth={1.5}
+            strokeDasharray="3,4"
+            initial={{ pathLength: 0, opacity: 0 }}
+            whileInView={{ pathLength: 1, opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 1.8, delay: 1.2 }}
+          />
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -766,48 +1245,114 @@ function AscendingBarsViz({ params }: { params: any }) {
     const t = (i + 1) / count;
     return Math.max(0.2, t * peak);
   });
+  const reduce = useReducedMotion();
+  const W = 460, H = 280;
+  const baseY = H - 50;
+  const depth = 14;
+  const barW = (W - 80) / count - 6;
 
   return (
-    <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%' }}>
-      <line x1={20} y1={170} x2={180} y2={170} stroke="rgba(255,255,255,0.12)" strokeWidth={0.5} />
-      {heights.map((h, i) => {
-        const w = 160 / count;
-        const x = 20 + i * w + 4;
-        const height = h * 130;
-        return (
-          <motion.rect
-            key={i}
-            x={x} width={w - 8} height={height} y={170 - height}
-            rx={1.5}
-            fill={i === count - 1 ? 'var(--anchor)' : 'hsla(var(--anchor-h), var(--anchor-s), 75%, 0.6)'}
-            initial={{ scaleY: 0 }}
-            animate={{ scaleY: 1 }}
-            style={{
-              transformOrigin: `${x + (w - 8) / 2}px 170px`,
-              filter: i === count - 1 ? 'drop-shadow(0 0 14px var(--anchor-glow))' : undefined,
-            }}
-            transition={{ duration: 0.9, delay: 0.4 + i * 0.12, ease: [0.16, 1, 0.3, 1] }}
-          />
-        );
-      })}
-    </svg>
+    <div className="bar-3d-stage" style={{ width: '100%', height: '100%' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+        <defs>
+          <linearGradient id="ab-front-active" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"  stopColor="hsla(var(--anchor-h), 95%, 88%, 1)" />
+            <stop offset="50%" stopColor="hsla(var(--anchor-h), 85%, 65%, 1)" />
+            <stop offset="100%" stopColor="hsla(var(--anchor-h), 70%, 35%, 0.92)" />
+          </linearGradient>
+          <linearGradient id="ab-front-rising" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"  stopColor="hsla(var(--anchor-h), 85%, 78%, 0.95)" />
+            <stop offset="100%" stopColor="hsla(var(--anchor-h), 65%, 30%, 0.7)" />
+          </linearGradient>
+          <linearGradient id="ab-floor" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
+            <stop offset="100%" stopColor="transparent" />
+          </linearGradient>
+          <filter id="ab-bloom">
+            <feGaussianBlur stdDeviation="5" />
+          </filter>
+        </defs>
+
+        <rect x={0} y={baseY} width={W} height={H - baseY} fill="url(#ab-floor)" opacity={0.5} />
+        <line x1={20} y1={baseY} x2={W - 20} y2={baseY} stroke="rgba(255,255,255,0.18)" strokeWidth={0.5} />
+
+        {heights.map((h, i) => {
+          const x = 40 + i * ((W - 80) / count) + 3;
+          const height = h * (baseY - 30);
+          const y = baseY - height;
+          const isPeak = i === count - 1;
+
+          return (
+            <motion.g
+              key={i}
+              initial={{ y: 60, opacity: 0 }}
+              whileInView={{ y: 0, opacity: 1 }}
+              viewport={{ once: true, margin: '-15%' }}
+              transition={{ type: 'spring', stiffness: 80, damping: 18, delay: 0.15 + i * 0.1 }}
+            >
+              {/* Ground shadow */}
+              <ellipse cx={x + barW / 2 + depth / 2} cy={baseY + 4} rx={barW / 2 + 4} ry={3}
+                fill="rgba(0,0,0,0.4)" />
+
+              {/* Right face */}
+              <path
+                d={`M ${x + barW} ${y} L ${x + barW + depth} ${y - depth * 0.45} L ${x + barW + depth} ${baseY - depth * 0.45} L ${x + barW} ${baseY} Z`}
+                fill="hsla(var(--anchor-h), 65%, 22%, 0.95)"
+                stroke="rgba(0,0,0,0.25)" strokeWidth={0.3}
+              />
+              {/* Top face */}
+              <path
+                d={`M ${x} ${y} L ${x + depth} ${y - depth * 0.45} L ${x + barW + depth} ${y - depth * 0.45} L ${x + barW} ${y} Z`}
+                fill={isPeak ? 'hsla(var(--anchor-h), 95%, 88%, 1)' : 'hsla(var(--anchor-h), 90%, 72%, 0.9)'}
+                stroke="hsla(var(--anchor-h), 95%, 90%, 0.6)" strokeWidth={0.4}
+              />
+              {/* Front face */}
+              <rect
+                x={x} y={y} width={barW} height={height}
+                fill={isPeak ? 'url(#ab-front-active)' : 'url(#ab-front-rising)'}
+                filter={isPeak ? 'url(#ab-bloom)' : undefined}
+              />
+              {/* Front edges */}
+              <line x1={x} y1={y} x2={x} y2={baseY} stroke="rgba(255,255,255,0.4)" strokeWidth={0.8} />
+              <line x1={x + barW} y1={y} x2={x + barW} y2={baseY} stroke="rgba(0,0,0,0.3)" strokeWidth={0.8} />
+
+              {/* Crown bloom on peak */}
+              {isPeak && !reduce && (
+                <motion.circle
+                  cx={x + barW / 2} cy={y - 4} r={8}
+                  fill="hsla(var(--anchor-h), 95%, 88%, 0.9)"
+                  filter="url(#ab-bloom)"
+                  animate={{ opacity: [0.5, 1, 0.5], r: [8, 12, 8] }}
+                  transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+                />
+              )}
+            </motion.g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 
-/* ─── Flowing Lines — link graph nodes connected by flowing paths ─ */
+/* ─── Flowing Lines — 3D node network with traveling data particles ── */
 function FlowingLinesViz({ params }: { params: any }) {
   const nodeCount = Math.max(4, Math.min(12, Number(params.node_count || 7)));
+  const reduce = useReducedMotion();
+
   const nodes = useMemo(() => {
     return Array.from({ length: nodeCount }, (_, i) => {
       const angle = (i / nodeCount) * Math.PI * 2;
+      const radius = 60 + (i % 3) * 12;
+      const depth = (i % 4) * 0.2;
       return {
-        x: 100 + Math.cos(angle) * (40 + Math.random() * 30),
-        y: 100 + Math.sin(angle) * (40 + Math.random() * 30),
+        x:    100 + Math.cos(angle) * radius,
+        y:    100 + Math.sin(angle) * radius * 0.85,
+        size: 4 + depth * 4, // depth simulated through size
+        depth,
       };
     });
   }, [nodeCount]);
 
-  /* Create connections — each node links to 2 others */
   const links = useMemo(() => {
     const arr: Array<[number, number]> = [];
     for (let i = 0; i < nodeCount; i++) {
@@ -818,100 +1363,253 @@ function FlowingLinesViz({ params }: { params: any }) {
   }, [nodeCount]);
 
   return (
-    <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%' }}>
+    <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+      <defs>
+        <radialGradient id="fl-node-active" cx="35%" cy="30%">
+          <stop offset="0%"  stopColor="hsla(var(--anchor-h), 95%, 92%, 1)" />
+          <stop offset="55%" stopColor="hsla(var(--anchor-h), 90%, 70%, 1)" />
+          <stop offset="100%" stopColor="hsla(var(--anchor-h), 70%, 30%, 0.9)" />
+        </radialGradient>
+        <radialGradient id="fl-node-mid" cx="35%" cy="30%">
+          <stop offset="0%"  stopColor="hsla(var(--anchor-h), 90%, 85%, 1)" />
+          <stop offset="100%" stopColor="hsla(var(--anchor-h), 70%, 40%, 0.8)" />
+        </radialGradient>
+        <filter id="fl-glow"><feGaussianBlur stdDeviation="2" /></filter>
+      </defs>
+
+      {/* Link paths */}
       {links.map(([a, b], i) => {
         const n1 = nodes[a], n2 = nodes[b];
         return (
-          <motion.line
-            key={i}
-            x1={n1.x} y1={n1.y} x2={n2.x} y2={n2.y}
-            stroke="hsla(var(--anchor-h), var(--anchor-s), 75%, 0.3)"
-            strokeWidth={0.6}
-            initial={{ pathLength: 0, opacity: 0 }}
-            animate={{ pathLength: 1, opacity: 1 }}
-            transition={{ duration: 1.2, delay: 0.3 + i * 0.05 }}
-          />
+          <g key={i}>
+            <motion.line
+              x1={n1.x} y1={n1.y} x2={n2.x} y2={n2.y}
+              stroke="hsla(var(--anchor-h), 80%, 65%, 0.28)"
+              strokeWidth={0.7}
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 1.2, delay: 0.3 + i * 0.05 }}
+            />
+            {/* Traveling data particle */}
+            {!reduce && i % 2 === 0 && (
+              <motion.circle
+                r={1.6}
+                className="traveler-particle"
+                initial={{ opacity: 0 }}
+                animate={{
+                  cx: [n1.x, n2.x, n1.x],
+                  cy: [n1.y, n2.y, n1.y],
+                  opacity: [0, 1, 0],
+                }}
+                transition={{
+                  duration: 4 + (i % 3) * 0.8,
+                  repeat: Infinity,
+                  delay: 1.5 + (i % 5) * 0.4,
+                  ease: 'linear',
+                }}
+              />
+            )}
+          </g>
         );
       })}
+
+      {/* Nodes — sized by depth, brightest in foreground */}
       {nodes.map((n, i) => (
-        <motion.circle
+        <motion.g
           key={i}
-          cx={n.x} cy={n.y} r={4}
-          fill={i === 0 ? 'var(--anchor)' : 'hsla(var(--anchor-h), var(--anchor-s), 75%, 0.85)'}
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ duration: 0.5, delay: 0.2 + i * 0.08 }}
-          style={{ filter: i === 0 ? 'drop-shadow(0 0 8px var(--anchor-glow))' : undefined }}
-        />
+        >
+          {/* Halo glow for primary node */}
+          {i === 0 && (
+            <motion.circle
+              cx={n.x} cy={n.y} r={n.size * 2.4}
+              fill="hsla(var(--anchor-h), 85%, 65%, 0.18)"
+              filter="url(#fl-glow)"
+              animate={reduce ? {} : { r: [n.size * 2.4, n.size * 3, n.size * 2.4] }}
+              transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          )}
+          <circle
+            cx={n.x} cy={n.y} r={n.size}
+            fill={i === 0 ? 'url(#fl-node-active)' : 'url(#fl-node-mid)'}
+            stroke="hsla(var(--anchor-h), 90%, 85%, 0.5)"
+            strokeWidth={0.4}
+            style={{ filter: i === 0 ? 'drop-shadow(0 0 12px var(--anchor-glow))' : 'drop-shadow(0 0 6px var(--anchor-glow))' }}
+          />
+        </motion.g>
       ))}
     </svg>
   );
 }
 
-/* ─── Pulse Stack — layered cards pulsing ─────────────────────── */
+/* ─── Pulse Stack — true 3D layered depth with translateZ separation ─ */
 function PulseStackViz({ params }: { params: any }) {
   const layers = Math.max(3, Math.min(6, Number(params.layers || 4)));
   const arr = Array.from({ length: layers }, (_, i) => i);
+  const reduce = useReducedMotion();
 
   return (
-    <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%' }}>
-      {arr.map(i => {
-        const offset = i * 14;
-        const size = 130 - i * 18;
-        const opacity = 0.25 + (i / layers) * 0.55;
-        return (
-          <motion.rect
-            key={i}
-            x={(200 - size) / 2}
-            y={(200 - size) / 2 + (layers - 1 - i) * 4 - 10 + offset / 2}
-            width={size} height={size * 0.65}
-            rx={8}
-            fill="hsla(var(--anchor-h), var(--anchor-s), 75%, 0.05)"
-            stroke={i === layers - 1 ? 'var(--anchor)' : 'hsla(var(--anchor-h), var(--anchor-s), 75%, 0.4)'}
-            strokeWidth={0.8}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.3 + i * 0.15, ease: [0.16, 1, 0.3, 1] }}
-            style={i === layers - 1 ? { filter: 'drop-shadow(0 0 16px var(--anchor-glow))' } : undefined}
-          />
-        );
-      })}
-      <text x={100} y={104} textAnchor="middle" fontSize={9} fontWeight={600} fill="var(--anchor)">
-        {String(params.peak_label || '').toUpperCase()}
-      </text>
-    </svg>
+    <div style={{
+      width: '100%', height: '100%',
+      perspective: 800,
+      perspectiveOrigin: '50% 40%',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        position: 'relative',
+        width: 240, height: 180,
+        transformStyle: 'preserve-3d',
+        transform: 'rotateX(28deg) rotateZ(-3deg)',
+      }}>
+        {arr.map(i => {
+          const isTop = i === layers - 1;
+          const z = i * 18;
+          const scale = 1 - (layers - 1 - i) * 0.06;
+          const opacity = 0.3 + (i / layers) * 0.65;
+
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity, y: 0 }}
+              viewport={{ once: true, margin: '-15%' }}
+              transition={{ duration: 0.7, delay: 0.2 + i * 0.15, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                margin: 'auto',
+                width: `${scale * 100}%`,
+                height: `${scale * 70}%`,
+                background: isTop
+                  ? 'linear-gradient(135deg, hsla(var(--anchor-h), 90%, 65%, 0.35), hsla(var(--anchor-h), 80%, 45%, 0.18))'
+                  : 'linear-gradient(135deg, hsla(var(--anchor-h), 70%, 55%, 0.12), hsla(var(--anchor-h), 60%, 35%, 0.05))',
+                border: isTop
+                  ? '1px solid hsla(var(--anchor-h), 90%, 75%, 0.7)'
+                  : '0.5px solid hsla(var(--anchor-h), 80%, 65%, 0.35)',
+                borderRadius: 12,
+                transform: `translateZ(${z}px)`,
+                boxShadow: isTop
+                  ? '0 0 40px var(--anchor-glow), 0 0 20px hsla(var(--anchor-h), 80%, 60%, 0.4), inset 0 1px 0 hsla(var(--anchor-h), 90%, 85%, 0.4)'
+                  : '0 4px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06)',
+                backdropFilter: 'blur(2px)',
+              }}
+            >
+              {/* Specular sheen on top layer */}
+              {isTop && !reduce && (
+                <motion.div
+                  style={{
+                    position: 'absolute', inset: 0, borderRadius: 12,
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%)',
+                    mixBlendMode: 'overlay',
+                  }}
+                  animate={{ opacity: [0.4, 0.9, 0.4] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                />
+              )}
+              {isTop && (
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'hsla(var(--anchor-h), 95%, 92%, 0.98)',
+                  fontSize: 13, fontWeight: 700,
+                  letterSpacing: '0.12em', textTransform: 'uppercase',
+                  textShadow: '0 0 8px var(--anchor-glow), 0 0 16px hsla(var(--anchor-h), 80%, 60%, 0.6)',
+                  transform: 'translateZ(8px)',
+                }}>
+                  {String(params.peak_label || '').slice(0, 24)}
+                </div>
+              )}
+            </motion.div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
-/* ─── Particle Burst — celebratory radial spray ───────────────── */
+/* ─── Particle Burst — 3D depth radial spray with bloom core ─────── */
 function ParticleBurstViz({ params }: { params: any }) {
-  const count = 18;
+  const count = 24;
   const reduce = useReducedMotion();
+
+  /* Pre-compute particle depths */
+  const particles = useMemo(() => {
+    return Array.from({ length: count }, (_, i) => {
+      const angle = (i / count) * Math.PI * 2 + (i * 0.13);
+      const depth = 0.3 + Math.random() * 0.7; // 0.3-1.0
+      const dist = 60 + (i % 5) * 12 + depth * 25;
+      return {
+        angle,
+        dist,
+        depth,
+        x: Math.cos(angle) * dist,
+        y: Math.sin(angle) * dist * 0.85,
+        size: 1 + depth * 2.5,
+        delay: (i % 8) * 0.05,
+      };
+    });
+  }, []);
+
   return (
-    <svg viewBox="-100 -100 200 200" style={{ width: '100%', height: '100%' }}>
+    <svg viewBox="-150 -150 300 300" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+      <defs>
+        <radialGradient id="pb-core" cx="35%" cy="30%">
+          <stop offset="0%"   stopColor="hsla(var(--anchor-h), 95%, 95%, 1)" />
+          <stop offset="35%"  stopColor="hsla(var(--anchor-h), 90%, 75%, 1)" />
+          <stop offset="100%" stopColor="hsla(var(--anchor-h), 70%, 35%, 0.95)" />
+        </radialGradient>
+        <radialGradient id="pb-bloom" cx="50%" cy="50%">
+          <stop offset="0%" stopColor="hsla(var(--anchor-h), 85%, 70%, 0.6)" />
+          <stop offset="100%" stopColor="hsla(var(--anchor-h), 80%, 50%, 0)" />
+        </radialGradient>
+        <filter id="pb-blur"><feGaussianBlur stdDeviation="3" /></filter>
+      </defs>
+
+      {/* Bloom halo */}
       <motion.circle
-        cx={0} cy={0} r={14}
-        fill="var(--anchor)"
-        animate={reduce ? {} : { r: [14, 18, 14] }}
-        transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-        style={{ filter: 'drop-shadow(0 0 18px var(--anchor-glow))' }}
+        cx={0} cy={0} r={60}
+        fill="url(#pb-bloom)"
+        animate={reduce ? {} : { r: [60, 75, 60], opacity: [0.7, 1, 0.7] }}
+        transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
       />
-      {Array.from({ length: count }).map((_, i) => {
-        const angle = (i / count) * Math.PI * 2;
-        const dist = 50 + (i % 3) * 18;
-        const x = Math.cos(angle) * dist;
-        const y = Math.sin(angle) * dist;
-        return (
-          <motion.circle
-            key={i}
-            cx={0} cy={0} r={1.6}
-            fill="hsla(var(--anchor-h), var(--anchor-s), 80%, 0.8)"
-            initial={{ opacity: 0 }}
-            animate={{ cx: x, cy: y, opacity: [0, 1, 0.4] }}
-            transition={{ duration: 1.4, delay: 0.2 + (i % 6) * 0.06, ease: [0.16, 1, 0.3, 1] }}
-          />
-        );
-      })}
+
+      {/* Core bright sphere */}
+      <motion.circle
+        cx={0} cy={0} r={20}
+        fill="url(#pb-core)"
+        animate={reduce ? {} : { r: [20, 23, 20] }}
+        transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ filter: 'drop-shadow(0 0 20px var(--anchor-glow))' }}
+      />
+
+      {/* Light rays — long faint streaks giving radial 3D feel */}
+      {!reduce && particles.filter((_, i) => i % 3 === 0).map((p, i) => (
+        <motion.line
+          key={`ray-${i}`}
+          x1={0} y1={0} x2={p.x * 1.3} y2={p.y * 1.3}
+          stroke="hsla(var(--anchor-h), 85%, 70%, 0.18)"
+          strokeWidth={p.depth * 0.6}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 0.6, 0] }}
+          transition={{ duration: 2.4, delay: p.delay + 0.3, repeat: Infinity, repeatDelay: 1.6 }}
+        />
+      ))}
+
+      {/* Outward burst particles — size+blur communicate depth */}
+      {particles.map((p, i) => (
+        <motion.circle
+          key={i}
+          cx={0} cy={0} r={p.size}
+          fill={`hsla(var(--anchor-h), ${80 + p.depth * 15}%, ${65 + p.depth * 20}%, ${0.6 + p.depth * 0.4})`}
+          filter={p.depth < 0.5 ? 'url(#pb-blur)' : undefined}
+          initial={{ opacity: 0 }}
+          animate={{ cx: p.x, cy: p.y, opacity: [0, 1, 0.4] }}
+          transition={{ duration: 1.6, delay: 0.2 + p.delay, ease: [0.16, 1, 0.3, 1] }}
+          style={{ filter: p.depth > 0.7 ? 'drop-shadow(0 0 4px var(--anchor-glow))' : undefined }}
+        />
+      ))}
     </svg>
   );
 }
@@ -1518,13 +2216,19 @@ function MoverColumn({ title, subtitle, icon, accent, rows }: {
 }) {
   const a = COLOR_ANCHORS[accent];
   return (
-    <div style={{
-      background: 'rgba(255,255,255,0.025)',
-      border: '0.5px solid rgba(255,255,255,0.08)',
-      borderRadius: 16,
-      padding: '1.25rem',
-      backdropFilter: 'blur(8px)',
-    }}>
+    <div
+      className="card-3d"
+      style={{
+        background: 'rgba(255,255,255,0.025)',
+        border: '0.5px solid rgba(255,255,255,0.08)',
+        borderRadius: 16,
+        padding: '1.25rem',
+        backdropFilter: 'blur(8px)',
+        position: 'relative',
+        ['--anchor-h' as any]: a.h,
+        ['--anchor-glow' as any]: `hsla(${a.h}, ${a.s}%, 60%, 0.3)`,
+      } as React.CSSProperties}
+    >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <span style={{ color: `hsl(${a.h}, ${a.s}%, ${a.l}%)` }}>{icon}</span>
@@ -1616,7 +2320,7 @@ function IntentDistribution({ intent }: { intent: NonNullable<ShowcaseDataClient
           alignItems: 'center',
         }} className="intent-grid">
           {/* Donut chart */}
-          <svg viewBox="0 0 260 260" style={{ width: '100%', maxWidth: 280 }}>
+          <svg viewBox="0 0 260 260" className="donut-3d" style={{ width: '100%', maxWidth: 280 }}>
             <defs>
               {slices.map(s => (
                 <radialGradient key={s.id} id={`grad_${s.id}`} cx="50%" cy="50%" r="50%">
@@ -1804,6 +2508,7 @@ function ContentHealth({ health }: { health: NonNullable<ShowcaseDataClient['con
           {tiers.map((tier, ti) => (
             <motion.div
               key={tier.id}
+              className="card-3d"
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1815,7 +2520,9 @@ function ContentHealth({ health }: { health: NonNullable<ShowcaseDataClient['con
                 padding: '1.25rem',
                 position: 'relative',
                 overflow: 'hidden',
-              }}
+                ['--anchor-h' as any]: tier.hue,
+                ['--anchor-glow' as any]: `hsla(${tier.hue}, 80%, 60%, 0.35)`,
+              } as React.CSSProperties}
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-3">
