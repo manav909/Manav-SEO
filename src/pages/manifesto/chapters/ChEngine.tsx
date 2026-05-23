@@ -2,41 +2,82 @@
    src/pages/manifesto/chapters/ChEngine.tsx
    Chapter 06 — The Engine Room. Monsoon.
 
-   The architecture, named out loud. Five counter cards animate from
-   zero to their actual values on scroll-in.
+   The premium spec sheet. Reframed entirely from internal architecture
+   to client-facing capability — the way a corporate marketing director
+   reads an aircraft cockpit, not a developer's package.json.
 
-     12  serverless API functions  (hard-capped by design)
-     50  database tables
-     22  internal engines
-     42  frontend pages
-      6  shared React contexts
+   Six capability cards arranged like an instrument cluster:
+     12           Intelligence engines firing in sequence
+     MIN          Refresh cadence — minutes, not weeks
+     5+           Search surfaces monitored (Google + LLMs)
+     UNLIMITED    Pillar campaigns concurrent per project
+     100%         Action retention — every decision queryable forever
+     24/7         Always-on monitoring, year-round
 
-   These numbers aren't decoration. They're the constraint set the
-   system was designed under. Showing them tells investors and
-   stakeholders that the inside of SEO SEASON is verifiable.
+   Engine metaphor extends: V12 power, continuous fire, telemetry over
+   slide decks. No internals exposed (no "API functions", no "tables",
+   no "React contexts"). What the engine DOES, not how it's built.
 ══════════════════════════════════════════════════════════════════════ */
 
 import { motion } from 'framer-motion';
 import {
-  Network, Database, Activity, Layers,
+  Cpu, Gauge, Radar, Layers, Archive, Clock,
 } from 'lucide-react';
-import { ChapterShell, Prose, CounterNumber } from '../shared';
+import { ChapterShell, Prose, Statement } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-interface Stat {
-  label: string;
-  value: number;
-  sub:   string;
-  icon:  React.ReactNode;
+interface Spec {
+  value:      string;
+  unit:       string;
+  label:      string;
+  descriptor: string;
+  icon:       React.ReactNode;
 }
 
-const STATS: Stat[] = [
-  { label: 'API functions',         value: 12, sub: 'Hard-capped. By design.',         icon: <Network className="h-4 w-4" />  },
-  { label: 'Database tables',        value: 50, sub: 'Normalized. Each a clean concept.', icon: <Database className="h-4 w-4" /> },
-  { label: 'Internal engines',       value: 22, sub: 'Compose data into views.',         icon: <Activity className="h-4 w-4" /> },
-  { label: 'Frontend pages',         value: 42, sub: 'Render every surface.',            icon: <Layers className="h-4 w-4" />   },
-  { label: 'Shared React contexts',  value:  6, sub: 'State across pages.',              icon: <Network className="h-4 w-4" />  },
+const SPECS: Spec[] = [
+  {
+    value:      '12',
+    unit:       '',
+    label:      'Intelligence Engines',
+    descriptor: "Twelve specialized engines fire in sequence — query analysis, content gap detection, backlink intelligence, cluster mapping, internal link orchestration, off-page authority tracking, technical drift, conversion attribution, audit logging, real-time alerting, and two more. Each independent. None pausing.",
+    icon:       <Cpu className="h-4 w-4" />,
+  },
+  {
+    value:      'MIN',
+    unit:       'cadence',
+    label:      'Continuous Refresh',
+    descriptor: "Data refreshes in minutes, not the monthly cadence agencies invented to hide latency. Every query movement, every traffic shift, every backlink change registers before your competitor's monthly meeting agenda is written.",
+    icon:       <Gauge className="h-4 w-4" />,
+  },
+  {
+    value:      '5+',
+    unit:       'surfaces',
+    label:      'Multi-Engine Reach',
+    descriptor: "Google. ChatGPT. Claude. Perplexity. Gemini. Visibility tracked across every modern search surface as a first-class signal. The era of 'rank in Google alone' ended around 2024. The engine room treats it that way.",
+    icon:       <Radar className="h-4 w-4" />,
+  },
+  {
+    value:      '∞',
+    unit:       'concurrent',
+    label:      'Campaign Concurrency',
+    descriptor: "Run as many pillar campaigns as the brand can support — five, fifty, five hundred. Each campaign carries its own baseline, its own cadence, its own scoreboard. No artificial caps. No 'enterprise tier required.' The architecture scales because it was designed to.",
+    icon:       <Layers className="h-4 w-4" />,
+  },
+  {
+    value:      '100%',
+    unit:       'retention',
+    label:      'Total Audit Depth',
+    descriptor: "Every decision logged. Every action timestamped. Every metric source-cited. Day one is always queryable. Year three audits the same way as week three. The complete decision trail is part of the deliverable.",
+    icon:       <Archive className="h-4 w-4" />,
+  },
+  {
+    value:      '24/7',
+    unit:       'live',
+    label:      'Always-On Operation',
+    descriptor: "No quiet weekends. No monthly cadence drift. The engine runs continuously — the same way your billing system runs continuously, because enterprise marketing operations stopped being a monthly-meeting discipline somewhere around 2018.",
+    icon:       <Clock className="h-4 w-4" />,
+  },
 ];
 
 export function ChEngine({ t }: { t: TFn }) {
@@ -45,46 +86,58 @@ export function ChEngine({ t }: { t: TFn }) {
       <EngineStyles />
 
       <Prose delay={0.4}>
-        Twelve serverless API functions. Fifty database tables. Twenty-two
-        internal engines. Forty-two frontend pages. Six shared React contexts.
-      </Prose>
-      <Prose delay={0.55}>
-        These numbers aren't decoration. They're constraints. The twelfth
-        function means there is no thirteenth — the system was designed for
-        that limit and lives within it. The tables are normalized; each
-        represents a clean concept that can be read in isolation. Every page
-        renders state derived from one or more engines. Nothing is improvised
-        at request time.
+        Under every dashboard, twelve specialized intelligence engines run
+        continuously — like cylinders firing in sequence inside a precision
+        powerplant. Each handles one class of decision; together they carry
+        the full operating load of an enterprise SEO program.
       </Prose>
 
-      <div className="engine-grid mt-14">
-        {STATS.map((s, i) => (
-          <EngineCard key={i} stat={s} index={i} />
+      <Prose delay={0.6}>
+        Below, the spec sheet. What this engine delivers — not how it's
+        wired underneath.
+      </Prose>
+
+      <div className="engine-spec-grid mt-14">
+        {SPECS.map((s, i) => (
+          <SpecCard key={i} spec={s} index={i} />
         ))}
       </div>
 
-      <Prose delay={1.6} className="mt-14">
-        Software that respects its own architecture remains trustworthy over
-        years. Software that doesn't gets rewritten every eighteen months while
-        the client pays the bill twice.
+      <Statement delay={0.4}>
+        This is what enterprise-grade actually means. A marketing operations
+        engine that runs the way your finance system runs — continuously,
+        accurately, auditably, every minute of every day.
+      </Statement>
+
+      <Prose delay={0.6} className="mt-10">
+        The agency next door still operates on slide decks and rank-tracker
+        screenshots. Yours operates on telemetry.
       </Prose>
     </ChapterShell>
   );
 }
 
-function EngineCard({ stat, index }: { stat: Stat; index: number }) {
+function SpecCard({ spec, index }: { spec: Spec; index: number }) {
   return (
     <motion.div
-      className="engine-card"
-      initial={{ opacity: 0, y: 20 }}
+      className="spec-card"
+      initial={{ opacity: 0, y: 22 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-15%' }}
-      transition={{ duration: 1.0, ease: FEATHER, delay: 0.1 + index * 0.1 }}
+      viewport={{ once: true, margin: '-12%' }}
+      transition={{ duration: 1.1, ease: FEATHER, delay: 0.1 + index * 0.08 }}
     >
-      <div className="engine-icon">{stat.icon}</div>
-      <CounterNumber value={stat.value} className="engine-number" />
-      <div className="engine-label">{stat.label}</div>
-      <div className="engine-sub">{stat.sub}</div>
+      <div className="spec-top">
+        <div className="spec-icon">{spec.icon}</div>
+        <div className="spec-no">SPEC · {String(index + 1).padStart(2, '0')}</div>
+      </div>
+
+      <div className="spec-value-row">
+        <div className="spec-value">{spec.value}</div>
+        {spec.unit && <div className="spec-unit">{spec.unit}</div>}
+      </div>
+
+      <div className="spec-label">{spec.label}</div>
+      <div className="spec-descriptor">{spec.descriptor}</div>
     </motion.div>
   );
 }
@@ -94,56 +147,114 @@ function EngineCard({ stat, index }: { stat: Stat; index: number }) {
 function EngineStyles() {
   return (
     <style>{`
-      .engine-grid {
+      .engine-spec-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
         gap: 1.2rem;
       }
-      .engine-card {
-        padding: 1.6rem 1.4rem;
+      .spec-card {
+        position: relative;
+        padding: 1.5rem 1.6rem 1.7rem 1.6rem;
         border-radius: 14px;
         background: linear-gradient(180deg,
-          hsla(var(--ch-hue), 50%, 30%, 0.12),
+          hsla(var(--ch-hue), 50%, 28%, 0.12),
           rgba(255,255,255,0.012));
         border: 0.5px solid var(--m-hairline-s);
-        position: relative;
         overflow: hidden;
+        display: flex; flex-direction: column;
+        min-height: 240px;
       }
-      .engine-card::after {
+      .spec-card::before {
         content: '';
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 1px;
-        background: linear-gradient(90deg, transparent,
-          hsla(var(--ch-hue), 60%, 65%, 0.55), transparent);
+        background: linear-gradient(90deg,
+          transparent,
+          hsla(var(--ch-hue), 70%, 65%, 0.7) 30%,
+          hsla(var(--ch-hue), 80%, 75%, 0.9) 50%,
+          hsla(var(--ch-hue), 70%, 65%, 0.7) 70%,
+          transparent);
       }
-      .engine-icon {
-        color: hsla(var(--ch-hue), 70%, 78%, 0.95);
+      .spec-card::after {
+        content: '';
+        position: absolute;
+        top: 0; bottom: 0; left: 0;
+        width: 2px;
+        background: linear-gradient(180deg,
+          hsla(var(--ch-hue), 80%, 70%, 0.65),
+          hsla(var(--ch-hue), 50%, 50%, 0.1));
+      }
+      .spec-top {
+        display: flex; align-items: center;
+        justify-content: space-between;
         margin-bottom: 1rem;
       }
-      .engine-number {
+      .spec-icon {
+        display: flex; align-items: center; justify-content: center;
+        width: 28px; height: 28px;
+        border-radius: 6px;
+        background: hsla(var(--ch-hue), 60%, 50%, 0.12);
+        border: 0.5px solid hsla(var(--ch-hue), 60%, 50%, 0.3);
+        color: hsla(var(--ch-hue), 70%, 78%, 0.95);
+      }
+      .spec-no {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--m-ink-soft);
+      }
+      .spec-value-row {
+        display: flex; align-items: baseline;
+        gap: 0.5rem;
+        margin-bottom: 0.6rem;
+      }
+      .spec-value {
         font-family: ui-serif, Georgia, serif;
-        font-size: 2.8rem;
+        font-size: clamp(2.6rem, 5vw, 3.6rem);
         font-weight: 300;
-        line-height: 1;
-        letter-spacing: -0.03em;
+        line-height: 0.95;
+        letter-spacing: -0.04em;
         color: var(--m-ink-strong);
         font-feature-settings: 'tnum' 1;
+        background: linear-gradient(180deg,
+          rgba(255, 255, 255, 1),
+          hsla(var(--ch-hue), 70%, 80%, 0.85));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
       }
-      .engine-label {
-        margin-top: 0.7rem;
+      .spec-unit {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: hsla(var(--ch-hue), 50%, 78%, 0.75);
+      }
+      .spec-label {
         font-family: ui-sans-serif, system-ui, sans-serif;
         font-size: 0.82rem;
-        color: var(--m-ink-strong);
-        letter-spacing: 0.04em;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: hsla(var(--ch-hue), 60%, 80%, 0.95);
+        margin-bottom: 0.85rem;
+        padding-bottom: 0.85rem;
+        border-bottom: 0.5px dashed hsla(var(--ch-hue), 40%, 50%, 0.25);
       }
-      .engine-sub {
-        margin-top: 0.3rem;
+      .spec-descriptor {
         font-family: ui-sans-serif, system-ui, sans-serif;
-        font-size: 0.72rem;
-        color: var(--m-ink-soft);
-        font-style: italic;
-        line-height: 1.4;
+        font-size: 0.85rem;
+        line-height: 1.6;
+        color: var(--m-ink-medium);
+        flex: 1;
+      }
+      @media (max-width: 560px) {
+        .engine-spec-grid { grid-template-columns: 1fr; }
+        .spec-card { min-height: auto; }
       }
     `}</style>
   );
