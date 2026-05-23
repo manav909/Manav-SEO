@@ -39,11 +39,29 @@ export interface CommandResponse {
 /* ─── Main endpoint ──────────────────────────────────────────── */
 
 export async function bsSeasonCommand(body: any): Promise<any> {
-  const { projectId, input, awareness, web_access } = body;
+  const { projectId, input, awareness, web_access, priorTurns } = body;
   /* web_access defaults to true if not specified (older clients).
      Setting it to false disables the web brain — questions that
      would route to web get the honest fallback instead. */
   const webEnabled = web_access !== false;
+
+  /* Phase 21 Block 2.5c — V2 of chat scrollback: backend conversation memory.
+     priorTurns is an optional array of recent {input, responseText} pairs from
+     the frontend's localStorage chat history. We pass them through to the LLM
+     handlers, which prepend them as native messages so the model has actual
+     conversation context. Deterministic intents (diagnose, status, help)
+     ignore this — they don't need memory. Cap at 6 turns server-side too as
+     defense-in-depth against runaway token costs. */
+  const sanitizedPriorTurns = Array.isArray(priorTurns)
+    ? priorTurns
+        .filter((t: any) => t && typeof t.input === 'string' && typeof t.responseText === 'string')
+        .slice(-6)
+        .map((t: any) => ({
+          input:        String(t.input).slice(0, 2000),
+          responseText: String(t.responseText).slice(0, 4000),
+        }))
+    : [];
+
   if (!projectId) return { success: false, error: "projectId required" };
   if (!input || typeof input !== "string") return { success: false, error: "input required" };
 
@@ -77,7 +95,7 @@ export async function bsSeasonCommand(body: any): Promise<any> {
       } else {
       try {
         const { seasonLlmWebHandle } = await import("./season-llm-web.js");
-        const llm = await seasonLlmWebHandle({ projectId, input, awareness });
+        const llm = await seasonLlmWebHandle({ projectId, input, awareness, priorTurns: sanitizedPriorTurns });
         response = {
           intent:       llm.intent,
           confidence:   llm.confidence,
@@ -100,7 +118,7 @@ export async function bsSeasonCommand(body: any): Promise<any> {
       /* Hand to the LLM brain */
       try {
         const { seasonLlmHandle } = await import("./season-llm.js");
-        const llm = await seasonLlmHandle({ projectId, input, awareness });
+        const llm = await seasonLlmHandle({ projectId, input, awareness, priorTurns: sanitizedPriorTurns });
         response = {
           intent:       llm.intent,
           confidence:   llm.confidence,

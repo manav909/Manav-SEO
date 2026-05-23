@@ -1991,7 +1991,16 @@ export async function seasonBriefing(projectId: string): Promise<{ briefing?: Br
   return { briefing: r.briefing };
 }
 
-export async function seasonCommand(opts: { projectId: string; input: string; awareness?: any; web_access?: boolean }): Promise<{ response?: CommandResponseClient; error?: string }> {
+export async function seasonCommand(opts: {
+  projectId:    string;
+  input:        string;
+  awareness?:   any;
+  web_access?:  boolean;
+  /* Phase 21 Block 2.5c — V2 conversation memory. Send recent {input, responseText}
+     pairs so the LLM has actual context across turns in Pro mode. Capped on
+     both ends (frontend sends max 6, backend re-caps as defense). */
+  priorTurns?:  Array<{ input: string; responseText: string }>;
+}): Promise<{ response?: CommandResponseClient; error?: string }> {
   const r = await post(ENGINE, { action: 'bs_season_command', ...opts });
   if (!r?.success) return { error: r?.error };
   return { response: r.response };

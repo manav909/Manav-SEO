@@ -56,8 +56,9 @@ export async function seasonLlmWebHandle(opts: {
   input: string;
   awareness?: any;
   projectContextBundle?: string;  // pre-built context block from regular gatherContext
+  priorTurns?: Array<{ input: string; responseText: string }>;
 }): Promise<WebLlmResponse> {
-  const { projectId, input, awareness, projectContextBundle } = opts;
+  const { projectId, input, awareness, projectContextBundle, priorTurns } = opts;
 
   if (!ANTHROPIC_API_KEY) {
     return softFail("Web access requires ANTHROPIC_API_KEY (currently missing). Ask your admin to set it in Vercel env.", "no_api_key");
@@ -69,6 +70,19 @@ export async function seasonLlmWebHandle(opts: {
 
   const systemPrompt = buildWebSystemPrompt();
   const userMessage  = buildWebUserMessage(input, awareness, projectContextBundle);
+
+  /* Phase 21 Block 2.5c — V2 conversation memory for web-routed turns.
+     Same pattern as season-llm.ts: prepend up to 6 prior {user, assistant}
+     pairs as native messages so the model has actual continuity. */
+  const messagesPayload: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  if (Array.isArray(priorTurns) && priorTurns.length > 0) {
+    for (const t of priorTurns.slice(-6)) {
+      if (!t?.input || !t?.responseText) continue;
+      messagesPayload.push({ role: 'user',      content: String(t.input).slice(0, 2000) });
+      messagesPayload.push({ role: 'assistant', content: String(t.responseText).slice(0, 4000) });
+    }
+  }
+  messagesPayload.push({ role: 'user', content: userMessage });
 
   /* ─── Call Anthropic with web_search tool enabled ─── */
   let raw: any;
@@ -85,7 +99,7 @@ export async function seasonLlmWebHandle(opts: {
         model: MODEL,
         max_tokens: MAX_TOK,
         system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
+        messages: messagesPayload,
         tools: [{
           type: "web_search_20250305",
           name: "web_search",

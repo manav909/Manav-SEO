@@ -53,8 +53,9 @@ export async function seasonLlmHandle(opts: {
   projectId: string;
   input: string;
   awareness?: any;
+  priorTurns?: Array<{ input: string; responseText: string }>;
 }): Promise<LlmResponse> {
-  const { projectId, input, awareness } = opts;
+  const { projectId, input, awareness, priorTurns } = opts;
 
   /* ─── Cost protection ─── */
   if (!ANTHROPIC_API_KEY) {
@@ -72,6 +73,23 @@ export async function seasonLlmHandle(opts: {
   const systemPrompt = buildSystemPrompt();
   const userMessage  = buildUserMessage(input, ctx, awareness);
 
+  /* ─── Phase 21 Block 2.5c — V2 conversation memory.
+     Prepend prior turns as native Anthropic messages so the model has
+     genuine conversation context. Each prior turn becomes one user +
+     one assistant message. Capped at 6 turns (already enforced upstream
+     in the orchestrator); we sanity-cap again here as defense in depth.
+     The CURRENT turn's user message carries full project context
+     (gatherContext bundle); prior turns are bare text. */
+  const messagesPayload: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  if (Array.isArray(priorTurns) && priorTurns.length > 0) {
+    for (const t of priorTurns.slice(-6)) {
+      if (!t?.input || !t?.responseText) continue;
+      messagesPayload.push({ role: 'user',      content: String(t.input).slice(0, 2000) });
+      messagesPayload.push({ role: 'assistant', content: String(t.responseText).slice(0, 4000) });
+    }
+  }
+  messagesPayload.push({ role: 'user', content: userMessage });
+
   /* ─── Call Anthropic ─── */
   let raw: any;
   try {
@@ -86,7 +104,7 @@ export async function seasonLlmHandle(opts: {
         model: MODEL,
         max_tokens: MAX_TOK,
         system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
+        messages: messagesPayload,
       }),
     });
     if (!res.ok) {

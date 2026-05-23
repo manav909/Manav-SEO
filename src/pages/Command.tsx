@@ -478,7 +478,26 @@ function CommandInner() {
     }
 
     /* Standard chat brain */
-    const r = await seasonCommand({ projectId: selectedProjectId, input: text });
+    /* Phase 21 Block 2.5c — V2 conversation memory.
+       Send the last 6 turns as {input, responseText} pairs so the LLM has
+       continuity. responseText is built by flattening chunk.content strings;
+       artifacts/actions are NOT sent (LLM doesn't need to reconstruct them).
+       Pro mode benefits most but we send for both modes — Casual still
+       single-shot visually, but if the user crosses turns the LLM remembers. */
+    const priorTurns = chatHistory.slice(-6).map(turn => ({
+      input:        turn.input,
+      responseText: (turn.response.chunks || [])
+        .map((c: any) => typeof c?.content === 'string' ? c.content : '')
+        .filter(Boolean)
+        .join('\n\n')
+        .slice(0, 4000),
+    })).filter(t => t.input && t.responseText);
+
+    const r = await seasonCommand({
+      projectId: selectedProjectId,
+      input: text,
+      priorTurns: priorTurns.length > 0 ? priorTurns : undefined,
+    });
     setSubmitting(false);
     if (r.error) { setCommandError(r.error); return; }
     if (r.response) {
