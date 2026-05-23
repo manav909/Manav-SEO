@@ -43,13 +43,20 @@ export function ChVision({ t }: { t: TFn }) {
       </Prose>
 
       <Prose delay={1.3}>
+        And it was built by hand. Not commissioned to a development shop. Not
+        assembled from off-the-shelf SaaS bolted together. Not acquired from
+        someone else and rebranded. Every line of code, every interface, every
+        audit trail authored by the same person who runs the agency.
+      </Prose>
+
+      <Prose delay={1.5}>
         Per-campaign baselines, source-cited charts, audit trails the client can
         read, honest gaps acknowledged out loud — these aren't features added to
         a product. They're the rules the agency operates under, encoded so they
         cannot be quietly broken later.
       </Prose>
 
-      <Prose delay={1.5}>
+      <Prose delay={1.7}>
         When a client opens their SEO SEASON dashboard, they see the same view
         their account manager opens. Not a sanitized client portal. Not a slide
         with last week's screenshots. The same operator interface, with the

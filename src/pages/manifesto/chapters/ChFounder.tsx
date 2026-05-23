@@ -18,16 +18,17 @@ import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
 const PARAS: string[] = [
-  "I've spent years inside the SEO industry — as an operator, as a consultant, as someone who watched the work happen from every side that exists.",
-  "I built SEO SEASON because the problem I kept seeing wasn't a tooling problem. It was a trust problem.",
-  "As a client who couldn't tell what had been done. As an operator who couldn't prove what I'd done. As someone who watched an industry quietly accept opacity as the price of doing business.",
-  "The fix wasn't more reports. More dashboards. More AI. The fix was a different shape of agency — one where the work is verifiable as it happens. Where the data and the narrative are the same artifact. Where the client and the operator look at the same screen at the same hour.",
-  "Two years building the infrastructure that makes this kind of agency possible. Twelve intelligence engines. Fifty live data streams. Hundreds of decisions encoded as system constraints. One commitment, made operational.",
+  "I've spent years inside SEO from every position that exists — as an operator running campaigns, as a consultant advising on architecture, as the client who couldn't get a straight answer from their agency. I learned how the work actually happens by doing it from every angle.",
+  "What I saw, across every angle, wasn't a tooling problem. It was a trust problem. Agencies that knew exactly what they were doing — and clients who couldn't verify any of it.",
+  "Nobody handed me a foundation to build on top of. No firm to inherit, no playbook to copy. What I have is years of working from inside this industry — long enough that the patterns became visible, and the gap between what agencies sell and what clients actually receive became impossible to ignore.",
+  "So I built the answer myself. Every system in SEO SEASON, I designed and shipped — every data engine, every dashboard, every audit trail, every line of code, every database schema, every architectural decision. Hiring engineers wouldn't have produced this. The problem required someone who had lived it, and the system required a single architect who could hold the whole shape in their head while building it.",
+  "The depth of what's been built is the proof of the years that went into understanding what was needed. You don't architect this kind of system without having seen, in detail, what the alternatives leave on the floor.",
+  "I run this agency the way I built the system underneath it: hands on every part. When you hire SEO SEASON, you hire that. The infrastructure isn't a vendor I plug into. The work isn't outsourced to a team you'll never meet. You get the agency, the system, and the builder — all the same person, all the same standard.",
 ];
 
 const PARAS_FINAL: string[] = [
   'This is what I wanted to exist.',
-  'So I built it — and now I run an agency on it.',
+  'So I built it — every layer of it — and now I run an agency on it.',
 ];
 
 export function ChFounder({ t }: { t: TFn }) {

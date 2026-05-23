@@ -40,6 +40,7 @@ const ROWS: Row[] = [
   { capability: 'Source-cited recommendations',          season: 'yes', agency: 'rare',   diy: 'no'      },
   { capability: 'Human accountability',                  season: 'yes', agency: 'yes',    diy: 'no'      },
   { capability: 'Years of operator experience',          season: 'yes', agency: 'yes',    diy: 'no'      },
+  { capability: 'Single architect for the entire system', season: 'yes', agency: 'no',     diy: 'no'      },
   { capability: 'Charges for work done, not retainer',   season: 'yes', agency: 'no',     diy: 'monthly' },
 ];
 

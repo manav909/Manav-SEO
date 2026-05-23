@@ -93,7 +93,14 @@ export function ChEngine({ t }: { t: TFn }) {
         enterprise SEO program.
       </Prose>
 
-      <Prose delay={0.6}>
+      <Prose delay={0.55}>
+        They never sleep. They never drift. They never forget what they have
+        seen. The system was designed that way from the first commit — an
+        always-on intelligence layer the agency runs on, not a dashboard the
+        agency sells.
+      </Prose>
+
+      <Prose delay={0.7}>
         This is the infrastructure our agency runs on. You don't license it.
         You hire us, and we run it on your behalf. The spec sheet below
         describes what that buys you — not what we sell.
@@ -104,6 +111,12 @@ export function ChEngine({ t }: { t: TFn }) {
           <SpecCard key={i} spec={s} index={i} />
         ))}
       </div>
+
+      <Prose delay={0.4} className="mt-14">
+        Every engine above was designed, coded, and integrated by the
+        founder personally. The agency runs on a system that has exactly one
+        architect — and an architect who answers when called.
+      </Prose>
 
       <Statement delay={0.4}>
         This is what enterprise-grade actually means. A marketing operations

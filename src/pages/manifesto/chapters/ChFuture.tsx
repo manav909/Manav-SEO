@@ -52,7 +52,8 @@ export function ChFuture({ t }: { t: TFn }) {
 
       <Prose delay={1.2}>
         Few agencies are positioned for this era. Fewer are operating from
-        infrastructure built to last it. We are taking on new clients while
+        infrastructure built to last it. Almost none are run by the person
+        who designed every part of it. We are taking on new clients while
         the curve is still gentle.
       </Prose>
 
