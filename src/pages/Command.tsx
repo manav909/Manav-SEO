@@ -1538,11 +1538,11 @@ function ResponsePanel({ response, onClose, onAction, actionRunning }: {
         </div>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1"><X className="h-3.5 w-3.5" /></button>
       </div>
-      <div className="p-4 space-y-2">
+      <div className="p-5 space-y-3.5">
         {response.chunks.map((c, i) => <StreamingChunk key={i} chunk={c} delay={i * 0.15} />)}
         {response.honest_note && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: response.chunks.length * 0.15 + 0.3 }}
-            className="mt-3 pt-3 border-t border-amber-500/20 text-[11px] text-amber-400/80 italic flex items-start gap-1.5">
+            className="mt-4 pt-3 border-t border-amber-500/20 text-[11px] text-amber-400/85 italic flex items-start gap-1.5">
             <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" /><span>{response.honest_note}</span>
           </motion.div>
         )}
@@ -1632,6 +1632,8 @@ function ArtifactPanel({ artifact, delay }: { artifact: { kind: string; title: s
 
 function StreamingChunk({ chunk, delay }: { chunk: any; delay: number }) {
   const text = useTypewriterWithDelay(chunk.content, delay, 10);
+  const isDone = text.length >= chunk.content.length && chunk.content.length > 0;
+
   if (chunk.kind === 'verify') {
     return (
       <motion.details initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: delay + 0.2 }} className="text-[10px]">
@@ -1647,15 +1649,143 @@ function StreamingChunk({ chunk, delay }: { chunk: any; delay: number }) {
       </motion.details>
     );
   }
+
+  /* Phase 21 Block 2.17 — once typing completes, swap raw text for formatted markdown.
+     Walls of dense text with **1. **2. inline markers become readable sectioned output. */
+  if (!isDone) {
+    return (
+      <div className="text-[12.5px] text-foreground/85 leading-relaxed min-h-[1.2rem] whitespace-pre-wrap">
+        {text}
+        {text.length > 0 && text.length < chunk.content.length && (
+          <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.6, repeat: Infinity }}
+            className="inline-block w-0.5 h-3 ml-0.5 bg-cyan-400 align-middle" />
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="text-[12.5px] text-foreground/90 leading-relaxed min-h-[1.2rem]">
-      {text}
-      {text.length < chunk.content.length && text.length > 0 && (
-        <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.6, repeat: Infinity }}
-          className="inline-block w-0.5 h-3 ml-0.5 bg-cyan-400 align-middle" />
-      )}
-    </div>
+    <motion.div
+      initial={{ opacity: 0.8 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}
+      className="space-y-3.5">
+      {renderFormattedChunk(chunk.content)}
+    </motion.div>
   );
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Markdown rendering helpers — Phase 21 Block 2.17
+   Lightweight inline parser. Handles bold, inline numbered sections,
+   em-dash separated lists, and paragraph breaks. No external dependency.
+══════════════════════════════════════════════════════════════════════ */
+
+function renderFormattedChunk(raw: string): React.ReactNode[] {
+  if (!raw || !raw.trim()) return [];
+
+  /* Pre-process: force a paragraph break BEFORE every inline "**N." marker.
+     LLMs often pack the whole numbered list into one paragraph; we want each
+     numbered item to stand alone as a sub-section. */
+  let text = raw;
+  text = text.replace(/\s+(\*\*\d+\.\s)/g, '\n\n$1');
+
+  /* Also force a break before "**The short version:**" or similar trailing summaries. */
+  text = text.replace(/\s+(\*\*The short version[:\s])/gi, '\n\n$1');
+
+  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+
+  return paragraphs.map((para, i) => {
+    /* Numbered section header — "**N. Title** body text..." */
+    const numbered = para.match(/^\*\*(\d+)\.\s+([^*]+?)\*\*\s*(.*)$/s);
+    if (numbered) {
+      const [, num, header, body] = numbered;
+      return (
+        <div key={i} className="rounded-lg border border-border/30 bg-card/20 p-3">
+          <div className="flex items-baseline gap-2 mb-1.5">
+            <span className="text-[11px] font-bold text-cyan-400 shrink-0 tabular-nums">{num}.</span>
+            <span className="text-[13px] font-bold text-foreground leading-snug">{renderInline(header.trim())}</span>
+          </div>
+          {body.trim() && (
+            <div className="ml-5 text-[12.5px] text-foreground/85 leading-relaxed">
+              {renderBodyContent(body.trim())}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* "Short version" callout */
+    if (/^\*\*(The short version|Short version|Bottom line|TL;DR)[:\s*]/i.test(para)) {
+      const cleaned = para.replace(/\*\*/g, '').trim();
+      return (
+        <div key={i} className="rounded-lg border border-amber-500/25 bg-amber-500/[0.04] p-3">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-amber-400 mb-1">In short</div>
+          <p className="text-[12.5px] text-foreground/90 leading-relaxed">
+            {renderInline(cleaned.replace(/^(The short version|Short version|Bottom line|TL;DR)[:\s]+/i, ''))}
+          </p>
+        </div>
+      );
+    }
+
+    /* Bullet list paragraph (lines starting with -, •, or *) */
+    const lines = para.split(/\n/).map(l => l.trim());
+    if (lines.length > 1 && lines.every(l => /^[-•*]\s+/.test(l) || l === '')) {
+      const items = lines.filter(l => /^[-•*]\s+/.test(l)).map(l => l.replace(/^[-•*]\s+/, ''));
+      return (
+        <ul key={i} className="space-y-1.5 text-[12.5px] text-foreground/90 leading-relaxed">
+          {items.map((item, j) => (
+            <li key={j} className="flex items-start gap-2">
+              <span className="text-cyan-400/80 mt-0.5 shrink-0">·</span>
+              <span>{renderInline(item)}</span>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    /* Regular paragraph */
+    return (
+      <p key={i} className="text-[12.5px] text-foreground/90 leading-relaxed">
+        {renderInline(para)}
+      </p>
+    );
+  });
+}
+
+/* Body content under a numbered heading — if it contains em-dash separated
+   items (LLM's common pattern), render as a bullet list for readability. */
+function renderBodyContent(body: string): React.ReactNode {
+  /* Split on " — " when it appears 2+ times, suggesting list-like structure */
+  const emDashItems = body.split(/\s+—\s+/).map(s => s.trim()).filter(Boolean);
+  if (emDashItems.length >= 3) {
+    return (
+      <ul className="space-y-1.5">
+        {emDashItems.map((item, i) => (
+          <li key={i} className="flex items-start gap-2">
+            <span className="text-cyan-400/60 mt-0.5 shrink-0">·</span>
+            <span>{renderInline(item)}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return <span>{renderInline(body)}</span>;
+}
+
+/* Inline formatting — handles **bold** within a paragraph. */
+function renderInline(text: string): React.ReactNode[] {
+  if (!text) return [];
+  const out: React.ReactNode[] = [];
+  const regex = /\*\*([^*]+)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) out.push(text.slice(lastIndex, match.index));
+    out.push(<strong key={`b${key++}`} className="font-bold text-foreground">{match[1]}</strong>);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) out.push(text.slice(lastIndex));
+  return out;
 }
 
 function useTypewriterWithDelay(text: string, delaySec: number, speedMs = 12): string {

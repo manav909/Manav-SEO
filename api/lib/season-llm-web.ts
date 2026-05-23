@@ -235,6 +235,7 @@ CHUNK RULES:
 - First chunk: direct answer in 1-3 sentences. Cite key claims.
 - Detail chunks: deeper synthesis with more citations.
 - Verify chunk: name which searches you ran.
+- FORMATTING: keep prose readable. If you have 3+ steps or items, put each "**N. Header**" as the start of its own chunk, NOT inline in one paragraph. Use **bold** sparingly. Aim for 1-4 sentences per chunk — walls of text are unreadable.
 
 ACTIONS — same catalog as the regular brain (navigate, refresh, etc.).
 
