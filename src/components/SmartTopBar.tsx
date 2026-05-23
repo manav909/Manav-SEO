@@ -60,25 +60,46 @@ export default function SmartTopBar(){
   // in production builds. Order matters.
   const location=useLocation();
   const{setSidebarOpen,sidebarOpen,sidebarPinned,
-        role,setRole,empireStats,suggestion,navigate}=useNav();
+        role,setRole,empireStats,suggestion,tickerLines,navigate}=useNav();
   const[time,setTime]=useState(new Date());
   const[showSearch,setShowSearch]=useState(false);
-  const[jarvisMsg,setJarvisMsg]=useState("");
-  const[showMsg,setShowMsg]=useState(false);
+
+  /* Phase 21 Block 2.22 — continuous ticker. Index cycles through tickerLines,
+     rotating every 14s. Fade out (450ms) → swap → fade in (450ms). Pause on
+     hover so the user can finish reading anything that hits them right. */
+  const[tickerIdx,setTickerIdx]=useState(0);
+  const[tickerVisible,setTickerVisible]=useState(true);
+  const[tickerPaused,setTickerPaused]=useState(false);
 
   // Hide on original PortalNav pages to avoid double navigation
   if (PORTAL_NAV_PAGES.has(location.pathname)) return null;
 
   useEffect(()=>{const id=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(id);},[]);
 
-  // JARVIS ambient message - surfaces periodically
+  /* Drive the ticker — fade out, advance, fade in */
   useEffect(()=>{
-    const t=setTimeout(()=>{
-      setJarvisMsg(suggestion);
-      setShowMsg(true);
-      setTimeout(()=>setShowMsg(false),5000);
-    },3000);
-    return()=>clearTimeout(t);
+    if (tickerPaused) return;
+    if (!tickerLines || tickerLines.length === 0) return;
+    const rotate = setInterval(()=>{
+      setTickerVisible(false);
+      setTimeout(()=>{
+        setTickerIdx(i => (i + 1) % tickerLines.length);
+        setTickerVisible(true);
+      }, 500);
+    }, 14000);
+    return ()=>clearInterval(rotate);
+  },[tickerLines, tickerPaused]);
+
+  /* When the path changes, restart the ticker from a fresh line so it
+     feels responsive to navigation. */
+  useEffect(()=>{
+    setTickerVisible(false);
+    const t = setTimeout(()=>{
+      setTickerIdx(Math.floor(Math.random() * Math.max(1, tickerLines.length)));
+      setTickerVisible(true);
+    }, 250);
+    return ()=>clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   },[location.pathname]);
 
   useEffect(()=>{
@@ -153,17 +174,28 @@ export default function SmartTopBar(){
           </span>
         </div>
 
-        {/* JARVIS ambient message */}
-        <div style={{
-          flex:2,minWidth:0,overflow:"hidden",
-          display:"flex",alignItems:"center",gap:6,
-          opacity:showMsg?.8:0,transition:"opacity .5s ease",
-        }}>
-          <span style={{fontSize:10,color:"rgba(99,102,241,.6)",flexShrink:0}}>✦</span>
-          <span style={{fontSize:11,color:"rgba(255,255,255,.35)",
+        {/* Phase 21 Block 2.22 — JARVIS continuous ticker.
+            Lines rotate every 14s with a 500ms cross-fade. Hover pauses
+            rotation so you can finish reading anything that catches you. */}
+        <div
+          onMouseEnter={()=>setTickerPaused(true)}
+          onMouseLeave={()=>setTickerPaused(false)}
+          style={{
+            flex:2,minWidth:0,overflow:"hidden",
+            display:"flex",alignItems:"center",gap:6,
+            cursor:"default",
+          }}>
+          <span style={{fontSize:10,color:"rgba(167,139,250,.65)",flexShrink:0}}>✦</span>
+          <span style={{
+            fontSize:11,color:"rgba(255,255,255,.55)",
             overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const,
-            fontStyle:"italic"}}>
-            {jarvisMsg}
+            fontStyle:"italic",
+            opacity: tickerVisible ? 1 : 0,
+            transition:"opacity .45s ease",
+          }}>
+            {(tickerLines && tickerLines.length > 0)
+              ? tickerLines[tickerIdx % tickerLines.length]
+              : suggestion}
           </span>
         </div>
 
