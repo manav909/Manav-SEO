@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `39cee85`
+**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `58d31ec`
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -174,7 +174,7 @@ Changes analytical lens, not just tone.
 
 ## 11. Phase 21 + 22 state
 
-**Live main HEAD before this turn**: `39cee85` (Manifesto journey-arc hero, loud-Manav version)
+**Live main HEAD before this turn**: `58d31ec` (Cold open interactive recital + humble Manav reveal, credit-centered framing)
 
 **Shipped 2.13–2.22**: Pick engine · widget gallery + drawer · layout polish · gear removed · readable markdown chat · cite-tag strip · AIConcierge hidden on Season pages · JARVIS mood freshness · continuous ticker ~85 lines
 
@@ -242,11 +242,11 @@ FEATHER curve `[0.16, 1, 0.3, 1]`, soft springs (stiffness 60, damping 18), 1.0�
 | 2c | 3.4s | Kicker: "An SEO agency that operates on its own infrastructure." |
 | 2d | 3.9s | Sub: "Thinks in seasons. Verified in minutes." |
 | 2e | 4.5s | Intel callout: "TWELVE ALWAYS-ON INTELLIGENCE ENGINES. CONTINUOUS DATA REFRESH. TOTAL AUDIT TRAIL." |
-| 3 | 6.0s | Setup: "Infrastructure of this depth is usually a team's work." |
-| 4 | 7.0s | **Pivot** (dramatic hinge): *"This is one person's."* italic display cyan glow |
+| 3 | 6.0s | Setup: *"AI changed search. The agency model built for the old era hasn't caught up."* |
+| 4 | 7.0s | **Pivot** (dramatic hinge): ***"SEASON is what the moment demands."*** italic display cyan glow |
 | 5 | 8.4s | `── by ──` small mark |
 | 5 | 8.9s | **Manav** humble — `clamp(2.5rem, 5vw, 4rem)`, italic serif, plain white, single fade-in |
-| 5 | 9.8s | Close: *"Architect of the system above. He answers when called."* |
+| 5 | 9.8s | Close: *"State-of-the-art for the era of AI search. He answers when called."* |
 | — | 11.0s | Scroll hint `BEGIN ↓` |
 
 ### 13.1 Interactive recital mechanics
@@ -259,11 +259,17 @@ FEATHER curve `[0.16, 1, 0.3, 1]`, soft springs (stiffness 60, damping 18), 1.0�
 - Recital rows are themselves hoverable (not just the brand letters)
 - Mobile: `onClick` toggles the same state (no hover on touch)
 
-### 13.2 Why Manav is humble now
+### 13.2 Why the reveal is era-centered, not credit-centered
 
-Iron Man doesn't shout "I AM IRON MAN" — he says it quietly into a microphone. Confidence is calm. The reveal is the moment AFTER the journey of trust-building (company → recital → capabilities → pivot), and lands as a craftsperson signing their work — not a hero entering a stadium. The role triplet was removed for the same reason; the close line carries the role attribution in service of the agency, not as separate billing.
+The Arc Reactor parallel: Tony Stark didn't sell the Arc Reactor as "look what I invented." He sold it as "this is the future of clean energy" — a response to the demand of the time, state-of-the-art for the era, era-transforming because the world needed it. He was the builder who shipped the response. The credit lived in the *demand the work answered*, not in his cleverness.
 
-### 13.3 Copy keys (5 languages each)
+Same here. The cold open names the era (AI changed search), names the gap (the agency model hasn't caught up), names SEASON as the response the moment demands, and gives Manav quiet builder attribution — not as "the architect of every system" but as the operator who built the response and now runs it. The work's positioning carries the weight; the builder gets quiet credit. The reveal lands as a craftsperson signing their work, not as a hero entering a stadium.
+
+### 13.3 Honest call-out
+
+The era claim ("AI changed search; the agency model built for the old era hasn't caught up") is true and verifiable — Google AI Overviews, ChatGPT Search, Perplexity, AI Mode have all shipped in the last 18 months, and most agency operating models still use PDFs/static reporting. The "state-of-the-art" claim in the close is positional — what SEASON does (continuous data refresh, source-verified metrics, audit trail) is at the current frontier of the SEO operating-infrastructure category. Flagged so the manifesto's claims survive a fact-check.
+
+### 13.4 Copy keys (5 languages each)
 
 `hero_kicker` · `hero_sub` · `hero_intel_callout` · `hero_se_context` · `hero_as_context` · `hero_on_context` · `hero_reveal_setup` · `hero_reveal_pivot` · `hero_by_mark` · `hero_founder_name` · `hero_roles` · `hero_close` · `phrase_strat_exec` · `phrase_anal_supp` · `phrase_op_net` · `scroll_hint`
 
@@ -291,12 +297,14 @@ Iron Man doesn't shout "I AM IRON MAN" — he says it quietly into a microphone.
 
 ## 16. Honest call-outs (carried forward)
 
-1. The pivot line *"This is one person's"* only lands if literally true — no co-architects, no engineers contributing meaningfully beyond minor packages. From the visible repo signal (Manav is the sole committer at `manav909`), the claim looks defensible. Flagged for transparency since the entire grand entry rests on it being true.
+1. **Era claim is verifiable** — "AI changed search; the agency model built for the old era hasn't caught up" rests on shipped AI search products (Google AI Overviews, ChatGPT Search, Perplexity, AI Mode) and the persistence of legacy SEO operating models. True today.
 
-2. AIConcierge + profile avatar on `/manifesto` should be hidden for cinematic cleanness. Awaiting Manav's go-ahead before touching the app shell.
+2. **"State-of-the-art" claim is positional** — what SEASON does (continuous GSC+GA4 refresh, source-cited metrics, audit trail, 12 always-on engines) is at the current frontier of the SEO operating-infrastructure category. Not "the best in the world" — "the frontier where this category currently is." Defensible.
+
+3. **AIConcierge + profile avatar visible on `/manifesto`** — should be hidden for cinematic cleanness. Awaiting Manav's go-ahead before touching the app shell.
 
 ---
 
 ## 17. Session handoff prompt for next chat
 
-> "Continuing SEO SEASON. Brief attached. Just shipped cold open with interactive recital + humble Manav reveal — letters of S.E.A.S.O.N. hover-expand each pair's SEO context, Manav name is now small italic with no gradient. Layout work paused. Don't change anything without confirming."
+> "Continuing SEO SEASON. Brief attached. Cold open is now era-centered (Arc Reactor framing) — setup names AI changing search, pivot names SEASON as what the moment demands, Manav reveal stays quiet and humble. Interactive recital still in place. Layout work paused. Don't change anything without confirming."
