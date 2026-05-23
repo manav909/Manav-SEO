@@ -54,6 +54,25 @@ export default function AIConcierge() {
   const pageCtx = PAGE_CONTEXT[currentPath] || `Page: ${currentPath}`;
   const quickQ = QUICK_QUESTIONS[currentPath] || QUICK_QUESTIONS.default;
 
+  /* Phase 21 Block 2.20 — AIConcierge is hidden on S.E.A.S.O.N. pages.
+     The Season Orb is the AI entry point there; the Concierge competes for
+     attention and covers content on /command. List of routes where the
+     Season Orb is the canonical AI surface — keep them out of Concierge. */
+  const HIDE_ON_PATHS = new Set([
+    '/command',
+    '/data-room',
+    '/bde-panel',
+    '/algorithm-intel',
+    '/launchpad',
+    '/playground',
+    '/morning-brief',
+    '/empire',
+    '/ask',
+    '/dashboard',
+    '/admin',
+  ]);
+  if (HIDE_ON_PATHS.has(currentPath)) return null;
+
   // Pulse when page changes to suggest help
   useEffect(() => {
     if (!open) {

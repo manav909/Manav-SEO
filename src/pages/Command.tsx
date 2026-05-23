@@ -674,13 +674,12 @@ function CommandInner() {
         <div className={`relative transition-all duration-500 ${
           mode === 'pro'
             ? 'px-5 lg:px-8 pb-8'
-            : 'mx-auto max-w-3xl lg:max-w-5xl px-4 sm:px-6 pb-10'
+            : 'mx-auto max-w-3xl lg:max-w-6xl px-4 sm:px-6 lg:px-10 pb-10'
         }`}>
 
-          {/* Phase 21 Block 2.18 — simple inline top row, NOT sticky.
-              The global SmartTopBar (40px tall, position:fixed, z-950) is the page chrome.
-              Anything I make sticky here fights with it. This is just a content row
-              that flows naturally above the greeting. */}
+          {/* Phase 21 Block 2.20 — Casual width bumped from 5xl (1024px) to 6xl (1152px).
+              Pairs with hiding AIConcierge on this page (it was covering right-side content
+              and making the left whitespace feel orphaned). */}
           {!loading && briefing && (
             <div className="flex items-center justify-between gap-3 mb-6 pt-2">
               <motion.div
