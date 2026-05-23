@@ -661,7 +661,7 @@ function CommandInner() {
       <SmartTopBar />
       <SmartSidebar />
 
-      <div className="relative md:pl-64 overflow-hidden">
+      <div className="relative md:pl-64 pt-10 overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <motion.div
             className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full opacity-20"
@@ -677,18 +677,16 @@ function CommandInner() {
             : 'mx-auto max-w-3xl lg:max-w-5xl px-4 sm:px-6 pb-10'
         }`}>
 
-          {/* Phase 21 Block 2.16 — sticky top header strip.
-              Spans the full width of the content area, lives at the very top.
-              Breadcrumb LEFT · mode toggle + settings gear RIGHT.
-              No floating gear button anywhere. */}
+          {/* Phase 21 Block 2.18 — simple inline top row, NOT sticky.
+              The global SmartTopBar (40px tall, position:fixed, z-950) is the page chrome.
+              Anything I make sticky here fights with it. This is just a content row
+              that flows naturally above the greeting. */}
           {!loading && briefing && (
-            <div className={`sticky top-0 z-20 flex items-center justify-between gap-3 mb-6 py-3 bg-background/90 backdrop-blur-md border-b border-border/40 ${
-              mode === 'pro' ? '-mx-5 lg:-mx-8 px-5 lg:px-8' : '-mx-4 sm:-mx-6 px-4 sm:px-6'
-            }`}>
+            <div className="flex items-center justify-between gap-3 mb-6 pt-2">
               <motion.div
                 initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
-                className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 flex items-center gap-2 min-w-0">
+                className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/75 flex items-center gap-2 min-w-0">
                 <Building2 className="h-3 w-3 shrink-0" />
                 <span className="truncate font-bold">{selectedProject?.project_name || selectedProject?.name || briefing.project_name}</span>
                 <span className="text-cyan-400/50 shrink-0">·</span>
@@ -699,21 +697,19 @@ function CommandInner() {
                 <button
                   onClick={() => setDrawerOpen(true)}
                   title="Command Settings (⌘.)"
-                  className="w-9 h-9 rounded-full bg-card/60 border border-border/50 flex items-center justify-center text-muted-foreground/75 hover:text-cyan-400 hover:border-cyan-500/40 hover:bg-cyan-500/[0.05] transition-colors">
+                  className="w-9 h-9 rounded-full bg-card/40 border border-border/50 flex items-center justify-center text-muted-foreground/75 hover:text-cyan-400 hover:border-cyan-500/40 hover:bg-cyan-500/[0.05] transition-colors">
                   <Settings className="h-4 w-4" />
                 </button>
               </div>
             </div>
           )}
           {(!briefing || loading) && (
-            <div className={`sticky top-0 z-20 flex items-center justify-end gap-2 mb-6 py-3 bg-background/90 backdrop-blur-md border-b border-border/40 ${
-              mode === 'pro' ? '-mx-5 lg:-mx-8 px-5 lg:px-8' : '-mx-4 sm:-mx-6 px-4 sm:px-6'
-            }`}>
+            <div className="flex items-center justify-end gap-2 mb-6 pt-2">
               <ModeToggle mode={mode} onChange={setMode} />
               <button
                 onClick={() => setDrawerOpen(true)}
                 title="Command Settings (⌘.)"
-                className="w-9 h-9 rounded-full bg-card/60 border border-border/50 flex items-center justify-center text-muted-foreground/75 hover:text-cyan-400 hover:border-cyan-500/40 hover:bg-cyan-500/[0.05] transition-colors">
+                className="w-9 h-9 rounded-full bg-card/40 border border-border/50 flex items-center justify-center text-muted-foreground/75 hover:text-cyan-400 hover:border-cyan-500/40 hover:bg-cyan-500/[0.05] transition-colors">
                 <Settings className="h-4 w-4" />
               </button>
             </div>
