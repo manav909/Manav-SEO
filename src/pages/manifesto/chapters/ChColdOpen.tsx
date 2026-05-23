@@ -202,25 +202,18 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
           <span className="by-rule" />
         </motion.div>
 
-        <motion.div
-          className="hero-name-humble mt-4"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.4, delay: 8.9, ease: FEATHER }}
-        >
-          {t('hero_founder_name')}
-        </motion.div>
+        <AnimatedSignature delay={8.9} />
 
         <motion.div
           className="hero-close mt-5"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 0.82, y: 0 }}
-          transition={{ duration: 1.2, delay: 9.8, ease: FEATHER }}
+          transition={{ duration: 1.2, delay: 11.4, ease: FEATHER }}
         >
           {t('hero_close')}
         </motion.div>
 
-        <ScrollHint label={t('scroll_hint')} delay={11.0} />
+        <ScrollHint label={t('scroll_hint')} delay={12.7} />
       </motion.div>
     </section>
   );
@@ -354,6 +347,143 @@ function InteractiveRecital({
         );
       })}
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANIMATED SIGNATURE — "Manav Sharma"
+
+   A signature that draws itself. The cinematic spec:
+
+     · "Manav Sharma" rendered in the Allison handwriting font
+       (Google Fonts), inside an SVG. The font is hinted for
+       signature-style rendering — connected letterforms, a
+       natural slant, organic baseline drift.
+
+     · A clipPath rect grows from left to right over 1.9 seconds
+       using a custom ease curve `[0.45, 0.05, 0.2, 1]` that
+       mimics writing motion — gentle initiation, smooth glide
+       middle, soft landing.
+
+     · A small glowing pen-tip dot rides along the leading edge
+       of the clip, perfectly synchronized. Cyan glow trails
+       behind it via a triple drop-shadow filter — close,
+       medium, far — so the pen tip reads as a luminous instrument
+       not a flat dot.
+
+     · The pen tip fades in for 0.25s before writing begins,
+       holds at the right edge for 0.2s after writing completes,
+       then fades out over 0.5s.
+
+     · The signature persists. The pen tip vanishes. The image
+       you're left with is the same one you'd see if Manav had
+       signed it himself.
+
+   Respects prefers-reduced-motion. If the user has reduced motion
+   set, the signature appears fully visible immediately, with no
+   writing animation and no pen tip.
+═══════════════════════════════════════════════════════════════ */
+
+function AnimatedSignature({ delay }: { delay: number }) {
+  const reducedMotion = useReducedMotion();
+
+  /* Inner-animation timing relative to component delay */
+  const containerFadeMs = 600;
+  const innerStartS     = 0.4;   // wait for container fade-in before pen appears
+  const fadeInS         = 0.25;  // pen tip fade-in
+  const writeS          = 1.9;   // mask travel + pen travel
+  const holdS           = 0.2;   // brief held tip after write
+  const fadeOutS        = 0.5;   // pen tip fade-out
+
+  const penTotalS = fadeInS + writeS + holdS + fadeOutS;
+  const writeDelay = delay + innerStartS + fadeInS;
+
+  /* Pen tip keyframes (cx + opacity), each normalized to penTotalS */
+  const t1 = fadeInS / penTotalS;                       // fade-in done
+  const t2 = (fadeInS + writeS) / penTotalS;            // write done
+  const t3 = (fadeInS + writeS + holdS) / penTotalS;    // hold done
+
+  return (
+    <>
+      {/* Google Fonts: Allison — a signature handwriting font.
+          The link tags are hoisted into <head> by React 19 (and work
+          inline in React 18). font-display: swap means the signature
+          renders in a fallback cursive immediately, then swaps in
+          Allison when it loads. */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Allison&display=swap"
+      />
+
+      <motion.div
+        className="hero-signature-wrap mt-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: containerFadeMs / 1000, delay, ease: FEATHER }}
+        role="img"
+        aria-label="Manav Sharma, founder signature"
+      >
+        <svg
+          viewBox="0 0 720 200"
+          className="hero-signature-svg"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <defs>
+            <clipPath id="manav-sig-clip">
+              {reducedMotion ? (
+                <rect x="0" y="0" width="720" height="200" />
+              ) : (
+                <motion.rect
+                  x="0"
+                  y="0"
+                  height="200"
+                  initial={{ width: 0 }}
+                  animate={{ width: 720 }}
+                  transition={{
+                    duration: writeS,
+                    ease: [0.45, 0.05, 0.2, 1],
+                    delay: writeDelay,
+                  }}
+                />
+              )}
+            </clipPath>
+          </defs>
+
+          {/* The signature itself — clipped to the animated rect */}
+          <text
+            x="360"
+            y="135"
+            textAnchor="middle"
+            className="hero-signature-text"
+            clipPath={reducedMotion ? undefined : 'url(#manav-sig-clip)'}
+          >
+            Manav Sharma
+          </text>
+
+          {/* Pen tip — appears, travels with the clip edge, holds, fades */}
+          {!reducedMotion && (
+            <motion.circle
+              cy="135"
+              r="3.2"
+              className="hero-signature-pen"
+              initial={{ cx: 0, opacity: 0 }}
+              animate={{
+                cx:      [0,  0,  720, 720, 720],
+                opacity: [0,  1,  1,   1,   0  ],
+              }}
+              transition={{
+                duration: penTotalS,
+                times: [0, t1, t2, t3, 1],
+                ease: ['easeOut', [0.45, 0.05, 0.2, 1], 'linear', 'easeIn'],
+                delay: delay + innerStartS,
+              }}
+            />
+          )}
+        </svg>
+      </motion.div>
+    </>
   );
 }
 
@@ -563,6 +693,7 @@ function ColdOpenStyles() {
         background: linear-gradient(90deg, transparent, var(--m-hairline-s), transparent);
       }
       .hero-name-humble {
+        /* legacy class — kept as a positioning fallback if used elsewhere */
         font-family: ui-serif, Georgia, serif;
         font-size: clamp(2.5rem, 5vw, 4rem);
         line-height: 1.05;
@@ -571,7 +702,37 @@ function ColdOpenStyles() {
         letter-spacing: -0.01em;
         color: rgba(255, 255, 255, 0.96);
         text-align: center;
-        /* no gradient — humble pure white signature feel */
+      }
+
+      /* ─── ANIMATED SIGNATURE ──────────────────────────────── */
+      .hero-signature-wrap {
+        width: 100%;
+        max-width: 580px;
+        margin: 1rem auto 0 auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .hero-signature-svg {
+        width: 100%;
+        height: auto;
+        display: block;
+        overflow: visible;
+      }
+      .hero-signature-text {
+        font-family: 'Allison', 'Homemade Apple', 'Caveat', 'Dancing Script', cursive;
+        font-size: 175px;
+        font-weight: 400;
+        fill: rgba(255, 255, 255, 0.97);
+        letter-spacing: -0.005em;
+        filter: drop-shadow(0 0 18px hsla(0, 0%, 100%, 0.08));
+      }
+      .hero-signature-pen {
+        fill: hsla(188, 100%, 92%, 1);
+        filter:
+          drop-shadow(0 0 6px  hsla(188, 100%, 80%, 0.95))
+          drop-shadow(0 0 18px hsla(188, 100%, 70%, 0.55))
+          drop-shadow(0 0 32px hsla(188, 90%,  65%, 0.35));
       }
       .hero-close {
         font-family: ui-serif, Georgia, serif;
@@ -589,6 +750,7 @@ function ColdOpenStyles() {
       @media (max-width: 880px) {
         .cold-open-stage-journey .brand-reveal { font-size: clamp(2.4rem, 12vw, 4.5rem); }
         .hero-name-humble { font-size: clamp(2rem, 7vw, 3rem); }
+        .hero-signature-wrap { max-width: 420px; }
         .recital-phrase   { font-size: 1.1rem; white-space: normal; }
         .recital-row-main { grid-template-columns: 3.4rem 18px 1fr; gap: 0.7rem; }
         .recital-context-inner { padding-left: 4.1rem; font-size: 0.92rem; }
@@ -603,6 +765,7 @@ function ColdOpenStyles() {
         .recital-phrase   { text-align: center; }
         .recital-context-inner { padding-left: 0; text-align: center; }
         .by-rule { width: 36px; }
+        .hero-signature-wrap { max-width: 300px; }
       }
     `}</style>
   );
