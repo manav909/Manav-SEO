@@ -128,51 +128,73 @@ Setup, P0 bug fixes, Intelligence Playground recovery, PM Module (cards/strategy
 
 ---
 
-## 6. P0 Platform Bugs (UNRESOLVED)
+## 6. P0 Platform Bugs — AUDITED 2026-05-23
 
-These are the highest-leverage bugs. Address before more features.
+The previously documented "5 P0 bugs" were audited against current main (`467ebcf`). **4 of 5 are already fixed.** Only one partial cleanup remains.
 
-1. **`task-engine.ts` duplicate "requirements" stub.** Empty handler at line ~2420 shadows the real one at ~3122. Causes 300-second hang when TaskExecutor calls "requirements" action.
-2. **`Audit.tsx` calls `/api/audit-orchestrator`** which is `.disabled` (returns 404). Audit flow broken.
-3. **`check_system_health`** action has no handler in `task-engine.ts`.
-4. **`get_revenue_records`** action has no handler in `task-engine.ts`.
-5. **`extractAndSaveLearning`** in `api/lib/ai-cache.ts` is imported by seo-agent / crawl / algorithm-intel / run-analysis but **never called** — dead code. The live mechanism is each handler's inline `saveLearning` HTTP-POST to `/api/task-engine` action `save_learning` with a regex classification gate. Multiple divergent implementations exist.
+| Originally documented | Verified state |
+|---|---|
+| **Duplicate `requirements` stub at ~line 2420 shadowing real handler at ~3122 (300s hang)** | ✅ **FIXED.** Only one handler exists, at `task-engine.ts:3396`. Real implementation with full BLUEPRINTS object. |
+| **`Audit.tsx` calls `/api/audit-orchestrator` (`.disabled`, 404)** | ✅ **FIXED.** `Audit.tsx` calls `/api/run-analysis`. No `audit-orchestrator` reference anywhere in source. |
+| **`check_system_health` no handler** | ✅ **FIXED.** Real handler at `task-engine.ts:1841`. Checks env vars, Supabase reachability, Anthropic reachability. |
+| **`get_revenue_records` no handler** | ✅ **FIXED.** Real handler at `task-engine.ts:1865`. Fetches from `revenue_records` table with project filter. |
+| **`extractAndSaveLearning` imported but never called (dead code)** | ⚠️ **PARTIAL.** Called from `task-engine.ts:2653`. But still imported (without being called) by `algorithm-intel.ts`, `seo-agent.ts`, `crawl.ts`, `run-analysis.ts`. Cleanup: remove the dead imports OR wire them up. |
+
+**Implication:** the previously-planned "P0 sprint" session is mostly unnecessary. The remaining cleanup is ~5 minutes of work and not blocking anything.
+
+### Verification discipline (rule, not a bug)
+
+A pattern learned the hard way: the brief and memory CAN go stale silently. Before proposing work on any "documented bug" or "known issue," verify it in current main code first. Distinguish "noted in past sessions" from "verified to still exist." When documentation contradicts reality, surface the contradiction — never paper over.
 
 ---
 
-## 7. Backlog (Prioritized)
+## 7. Backlog (Prioritized — locked 2026-05-23)
 
-### A. Critical platform (do first)
-1. Fix the 5 P0 bugs above.
+Priorities below are based on Manav's reality check: mix of personal + a few client trials, daily reading of pillar reports (hallucinations matter), commercial expectations active.
 
-### B. Engine quality
-6. Hallucination guards + quality pass for 4 pillars: `cluster_map`, `internal_linking`, `off_page`, `monitoring`. Quality reviews documented in older transcripts; improvements never shipped.
-7. Living Overview cron + URL fit nightly — Phase 20 work never wired to a scheduler.
+### P0 — Ship next session
 
-### C. Pick / Ticker (deferred from recent blocks)
-8. LLM-generated ticker lines pulling from Brain Learnings + Manav's Pick corpus.
-9. Feedback loop (👍/👎) on ticker lines.
-10. Tone preference toggle (witty / motivational / serious) in drawer prefs.
+1. **Pillar quality + hallucination guards.** Start with whichever pillar Manav reads most. One pillar per session. Cover the 4 pillars where quality reviews were documented but fixes never shipped: `cluster_map`, `internal_linking`, `off_page`, `monitoring`. Plus verify `research` and `technical_audit` while we're in there. Each pillar gets: source-required gates, partial-data acknowledgments, "I don't have enough data to say X" patterns where appropriate. Validate against a real project before shipping.
 
-### D. Pro mode features
-11. Multi-turn chat scrollback in Pro mode.
-12. PDF export of Pro mode view.
-13. Per-project widget layout preferences (currently global).
-14. Drag-and-drop widget reordering (currently ↑↓ arrows).
+### P1 — Quick wins after pillar work begins
 
-### E. Mobile
-15. Mobile bottom-sheet drawer variant for CommandDrawer.
-16. Mobile-specific layout for Command page.
+2. **Clean up `extractAndSaveLearning` dead imports** in `algorithm-intel.ts`, `seo-agent.ts`, `crawl.ts`, `run-analysis.ts`. Either remove the imports or wire them up. ~5 minutes work, can be done at the start of any pillar session.
+3. **Living Overview cron + URL fit nightly.** Engine exists (Phase 20 work). Wire it to the Vercel cron that currently only runs `run_scheduled_verifications` at 6am. Decide whether Living Overview should run nightly or weekly.
 
-### F. External integrations / engine work
-17. SerpAPI for competitive radar (Block 4 plan).
-18. `decisions_avoided` dedicated surface (Block 5 plan).
-19. Client PDF export per pillar (Block 6 plan).
-20. Block 3 — pillar engine hallucination guards (overlaps with #6).
+### P2 — Value-adding features after core is solid
 
-### G. Layout (PAUSED — do not touch without explicit "yes, layout")
-21. Casual mode empty left space when sidebar is closed.
-22. Left rail attempt — needs redesign that respects Pro mode existing content (Block 2.24 v1 was wrong).
+4. LLM-generated ticker lines from Brain Learnings + Manav's Pick corpus.
+5. Multi-turn chat scrollback in Pro mode.
+6. Per-project widget layout preferences (currently global).
+
+### P3 — When client trials grow into paying clients
+
+7. SerpAPI integration for competitive radar (Block 4 plan).
+8. Client PDF export per pillar (Block 6 plan).
+9. `decisions_avoided` dedicated surface (Block 5 plan).
+
+### Deferred indefinitely (do not propose without explicit ask)
+
+- Mobile bottom-sheet drawer variant + mobile Command layout
+- Drag-and-drop widget reordering (current ↑↓ arrows are functional)
+- PDF export of Pro mode view
+- Tone preference toggle on ticker (witty/motivational/serious)
+- Feedback loop (👍/👎) on ticker lines
+
+### Permanently paused (per Manav's explicit rule)
+
+- All layout work. Do not touch without explicit "yes, proceed with layout."
+- Open layout items if/when revived: Casual empty left space (when sidebar closed); persistent left rail attempt (needs redesign that respects Pro mode's 2-column grid).
+
+### Audit notes for items that may already be done
+
+The following were referenced in past transcripts but their current state was checked on 2026-05-23:
+
+- **Phase 22 Operator Inbox + Report Search** — Built. `SeoInboxPanel.tsx` wired into `PMModule.tsx`. Quality unverified but feature exists.
+- **Phase 16.0.2** (competitor_owners + partial_losing + two-section pillar reports) — Code in `seo-off-page.ts` and `seo-cluster-map.ts` references both terms. Implementation present, output quality unverified.
+- **Phase 19 Monitoring** — Engine in `seo-monitoring.ts` with `runMonitoringCheck` function. NOT wired to any cron — only the 6am `run_scheduled_verifications` cron exists. Monitoring runs only when triggered from `SeoCampaignsPanel` manually.
+
+These three are candidates for verification in pillar-quality sessions but not separately ticketed.
 
 ---
 
@@ -222,7 +244,9 @@ These are the highest-leverage bugs. Address before more features.
 Real money is on this. Manav has international clients with real commercial expectations. Wrong answers cost money, time, and trust. "Good enough" is not the bar. Working software with clean data is the bar. If a number is uncertain or a feature is shaky, say so plainly — don't smooth it over to look productive.
 
 **Role-thinking — when Manav says "think like X":**
-This is not a tone change. It's a frame change. Switch the analytical lens deliberately:
+This is not a tone change. It's a frame change. Each role catches different failure modes the others miss. Roles fall into two groups: **building** roles (used during code work) and **quality-gate** roles (used when reviewing client-facing output).
+
+#### Building roles (used during code work)
 
 - **"Think like a senior engineer"** → architecture first, edge cases second, write a plan before code, ask "what could break this," prefer boring proven solutions over clever ones, name the tradeoffs explicitly.
 - **"Think like a strategist"** → start with the business outcome, work backwards to the tactic, consider what competitors will do, surface what's unknowable.
@@ -230,7 +254,29 @@ This is not a tone change. It's a frame change. Switch the analytical lens delib
 - **"Think like an operator"** → what does the person running this on Monday morning need? Speed, clarity, no surprises. Prefer one fewer step.
 - **"Think like a product designer"** → user's mental model first, screen second, motion last. What does this teach the user about how the system works?
 
-If a role isn't named, default is senior engineer + operator, because that's where most SEO Season work lives.
+#### Quality-gate roles (used when reviewing pillar reports, briefs, strategies, any client-facing deliverable)
+
+These are CRITICAL. Running output through multiple role lenses sequentially is how we catch hallucinations, bad recommendations, missing context. **Quality = surviving all relevant role critiques.** The goal is to protect the client from bad decisions before the deliverable ships.
+
+- **"Think like a Digital Marketing Specialist"** → does this make sense in the full marketing mix? Where does SEO sit relative to paid, social, email, content? Is attribution being honest? Are we ignoring channels that would actually move the needle? Is this advice realistic for the client's stage?
+- **"Think like a Senior SEO Specialist"** → is the technical SEO correct? Does this respect how the current Google algorithm actually behaves? Are we chasing vanity metrics (impressions, raw rankings) instead of revenue-driving ones (intent-matched traffic, conversions)? Are the keyword choices defensible? Is this what a skilled practitioner would actually recommend, or is it generic AI-flavored advice?
+- **"Think like an SEO Executive (junior operator)"** → given this brief or task, can I actually execute it on Monday? Are the required inputs all listed? Is the verification method clear? Could I screw this up by misreading something? Are the steps in the right order?
+- **"Think like a Client"** → does this report make sense to me as a non-SEO-expert? Would I trust it? Would I pay for it? Am I being protected from making a bad decision? Is the recommendation explained in terms of MY business outcome, not SEO jargon? Does it acknowledge what I'm worried about?
+- **"Think like a PM"** → is the work sequenced right? Are blockers surfaced? Is anything aging? Are dependencies between cards/tasks explicit? Will the team know what to do next without re-asking?
+- **"Think like a Content Writer"** → given this content brief, can I actually write something that ranks AND reads well? Is the keyword guidance specific without being constraining? Is the search intent clear? Is the tone direction concrete enough to act on? Are the internal links justified?
+- **"Think like Sales"** → does this deliverable help the salesperson close, retain, or upsell? Is there a clear "here's what we did, here's what's next" arc the client will appreciate? Does it create future-work hooks naturally, or feel like an ending?
+- **"Think like a Brand Specialist"** → does the language and positioning fit the client's brand voice? Is anything in here off-brand or generic-corporate? Would the founder approve of this going out under their name?
+- **"Think like an Investor"** → what would a skeptical investor look at and ask about this? Are the metrics defensible? Are we conflating activity with progress? Would this hold up to due diligence? What's the next funding round going to ask about that's NOT in here?
+
+#### How to use the quality-gate roles
+
+- For **each pillar report** before shipping: minimum lens = Senior SEO Specialist + Client. Add others when relevant (Brand Specialist for voice-heavy clients, PM for execution-heavy reports, Content Writer for content-pillar output).
+- For **strategy decisions**: Digital Marketing Specialist + Senior SEO + Investor. Catches scope and viability issues early.
+- For **content briefs**: Senior SEO + Content Writer + Client. Catches both ranking-feasibility and write-ability.
+- When Manav names a role: that's the PRIMARY lens. But still run a quick sanity-check through the Client lens at the end — that one is non-negotiable.
+- When NO role is named: default for pillar review is **Senior SEO Specialist + Client**.
+
+If a role isn't named for general code/architecture work, default is **senior engineer + operator** (the building roles). For client-facing output, default is **Senior SEO + Client**.
 
 **Hard fact-check discipline:**
 - Web search for any current-state fact (people in roles, current prices, current API behavior, current Google algorithm specifics, current SEO best practices).
@@ -325,27 +371,48 @@ Manav then either copies these into the brief or asks Claude to regenerate the b
 
 ---
 
-## 11. In-Flight State (as of 2026-05-23)
+## 11. In-Flight State (as of 2026-05-23 — end of triage session)
 
 **Current main:** `467ebcf` (Block 2.22 Gossip Partner ticker)
 
-**Active work paused:** None — Manav explicitly asked to stop layout iteration and triage backlog instead.
+**Active work paused:** None. Backlog is triaged and prioritized in Section 7.
 
-**Decision points open:**
-- Where to spend next session (backlog item to pick)
-- Whether to add LLM-curated ticker content (Backlog #8) before or after fixing P0 bugs
+### Decisions locked this session
 
-**This session's accomplishments (setup, not code):**
-- Reverted main to `467ebcf` (Block 2.24 left rail was abandoned; rejected by Manav after overlapping Pro mode)
-- Created PROJECT_BRIEF.md (this document) as the cross-chat memory bridge
-- Added 15 memory entries covering: architecture facts, working style, deploy policy, voice, layout pause, session handoff ritual, brief-update ritual, operating philosophy
-- Expanded Section 9 (Voice & Ethics) with role-thinking frames, fact-check discipline, transparency requirements, mistake-owning protocol, pushback discipline, and concrete honest-vs-dishonest examples
-- Established that brief regeneration is a hard ritual after every build (single deploy command covers code + brief)
+- **No more layout work** without explicit "yes, proceed with layout"
+- **P0 bug list reset** — 4 of 5 documented bugs are already fixed (audit in Section 6)
+- **Backlog locked** in priority order P0→P3 (Section 7)
+- **Hard ritual** — brief regeneration is part of every build deploy command (single chain, not two)
 
-**Manav's stated current concerns:**
-- Chat-length anxiety → addressed via brief + memory
-- Did not want code touches until backlog is triaged and next focus is agreed
-- Wanted honesty/transparency/role-thinking explicitly captured (this session's expansion of Section 9)
+### Next session focus (decided)
+
+**P0 Item 1 — Pillar quality + hallucination guards.** One pillar per session. Manav reads pillar reports daily; client trials are live; hallucinations now would damage trial-to-paid conversion.
+
+**Open question for start of next session:** Which pillar does Manav read most often? That's the one to attack first. Likely candidates based on transcript history: `cluster_map`, `internal_linking`, `off_page`, `monitoring`. Ask before starting.
+
+### Session-start ritual for next chat
+
+1. Upload this PROJECT_BRIEF.md as the first message
+2. Re-clone: `rm -rf Manav-SEO && git clone -q https://github.com/manav909/Manav-SEO.git && cd Manav-SEO && npm install --silent`
+3. Confirm baseline: TS=26, functions=12, last commit = `467ebcf`
+4. Ask Manav: "Which pillar do you read most? We'll start the quality pass there."
+5. Read the chosen pillar's engine code top-to-bottom before proposing any changes
+6. Build, verify against real project, ship, regenerate brief
+
+### This session's accomplishments
+
+- Reverted main to `467ebcf` after Block 2.24 left rail failure
+- Created PROJECT_BRIEF.md (this document) as cross-chat memory bridge
+- Added 16 memory entries (was 7) covering: architecture, working style, deploy policy, voice rules, layout pause, session handoff ritual, hard brief-update ritual, operating philosophy, verification-discipline-against-stale-docs
+- Expanded Section 9 (Voice & Ethics) with role-thinking, fact-check discipline, transparency requirements, mistake-owning protocol, pushback discipline, honest-vs-dishonest examples
+- **Audited P0 bug list** and discovered 4 of 5 were already fixed; updated Section 6 accordingly
+- **Locked prioritized backlog** in Section 7 (P0: pillar quality; P1: dead import cleanup + Living Overview cron; P2: tickers/scrollback/widget prefs; P3: SerpAPI/PDF/decisions_avoided; deferred + paused items listed)
+
+### Manav's stated current concerns
+
+- Chat-length anxiety → addressed via brief + memory persistence
+- Wants to ship, not audit further
+- Quality matters because client trials are live
 
 ---
 
