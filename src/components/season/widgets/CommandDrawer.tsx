@@ -1,31 +1,36 @@
 /* ════════════════════════════════════════════════════════════════════
    src/components/season/widgets/CommandDrawer.tsx
-   Phase 21 — Block 2.14 — Right drawer (second-level attention)
+   Phase 21 — Block 2.16 — Right drawer (six tabs)
 
-   Slides in from the right when the floating ⌘. button is clicked.
-   Four tabs:
+   Tabs:
      1. Layout      — reorder & hide currently-active widgets
      2. Gallery     — add hidden widgets back, browse all
-     3. Saved       — Manav's Picks Archive + saved RSS items
-     4. Preferences — default mode, density, motion
+     3. Saved       — Manav's Picks Archive
+     4. Engine      — Manav's Pick corpus status + force-generate controls
+     5. Activity    — "Behind the scenes" live ledger (merged in this block)
+     6. Preferences — default mode, density, motion
 ══════════════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, Settings, Layers, BookOpen, History, Sliders,
+  X, Settings, Layers, BookOpen, Sliders,
   Plus, Eye, EyeOff, ChevronUp, ChevronDown, ExternalLink,
-  Sparkles, RotateCcw, RefreshCw, Bookmark,
+  Sparkles, RotateCcw, RefreshCw, Bookmark, Activity, Database,
+  Zap, AlertCircle, CheckCircle2,
 } from 'lucide-react';
 import { DURATION, FEATHER_EASE } from '../warRoomAnimations';
 import {
-  WIDGET_REGISTRY, widgetsByCategory, getWidget,
+  widgetsByCategory, getWidget,
   type WidgetMode, type WidgetCategory,
 } from './registry';
-import type { UserPrefsClient } from '@/components/pm/api';
-import { seoPickEngineArchive, type ManavsPickRowClient } from '@/components/pm/api';
+import type { UserPrefsClient, ActivityEvent, BriefingClient } from '@/components/pm/api';
+import {
+  seoPickEngineArchive, seoPickEngineRegenerate, seoCorpusEnrichBatch, seoPickEngineGet,
+  type ManavsPickRowClient,
+} from '@/components/pm/api';
 
-type Tab = 'layout' | 'gallery' | 'saved' | 'prefs';
+type Tab = 'layout' | 'gallery' | 'saved' | 'engine' | 'activity' | 'prefs';
 
 interface Props {
   open:        boolean;
@@ -34,12 +39,13 @@ interface Props {
   prefs:       UserPrefsClient;
   setPrefs:    (updater: (p: UserPrefsClient) => UserPrefsClient) => void;
   projectId:   string | null;
+  activity:    ActivityEvent[];
+  briefing:    BriefingClient | null;
 }
 
-export default function CommandDrawer({ open, onClose, mode, prefs, setPrefs, projectId }: Props) {
+export default function CommandDrawer({ open, onClose, mode, prefs, setPrefs, projectId, activity, briefing }: Props) {
   const [tab, setTab] = useState<Tab>('layout');
 
-  /* Cmd/Ctrl + . opens drawer; Escape closes */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (open && e.key === 'Escape') {
@@ -55,7 +61,6 @@ export default function CommandDrawer({ open, onClose, mode, prefs, setPrefs, pr
     <AnimatePresence>
       {open && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: DURATION.short, ease: FEATHER_EASE }}
@@ -63,15 +68,11 @@ export default function CommandDrawer({ open, onClose, mode, prefs, setPrefs, pr
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             style={{ zIndex: 9999 }}
           />
-          {/* Panel */}
           <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
+            initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
             transition={{ duration: DURATION.major, ease: FEATHER_EASE }}
-            className="fixed top-0 right-0 bottom-0 w-full sm:w-[440px] bg-card border-l border-border/40 shadow-2xl flex flex-col"
+            className="fixed top-0 right-0 bottom-0 w-full sm:w-[460px] bg-card border-l border-border/40 shadow-2xl flex flex-col"
             style={{ zIndex: 10000 }}>
-            {/* Header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border/40">
               <Settings className="h-4 w-4 text-cyan-400" />
               <h3 className="text-sm font-bold text-foreground/95">Command Settings</h3>
@@ -80,20 +81,23 @@ export default function CommandDrawer({ open, onClose, mode, prefs, setPrefs, pr
               </button>
             </div>
 
-            {/* Tabs */}
-            <div className="flex border-b border-border/40">
-              <TabBtn active={tab === 'layout'} onClick={() => setTab('layout')} icon={<Layers className="h-3 w-3" />} label="Layout" />
-              <TabBtn active={tab === 'gallery'} onClick={() => setTab('gallery')} icon={<BookOpen className="h-3 w-3" />} label="Gallery" />
-              <TabBtn active={tab === 'saved'} onClick={() => setTab('saved')} icon={<Bookmark className="h-3 w-3" />} label="Saved" />
-              <TabBtn active={tab === 'prefs'} onClick={() => setTab('prefs')} icon={<Sliders className="h-3 w-3" />} label="Preferences" />
+            {/* Tabs strip — scrollable on narrow widths */}
+            <div className="flex border-b border-border/40 overflow-x-auto">
+              <TabBtn active={tab === 'layout'}   onClick={() => setTab('layout')}   icon={<Layers className="h-3 w-3" />}   label="Layout"     />
+              <TabBtn active={tab === 'gallery'}  onClick={() => setTab('gallery')}  icon={<BookOpen className="h-3 w-3" />} label="Gallery"    />
+              <TabBtn active={tab === 'saved'}    onClick={() => setTab('saved')}    icon={<Bookmark className="h-3 w-3" />} label="Saved"      />
+              <TabBtn active={tab === 'engine'}   onClick={() => setTab('engine')}   icon={<Zap className="h-3 w-3" />}      label="Engine"     />
+              <TabBtn active={tab === 'activity'} onClick={() => setTab('activity')} icon={<Activity className="h-3 w-3" />} label="Behind"     />
+              <TabBtn active={tab === 'prefs'}    onClick={() => setTab('prefs')}    icon={<Sliders className="h-3 w-3" />}  label="Prefs"      />
             </div>
 
-            {/* Body */}
             <div className="flex-1 overflow-y-auto">
-              {tab === 'layout'  && <LayoutTab  mode={mode} prefs={prefs} setPrefs={setPrefs} />}
-              {tab === 'gallery' && <GalleryTab mode={mode} prefs={prefs} setPrefs={setPrefs} />}
-              {tab === 'saved'   && <SavedTab   projectId={projectId} />}
-              {tab === 'prefs'   && <PrefsTab   prefs={prefs} setPrefs={setPrefs} />}
+              {tab === 'layout'   && <LayoutTab   mode={mode} prefs={prefs} setPrefs={setPrefs} />}
+              {tab === 'gallery'  && <GalleryTab  mode={mode} prefs={prefs} setPrefs={setPrefs} />}
+              {tab === 'saved'    && <SavedTab    projectId={projectId} />}
+              {tab === 'engine'   && <EngineTab   projectId={projectId} />}
+              {tab === 'activity' && <ActivityTab events={activity} briefing={briefing} />}
+              {tab === 'prefs'    && <PrefsTab    prefs={prefs} setPrefs={setPrefs} />}
             </div>
           </motion.div>
         </>
@@ -108,7 +112,7 @@ function TabBtn({ active, onClick, icon, label }: {
   return (
     <button
       onClick={onClick}
-      className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2.5 text-[11px] font-bold uppercase tracking-wider transition-colors border-b-2 ${
+      className={`shrink-0 flex items-center justify-center gap-1 px-2.5 py-2.5 text-[10px] font-bold uppercase tracking-wider transition-colors border-b-2 ${
         active
           ? 'text-cyan-400 border-cyan-500/70 bg-cyan-500/[0.04]'
           : 'text-muted-foreground/65 border-transparent hover:text-foreground'
@@ -146,8 +150,6 @@ function LayoutTab({ mode, prefs, setPrefs }: {
       </div>
     );
   }
-
-  /* Pro mode = 2 columns */
   return (
     <div className="p-4 space-y-5">
       <div>
@@ -250,7 +252,6 @@ function GalleryTab({ mode, prefs, setPrefs }: {
         if (p.layout_casual.includes(id)) return { ...p, hidden_widgets: nextHidden };
         return { ...p, layout_casual: [...p.layout_casual, id], hidden_widgets: nextHidden };
       }
-      /* Pro: respect default_column */
       const targetKey = spec.default_column === 'right' ? 'layout_pro_right' : 'layout_pro_left';
       const arr = p[targetKey];
       if (arr.includes(id)) return { ...p, hidden_widgets: nextHidden };
@@ -351,7 +352,7 @@ function SavedTab({ projectId }: { projectId: string | null }) {
         </div>
       ) : picks.length === 0 ? (
         <div className="text-center text-[11px] text-muted-foreground/55 italic py-6">
-          No picks yet. The engine generates picks daily — they accumulate here.
+          No picks yet. Open the Engine tab to warm up the corpus and generate your first pick.
         </div>
       ) : (
         <ul className="space-y-3">
@@ -384,7 +385,218 @@ function SavedTab({ projectId }: { projectId: string | null }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   TAB 4 — PREFERENCES
+   TAB 4 — ENGINE (Manav's Pick corpus + force-generate)
+══════════════════════════════════════════════════════════════════════ */
+
+function EngineTab({ projectId }: { projectId: string | null }) {
+  const [enriching, setEnriching]       = useState(false);
+  const [enrichResult, setEnrichResult] = useState<{ enriched: number; remaining: number } | null>(null);
+  const [generating, setGenerating]     = useState(false);
+  const [genResult, setGenResult]       = useState<{ note?: string; score?: number; headline?: string } | null>(null);
+
+  if (!projectId) return <div className="p-4 text-[11px] text-muted-foreground/55 italic">No project selected.</div>;
+
+  async function handleEnrich() {
+    setEnriching(true);
+    setEnrichResult(null);
+    /* Run up to 5 batches (5 articles each = 25 enrichments per click) */
+    let totalEnriched = 0;
+    let lastRemaining = 0;
+    for (let i = 0; i < 5; i++) {
+      const r = await seoCorpusEnrichBatch({ limit: 5 });
+      if (r.enriched != null) totalEnriched += r.enriched;
+      if (r.remaining != null) lastRemaining = r.remaining;
+      if ((r.remaining || 0) === 0) break;
+    }
+    setEnrichResult({ enriched: totalEnriched, remaining: lastRemaining });
+    setEnriching(false);
+  }
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setGenResult(null);
+    const r = await seoPickEngineRegenerate({ projectId: projectId! });
+    setGenResult({
+      note:     r.honest_note,
+      score:    r.pick?.connection_score,
+      headline: r.pick?.insight_headline,
+    });
+    setGenerating(false);
+  }
+
+  async function handleRefreshCurrent() {
+    setGenerating(true);
+    setGenResult(null);
+    const r = await seoPickEngineGet({ projectId: projectId! });
+    setGenResult({
+      note:     r.honest_note,
+      score:    r.pick?.connection_score,
+      headline: r.pick?.insight_headline,
+    });
+    setGenerating(false);
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      <div>
+        <div className="flex items-baseline gap-2 mb-2">
+          <Zap className="h-3.5 w-3.5 text-amber-400" />
+          <div className="text-[10px] uppercase tracking-wider font-bold text-amber-400">Pick Engine controls</div>
+        </div>
+        <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+          Manav's Pick scores how strongly external articles cross-connect to your project's current state.
+          Two-step warmup: enrich the corpus, then generate a pick. Both can be re-run anytime.
+        </p>
+      </div>
+
+      {/* STEP 1 — Enrich corpus */}
+      <div className="rounded-xl border border-border/40 bg-card/30 p-3.5">
+        <div className="flex items-baseline gap-2 mb-1">
+          <Database className="h-3 w-3 text-cyan-400" />
+          <div className="text-[11px] font-bold text-foreground/95">Step 1 · Enrich the corpus</div>
+        </div>
+        <p className="text-[10.5px] text-muted-foreground/75 leading-snug mb-2.5">
+          Each article runs through one LLM pass to extract topic tags, entities, and key claims —
+          this is what the engine matches against your project state. Costs ~$0.005 per article.
+        </p>
+        <button
+          onClick={handleEnrich}
+          disabled={enriching}
+          className="text-[11px] px-3 py-1.5 rounded-md border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50 transition-colors font-bold inline-flex items-center gap-1.5">
+          {enriching ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+          {enriching ? 'Enriching…' : 'Run enrichment (up to 25 articles)'}
+        </button>
+        {enrichResult && (
+          <div className="mt-2 text-[10.5px] flex items-center gap-1.5 text-emerald-400">
+            <CheckCircle2 className="h-3 w-3" />
+            Enriched {enrichResult.enriched} this run · {enrichResult.remaining} still unprocessed
+          </div>
+        )}
+      </div>
+
+      {/* STEP 2 — Generate a pick */}
+      <div className="rounded-xl border border-border/40 bg-card/30 p-3.5">
+        <div className="flex items-baseline gap-2 mb-1">
+          <Sparkles className="h-3 w-3 text-amber-400" />
+          <div className="text-[11px] font-bold text-foreground/95">Step 2 · Generate a pick</div>
+        </div>
+        <p className="text-[10.5px] text-muted-foreground/75 leading-snug mb-2.5">
+          Runs candidate filtering, cross-connection scoring, and insight assembly with 5 role frames.
+          Picks below 65/100 are honestly rejected — the engine refuses to surface weak connections.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="text-[11px] px-3 py-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 disabled:opacity-50 transition-colors font-bold inline-flex items-center gap-1.5">
+            {generating ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            {generating ? 'Running engine…' : 'Force-generate now'}
+          </button>
+          <button
+            onClick={handleRefreshCurrent}
+            disabled={generating}
+            className="text-[11px] px-3 py-1.5 rounded-md border border-border/50 bg-card/30 text-muted-foreground/85 hover:text-foreground hover:bg-card/60 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5">
+            <RefreshCw className="h-3 w-3" />
+            Refresh current
+          </button>
+        </div>
+        {genResult && (
+          <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-2.5 text-[10.5px]">
+            {genResult.headline ? (
+              <>
+                <div className="flex items-center gap-1.5 text-emerald-400 mb-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  <span className="font-bold">Pick is live</span>
+                  {genResult.score != null && <span className="text-amber-400/90">· score {Math.round(genResult.score)}/100</span>}
+                </div>
+                <div className="text-foreground/85 font-bold leading-snug">{genResult.headline}</div>
+                <div className="text-[10px] text-muted-foreground/70 italic mt-1">Visible on the Casual mode home page.</div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-1.5 text-amber-400 mb-1">
+                  <AlertCircle className="h-3 w-3" />
+                  <span className="font-bold">No pick this run</span>
+                </div>
+                {genResult.note && <div className="text-muted-foreground/85 leading-snug">{genResult.note}</div>}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="text-[10px] text-muted-foreground/55 italic">
+        Tip: enrichment is permanent — the corpus only grows. After a week of pulls + enrichment runs, picks become substantially more relevant.
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TAB 5 — ACTIVITY (Behind the scenes, merged in from floating button)
+══════════════════════════════════════════════════════════════════════ */
+
+function ActivityTab({ events, briefing }: { events: ActivityEvent[]; briefing: BriefingClient | null }) {
+  return (
+    <div className="p-4 space-y-2">
+      <div className="flex items-baseline gap-2 mb-1">
+        <Activity className="h-3.5 w-3.5 text-cyan-400" />
+        <div className="text-[10px] uppercase tracking-wider font-bold text-cyan-400">Behind the scenes</div>
+        <div className="text-[10px] text-muted-foreground/55 ml-auto">Live ledger · {events.length} events</div>
+      </div>
+
+      {briefing && (
+        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] p-3 text-[11px]">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-cyan-400 mb-1">Data freshness</div>
+          <div className="space-y-0.5 text-foreground/80">
+            <div>GSC last pull: <span className="text-foreground font-bold">{briefing.freshness.gsc_last_pull ? new Date(briefing.freshness.gsc_last_pull).toLocaleString() : 'never'}</span></div>
+            <div>GA4 last pull: <span className="text-foreground font-bold">{briefing.freshness.ga4_last_pull ? new Date(briefing.freshness.ga4_last_pull).toLocaleString() : 'never'}</span></div>
+            <div>Active strategies: <span className="text-foreground font-bold">{briefing.freshness.strategies_seen}</span> · goals: <span className="text-foreground font-bold">{briefing.freshness.goals_seen}</span></div>
+          </div>
+        </div>
+      )}
+
+      {events.length === 0 ? (
+        <div className="text-center py-8 text-[11px] text-muted-foreground/65 italic">
+          No activity logged yet. As S.E.A.S.O.N. runs (pulls, plans, decisions), events appear here — append-only trust ledger.
+        </div>
+      ) : (
+        events.map(e => (
+          <div key={e.id} className="rounded-lg border border-border/40 bg-card/30 p-2.5">
+            <div className="flex items-start gap-2">
+              <SeverityDot severity={e.severity} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] text-foreground/90">{e.headline}</div>
+                {e.detail && <div className="text-[10px] text-muted-foreground/75 mt-0.5">{e.detail}</div>}
+                <div className="text-[9px] text-muted-foreground/55 mt-1">{timeAgo(e.created_at)} · {e.source} · {e.event_type}</div>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function SeverityDot({ severity }: { severity: string }) {
+  const colorClass = severity === 'critical' ? 'bg-rose-400' : severity === 'warning' ? 'bg-amber-400' : severity === 'success' ? 'bg-emerald-400' : 'bg-cyan-400';
+  return <span className={`shrink-0 mt-1 w-1.5 h-1.5 rounded-full ${colorClass}`} />;
+}
+
+function timeAgo(iso: string): string {
+  try {
+    const ms = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(ms / 60_000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  } catch { return ''; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TAB 6 — PREFERENCES
 ══════════════════════════════════════════════════════════════════════ */
 
 function PrefsTab({ prefs, setPrefs }: {
@@ -393,30 +605,21 @@ function PrefsTab({ prefs, setPrefs }: {
 }) {
   return (
     <div className="p-4 space-y-5">
-      <PrefRow
-        label="Default mode"
-        description="Which mode opens when you load /command">
+      <PrefRow label="Default mode" description="Which mode opens when you load /command">
         <div className="flex gap-1">
           <PillBtn active={prefs.default_mode === 'casual'} onClick={() => setPrefs(p => ({ ...p, default_mode: 'casual' }))}>Casual</PillBtn>
           <PillBtn active={prefs.default_mode === 'pro'}    onClick={() => setPrefs(p => ({ ...p, default_mode: 'pro' }))}>Pro</PillBtn>
         </div>
       </PrefRow>
-
-      <PrefRow
-        label="Density"
-        description="Spacing between widgets and content">
+      <PrefRow label="Density" description="Spacing between widgets and content">
         <div className="flex gap-1">
           <PillBtn active={prefs.density === 'comfortable'} onClick={() => setPrefs(p => ({ ...p, density: 'comfortable' }))}>Comfortable</PillBtn>
           <PillBtn active={prefs.density === 'compact'}     onClick={() => setPrefs(p => ({ ...p, density: 'compact' }))}>Compact</PillBtn>
         </div>
       </PrefRow>
-
-      <PrefRow
-        label="Reduce motion"
-        description="Less animation, no scale or stagger effects">
+      <PrefRow label="Reduce motion" description="Less animation, no scale or stagger effects">
         <Toggle on={prefs.reduce_motion} onChange={(v) => setPrefs(p => ({ ...p, reduce_motion: v }))} />
       </PrefRow>
-
       <div className="pt-3 border-t border-border/30">
         <button
           onClick={() => setPrefs(p => ({
@@ -435,9 +638,7 @@ function PrefsTab({ prefs, setPrefs }: {
   );
 }
 
-function PrefRow({ label, description, children }: {
-  label: string; description: string; children: React.ReactNode;
-}) {
+function PrefRow({ label, description, children }: { label: string; description: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3">
       <div>

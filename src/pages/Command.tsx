@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, Component, type ReactNode, type ErrorInfo 
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import {
   Sparkles, AlertCircle, CheckCircle2, Activity, ArrowRight,
-  X, Send, RefreshCw, Database, Building2, ExternalLink, Lightbulb,
+  X, Send, RefreshCw, Database, Building2, ExternalLink, Lightbulb, Settings,
 } from 'lucide-react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,7 +40,6 @@ import { DURATION, FEATHER_EASE, modeSwitchVariants } from '@/components/season/
 /* Phase 21 Block 2.14 — widget infrastructure */
 import { useUserPrefs } from '@/components/season/widgets/useUserPrefs';
 import CommandDrawer from '@/components/season/widgets/CommandDrawer';
-import DrawerTriggerButton from '@/components/season/widgets/DrawerTriggerButton';
 import {
   seasonBriefing, seasonCommand, seasonActivity,
   type BriefingClient, type BriefingItemClient,
@@ -235,6 +234,18 @@ function CommandInner() {
   const userId: string | null = user?.id || null;
   const { prefs, setPrefs: setUserPrefs, loading: prefsLoading } = useUserPrefs(userId);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  /* Phase 21 Block 2.16 — global ⌘. / Ctrl+. opens drawer (floating button removed) */
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+        e.preventDefault();
+        setDrawerOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   /* Phase 21 Block 2.8 — action runner for ResponsePanel buttons */
   const { run: runAction, confirm: confirmAction, cancel: cancelAction, pendingConfirm, running: actionRunning } = useSeasonAction();
@@ -662,29 +673,49 @@ function CommandInner() {
 
         <div className={`relative transition-all duration-500 ${
           mode === 'pro'
-            ? 'px-4 sm:px-6 lg:px-8 py-6 sm:py-8'
-            : 'mx-auto max-w-3xl lg:max-w-5xl px-4 sm:px-6 py-8 sm:py-10'
+            ? 'px-5 lg:px-8 pb-8'
+            : 'mx-auto max-w-3xl lg:max-w-5xl px-4 sm:px-6 pb-10'
         }`}>
 
-          {/* Phase 21 Block 2.15 — top bar with breadcrumb + mode toggle on same row.
-              Removes the orphaned floating toggle and gives the page a real header. */}
+          {/* Phase 21 Block 2.16 — sticky top header strip.
+              Spans the full width of the content area, lives at the very top.
+              Breadcrumb LEFT · mode toggle + settings gear RIGHT.
+              No floating gear button anywhere. */}
           {!loading && briefing && (
-            <div className="flex items-center justify-between gap-3 mb-5">
+            <div className={`sticky top-0 z-20 flex items-center justify-between gap-3 mb-6 py-3 bg-background/90 backdrop-blur-md border-b border-border/40 ${
+              mode === 'pro' ? '-mx-5 lg:-mx-8 px-5 lg:px-8' : '-mx-4 sm:-mx-6 px-4 sm:px-6'
+            }`}>
               <motion.div
                 initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
-                className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70 flex items-center gap-2 min-w-0">
+                className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80 flex items-center gap-2 min-w-0">
                 <Building2 className="h-3 w-3 shrink-0" />
                 <span className="truncate font-bold">{selectedProject?.project_name || selectedProject?.name || briefing.project_name}</span>
                 <span className="text-cyan-400/50 shrink-0">·</span>
                 <span className="text-cyan-400 shrink-0">S.E.A.S.O.N.</span>
               </motion.div>
-              <ModeToggle mode={mode} onChange={setMode} />
+              <div className="flex items-center gap-2 shrink-0">
+                <ModeToggle mode={mode} onChange={setMode} />
+                <button
+                  onClick={() => setDrawerOpen(true)}
+                  title="Command Settings (⌘.)"
+                  className="w-9 h-9 rounded-full bg-card/60 border border-border/50 flex items-center justify-center text-muted-foreground/75 hover:text-cyan-400 hover:border-cyan-500/40 hover:bg-cyan-500/[0.05] transition-colors">
+                  <Settings className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           )}
           {(!briefing || loading) && (
-            <div className="flex items-center justify-end mb-5">
+            <div className={`sticky top-0 z-20 flex items-center justify-end gap-2 mb-6 py-3 bg-background/90 backdrop-blur-md border-b border-border/40 ${
+              mode === 'pro' ? '-mx-5 lg:-mx-8 px-5 lg:px-8' : '-mx-4 sm:-mx-6 px-4 sm:px-6'
+            }`}>
               <ModeToggle mode={mode} onChange={setMode} />
+              <button
+                onClick={() => setDrawerOpen(true)}
+                title="Command Settings (⌘.)"
+                className="w-9 h-9 rounded-full bg-card/60 border border-border/50 flex items-center justify-center text-muted-foreground/75 hover:text-cyan-400 hover:border-cyan-500/40 hover:bg-cyan-500/[0.05] transition-colors">
+                <Settings className="h-4 w-4" />
+              </button>
             </div>
           )}
 
@@ -1245,15 +1276,8 @@ function CommandInner() {
           )}
         </div>
 
-        <motion.button
-          onClick={() => setActivityOpen(true)}
-          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 2.6 }}
-          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          className="fixed bottom-5 right-20 px-3 py-2 rounded-full border border-cyan-500/30 bg-card/80 backdrop-blur-sm text-cyan-400 hover:border-cyan-500/60 transition-colors text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-cyan-500/10 z-30">
-          <motion.span animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }}
-            className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-          Behind the scenes
-        </motion.button>
+        {/* Phase 21 Block 2.16 — Behind the scenes button removed.
+            Activity log is now a tab inside the Command drawer (open via top-bar gear or ⌘.). */}
 
         {/* Help / capabilities — mirror to bottom-left */}
         <motion.button
@@ -1276,8 +1300,7 @@ function CommandInner() {
         {capabilitiesOpen && <CapabilitiesPanel onClose={() => setCapabilitiesOpen(false)} onTry={handleQuickAction} hasProject={!!selectedProjectId} />}
       </AnimatePresence>
 
-      {/* Phase 21 Block 2.14 — command drawer + floating trigger button */}
-      <DrawerTriggerButton onClick={() => setDrawerOpen(true)} />
+      {/* Phase 21 Block 2.16 — command drawer (no floating button — opens via top-bar gear or ⌘.) */}
       <CommandDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -1285,6 +1308,8 @@ function CommandInner() {
         prefs={prefs}
         setPrefs={setUserPrefs}
         projectId={selectedProjectId}
+        activity={activity}
+        briefing={briefing}
       />
     </div>
     </MotionConfig>
