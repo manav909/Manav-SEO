@@ -125,3 +125,5 @@ export default function Manifesto() {
     </MotionConfig>
   );
 }
+
+// build:20260523-145449
