@@ -478,3 +478,27 @@ export async function bsSeoProjectSnapshotRefresh(body: any): Promise<any> {
   const { refreshSnapshotNow } = await import("./season-project-snapshot.js");
   return refreshSnapshotNow(projectId);
 }
+
+/* Phase 21 Block 2.14 — user preferences (widget layouts, density, defaults) */
+
+export async function bsSeoUserPrefsGet(body: any): Promise<any> {
+  const { userId } = body || {};
+  if (!userId) return { success: false, error: "userId required" };
+  const { getUserPrefs } = await import("./season-user-prefs.js");
+  return getUserPrefs({ userId });
+}
+
+export async function bsSeoUserPrefsSet(body: any): Promise<any> {
+  const { userId, partial } = body || {};
+  if (!userId) return { success: false, error: "userId required" };
+  if (!partial || typeof partial !== 'object') return { success: false, error: "partial required" };
+  const { setUserPrefs } = await import("./season-user-prefs.js");
+  return setUserPrefs({ userId, partial });
+}
+
+export async function bsSeoUserPrefsReset(body: any): Promise<any> {
+  const { userId } = body || {};
+  if (!userId) return { success: false, error: "userId required" };
+  const { resetUserPrefs } = await import("./season-user-prefs.js");
+  return resetUserPrefs({ userId });
+}

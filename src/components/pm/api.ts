@@ -3600,3 +3600,47 @@ export async function seoCorpusEnrichBatch(opts?: { limit?: number }): Promise<{
   if (!r?.success) return { error: r?.error };
   return { enriched: r.enriched, failed: r.failed, remaining: r.remaining };
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 21 Block 2.14 — User preferences
+══════════════════════════════════════════════════════════════════════ */
+
+export type UserPrefsCommandMode = 'casual' | 'pro';
+export type UserPrefsDensity     = 'comfortable' | 'compact';
+
+export interface UserPrefsClient {
+  layout_casual:       string[];
+  layout_pro_left:     string[];
+  layout_pro_right:    string[];
+  hidden_widgets:      string[];
+  saved_at_user_level: string[];
+  reduce_motion:       boolean;
+  density:             UserPrefsDensity;
+  default_mode:        UserPrefsCommandMode;
+  loaded_from_db:      boolean;
+}
+
+export async function seoUserPrefsGet(opts: { userId: string }): Promise<{
+  prefs?: UserPrefsClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_user_prefs_get', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { prefs: r.prefs };
+}
+
+export async function seoUserPrefsSet(opts: {
+  userId:  string;
+  partial: Partial<UserPrefsClient>;
+}): Promise<{ prefs?: UserPrefsClient; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_seo_user_prefs_set', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { prefs: r.prefs };
+}
+
+export async function seoUserPrefsReset(opts: { userId: string }): Promise<{
+  prefs?: UserPrefsClient; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_seo_user_prefs_reset', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { prefs: r.prefs };
+}

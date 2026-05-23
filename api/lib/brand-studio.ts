@@ -972,6 +972,21 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeoProjectSnapshotRefresh(body);
     }
 
+    case "bs_seo_user_prefs_get": {
+      const { bsSeoUserPrefsGet } = await import("./seo-campaign-routes.js");
+      return bsSeoUserPrefsGet(body);
+    }
+
+    case "bs_seo_user_prefs_set": {
+      const { bsSeoUserPrefsSet } = await import("./seo-campaign-routes.js");
+      return bsSeoUserPrefsSet(body);
+    }
+
+    case "bs_seo_user_prefs_reset": {
+      const { bsSeoUserPrefsReset } = await import("./seo-campaign-routes.js");
+      return bsSeoUserPrefsReset(body);
+    }
+
     /* Phase 14.1 — unification adapters */
     case "bs_seo_opportunity_from_alert": {
       const { bsSeoOpportunityFromAlert } = await import("./seo-campaign-routes.js");

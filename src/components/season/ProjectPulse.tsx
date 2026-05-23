@@ -31,6 +31,8 @@ import {
   type ClientQuestionClient, type ClientRecapClient,
 } from '@/components/pm/api';
 import { cascadeContainerVariants, cascadeItemVariants, DURATION, FEATHER_EASE } from './warRoomAnimations';
+import WidgetShell from './widgets/WidgetShell';
+import { getWidget as getWidgetSpec } from './widgets/registry';
 
 interface Props {
   projectId:        string | null;
@@ -38,9 +40,12 @@ interface Props {
   loading:          boolean;
   onLaunchCommand:  (cmd: string) => void;
   onNavigate?:      (path: string) => void;
+  /* Phase 21 Block 2.14 — widget ordering. If null, falls back to default. */
+  widgetOrder?:     string[];
+  hiddenWidgets?:   string[];
 }
 
-export default function ProjectPulse({ projectId, scorecard, loading, onLaunchCommand, onNavigate }: Props) {
+export default function ProjectPulse({ projectId, scorecard, loading, onLaunchCommand, onNavigate, widgetOrder, hiddenWidgets }: Props) {
   const [pillarCards, setPillarCards]     = useState<PillarHealthCardClient[]>([]);
   const [pulse, setPulse]                 = useState<PerformancePulseClient | null>(null);
   const [decisions, setDecisions]         = useState<DecisionLogEntryClient[]>([]);
@@ -89,16 +94,40 @@ export default function ProjectPulse({ projectId, scorecard, loading, onLaunchCo
     return () => { cancelled = true; };
   }, [projectId]);
 
+  /* Phase 21 Block 2.14 — render widgets in user-configured order, wrapped in WidgetShell.
+     The order is determined by widgetOrder (from useUserPrefs) — fallback to default order. */
+  const renderMap: Record<string, React.ReactNode> = {
+    pro_scorecard:         <Scorecard cells={scorecard} loading={loading} />,
+    pro_performance_pulse: <PerformancePulsePanel pulse={pulse} loading={pulseLoading} onLaunchCommand={onLaunchCommand} />,
+    pro_pillar_health:     <PillarHealthMatrixPanel cards={pillarCards} loading={pillarLoading} onNavigate={onNavigate} />,
+    pro_i_noticed:         <INoticedPanel observations={noticed} loading={noticedLoading} onLaunchCommand={onLaunchCommand} />,
+    pro_client_questions:  <ClientQuestionsPanel questions={questions} loading={questionsLoading} />,
+    pro_decisions_log:     <DecisionsLogPanel entries={decisions} total={decisionsTotal} loading={decisionsLoading} />,
+    pro_velocity:          <VelocityPanel stats={velocity} loading={velocityLoading} />,
+    pro_client_recap:      <ClientRecapPanel recap={recap} loading={recapLoading} />,
+  };
+
+  const defaultOrder = [
+    'pro_scorecard', 'pro_performance_pulse', 'pro_pillar_health', 'pro_i_noticed',
+    'pro_client_questions', 'pro_decisions_log', 'pro_velocity', 'pro_client_recap',
+  ];
+  const order = Array.isArray(widgetOrder) && widgetOrder.length > 0 ? widgetOrder : defaultOrder;
+  const hidden = new Set(hiddenWidgets || []);
+
   return (
     <div className="space-y-5">
-      <Scorecard cells={scorecard} loading={loading} />
-      <PerformancePulsePanel pulse={pulse} loading={pulseLoading} onLaunchCommand={onLaunchCommand} />
-      <PillarHealthMatrixPanel cards={pillarCards} loading={pillarLoading} onNavigate={onNavigate} />
-      <INoticedPanel observations={noticed} loading={noticedLoading} onLaunchCommand={onLaunchCommand} />
-      <ClientQuestionsPanel questions={questions} loading={questionsLoading} />
-      <DecisionsLogPanel entries={decisions} total={decisionsTotal} loading={decisionsLoading} />
-      <VelocityPanel stats={velocity} loading={velocityLoading} />
-      <ClientRecapPanel recap={recap} loading={recapLoading} />
+      {order.map(widgetId => {
+        if (hidden.has(widgetId)) return null;
+        const node = renderMap[widgetId];
+        if (!node) return null;
+        const spec = getWidgetSpec(widgetId);
+        if (!spec) return node;
+        return (
+          <WidgetShell key={widgetId} spec={spec}>
+            {node}
+          </WidgetShell>
+        );
+      })}
     </div>
   );
 }
@@ -115,7 +144,7 @@ function Scorecard({ cells, loading }: { cells: ScorecardCellClient[]; loading: 
         icon={<Activity className="h-3.5 w-3.5" />}
         tone="cyan"
         label="Health"
-        sublabel={loading ? 'computing…' : '5 vital signs · click any for contributing factors'} />
+        sublabel={loading ? 'computing…' : '5 vital signs'} />
       {loading && cells.length === 0 ? (
         <LoadingCard label="Computing project vitals…" />
       ) : (

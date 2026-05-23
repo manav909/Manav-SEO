@@ -33,11 +33,15 @@ interface Props {
   onNavigate?:      (path: string) => void;
   onRerunPillar?:   (payload: any) => void;
   onOpenInbox?:     (payload: any) => void;
+  /* Phase 21 Block 2.14 — widget ordering for LEFT column */
+  widgetOrder?:     string[];
+  hiddenWidgets?:   string[];
 }
 
 export default function ActionDeck({
   projectId, unifiedFeed, loading, filterTerm,
   onLaunchCommand, onNavigate, onRerunPillar, onOpenInbox,
+  widgetOrder, hiddenWidgets,
 }: Props) {
   if (!projectId) return null;
 
@@ -60,9 +64,9 @@ export default function ActionDeck({
     }
   }
 
-  return (
-    <div className="space-y-5">
-      {/* SECTION 1 — Unified priority feed */}
+  /* Phase 21 Block 2.14 — define widget render map; iterate in user's order */
+  const widgetNodes: Record<string, React.ReactNode> = {
+    pro_priority_feed: (
       <section>
         <SectionHeader
           icon={<Zap className="h-3.5 w-3.5" />}
@@ -80,8 +84,8 @@ export default function ActionDeck({
         )}
 
         {!loading && unifiedFeed.length === 0 && (
-          <div className="mt-3 rounded-xl border border-border/40 bg-card/30 p-6 text-center text-xs text-muted-foreground/60">
-            Nothing urgent surfaced — that's a calm day. Strategic intelligence below for deeper context.
+          <div className="mt-2 text-[11px] text-muted-foreground/55 italic px-1">
+            Nothing urgent surfaced — calm day. See strategic intelligence below.
           </div>
         )}
 
@@ -102,22 +106,28 @@ export default function ActionDeck({
           </motion.div>
         )}
       </section>
+    ),
+    pro_strategic_intel: (
+      <WarRoomSection
+        projectId={projectId}
+        filterTerm={filterTerm}
+        onLaunchCommand={onLaunchCommand}
+      />
+    ),
+  };
 
-      {/* SECTION 2 — Strategic intelligence (uses the existing WarRoomSection internally) */}
-      <section>
-        <SectionHeader
-          icon={<Sparkles className="h-3.5 w-3.5" />}
-          tone="violet"
-          label="Strategic intelligence"
-          sublabel="grounded · exploratory · growth roadmap — type to filter" />
-        <div className="mt-3">
-          <WarRoomSection
-            projectId={projectId}
-            filterTerm={filterTerm}
-            onLaunchCommand={onLaunchCommand}
-          />
-        </div>
-      </section>
+  const defaultOrder = ['pro_priority_feed', 'pro_strategic_intel'];
+  const order = Array.isArray(widgetOrder) && widgetOrder.length > 0 ? widgetOrder : defaultOrder;
+  const hidden = new Set(hiddenWidgets || []);
+
+  return (
+    <div className="space-y-5">
+      {order.map(id => {
+        if (hidden.has(id)) return null;
+        const node = widgetNodes[id];
+        if (!node) return null;
+        return <div key={id}>{node}</div>;
+      })}
     </div>
   );
 }

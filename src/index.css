@@ -308,3 +308,26 @@ select {
 
 /* ── NO-SELECT ───────────────────────────────────────────────── */
 .no-select { user-select: none; }
+
+/* ════════════════════════════════════════════════════════════════════
+   Phase 21 Block 2.14 — Density preference
+   Applied via .season-density-compact / .season-density-comfortable
+   on the Command page wrapper.
+══════════════════════════════════════════════════════════════════════ */
+
+.season-density-compact .space-y-5 > * + * { margin-top: 0.875rem; }   /* 14px instead of 20px */
+.season-density-compact .space-y-4 > * + * { margin-top: 0.625rem; }
+.season-density-compact .space-y-3 > * + * { margin-top: 0.5rem; }
+.season-density-compact .space-y-2 > * + * { margin-top: 0.375rem; }
+.season-density-compact .p-6           { padding: 1rem; }
+.season-density-compact .p-5           { padding: 0.875rem; }
+.season-density-compact .p-4           { padding: 0.75rem; }
+.season-density-compact .py-12         { padding-top: 1.75rem; padding-bottom: 1.75rem; }
+.season-density-compact .py-10         { padding-top: 1.25rem; padding-bottom: 1.25rem; }
+.season-density-compact .mt-10         { margin-top: 1.5rem; }
+.season-density-compact .mt-8          { margin-top: 1.25rem; }
+
+/* When reduce-motion is true, hard-disable the ambient radial pulse and
+   any other infinite animations that aren't gated by Framer's MotionConfig. */
+[data-reduce-motion="true"] .animate-pulse { animation: none; }
+[data-reduce-motion="true"] .animate-spin  { animation: none; }

@@ -12,7 +12,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useRef, useState, Component, type ReactNode, type ErrorInfo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import {
   Sparkles, AlertCircle, CheckCircle2, Activity, ArrowRight,
   X, Send, RefreshCw, Database, Building2, ExternalLink, Lightbulb,
@@ -37,6 +37,10 @@ import ManavsPick from '@/components/season/ManavsPick';
 import StatusStrip from '@/components/season/StatusStrip';
 import { consumeHandoff } from '@/components/season/ChatHandoff';
 import { DURATION, FEATHER_EASE, modeSwitchVariants } from '@/components/season/warRoomAnimations';
+/* Phase 21 Block 2.14 — widget infrastructure */
+import { useUserPrefs } from '@/components/season/widgets/useUserPrefs';
+import CommandDrawer from '@/components/season/widgets/CommandDrawer';
+import DrawerTriggerButton from '@/components/season/widgets/DrawerTriggerButton';
 import {
   seasonBriefing, seasonCommand, seasonActivity,
   type BriefingClient, type BriefingItemClient,
@@ -223,9 +227,14 @@ export default function Command() {
 
 function CommandInner() {
   const { selectedProjectId, selectedProject, setSelectedProjectId } = useProject() as any;
-  const { projects } = useAuth() as any;
+  const { projects, user } = useAuth() as any;
   const { setMood } = useSeason();
   const safeProjects = (projects || []).filter((p: any) => p && p.id);
+
+  /* Phase 21 Block 2.14 — user preferences (widget layouts, density, default mode) */
+  const userId: string | null = user?.id || null;
+  const { prefs, setPrefs: setUserPrefs, loading: prefsLoading } = useUserPrefs(userId);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   /* Phase 21 Block 2.8 — action runner for ResponsePanel buttons */
   const { run: runAction, confirm: confirmAction, cancel: cancelAction, pendingConfirm, running: actionRunning } = useSeasonAction();
@@ -494,6 +503,17 @@ function CommandInner() {
   /* Phase 21 Block 2.11 Phase A — persist mode preference */
   useEffect(() => { saveMode(mode); }, [mode]);
 
+  /* Phase 21 Block 2.14 — when prefs first load from DB, apply default_mode
+     if the user hasn't manually toggled in this session yet. We use the
+     loaded_from_db flag to avoid overriding the user's local choice. */
+  const [modeAppliedFromPrefs, setModeAppliedFromPrefs] = useState(false);
+  useEffect(() => {
+    if (!prefsLoading && prefs.loaded_from_db && !modeAppliedFromPrefs) {
+      setMode(prefs.default_mode);
+      setModeAppliedFromPrefs(true);
+    }
+  }, [prefsLoading, prefs.loaded_from_db, prefs.default_mode, modeAppliedFromPrefs]);
+
   /* Phase 21 Block 2.11 Phase A — restore chat handoff from modal (one-shot on mount).
      If the user was working in the modal and clicked "Full briefing", restore
      their in-flight state and show a subtle "Continuing from quick chat →" badge. */
@@ -621,7 +641,12 @@ function CommandInner() {
     !loading && (!selectedProjectId || briefingError === "Project not found" || (briefingError && !briefing));
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background via-background to-card text-foreground">
+    <MotionConfig reducedMotion={prefs.reduce_motion ? 'always' : 'never'}>
+    <div
+      className={`min-h-screen bg-gradient-to-b from-background via-background to-card text-foreground ${
+        prefs.density === 'compact' ? 'season-density-compact' : 'season-density-comfortable'
+      }`}
+      data-reduce-motion={prefs.reduce_motion ? 'true' : 'false'}>
       <SmartTopBar />
       <SmartSidebar />
 
@@ -641,8 +666,8 @@ function CommandInner() {
             : 'max-w-3xl lg:max-w-5xl'
         }`}>
 
-          {/* Phase 21 Block 2.11 Phase A — mode toggle pinned top-right */}
-          <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10">
+          {/* Phase 21 Block 2.14 — inline top bar with mode toggle (no more overlap) */}
+          <div className="flex items-center justify-end gap-2 mb-4">
             <ModeToggle mode={mode} onChange={setMode} />
           </div>
 
@@ -1080,29 +1105,44 @@ function CommandInner() {
                 variants={modeSwitchVariants}
                 initial="hidden"
                 animate="visible"
-                exit="exit">
-                {/* The pre-coffee read — external editorial feed */}
-                {!response && !explorationResponse && !pendingStructure && (
-                  <ManavsPick
-                    projectId={selectedProjectId}
-                    onLaunchCommand={runChatCommand}
-                  />
-                )}
-                {/* Existing calm priority view continues below */}
-                {!loading && briefing && !response && !pendingStructure && !explorationResponse && (
-                  <WhatNeedsYou
-                    attentionItems={briefing.attention}
-                    recoverableTop={recoverableTop}
-                    onLaunchCommand={runChatCommand}
-                  />
-                )}
-                {!response && !explorationResponse && !pendingStructure && (
-                  <WarRoomSection
-                    projectId={selectedProjectId}
-                    filterTerm={extractKeywordFragment(input)}
-                    onLaunchCommand={runChatCommand}
-                  />
-                )}
+                exit="exit"
+                className="space-y-5">
+                {/* Phase 21 Block 2.14 — Casual layout iterates user's widget order */}
+                {prefs.layout_casual.map(widgetId => {
+                  if (prefs.hidden_widgets.includes(widgetId)) return null;
+                  if (response || explorationResponse || pendingStructure) return null;
+                  switch (widgetId) {
+                    case 'casual_manavs_pick':
+                      return (
+                        <ManavsPick
+                          key={widgetId}
+                          projectId={selectedProjectId}
+                          onLaunchCommand={runChatCommand}
+                        />
+                      );
+                    case 'casual_what_needs_you':
+                      if (loading || !briefing) return null;
+                      return (
+                        <WhatNeedsYou
+                          key={widgetId}
+                          attentionItems={briefing.attention}
+                          recoverableTop={recoverableTop}
+                          onLaunchCommand={runChatCommand}
+                        />
+                      );
+                    case 'casual_strategic_intel':
+                      return (
+                        <WarRoomSection
+                          key={widgetId}
+                          projectId={selectedProjectId}
+                          filterTerm={extractKeywordFragment(input)}
+                          onLaunchCommand={runChatCommand}
+                        />
+                      );
+                    default:
+                      return null;
+                  }
+                })}
               </motion.div>
             ) : (
               <motion.div
@@ -1127,6 +1167,8 @@ function CommandInner() {
                         loading={warRoomLoading}
                         filterTerm={extractKeywordFragment(input)}
                         onLaunchCommand={runChatCommand}
+                        widgetOrder={prefs.layout_pro_left}
+                        hiddenWidgets={prefs.hidden_widgets}
                       />
                     )}
                   </div>
@@ -1137,6 +1179,8 @@ function CommandInner() {
                       scorecard={scorecard}
                       loading={warRoomLoading}
                       onLaunchCommand={runChatCommand}
+                      widgetOrder={prefs.layout_pro_right}
+                      hiddenWidgets={prefs.hidden_widgets}
                     />
                   </div>
                 </div>
@@ -1188,7 +1232,7 @@ function CommandInner() {
           onClick={() => setActivityOpen(true)}
           initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 2.6 }}
           whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          className="fixed bottom-5 right-5 px-3 py-2 rounded-full border border-cyan-500/30 bg-card/80 backdrop-blur-sm text-cyan-400 hover:border-cyan-500/60 transition-colors text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-cyan-500/10 z-30">
+          className="fixed bottom-5 right-20 px-3 py-2 rounded-full border border-cyan-500/30 bg-card/80 backdrop-blur-sm text-cyan-400 hover:border-cyan-500/60 transition-colors text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-cyan-500/10 z-30">
           <motion.span animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }}
             className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
           Behind the scenes
@@ -1214,7 +1258,19 @@ function CommandInner() {
       <AnimatePresence>
         {capabilitiesOpen && <CapabilitiesPanel onClose={() => setCapabilitiesOpen(false)} onTry={handleQuickAction} hasProject={!!selectedProjectId} />}
       </AnimatePresence>
+
+      {/* Phase 21 Block 2.14 — command drawer + floating trigger button */}
+      <DrawerTriggerButton onClick={() => setDrawerOpen(true)} />
+      <CommandDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        mode={mode}
+        prefs={prefs}
+        setPrefs={setUserPrefs}
+        projectId={selectedProjectId}
+      />
     </div>
+    </MotionConfig>
   );
 }
 
