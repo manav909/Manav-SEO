@@ -93,7 +93,7 @@ export default function StatusStrip({ briefing, loading, onLaunchCommand, onNavi
       variants={cascadeContainerVariants}
       initial="hidden"
       animate="visible"
-      className="mt-6 rounded-xl border border-border/40 bg-card/30 backdrop-blur-sm p-2 flex items-stretch gap-1 overflow-x-auto">
+      className="mt-3 rounded-xl border border-border/40 bg-card/30 backdrop-blur-sm p-1.5 flex items-stretch gap-1 overflow-x-auto">
       {cells.map(cell => <StatusCell key={cell.key} spec={cell} />)}
     </motion.div>
   );
@@ -121,13 +121,13 @@ function StatusCell({ spec }: { spec: CellSpec }) {
       transition={{ duration: DURATION.hover, ease: FEATHER_EASE }}
       onClick={spec.onClick}
       title={spec.hint || ''}
-      className={`flex-1 min-w-[120px] rounded-lg border px-3 py-2 text-left transition-colors flex items-center gap-2 ${toneClass[spec.tone]}`}>
-      <div className={`shrink-0 w-6 h-6 rounded-md flex items-center justify-center ${iconBgClass[spec.tone]}`}>
+      className={`flex-1 min-w-[110px] rounded-lg border px-2.5 py-1.5 text-left transition-colors flex items-center gap-2 ${toneClass[spec.tone]}`}>
+      <div className={`shrink-0 w-5 h-5 rounded flex items-center justify-center ${iconBgClass[spec.tone]}`}>
         {spec.icon}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[9px] uppercase tracking-wider font-bold opacity-80">{spec.label}</div>
-        <div className="text-[11px] font-bold truncate">{spec.value}</div>
+        <div className="text-[8.5px] uppercase tracking-wider font-bold opacity-80">{spec.label}</div>
+        <div className="text-[10.5px] font-bold truncate">{spec.value}</div>
       </div>
     </motion.button>
   );

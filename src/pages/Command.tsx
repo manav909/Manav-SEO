@@ -660,16 +660,33 @@ function CommandInner() {
           />
         </div>
 
-        <div className={`relative mx-auto px-4 sm:px-6 py-10 sm:py-12 transition-all duration-500 ${
+        <div className={`relative transition-all duration-500 ${
           mode === 'pro'
-            ? 'max-w-[1600px]'
-            : 'max-w-3xl lg:max-w-5xl'
+            ? 'px-4 sm:px-6 lg:px-8 py-6 sm:py-8'
+            : 'mx-auto max-w-3xl lg:max-w-5xl px-4 sm:px-6 py-8 sm:py-10'
         }`}>
 
-          {/* Phase 21 Block 2.14 — inline top bar with mode toggle (no more overlap) */}
-          <div className="flex items-center justify-end gap-2 mb-4">
-            <ModeToggle mode={mode} onChange={setMode} />
-          </div>
+          {/* Phase 21 Block 2.15 — top bar with breadcrumb + mode toggle on same row.
+              Removes the orphaned floating toggle and gives the page a real header. */}
+          {!loading && briefing && (
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <motion.div
+                initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70 flex items-center gap-2 min-w-0">
+                <Building2 className="h-3 w-3 shrink-0" />
+                <span className="truncate font-bold">{selectedProject?.project_name || selectedProject?.name || briefing.project_name}</span>
+                <span className="text-cyan-400/50 shrink-0">·</span>
+                <span className="text-cyan-400 shrink-0">S.E.A.S.O.N.</span>
+              </motion.div>
+              <ModeToggle mode={mode} onChange={setMode} />
+            </div>
+          )}
+          {(!briefing || loading) && (
+            <div className="flex items-center justify-end mb-5">
+              <ModeToggle mode={mode} onChange={setMode} />
+            </div>
+          )}
 
           {/* Phase 21 Block 2.11 Phase A — handoff notice */}
           <AnimatePresence>
@@ -1157,7 +1174,7 @@ function CommandInner() {
                   loading={warRoomLoading}
                   onLaunchCommand={runChatCommand}
                 />
-                <div className="mt-8 grid grid-cols-1 lg:grid-cols-[58fr_42fr] gap-6">
+                <div className="mt-5 grid grid-cols-1 lg:grid-cols-[58fr_42fr] gap-5">
                   {/* LEFT — Action Deck */}
                   <div className="min-w-0">
                     {!response && !explorationResponse && !pendingStructure && (
@@ -1276,7 +1293,7 @@ function CommandInner() {
 
 function LoadingHero() {
   return (
-    <div className="space-y-3 pt-8">
+    <div className="space-y-3 pt-2">
       <motion.div animate={{ opacity: [0.3, 0.6, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}
         className="h-8 w-2/3 rounded-md bg-muted/30" />
       <motion.div animate={{ opacity: [0.3, 0.6, 0.3] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
@@ -1291,7 +1308,7 @@ function LoadingHero() {
   );
 }
 
-function GreetingBlock({ briefing, project }: { briefing: BriefingClient; project: any }) {
+function GreetingBlock({ briefing }: { briefing: BriefingClient; project?: any }) {
   const greet = useTypewriter(briefing.greeting_phrase, 22);
   const [showStatus, setShowStatus] = useState(false);
   useEffect(() => {
@@ -1300,12 +1317,7 @@ function GreetingBlock({ briefing, project }: { briefing: BriefingClient; projec
   }, [briefing.greeting_phrase]);
   const status = useTypewriter(showStatus ? briefing.status_summary : '', 12);
   return (
-    <div className="pt-8 pb-2">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-        className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground/60 mb-2 flex items-center gap-2">
-        <Building2 className="h-3 w-3" />{project?.project_name || project?.name || briefing.project_name}
-        <span className="text-cyan-400/60">·</span><span className="text-cyan-400">S.E.A.S.O.N.</span>
-      </motion.div>
+    <div className="pt-2 pb-2">
       <h1 className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight leading-tight min-h-[2.5rem]">
         {greet}
         {greet.length < briefing.greeting_phrase.length && (
@@ -1338,12 +1350,7 @@ function FallbackGreeting({ hasProject, projectError, projectsAvailable }: {
         ? `Reason given: ${projectError}. Try a different project or refresh.`
         : "Tell me what you need below.";
   return (
-    <div className="pt-8 pb-2">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground/60 mb-2 flex items-center gap-2">
-        <Sparkles className="h-3 w-3 text-cyan-400" />
-        <span className="text-cyan-400">S.E.A.S.O.N.</span>
-      </motion.div>
+    <div className="pt-2 pb-2">
       <h1 className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight leading-tight">{headline}</h1>
       <p className="mt-2 text-sm text-muted-foreground">{sub}</p>
     </div>

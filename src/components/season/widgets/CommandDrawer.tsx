@@ -60,7 +60,8 @@ export default function CommandDrawer({ open, onClose, mode, prefs, setPrefs, pr
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: DURATION.short, ease: FEATHER_EASE }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            style={{ zIndex: 9999 }}
           />
           {/* Panel */}
           <motion.div
@@ -68,7 +69,8 @@ export default function CommandDrawer({ open, onClose, mode, prefs, setPrefs, pr
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: DURATION.major, ease: FEATHER_EASE }}
-            className="fixed top-0 right-0 bottom-0 z-50 w-full sm:w-[440px] bg-card border-l border-border/40 shadow-2xl flex flex-col">
+            className="fixed top-0 right-0 bottom-0 w-full sm:w-[440px] bg-card border-l border-border/40 shadow-2xl flex flex-col"
+            style={{ zIndex: 10000 }}>
             {/* Header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border/40">
               <Settings className="h-4 w-4 text-cyan-400" />

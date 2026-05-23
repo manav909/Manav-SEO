@@ -33,9 +33,11 @@ export default function DrawerTriggerButton({ onClick }: Props) {
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
       transition={{ duration: DURATION.hover, ease: FEATHER_EASE }}
-      title="Command settings (⌘.)"
-      className="fixed bottom-6 right-6 z-30 w-10 h-10 rounded-full bg-card border border-border/60 backdrop-blur-sm flex items-center justify-center text-cyan-400 hover:text-cyan-300 hover:border-cyan-500/40 hover:bg-cyan-500/[0.05] shadow-lg transition-colors">
+      title="Customize layout (⌘.)"
+      style={{ zIndex: 9997 }}
+      className="fixed bottom-24 right-6 w-11 h-11 rounded-full bg-card/90 border border-cyan-500/30 backdrop-blur-sm flex items-center justify-center text-cyan-400 hover:text-cyan-300 hover:border-cyan-500/60 hover:bg-cyan-500/[0.08] shadow-xl shadow-cyan-500/[0.08] transition-colors">
       <Settings className="h-4 w-4" />
+      <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan-400/70 animate-pulse" />
     </motion.button>
   );
 }
