@@ -1,0 +1,298 @@
+/* ════════════════════════════════════════════════════════════════════
+   src/pages/manifesto/copy.ts
+   Five-language translation dictionary for the Manifesto codex.
+
+   Discipline note: structural / marketing copy is translated. Deep
+   technical paragraphs (rendered inside chapter components) remain in
+   English. Translation discipline > illusion of coverage.
+
+   Languages: English, Hindi, Spanish, French, German.
+══════════════════════════════════════════════════════════════════════ */
+
+import type { Lang } from './types';
+
+export const LANG_LABEL: Record<Lang, string> = {
+  en: 'English',
+  hi: 'हिन्दी',
+  es: 'Español',
+  fr: 'Français',
+  de: 'Deutsch',
+};
+
+export const COPY: Record<Lang, Record<string, string>> = {
+
+  /* ═══════════════ ENGLISH ═══════════════ */
+  en: {
+    meet:                       'Meet',
+    brand:                      'S.E.A.S.O.N.',
+    brand_expand:               "Strategic Execution & Analysis Support Operator's Network",
+    hero_kicker:                'An operating system for search that thinks in seasons.',
+    hero_sub:                   'Built for the moment search itself changed.',
+    scroll_hint:                'Begin',
+    nav_label:                  'The Codex',
+    chapter:                    'Chapter',
+
+    s_letter:                   'Strategic',
+    e_letter:                   'Execution',
+    a_letter:                   'Analysis',
+    s2_letter:                  'Support',
+    o_letter:                   "Operator's",
+    n_letter:                   'Network',
+
+    season_winter:              'Winter',
+    season_spring:              'Spring',
+    season_summer:              'Summer',
+    season_monsoon:             'Monsoon',
+    season_autumn:              'Autumn',
+    season_harvest:             'Harvest',
+    season_eternal:             'Eternal Spring',
+
+    season_kicker_winter:       'where the cold problem lives',
+    season_kicker_spring:       'where the work begins to breathe',
+    season_kicker_summer:       'where commitment is named',
+    season_kicker_monsoon:      'where the work pours down',
+    season_kicker_autumn:       'where truth is harvested carefully',
+    season_kicker_harvest:      'where the yield is counted',
+    season_kicker_eternal:      'where the next decade begins',
+
+    ch00:                       'Meet S.E.A.S.O.N.',
+    ch01:                       'The Problem We Solve',
+    ch02:                       'The Vision',
+    ch03:                       'How Search Actually Works Now',
+    ch04:                       'The Five Pillars',
+    ch05:                       "A Client's Journey",
+    ch06:                       'The Engine Room',
+    ch07:                       'Why This, Not That',
+    ch08:                       "What We Will & Won't Do",
+    ch09:                       'Authentic Data Doctrine',
+    ch10:                       'For Whom This Was Built',
+    ch11:                       'A Letter from the Founder',
+    ch12:                       'The Future Belongs to Builders',
+
+    join_cta:                   'Become a client',
+    closing_cta:                'You can join now, while the curve is still gentle.',
+    lang_note:                  'Structural copy localized. Technical deep-dives in English.',
+    back:                       'Return',
+    footer_line:                'A working manifesto. Updated as the system grows.',
+  },
+
+  /* ═══════════════ HINDI ═══════════════ */
+  hi: {
+    meet:                       'मिलिए',
+    brand:                      'S.E.A.S.O.N.',
+    brand_expand:               'रणनीतिक निष्पादन और विश्लेषण समर्थन ऑपरेटर का नेटवर्क',
+    hero_kicker:                'खोज के लिए एक ऑपरेटिंग सिस्टम जो ऋतुओं में सोचता है।',
+    hero_sub:                   'उस क्षण के लिए बनाया गया जब खोज स्वयं बदल गई।',
+    scroll_hint:                'शुरू करें',
+    nav_label:                  'पुस्तिका',
+    chapter:                    'अध्याय',
+
+    s_letter:                   'रणनीतिक',
+    e_letter:                   'निष्पादन',
+    a_letter:                   'विश्लेषण',
+    s2_letter:                  'समर्थन',
+    o_letter:                   'ऑपरेटर का',
+    n_letter:                   'नेटवर्क',
+
+    season_winter:              'शीत',
+    season_spring:              'वसंत',
+    season_summer:              'ग्रीष्म',
+    season_monsoon:             'वर्षा',
+    season_autumn:              'शरद',
+    season_harvest:             'फसल',
+    season_eternal:             'चिर वसंत',
+
+    season_kicker_winter:       'जहाँ ठंडी समस्या रहती है',
+    season_kicker_spring:       'जहाँ काम साँस लेने लगता है',
+    season_kicker_summer:       'जहाँ प्रतिबद्धता का नाम होता है',
+    season_kicker_monsoon:      'जहाँ काम बरसता है',
+    season_kicker_autumn:       'जहाँ सत्य सावधानी से काटा जाता है',
+    season_kicker_harvest:      'जहाँ उपज गिनी जाती है',
+    season_kicker_eternal:      'जहाँ अगला दशक शुरू होता है',
+
+    ch00:                       'मिलिए S.E.A.S.O.N. से',
+    ch01:                       'जिस समस्या को हम हल करते हैं',
+    ch02:                       'दृष्टि',
+    ch03:                       'खोज वास्तव में अब कैसे काम करती है',
+    ch04:                       'पाँच स्तंभ',
+    ch05:                       'एक ग्राहक की यात्रा',
+    ch06:                       'इंजन कक्ष',
+    ch07:                       'यह क्यों, वह क्यों नहीं',
+    ch08:                       'हम क्या करेंगे और क्या नहीं',
+    ch09:                       'प्रामाणिक डेटा सिद्धांत',
+    ch10:                       'किसके लिए यह बनाया गया था',
+    ch11:                       'संस्थापक का पत्र',
+    ch12:                       'भविष्य निर्माताओं का है',
+
+    join_cta:                   'ग्राहक बनें',
+    closing_cta:                'आप अभी शामिल हो सकते हैं, जब वक्र अभी भी कोमल है।',
+    lang_note:                  'संरचनात्मक प्रति स्थानीयकृत। तकनीकी विवरण अंग्रेज़ी में।',
+    back:                       'वापस जाएँ',
+    footer_line:                'एक कार्यशील घोषणापत्र। सिस्टम के बढ़ने के साथ अद्यतन।',
+  },
+
+  /* ═══════════════ SPANISH ═══════════════ */
+  es: {
+    meet:                       'Conoce a',
+    brand:                      'S.E.A.S.O.N.',
+    brand_expand:               'Red Operativa de Soporte de Análisis y Ejecución Estratégica',
+    hero_kicker:                'Un sistema operativo de búsqueda que piensa en estaciones.',
+    hero_sub:                   'Construido para el momento en que la búsqueda misma cambió.',
+    scroll_hint:                'Comenzar',
+    nav_label:                  'El Códice',
+    chapter:                    'Capítulo',
+
+    s_letter:                   'Estratégica',
+    e_letter:                   'Ejecución',
+    a_letter:                   'Análisis',
+    s2_letter:                  'Soporte',
+    o_letter:                   'Operativa',
+    n_letter:                   'Red',
+
+    season_winter:              'Invierno',
+    season_spring:              'Primavera',
+    season_summer:              'Verano',
+    season_monsoon:             'Monzón',
+    season_autumn:              'Otoño',
+    season_harvest:             'Cosecha',
+    season_eternal:             'Primavera Eterna',
+
+    season_kicker_winter:       'donde vive el problema frío',
+    season_kicker_spring:       'donde el trabajo comienza a respirar',
+    season_kicker_summer:       'donde se nombra el compromiso',
+    season_kicker_monsoon:      'donde el trabajo se derrama',
+    season_kicker_autumn:       'donde la verdad se cosecha con cuidado',
+    season_kicker_harvest:      'donde se cuenta la cosecha',
+    season_kicker_eternal:      'donde comienza la próxima década',
+
+    ch00:                       'Conoce a S.E.A.S.O.N.',
+    ch01:                       'El problema que resolvemos',
+    ch02:                       'La visión',
+    ch03:                       'Cómo funciona realmente la búsqueda ahora',
+    ch04:                       'Los cinco pilares',
+    ch05:                       'El viaje de un cliente',
+    ch06:                       'La sala de máquinas',
+    ch07:                       'Por qué esto, no aquello',
+    ch08:                       'Lo que haremos y no haremos',
+    ch09:                       'Doctrina de datos auténticos',
+    ch10:                       'Para quién se construyó esto',
+    ch11:                       'Una carta del fundador',
+    ch12:                       'El futuro pertenece a los constructores',
+
+    join_cta:                   'Conviértete en cliente',
+    closing_cta:                'Puedes unirte ahora, mientras la curva aún es suave.',
+    lang_note:                  'Texto estructural localizado. Detalles técnicos en inglés.',
+    back:                       'Volver',
+    footer_line:                'Un manifiesto vivo. Actualizado a medida que el sistema crece.',
+  },
+
+  /* ═══════════════ FRENCH ═══════════════ */
+  fr: {
+    meet:                       'Rencontrez',
+    brand:                      'S.E.A.S.O.N.',
+    brand_expand:               "Réseau Opérationnel de Support d'Analyse et d'Exécution Stratégique",
+    hero_kicker:                "Un système d'exploitation de recherche qui pense en saisons.",
+    hero_sub:                   "Conçu pour le moment où la recherche elle-même a changé.",
+    scroll_hint:                'Commencer',
+    nav_label:                  'Le Codex',
+    chapter:                    'Chapitre',
+
+    s_letter:                   'Stratégique',
+    e_letter:                   'Exécution',
+    a_letter:                   'Analyse',
+    s2_letter:                  'Support',
+    o_letter:                   'Opérationnel',
+    n_letter:                   'Réseau',
+
+    season_winter:              'Hiver',
+    season_spring:              'Printemps',
+    season_summer:              'Été',
+    season_monsoon:             'Mousson',
+    season_autumn:              'Automne',
+    season_harvest:             'Récolte',
+    season_eternal:             'Printemps Éternel',
+
+    season_kicker_winter:       'où vit le problème froid',
+    season_kicker_spring:       'où le travail commence à respirer',
+    season_kicker_summer:       "où l'engagement est nommé",
+    season_kicker_monsoon:      'où le travail se déverse',
+    season_kicker_autumn:       'où la vérité est récoltée avec soin',
+    season_kicker_harvest:      'où la récolte est comptée',
+    season_kicker_eternal:      'où commence la prochaine décennie',
+
+    ch00:                       'Rencontrez S.E.A.S.O.N.',
+    ch01:                       'Le problème que nous résolvons',
+    ch02:                       'La vision',
+    ch03:                       'Comment la recherche fonctionne vraiment maintenant',
+    ch04:                       'Les cinq piliers',
+    ch05:                       "Le parcours d'un client",
+    ch06:                       'La salle des machines',
+    ch07:                       'Pourquoi ceci, pas cela',
+    ch08:                       'Ce que nous ferons et ne ferons pas',
+    ch09:                       'Doctrine des données authentiques',
+    ch10:                       'Pour qui cela a été construit',
+    ch11:                       'Une lettre du fondateur',
+    ch12:                       "L'avenir appartient aux bâtisseurs",
+
+    join_cta:                   'Devenez client',
+    closing_cta:                'Vous pouvez rejoindre maintenant, tant que la courbe reste douce.',
+    lang_note:                  'Texte structurel localisé. Détails techniques en anglais.',
+    back:                       'Retour',
+    footer_line:                'Un manifeste vivant. Mis à jour à mesure que le système grandit.',
+  },
+
+  /* ═══════════════ GERMAN ═══════════════ */
+  de: {
+    meet:                       'Lernen Sie',
+    brand:                      'S.E.A.S.O.N.',
+    brand_expand:               'Strategisches Ausführungs- und Analyse-Unterstützungs-Betreiber-Netzwerk',
+    hero_kicker:                'Ein Such-Betriebssystem, das in Jahreszeiten denkt.',
+    hero_sub:                   'Gebaut für den Moment, in dem sich die Suche selbst veränderte.',
+    scroll_hint:                'Beginnen',
+    nav_label:                  'Der Codex',
+    chapter:                    'Kapitel',
+
+    s_letter:                   'Strategisch',
+    e_letter:                   'Ausführung',
+    a_letter:                   'Analyse',
+    s2_letter:                  'Unterstützung',
+    o_letter:                   'Betreiber',
+    n_letter:                   'Netzwerk',
+
+    season_winter:              'Winter',
+    season_spring:              'Frühling',
+    season_summer:              'Sommer',
+    season_monsoon:             'Monsun',
+    season_autumn:              'Herbst',
+    season_harvest:             'Ernte',
+    season_eternal:             'Ewiger Frühling',
+
+    season_kicker_winter:       'wo das kalte Problem lebt',
+    season_kicker_spring:       'wo die Arbeit zu atmen beginnt',
+    season_kicker_summer:       'wo das Engagement benannt wird',
+    season_kicker_monsoon:      'wo die Arbeit niedergeht',
+    season_kicker_autumn:       'wo die Wahrheit sorgfältig geerntet wird',
+    season_kicker_harvest:      'wo der Ertrag gezählt wird',
+    season_kicker_eternal:      'wo das nächste Jahrzehnt beginnt',
+
+    ch00:                       'Lernen Sie S.E.A.S.O.N. kennen',
+    ch01:                       'Das Problem, das wir lösen',
+    ch02:                       'Die Vision',
+    ch03:                       'Wie Suche heute wirklich funktioniert',
+    ch04:                       'Die fünf Säulen',
+    ch05:                       'Die Reise eines Kunden',
+    ch06:                       'Der Maschinenraum',
+    ch07:                       'Warum dies, nicht das',
+    ch08:                       'Was wir tun und nicht tun werden',
+    ch09:                       'Doktrin authentischer Daten',
+    ch10:                       'Für wen das gebaut wurde',
+    ch11:                       'Ein Brief vom Gründer',
+    ch12:                       'Die Zukunft gehört den Erbauern',
+
+    join_cta:                   'Kunde werden',
+    closing_cta:                'Sie können jetzt beitreten, solange die Kurve noch sanft ist.',
+    lang_note:                  'Strukturtext lokalisiert. Technische Details auf Englisch.',
+    back:                       'Zurück',
+    footer_line:                'Ein lebendiges Manifest. Aktualisiert, während das System wächst.',
+  },
+};
