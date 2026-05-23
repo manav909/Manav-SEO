@@ -133,6 +133,13 @@ export default function ClientShowcase() {
         {data.scenes.map((scene, i) => (
           <Scene key={scene.id} scene={scene} index={i} />
         ))}
+
+        {/* Phase 22.1 — Depth sections (real digital-marketing report substance) */}
+        {data.visibility_pulse && <VisibilityPulse pulse={data.visibility_pulse} />}
+        {data.keyword_movers && <KeywordMovers movers={data.keyword_movers} />}
+        {data.intent_distribution && <IntentDistribution intent={data.intent_distribution} />}
+        {data.content_health && <ContentHealth health={data.content_health} />}
+
         {data.wins.length > 0 && <WinsTimeline wins={data.wins} />}
         {data.forecast && <ForecastBlock forecast={data.forecast} />}
         {data.next_chapter.length > 0 && <NextChapter items={data.next_chapter} />}
@@ -1261,4 +1268,624 @@ function sceneMoodLabel(mood: ShowcaseSceneMoodClient): string {
     case 'pivot':      return 'Pivot point';
     case 'foundation': return 'Foundation';
   }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PHASE 22.1 — DEPTH SECTIONS
+   Real digital-marketing report content. Each section is data-driven
+   from the new backend depth fields. Honest fallbacks when null.
+══════════════════════════════════════════════════════════════════════ */
+
+/* ─── VISIBILITY PULSE — clicks/impressions timeline ────────────── */
+
+function VisibilityPulse({ pulse }: { pulse: NonNullable<ShowcaseDataClient['visibility_pulse']> }) {
+  const anchor = COLOR_ANCHORS['gold'];
+  const W = 1000, H = 200;
+  const points = pulse.points;
+  const maxClicks = Math.max(1, ...points.map(p => p.clicks));
+  const maxImpr   = Math.max(1, ...points.map(p => p.impressions));
+  const stepX = W / Math.max(1, points.length - 1);
+
+  const clicksPath = points.map((p, i) =>
+    `${i === 0 ? 'M' : 'L'} ${i * stepX} ${H - (p.clicks / maxClicks) * (H - 20) - 10}`
+  ).join(' ');
+  const imprPath = points.map((p, i) =>
+    `${i === 0 ? 'M' : 'L'} ${i * stepX} ${H - (p.impressions / maxImpr) * (H - 20) - 10}`
+  ).join(' ');
+
+  /* Locate peak index for the marker */
+  const peakIdx = pulse.peak_day ? points.findIndex(p => p.date === pulse.peak_day!.date) : -1;
+  const peakX = peakIdx >= 0 ? peakIdx * stepX : 0;
+  const peakY = peakIdx >= 0 ? H - (points[peakIdx].clicks / maxClicks) * (H - 20) - 10 : 0;
+
+  const goingUp = pulse.period_delta_pct >= 0;
+
+  return (
+    <section
+      className="scene-section"
+      data-section="visibility-pulse"
+      style={{
+        ['--anchor-h' as any]: anchor.h,
+        ['--anchor-s' as any]: `${anchor.s}%`,
+        ['--anchor-l' as any]: `${anchor.l}%`,
+      } as React.CSSProperties}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: '-10%' }}
+        transition={{ duration: 0.8 }}
+      >
+        <div className="label-tiny mb-3" style={{ color: 'var(--anchor)' }}>Visibility pulse</div>
+        <h2 className="display-lg mb-2">{pulse.window_label}</h2>
+        <div className="display-sm mb-6" style={{ color: 'rgba(245,247,255,0.65)', fontWeight: 400 }}>
+          {pulse.total_clicks.toLocaleString()} clicks · {pulse.total_impressions.toLocaleString()} impressions
+        </div>
+
+        <div className="flex items-center gap-6 mb-6 flex-wrap">
+          <div className="delta-badge" style={{
+            background: goingUp ? 'hsla(152, 70%, 55%, 0.12)' : 'hsla(320, 78%, 60%, 0.12)',
+            borderColor: goingUp ? 'hsla(152, 70%, 55%, 0.4)' : 'hsla(320, 78%, 60%, 0.4)',
+            color: goingUp ? 'hsl(152, 70%, 65%)' : 'hsl(320, 78%, 70%)',
+          }}>
+            <TrendingUp className="h-3.5 w-3.5" style={{ transform: goingUp ? 'none' : 'rotate(180deg)' }} />
+            {goingUp ? '+' : ''}{pulse.period_delta_pct.toFixed(1)}% half-over-half
+          </div>
+          {pulse.peak_day && (
+            <div className="label-tiny" style={{ opacity: 0.7 }}>
+              Peak: {pulse.peak_day.date} · {pulse.peak_day.clicks.toLocaleString()} clicks
+            </div>
+          )}
+        </div>
+
+        {/* Dual-line chart: impressions (back, soft) + clicks (front, accent) */}
+        <div style={{ background: 'rgba(255,255,255,0.02)', border: '0.5px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '1.5rem' }}>
+          <svg viewBox={`0 0 ${W} ${H + 20}`} style={{ width: '100%', maxWidth: '100%' }}>
+            {/* Gridlines */}
+            {[0.25, 0.5, 0.75].map(t => (
+              <line key={t} x1={0} y1={H * t + 10} x2={W} y2={H * t + 10}
+                stroke="rgba(255,255,255,0.04)" strokeWidth={0.5} />
+            ))}
+
+            {/* Impressions area (back) */}
+            <motion.path
+              d={`${imprPath} L ${(points.length - 1) * stepX} ${H} L 0 ${H} Z`}
+              fill="hsla(var(--anchor-h), var(--anchor-s), 75%, 0.08)"
+              initial={{ pathLength: 0, opacity: 0 }}
+              whileInView={{ pathLength: 1, opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}
+            />
+            <motion.path
+              d={imprPath}
+              stroke="hsla(var(--anchor-h), var(--anchor-s), 75%, 0.35)"
+              strokeWidth={1.2}
+              fill="none"
+              initial={{ pathLength: 0 }}
+              whileInView={{ pathLength: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}
+            />
+
+            {/* Clicks line (front) */}
+            <motion.path
+              d={clicksPath}
+              stroke="var(--anchor)"
+              strokeWidth={2.2}
+              fill="none"
+              initial={{ pathLength: 0 }}
+              whileInView={{ pathLength: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 2, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              style={{ filter: 'drop-shadow(0 0 8px var(--anchor-glow))' }}
+            />
+
+            {/* Peak marker */}
+            {peakIdx >= 0 && (
+              <motion.g
+                initial={{ opacity: 0, scale: 0 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 1.8 }}
+              >
+                <circle cx={peakX} cy={peakY} r={6} fill="var(--anchor)"
+                  style={{ filter: 'drop-shadow(0 0 10px var(--anchor-glow))' }} />
+                <circle cx={peakX} cy={peakY} r={12} fill="none" stroke="var(--anchor)" strokeWidth={0.8} opacity={0.4} />
+                <text x={peakX} y={peakY - 16} textAnchor="middle" fontSize={10} fill="var(--anchor)" fontWeight={600}>
+                  ★ peak
+                </text>
+              </motion.g>
+            )}
+          </svg>
+
+          {/* Legend */}
+          <div className="flex items-center gap-6 mt-4 text-[11px]" style={{ color: 'rgba(245,247,255,0.65)' }}>
+            <div className="flex items-center gap-2">
+              <span style={{ width: 16, height: 2, background: 'var(--anchor)', display: 'inline-block', boxShadow: '0 0 8px var(--anchor-glow)' }} />
+              Clicks (organic)
+            </div>
+            <div className="flex items-center gap-2">
+              <span style={{ width: 16, height: 2, background: 'hsla(var(--anchor-h), var(--anchor-s), 75%, 0.35)', display: 'inline-block' }} />
+              Impressions
+            </div>
+          </div>
+        </div>
+
+        <p className="prose-soft mt-5" style={{ maxWidth: '60ch' }}>
+          The line tells the story Google Search Console saw: every day a user typed something
+          you tried to rank for, every click that followed. {goingUp
+            ? 'Trajectory is upward across the window.'
+            : 'Trajectory has softened — the recommendations below address it.'}
+        </p>
+      </motion.div>
+    </section>
+  );
+}
+
+/* ─── KEYWORD MOVERS — winners / losers / holding ───────────────── */
+
+function KeywordMovers({ movers }: { movers: NonNullable<ShowcaseDataClient['keyword_movers']> }) {
+  const anchor = COLOR_ANCHORS['cyan'];
+
+  return (
+    <section
+      className="scene-section"
+      data-section="keyword-movers"
+      style={{
+        ['--anchor-h' as any]: anchor.h,
+        ['--anchor-s' as any]: `${anchor.s}%`,
+        ['--anchor-l' as any]: `${anchor.l}%`,
+      } as React.CSSProperties}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: '-10%' }}
+        transition={{ duration: 0.8 }}
+      >
+        <div className="label-tiny mb-3" style={{ color: 'var(--anchor)' }}>Keyword movement</div>
+        <h2 className="display-lg mb-6">What's climbing, what's slipping</h2>
+
+        <div className="movers-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '1.25rem',
+        }}>
+          {/* Winners column */}
+          {movers.winners.length > 0 && (
+            <MoverColumn
+              title="Winners"
+              subtitle={`${movers.winners.length} climbing`}
+              icon={<ArrowUpRight className="h-4 w-4" />}
+              accent="emerald"
+              rows={movers.winners.map(w => ({
+                keyword: w.keyword,
+                left:   `${w.from_position.toFixed(0)} → ${w.to_position.toFixed(1)}`,
+                delta:  `+${w.delta.toFixed(1)} pos`,
+                impressions: w.impressions,
+                deltaPositive: true,
+              }))}
+            />
+          )}
+
+          {/* Losers column */}
+          {movers.losers.length > 0 && (
+            <MoverColumn
+              title="Needs attention"
+              subtitle={`${movers.losers.length} slipping`}
+              icon={<AlertCircle className="h-4 w-4" />}
+              accent="magenta"
+              rows={movers.losers.map(l => ({
+                keyword: l.keyword,
+                left:   `${l.from_position.toFixed(0)} → ${l.to_position.toFixed(1)}`,
+                delta:  `${l.delta.toFixed(1)} pos`,
+                impressions: l.impressions,
+                deltaPositive: false,
+              }))}
+            />
+          )}
+
+          {/* Holding column — shown when winners/losers are sparse */}
+          {(movers.winners.length === 0 || movers.losers.length === 0) && movers.holding.length > 0 && (
+            <MoverColumn
+              title="Holding position"
+              subtitle={`${movers.holding.length} stable`}
+              icon={<Target className="h-4 w-4" />}
+              accent="cyan"
+              rows={movers.holding.map(h => ({
+                keyword: h.keyword,
+                left:   `position ${h.position.toFixed(1)}`,
+                delta:  `${h.impressions.toLocaleString()} impr`,
+                impressions: h.impressions,
+                deltaPositive: null,
+              }))}
+            />
+          )}
+        </div>
+
+        <p className="prose-soft mt-6" style={{ maxWidth: '60ch', color: 'rgba(245,247,255,0.55)', fontStyle: 'italic' }}>
+          {movers.methodology}
+        </p>
+      </motion.div>
+    </section>
+  );
+}
+
+function MoverColumn({ title, subtitle, icon, accent, rows }: {
+  title: string; subtitle: string; icon: React.ReactNode;
+  accent: ShowcaseColorAnchorClient;
+  rows: Array<{ keyword: string; left: string; delta: string; impressions: number; deltaPositive: boolean | null }>;
+}) {
+  const a = COLOR_ANCHORS[accent];
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.025)',
+      border: '0.5px solid rgba(255,255,255,0.08)',
+      borderRadius: 16,
+      padding: '1.25rem',
+      backdropFilter: 'blur(8px)',
+    }}>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span style={{ color: `hsl(${a.h}, ${a.s}%, ${a.l}%)` }}>{icon}</span>
+          <div>
+            <div className="display-sm" style={{ fontWeight: 600 }}>{title}</div>
+            <div className="label-tiny" style={{ opacity: 0.7 }}>{subtitle}</div>
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        {rows.slice(0, 6).map((r, i) => (
+          <motion.div
+            key={i}
+            className="flex items-baseline justify-between gap-3 py-2 px-2 rounded-lg"
+            style={{ background: 'rgba(255,255,255,0.02)' }}
+            initial={{ opacity: 0, x: 12 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.4, delay: 0.1 + i * 0.06 }}
+          >
+            <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'rgba(245,247,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.keyword}
+              </div>
+              <div className="label-tiny" style={{ opacity: 0.65, marginTop: '0.1rem' }}>{r.left}</div>
+            </div>
+            <div style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              color: r.deltaPositive === true ? 'hsl(152, 70%, 65%)'
+                   : r.deltaPositive === false ? 'hsl(320, 78%, 70%)'
+                   : 'rgba(245,247,255,0.65)',
+              fontFeatureSettings: '"tnum" 1',
+              whiteSpace: 'nowrap',
+            }}>
+              {r.delta}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── INTENT DISTRIBUTION — donut + breakdown ───────────────────── */
+
+function IntentDistribution({ intent }: { intent: NonNullable<ShowcaseDataClient['intent_distribution']> }) {
+  const anchor = COLOR_ANCHORS['amethyst'];
+  const totalImpressions = intent.branded.impressions + intent.informational.impressions + intent.commercial.impressions + intent.transactional.impressions;
+  const totalClicks      = intent.branded.clicks + intent.informational.clicks + intent.commercial.clicks + intent.transactional.clicks;
+
+  const slices = [
+    { id: 'branded',       label: 'Branded',       hue: 42,  data: intent.branded,       describe: 'searches with your brand name' },
+    { id: 'informational', label: 'Informational', hue: 188, data: intent.informational, describe: 'how-to, what-is, learn' },
+    { id: 'commercial',    label: 'Commercial',    hue: 268, data: intent.commercial,    describe: 'best, top, reviews, alternatives' },
+    { id: 'transactional', label: 'Transactional', hue: 152, data: intent.transactional, describe: 'buy, price, near me' },
+  ].filter(s => s.data.impressions > 0);
+
+  /* Compute donut arcs */
+  const cx = 130, cy = 130, rOuter = 110, rInner = 70;
+  let accAngle = -Math.PI / 2; // start at top
+
+  return (
+    <section
+      className="scene-section"
+      data-section="intent-distribution"
+      style={{
+        ['--anchor-h' as any]: anchor.h,
+        ['--anchor-s' as any]: `${anchor.s}%`,
+        ['--anchor-l' as any]: `${anchor.l}%`,
+      } as React.CSSProperties}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: '-10%' }}
+        transition={{ duration: 0.8 }}
+      >
+        <div className="label-tiny mb-3" style={{ color: 'var(--anchor)' }}>Search intent map</div>
+        <h2 className="display-lg mb-2">Where the traffic actually comes from</h2>
+        <div className="display-sm mb-8" style={{ color: 'rgba(245,247,255,0.65)', fontWeight: 400 }}>
+          {totalClicks.toLocaleString()} clicks across {totalImpressions.toLocaleString()} impressions, classified by intent
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(260px, 280px) 1fr',
+          gap: '3rem',
+          alignItems: 'center',
+        }} className="intent-grid">
+          {/* Donut chart */}
+          <svg viewBox="0 0 260 260" style={{ width: '100%', maxWidth: 280 }}>
+            <defs>
+              {slices.map(s => (
+                <radialGradient key={s.id} id={`grad_${s.id}`} cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor={`hsl(${s.hue}, 80%, 70%)`} stopOpacity={0.95} />
+                  <stop offset="100%" stopColor={`hsl(${s.hue}, 70%, 50%)`} stopOpacity={0.7} />
+                </radialGradient>
+              ))}
+            </defs>
+            {slices.map((s, i) => {
+              const fraction = s.data.impressions / totalImpressions;
+              const sweep = fraction * Math.PI * 2;
+              const a1 = accAngle;
+              const a2 = accAngle + sweep;
+              accAngle = a2;
+              const largeArc = sweep > Math.PI ? 1 : 0;
+              const x1o = cx + Math.cos(a1) * rOuter, y1o = cy + Math.sin(a1) * rOuter;
+              const x2o = cx + Math.cos(a2) * rOuter, y2o = cy + Math.sin(a2) * rOuter;
+              const x1i = cx + Math.cos(a2) * rInner, y1i = cy + Math.sin(a2) * rInner;
+              const x2i = cx + Math.cos(a1) * rInner, y2i = cy + Math.sin(a1) * rInner;
+              const path = `M ${x1o} ${y1o} A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${x2o} ${y2o} L ${x1i} ${y1i} A ${rInner} ${rInner} 0 ${largeArc} 0 ${x2i} ${y2i} Z`;
+              return (
+                <motion.path
+                  key={s.id}
+                  d={path}
+                  fill={`url(#grad_${s.id})`}
+                  stroke={`hsl(${s.hue}, 70%, 30%)`}
+                  strokeWidth={0.5}
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.8, delay: 0.3 + i * 0.15, ease: [0.16, 1, 0.3, 1] }}
+                  style={{ transformOrigin: '130px 130px', filter: `drop-shadow(0 0 8px hsla(${s.hue}, 80%, 60%, 0.4))` }}
+                />
+              );
+            })}
+            {/* Center labels */}
+            <text x={cx} y={cy - 6} textAnchor="middle" fontSize={11} fill="rgba(245,247,255,0.6)" fontWeight={600}
+              style={{ letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+              Intent
+            </text>
+            <text x={cx} y={cy + 14} textAnchor="middle" fontSize={20} fill="var(--anchor)" fontWeight={300}>
+              {slices.length}
+            </text>
+            <text x={cx} y={cy + 30} textAnchor="middle" fontSize={9} fill="rgba(245,247,255,0.55)">
+              buckets active
+            </text>
+          </svg>
+
+          {/* Breakdown table */}
+          <div className="flex flex-col gap-3">
+            {slices.sort((a, b) => b.data.impressions - a.data.impressions).map((s, i) => {
+              const impPct = totalImpressions > 0 ? (s.data.impressions / totalImpressions) * 100 : 0;
+              const ctr = s.data.impressions > 0 ? (s.data.clicks / s.data.impressions) * 100 : 0;
+              return (
+                <motion.div
+                  key={s.id}
+                  initial={{ opacity: 0, x: 10 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: 0.6 + i * 0.1 }}
+                  style={{
+                    background: 'rgba(255,255,255,0.025)',
+                    border: '0.5px solid rgba(255,255,255,0.08)',
+                    borderRadius: 12,
+                    padding: '0.9rem 1.1rem',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Subtle bar overlay showing the % */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: `linear-gradient(90deg, hsla(${s.hue}, 70%, 50%, 0.10) 0%, hsla(${s.hue}, 70%, 50%, 0.10) ${impPct}%, transparent ${impPct}%)`,
+                    pointerEvents: 'none',
+                  }} />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '1rem' }}>
+                    <div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 600, color: `hsl(${s.hue}, 70%, 75%)` }}>{s.label}</div>
+                      <div className="label-tiny" style={{ opacity: 0.6, marginTop: '0.15rem' }}>{s.describe}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 300, color: 'rgba(245,247,255,0.92)', fontFeatureSettings: '"tnum" 1' }}>
+                        {impPct.toFixed(1)}%
+                      </div>
+                      <div className="label-tiny" style={{ opacity: 0.65, marginTop: '0.1rem' }}>
+                        {s.data.clicks.toLocaleString()} clicks · {ctr.toFixed(2)}% CTR
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+
+        <p className="prose-soft mt-6" style={{ maxWidth: '70ch', color: 'rgba(245,247,255,0.55)', fontStyle: 'italic' }}>
+          {intent.classification_note}
+        </p>
+
+        <style>{`
+          @media (max-width: 768px) {
+            .intent-grid { grid-template-columns: 1fr !important; }
+          }
+        `}</style>
+      </motion.div>
+    </section>
+  );
+}
+
+/* ─── CONTENT HEALTH — page tiers with action recommendations ────── */
+
+function ContentHealth({ health }: { health: NonNullable<ShowcaseDataClient['content_health']> }) {
+  const anchor = COLOR_ANCHORS['emerald'];
+
+  const tiers = [
+    {
+      id: 'hero' as const,
+      label: 'Heroes',
+      sub: 'Page-1, high CTR. Defend.',
+      count: health.tier_counts.hero,
+      rows: health.tiers.hero,
+      action: health.tier_actions.hero,
+      hue: 42,
+      icon: <Award className="h-4 w-4" />,
+    },
+    {
+      id: 'climbing' as const,
+      label: 'Climbing',
+      sub: 'Page-2 with momentum. Push.',
+      count: health.tier_counts.climbing,
+      rows: health.tiers.climbing,
+      action: health.tier_actions.climbing,
+      hue: 188,
+      icon: <TrendingUp className="h-4 w-4" />,
+    },
+    {
+      id: 'plateau' as const,
+      label: 'Plateaued',
+      sub: 'Ranking but low CTR. Rewrite.',
+      count: health.tier_counts.plateau,
+      rows: health.tiers.plateau,
+      action: health.tier_actions.plateau,
+      hue: 268,
+      icon: <Target className="h-4 w-4" />,
+    },
+    {
+      id: 'under' as const,
+      label: 'Underperforming',
+      sub: 'Buried or low signal. Re-evaluate.',
+      count: health.tier_counts.underperforming,
+      rows: health.tiers.underperforming,
+      action: health.tier_actions.underperforming,
+      hue: 320,
+      icon: <AlertCircle className="h-4 w-4" />,
+    },
+  ];
+
+  return (
+    <section
+      className="scene-section"
+      data-section="content-health"
+      style={{
+        ['--anchor-h' as any]: anchor.h,
+        ['--anchor-s' as any]: `${anchor.s}%`,
+        ['--anchor-l' as any]: `${anchor.l}%`,
+      } as React.CSSProperties}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: '-10%' }}
+        transition={{ duration: 0.8 }}
+      >
+        <div className="label-tiny mb-3" style={{ color: 'var(--anchor)' }}>Content health matrix</div>
+        <h2 className="display-lg mb-2">Every page has a job</h2>
+        <div className="display-sm mb-8" style={{ color: 'rgba(245,247,255,0.65)', fontWeight: 400 }}>
+          Top {tiers.reduce((s, t) => s + t.count, 0)} pages tiered by performance — each tier has its own action
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '1.25rem',
+        }}>
+          {tiers.map((tier, ti) => (
+            <motion.div
+              key={tier.id}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.15 + ti * 0.12 }}
+              style={{
+                background: 'rgba(255,255,255,0.025)',
+                border: `0.5px solid hsla(${tier.hue}, 70%, 60%, 0.25)`,
+                borderRadius: 16,
+                padding: '1.25rem',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2" style={{ color: `hsl(${tier.hue}, 70%, 70%)` }}>
+                  {tier.icon}
+                  <div>
+                    <div className="display-sm" style={{ fontWeight: 600, color: `hsl(${tier.hue}, 70%, 78%)` }}>{tier.label}</div>
+                    <div className="label-tiny" style={{ opacity: 0.65 }}>{tier.sub}</div>
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: '1.5rem',
+                  fontWeight: 300,
+                  color: `hsl(${tier.hue}, 70%, 78%)`,
+                  fontFeatureSettings: '"tnum" 1',
+                }}>
+                  {tier.count}
+                </div>
+              </div>
+
+              {/* Top rows in this tier */}
+              {tier.rows.length > 0 ? (
+                <div className="flex flex-col gap-1.5 mb-4">
+                  {tier.rows.slice(0, 3).map((p, i) => (
+                    <div key={i} style={{
+                      fontSize: '0.75rem',
+                      color: 'rgba(245,247,255,0.7)',
+                      padding: '0.4rem 0.6rem',
+                      background: 'rgba(255,255,255,0.02)',
+                      borderRadius: 6,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: '0.5rem',
+                    }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
+                        {p.page.replace(/^https?:\/\/[^/]+/, '') || '/'}
+                      </span>
+                      <span style={{ fontFeatureSettings: '"tnum" 1', opacity: 0.85, whiteSpace: 'nowrap', color: `hsl(${tier.hue}, 65%, 70%)` }}>
+                        #{p.position.toFixed(0)} · {p.clicks.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                  {tier.rows.length > 3 && (
+                    <div className="label-tiny" style={{ opacity: 0.5, marginTop: '0.25rem', textAlign: 'center' }}>
+                      +{tier.rows.length - 3} more
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="label-tiny" style={{ opacity: 0.5, padding: '0.5rem 0', textAlign: 'center', fontStyle: 'italic' }}>
+                  No pages in this tier
+                </div>
+              )}
+
+              {/* Action recommendation */}
+              <div style={{
+                marginTop: 'auto',
+                paddingTop: '0.75rem',
+                borderTop: `0.5px solid hsla(${tier.hue}, 70%, 60%, 0.2)`,
+                fontSize: '0.75rem',
+                color: 'rgba(245,247,255,0.7)',
+                lineHeight: 1.5,
+                fontStyle: 'italic',
+              }}>
+                {tier.action}
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </motion.div>
+    </section>
+  );
 }

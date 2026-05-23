@@ -2077,6 +2077,49 @@ export interface ShowcaseDataClient {
     audit_run_count:    number;
     audit_period:       string;
   };
+
+  /* Phase 22.1 — Depth sections (all nullable; null = source data missing) */
+  visibility_pulse: null | {
+    window_label:        string;
+    points:              Array<{ date: string; clicks: number; impressions: number }>;
+    peak_day:            { date: string; clicks: number; impressions: number } | null;
+    total_clicks:        number;
+    total_impressions:   number;
+    period_delta_pct:    number;
+  };
+  keyword_movers: null | {
+    winners:             Array<{ keyword: string; from_position: number; to_position: number; impressions: number; clicks: number; delta: number }>;
+    losers:              Array<{ keyword: string; from_position: number; to_position: number; impressions: number; clicks: number; delta: number }>;
+    holding:             Array<{ keyword: string; position: number; impressions: number; clicks: number }>;
+    methodology:         string;
+  };
+  intent_distribution: null | {
+    branded:             { impressions: number; clicks: number; query_count: number };
+    informational:       { impressions: number; clicks: number; query_count: number };
+    commercial:          { impressions: number; clicks: number; query_count: number };
+    transactional:       { impressions: number; clicks: number; query_count: number };
+    classification_note: string;
+  };
+  content_health: null | {
+    tiers: {
+      hero:               Array<{ page: string; clicks: number; impressions: number; position: number; ctr: number }>;
+      climbing:           Array<{ page: string; clicks: number; impressions: number; position: number; ctr: number }>;
+      plateau:            Array<{ page: string; clicks: number; impressions: number; position: number; ctr: number }>;
+      underperforming:    Array<{ page: string; clicks: number; impressions: number; position: number; ctr: number }>;
+    };
+    tier_counts: {
+      hero:               number;
+      climbing:           number;
+      plateau:            number;
+      underperforming:    number;
+    };
+    tier_actions: {
+      hero:               string;
+      climbing:           string;
+      plateau:            string;
+      underperforming:    string;
+    };
+  };
 }
 
 export async function getClientShowcase(opts: { projectId: string }): Promise<{
