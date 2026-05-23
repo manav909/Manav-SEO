@@ -58,6 +58,19 @@ import {
 } from '@/components/pm/api';
 
 /* Phase 21 Block 2.5 — relative time display for source freshness */
+/* Phase 21 Block 2.5b — Pro mode multi-turn chat scrollback.
+   Each turn captures the user's input + the assistant's CommandResponseClient
+   so Pro mode can render a vertical history of past Q&A pairs. Persisted
+   per-project in localStorage, capped at MAX_CHAT_HISTORY. */
+interface ChatTurn {
+  id:         string;
+  input:      string;
+  response:   CommandResponseClient;
+  timestamp:  number;
+}
+const MAX_CHAT_HISTORY = 30;
+const chatStorageKey = (projectId: string) => `season_chat_history_${projectId}`;
+
 function formatRelativeShort(iso?: string | null): string {
   if (!iso) return '';
   try {
@@ -260,6 +273,12 @@ function CommandInner() {
   const [commandError, setCommandError] = useState<string | null>(null);
   const inputRef                        = useRef<HTMLInputElement>(null);
 
+  /* Phase 21 Block 2.5b — Multi-turn chat scrollback (Pro mode only).
+     Each successful response is appended as a ChatTurn. History is persisted
+     per-project in localStorage and capped at MAX_CHAT_HISTORY turns.
+     Casual mode ignores this entirely (stays single-shot). */
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
+
   const [activityOpen, setActivityOpen]   = useState(false);
   const [activity, setActivity]            = useState<ActivityEvent[]>([]);
 
@@ -459,7 +478,19 @@ function CommandInner() {
     const r = await seasonCommand({ projectId: selectedProjectId, input: text });
     setSubmitting(false);
     if (r.error) { setCommandError(r.error); return; }
-    if (r.response) setResponse(r.response);
+    if (r.response) {
+      setResponse(r.response);
+      /* Phase 21 Block 2.5b — append to chat history for Pro mode scrollback.
+         Casual mode ignores this; in Pro mode the latest turn renders as the
+         live ResponsePanel and earlier turns render above as past context. */
+      const newTurn: ChatTurn = {
+        id:        `t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        input:     text,
+        response:  r.response,
+        timestamp: Date.now(),
+      };
+      setChatHistory(prev => [...prev, newTurn].slice(-MAX_CHAT_HISTORY));
+    }
   };
 
   /* Phase 21 Block 2.7 — fetch top recoverable opportunities for WhatNeedsYou hero */
@@ -473,6 +504,35 @@ function CommandInner() {
       } catch { /* swallow — WhatNeedsYou will simply render fewer rows */ }
     })();
   }, [selectedProjectId]);
+
+  /* Phase 21 Block 2.5b — Load persisted chat history when project changes.
+     History is per-project; switching projects loads that project's prior
+     conversation. Capped at MAX_CHAT_HISTORY turns for storage safety. */
+  useEffect(() => {
+    if (!selectedProjectId) { setChatHistory([]); return; }
+    try {
+      const raw = localStorage.getItem(chatStorageKey(selectedProjectId));
+      if (!raw) { setChatHistory([]); return; }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setChatHistory(parsed.slice(-MAX_CHAT_HISTORY));
+      } else {
+        setChatHistory([]);
+      }
+    } catch { setChatHistory([]); }
+  }, [selectedProjectId]);
+
+  /* Persist chat history on every change. localStorage write is cheap enough
+     to do on every state change without debouncing — turns are infrequent. */
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    try {
+      localStorage.setItem(
+        chatStorageKey(selectedProjectId),
+        JSON.stringify(chatHistory.slice(-MAX_CHAT_HISTORY)),
+      );
+    } catch { /* localStorage may be disabled or full — silently skip */ }
+  }, [chatHistory, selectedProjectId]);
 
   /* Phase 21 Block 2.11 Phase A — fetch unified war room briefing v2.
      Mode-aware: casual gets 5 items, pro gets 10. Re-fetches on mode switch. */
@@ -1066,6 +1126,31 @@ function CommandInner() {
             </motion.div>
           )}
 
+          {/* Phase 21 Block 2.5b — Pro mode chat scrollback.
+              Renders past turns above the current ResponsePanel. In Casual
+              this whole block is hidden (single-shot UX preserved).
+              When response is null (user X'd out), show ALL history including
+              the most recent so the just-closed turn isn't lost. */}
+          {mode === 'pro' && chatHistory.length > 0 && (response ? chatHistory.length > 1 : true) && (
+            <div className="space-y-3 mb-4">
+              <div className="flex items-center justify-between px-1">
+                <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/70">
+                  Conversation history · {response ? chatHistory.length - 1 : chatHistory.length} turn{(response ? chatHistory.length - 1 : chatHistory.length) === 1 ? '' : 's'}
+                </div>
+                <button
+                  onClick={() => { setChatHistory([]); }}
+                  className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors flex items-center gap-1"
+                  title="Clear conversation history for this project"
+                >
+                  <X className="h-3 w-3" /> Clear
+                </button>
+              </div>
+              {(response ? chatHistory.slice(0, -1) : chatHistory).map(turn => (
+                <HistoricalTurn key={turn.id} turn={turn} />
+              ))}
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             {response && (
               <ResponsePanel
@@ -1567,6 +1652,56 @@ function ResponsePanel({ response, onClose, onAction, actionRunning }: {
               </motion.button>
             );
           })}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+/* Phase 21 Block 2.5b — HistoricalTurn
+   Compact, read-only rendering of a past chat turn for Pro mode scrollback.
+   Shows the user's input above the assistant's response chunks + artifacts.
+   No action buttons (stale state), no X (history doesn't get individually
+   removed — use "Clear" to wipe). No streaming animation either — past
+   turns render fully expanded immediately. */
+function HistoricalTurn({ turn }: { turn: ChatTurn }) {
+  const { input, response } = turn;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="rounded-2xl border border-border/60 bg-card/30 overflow-hidden"
+    >
+      {/* User input bubble */}
+      <div className="px-4 py-2.5 border-b border-border/40 bg-muted/20">
+        <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/70 mb-1">You asked</div>
+        <div className="text-[13px] text-foreground/90 leading-snug">{input}</div>
+      </div>
+      {/* Response body — compact, no animations */}
+      <div className="px-4 py-3 space-y-2.5">
+        <div className="text-[10px] uppercase tracking-wider font-bold text-cyan-400/70">
+          {response.intent === 'unknown' ? 'Not sure yet' : response.intent.replace('_', ' ')} · {(response.confidence * 100).toFixed(0)}% confident
+        </div>
+        {response.chunks.map((c, i) => (
+          <div key={i} className="text-[13px] text-foreground/85 leading-relaxed whitespace-pre-wrap">
+            {typeof c?.content === 'string' ? c.content : ''}
+          </div>
+        ))}
+        {response.honest_note && (
+          <div className="mt-2 pt-2 border-t border-amber-500/15 text-[11px] text-amber-400/70 italic flex items-start gap-1.5">
+            <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" /><span>{response.honest_note}</span>
+          </div>
+        )}
+      </div>
+      {/* Artifacts — collapsed by default in history (just titles) */}
+      {response.artifacts && response.artifacts.length > 0 && (
+        <div className="px-4 pb-3 flex flex-wrap gap-1.5">
+          {response.artifacts.map((art, i) => (
+            <div key={i} className="text-[10px] px-2 py-1 rounded-md border border-violet-500/20 bg-violet-500/[0.05] text-violet-400/80">
+              {art.kind === 'brief' ? '📝' : art.kind === 'email' ? '✉' : art.kind === 'table' ? '◫' : art.kind === 'plan' ? '◆' : '◦'} {art.title}
+            </div>
+          ))}
         </div>
       )}
     </motion.div>
