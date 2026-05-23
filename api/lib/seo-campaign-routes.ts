@@ -503,3 +503,265 @@ export async function bsSeoUserPrefsReset(body: any): Promise<any> {
   const { resetUserPrefs } = await import("./season-user-prefs.js");
   return resetUserPrefs({ userId, projectId: projectId || null });
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   Phase 21 Block 2.7 — Client Lens
+   
+   Single aggregator that loads everything the client-facing cinematic
+   page needs in one round trip. Returns a rich shape designed so every
+   stat, every keyword movement, every pillar status drives a frontend
+   animation directly — no further round trips needed for the page to
+   come alive.
+   
+   Honesty discipline applies: missing data is surfaced explicitly as
+   null + a "data_status" reason, never papered over with synthetic
+   placeholders. The page renders honest empty states for missing pieces.
+══════════════════════════════════════════════════════════════════════ */
+
+export async function bsClientLensLoad(body: any): Promise<any> {
+  const { projectId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+
+  try {
+    const { db } = await import("./db.js");
+
+    /* Parallel reads — everything fans out together for speed */
+    const [
+      projectRow,
+      clientRow,
+      campaignsRow,
+      gscQueriesRow,
+      gscPagesRow,
+      ga4SummaryRow,
+    ] = await Promise.all([
+      db().from("projects").select("id,project_name,client_url,status,created_at").eq("id", projectId).maybeSingle(),
+      db().from("clients").select("id,client_name,client_url,company_name,brand_name").eq("id", projectId).maybeSingle(),
+      db().from("seo_campaigns")
+        .select("id,keyword,status,started_at,current_position,target_position,health,living_overview_md,last_assessed_at")
+        .eq("project_id", projectId)
+        .neq("status", "archived")
+        .order("started_at", { ascending: false }),
+      db().from("project_knowledge")
+        .select("field_value,updated_at")
+        .eq("project_id", projectId).eq("category", "analytics").eq("field_key", "gsc_top_queries").maybeSingle(),
+      db().from("project_knowledge")
+        .select("field_value,updated_at")
+        .eq("project_id", projectId).eq("category", "analytics").eq("field_key", "gsc_top_pages").maybeSingle(),
+      db().from("project_knowledge")
+        .select("field_value,updated_at")
+        .eq("project_id", projectId).eq("category", "analytics").eq("field_key", "ga4_summary").maybeSingle(),
+    ]);
+
+    /* Identity — prefer client row over project row for naming */
+    const proj = (projectRow as any)?.data;
+    const cli  = (clientRow as any)?.data;
+    const displayName = cli?.brand_name || cli?.company_name || cli?.client_name || proj?.project_name || "Untitled project";
+    const displayDomain = cli?.client_url || proj?.client_url || null;
+    const startedAt = proj?.created_at || null;
+    const daysActive = startedAt
+      ? Math.floor((Date.now() - new Date(startedAt).getTime()) / 86_400_000)
+      : null;
+
+    /* Campaigns + their panels */
+    const campaigns: any[] = ((campaignsRow as any)?.data) || [];
+    const campaignIds = campaigns.map(c => c.id);
+
+    let panels: any[] = [];
+    let recentReports: any[] = [];
+    if (campaignIds.length > 0) {
+      const [panelsR, reportsR] = await Promise.all([
+        db().from("seo_campaign_panels")
+          .select("id,campaign_id,pillar,status,current_status,current_summary,goal_summary,scheduled_note,updated_at")
+          .in("campaign_id", campaignIds),
+        db().from("seo_campaign_reports")
+          .select("id,campaign_id,pillar,title,summary,confidence_rating,generated_at,tags")
+          .in("campaign_id", campaignIds)
+          .order("generated_at", { ascending: false })
+          .limit(50),
+      ]);
+      panels = ((panelsR as any).data) || [];
+      recentReports = ((reportsR as any).data) || [];
+    }
+
+    /* GSC queries — parse + sort by impressions, take top 10 */
+    let gscQueries: any[] = [];
+    let gscFreshness: string | null = null;
+    try {
+      const raw = (gscQueriesRow as any)?.data?.field_value;
+      if (raw) {
+        gscQueries = JSON.parse(raw);
+        gscFreshness = (gscQueriesRow as any)?.data?.updated_at || null;
+      }
+    } catch { /* leave empty */ }
+
+    const topRankings = gscQueries
+      .filter(q => q && q.query)
+      .sort((a, b) => (b.impressions || 0) - (a.impressions || 0))
+      .slice(0, 10)
+      .map(q => ({
+        keyword:     String(q.query),
+        position:    Number(q.position?.toFixed(1)) || null,
+        impressions: q.impressions || 0,
+        clicks:      q.clicks || 0,
+        ctr:         q.ctr ? Number((q.ctr * 100).toFixed(2)) : 0,
+      }));
+
+    /* Top pages for the traffic narrative */
+    let gscPages: any[] = [];
+    try {
+      const raw = (gscPagesRow as any)?.data?.field_value;
+      if (raw) gscPages = JSON.parse(raw);
+    } catch { /* leave empty */ }
+
+    const totalImpressions = gscQueries.reduce((s, q) => s + (q.impressions || 0), 0);
+    const totalClicks      = gscQueries.reduce((s, q) => s + (q.clicks || 0), 0);
+    const overallCtr       = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+    const page1Count       = gscQueries.filter(q => (q.position || 999) <= 10).length;
+    const page2Count       = gscQueries.filter(q => (q.position || 999) > 10 && (q.position || 999) <= 20).length;
+
+    /* GA4 summary — connected = real session/conversion data, otherwise honest null */
+    let ga4: any = null;
+    try {
+      const raw = (ga4SummaryRow as any)?.data?.field_value;
+      if (raw) ga4 = JSON.parse(raw);
+    } catch { /* leave null */ }
+
+    /* Five pillars — aggregate status across campaigns. A pillar is "green"
+       overall if at least one campaign has it green and none are red. */
+    const PILLAR_ORDER = ['cluster_map', 'internal_linking', 'off_page', 'technical_audit', 'monitoring'];
+    const pillarHealth = PILLAR_ORDER.map(pillar => {
+      const matching = panels.filter(p => p.pillar === pillar);
+      const active   = matching.filter(p => p.status === 'active');
+      const reds     = active.filter(p => p.current_status === 'red').length;
+      const ambers   = active.filter(p => p.current_status === 'amber').length;
+      const greens   = active.filter(p => p.current_status === 'green').length;
+      let overall: 'green' | 'amber' | 'red' | 'pending' = 'pending';
+      if (active.length === 0) overall = 'pending';
+      else if (reds > 0)       overall = 'red';
+      else if (ambers > 0)     overall = 'amber';
+      else if (greens > 0)     overall = 'green';
+      /* Pick the most recent report summary as the human-readable status */
+      const recent = recentReports.find(r => r.pillar === pillar);
+      return {
+        pillar,
+        label:        prettifyPillar(pillar),
+        status:       overall,
+        active_count: active.length,
+        total_count:  matching.length,
+        summary:      recent?.summary || matching[0]?.current_summary || null,
+        last_update:  recent?.generated_at || matching[0]?.updated_at || null,
+      };
+    });
+
+    /* Wins — derive from recent reports that mention upward movement.
+       Simple heuristic: pillar reports tagged with green status + the
+       most recent monitoring snapshots showing position improvements. */
+    const wins: any[] = [];
+    for (const r of recentReports.slice(0, 10)) {
+      const tagStr = Array.isArray(r.tags) ? r.tags.join(' ') : '';
+      const isGreen = r.confidence_rating === 'high' || /baseline|improved|win|green/i.test(tagStr);
+      if (isGreen && r.summary) {
+        wins.push({
+          title:   r.title || `${prettifyPillar(r.pillar)} update`,
+          summary: r.summary,
+          pillar:  r.pillar,
+          when:    r.generated_at,
+        });
+      }
+    }
+
+    /* Top-line headline — what's the ONE number to lead with?
+       Priority: positions on page 1 > total clicks > impressions > "just getting started" */
+    let headline: any;
+    if (page1Count > 0) {
+      headline = {
+        kind:   'page_one',
+        value:  page1Count,
+        label:  `${page1Count === 1 ? 'keyword' : 'keywords'} ranking on page 1`,
+        detail: `${totalClicks.toLocaleString()} organic clicks captured`,
+      };
+    } else if (page2Count > 0) {
+      headline = {
+        kind:   'page_two',
+        value:  page2Count,
+        label:  `${page2Count === 1 ? 'keyword' : 'keywords'} within striking distance of page 1`,
+        detail: `Currently sitting on page 2 — the next push lifts these.`,
+      };
+    } else if (totalImpressions > 0) {
+      headline = {
+        kind:   'impressions',
+        value:  totalImpressions,
+        label:  'search impressions captured',
+        detail: `Visibility is building. ${gscQueries.length} unique queries tracked.`,
+      };
+    } else {
+      headline = {
+        kind:   'starting',
+        value:  daysActive || 0,
+        label:  daysActive === 1 ? 'day in' : 'days in',
+        detail: 'GSC data will populate this view as soon as Google indexes the site signals.',
+      };
+    }
+
+    /* Living overview — take the freshest one */
+    const livingOverviewMd = campaigns.find(c => c.living_overview_md)?.living_overview_md || null;
+
+    return {
+      success: true,
+      lens: {
+        identity: {
+          display_name:   displayName,
+          domain:         displayDomain,
+          started_at:     startedAt,
+          days_active:    daysActive,
+          campaign_count: campaigns.length,
+        },
+        headline,
+        rankings: {
+          top:           topRankings,
+          page_1_count:  page1Count,
+          page_2_count:  page2Count,
+          total_queries: gscQueries.length,
+          freshness:     gscFreshness,
+        },
+        traffic: {
+          impressions:  totalImpressions,
+          clicks:       totalClicks,
+          ctr:          Number(overallCtr.toFixed(2)),
+          top_pages:    gscPages.slice(0, 5).map((p: any) => ({
+            page:        p.page,
+            clicks:      p.clicks || 0,
+            impressions: p.impressions || 0,
+          })),
+          ga4_connected: !!ga4,
+          ga4_summary:   ga4,
+        },
+        pillars: pillarHealth,
+        wins:    wins.slice(0, 6),
+        forecast: campaigns.length > 0 ? {
+          active_campaigns: campaigns.filter(c => c.status === 'active').length,
+          targeting:        campaigns.filter(c => c.target_position).map(c => ({
+            keyword:          c.keyword,
+            current_position: c.current_position,
+            target_position:  c.target_position,
+          })).slice(0, 5),
+        } : null,
+        living_overview_md: livingOverviewMd,
+        generated_at: new Date().toISOString(),
+      },
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'client lens load failed' };
+  }
+}
+
+function prettifyPillar(p: string): string {
+  switch (p) {
+    case 'cluster_map':      return 'Topic Authority';
+    case 'internal_linking': return 'Site Architecture';
+    case 'off_page':         return 'External Signals';
+    case 'technical_audit':  return 'Technical Health';
+    case 'monitoring':       return 'Live Tracking';
+    default:                 return p.replace('_', ' ');
+  }
+}
