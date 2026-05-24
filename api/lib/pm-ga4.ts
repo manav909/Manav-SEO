@@ -696,6 +696,110 @@ export async function ga4CronPullAll(): Promise<{
   return { pulled, failed, errors };
 }
 
+/* ── 9. per-page metrics for tech-audit (Phase 16.5 Tier 2) ─────────── */
+
+/** Pull per-URL engagement metrics for a single page from GA4.
+ *  Used by seo-technical-audit's checkEngagementSignals to replace the
+ *  site-wide hedge with real page-level data. Filters by pagePath
+ *  dimension on the URL's pathname.
+ *
+ *  Returns null on any failure (no connection, no resource_id, query
+ *  failure, no rows for this pagePath) — callers fall back gracefully
+ *  to the site-wide signal. Best-effort, never throws. */
+export async function ga4PullPageMetrics(opts: {
+  projectId: string;
+  pagePath:  string;        // e.g. "/power-apps-pricing-what-you-should-know..."
+  days?:     number;        // default 28
+}): Promise<{
+  page_path:               string;
+  sessions:                number;
+  engaged_sessions:        number;
+  engagement_rate_pct:     number;
+  avg_session_sec:         number;
+  bounce_rate_pct:         number;
+  views:                   number;
+  conversions:             number;
+  date_range_days:         number;
+  data_freshness:          string;   // "yesterday" — GA4's standard reporting boundary
+} | null> {
+  if (!opts.projectId || !opts.pagePath) return null;
+  const days = opts.days || 28;
+  try {
+    const { data: integ } = await db().from("project_integrations").select("*")
+      .eq("project_id", opts.projectId).eq("provider", "ga4").maybeSingle();
+    if (!integ) return null;
+    const i = integ as any;
+    if (!i.resource_id) return null;
+
+    const { token, error: tokErr } = await getAccessToken(opts.projectId);
+    if (tokErr || !token) return null;
+
+    const startDate = `${days}daysAgo`;
+    const endDate   = "yesterday";
+    const url       = `${DATA_API}/${i.resource_id}:runReport`;
+
+    /* Filter by exact pagePath match — pathname only (strip query strings
+       since GA4's pagePath dimension is the path component). */
+    const cleanPagePath = opts.pagePath.split('?')[0].split('#')[0];
+
+    const body = {
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: "pagePath" }],
+      metrics: [
+        { name: "sessions" },
+        { name: "engagedSessions" },
+        { name: "engagementRate" },
+        { name: "averageSessionDuration" },
+        { name: "bounceRate" },
+        { name: "screenPageViews" },
+        { name: "conversions" },
+      ],
+      dimensionFilter: {
+        filter: {
+          fieldName: "pagePath",
+          stringFilter: { matchType: "EXACT", value: cleanPagePath, caseSensitive: false },
+        },
+      },
+    };
+
+    const res = await fetch(url, {
+      method:  "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(15000),
+    });
+    if (!res.ok) {
+      console.log(`[ga4PullPageMetrics] HTTP ${res.status} for project ${opts.projectId} path ${cleanPagePath}`);
+      return null;
+    }
+    const json = await res.json();
+    const rows = json?.rows || [];
+    if (rows.length === 0) {
+      /* No data for this exact pagePath in the date range — page may be
+         new, low-traffic, or pathname doesn't match GA4's recording. */
+      return null;
+    }
+    /* Take the first (and typically only) row since we filtered EXACT. */
+    const row = rows[0];
+    const vals = (row?.metricValues || []).map((v: any) => Number(v?.value || 0));
+    return {
+      page_path:           cleanPagePath,
+      sessions:            vals[0] || 0,
+      engaged_sessions:    vals[1] || 0,
+      engagement_rate_pct: Number(((vals[2] || 0) * 100).toFixed(1)),
+      avg_session_sec:     Number((vals[3] || 0).toFixed(1)),
+      bounce_rate_pct:     Number(((vals[4] || 0) * 100).toFixed(1)),
+      views:               vals[5] || 0,
+      conversions:         vals[6] || 0,
+      date_range_days:     days,
+      data_freshness:      endDate,
+    };
+  } catch (e: any) {
+    console.log(`[ga4PullPageMetrics] exception: ${e?.message || 'unknown'}`);
+    return null;
+  }
+}
+
 /* ── dispatch ─────────────────────────────────────────────── */
 
 export async function handlePmGa4(action: string, body: any, req?: any, res?: any): Promise<any | null> {

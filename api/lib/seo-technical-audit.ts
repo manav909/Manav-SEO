@@ -22,6 +22,7 @@
 import { db } from "./db.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
 import { fetchSerpFeatures, summarizeSerpFeatures } from "./serpapi.js";
+import { ga4PullPageMetrics } from "./pm-ga4.js";
 
 /* Phase 16.4 — ANTHROPIC_API_KEY needed for diffuse-intent classifier
    in checkDiffuseIntentSerp. Single LLM call per audit run when SerpAPI
@@ -893,17 +894,30 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
     });
   }
 
-  /* Internal links count */
-  const linkMatches = html.match(/<a\s+[^>]*href=["']([^"']+)["']/gi) || [];
-  const internalLinks = linkMatches.filter(l => {
+  /* Internal links — Phase 16.5 expanded to include anchor-text quality
+     analysis. Existing count finding retained; new quality finding added.
+     Industry threshold: >40% generic anchors is a real signal that anchor
+     usage isn't strategic. */
+  const linkMatches = html.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
+  type AnchorParsed = { href: string; text: string; isInternal: boolean };
+  const allParsed: AnchorParsed[] = [];
+  for (const l of linkMatches) {
     const hrefMatch = /href=["']([^"']+)["']/i.exec(l);
+    const textMatch = />([\s\S]*?)<\/a>$/i.exec(l);
     const href = hrefMatch?.[1] || '';
+    const textRaw = textMatch?.[1] || '';
+    /* Strip inner tags + decode entities to get clean anchor text */
+    const text = decodeHtmlEntities(textRaw.replace(/<[^>]+>/g, '').trim());
+    if (!href || !text) continue;
+    let isInternal = false;
     try {
       const target = new URL(href, url);
       const source = new URL(url);
-      return target.hostname === source.hostname;
-    } catch { return false; }
-  });
+      isInternal = target.hostname === source.hostname;
+    } catch { /* invalid URL, treat as not internal */ }
+    allParsed.push({ href, text, isInternal });
+  }
+  const internalLinks = allParsed.filter(a => a.isInternal);
   if (internalLinks.length < 3) {
     findings.push({
       audit_kind: 'internal_links', severity: 'amber',
@@ -920,6 +934,65 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
       evidence: { internal_link_count: internalLinks.length },
       data_source: 'html_fetch',
     });
+
+    /* Phase 16.5 — Anchor-text quality analysis.
+       Classify each internal anchor:
+       • generic        — "click here", "read more", "learn more", "this", "here", "more info", etc.
+       • url_based      — anchor text is literally a URL (or starts with http)
+       • single_word    — likely-nav single word ("Home", "About", "Pricing")
+       • descriptive    — multi-word, content-bearing anchor text
+       Aggregate distribution; flag if generic ratio is >40% (industry threshold). */
+    const GENERIC_ANCHORS = new Set([
+      'click here','read more','learn more','more','here','this','this page','this article','this post',
+      'more info','more information','details','see more','find out more','continue reading',
+      'click','tap','tap here','go here','view','view more','see','see all','read','read on',
+      'next','previous','back','forward','top','home',
+    ]);
+    let generic = 0, urlBased = 0, singleWord = 0, descriptive = 0;
+    const genericExamples: string[] = [];
+    for (const a of internalLinks) {
+      const normalized = a.text.toLowerCase().trim().replace(/\s+/g, ' ');
+      if (normalized.startsWith('http') || normalized.match(/^www\./)) {
+        urlBased++;
+      } else if (GENERIC_ANCHORS.has(normalized)) {
+        generic++;
+        if (genericExamples.length < 5 && !genericExamples.includes(a.text)) genericExamples.push(a.text);
+      } else if (normalized.split(/\s+/).filter(Boolean).length === 1 && normalized.length < 12) {
+        singleWord++;
+      } else {
+        descriptive++;
+      }
+    }
+    const lowQualityCount = generic + urlBased;
+    const lowQualityRatio = internalLinks.length > 0 ? lowQualityCount / internalLinks.length : 0;
+    const descriptiveRatio = internalLinks.length > 0 ? descriptive / internalLinks.length : 0;
+
+    if (lowQualityRatio > 0.4) {
+      findings.push({
+        audit_kind: 'internal_links', severity: 'amber',
+        finding_title: `Anchor-text quality is weak — ${Math.round(lowQualityRatio * 100)}% of internal anchors are generic or URL-based`,
+        finding_detail: `Across ${internalLinks.length} internal anchors: **${generic} generic** (e.g. "click here", "read more"), **${urlBased} URL-based** (raw href as anchor text), **${singleWord} single-word/nav** (e.g. "Home"), **${descriptive} descriptive** (multi-word, content-bearing).\n\nGeneric anchors give Google's link-equity model nothing to work with — descriptive anchors are how internal linking actually transfers topical authority. The industry threshold is ≤40% generic/URL-based; this page is at ${Math.round(lowQualityRatio * 100)}%.${genericExamples.length > 0 ? `\n\n**Examples of generic anchors on this page:** ${genericExamples.map(e => `"${e}"`).join(', ')}` : ''}`,
+        recommendation: `Replace the generic anchors with descriptive multi-word phrases that include the target page's topic keyword. E.g. instead of "click here" → "compare Power Apps pricing tiers". Aim for ≥60% descriptive anchors. URL-based anchors (raw href text) should be replaced with human-readable descriptions.`,
+        evidence: { internal_links_total: internalLinks.length, generic, url_based: urlBased, single_word: singleWord, descriptive, low_quality_ratio: Number(lowQualityRatio.toFixed(2)) },
+        data_source: 'html_fetch',
+      });
+    } else if (descriptiveRatio > 0.6) {
+      findings.push({
+        audit_kind: 'internal_links', severity: 'green',
+        finding_title: `Anchor-text quality is strong — ${Math.round(descriptiveRatio * 100)}% of internal anchors are descriptive`,
+        finding_detail: `Across ${internalLinks.length} internal anchors: ${descriptive} descriptive, ${singleWord} nav/single-word, ${generic} generic, ${urlBased} URL-based. Descriptive anchors transfer topical authority efficiently.`,
+        evidence: { internal_links_total: internalLinks.length, generic, url_based: urlBased, single_word: singleWord, descriptive, descriptive_ratio: Number(descriptiveRatio.toFixed(2)) },
+        data_source: 'html_fetch',
+      });
+    } else {
+      findings.push({
+        audit_kind: 'internal_links', severity: 'info',
+        finding_title: `Anchor-text mix: ${descriptive} descriptive, ${singleWord} nav, ${generic} generic, ${urlBased} URL-based`,
+        finding_detail: `Across ${internalLinks.length} internal anchors. Below the 40% generic-anchor threshold but room to improve — descriptive multi-word anchors transfer the most topical authority.`,
+        evidence: { internal_links_total: internalLinks.length, generic, url_based: urlBased, single_word: singleWord, descriptive },
+        data_source: 'html_fetch',
+      });
+    }
   }
 
   return findings;
@@ -1867,12 +1940,70 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
 async function checkEngagementSignals(url: string, projectId: string): Promise<Finding[]> {
   const findings: Finding[] = [];
 
-  /* Read site-wide GA4 engagement metrics from project_knowledge.
-     IMPORTANT: GA4 currently persists only site-wide aggregates; per-URL
-     engagement requires a future pm-ga4 enhancement (top-pages dimension).
-     Until then, this check is INFO-level only — it is NOT a page-level
-     pass/fail. Marking it green would be synthesis-as-fact (claiming the
-     page is engaging when we're really measuring the whole site). */
+  /* Phase 16.5 — Tier 2: per-page GA4 FIRST. When successful, this
+     replaces the site-wide hedge with real per-URL engagement data —
+     the most-flagged role-lens gap is finally closed. Falls back to
+     site-wide aggregates from project_knowledge when per-page returns
+     null (no GA4 connection, no resource_id, no rows for this pagePath,
+     or fetch failure). */
+  let pagePath = '';
+  try {
+    pagePath = new URL(url).pathname || '/';
+  } catch { /* invalid URL — fall through to site-wide */ }
+
+  if (pagePath) {
+    const perPage = await ga4PullPageMetrics({ projectId, pagePath, days: 28 });
+    if (perPage && perPage.sessions > 0) {
+      /* We have per-page data — emit page-level findings with real verdicts.
+         Severity bands:
+         • engagementRate: <40% red, 40-55% amber, ≥55% green
+         • avg_session_sec: <30s amber for content pages, otherwise info */
+      const eRate = perPage.engagement_rate_pct;
+      const sevEng: 'green' | 'amber' | 'red' = eRate < 40 ? 'red' : eRate < 55 ? 'amber' : 'green';
+      findings.push({
+        audit_kind: 'engagement_signals',
+        severity:   sevEng,
+        finding_title: sevEng === 'red'
+          ? `Per-page engagement rate is poor (${eRate.toFixed(1)}%) — significant content/intent mismatch signal`
+          : sevEng === 'amber'
+          ? `Per-page engagement rate is mediocre (${eRate.toFixed(1)}%) — room to improve`
+          : `Per-page engagement rate is healthy (${eRate.toFixed(1)}%)`,
+        finding_detail: `Page-level GA4 metrics for the last ${perPage.date_range_days} days (data through ${perPage.data_freshness}):\n\n- **Sessions:** ${perPage.sessions.toLocaleString()}\n- **Engaged sessions:** ${perPage.engaged_sessions.toLocaleString()} (${eRate.toFixed(1)}%)\n- **Avg session duration:** ${perPage.avg_session_sec.toFixed(0)}s\n- **Bounce rate:** ${perPage.bounce_rate_pct.toFixed(1)}%\n- **Page views:** ${perPage.views.toLocaleString()}\n- **Conversions:** ${perPage.conversions.toLocaleString()}\n\n${sevEng === 'red' ? 'Engagement below 40% indicates visitors landing on this page aren\'t finding what they expected. The CTR-to-position gap may be compounded by a content-quality gap once visitors arrive.' : sevEng === 'amber' ? 'Engagement is on the low end of healthy. The page is keeping some visitors engaged but losing others — worth a content-quality and intent-match review.' : 'Engagement is strong — visitors who land here are finding what they expected. Preserve the structure; consider what makes this page work and replicate.'}`,
+        recommendation: sevEng === 'red'
+          ? `Audit content for search-intent match: does the page answer the dominant query intent in the first paragraph? Check above-the-fold clarity, slow load times, intrusive popups, and the first-paragraph topicality finding from this audit. If intent mismatch is the cause, the keyword-pivot recommendation (if present) is the strategic fix.`
+          : sevEng === 'amber'
+          ? `Surface related content via internal links + table of contents. Improve above-the-fold clarity. Ensure the page answers the dominant query intent in the first 100 words.`
+          : undefined,
+        evidence: { ...perPage, scope: 'per-page' },
+        data_source: 'ga4',
+      });
+
+      /* Avg session duration check — only meaningful for content pages
+         (informational/article-like). Use word count as a content-page
+         heuristic — we don't fetch it here so we tolerate the noise. */
+      if (perPage.avg_session_sec < 30 && perPage.sessions >= 50) {
+        findings.push({
+          audit_kind: 'engagement_signals',
+          severity: 'amber',
+          finding_title: `Per-page avg session duration is short (${perPage.avg_session_sec.toFixed(0)}s)`,
+          finding_detail: `Visitors are leaving in under 30 seconds on average across ${perPage.sessions.toLocaleString()} sessions. For a content page this typically means either intent mismatch (wrong visitors arriving) or above-the-fold content not delivering on the SERP snippet's promise.`,
+          recommendation: `Cross-reference with the first-paragraph topicality finding. If the first paragraph is off-topic OR uncompelling, that's likely the cause. Add a table of contents to set expectations; surface related content for visitors who decide this isn't the right page.`,
+          evidence: { avg_session_sec: perPage.avg_session_sec, sessions: perPage.sessions, scope: 'per-page' },
+          data_source: 'ga4',
+        });
+      }
+      return findings;
+    }
+    /* Per-page returned null — log the path that was attempted so the
+       fall-through is debuggable. */
+    if (perPage === null) {
+      /* Not blocking — fall through to site-wide. */
+    }
+  }
+
+  /* FALLBACK: site-wide GA4 from project_knowledge (existing behavior).
+     Per-page lookup failed or returned no data — surface site-wide
+     aggregates as info-level only. */
   const fetchField = async (key: string) => {
     const { data } = await db().from("project_knowledge")
       .select("field_value").eq("project_id", projectId)
@@ -1887,31 +2018,33 @@ async function checkEngagementSignals(url: string, projectId: string): Promise<F
     findings.push({
       audit_kind: 'engagement_signals', severity: 'info',
       finding_title:  'No GA4 engagement data available',
-      finding_detail: 'Connect GA4 in Data Room → Integrations to enable engagement signal analysis. Engagement is a soft ranking factor and a strong predictor of content quality.',
+      finding_detail: 'GA4 is not connected for this project, or the connection has no data for this date range. Engagement is a soft ranking factor and a strong predictor of content quality.',
+      recommendation: 'Connect GA4 via the OAuth flow. Once connected, per-page engagement metrics will appear on subsequent audits.',
       data_source: 'ga4',
     });
     return findings;
   }
 
-  /* Engagement rate context — surfaced as INFO since this is site-wide,
-     not page-specific. Senior DMS rule: don't dress site-wide stats as
-     page-level performance. */
+  /* Site-wide fallback — explicitly note this is a degraded signal
+     because per-page lookup failed. */
+  const pagePathNote = pagePath
+    ? ` _(Per-page GA4 lookup for \`${pagePath}\` returned no data — this URL may be new, low-traffic, or the GA4 pagePath dimension doesn't include it. Falling back to site-wide.)_`
+    : '';
   if (engagementRate < 40) {
     findings.push({
       audit_kind: 'engagement_signals', severity: 'amber',
-      finding_title:  `Site-wide engagement rate is low (${engagementRate.toFixed(1)}%) — context only`,
-      finding_detail: `Engagement rate below 40% suggests visitors don't find what they expect across the site. This is a **site-wide** metric, not page-specific — it provides backdrop, not a verdict on this page.`,
-      recommendation: 'Audit content for matching search intent. Improve above-the-fold clarity. Check for intrusive popups or slow load times. Per-page engagement requires a pm-ga4 enhancement to pull top_pages with engagement metrics.',
-      evidence: { engagement_rate_pct: engagementRate, scope: 'site-wide' },
+      finding_title:  `Site-wide engagement rate is low (${engagementRate.toFixed(1)}%) — site-wide fallback, not page-specific`,
+      finding_detail: `Engagement rate below 40% suggests visitors don't find what they expect across the site. This is a **site-wide** metric, not page-specific.${pagePathNote}`,
+      recommendation: 'Audit content for matching search intent. Improve above-the-fold clarity. Check for intrusive popups or slow load times.',
+      evidence: { engagement_rate_pct: engagementRate, scope: 'site-wide', per_page_failed: true, page_path_attempted: pagePath || null },
       data_source: 'ga4',
     });
   } else {
     findings.push({
       audit_kind: 'engagement_signals', severity: 'info',
-      finding_title:  `Site-wide engagement rate: ${engagementRate.toFixed(1)}% (site-wide, not page-specific)`,
-      finding_detail: 'Healthy site-wide engagement provides a positive backdrop for individual pages. **This is not a page-level verdict** — per-URL GA4 metrics require a pm-ga4 top-pages-by-engagement query that has not yet been added.',
-      recommendation: 'To turn this into a page-level signal: add a per-page GA4 fetch to pm-ga4.ts (dimensions: pagePath, metrics: engagementRate, averageSessionDuration, eventsPerSession).',
-      evidence: { engagement_rate_pct: engagementRate, scope: 'site-wide' },
+      finding_title:  `Site-wide engagement rate: ${engagementRate.toFixed(1)}% (site-wide fallback)`,
+      finding_detail: `Healthy site-wide engagement provides a positive backdrop for individual pages. **This is not a page-level verdict.**${pagePathNote}`,
+      evidence: { engagement_rate_pct: engagementRate, scope: 'site-wide', per_page_failed: true, page_path_attempted: pagePath || null },
       data_source: 'ga4',
     });
   }
@@ -1919,9 +2052,9 @@ async function checkEngagementSignals(url: string, projectId: string): Promise<F
   if (avgSessionSec > 0 && avgSessionSec < 30) {
     findings.push({
       audit_kind: 'engagement_signals', severity: 'amber',
-      finding_title:  `Site-wide avg session duration is short (${Math.round(avgSessionSec)}s) — context only`,
+      finding_title:  `Site-wide avg session duration is short (${Math.round(avgSessionSec)}s) — site-wide fallback, not page-specific`,
       finding_detail: 'Short sessions across the site suggest content either doesn\'t hold attention or visitors find what they need quickly. **Site-wide signal**, not page-specific.',
-      recommendation: 'For content pages, surface related content, add table of contents, embed videos. For tools, this metric is less meaningful. Per-page session duration requires the pm-ga4 enhancement noted above.',
+      recommendation: 'For content pages, surface related content, add table of contents, embed videos. For tools, this metric is less meaningful.',
       evidence: { avg_session_sec: avgSessionSec, scope: 'site-wide' },
       data_source: 'ga4',
     });
@@ -1953,22 +2086,29 @@ async function checkSchemaMarkup(url: string): Promise<Finding[]> {
     return findings;
   }
 
-  /* Try to parse and detect types */
+  /* Try to parse and detect types + collect entities for validation */
   const types: string[] = [];
   const errors: string[] = [];
+  /* Phase 16.5 — collect typed entities for per-type validation */
+  const entities: { type: string; obj: any }[] = [];
   for (const block of jsonLdMatches) {
     const content = block.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '').trim();
     try {
       const parsed = JSON.parse(content);
-      const collectTypes = (obj: any) => {
+      const collectTypesAndEntities = (obj: any) => {
         if (!obj) return;
-        if (Array.isArray(obj)) { obj.forEach(collectTypes); return; }
+        if (Array.isArray(obj)) { obj.forEach(collectTypesAndEntities); return; }
         const t = obj['@type'];
-        if (typeof t === 'string') types.push(t);
-        else if (Array.isArray(t)) types.push(...t.filter(x => typeof x === 'string'));
-        if (obj['@graph']) collectTypes(obj['@graph']);
+        const typeList: string[] = [];
+        if (typeof t === 'string') typeList.push(t);
+        else if (Array.isArray(t)) typeList.push(...t.filter(x => typeof x === 'string'));
+        for (const ty of typeList) {
+          types.push(ty);
+          entities.push({ type: ty, obj });
+        }
+        if (obj['@graph']) collectTypesAndEntities(obj['@graph']);
       };
-      collectTypes(parsed);
+      collectTypesAndEntities(parsed);
     } catch (e: any) {
       errors.push(e?.message || 'parse error');
     }
@@ -1991,6 +2131,131 @@ async function checkSchemaMarkup(url: string): Promise<Finding[]> {
       finding_title:  `Schema present: ${[...new Set(types)].join(', ')}`,
       finding_detail: `${jsonLdMatches.length} JSON-LD block(s) with types: ${[...new Set(types)].join(', ')}.`,
       evidence: { types: [...new Set(types)], block_count: jsonLdMatches.length },
+      data_source: 'schema_parser',
+    });
+  }
+
+  /* Phase 16.5 — Per-type schema validation. For each known type, check
+     Google's required fields and (for FAQPage) visible-content match.
+     Mismatch between schema and visible content violates Google's
+     structured-data policies and can incur manual action. */
+  const validationIssues: { type: string; issue: string; severity: 'red' | 'amber' }[] = [];
+  /* Visible-text body for FAQPage content-match check.
+     Strip scripts/styles + tags + collapse whitespace, then lowercase. */
+  const visibleText = r.html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  for (const e of entities) {
+    if (e.type === 'FAQPage') {
+      /* FAQPage needs mainEntity → Array<Question> with name + acceptedAnswer.text */
+      const mainEntity = Array.isArray(e.obj.mainEntity) ? e.obj.mainEntity
+                       : (e.obj.mainEntity ? [e.obj.mainEntity] : []);
+      if (mainEntity.length === 0) {
+        validationIssues.push({ type: 'FAQPage', severity: 'red', issue: 'FAQPage has no mainEntity array — Google requires mainEntity with at least one Question entity.' });
+        continue;
+      }
+      let questionsMissingAnswer = 0;
+      let questionsMissingName   = 0;
+      let questionsNotInVisibleHtml = 0;
+      const orphanedQuestions: string[] = [];
+      for (const q of mainEntity) {
+        const qName = (q?.name || '').trim();
+        const qAnswer = (q?.acceptedAnswer?.text || '').trim();
+        if (!qName) questionsMissingName++;
+        if (!qAnswer) questionsMissingAnswer++;
+        /* Content-match check: does the question appear in visible HTML?
+           Strip schema-specific noise (HTML entities, surrounding punctuation)
+           and check for substring match. Use a normalized substring threshold
+           — exact match would be too strict for content that gets slightly
+           paraphrased. */
+        if (qName) {
+          const qNormalized = decodeHtmlEntities(qName).toLowerCase()
+            .replace(/[?!.,;:]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (qNormalized.length >= 8 && !visibleText.includes(qNormalized)) {
+            questionsNotInVisibleHtml++;
+            if (orphanedQuestions.length < 3) orphanedQuestions.push(qName);
+          }
+        }
+      }
+      if (questionsMissingName > 0) {
+        validationIssues.push({ type: 'FAQPage', severity: 'red', issue: `${questionsMissingName} of ${mainEntity.length} Question entities have no \`name\` field — Google requires the question text in \`name\`.` });
+      }
+      if (questionsMissingAnswer > 0) {
+        validationIssues.push({ type: 'FAQPage', severity: 'red', issue: `${questionsMissingAnswer} of ${mainEntity.length} Question entities have no \`acceptedAnswer.text\` — Google requires answer content.` });
+      }
+      if (questionsNotInVisibleHtml > 0) {
+        const ratio = questionsNotInVisibleHtml / mainEntity.length;
+        const sev = ratio > 0.5 ? 'red' : 'amber';
+        validationIssues.push({
+          type: 'FAQPage',
+          severity: sev,
+          issue: `${questionsNotInVisibleHtml} of ${mainEntity.length} FAQ Question(s) do NOT appear in the visible page content (${Math.round(ratio * 100)}%). Google requires schema content to match what users see — schema-only Q&A is a structured-data policy violation and risks manual action.${orphanedQuestions.length > 0 ? ` Example orphaned questions: ${orphanedQuestions.map(q => `"${q.slice(0, 60)}${q.length > 60 ? '…' : ''}"`).join(', ')}.` : ''}`,
+        });
+      }
+    } else if (e.type === 'HowTo') {
+      const steps = Array.isArray(e.obj.step) ? e.obj.step : (e.obj.step ? [e.obj.step] : []);
+      if (steps.length === 0) {
+        validationIssues.push({ type: 'HowTo', severity: 'red', issue: 'HowTo has no `step` field — Google requires an array of HowToStep with text/name.' });
+      } else {
+        const stepsMissing = steps.filter((s: any) => !s?.text && !s?.name).length;
+        if (stepsMissing > 0) {
+          validationIssues.push({ type: 'HowTo', severity: 'amber', issue: `${stepsMissing} of ${steps.length} HowTo steps lack both \`text\` and \`name\`.` });
+        }
+      }
+    } else if (e.type === 'Article' || e.type === 'BlogPosting' || e.type === 'NewsArticle') {
+      const missing: string[] = [];
+      if (!e.obj.headline)        missing.push('headline');
+      if (!e.obj.author)          missing.push('author');
+      if (!e.obj.datePublished)   missing.push('datePublished');
+      if (missing.length > 0) {
+        const sev = missing.includes('headline') ? 'red' : 'amber';
+        validationIssues.push({ type: e.type, severity: sev, issue: `Missing required field(s): ${missing.join(', ')}.` });
+      }
+    } else if (e.type === 'Product') {
+      const missing: string[] = [];
+      if (!e.obj.name)   missing.push('name');
+      if (!e.obj.image)  missing.push('image');
+      if (!e.obj.offers && !e.obj.aggregateRating && !e.obj.review) {
+        missing.push('one of: offers, aggregateRating, or review');
+      }
+      if (missing.length > 0) {
+        validationIssues.push({ type: 'Product', severity: 'amber', issue: `Missing recommended field(s): ${missing.join(', ')}.` });
+      }
+    } else if (e.type === 'Review') {
+      const missing: string[] = [];
+      if (!e.obj.itemReviewed)  missing.push('itemReviewed');
+      if (!e.obj.author)        missing.push('author');
+      if (!e.obj.reviewBody && !e.obj.reviewRating) missing.push('reviewBody or reviewRating');
+      if (missing.length > 0) {
+        validationIssues.push({ type: 'Review', severity: 'amber', issue: `Missing required field(s): ${missing.join(', ')}.` });
+      }
+    }
+  }
+
+  /* Emit ONE consolidated validation finding (Critical or Amber depending
+     on worst severity) so we don't spam multiple Critical findings for
+     one underlying schema issue. */
+  if (validationIssues.length > 0) {
+    const hasRed = validationIssues.some(v => v.severity === 'red');
+    const bullets = validationIssues.map(v => `- **${v.type}** — ${v.issue}`).join('\n');
+    findings.push({
+      audit_kind: 'schema_markup',
+      severity: hasRed ? 'red' : 'amber',
+      finding_title: hasRed
+        ? `Schema validation FAILED — ${validationIssues.length} issue(s) including critical violations`
+        : `Schema validation issues — ${validationIssues.length} non-critical problem(s)`,
+      finding_detail: `Per-type validation against Google's required-fields specifications surfaced the following:\n\n${bullets}${hasRed ? '\n\nCritical schema issues can disqualify the page from rich results AND incur manual action for policy violations (especially schema-content mismatch on FAQPage).' : ''}`,
+      recommendation: hasRed
+        ? `Fix the critical issues first — schema-content mismatch is the highest priority (Google policy violation). Validate with https://validator.schema.org and the Rich Results Test at https://search.google.com/test/rich-results before redeploying.`
+        : `Add the missing recommended fields. Validate with https://validator.schema.org. Recommended fields aren't required, but rich-result eligibility depends on them.`,
+      evidence: { validation_issues: validationIssues, types_validated: [...new Set(entities.map(e => e.type))] },
       data_source: 'schema_parser',
     });
   }
