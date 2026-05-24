@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.0 audit-to-pipeline bridge) · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality. Phase 16.11 shipped an HTML renderer alongside markdown; Phase 16.11.1 hotfix did not resolve "audits stop fast in production" symptom; Phase 16.11.2 rolls back the HTML render wire-in pending runtime evidence. Phase 17.0 ships the foundational bridge between technical_audit findings and the season pipeline — `ctx.audit_findings` now available to every step (no step behavior changed yet).
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.1 competitor_snapshot wire-in) · **Live commit:** `c0f670f` (Phase 17.0 audit-to-pipeline bridge — `ctx.audit_findings` available to every step). Phase 17.1 wires the first step to consume that data: `competitor_snapshot` now uses the audit's verified SerpAPI top-10 instead of an LLM call when audit data is available. Saves ~$0.50/run + eliminates URL hallucination risk. Manifesto work was completed 2026-05-23; SEO Season pivot is in progress along STRATEGY.md Track 2 (pillar-to-pipeline integration).
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -882,6 +882,32 @@ First foundational ship of Track 2 from STRATEGY.md. Makes the technical_audit p
 - Phase 17.4 — wire `client_update` + `internal_handover` to consume audit's §0 + §7
 - Phase 17.5 — L1 manual "Refresh from audit" panel button + task-engine action wrapping `retryFromStep`
 - Phase 17.6 — L2 step-level dependency declarations + material-change gate for cron-driven refresh
+
+### Phase 17.1 — competitor_snapshot wire-in (2026-05-24)
+
+First step to actually consume `ctx.audit_findings`. Replaces the LLM call with audit-sourced verified SerpAPI data when available.
+
+**What it does:**
+- New helper `buildCompetitorSnapshotFromAudit(findings, keyword)` in `season-pipeline-rank-for-keyword.ts` — extracts top-10 URLs/domains from CTR finding evidence, median word count from competitive_content_benchmark, intent diversity from diffuse_intent, PAA gap from content gap finding. Returns the same shape the existing LLM path produced, sans qualitative judgments (page_format/why_it_ranks).
+- `renderCompetitorArtifact` made resilient — skips fields that are missing instead of rendering "undefined".
+- `competitor_snapshot` handler reordered preference: **Audit > Cache > LLM**. When audit data is available (CTR finding has 3+ top_10_urls), use it directly with `llm_calls: 0`. Cached audit-sourced result is persisted so other readers see it as authoritative.
+
+**Cost impact per pipeline run:**
+- Before: ~$0.30-0.50 for one LLM web-search call to identify 5 top pages
+- After: $0 when audit available, identical to before when not
+- Hallucination risk: eliminated when audit available (real URLs vs LLM-guessed)
+
+**Trade-off:**
+- Audit-sourced output omits `page_format` / `structure_pattern` / `why_it_ranks` (qualitative judgments not in audit data). Downstream steps consuming `competitors.top_pages` only read `domain` (verified working). The cosmetic artifact body loses three lines per page in exchange for verifiability.
+
+**Verification:**
+- Vercel runtime TS clean (touched files + runner).
+- Frontend baseline: 27 (unchanged). API ceiling: 12 (unchanged). Vite green.
+- Smoke test with 5 fixtures (empty, no-CTR, too-few-URLs, real alphasoftware-shape, domain-fallback) all pass.
+- Production title format `Diffuse-intent SERP for "X" — N distinct intent categories` matches regex. CTR title format `CTR is N% of expected for position X` matches regex.
+- `_source_note` correctly reads 'cached SerpAPI snapshot' vs 'fresh SerpAPI fetch' from `evidence.cache_hit`.
+
+**Diff:** 1 file changed, 141 insertions, 7 deletions in `season-pipeline-rank-for-keyword.ts`.
 
 ### Session handoff for tech audit work
 

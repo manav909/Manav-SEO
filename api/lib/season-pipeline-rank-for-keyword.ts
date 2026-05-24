@@ -490,6 +490,40 @@ const stepCompetitorSnapshot = {
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
     const cacheKey = `comp:${keyword.toLowerCase().slice(0, 100)}`;
+
+    /* Phase 17.1 — Audit-first. When the technical audit has surfaced
+       SerpAPI top-10 data, use it directly. Real URLs, real word counts,
+       real SERP features. No LLM call, no hallucination risk. Audit data
+       is preferred over both cache (which may be stale LLM output) and
+       fresh LLM call (which can hallucinate URLs). */
+    const auditSourced = buildCompetitorSnapshotFromAudit(ctx.audit_findings, keyword);
+    if (auditSourced) {
+      /* Persist to cache too so downstream readers querying by knowledge
+         type still find a current snapshot. */
+      await cacheKnowledge({
+        projectId: ctx.projectId,
+        knowledgeType: 'competitor_snapshot',
+        key: cacheKey,
+        value: auditSourced,
+        summary: `Top ${auditSourced.top_pages.length} for "${keyword}" (audit-sourced)`,
+        source: 'technical_audit',
+        sourceUrls: auditSourced.top_pages.map((p: any) => p.url).filter(Boolean),
+        confidence: 0.95,  /* SerpAPI live data is highest trust band */
+      });
+      return {
+        ok: true,
+        output: auditSourced,
+        artifact: {
+          kind: 'competitor_snapshot',
+          title: `Top-ranking pages for "${keyword}"`,
+          body: renderCompetitorArtifact(keyword, auditSourced),
+        },
+        honest_note: `Sourced from technical audit — ${auditSourced._source_note} of ${auditSourced.top_pages.length} top URLs. No LLM call required; data is verified-real not LLM-inferred.`,
+        llm_calls: 0,
+      };
+    }
+
+    /* No audit data — try cache */
     const cached = await getKnowledge({
       projectId: ctx.projectId,
       knowledgeType: 'competitor_snapshot',
@@ -561,14 +595,114 @@ Use web_search to actually look at the SERP. Don't fabricate URLs.`;
 };
 
 function renderCompetitorArtifact(keyword: string, data: any): string {
-  const pages = (data.top_pages || []).map((p: any) =>
-    `### ${p.rank_position}. ${p.title || p.domain || 'untitled'}\n` +
-    `**URL:** ${p.url}\n` +
-    `**Format:** ${p.page_format} · **Length:** ${p.word_count_estimate}\n` +
-    `**Structure:** ${p.structure_pattern}\n` +
-    `**Why it ranks:** ${p.why_it_ranks}\n`
-  ).join('\n---\n\n');
+  const pages = (data.top_pages || []).map((p: any) => {
+    const lines: string[] = [];
+    lines.push(`### ${p.rank_position}. ${p.title || p.domain || 'untitled'}`);
+    if (p.url) lines.push(`**URL:** ${p.url}`);
+    if (p.page_format || p.word_count_estimate) {
+      lines.push(`**Format:** ${p.page_format || '—'} · **Length:** ${p.word_count_estimate || '—'}`);
+    }
+    if (p.structure_pattern) lines.push(`**Structure:** ${p.structure_pattern}`);
+    if (p.why_it_ranks) lines.push(`**Why it ranks:** ${p.why_it_ranks}`);
+    return lines.join('\n') + '\n';
+  }).join('\n---\n\n');
   return `# Competitor Snapshot: "${keyword}"\n\n${pages}\n\n## Shared patterns across top results\n${(data.shared_patterns || []).map((p: string) => `- ${p}`).join('\n')}\n\n## Content gap opportunity\n${data.content_gap_opportunity || '—'}\n`;
+}
+
+/* ─── Phase 17.1 — Audit-sourced competitor snapshot ────────────
+   Build the competitor_snapshot output directly from technical audit
+   findings, no LLM call required. The audit's CTR finding carries
+   SerpAPI top_10_urls + top_10_domains (verified real, not LLM-guessed),
+   competitive_content_benchmark carries median word counts, diffuse_intent
+   carries intent classification, paaGap surfaces content opportunity.
+
+   Returns null when the audit either hasn't run or didn't produce
+   SerpAPI top-10 data (the existing LLM path remains the fallback in
+   that case). */
+function buildCompetitorSnapshotFromAudit(
+  findings: Array<{ finding_title: string; evidence?: any }>,
+  _keyword: string,
+): { top_pages: any[]; shared_patterns: string[]; content_gap_opportunity: string; _source_note: string } | null {
+  if (!findings || findings.length === 0) return null;
+
+  /* CTR finding carries the SerpAPI live top-10. Match on the same regex
+     pattern used in the audit's renderer (ctrFinding extractor). */
+  const ctr = findings.find(f => /CTR is \d+%|CTR underperformance|CTR.*of expected|click-through/i.test(f.finding_title));
+  const ctrEv = ctr?.evidence || {};
+  const urls: string[] = Array.isArray(ctrEv.top_10_urls) ? ctrEv.top_10_urls : [];
+  const domains: string[] = Array.isArray(ctrEv.top_10_domains) ? ctrEv.top_10_domains : [];
+  if (urls.length < 3) return null;  /* not enough verified data to replace the LLM path */
+
+  /* Competitive content benchmark — median word counts */
+  const compContent = findings.find(f => /Content depth.*SERP median|content exceeds SERP median|word count.*competitor/i.test(f.finding_title));
+  const ccEv = compContent?.evidence || {};
+
+  /* Diffuse-intent SERP — intent diversity */
+  const diffuse = findings.find(f => /Diffuse-intent SERP|Tight-intent SERP/i.test(f.finding_title));
+  const dEv = diffuse?.evidence || {};
+
+  /* PAA gap — content opportunity */
+  const paaGap = findings.find(f => /Content gap.+PAA|PAA questions.+addressed/i.test(f.finding_title));
+  const paaEv = paaGap?.evidence || {};
+
+  /* Build top_pages from verified URLs. page_format / structure_pattern
+     / why_it_ranks are intentionally omitted — qualitative judgments
+     aren't in audit data and we'd rather show fewer real fields than
+     fabricate any. */
+  const top_pages = urls.slice(0, 8).map((url, i) => {
+    let domain = domains[i] || '';
+    if (!domain) {
+      try { domain = new URL(url).hostname; } catch { /* keep blank */ }
+    }
+    return {
+      url,
+      domain,
+      rank_position: i + 1,
+    };
+  });
+
+  /* Shared patterns derive from observed signals across the audit findings */
+  const shared_patterns: string[] = [];
+  if (ccEv.competitor_median) {
+    const range = (ccEv.competitor_min !== undefined && ccEv.competitor_max !== undefined)
+      ? ` (range ${Number(ccEv.competitor_min).toLocaleString()}–${Number(ccEv.competitor_max).toLocaleString()})`
+      : '';
+    shared_patterns.push(`Median competitor word count: ${Number(ccEv.competitor_median).toLocaleString()} words${range} across ${ccEv.competitors_fetched || urls.length} fetched competitors`);
+  }
+  if (ctrEv.ai_overview) {
+    shared_patterns.push(`Google AI Overview present on this SERP — citation eligibility (concise direct-answer paragraphs, structured FAQs) matters more than raw position`);
+  }
+  if (ctrEv.featured_snippet) {
+    shared_patterns.push(`Featured snippet captured${ctrEv.featured_snippet_owner ? ' by `' + ctrEv.featured_snippet_owner + '`' : ''} — direct-answer formatting (40-60 word paragraph or list) wins this slot`);
+  }
+  if (ctrEv.paa_count > 0) {
+    shared_patterns.push(`${ctrEv.paa_count} PAA questions live on this SERP — H2 sections answering them verbatim are AI-Overview citation candidates`);
+  }
+  if (ctrEv.ads_top >= 3) {
+    shared_patterns.push(`${ctrEv.ads_top} paid placements at top compressing organic visibility — title/meta differentiation matters more here than typical`);
+  }
+  if (dEv.distinct_categories && dEv.distinct_categories >= 3) {
+    shared_patterns.push(`Diffuse-intent SERP — ${dEv.distinct_categories} distinct intent categories in the top-10; users from different intents skip mismatched results, capping CTR ceiling at any position`);
+  }
+
+  /* Content gap opportunity from PAA + competitive content gaps */
+  let content_gap_opportunity = '';
+  if (paaEv.unanswered && Array.isArray(paaEv.unanswered) && paaEv.unanswered.length > 0) {
+    content_gap_opportunity = `${paaEv.unanswered.length} live PAA question(s) lack strong coverage on this SERP. New H2 sections answering them verbatim (40-80 word direct answer + 300-500 word body) carry the highest citation-eligibility leverage.`;
+  } else if (ccEv.competitor_median && ccEv.word_ratio !== undefined && Number(ccEv.word_ratio) < 0.8) {
+    content_gap_opportunity = `Audited page is at ${Math.round(Number(ccEv.word_ratio) * 100)}% of the competitor median. Topic depth expansion (not filler) is the highest-leverage gap.`;
+  } else if (dEv.distinct_categories && dEv.distinct_categories >= 3) {
+    content_gap_opportunity = `SERP intent is diffuse (${dEv.distinct_categories} categories) — the gap may not be topical depth but intent precision. Consider whether a tighter-intent keyword variant has better economics.`;
+  } else {
+    content_gap_opportunity = 'No structural content-gap signal surfaced in the audit. Competitors are covering the topical surface area; the gap (if any) is likely qualitative — angle, freshness, or authority signals.';
+  }
+
+  return {
+    top_pages,
+    shared_patterns,
+    content_gap_opportunity,
+    _source_note: ctrEv.cache_hit ? `cached SerpAPI snapshot` : `fresh SerpAPI fetch`,
+  };
 }
 
 /* ─── STEP 4: Strategy plan ─────────────────────────────────── */
