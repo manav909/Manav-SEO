@@ -44,7 +44,7 @@
       pillars. No registry changes needed.
 ═══════════════════════════════════════════════════════════════════ */
 
-import { db } from './db';
+import { db } from './db.js';
 import { createHash } from 'crypto';
 
 export interface SerpFeatures {
