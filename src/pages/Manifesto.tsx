@@ -65,6 +65,22 @@ export default function Manifesto() {
     [lang]
   );
 
+  /* Sync the document's <html lang="..."> attribute and the browser tab
+     title with the active language. The lang attribute matters for
+     screen readers (so they pronounce text correctly), font selection,
+     hyphenation, and SEO. The title gives reader confidence that they're
+     on the localized page. Both restore when leaving the manifesto. */
+  useEffect(() => {
+    const prevLang = document.documentElement.lang;
+    const prevTitle = document.title;
+    document.documentElement.lang = t('html_lang') || 'en';
+    document.title = t('meta_title') || prevTitle;
+    return () => {
+      document.documentElement.lang = prevLang;
+      document.title = prevTitle;
+    };
+  }, [lang, t]);
+
   /* Active-chapter detection. A scroll-spy (rAF-throttled) replaces the
      prior IntersectionObserver, which became unreliable as chapters grew
      in length — long chapters could never cross a 25% intersection ratio

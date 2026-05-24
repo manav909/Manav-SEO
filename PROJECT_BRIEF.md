@@ -397,7 +397,14 @@ Five new copy keys driving the locale flavor: `locale_cities`, `locale_coord`, `
 - FloatingNav `aria-label="Chapter navigation"` → `nav_aria`
 - AnimatedSignature `aria-label="Manav Sharma, founder signature"` → `sig_aria_label`
 
-Total now 284 keys per language (1,420 total strings). The bundle has been verified to contain HI/ES/FR/DE renderings of every visible element. Brand identifiers that stay English by design: `SEO SEASON` (brand wordmark), `S.E.A.S.O.N.` (brand acronym), `Manav` (proper name).
+Total now 287 keys per language (1,435 total strings). The bundle has been verified to contain HI/ES/FR/DE renderings of every visible element. Brand identifiers that stay English by design: `SEO SEASON` (brand wordmark), `S.E.A.S.O.N.` (brand acronym), `Manav` (proper name).
+
+🟢 **Locale infrastructure** — shipped 2026-05-24. Three deeper fixes for full language switching:
+- **`<html lang>` attribute** — was hardcoded `lang="en"` in index.html. Manifesto.tsx now sets `document.documentElement.lang` from the `html_lang` key on every language change. Matters for screen readers, font fallback, hyphenation, and SEO crawler signals.
+- **Browser tab title** — was stuck on the global index.html title. Manifesto.tsx now sets `document.title` from the `meta_title` key per language ("SEO SEASON — La Méthode" for FR, "विधि" for HI, etc.). Restores prior title on unmount.
+- **FooterMark date** — was formatted with hardcoded `'en-US'` locale, leaving the month in English regardless of selected language. Now uses `t('locale_code')` so the month renders in the active language (Mai for DE, mayo for ES, मई for HI, mai for FR).
+
+Updated `lang_note` (the small note inside the language picker) from "Structural copy localized. Technical deep-dives in English." to "Fully localized." — the disclaimer was inaccurate after the full sweep.
 
 🟢 **Chapter 13 "In Practice"** — shipped 2026-05-23. Anonymized 4:47 AM scenario showing the drift engine catching AI Overview cannibalization. Three timestamped scene beats (04:47 alert → 11:00 three response paths → 12:30 client got audit trail before they had the problem) + Statement + close. Localized 5 langs (8 keys × 5 langs = 40 strings). ChFuture shifted to Ch14. Honest framing: "scenario is composite, patterned on the class of incident SEASON catches in active engagements, told as it would actually unfold."
 

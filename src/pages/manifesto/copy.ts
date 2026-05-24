@@ -313,7 +313,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     faq_6_doubt:                'Why no monthly retainer?',
     faq_6_answer:               "A retainer charges for time I might spend, not work I shipped. That model rewards busywork; mine doesn't allow it. I charge per campaign cycle — five pillars completed, baseline frozen, results measured against the baseline you saw on day one. More cycles mean an explicit authorization from you. Less work means a smaller invoice. Every line item defensible because every line item is a thing I did, on a date I logged, against a baseline neither of us can quietly rewrite.",
 
-    lang_note:                  'Structural copy localized. Technical deep-dives in English.',
+    lang_note:                  'Fully localized.',
     back:                       'Return',
     footer_line:                'A working manifesto. Updated as the system grows.',
     locale_cities: 'London · New York · Singapore · Tokyo',
@@ -338,6 +338,9 @@ export const COPY: Record<Lang, Record<string, string>> = {
     lang_change: 'Change language',
     nav_aria: 'Chapter navigation',
     sig_aria_label: 'Manav Sharma, founder signature',
+    meta_title: 'SEO SEASON — The Method',
+    locale_code: 'en-US',
+    html_lang: 'en',
   },
 
   /* ═══════════════ HINDI ═══════════════ */
@@ -632,7 +635,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     faq_6_doubt:                'मासिक रिटेनर क्यों नहीं?',
     faq_6_answer:               'एक रिटेनर उस समय के लिए शुल्क लेता है जो मैं खर्च कर सकता हूँ, उस काम के लिए नहीं जो मैंने जारी किया। वह मॉडल व्यस्तता को पुरस्कृत करता है; मेरा इसकी अनुमति नहीं देता। मैं प्रति अभियान चक्र शुल्क लेता हूँ — पाँच स्तंभ पूरे, बेसलाइन जमी, परिणाम उस बेसलाइन के विरुद्ध मापे गए जो आपने पहले दिन देखी। अधिक चक्र का अर्थ है आपसे एक स्पष्ट अनुमति। कम काम का अर्थ है एक छोटा इनवॉइस। हर लाइन आइटम रक्षणीय क्योंकि हर लाइन आइटम एक चीज़ है जो मैंने की, एक तारीख पर जो मैंने लॉग की, एक बेसलाइन के विरुद्ध जिसे हम में से कोई भी चुपचाप फिर से नहीं लिख सकता।',
 
-    lang_note:                  'संरचनात्मक प्रति स्थानीयकृत। तकनीकी विवरण अंग्रेज़ी में।',
+    lang_note:                  'पूर्णतः स्थानीयकृत।',
     back:                       'वापस जाएँ',
     footer_line:                'एक कार्यशील घोषणापत्र। सिस्टम के बढ़ने के साथ अद्यतन।',
     locale_cities: 'बेंगलुरु · मुंबई · दिल्ली · जयपुर',
@@ -657,6 +660,9 @@ export const COPY: Record<Lang, Record<string, string>> = {
     lang_change: 'भाषा बदलें',
     nav_aria: 'अध्याय नेविगेशन',
     sig_aria_label: 'मानव शर्मा, संस्थापक हस्ताक्षर',
+    meta_title: 'SEO SEASON — विधि',
+    locale_code: 'hi-IN',
+    html_lang: 'hi',
   },
 
   /* ═══════════════ SPANISH ═══════════════ */
@@ -951,7 +957,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     faq_6_doubt:                '¿Por qué no un anticipo mensual?',
     faq_6_answer:               'Un anticipo cobra por el tiempo que podría gastar, no por el trabajo que entregué. Ese modelo premia el trabajo ocupado; el mío no lo permite. Cobro por ciclo de campaña — cinco pilares completados, línea base congelada, resultados medidos contra la línea base que viste el día uno. Más ciclos significan una autorización explícita tuya. Menos trabajo significa una factura más pequeña. Cada partida defendible porque cada partida es algo que hice, en una fecha que registré, contra una línea base que ninguno de los dos puede reescribir silenciosamente.',
 
-    lang_note:                  'Texto estructural localizado. Detalles técnicos en inglés.',
+    lang_note:                  'Completamente localizado.',
     back:                       'Volver',
     footer_line:                'Un manifiesto vivo. Actualizado a medida que el sistema crece.',
     locale_cities: 'Madrid · Ciudad de México · Buenos Aires · Barcelona',
@@ -976,6 +982,9 @@ export const COPY: Record<Lang, Record<string, string>> = {
     lang_change: 'Cambiar idioma',
     nav_aria: 'Navegación de capítulos',
     sig_aria_label: 'Manav Sharma, firma del fundador',
+    meta_title: 'SEO SEASON — El Método',
+    locale_code: 'es-ES',
+    html_lang: 'es',
   },
 
   /* ═══════════════ FRENCH ═══════════════ */
@@ -1270,7 +1279,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     faq_6_doubt:                "Pourquoi pas d'acompte mensuel ?",
     faq_6_answer:               "Un acompte facture le temps que je pourrais passer, pas le travail que j'ai livré. Ce modèle récompense le travail occupé ; le mien ne l'autorise pas. Je facture par cycle de campagne — cinq piliers complétés, ligne de référence gelée, résultats mesurés contre la ligne de référence que vous avez vue le jour un. Plus de cycles signifie une autorisation explicite de votre part. Moins de travail signifie une facture plus petite. Chaque ligne défendable parce que chaque ligne est une chose que j'ai faite, à une date que j'ai enregistrée, contre une ligne de référence que ni l'un ni l'autre de nous ne peut silencieusement réécrire.",
 
-    lang_note:                  'Texte structurel localisé. Détails techniques en anglais.',
+    lang_note:                  'Entièrement localisé.',
     back:                       'Retour',
     footer_line:                'Un manifeste vivant. Mis à jour à mesure que le système grandit.',
     locale_cities: 'Paris · Lyon · Marseille · Bordeaux',
@@ -1295,6 +1304,9 @@ export const COPY: Record<Lang, Record<string, string>> = {
     lang_change: 'Changer de langue',
     nav_aria: 'Navigation des chapitres',
     sig_aria_label: 'Manav Sharma, signature du fondateur',
+    meta_title: 'SEO SEASON — La Méthode',
+    locale_code: 'fr-FR',
+    html_lang: 'fr',
   },
 
   /* ═══════════════ GERMAN ═══════════════ */
@@ -1589,7 +1601,7 @@ export const COPY: Record<Lang, Record<string, string>> = {
     faq_6_doubt:                'Warum kein monatlicher Retainer?',
     faq_6_answer:               'Ein Retainer berechnet die Zeit, die ich verbringen könnte, nicht die Arbeit, die ich geliefert habe. Dieses Modell belohnt Beschäftigungstherapie; meines erlaubt sie nicht. Ich berechne pro Kampagnenzyklus — fünf Säulen abgeschlossen, Baseline eingefroren, Ergebnisse gemessen gegen die Baseline, die Sie am ersten Tag gesehen haben. Mehr Zyklen bedeuten eine explizite Autorisierung von Ihnen. Weniger Arbeit bedeutet eine kleinere Rechnung. Jede Position verteidigbar, weil jede Position eine Sache ist, die ich getan habe, an einem Datum, das ich protokolliert habe, gegen eine Baseline, die keiner von uns leise umschreiben kann.',
 
-    lang_note:                  'Strukturtext lokalisiert. Technische Details auf Englisch.',
+    lang_note:                  'Vollständig lokalisiert.',
     back:                       'Zurück',
     footer_line:                'Ein lebendiges Manifest. Aktualisiert, während das System wächst.',
     locale_cities: 'Berlin · Hamburg · München · Frankfurt',
@@ -1614,5 +1626,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     lang_change: 'Sprache ändern',
     nav_aria: 'Kapitelnavigation',
     sig_aria_label: 'Manav Sharma, Gründer-Unterschrift',
+    meta_title: 'SEO SEASON — Die Methode',
+    locale_code: 'de-DE',
+    html_lang: 'de',
   },
 };
