@@ -2,21 +2,8 @@
    src/pages/manifesto/chapters/ChEngine.tsx
    Chapter 06 — The Engine Room. Monsoon.
 
-   The premium spec sheet. Reframed entirely from internal architecture
-   to client-facing capability — the way a corporate marketing director
-   reads an aircraft cockpit, not a developer's package.json.
-
-   Six capability cards arranged like an instrument cluster:
-     12           Intelligence engines firing in sequence
-     MIN          Refresh cadence — minutes, not weeks
-     5+           Search surfaces monitored (Google + LLMs)
-     UNLIMITED    Pillar campaigns concurrent per project
-     100%         Action retention — every decision queryable forever
-     24/7         Always-on monitoring, year-round
-
-   Engine metaphor extends: V12 power, continuous fire, telemetry over
-   slide decks. No internals exposed (no "API functions", no "tables",
-   no "React contexts"). What the engine DOES, not how it's built.
+   All prose, spec labels/descriptors, live-ops stat labels/units, and
+   panel headers localized via copy.ts.
 ══════════════════════════════════════════════════════════════════════ */
 
 import { useEffect, useRef, useState } from 'react';
@@ -28,57 +15,19 @@ import { ChapterShell, Prose, Statement } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-interface Spec {
-  value:      string;
-  unit:       string;
-  label:      string;
-  descriptor: string;
-  icon:       React.ReactNode;
+interface SpecMeta {
+  n:     1 | 2 | 3 | 4 | 5 | 6;
+  value: string;
+  icon:  React.ReactNode;
 }
 
-const SPECS: Spec[] = [
-  {
-    value:      '12',
-    unit:       '',
-    label:      'Intelligence Engines',
-    descriptor: "Twelve specialized engines fire in sequence — query analysis, content gap detection, backlink intelligence, cluster mapping, internal link orchestration, off-page authority tracking, technical drift detection, conversion attribution, AI-surface monitoring, SERP volatility scanning, audit logging, and real-time alerting. Each independent. None pausing.",
-    icon:       <Cpu className="h-4 w-4" />,
-  },
-  {
-    value:      'MIN',
-    unit:       'cadence',
-    label:      'Continuous Refresh',
-    descriptor: "Our pull cadence is minutes — every query movement, every traffic shift, every backlink change registers as soon as the source publishes it. The publishing latency at Google's end (~48 hours for most query data in Search Console) is theirs, not ours; we name it openly on every chart and tell you exactly when the source last updated. Nothing in between is hidden behind a monthly meeting.",
-    icon:       <Gauge className="h-4 w-4" />,
-  },
-  {
-    value:      '5+',
-    unit:       'surfaces',
-    label:      'Multi-Engine Reach',
-    descriptor: "Google. ChatGPT. Claude. Perplexity. Gemini. Visibility tracked across every modern search surface as a first-class signal. The era of 'rank in Google alone' ended around 2024. The engine room treats it that way.",
-    icon:       <Radar className="h-4 w-4" />,
-  },
-  {
-    value:      '∞',
-    unit:       'concurrent',
-    label:      'Campaign Concurrency',
-    descriptor: "Run as many pillar campaigns as the brand can support — five, fifty, five hundred. Each campaign carries its own baseline, its own cadence, its own scoreboard. No artificial caps. No 'enterprise tier required.' The architecture scales because it was designed to.",
-    icon:       <Layers className="h-4 w-4" />,
-  },
-  {
-    value:      '100%',
-    unit:       'retention',
-    label:      'Total Audit Depth',
-    descriptor: "Every decision logged. Every action timestamped. Every metric source-cited. Day one is always queryable. Year three audits the same way as week three. The complete decision trail is part of the deliverable.",
-    icon:       <Archive className="h-4 w-4" />,
-  },
-  {
-    value:      '24/7',
-    unit:       'live',
-    label:      'Always-On Operation',
-    descriptor: "No quiet weekends. No monthly cadence drift. The engine runs continuously — the same way your billing system runs continuously, because enterprise marketing operations stopped being a monthly-meeting discipline somewhere around 2018.",
-    icon:       <Clock className="h-4 w-4" />,
-  },
+const SPEC_META: SpecMeta[] = [
+  { n: 1, value: '12',    icon: <Cpu className="h-4 w-4" />     },
+  { n: 2, value: 'MIN',   icon: <Gauge className="h-4 w-4" />   },
+  { n: 3, value: '5+',    icon: <Radar className="h-4 w-4" />   },
+  { n: 4, value: '∞',     icon: <Layers className="h-4 w-4" />  },
+  { n: 5, value: '100%',  icon: <Archive className="h-4 w-4" /> },
+  { n: 6, value: '24/7',  icon: <Clock className="h-4 w-4" />   },
 ];
 
 export function ChEngine({ t }: { t: TFn }) {
@@ -86,58 +35,49 @@ export function ChEngine({ t }: { t: TFn }) {
     <ChapterShell id="engine" no="06" season="monsoon" titleKey="ch06" t={t}>
       <EngineStyles />
 
-      <Prose delay={0.4}>
-        Behind every campaign we run for a client, twelve specialized
-        intelligence engines fire continuously — like cylinders firing in
-        sequence inside a precision powerplant. Each handles one class of
-        decision; together they carry the full operating load of an
-        enterprise SEO program.
-      </Prose>
-
-      <Prose delay={0.55}>
-        They never sleep. They never drift. They never forget what they have
-        seen. The system was designed that way from the first commit — an
-        always-on intelligence layer the agency runs on, not a dashboard the
-        agency sells.
-      </Prose>
-
-      <Prose delay={0.7}>
-        This is the infrastructure our agency runs on. You don't license it.
-        You hire us, and we run it on your behalf. The spec sheet below
-        describes what that buys you — not what we sell.
-      </Prose>
+      <Prose delay={0.4}>{t('engine_intro_1')}</Prose>
+      <Prose delay={0.55}>{t('engine_intro_2')}</Prose>
+      <Prose delay={0.7}>{t('engine_intro_3')}</Prose>
 
       <div className="engine-spec-grid mt-14">
-        {SPECS.map((s, i) => (
-          <SpecCard key={i} spec={s} index={i} />
+        {SPEC_META.map((s, i) => (
+          <SpecCard
+            key={s.n}
+            n={s.n}
+            value={s.value}
+            icon={s.icon}
+            label={t(`spec_${s.n}_label`)}
+            unit={s.n === 1 ? '' : t(`spec_${s.n}_unit`)}
+            descriptor={t(`spec_${s.n}_descriptor`)}
+            label_spec={t('engine_spec_word')}
+            index={i}
+          />
         ))}
       </div>
 
-      <LiveOpsPanel />
+      <LiveOpsPanel t={t} />
 
-      <Prose delay={0.4} className="mt-14">
-        Every engine above was designed, coded, and integrated by the
-        founder personally. The agency runs on a system that has exactly one
-        architect — and an architect who answers when called.
-      </Prose>
+      <Prose delay={0.4} className="mt-14">{t('engine_architect_line')}</Prose>
 
-      <Statement delay={0.4}>
-        This is what enterprise-grade actually means. A marketing operations
-        engine that runs the way your finance system runs — continuously,
-        accurately, auditably, every minute of every day.
-      </Statement>
+      <Statement delay={0.4}>{t('engine_statement')}</Statement>
 
-      <Prose delay={0.6} className="mt-10">
-        The agency next door still operates on slide decks and rank-tracker
-        screenshots. We operate on telemetry. The AI-only platforms operate
-        on a single prompt and a confident tone. We operate on a team, on
-        evidence, on a system that won't lie even if we wanted it to.
-      </Prose>
+      <Prose delay={0.6} className="mt-10">{t('engine_close')}</Prose>
     </ChapterShell>
   );
 }
 
-function SpecCard({ spec, index }: { spec: Spec; index: number }) {
+function SpecCard({
+  n, value, icon, label, unit, descriptor, label_spec, index,
+}: {
+  n:          number;
+  value:      string;
+  icon:       React.ReactNode;
+  label:      string;
+  unit:       string;
+  descriptor: string;
+  label_spec: string;
+  index:      number;
+}) {
   return (
     <motion.div
       className="spec-card"
@@ -147,17 +87,17 @@ function SpecCard({ spec, index }: { spec: Spec; index: number }) {
       transition={{ duration: 1.1, ease: FEATHER, delay: 0.1 + index * 0.08 }}
     >
       <div className="spec-top">
-        <div className="spec-icon">{spec.icon}</div>
-        <div className="spec-no">SPEC · {String(index + 1).padStart(2, '0')}</div>
+        <div className="spec-icon">{icon}</div>
+        <div className="spec-no">{label_spec} · {String(n).padStart(2, '0')}</div>
       </div>
 
       <div className="spec-value-row">
-        <div className="spec-value">{spec.value}</div>
-        {spec.unit && <div className="spec-unit">{spec.unit}</div>}
+        <div className="spec-value">{value}</div>
+        {unit && <div className="spec-unit">{unit}</div>}
       </div>
 
-      <div className="spec-label">{spec.label}</div>
-      <div className="spec-descriptor">{spec.descriptor}</div>
+      <div className="spec-label">{label}</div>
+      <div className="spec-descriptor">{descriptor}</div>
     </motion.div>
   );
 }
@@ -165,43 +105,35 @@ function SpecCard({ spec, index }: { spec: Spec; index: number }) {
 /* ═══════════════════════════════════════════════════════════════════
    LIVE OPERATIONS PANEL — current operating status
 
-   Inserted between the capability spec-grid (above) and the
-   architect-attribution prose (below). The spec cards describe what
-   the engines CAN do; this panel describes what they ARE doing right
-   now. Different visual register — monospaced terminal aesthetic,
-   pulsing live indicator, animated counters — so it reads as
-   "current operation" rather than "catalog of features."
-
-   Some values are architectural truths (engines=12, surfaces=5,
-   refresh<4min, audit retention 100%). Others are operational
-   placeholders Manav fills in with current state — they're flagged
-   below with ◆ TBD comments so they're easy to find and update.
+   All labels + units localized. ◆ TBD placeholders for Manav:
+   - liveops_unit_since:  Q4 2025 (Continuous Since)
+   - liveops_unit_datapoints display: ~184K Events
 ═══════════════════════════════════════════════════════════════════ */
 
-interface LiveStat {
-  label:    string;
-  value:    number | string;
-  display?: string;          // override the rendered value
-  prefix?:  string;          // e.g. "<" or "~"
-  unit:     string;
-  /* When animate=true, value is treated as a number and counter-animates
-     from 0 to target on scroll-in. When false, the display string renders
-     as-is. */
-  animate:  boolean;
+interface LiveStatMeta {
+  labelKey:    string;
+  unitKey:     string;
+  value:       number | string;
+  display?:    string;
+  displayKey?: string;
+  prefix?:     string;
+  animate:     boolean;
 }
 
-const LIVE_STATS: LiveStat[] = [
-  { label: 'Engines',           value: 12,    unit: 'Active',    animate: true  },
-  { label: 'Search Surfaces',   value: 5,     unit: 'Indexed',   animate: true  },
-  { label: 'Refresh Cadence',   value: 4,     prefix: '<',       unit: 'Minutes',         animate: true  },
-  /* ◆ TBD: Manav fills — month/quarter operations went live */
-  { label: 'Continuous Since',  value: 'Q4',  display: 'Q4',     unit: '2025',            animate: false },
-  /* ◆ TBD: Manav fills — average daily event count from the live system */
-  { label: 'Data Points / Day', value: 184,   display: '~184K', unit: 'Events',          animate: false },
-  { label: 'Audit Retention',   value: 100,   unit: 'Percent',   animate: true  },
+const LIVE_STATS_META: LiveStatMeta[] = [
+  { labelKey: 'liveops_stat_engines',    unitKey: 'liveops_unit_engines',    value: 12,    animate: true  },
+  { labelKey: 'liveops_stat_surfaces',   unitKey: 'liveops_unit_surfaces',   value: 5,     animate: true  },
+  { labelKey: 'liveops_stat_refresh',    unitKey: 'liveops_unit_refresh',    value: 4,     prefix: '<',   animate: true  },
+  /* ◆ TBD: month/quarter ops went live — display localized via liveops_since_display */
+  { labelKey: 'liveops_stat_since',      unitKey: '_skip',                   value: 'Q4',  displayKey: 'liveops_since_display', animate: false },
+  /* ◆ TBD: avg daily event count */
+  { labelKey: 'liveops_stat_datapoints', unitKey: 'liveops_unit_datapoints', value: 184,   display: '~184K',   animate: false },
+  { labelKey: 'liveops_stat_retention',  unitKey: 'liveops_unit_retention',  value: 100,   animate: true  },
 ];
 
-function LiveOpsPanel() {
+const VERTICAL_KEYS = ['vertical_saas', 'vertical_dtc', 'vertical_legal', 'vertical_local', 'vertical_b2b'];
+
+function LiveOpsPanel({ t }: { t: TFn }) {
   return (
     <motion.div
       className="live-ops-panel mt-14"
@@ -215,36 +147,55 @@ function LiveOpsPanel() {
           <span className="live-ops-pulse" />
           <span className="live-ops-pulse-ring" />
         </div>
-        <span className="live-ops-title">CURRENT OPERATION</span>
+        <span className="live-ops-title">{t('liveops_title')}</span>
         <span className="live-ops-separator" />
-        <span className="live-ops-status">LIVE</span>
+        <span className="live-ops-status">{t('liveops_status')}</span>
       </div>
 
       <div className="live-ops-grid">
-        {LIVE_STATS.map((s, i) => (
-          <LiveOpsRow key={s.label} stat={s} index={i} />
+        {LIVE_STATS_META.map((s, i) => (
+          <LiveOpsRow
+            key={s.labelKey}
+            label={t(s.labelKey)}
+            unit={s.unitKey === '_skip' ? '' : t(s.unitKey)}
+            value={s.value}
+            display={s.displayKey ? t(s.displayKey) : s.display}
+            prefix={s.prefix}
+            animate={s.animate}
+            index={i}
+          />
         ))}
       </div>
 
       <div className="live-ops-footer">
-        <span className="live-ops-footer-label">VERTICALS</span>
+        <span className="live-ops-footer-label">{t('liveops_verticals')}</span>
         <span className="live-ops-footer-sep">·</span>
-        {['SaaS', 'DTC', 'Legal', 'Local', 'B2B'].map((v) => (
-          <span key={v} className="live-ops-chip">{v}</span>
+        {VERTICAL_KEYS.map((vk) => (
+          <span key={vk} className="live-ops-chip">{t(vk)}</span>
         ))}
       </div>
     </motion.div>
   );
 }
 
-function LiveOpsRow({ stat, index }: { stat: LiveStat; index: number }) {
+function LiveOpsRow({
+  label, unit, value, display, prefix, animate, index,
+}: {
+  label:    string;
+  unit:     string;
+  value:    number | string;
+  display?: string;
+  prefix?:  string;
+  animate:  boolean;
+  index:    number;
+}) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [displayValue, setDisplayValue] = useState<string>(
-    stat.animate ? '0' : (stat.display ?? String(stat.value))
+    animate ? '0' : (display ?? String(value))
   );
 
   useEffect(() => {
-    if (!stat.animate) return;
+    if (!animate) return;
     const el = rowRef.current;
     if (!el) return;
     let cancelled = false;
@@ -254,18 +205,15 @@ function LiveOpsRow({ stat, index }: { stat: LiveStat; index: number }) {
         entries.forEach((entry) => {
           if (entry.isIntersecting && !cancelled) {
             cancelled = true;
-            const target = Number(stat.value);
+            const target = Number(value);
             const durationMs = 1200 + index * 80;
             const startTime = performance.now();
-
             const tick = (now: number) => {
               const elapsed = now - startTime;
               const progress = Math.min(elapsed / durationMs, 1);
-              /* Ease-out cubic for natural counter deceleration */
               const eased = 1 - Math.pow(1 - progress, 3);
               const current = Math.round(target * eased);
-              const prefix = stat.prefix ?? '';
-              setDisplayValue(prefix + current.toString());
+              setDisplayValue((prefix ?? '') + current.toString());
               if (progress < 1) requestAnimationFrame(tick);
             };
             requestAnimationFrame(tick);
@@ -275,10 +223,9 @@ function LiveOpsRow({ stat, index }: { stat: LiveStat; index: number }) {
       },
       { threshold: 0.4 }
     );
-
     obs.observe(el);
     return () => { cancelled = true; obs.disconnect(); };
-  }, [stat, index]);
+  }, [animate, value, prefix, index]);
 
   return (
     <motion.div
@@ -289,15 +236,13 @@ function LiveOpsRow({ stat, index }: { stat: LiveStat; index: number }) {
       viewport={{ once: true, margin: '-12%' }}
       transition={{ duration: 0.8, ease: FEATHER, delay: 0.2 + index * 0.07 }}
     >
-      <span className="live-ops-row-label">{stat.label.toUpperCase()}</span>
+      <span className="live-ops-row-label">{label.toUpperCase()}</span>
       <span className="live-ops-row-dotline" />
       <span className="live-ops-row-value">{displayValue}</span>
-      <span className="live-ops-row-unit">{stat.unit.toUpperCase()}</span>
+      <span className="live-ops-row-unit">{unit.toUpperCase()}</span>
     </motion.div>
   );
 }
-
-/* ─── Inline styles for this chapter ─────────────────────────────── */
 
 function EngineStyles() {
   return (
@@ -412,12 +357,7 @@ function EngineStyles() {
         .spec-card { min-height: auto; }
       }
 
-      /* ═══════════════════════════════════════════════════════════
-         LIVE OPERATIONS PANEL
-         A system-status console, distinct visual register from the
-         spec cards above. Monospaced row labels, large display
-         values, pulsing live indicator at top.
-      ═══════════════════════════════════════════════════════════ */
+      /* LIVE OPS PANEL — unchanged */
       .live-ops-panel {
         position: relative;
         padding: 1.6rem 1.8rem 1.8rem 1.8rem;
@@ -447,43 +387,32 @@ function EngineStyles() {
           hsla(var(--ch-hue), 80%, 70%, 0.55) 70%,
           transparent);
       }
-
-      /* HEADER */
       .live-ops-header {
-        display: flex;
-        align-items: center;
+        display: flex; align-items: center;
         gap: 0.7rem;
         padding-bottom: 1.2rem;
         margin-bottom: 1.4rem;
         border-bottom: 0.5px dashed hsla(var(--ch-hue), 40%, 60%, 0.22);
       }
-      .live-ops-pulse-wrap {
-        position: relative;
-        width: 10px; height: 10px;
-        flex-shrink: 0;
-      }
+      .live-ops-pulse-wrap { position: relative; width: 10px; height: 10px; flex-shrink: 0; }
       .live-ops-pulse {
-        position: absolute;
-        inset: 0;
-        border-radius: 50%;
+        position: absolute; inset: 0; border-radius: 50%;
         background: hsla(142, 75%, 60%, 1);
         box-shadow: 0 0 14px hsla(142, 75%, 55%, 0.85);
         animation: lopsPulse 2.2s ease-in-out infinite;
       }
       .live-ops-pulse-ring {
-        position: absolute;
-        inset: -3px;
-        border-radius: 50%;
+        position: absolute; inset: -3px; border-radius: 50%;
         border: 1px solid hsla(142, 70%, 55%, 0.5);
         animation: lopsRing 2.2s ease-out infinite;
       }
       @keyframes lopsPulse {
-        0%, 100% { transform: scale(1);   opacity: 1;   }
-        50%      { transform: scale(0.8); opacity: 0.65;}
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(0.8); opacity: 0.65; }
       }
       @keyframes lopsRing {
-        0%   { transform: scale(0.6); opacity: 0.9; }
-        100% { transform: scale(2.2); opacity: 0;   }
+        0% { transform: scale(0.6); opacity: 0.9; }
+        100% { transform: scale(2.2); opacity: 0; }
       }
       .live-ops-title {
         font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -494,8 +423,7 @@ function EngineStyles() {
         color: hsla(var(--ch-hue), 65%, 82%, 0.97);
       }
       .live-ops-separator {
-        flex: 1;
-        height: 1px;
+        flex: 1; height: 1px;
         background: linear-gradient(90deg,
           hsla(var(--ch-hue), 60%, 60%, 0.18),
           transparent 80%);
@@ -505,19 +433,14 @@ function EngineStyles() {
         font-size: 0.62rem;
         font-weight: 800;
         letter-spacing: 0.32em;
+        text-transform: uppercase;
         color: hsla(142, 80%, 75%, 1);
         padding: 0.2rem 0.6rem;
         border: 0.5px solid hsla(142, 70%, 55%, 0.35);
         border-radius: 4px;
         background: hsla(142, 70%, 40%, 0.08);
       }
-
-      /* STATS GRID */
-      .live-ops-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 0.4rem;
-      }
+      .live-ops-grid { display: flex; flex-direction: column; gap: 0.4rem; }
       .live-ops-row {
         display: grid;
         grid-template-columns: 12rem 1fr auto 4rem;
@@ -526,9 +449,7 @@ function EngineStyles() {
         padding: 0.55rem 0;
         border-bottom: 0.5px dashed hsla(var(--ch-hue), 30%, 50%, 0.12);
       }
-      .live-ops-row:last-child {
-        border-bottom: none;
-      }
+      .live-ops-row:last-child { border-bottom: none; }
       .live-ops-row-label {
         font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
         font-size: 0.68rem;
@@ -568,11 +489,8 @@ function EngineStyles() {
         color: hsla(var(--ch-hue), 50%, 75%, 0.7);
         text-align: left;
       }
-
-      /* FOOTER */
       .live-ops-footer {
-        display: flex;
-        align-items: center;
+        display: flex; align-items: center;
         gap: 0.5rem;
         margin-top: 1.4rem;
         padding-top: 1.2rem;
@@ -584,12 +502,10 @@ function EngineStyles() {
         font-size: 0.6rem;
         font-weight: 700;
         letter-spacing: 0.24em;
+        text-transform: uppercase;
         color: var(--m-ink-soft);
       }
-      .live-ops-footer-sep {
-        color: var(--m-ink-soft);
-        opacity: 0.4;
-      }
+      .live-ops-footer-sep { color: var(--m-ink-soft); opacity: 0.4; }
       .live-ops-chip {
         font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
         font-size: 0.62rem;
@@ -601,13 +517,12 @@ function EngineStyles() {
         border-radius: 3px;
         background: hsla(var(--ch-hue), 50%, 30%, 0.15);
       }
-
       @media (max-width: 720px) {
         .live-ops-panel { padding: 1.2rem 1.2rem 1.4rem 1.2rem; }
-        .live-ops-row   { grid-template-columns: 7rem 1fr auto 3rem; gap: 0.4rem; }
+        .live-ops-row { grid-template-columns: 7rem 1fr auto 3rem; gap: 0.4rem; }
         .live-ops-row-label { font-size: 0.6rem; letter-spacing: 0.14em; }
         .live-ops-row-value { font-size: 1.4rem; }
-        .live-ops-row-unit  { font-size: 0.52rem; }
+        .live-ops-row-unit { font-size: 0.52rem; }
       }
     `}</style>
   );

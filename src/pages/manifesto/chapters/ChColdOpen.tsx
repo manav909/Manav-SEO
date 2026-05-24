@@ -109,7 +109,7 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
           <span className="coord-rule" />
           <span className="coord-segment">SEO SEASON</span>
           <span className="coord-dot">·</span>
-          <span className="coord-segment">VOL. I</span>
+          <span className="coord-segment">{t('coord_vol')}</span>
           <span className="coord-dot">·</span>
           <span className="coord-segment">2026</span>
           <span className="coord-rule" />
@@ -202,7 +202,7 @@ export function ChColdOpen({ t, lang }: { t: TFn; lang: Lang }) {
           <span className="by-rule" />
         </motion.div>
 
-        <AnimatedSignature delay={8.9} />
+        <AnimatedSignature delay={8.9} t={t} />
 
         <motion.div
           className="hero-close mt-5"
@@ -385,7 +385,7 @@ const HARMA_PATH = "M 325,82 C 332,80 332,30 335,25 C 338,22 340,30 340,55 C 342
 const DOT1       = { cx: 462, cy: 105 };
 const DOT2       = { cx: 474, cy: 108 };
 
-function AnimatedSignature({ delay }: { delay: number }) {
+function AnimatedSignature({ delay, t }: { delay: number; t: TFn }) {
   const reducedMotion = useReducedMotion();
 
   const writeCurve = [0.4, 0.05, 0.25, 1] as const;
@@ -427,7 +427,7 @@ function AnimatedSignature({ delay }: { delay: number }) {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5, delay, ease: FEATHER }}
       role="img"
-      aria-label="Manav Sharma, founder signature"
+      aria-label={t('sig_aria_label')}
     >
       <svg
         viewBox="0 0 500 130"

@@ -35,7 +35,7 @@ export function TopBar({
           <button
             onClick={() => setOpen(!open)}
             className="lang-trigger"
-            aria-label="Change language"
+            aria-label={t('lang_change')}
             aria-expanded={open}
           >
             <Globe className="h-3.5 w-3.5" />

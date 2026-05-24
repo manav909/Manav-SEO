@@ -21,7 +21,7 @@ export function FloatingNav({
   t:        TFn;
 }) {
   return (
-    <nav className="floating-nav" aria-label="Chapter navigation">
+    <nav className="floating-nav" aria-label={t('nav_aria')}>
       {chapters.map((c) => {
         const season = SEASONS[c.season];
         const active = c.id === activeId;

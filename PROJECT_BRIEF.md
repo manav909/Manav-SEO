@@ -387,6 +387,18 @@ Five new copy keys driving the locale flavor: `locale_cities`, `locale_coord`, `
 
 🟢 **ChFuture localization** — shipped 2026-05-24. Caught five hardcoded-English `<Prose>` blocks in `ChFuture.tsx` (the chapter's whole body was untranslated). Extracted to keys `future_1` through `future_5`, added translations across all 5 languages. Now 272 keys per language (1,360 total strings). Audit script in repo to catch this pattern: any line that looks like substantive prose JSX content but is not a `t()` call, template literal, or comment.
 
+🟢 **Final hardcoded-string sweep** — shipped 2026-05-24. Audit pass caught the last items that were still rendering English in every language regardless of language picker selection:
+- `VOL. I` in the ChColdOpen coordinate mark → `coord_vol`
+- `SPEC · 01..06` prefix on every engine spec card → `engine_spec_word`
+- `Q4 2025` LiveOps display value → `liveops_since_display`
+- Vertical chips (`SaaS · DTC · Legal · Local · B2B`) → `vertical_saas/dtc/legal/local/b2b` (industry abbreviations universal; "Legal"/"Local" translated)
+- `Q` prefix on every FAQ row → `faq_q_prefix`
+- TopBar `aria-label="Change language"` → `lang_change`
+- FloatingNav `aria-label="Chapter navigation"` → `nav_aria`
+- AnimatedSignature `aria-label="Manav Sharma, founder signature"` → `sig_aria_label`
+
+Total now 284 keys per language (1,420 total strings). The bundle has been verified to contain HI/ES/FR/DE renderings of every visible element. Brand identifiers that stay English by design: `SEO SEASON` (brand wordmark), `S.E.A.S.O.N.` (brand acronym), `Manav` (proper name).
+
 🟢 **Chapter 13 "In Practice"** — shipped 2026-05-23. Anonymized 4:47 AM scenario showing the drift engine catching AI Overview cannibalization. Three timestamped scene beats (04:47 alert → 11:00 three response paths → 12:30 client got audit trail before they had the problem) + Statement + close. Localized 5 langs (8 keys × 5 langs = 40 strings). ChFuture shifted to Ch14. Honest framing: "scenario is composite, patterned on the class of incident SEASON catches in active engagements, told as it would actually unfold."
 
 ---
