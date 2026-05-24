@@ -93,7 +93,7 @@ const ACTION_ID_ALIASES: Record<string, string> = {
   open_strategy:    'planning_open_strategy',
   open_provenance:  'open_provenance_detail',
   copy_artifact:    'copy_artifact_noop',
-  create_strategy:  'create_strategy_stub',
+  create_strategy:  'create_strategy_navigate',
 };
 
 function resolveActionId(actionId: string): string {
@@ -701,8 +701,13 @@ register({
   },
 });
 
+/* `create_strategy` (LLM intent) → navigates to /planning, where strategies
+   are actually built. This is a navigation-only handler by design — strategies
+   are multi-step inputs that need a real page, not a one-click action.
+   (Renamed from `create_strategy_stub` — the old name suggested it was an
+   unimplemented placeholder, but it's actually working as designed.) */
 register({
-  id:           'create_strategy_stub',
+  id:           'create_strategy_navigate',
   label:        'Create a strategy',
   description:  'Open the planning page where new strategies are created.',
   permission:   'ui_only',

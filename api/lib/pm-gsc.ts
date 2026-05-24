@@ -358,9 +358,9 @@ export async function gscPull(opts: {
     };
     fetched.totals = true;
 
-    /* ── 2-7. Top N by dimensions + 365d daily trend + prev-30d
-              queries (parallel) ────────────────────────────────── */
-    const [topQueries, topPages, topCountries, topDevices, dailyTrend, fullTrend365, prevPeriodQueries] = await Promise.all([
+    /* ── 2-8. Top N by dimensions + 365d daily trend + prev-30d
+              queries + query×page pairs (parallel) ─────────────── */
+    const [topQueries, topPages, topCountries, topDevices, dailyTrend, fullTrend365, prevPeriodQueries, queryPagePairs] = await Promise.all([
       runQuery({ dimensions: ["query"],   rowLimit: 50 }),
       runQuery({ dimensions: ["page"],    rowLimit: 50 }),
       runQuery({ dimensions: ["country"], rowLimit: 20 }),
@@ -376,6 +376,11 @@ export async function gscPull(opts: {
         { dimensions: ["query"], rowLimit: 100 },
         { startDate: prevQStart, endDate: prevQEnd },
       ),
+      /* Query×Page pairs — needed by detectCannibalization to find queries
+         where multiple pages compete for the same term. rowLimit 200 gives
+         enough resolution for typical project shapes without bloating the
+         cron payload. */
+      runQuery({ dimensions: ["query", "page"], rowLimit: 200 }),
     ]);
 
     /* ── Shape helpers ───────────────────────────────────────────── */
@@ -496,6 +501,26 @@ export async function gscPull(opts: {
           position:    Number((r.position || 0).toFixed(2)),
         }));
         jsonRows.push({ key: "gsc_queries_previous_30d", value: JSON.stringify(prevShaped) });
+      }
+
+      /* Query×Page pairs — multi-dimension shape: keys[0]=query, keys[1]=page.
+         Persisted as the input data for detectCannibalization in the intel
+         engine (finds queries where 2+ pages compete for the same term). */
+      if (Array.isArray(queryPagePairs) && queryPagePairs.length > 0) {
+        const pairsShaped = queryPagePairs
+          .map((r: any) => ({
+            query:       r.keys?.[0] || "(unknown)",
+            page:        r.keys?.[1] || "(unknown)",
+            clicks:      Number(r.clicks || 0),
+            impressions: Number(r.impressions || 0),
+            ctr:         Number(((r.ctr || 0) * 100).toFixed(2)),
+            position:    Number((r.position || 0).toFixed(2)),
+          }))
+          .filter((r) => r.query !== "(unknown)" && r.page !== "(unknown)");
+        if (pairsShaped.length > 0) {
+          jsonRows.push({ key: "gsc_query_page_pairs", value: JSON.stringify(pairsShaped) });
+          fetched.query_page_pairs = pairsShaped.length;
+        }
       }
 
       const allRows = [...scalarRows, ...jsonRows];

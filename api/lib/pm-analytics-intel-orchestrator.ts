@@ -99,6 +99,7 @@ export async function recomputeAnalyticsIntel(projectId: string): Promise<Analyt
     ga4Channels,
     ga4Devices,
     ga4Countries,
+    gscQueryPagePairs,
     baselineDateRaw,
     projectName,
   ] = await Promise.all([
@@ -112,6 +113,7 @@ export async function recomputeAnalyticsIntel(projectId: string): Promise<Analyt
     readJsonField<StoredDimRow[]>(projectId,   "ga4_top_traffic_sources"),
     readJsonField<StoredDimRow[]>(projectId,   "ga4_top_devices"),
     readJsonField<StoredDimRow[]>(projectId,   "ga4_top_countries"),
+    readJsonField<Array<{ query: string; page: string; clicks: number; position: number }>>(projectId, "gsc_query_page_pairs"),
     readScalarField(projectId, "organic_sessions_baseline_date"),
     readProjectName(projectId),
   ]);
@@ -159,6 +161,7 @@ export async function recomputeAnalyticsIntel(projectId: string): Promise<Analyt
     ga4Channels:        mapGa4Dim(ga4Channels,  "channel"),
     ga4Devices:         mapGa4Dim(ga4Devices,   "device"),
     ga4Countries:       mapGa4Dim(ga4Countries, "country"),
+    gscQueryPagePairs:  gscQueryPagePairs || [],
     brandNames,
     baselineDate:       baselineDateRaw,
   });

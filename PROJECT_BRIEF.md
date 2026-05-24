@@ -385,10 +385,7 @@ Each needs: source-required gates, partial-data acknowledgments, "I don't have e
 
 ### P1 — quick wins (each takes <2 hours, no scope creep)
 
-1. **Living Overview cron wiring** — engine code exists (`client-showcase-engine.ts`, `season-pipeline-runner.ts`, etc.) but `vercel.json` has only ONE cron (`/api/task-engine` at 6am daily, runs `run_scheduled_verifications`). Living Overview nightly never got its own schedule. Wire a second cron OR fold its invocation into the existing 6am task-engine cron.
-2. **`create_strategy` action stub** — `src/lib/season-actions/registry.ts:96` maps `create_strategy` to `create_strategy_stub`. Real implementation missing.
-3. **`pm-analytics-intel.ts:1070` cannibalization TODO** — needs query×page dimension pair on GSC data.
-4. **Manifesto 2 × `◆ TBD` placeholders** in `ChEngine.tsx` LiveOps panel (`Continuous Since`, `Data Points / Day`) — Manav fills in 30 seconds.
+1. **Manifesto 2 × `◆ TBD` placeholders** in `ChEngine.tsx` LiveOps panel (`Continuous Since`, `Data Points / Day`) — Manav fills in 30 seconds.
 
 ### P2 — client-facing stubs (visible in production right now)
 
@@ -431,6 +428,9 @@ Each needs: source-required gates, partial-data acknowledgments, "I don't have e
 | Manifesto full localization — 287 keys × 5 languages, Devanagari grapheme fix, html.lang + tab title sync, i18n parity guard | Live at commit `8d4e066` |
 | AIConcierge hidden on `/manifesto` | 2026-05-23 |
 | **`/api/market-researcher` dead reference cleanup** — STATIC_RULES block removed from `runtimeCompiler.ts:57`, dead-file mention removed from error message at line 188, doc-comment in `intelligenceFabric.ts:15` updated to flag the function as `.disabled` so future devs aren't confused. The `.ts.disabled` file itself untouched (re-enable later if needed). Build green, TS=26, no /api/market-researcher in bundle. | 2026-05-24 |
+| **Living Overview cron** — verified wired inside `run_scheduled_verifications` at task-engine.ts:2558-2566, runs alongside 6 other ticks (PM lifecycle, GSC/GA4 pull, rule engine, brand-studio monitors, forecast sweep, verification queue) at 6am UTC daily. `livingOverviewCronTick` in `seo-campaign-engine.ts:1358` skips fresh campaigns (no LLM call), hard-cap 50 campaigns, ~$0.50/day typical. URL fit is part of the in-flow campaign-build analysis (`seo-url-targeting.ts:53` UrlFitAnalysis used during `seo-campaign-grouping.ts:896`), not a separate nightly. The "Living Overview cron + URL fit nightly" item from the old backlog was already done — brief was stale. | 2026-05-24 |
+| **`create_strategy_stub` rename to `create_strategy_navigate`** — the alias at `registry.ts:96` and the registered action at line 705 were named "stub" but the implementation is intentional: it navigates the LLM-emitted `create_strategy` intent to `/planning` where strategies are actually built. Renamed for clarity + comment block explaining the navigation-only pattern. No behavior change. | 2026-05-24 |
+| **Cannibalization detection wired end-to-end** — `detectCannibalization` in `pm-analytics-intel.ts:963` was implemented but never called; the orchestrator at line 1070 was returning `[]` with a TODO. Wired: (1) `pm-gsc.ts` now fetches `["query","page"]` dimension pair (rowLimit 200) in the parallel cron pull, (2) shapes + persists as `gsc_query_page_pairs` in `project_knowledge`, (3) `pm-analytics-intel-orchestrator.ts` reads the new field, (4) `buildAnalyticsIntelligence` accepts `gscQueryPagePairs?` and calls `detectCannibalization` when data is present. Backward compatible — projects without the new field flow through as `[]`. Cost: 1 additional GSC API call per project per cron run. Thresholds in the engine (top ≥5 clicks, second ≥2, position spread ≤10) keep false positives low. First findings will appear after the next 6am UTC cron tick. | 2026-05-24 |
 
 ---
 

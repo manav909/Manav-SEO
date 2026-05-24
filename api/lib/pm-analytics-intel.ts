@@ -956,10 +956,12 @@ export function detectRisingFallingStars(
 /* ─── Cannibalization detection ──────────────────────────────── */
 
 /** Detect queries where multiple pages rank — typically a sign that
- *  authority is split and consolidating would help. Requires having
- *  page+query combination data (which our existing queries don't carry).
- *  This is a placeholder structure to be wired when GSC pulls add the
- *  query×page dimension combo. */
+ *  authority is split and consolidating would help. Wired into the
+ *  buildAnalyticsIntelligence orchestrator as of 2026-05-24; expects
+ *  query×page dimension pairs fetched by pm-gsc.ts and read out of
+ *  `project_knowledge.gsc_query_page_pairs` by the orchestrator.
+ *  Thresholds (top ≥5 clicks, second ≥2 clicks, position spread ≤10)
+ *  filter out noise so only meaningful splits surface. */
 export function detectCannibalization(
   queryPagePairs: Array<{ query: string; page: string; clicks: number; position: number }>,
 ): CannibalizationGroup[] {
@@ -1039,6 +1041,10 @@ export function buildAnalyticsIntelligence(input: {
   ga4Channels:     Ga4DimensionRow[];
   ga4Devices:      Ga4DimensionRow[];
   ga4Countries:    Ga4DimensionRow[];
+  /** Query×Page dimension pairs from GSC — required for cannibalization
+   *  detection. Optional; defaults to empty array when GSC hasn't pulled
+   *  the pair dimension yet (older data, or pre-2026-05-24 cron runs). */
+  gscQueryPagePairs?: Array<{ query: string; page: string; clicks: number; position: number }>;
   brandNames:      string[];
   baselineDate:    string | null;
 }): AnalyticsIntelligence {
@@ -1062,12 +1068,19 @@ export function buildAnalyticsIntelligence(input: {
   );
   const composite = computeCompositeScores(kpis);
 
+  /* Cannibalization — empty when query×page pairs are unavailable (the
+     dimension pair was added to the cron 2026-05-24; projects with stale
+     data fall back to [] which renders as "no cannibalization detected"). */
+  const cannibalization = (input.gscQueryPagePairs && input.gscQueryPagePairs.length > 0)
+    ? detectCannibalization(input.gscQueryPagePairs)
+    : [];
+
   return {
     generatedAt: new Date().toISOString(),
     periods, deltas, kpis,
     risingStars:     rising,
     fallingStars:    falling,
-    cannibalization: [],   /* TODO: requires query×page dimension pair */
+    cannibalization,
     queryVelocity:   velocity,
     ...composite,
   };
