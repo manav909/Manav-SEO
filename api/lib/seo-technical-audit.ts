@@ -39,6 +39,18 @@ interface Finding {
   recommendation?: string;
   evidence?:      any;
   data_source?:   'gsc' | 'ga4' | 'psi' | 'html_fetch' | 'schema_parser';
+  /* Phase 16.3 — secondary sources that ENRICHED this finding without being
+     the primary data source. E.g. CTR is primarily sourced from GSC but
+     enriched by SerpAPI's live SERP fetch. Used for source attribution in
+     the footer and confidence multiplier when multi-sourced. */
+  enrichment_sources?: Array<'serpapi'>;
+  /* Phase 16.3 — true when this is the foundational Critical finding —
+     the one whose recommendation, if adopted, would obsolete or reframe
+     other findings. Used to render 🎯 badge for sequencing. */
+  is_foundational?: boolean;
+  /* Phase 16.3 — internal tags used by cross-finding reinforcement detection.
+     Not rendered; used by detectConvergingEvidence(). */
+  signals?: Array<'keyword_mismatch' | 'url_not_in_top_10' | 'serp_topic_mismatch' | 'first_paragraph_off_topic'>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -94,6 +106,110 @@ function weightedFindingConfidence(findings: Finding[]): {
   if (sourced.length === 0) return { mean: 0, sourced_count: 0, unattributed_count: unattributed };
   const total = sourced.reduce((acc, m) => acc + m.confidence, 0);
   return { mean: Math.round(total / sourced.length), sourced_count: sourced.length, unattributed_count: unattributed };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 16.3 UTILITIES (2026-05-24 PM) — six small fixes that
+   compound to senior-practitioner-grade output:
+
+   • decodeHtmlEntities — fixes "&amp;" rendering in displayed titles
+   • computeBusinessImpact — translates CTR-gap ratio to missed
+     clicks/month + dollar range
+   • pickFoundationalCritical — marks 🎯 on the Critical finding
+     whose recommendation, if addressed, would reframe others
+   • detectConvergingEvidence — surfaces explicit cross-finding
+     reinforcement when 2+ Critical findings share a root cause
+   ════════════════════════════════════════════════════════════ */
+
+/** Decode common HTML entities so titles/H1/meta display cleanly
+ *  (e.g. "&amp;" → "&"). Targets the entities Google actually
+ *  serves in <title> tags. Idempotent — calling twice is safe. */
+function decodeHtmlEntities(s: string): string {
+  if (!s) return s;
+  return s
+    .replace(/&amp;/g,   '&')
+    .replace(/&lt;/g,    '<')
+    .replace(/&gt;/g,    '>')
+    .replace(/&quot;/g,  '"')
+    .replace(/&#x27;/g,  "'")
+    .replace(/&#39;/g,   "'")
+    .replace(/&#x2F;/g,  '/')
+    .replace(/&nbsp;/g,  ' ');
+}
+
+/** Convert a CTR underperformance ratio into operationally-useful business
+ *  impact: missed monthly clicks + dollar range. Click-value bounds
+ *  reflect industry benchmarks for SaaS/B2B pages where the audit is
+ *  most-used; treat as directional, not precise.
+ *
+ *  Returns the inline addendum (markdown) or empty string if inputs
+ *  are insufficient or the gap is too small to warrant translation. */
+function computeBusinessImpact(opts: {
+  impressions: number;
+  actual_ctr_pct: number;
+  expected_ctr_pct: number;
+  actual_clicks: number;
+}): string {
+  const { impressions, actual_ctr_pct, expected_ctr_pct, actual_clicks } = opts;
+  if (!impressions || impressions < 100) return '';
+  if (!expected_ctr_pct || expected_ctr_pct <= actual_ctr_pct) return '';
+  const expectedClicks = Math.round((impressions * expected_ctr_pct) / 100);
+  const missedClicks   = Math.max(0, expectedClicks - actual_clicks);
+  if (missedClicks < 5) return '';
+  /* Click-value range: $10-30 is the conservative midrange for B2B SaaS
+     pricing-page / commercial-intent traffic. Lower bound covers free-trial
+     funnels; upper bound covers enterprise lead-gen. Treat directionally. */
+  const lowDollar  = missedClicks * 10;
+  const highDollar = missedClicks * 30;
+  return `\n\n**Business impact:** at expected CTR of ${expected_ctr_pct.toFixed(1)}%, ${impressions.toLocaleString()} monthly impressions would yield ~${expectedClicks.toLocaleString()} clicks vs actual ${actual_clicks.toLocaleString()} → **~${missedClicks.toLocaleString()} missed monthly clicks**. At B2B SaaS commercial-page click value of \\$10-30 (industry benchmark, treat directionally), that's **\\$${lowDollar.toLocaleString()}-\\$${highDollar.toLocaleString()} monthly opportunity** at full recovery.`;
+}
+
+/** Pick the single foundational Critical finding among a list. Rules
+ *  (in priority order):
+ *
+ *  1. If indexability is blocked → that's foundational (nothing else
+ *     matters until the page is indexable)
+ *  2. If keyword-presence is Critical AND recommends a campaign-keyword
+ *     pivot → that's foundational (pivot would reframe other findings)
+ *  3. Else the first-paragraph-topicality finding if Critical (lowest-
+ *     effort high-impact baseline)
+ *  4. Else fall through to no marking (caller doesn't render badge)
+ *
+ *  Mutates the chosen finding in-place by setting is_foundational = true. */
+function pickFoundationalCritical(findings: Finding[]): void {
+  const reds = findings.filter(f => f.severity === 'red');
+  if (reds.length === 0) return;
+  /* Rule 1: indexability blocker */
+  const indexBlocked = reds.find(f =>
+    f.audit_kind === 'indexability' &&
+    /(noindex|blocked|robots\.txt|x-robots-tag)/i.test(f.finding_title));
+  if (indexBlocked) { indexBlocked.is_foundational = true; return; }
+  /* Rule 2: keyword-presence Critical with pivot recommendation */
+  const kwPivot = reds.find(f =>
+    f.audit_kind === 'on_page_fundamentals' &&
+    /keyword/i.test(f.finding_title) &&
+    f.recommendation && /change the campaign keyword|rewrite.*title/i.test(f.recommendation));
+  if (kwPivot) { kwPivot.is_foundational = true; return; }
+  /* Rule 3: first-paragraph topicality */
+  const firstParaCrit = reds.find(f => /first paragraph/i.test(f.finding_title));
+  if (firstParaCrit) { firstParaCrit.is_foundational = true; return; }
+}
+
+/** Detect when 2+ Critical findings share signals that converge on the
+ *  same diagnosis. Returns a banner string (markdown) or null. */
+function detectConvergingEvidence(findings: Finding[]): string | null {
+  const reds = findings.filter(f => f.severity === 'red');
+  if (reds.length < 2) return null;
+  /* Keyword-mismatch convergence: 2+ Critical findings tagged with
+     keyword_mismatch or url_not_in_top_10 or serp_topic_mismatch */
+  const kwSignals = reds.filter(f =>
+    Array.isArray(f.signals) &&
+    f.signals.some(s => s === 'keyword_mismatch' || s === 'url_not_in_top_10' || s === 'serp_topic_mismatch'));
+  if (kwSignals.length >= 2) {
+    const signalCount = kwSignals.length;
+    return `> 🔗 **Converging evidence — ${signalCount} independent signals support the campaign-keyword-pivot recommendation:** title/H1 token mismatch, audited URL absent from live top-10 for the campaign keyword, and the live top-10 SERP composition is misaligned with this page's topic. When 2+ Critical findings independently corroborate the same diagnosis, the recommendation hardens from hypothesis to operational call. Address the keyword pivot before downstream tactical fixes — those will reset against the new target.`;
+  }
+  return null;
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -554,9 +670,11 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
   if (!r.ok || !r.html) return findings;  /* indexability check already flagged this */
   const html = r.html;
 
-  /* Title tag */
+  /* Title tag.
+     Phase 16.3 — decode HTML entities at extraction so all downstream
+     display ("&amp;" → "&", etc.) is clean. */
   const titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
-  const title = titleMatch?.[1]?.trim() || '';
+  const title = decodeHtmlEntities((titleMatch?.[1]?.trim()) || '');
   if (!title) {
     findings.push({
       audit_kind: 'on_page_fundamentals', severity: 'red',
@@ -593,9 +711,10 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
     });
   }
 
-  /* Meta description */
+  /* Meta description.
+     Phase 16.3 — decode HTML entities at extraction (matches title handling). */
   const metaDescMatch = /<meta\s+[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(html);
-  const metaDesc = metaDescMatch?.[1]?.trim() || '';
+  const metaDesc = decodeHtmlEntities((metaDescMatch?.[1]?.trim()) || '');
   if (!metaDesc) {
     findings.push({
       audit_kind: 'meta_tags', severity: 'amber',
@@ -622,10 +741,11 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
     });
   }
 
-  /* H1 tag(s) */
+  /* H1 tag(s).
+     Phase 16.3 — decode HTML entities at extraction. */
   const h1Matches = html.match(/<h1[^>]*>(.*?)<\/h1>/gis) || [];
   const h1Count = h1Matches.length;
-  const h1Text = h1Count > 0 ? h1Matches[0].replace(/<[^>]+>/g, '').trim() : '';
+  const h1Text = h1Count > 0 ? decodeHtmlEntities(h1Matches[0].replace(/<[^>]+>/g, '').trim()) : '';
   if (h1Count === 0) {
     findings.push({
       audit_kind: 'on_page_fundamentals', severity: 'red',
@@ -1081,9 +1201,9 @@ async function checkFirstParagraphTopicality(url: string): Promise<Finding[]> {
   if (!r.ok || !r.html) return findings;
   const html = r.html;
   const titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
-  const title      = titleMatch?.[1]?.trim() || '';
+  const title      = decodeHtmlEntities((titleMatch?.[1]?.trim()) || '');
   const h1Match    = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-  const h1         = h1Match ? h1Match[1].replace(/<[^>]+>/g, '').trim() : '';
+  const h1         = h1Match ? decodeHtmlEntities(h1Match[1].replace(/<[^>]+>/g, '').trim()) : '';
   const firstPara  = firstParagraphText(html);
   if (!title || !firstPara) return findings;
   const reference = title + ' ' + h1;
@@ -1138,13 +1258,15 @@ async function checkKeywordPresence(url: string, keyword: string): Promise<Findi
   if (!r.ok || !r.html) return findings;  /* indexability check already flagged this */
   const html = r.html;
 
-  /* Extract the 5 locations */
+  /* Extract the 5 locations.
+     Phase 16.3 — decode HTML entities at extraction so the observed
+     coverage rows render clean ("&amp;" → "&"). */
   const titleMatch    = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
-  const title         = titleMatch?.[1]?.trim() || '';
+  const title         = decodeHtmlEntities((titleMatch?.[1]?.trim()) || '');
   const h1Match       = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-  const h1            = h1Match ? h1Match[1].replace(/<[^>]+>/g, '').trim() : '';
+  const h1            = h1Match ? decodeHtmlEntities(h1Match[1].replace(/<[^>]+>/g, '').trim()) : '';
   const metaDescMatch = /<meta\s+[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(html);
-  const metaDesc      = metaDescMatch?.[1]?.trim() || '';
+  const metaDesc      = decodeHtmlEntities((metaDescMatch?.[1]?.trim()) || '');
   const slug          = urlSlug(url);
   const firstPara     = firstParagraphText(html);
 
@@ -1222,6 +1344,8 @@ async function checkKeywordPresence(url: string, keyword: string): Promise<Findi
       recommendation,
       evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword), missing_tokens_in_title: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(title))), missing_tokens_in_h1: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(h1))), inferred_actual_topic: actualTopic, first_para_keyword_overlap: Number(firstParaOverlapWithKeyword.toFixed(2)) },
       data_source: 'html_fetch',
+      /* Phase 16.3 — tag for cross-finding reinforcement detection */
+      signals: ['keyword_mismatch'],
     });
   } else if (!titleStrong && !h1Strong) {
     findings.push({
@@ -1349,6 +1473,10 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
        All three use data already in the fetched SerpFeatures response. */
     const ctrUnderperforming = ratio < 0.8;
     let serpEnrichment: { detail_addendum: string; recommendation: string } | null = null;
+    /* Phase 16.3 — accumulate signals + enrichment sources during the
+       SerpAPI block so the outer finding-push can attach them. */
+    const ctrSignals: NonNullable<Finding['signals']> = [];
+    const ctrEnrichmentSources: NonNullable<Finding['enrichment_sources']> = [];
     if (ctrUnderperforming && campaignKeyword && campaignKeyword.trim()) {
       const serpFeatures = await fetchSerpFeatures(campaignKeyword, projectId);
       if (serpFeatures) {
@@ -1364,22 +1492,29 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
           return `\n\n**Competitive landscape (live top-10 domains for "${campaignKeyword}"):** ${serpFeatures.top_10_domains.slice(0, 10).map(d => `\`${d}\``).join(', ')}`;
         };
         const buildPositionBlock = (): string => {
-          /* Find if the audited URL appears in the live top-100. SerpAPI
-             returns top-10 organic in `top_10_urls` (we capped num=10 in
-             the fetch). Position verification: does GSC's avg position
-             match SerpAPI's live position? */
+          /* Find if the audited URL appears in the live top-100. Phase 16.3
+             upgraded from num=10 to num=100 — exact position 1-100 is now
+             reportable, vs old binary "in top-10 or not." */
           const normalizedAudited = url.replace(/\/$/, '').toLowerCase();
+          /* Prefer top_100_urls when available (Phase 16.3); fall back to
+             top_10_urls for any cached entries that pre-date the bump. */
+          const liveUrls = (Array.isArray(serpFeatures.top_100_urls) && serpFeatures.top_100_urls.length > 0)
+            ? serpFeatures.top_100_urls
+            : serpFeatures.top_10_urls;
+          const depthLabel = (Array.isArray(serpFeatures.top_100_urls) && serpFeatures.top_100_urls.length > 0)
+            ? 'top-100' : 'top-10';
           let livePosition: number | null = null;
-          for (let i = 0; i < serpFeatures.top_10_urls.length; i++) {
-            const u = (serpFeatures.top_10_urls[i] || '').replace(/\/$/, '').toLowerCase();
+          for (let i = 0; i < liveUrls.length; i++) {
+            const u = (liveUrls[i] || '').replace(/\/$/, '').toLowerCase();
             if (u === normalizedAudited) {
               livePosition = i + 1;
               break;
             }
           }
           if (livePosition === null) {
-            /* Audited URL not in top-10 of live SERP for the campaign keyword */
-            return `\n\n**Live SERP position check:** the audited URL does NOT appear in the live top-10 for "${campaignKeyword}". GSC reports average position ${position.toFixed(1)} (aggregated across queries and time); the live SERP for the campaign keyword specifically has this URL at position 11+. The GSC average is therefore driven by other queries — see GSC query distribution finding for which queries actually rank this URL.`;
+            /* Audited URL not in top-100 (or top-10 for legacy cache) */
+            const cutoff = depthLabel === 'top-100' ? '100+' : '11+';
+            return `\n\n**Live SERP position check:** the audited URL does NOT appear in the live ${depthLabel} for "${campaignKeyword}". GSC reports average position ${position.toFixed(1)} (aggregated across queries and time); the live SERP for the campaign keyword specifically has this URL at position ${cutoff}. The GSC average is therefore driven by other queries — see GSC query distribution finding for which queries actually rank this URL.`;
           }
           const gscLive = Math.abs(livePosition - position);
           if (gscLive >= 3) {
@@ -1387,6 +1522,18 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
           }
           return `\n\n**Live SERP position check:** the audited URL ranks at live position **${livePosition}** for "${campaignKeyword}", consistent with GSC's average of **${position.toFixed(1)}**. Position is stable across data windows.`;
         };
+        /* Phase 16.3 — detect url_not_in_top_10 signal here so the
+           outer finding-push can tag it without re-running the loop. */
+        const normalizedAudited = url.replace(/\/$/, '').toLowerCase();
+        const liveUrlsForSignal = (Array.isArray(serpFeatures.top_100_urls) && serpFeatures.top_100_urls.length > 0)
+          ? serpFeatures.top_100_urls
+          : serpFeatures.top_10_urls;
+        let urlInTop10 = false;
+        for (let i = 0; i < Math.min(10, liveUrlsForSignal.length); i++) {
+          const u = (liveUrlsForSignal[i] || '').replace(/\/$/, '').toLowerCase();
+          if (u === normalizedAudited) { urlInTop10 = true; break; }
+        }
+        if (!urlInTop10) ctrSignals.push('url_not_in_top_10');
         const paaBlock         = buildPaaBlock();
         const competitorBlock  = buildCompetitorBlock();
         const positionBlock    = buildPositionBlock();
@@ -1425,26 +1572,47 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
     }
 
     if (ratio < 0.5) {
+      /* Phase 16.3 — business-impact translation appended after the
+         SerpAPI enrichment for Critical findings. */
+      const businessImpact = computeBusinessImpact({
+        impressions,
+        actual_ctr_pct: actualCtr,
+        expected_ctr_pct: expectedCtr,
+        actual_clicks: clicks,
+      });
       const baseDetail = detail + `\n\nThis is a major underperformance signal. ${serpEnrichment ? '' : 'Either (a) the title/meta description is uncompelling at the SERP, or (b) the SERP for this query is dominated by features (AI Overview, featured snippet, PAA) that suppress organic CTR. Both are addressable.'}`;
+      /* Phase 16.3 — record SerpAPI as enrichment source when it fired */
+      if (serpEnrichment) ctrEnrichmentSources.push('serpapi');
       findings.push({
         audit_kind: 'engagement_signals',
         severity:   'red',
         finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — significant underperformance`,
-        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || ''),
+        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || '') + businessImpact,
         recommendation: serpEnrichment?.recommendation || `Rewrite the title and meta description for click appeal — front-load the benefit, include a number or specific outcome, and ensure the keyword sits at the start. Then check the live SERP for features that may be siphoning clicks. _To have the platform verify SERP features automatically on every audit, set the \`SERPAPI_KEY\` environment variable on Vercel — applies to all projects, current and future._`,
         evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100), serp_verified: !!serpEnrichment },
         data_source: 'gsc',
+        enrichment_sources: ctrEnrichmentSources.length > 0 ? [...ctrEnrichmentSources] : undefined,
+        signals: ctrSignals.length > 0 ? [...ctrSignals] : undefined,
       });
     } else if (ratio < 0.8) {
+      const businessImpact = computeBusinessImpact({
+        impressions,
+        actual_ctr_pct: actualCtr,
+        expected_ctr_pct: expectedCtr,
+        actual_clicks: clicks,
+      });
       const baseDetail = detail + `\n\nNot critical, but a clearer title or stronger meta description could earn measurably more clicks at this position.`;
+      if (serpEnrichment) ctrEnrichmentSources.push('serpapi');
       findings.push({
         audit_kind: 'engagement_signals',
         severity:   'amber',
         finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — mild underperformance`,
-        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || ''),
+        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || '') + businessImpact,
         recommendation: serpEnrichment?.recommendation || `A/B candidates: lead the title with the searcher's intent verb, include a specific year/number for freshness, add a clear value proposition in the meta description.`,
         evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100), serp_verified: !!serpEnrichment },
         data_source: 'gsc',
+        enrichment_sources: ctrEnrichmentSources.length > 0 ? [...ctrEnrichmentSources] : undefined,
+        signals: ctrSignals.length > 0 ? [...ctrSignals] : undefined,
       });
     } else if (ratio > 1.3) {
       findings.push({
@@ -1893,6 +2061,12 @@ function renderAuditReport(opts: {
   const green  = opts.findings.filter(f => f.severity === 'green');
   const info   = opts.findings.filter(f => f.severity === 'info');
 
+  /* Phase 16.3 — pre-render passes:
+     1. Mark the foundational Critical finding for 🎯 badge
+     2. Detect cross-finding converging evidence for the banner */
+  pickFoundationalCritical(opts.findings);
+  const convergingBanner = detectConvergingEvidence(opts.findings);
+
   lines.push('## Summary');
   lines.push('');
   lines.push(`| Severity | Count |`);
@@ -1915,6 +2089,14 @@ function renderAuditReport(opts: {
       const m = findingSourceMeta(f);
       if (m) sourceCounts[m.label] = (sourceCounts[m.label] || 0) + 1;
     }
+    /* Phase 16.3 — credit SerpAPI as an enrichment source when ANY finding
+       lists it in enrichment_sources. Counts how many findings were
+       SerpAPI-enriched and adds them to the sources-used line. */
+    const serpapiEnrichedCount = opts.findings.filter(f =>
+      Array.isArray(f.enrichment_sources) && f.enrichment_sources.includes('serpapi')).length;
+    if (serpapiEnrichedCount > 0) {
+      sourceCounts['SerpAPI (live SERP enrichment)'] = serpapiEnrichedCount;
+    }
     const sourceList = Object.entries(sourceCounts)
       .sort((a, b) => b[1] - a[1])
       .map(([label, count]) => `${label} (${count})`)
@@ -1929,16 +2111,32 @@ function renderAuditReport(opts: {
   }
   lines.push('');
 
-  /* Critical first */
+  /* Critical first — Phase 16.3 prepends the converging-evidence banner
+     when 2+ Critical findings corroborate the same diagnosis, and marks
+     the foundational finding with 🎯. */
   if (red.length > 0) {
     lines.push('## 🔴 Critical issues (fix first)');
     lines.push('');
+    if (convergingBanner) {
+      lines.push(convergingBanner);
+      lines.push('');
+    }
     for (const f of red) {
-      lines.push(`### ${f.finding_title}`);
+      const foundationalBadge = f.is_foundational ? '🎯 ' : '';
+      lines.push(`### ${foundationalBadge}${f.finding_title}`);
+      if (f.is_foundational) {
+        lines.push('');
+        lines.push(`> **Foundational fix — address this Critical first.** This finding's recommendation, if adopted, will reframe the remaining Critical findings (their context resets against the corrected target). Sequencing matters: tactical fixes done in the wrong order get undone.`);
+      }
       if (f.finding_detail)  lines.push(f.finding_detail);
       if (f.recommendation)  { lines.push(''); lines.push(`**Recommendation:** ${f.recommendation}`); }
       const meta = findingSourceMeta(f);
-      if (meta) lines.push(`*Source · ${meta.label} · confidence ${meta.confidence}/100*`);
+      if (meta) {
+        const enrichmentNote = Array.isArray(f.enrichment_sources) && f.enrichment_sources.length > 0
+          ? ` · enriched by ${f.enrichment_sources.join(', ')}`
+          : '';
+        lines.push(`*Source · ${meta.label} · confidence ${meta.confidence}/100${enrichmentNote}*`);
+      }
       lines.push('');
     }
   }

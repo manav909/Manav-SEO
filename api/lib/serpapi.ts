@@ -62,9 +62,15 @@ export interface SerpFeatures {
   ads_top:            number;              /* top-of-page ads count */
   ads_bottom:         number;
   organic_count:      number;
-  /* For downstream competitive analysis */
-  top_10_urls:        string[];            /* organic top 10 URLs in order */
+  /* For downstream competitive analysis.
+     Phase 16.3 — num bumped from 10 to 100 (same cost per call, much more
+     useful for position-check depth). top_10_* fields retained for
+     backward compatibility with cluster-map consumers; new top_100_*
+     fields enable exact position-in-100 reporting for the audited URL. */
+  top_10_urls:        string[];            /* organic top 10 URLs in order (first 10 from top_100_urls) */
   top_10_domains:     string[];            /* unique organic top 10 domains in order */
+  top_100_urls:       string[];            /* organic top 100 URLs in order — full depth for position-check */
+  top_100_domains:    string[];            /* unique organic top 100 domains in order */
   /* Provenance */
   fetched_at:         string;              /* ISO timestamp */
   query:              string;
@@ -92,7 +98,9 @@ const FETCH_TIMEOUT_MS = 15000;
 function buildCacheKey(query: string, country: string): string {
   const normalized = query.toLowerCase().trim().replace(/\s+/g, ' ');
   const hash = createHash('md5').update(normalized).digest('hex').slice(0, 16);
-  return `serpapi:google:${country}:${hash}`;
+  /* Phase 16.3 — v2 prefix forces fresh fetch since num=100 (was 10).
+     Old v1 cache entries become orphaned but expire naturally in 7 days. */
+  return `serpapi:google:v2:${country}:${hash}`;
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -153,7 +161,17 @@ async function readCache(cacheKey: string): Promise<SerpFeatures | null> {
     if (ageMs > CACHE_TTL_DAYS * 24 * 60 * 60 * 1000) return null;
     /* response may be string (JSON) or object depending on insert form */
     const parsed = typeof row.response === 'string' ? JSON.parse(row.response) : row.response;
-    return { ...parsed, cache_hit: true } as SerpFeatures;
+    /* Defensive normalization (Phase 16.3): if a cached entry pre-dates
+       the top_100_* fields, derive them from top_10_*. The v2 cache-key
+       prefix should orphan all v1 entries, but this guards against any
+       slip-through (e.g. if the prefix is changed back). */
+    const normalized: SerpFeatures = {
+      ...parsed,
+      top_100_urls:    Array.isArray(parsed?.top_100_urls)    ? parsed.top_100_urls    : (Array.isArray(parsed?.top_10_urls)    ? parsed.top_10_urls    : []),
+      top_100_domains: Array.isArray(parsed?.top_100_domains) ? parsed.top_100_domains : (Array.isArray(parsed?.top_10_domains) ? parsed.top_10_domains : []),
+      cache_hit:       true,
+    };
+    return normalized;
   } catch {
     return null;
   }
@@ -218,13 +236,21 @@ function parseSerpApiResponse(json: any, query: string, country: string): SerpFe
   const ads_top    = ads_arr.filter((a: any) => a?.position && a.position <= 4).length;
   const ads_bottom = ads_arr.filter((a: any) => a?.position && a.position > 4).length;
 
-  /* Organic results */
+  /* Organic results.
+     Phase 16.3 — extract full top 100. top_10_* fields are derived slices
+     for backward compat with cluster-map's existing logic. */
   const organic = Array.isArray(json?.organic_results) ? json.organic_results : [];
   const organic_count = organic.length;
-  const top_10 = organic.slice(0, 10).map((r: any) => r?.link).filter((l: any) => typeof l === 'string');
+  const top_100 = organic.slice(0, 100).map((r: any) => r?.link).filter((l: any) => typeof l === 'string');
+  const top_100_domains_arr: string[] = [];
+  for (const u of top_100) {
+    const d = extractDomainFromUrl(u);
+    if (d && !top_100_domains_arr.includes(d)) top_100_domains_arr.push(d);
+  }
+  const top_10 = top_100.slice(0, 10);
   const top_10_domains_arr: string[] = [];
-  for (const url of top_10) {
-    const d = extractDomainFromUrl(url);
+  for (const u of top_10) {
+    const d = extractDomainFromUrl(u);
     if (d && !top_10_domains_arr.includes(d)) top_10_domains_arr.push(d);
   }
 
@@ -241,12 +267,14 @@ function parseSerpApiResponse(json: any, query: string, country: string): SerpFe
     ads_top,
     ads_bottom,
     organic_count,
-    top_10_urls:    top_10,
-    top_10_domains: top_10_domains_arr,
-    fetched_at:     new Date().toISOString(),
+    top_10_urls:     top_10,
+    top_10_domains:  top_10_domains_arr,
+    top_100_urls:    top_100,
+    top_100_domains: top_100_domains_arr,
+    fetched_at:      new Date().toISOString(),
     query,
     country,
-    cache_hit:      false,
+    cache_hit:       false,
   };
 }
 
@@ -294,13 +322,16 @@ export async function fetchSerpFeatures(
     return null;
   }
 
-  /* 3. Build SerpAPI request URL */
+  /* 3. Build SerpAPI request URL.
+     Phase 16.3 — num bumped to 100 (was 10). Same SerpAPI cost per call,
+     dramatically more useful for position-check depth ("URL at position 47"
+     vs "URL not in top-10") and future competitive-depth analyses. */
   const url = new URL('https://serpapi.com/search');
   url.searchParams.set('engine', 'google');
   url.searchParams.set('q', query);
   url.searchParams.set('gl', country);
   url.searchParams.set('hl', 'en');
-  url.searchParams.set('num', '10');
+  url.searchParams.set('num', '100');
   url.searchParams.set('api_key', apiKey);
 
   /* 4. Fetch with timeout */

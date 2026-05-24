@@ -1514,6 +1514,7 @@ async function enrichClustersWithSerpApiCompetitors(
 }
 
 
+async function enrichWithCompetitorOwnership(
   clusters: Cluster[],
   campaignKeyword: string,
   competitors: any[],
