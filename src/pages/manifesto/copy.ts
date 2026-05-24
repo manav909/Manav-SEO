@@ -85,6 +85,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch13:                       'The Future Belongs to Builders',
 
     join_cta:                   'Become a client',
+    audit_cta:                  'Request a free audit',
+    pdf_cta:                    'Save as PDF',
     closing_cta:                'You can join now, while the curve is still gentle.',
     lang_note:                  'Structural copy localized. Technical deep-dives in English.',
     back:                       'Return',
@@ -155,6 +157,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch13:                       'भविष्य निर्माताओं का है',
 
     join_cta:                   'ग्राहक बनें',
+    audit_cta:                  'मुफ्त ऑडिट का अनुरोध करें',
+    pdf_cta:                    'PDF के रूप में सहेजें',
     closing_cta:                'आप अभी शामिल हो सकते हैं, जब वक्र अभी भी कोमल है।',
     lang_note:                  'संरचनात्मक प्रति स्थानीयकृत। तकनीकी विवरण अंग्रेज़ी में।',
     back:                       'वापस जाएँ',
@@ -225,6 +229,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch13:                       'El futuro pertenece a los constructores',
 
     join_cta:                   'Conviértete en cliente',
+    audit_cta:                  'Solicitar una auditoría gratuita',
+    pdf_cta:                    'Guardar como PDF',
     closing_cta:                'Puedes unirte ahora, mientras la curva aún es suave.',
     lang_note:                  'Texto estructural localizado. Detalles técnicos en inglés.',
     back:                       'Volver',
@@ -295,6 +301,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch13:                       "L'avenir appartient aux bâtisseurs",
 
     join_cta:                   'Devenez client',
+    audit_cta:                  'Demander un audit gratuit',
+    pdf_cta:                    'Enregistrer en PDF',
     closing_cta:                'Vous pouvez rejoindre maintenant, tant que la courbe reste douce.',
     lang_note:                  'Texte structurel localisé. Détails techniques en anglais.',
     back:                       'Retour',
@@ -365,6 +373,8 @@ export const COPY: Record<Lang, Record<string, string>> = {
     ch13:                       'Die Zukunft gehört den Erbauern',
 
     join_cta:                   'Kunde werden',
+    audit_cta:                  'Kostenloses Audit anfordern',
+    pdf_cta:                    'Als PDF speichern',
     closing_cta:                'Sie können jetzt beitreten, solange die Kurve noch sanft ist.',
     lang_note:                  'Strukturtext lokalisiert. Technische Details auf Englisch.',
     back:                       'Zurück',

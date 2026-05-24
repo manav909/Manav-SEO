@@ -70,6 +70,7 @@ export default function AIConcierge() {
     '/ask',
     '/dashboard',
     '/admin',
+    '/manifesto',
   ]);
 
   // Pulse when page changes to suggest help
