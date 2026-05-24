@@ -1385,7 +1385,7 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
         severity:   'red',
         finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — significant underperformance`,
         finding_detail: baseDetail + (serpEnrichment?.detail_addendum || ''),
-        recommendation: serpEnrichment?.recommendation || `Rewrite the title and meta description for click appeal — front-load the benefit, include a number or specific outcome, and ensure the keyword sits at the start. Then check the live SERP for features that may be siphoning clicks. _Add a SerpAPI key in Data Room → Integrations to have the platform verify SERP features automatically._`,
+        recommendation: serpEnrichment?.recommendation || `Rewrite the title and meta description for click appeal — front-load the benefit, include a number or specific outcome, and ensure the keyword sits at the start. Then check the live SERP for features that may be siphoning clicks. _To have the platform verify SERP features automatically on every audit, set the \`SERPAPI_KEY\` environment variable on Vercel — applies to all projects, current and future._`,
         evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100), serp_verified: !!serpEnrichment },
         data_source: 'gsc',
       });

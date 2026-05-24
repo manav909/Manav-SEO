@@ -19,9 +19,14 @@
      - freshness comparison: top-10 dateModified vs audited page
 
    Architecture decisions (read before changing):
-   1. SerpAPI key lives in `project_integrations` (provider='serpapi',
-      `api_key` column). Matches PSI's pattern exactly. The Data Room
-      Integrations UI already handles row creation.
+   1. SerpAPI key resolved in two tiers (see `lookupSerpApiKey`):
+        (a) per-project override from `project_integrations` (provider='serpapi')
+            — useful for white-label clients with separate billing
+        (b) platform-wide `SERPAPI_KEY` env var (Vercel) — the DEFAULT
+            path for normal multi-tenant operation. SerpAPI keys are
+            account-scoped, so one key naturally serves all projects.
+      Set the env var once; every current AND future project picks it
+      up automatically. No SQL ritual when new projects are created.
    2. Cache uses `ai_content_cache` with `project_id: null` — platform-
       wide because SERP data is public (Google serves identical SERPs
       to all users in a country at a point in time). One client audit
@@ -91,11 +96,23 @@ function buildCacheKey(query: string, country: string): string {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   Key lookup. Project-scoped (each project sets its own SerpAPI key
-   in Data Room → Integrations). Returns null if no row, no key, or
-   status indicates disabled.
+   Key lookup. Two-tier resolution:
+
+   1. Per-project override from `project_integrations` (provider='serpapi').
+      Use this only when a specific project needs a different key
+      (white-label clients with separate SerpAPI billing, etc.).
+
+   2. Platform-wide env-var fallback (`SERPAPI_KEY`). This is the
+      DEFAULT path for normal multi-tenant operation — set the env
+      var once on Vercel, every project (current AND future) uses
+      that key. SerpAPI keys are account-scoped anyway, so one key
+      naturally serves all projects.
+
+   Returns null if neither tier provides a key. Callers handle null
+   gracefully and fall through to the original recommendation.
    ───────────────────────────────────────────────────────────────── */
 async function lookupSerpApiKey(projectId: string): Promise<string | null> {
+  /* Tier 1: per-project override */
   try {
     const { data } = await db().from("project_integrations")
       .select("api_key, status")
@@ -103,12 +120,20 @@ async function lookupSerpApiKey(projectId: string): Promise<string | null> {
       .eq("provider", 'serpapi')
       .maybeSingle();
     const row = data as { api_key?: string; status?: string } | null;
-    if (!row || !row.api_key) return null;
-    if (row.status && row.status !== 'active' && row.status !== 'connected') return null;
-    return row.api_key;
+    if (row?.api_key) {
+      if (!row.status || row.status === 'active' || row.status === 'connected') {
+        return row.api_key;
+      }
+    }
   } catch {
-    return null;
+    /* DB lookup failed — fall through to env-var tier rather than aborting */
   }
+
+  /* Tier 2: platform-wide env-var. Default for normal operation. */
+  const envKey = (process.env.SERPAPI_KEY || '').trim();
+  if (envKey) return envKey;
+
+  return null;
 }
 
 /* ─────────────────────────────────────────────────────────────────
