@@ -205,18 +205,44 @@ function pickFoundationalCritical(findings: Finding[]): void {
 /** Detect when 2+ Critical findings share signals that converge on the
  *  same diagnosis. Returns a banner string (markdown) or null. */
 function detectConvergingEvidence(findings: Finding[]): string | null {
-  const reds = findings.filter(f => f.severity === 'red');
-  if (reds.length < 2) return null;
-  /* Keyword-mismatch convergence: 2+ Critical findings tagged with
-     keyword_mismatch or url_not_in_top_10 or serp_topic_mismatch */
-  const kwSignals = reds.filter(f =>
+  /* Phase 16.7 — count BOTH red AND amber findings tagged with the
+     relevant signals. The original Critical-only counting created a
+     mismatch where the banner said "2 signals" but listed 3 things
+     (the third being the amber diffuse-intent finding's signal). Senior
+     DMS read: amber-severity convergence is still convergence — counting
+     it is more honest. */
+  const SIGNAL_KEYS = ['keyword_mismatch', 'url_not_in_top_10', 'serp_topic_mismatch', 'first_paragraph_off_topic'] as const;
+  const candidates = findings.filter(f =>
+    (f.severity === 'red' || f.severity === 'amber') &&
     Array.isArray(f.signals) &&
-    f.signals.some(s => s === 'keyword_mismatch' || s === 'url_not_in_top_10' || s === 'serp_topic_mismatch'));
-  if (kwSignals.length >= 2) {
-    const signalCount = kwSignals.length;
-    return `> 🔗 **Converging evidence — ${signalCount} independent signals support the campaign-keyword-pivot recommendation:** title/H1 token mismatch, audited URL absent from live top-10 for the campaign keyword, and the live top-10 SERP composition is misaligned with this page's topic. When 2+ Critical findings independently corroborate the same diagnosis, the recommendation hardens from hypothesis to operational call. Address the keyword pivot before downstream tactical fixes — those will reset against the new target.`;
+    f.signals.some(s => (SIGNAL_KEYS as readonly string[]).includes(s)));
+  if (candidates.length < 2) return null;
+  /* Build the dynamic signal-list from what's actually tagged. Each
+     bullet refers to the specific evidence that triggered the signal. */
+  const presentSignals = new Set<string>();
+  for (const f of candidates) {
+    if (!f.signals) continue;
+    for (const s of f.signals) {
+      if ((SIGNAL_KEYS as readonly string[]).includes(s)) presentSignals.add(s);
+    }
   }
-  return null;
+  const signalDescriptions: Record<string, string> = {
+    keyword_mismatch:          'title/H1 token mismatch with the campaign keyword',
+    url_not_in_top_10:         'audited URL absent from the live top-10 for the campaign keyword',
+    serp_topic_mismatch:       'live top-10 SERP composition is misaligned with this page\'s topic (diffuse-intent SERP)',
+    first_paragraph_off_topic: 'first paragraph has zero overlap with title/H1 (templated/off-topic copy)',
+  };
+  const bullets = Array.from(presentSignals)
+    .map(s => `- ${signalDescriptions[s] || s}`)
+    .join('\n');
+  /* Note the severity mix in the banner so the reader knows the count
+     includes both red Critical and amber findings. */
+  const redCount   = candidates.filter(f => f.severity === 'red').length;
+  const amberCount = candidates.filter(f => f.severity === 'amber').length;
+  const severitySummary = amberCount > 0
+    ? `${redCount} Critical + ${amberCount} Warning`
+    : `${redCount} Critical`;
+  return `> 🔗 **Converging evidence — ${candidates.length} independent signal(s) (${severitySummary}) support the campaign-keyword-pivot recommendation:**\n>\n${bullets.split('\n').map(b => `> ${b}`).join('\n')}\n>\n> When 2+ findings independently corroborate the same diagnosis, the recommendation hardens from hypothesis to operational call. Address the keyword pivot before downstream tactical fixes — those will reset against the new target.`;
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -333,6 +359,24 @@ export async function runTechnicalAudit(opts: {
         const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution','first_para_topicality','heading_hierarchy_vs_paa','diffuse_intent_serp','competitive_content_benchmark','content_freshness','image_optimization','hreflang'][i];
         failedChecks.push(checkName);
       }
+    }
+
+    /* Phase 16.7 — Cross-finding relationship post-process.
+       When diffuse-intent SERP fired AND content-benchmark fired AND the
+       audited page exceeds competitor median by >150%, the bloat
+       interpretation is misleading: the median is dragged down by
+       different-intent pages dominating top-10. A senior DMS reading
+       both findings spots this; the audit should make the connection
+       explicit so a junior practitioner doesn't conclude "my page is
+       bloated" when the truth is "competitors are different content
+       types entirely." */
+    const diffuseIntentFinding = findings.find(f => /Diffuse-intent SERP/i.test(f.finding_title));
+    const benchmarkFinding = findings.find(f => /Content depth.*SERP median/i.test(f.finding_title));
+    if (diffuseIntentFinding && benchmarkFinding && benchmarkFinding.evidence?.word_ratio > 1.5) {
+      const categoryCount = diffuseIntentFinding.evidence?.distinct_categories || 0;
+      const wordRatio = benchmarkFinding.evidence.word_ratio;
+      const note = `\n\n**Note on the median:** the competitor median is dragged down by intent diffusion (see the *Diffuse-intent SERP* finding — ${categoryCount} distinct intent categories in top-10). Your content length (${Math.round(wordRatio * 100)}% of median) reflects this intent mismatch, not bloat. Compared to genuine peer content of the SAME intent class, your page may be similar or even shorter. Don't trim length based on this comparison alone — the more reliable signal is heading-hierarchy and topical coverage vs same-intent peers, which requires manually filtering the top-10 list to only the comparable page types.`;
+      benchmarkFinding.finding_detail = (benchmarkFinding.finding_detail || '') + note;
     }
 
     /* Insert findings into the DB */
@@ -1312,6 +1356,10 @@ async function checkFirstParagraphTopicality(url: string): Promise<Finding[]> {
       recommendation: `Rewrite the first paragraph to directly address the page's stated topic. Open with the searcher's problem or question, then frame how the page answers it. Do not lead with product taglines or generic marketing copy.`,
       evidence: { overlap_fraction: 0, first_paragraph: firstPara.slice(0, 400), title, h1 },
       data_source: 'html_fetch',
+      /* Phase 16.7 — tag for cross-finding convergence detection.
+         When THIS plus keyword_mismatch fire together, three independent
+         signals all point at "page is mistargeted." */
+      signals: ['first_paragraph_off_topic'],
     });
   } else if (overlap < 0.2) {
     findings.push({
@@ -1996,6 +2044,22 @@ async function checkEngagementSignals(url: string, projectId: string): Promise<F
           finding_detail: `Visitors are leaving in under 30 seconds on average across ${perPage.sessions.toLocaleString()} sessions. For a content page this typically means either intent mismatch (wrong visitors arriving) or above-the-fold content not delivering on the SERP snippet's promise.`,
           recommendation: `Cross-reference with the first-paragraph topicality finding. If the first paragraph is off-topic OR uncompelling, that's likely the cause. Add a table of contents to set expectations; surface related content for visitors who decide this isn't the right page.`,
           evidence: { avg_session_sec: perPage.avg_session_sec, sessions: perPage.sessions, scope: 'per-page' },
+          data_source: 'ga4',
+        });
+      }
+      /* Phase 16.7 — Zero-conversion alert. When the page has meaningful
+         traffic but zero conversions, that's either a conversion-tracking
+         setup issue OR a real funnel problem on this page. Both warrant
+         surfacing. Threshold (sessions >= 50) avoids noise on low-volume
+         pages where 0 conversions could just mean low sample size. */
+      if (perPage.sessions >= 50 && perPage.conversions === 0) {
+        findings.push({
+          audit_kind: 'engagement_signals',
+          severity: 'amber',
+          finding_title: `Zero conversions recorded on ${perPage.sessions.toLocaleString()} sessions — tracking gap or real funnel problem`,
+          finding_detail: `Page-level GA4 reports **0 conversions** across ${perPage.sessions.toLocaleString()} sessions over ${perPage.date_range_days} days. This is either:\n\n1. **A conversion-tracking gap** — GA4 conversion events aren't configured for this URL's funnel (form submits, signups, demo requests, paid plan triggers). Common when a page was added after initial GA4 setup.\n2. **A real funnel problem** — visitors arrive and engage (sessions > 0, engagement rate ${eRate.toFixed(1)}%) but none take the conversion action. The page may be informational-only, missing CTAs, or the CTA target doesn't match visitor intent.\n\nA 0% conversion rate on ${perPage.sessions.toLocaleString()} sessions is a signal worth investigating either way — even if the audit's CTR-recovery work succeeds and brings 150+ more clicks/month, those clicks won't translate to outcomes without a working conversion path.`,
+          recommendation: `**Step 1:** Verify in GA4 → Admin → Events that conversion events are firing for this URL. Filter Reports → Engagement → Events by pagePath = "${pagePath}" and check that the conversion-flagged event(s) appear. If they don't fire here, you have a tracking gap; instrument the relevant CTAs. **Step 2:** If tracking IS working and conversions genuinely == 0, audit the page's CTA structure: are CTAs present above the fold AND at content end? Does the CTA target match the searcher's intent (pricing query → demo CTA may mismatch intent → "see plans" CTA fits better)? Pair this with the CTR work — recovering clicks without fixing conversion means recovering visitors who still don't convert.`,
+          evidence: { sessions: perPage.sessions, conversions: 0, engagement_rate_pct: eRate, page_path: pagePath },
           data_source: 'ga4',
         });
       }
