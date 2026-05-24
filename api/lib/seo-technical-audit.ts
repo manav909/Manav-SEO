@@ -23,7 +23,13 @@ import { db } from "./db.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
 import { fetchSerpFeatures, summarizeSerpFeatures } from "./serpapi.js";
 import { ga4PullPageMetrics } from "./pm-ga4.js";
-import { renderAuditForAllLenses, concatenateLensReports, type LensInputs } from "./seo-technical-audit-lenses.js";
+/* Phase 16.9 — retired the 6-lens module in favor of a single deep
+   technical SEO report. Same Finding evidence flows into a more
+   comprehensive cross-referenced document; role-tailored views are
+   derived at consumption time by readers (human or LLM) instead of
+   at render time. seo-technical-audit-lenses.ts remains in the repo
+   for one phase as a safety hedge but is no longer imported. */
+import { renderDeepAuditReport, type DeepReportInputs } from "./seo-technical-audit-deep-report.js";
 
 /* Phase 16.4 — ANTHROPIC_API_KEY needed for diffuse-intent classifier
    in checkDiffuseIntentSerp. Single LLM call per audit run when SerpAPI
@@ -148,19 +154,22 @@ function computeBusinessImpact(opts: {
   actual_ctr_pct: number;
   expected_ctr_pct: number;
   actual_clicks: number;
-}): string {
+}): { markdown: string; structured: { missed_clicks: number; expected_clicks: number; dollar_low: number; dollar_high: number } | null } {
   const { impressions, actual_ctr_pct, expected_ctr_pct, actual_clicks } = opts;
-  if (!impressions || impressions < 100) return '';
-  if (!expected_ctr_pct || expected_ctr_pct <= actual_ctr_pct) return '';
+  if (!impressions || impressions < 100) return { markdown: '', structured: null };
+  if (!expected_ctr_pct || expected_ctr_pct <= actual_ctr_pct) return { markdown: '', structured: null };
   const expectedClicks = Math.round((impressions * expected_ctr_pct) / 100);
   const missedClicks   = Math.max(0, expectedClicks - actual_clicks);
-  if (missedClicks < 5) return '';
+  if (missedClicks < 5) return { markdown: '', structured: null };
   /* Click-value range: $10-30 is the conservative midrange for B2B SaaS
      pricing-page / commercial-intent traffic. Lower bound covers free-trial
      funnels; upper bound covers enterprise lead-gen. Treat directionally. */
   const lowDollar  = missedClicks * 10;
   const highDollar = missedClicks * 30;
-  return `\n\n**Business impact:** at expected CTR of ${expected_ctr_pct.toFixed(1)}%, ${impressions.toLocaleString()} monthly impressions would yield ~${expectedClicks.toLocaleString()} clicks vs actual ${actual_clicks.toLocaleString()} → **~${missedClicks.toLocaleString()} missed monthly clicks**. At B2B SaaS commercial-page click value of \\$10-30 (industry benchmark, treat directionally), that's **\\$${lowDollar.toLocaleString()}-\\$${highDollar.toLocaleString()} monthly opportunity** at full recovery.`;
+  return {
+    markdown: `\n\n**Business impact:** at expected CTR of ${expected_ctr_pct.toFixed(1)}%, ${impressions.toLocaleString()} monthly impressions would yield ~${expectedClicks.toLocaleString()} clicks vs actual ${actual_clicks.toLocaleString()} → **~${missedClicks.toLocaleString()} missed monthly clicks**. At B2B SaaS commercial-page click value of \\$10-30 (industry benchmark, treat directionally), that's **\\$${lowDollar.toLocaleString()}-\\$${highDollar.toLocaleString()} monthly opportunity** at full recovery.`,
+    structured: { missed_clicks: missedClicks, expected_clicks: expectedClicks, dollar_low: lowDollar, dollar_high: highDollar },
+  };
 }
 
 /** Pick the single foundational Critical finding among a list. Rules
@@ -398,12 +407,15 @@ export async function runTechnicalAudit(opts: {
     const panelStatus: 'red' | 'amber' | 'green' = redCount > 0 ? 'red' : amberCount > 0 ? 'amber' : 'green';
     const headline = buildHeadline({ url: target.url, redCount, amberCount, greenCount, failedChecks });
 
-    /* Phase 16.8 — Multi-lens audit rendering.
-       Manav 2026-05-24: instead of one mixed-audience report, generate
-       six role-tailored documents and concatenate with TOC + dividers.
-       Same findings, six fundamentally different framings — Senior DMS,
-       Client, Content Writer, PM, Sales, Junior SEO Exec. The old
-       renderAuditReport function is retained but no longer called. */
+    /* Phase 16.9 — Deep-doc audit rendering.
+       Manav 2026-05-24 architectural redirect: Phase 16.8 multi-lens
+       retired. Replaced by ONE comprehensive technical SEO report with
+       stable §-IDs and internal cross-references. Same findings, one
+       deep narrative. Any role reads the sections relevant to them;
+       any LLM uploaded the doc derives role-specific views (PM tasks,
+       content briefs, client summaries, sales hooks) by querying the
+       cross-reference graph. The lens module remains in the repo as
+       dormant code for one phase before deletion. */
     const sourceConf = weightedFindingConfidence(findings);
     const sourceCounts: Record<string, number> = {};
     for (const f of findings) {
@@ -415,7 +427,7 @@ export async function runTechnicalAudit(opts: {
     if (serpapiEnrichedCount > 0) {
       sourceCounts['SerpAPI (live SERP enrichment)'] = serpapiEnrichedCount;
     }
-    const lensInputs: LensInputs = {
+    const deepReportInputs: DeepReportInputs = {
       url:          target.url,
       keyword:      c.keyword,
       source:       target.source,
@@ -435,8 +447,7 @@ export async function runTechnicalAudit(opts: {
         by_source:           sourceCounts,
       },
     };
-    const lenses = renderAuditForAllLenses(lensInputs);
-    const bodyMd = concatenateLensReports(lenses, lensInputs);
+    const bodyMd = renderDeepAuditReport(deepReportInputs);
 
     /* Honest confidence rating — combines per-finding source quality AND
        check-execution failures. Either dimension dropping low pulls the
@@ -1644,6 +1655,11 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
        All three use data already in the fetched SerpFeatures response. */
     const ctrUnderperforming = ratio < 0.8;
     let serpEnrichment: { detail_addendum: string; recommendation: string } | null = null;
+    /* Phase 16.9 — structured SerpAPI evidence captured alongside the text
+       enrichment, so the deep-doc renderer can read AI Overview / PAA /
+       top-10 / live-position data directly from evidence rather than
+       parsing the detail string. */
+    let serpEvidence: any = null;
     /* Phase 16.3 — accumulate signals + enrichment sources during the
        SerpAPI block so the outer finding-push can attach them. */
     const ctrSignals: NonNullable<Finding['signals']> = [];
@@ -1710,6 +1726,38 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
         const positionBlock    = buildPositionBlock();
         const cacheNote        = serpFeatures.cache_hit ? '_(SERP features cached within last 7 days)_' : '_(Fresh SERP fetch)_';
 
+        /* Phase 16.9 — structured SerpAPI evidence for the deep-doc renderer.
+           Captures the same data that lives in detail-string addendums above,
+           but in a programmatically-accessible shape. live_position is null
+           when the URL is outside the live top-100 (or top-10 for legacy
+           cache entries). */
+        {
+          const audited = url.replace(/\/$/, '').toLowerCase();
+          const urls = (Array.isArray(serpFeatures.top_100_urls) && serpFeatures.top_100_urls.length > 0)
+            ? serpFeatures.top_100_urls : serpFeatures.top_10_urls;
+          let livePos: number | null = null;
+          for (let i = 0; i < urls.length; i++) {
+            if ((urls[i] || '').replace(/\/$/, '').toLowerCase() === audited) { livePos = i + 1; break; }
+          }
+          serpEvidence = {
+            ai_overview:             !!serpFeatures.ai_overview,
+            featured_snippet:        !!serpFeatures.featured_snippet,
+            featured_snippet_owner:  serpFeatures.featured_snippet_owner || null,
+            paa_count:               Array.isArray(serpFeatures.paa_questions) ? serpFeatures.paa_questions.length : 0,
+            paa_questions:           Array.isArray(serpFeatures.paa_questions) ? serpFeatures.paa_questions : [],
+            ads_top:                 serpFeatures.ads_top || 0,
+            ads_bottom:              serpFeatures.ads_bottom || 0,
+            top_10_domains:          Array.isArray(serpFeatures.top_10_domains) ? serpFeatures.top_10_domains : [],
+            top_10_urls:             Array.isArray(serpFeatures.top_10_urls) ? serpFeatures.top_10_urls : [],
+            top_100_domains:         Array.isArray(serpFeatures.top_100_domains) ? serpFeatures.top_100_domains : [],
+            top_100_urls:            Array.isArray(serpFeatures.top_100_urls) ? serpFeatures.top_100_urls : [],
+            live_position:           livePos,
+            in_live_top_10:          urlInTop10,
+            in_live_top_100:         livePos !== null,
+            cache_hit:               !!serpFeatures.cache_hit,
+          };
+        }
+
         if (featuresSummary) {
           /* SERP has notable features siphoning organic CTR */
           const detail_addendum = `\n\n**SerpAPI verification — what's actually on the SERP for "${campaignKeyword}":**\n- ${featuresSummary}${paaBlock}${competitorBlock}${positionBlock}\n\n${cacheNote}`;
@@ -1744,7 +1792,9 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
 
     if (ratio < 0.5) {
       /* Phase 16.3 — business-impact translation appended after the
-         SerpAPI enrichment for Critical findings. */
+         SerpAPI enrichment for Critical findings.
+         Phase 16.9 — refactored to return both markdown + structured;
+         the structured data now flows into evidence for the renderer. */
       const businessImpact = computeBusinessImpact({
         impressions,
         actual_ctr_pct: actualCtr,
@@ -1758,9 +1808,17 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
         audit_kind: 'engagement_signals',
         severity:   'red',
         finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — significant underperformance`,
-        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || '') + businessImpact,
+        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || '') + businessImpact.markdown,
         recommendation: serpEnrichment?.recommendation || `Rewrite the title and meta description for click appeal — front-load the benefit, include a number or specific outcome, and ensure the keyword sits at the start. Then check the live SERP for features that may be siphoning clicks. _To have the platform verify SERP features automatically on every audit, set the \`SERPAPI_KEY\` environment variable on Vercel — applies to all projects, current and future._`,
-        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100), serp_verified: !!serpEnrichment },
+        evidence: {
+          actual_ctr_pct: Number(actualCtr.toFixed(2)),
+          expected_ctr_pct: Number(expectedCtr.toFixed(1)),
+          position, clicks, impressions,
+          ratio_pct: Math.round(ratio * 100),
+          serp_verified: !!serpEnrichment,
+          ...(serpEvidence || {}),
+          ...(businessImpact.structured ? { business_impact: businessImpact.structured } : {}),
+        },
         data_source: 'gsc',
         enrichment_sources: ctrEnrichmentSources.length > 0 ? [...ctrEnrichmentSources] : undefined,
         signals: ctrSignals.length > 0 ? [...ctrSignals] : undefined,
@@ -1778,9 +1836,17 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
         audit_kind: 'engagement_signals',
         severity:   'amber',
         finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — mild underperformance`,
-        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || '') + businessImpact,
+        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || '') + businessImpact.markdown,
         recommendation: serpEnrichment?.recommendation || `A/B candidates: lead the title with the searcher's intent verb, include a specific year/number for freshness, add a clear value proposition in the meta description.`,
-        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100), serp_verified: !!serpEnrichment },
+        evidence: {
+          actual_ctr_pct: Number(actualCtr.toFixed(2)),
+          expected_ctr_pct: Number(expectedCtr.toFixed(1)),
+          position, clicks, impressions,
+          ratio_pct: Math.round(ratio * 100),
+          serp_verified: !!serpEnrichment,
+          ...(serpEvidence || {}),
+          ...(businessImpact.structured ? { business_impact: businessImpact.structured } : {}),
+        },
         data_source: 'gsc',
         enrichment_sources: ctrEnrichmentSources.length > 0 ? [...ctrEnrichmentSources] : undefined,
         signals: ctrSignals.length > 0 ? [...ctrSignals] : undefined,
