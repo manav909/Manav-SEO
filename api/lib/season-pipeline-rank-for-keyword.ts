@@ -1618,6 +1618,160 @@ ${(strategy.phases || []).map((p: any) => `- ${p.phase} (${p.duration_days}d): $
   },
 };
 
+/* ─── Phase 17.3 — Audit context for forecast ────────────────
+   The forecast engine emits modeled trajectories from GSC baselines +
+   difficulty + horizon. The audit's CTR finding carries a complementary
+   signal — `business_impact` — which quantifies the CTR-recovery
+   opportunity at CURRENT rank position. These are additive layers:
+
+     • Forecast clicks target = "where we'll be after ranking improvement"
+     • Audit business_impact  = "what we're leaving on the table right now
+                                  by under-CTR'ing the position we already have"
+
+   Showing both turns the forecast artifact from a modeled projection into
+   a grounded picture: $X immediately available via CTR recovery + Y%
+   additional reach via rank gains over the horizon. */
+
+interface ForecastAuditContext {
+  business_impact: { missed_clicks: number; expected_clicks: number; dollar_low: number; dollar_high: number } | null;
+  business_impact_position: number | null;        /* the rank position the business_impact was computed at */
+  business_impact_actual_ctr_pct: number | null;
+  business_impact_expected_ctr_pct: number | null;
+  foundational_signal: string | null;             /* red finding likely to be foundational fix */
+  content_depth_gate: { current_words: number; target_words: number; ratio_pct: number } | null;
+  intent_diffusion: { categories: number } | null;
+  critical_caveats: string[];                     /* red findings that gate the forecast */
+  source_count: number;
+}
+
+function extractAuditContextForForecast(
+  findings: Array<{ audit_kind: string; severity: string; finding_title: string; finding_detail?: string; recommendation?: string; evidence?: any }>,
+): ForecastAuditContext | null {
+  if (!findings || findings.length === 0) return null;
+
+  let sourceCount = 0;
+
+  /* Business impact from CTR finding */
+  const ctr = findings.find(f => /CTR is \d+%|CTR underperformance|CTR.*of expected/i.test(f.finding_title));
+  const ctrEv = ctr?.evidence || {};
+  const biRaw = ctrEv.business_impact;
+  const business_impact = (biRaw && typeof biRaw === 'object'
+    && biRaw.missed_clicks !== undefined
+    && biRaw.dollar_low !== undefined
+    && biRaw.dollar_high !== undefined)
+    ? {
+        missed_clicks: Number(biRaw.missed_clicks),
+        expected_clicks: Number(biRaw.expected_clicks),
+        dollar_low: Number(biRaw.dollar_low),
+        dollar_high: Number(biRaw.dollar_high),
+      }
+    : null;
+  if (business_impact) sourceCount++;
+  const business_impact_position = (ctrEv.position !== undefined) ? Number(ctrEv.position) : null;
+  const business_impact_actual_ctr_pct = (ctrEv.actual_ctr_pct !== undefined) ? Number(ctrEv.actual_ctr_pct) : null;
+  const business_impact_expected_ctr_pct = (ctrEv.expected_ctr_pct !== undefined) ? Number(ctrEv.expected_ctr_pct) : null;
+
+  /* Content depth gate from competitive_content_benchmark */
+  const compContent = findings.find(f => /Content depth.*SERP median|content exceeds SERP median/i.test(f.finding_title));
+  const ccEv = compContent?.evidence || {};
+  let content_depth_gate: { current_words: number; target_words: number; ratio_pct: number } | null = null;
+  if (ccEv.audited_word_count && ccEv.competitor_median && ccEv.word_ratio !== undefined && Number(ccEv.word_ratio) < 0.8) {
+    content_depth_gate = {
+      current_words: Number(ccEv.audited_word_count),
+      target_words: Number(ccEv.competitor_median),
+      ratio_pct: Math.round(Number(ccEv.word_ratio) * 100),
+    };
+    sourceCount++;
+  }
+
+  /* Intent diffusion warning */
+  const diffuse = findings.find(f => /Diffuse-intent SERP/i.test(f.finding_title));
+  const diffEv = diffuse?.evidence || {};
+  const intent_diffusion = (diffuse && diffEv.distinct_categories >= 3)
+    ? { categories: Number(diffEv.distinct_categories) }
+    : null;
+  if (intent_diffusion) sourceCount++;
+
+  /* Foundational signal — first red finding by severity. is_foundational
+     isn't persisted, so we use the first red as proxy. */
+  const reds = findings.filter(f => f.severity === 'red');
+  const foundational_signal = reds.length > 0 ? reds[0].finding_title : null;
+  if (foundational_signal) sourceCount++;
+
+  /* Critical caveats — red findings beyond the foundational */
+  const critical_caveats: string[] = reds.slice(1, 5).map(f => f.finding_title);
+  if (critical_caveats.length > 0) sourceCount++;
+
+  if (sourceCount === 0) return null;
+
+  return {
+    business_impact,
+    business_impact_position,
+    business_impact_actual_ctr_pct,
+    business_impact_expected_ctr_pct,
+    foundational_signal,
+    content_depth_gate,
+    intent_diffusion,
+    critical_caveats,
+    source_count: sourceCount,
+  };
+}
+
+function renderForecastAuditSection(ctx: ForecastAuditContext): string {
+  const lines: string[] = [];
+
+  /* Section: audit-anchored opportunity (current-position recovery) */
+  if (ctx.business_impact) {
+    lines.push('');
+    lines.push('## Audit-anchored opportunity (current-position recovery)');
+    lines.push('');
+    lines.push('The technical audit identified concrete recovery potential at the **current rank position**, independent of any ranking improvements:');
+    lines.push('');
+    const bi = ctx.business_impact;
+    lines.push(`| Layer | Value |`);
+    lines.push(`|---|---|`);
+    lines.push(`| **Missed monthly clicks at expected CTR** | ~${bi.missed_clicks.toLocaleString()} |`);
+    lines.push(`| **Expected clicks at proper CTR** | ~${bi.expected_clicks.toLocaleString()}/mo |`);
+    lines.push(`| **Monthly dollar opportunity (B2B SaaS click value $10-30)** | **\\$${bi.dollar_low.toLocaleString()} – \\$${bi.dollar_high.toLocaleString()}** |`);
+    if (ctx.business_impact_position !== null && ctx.business_impact_actual_ctr_pct !== null && ctx.business_impact_expected_ctr_pct !== null) {
+      lines.push(`| Position when measured | ${ctx.business_impact_position.toFixed(1)} (actual CTR ${ctx.business_impact_actual_ctr_pct.toFixed(2)}% vs expected ${ctx.business_impact_expected_ctr_pct.toFixed(1)}%) |`);
+    }
+    lines.push('');
+    lines.push('_Source: technical audit CTR finding (SerpAPI-verified expected CTR for the audited position). Treat dollar ranges as directional._');
+    lines.push('');
+    lines.push('**How this stacks with the forecast above:**');
+    lines.push('- The forecast projects clicks gained from **moving up the SERP** (rank-improvement layer)');
+    lines.push('- The opportunity above is clicks gained from **fixing CTR at the current position** (recovery layer)');
+    lines.push('- Both layers are additive when both ship: rank gains compound on top of CTR recovery');
+  }
+
+  /* Section: forecast preconditions */
+  const hasPreconditions = ctx.foundational_signal || ctx.content_depth_gate || ctx.intent_diffusion || ctx.critical_caveats.length > 0;
+  if (hasPreconditions) {
+    lines.push('');
+    lines.push('## Forecast preconditions (audit-identified)');
+    lines.push('');
+    lines.push('The forecasts above assume the following audit-identified issues are addressed during the horizon. If unaddressed, the forecasts no longer apply:');
+    lines.push('');
+    if (ctx.foundational_signal) {
+      lines.push(`- 🎯 **Foundational fix candidate** — ${ctx.foundational_signal}. Until this is resolved, tactical work on title/meta/snippet has limited compounding effect.`);
+    }
+    if (ctx.content_depth_gate) {
+      const cdg = ctx.content_depth_gate;
+      lines.push(`- 📏 **Content depth gate** — page at ${cdg.ratio_pct}% of competitor median (${cdg.current_words.toLocaleString()} of ${cdg.target_words.toLocaleString()} words). The clicks target assumes content expansion to ≥ SERP median during the horizon. If depth stays at current level, expect ~${Math.max(20, Math.round((1 - cdg.ratio_pct/100) * 100 * 0.4))}% downward adjustment to the modeled clicks target.`);
+    }
+    if (ctx.intent_diffusion) {
+      lines.push(`- 🧭 **Intent diffusion ceiling** — SERP is intent-diffuse (${ctx.intent_diffusion.categories} categories in top-10). Even at top-3, CTR has a hard ceiling because users from mismatched intents skip results. Treat the CTR forecast as best-case for an intent-tight visitor segment, not a blended audience.`);
+    }
+    if (ctx.critical_caveats.length > 0) {
+      lines.push(`- ⚠️ **Other red-severity issues** the work cycle must also resolve:`);
+      ctx.critical_caveats.forEach(c => lines.push(`  - ${c}`));
+    }
+  }
+
+  return lines.join('\n');
+}
+
 /* ─── STEP: Forecast — commit to numbers, schedule monitoring ─── */
 
 const stepForecast = {
@@ -1714,20 +1868,52 @@ const stepForecast = {
         };
       }
 
-      /* Build the artifact body */
-      const body = renderForecastArtifact(keyword, forecasts, horizonWeeks);
+      /* Phase 17.3 — extract audit context for the forecast.
+         If the audit found CTR business_impact + foundational signals +
+         content depth gates + intent diffusion warnings, append them to
+         the artifact AND surface in the output for downstream consumers. */
+      const auditCtx = extractAuditContextForForecast(ctx.audit_findings);
+      const auditSection = auditCtx ? renderForecastAuditSection(auditCtx) : '';
+
+      /* Build the artifact body, with audit-anchored section appended when available */
+      const body = renderForecastArtifact(keyword, forecasts, horizonWeeks) + auditSection;
 
       return {
         ok: true,
-        output: { forecasts: forecasts.map(f => f.id), forecast_summary: forecasts },
+        output: {
+          forecasts: forecasts.map(f => f.id),
+          forecast_summary: forecasts,
+          /* Phase 17.3 — audit-anchored signals exposed for downstream
+             consumers (client_update, internal_handover, reconciliation). */
+          _audit_anchored: auditCtx ? {
+            business_impact:    auditCtx.business_impact,
+            foundational:       auditCtx.foundational_signal,
+            depth_gate:         auditCtx.content_depth_gate,
+            intent_diffusion:   auditCtx.intent_diffusion,
+            critical_caveats:   auditCtx.critical_caveats,
+            source_count:       auditCtx.source_count,
+          } : null,
+        },
         artifact: {
           kind: 'forecast',
           title: `Expected results: "${keyword}" (${horizonWeeks}w horizon)`,
           body,
         },
-        honest_note: forecasts[0]?.honest_caveats
-          ? `Forecasts committed with caveats: ${String(forecasts[0].honest_caveats).replace(/\.$/, '')}. Monitoring will fire at 7d, 14d, 30d intervals.`
-          : `Forecasts committed. Monitoring will fire at 7d, 14d, 30d intervals.`,
+        honest_note: (() => {
+          const baseNote = forecasts[0]?.honest_caveats
+            ? `Forecasts committed with caveats: ${String(forecasts[0].honest_caveats).replace(/\.$/, '')}. Monitoring will fire at 7d, 14d, 30d intervals.`
+            : `Forecasts committed. Monitoring will fire at 7d, 14d, 30d intervals.`;
+          if (auditCtx) {
+            const audSig = [
+              auditCtx.business_impact && `\\$${auditCtx.business_impact.dollar_low.toLocaleString()}-\\$${auditCtx.business_impact.dollar_high.toLocaleString()} CTR-recovery layer surfaced`,
+              auditCtx.foundational_signal && 'foundational fix flagged',
+              auditCtx.content_depth_gate && 'content-depth gate flagged',
+              auditCtx.intent_diffusion && 'intent-diffusion ceiling flagged',
+            ].filter(Boolean).join('; ');
+            return audSig ? `${baseNote} Audit-anchored: ${audSig}.` : baseNote;
+          }
+          return baseNote;
+        })(),
       };
     } catch (e: any) {
       return { ok: false, error: e?.message || 'forecast step threw unexpectedly' };

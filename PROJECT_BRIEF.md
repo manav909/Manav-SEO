@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.2 content_brief wire-in) · **Live commit:** `c6e5841` (Phase 17.1 competitor_snapshot audit-sourced). Phase 17.2 wires the highest-UX-impact step: `content_brief`'s skeleton stage now anchors target word count, mandatory H2 candidates (from PAA gap), schema guidance, first-paragraph requirement, SERP features context, and critical signals to the audit. The brief output carries `_audit_sourced_signals` metadata for transparency, and the rendered artifact shows writers exactly which decisions came from audit ground truth vs LLM judgment. Manifesto work was completed 2026-05-23; SEO Season pivot is in progress along STRATEGY.md Track 2.
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.3 forecast wire-in) · **Live commit:** `bff58e5` (Phase 17.2 content_brief audit-anchored). Phase 17.3 wires the forecast step to expose audit's CTR business_impact + forecast preconditions. The artifact now shows two additive opportunity layers — current-position CTR recovery (dollar-anchored from audit) + rank-improvement projection (modeled forecast). Forecast preconditions (foundational fix, content depth gate, intent diffusion ceiling, critical red findings) are surfaced as explicit gates. Manifesto work was completed 2026-05-23; SEO Season pivot is in progress along STRATEGY.md Track 2.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -942,6 +942,37 @@ Brief skeleton needs creative judgment for title, meta description, unique angle
 - Formatted LLM block is rich, explicit, instructive — exactly what's needed for skeleton anchoring.
 
 **Diff:** 1 file changed, 209 insertions, 3 deletions in `season-pipeline-rank-for-keyword.ts`.
+
+### Phase 17.3 — forecast wire-in (2026-05-24)
+
+Turns forecast from a modeled projection into a grounded picture by adding audit-anchored sections. Two additive opportunity layers now surface:
+- **Forecast layer** (modeled) — clicks from moving up the SERP
+- **Audit-anchored layer** (verified) — dollar opportunity from fixing CTR at the *current* position
+
+The audit's CTR business_impact carries `{missed_clicks, expected_clicks, dollar_low, dollar_high}` computed from SerpAPI-verified expected CTR for the audited position. Showing both layers makes the forecast verifiable: clients can see what's available immediately (CTR recovery) and what compounds over the horizon (rank gain).
+
+**What it does:**
+- New helper `extractAuditContextForForecast(findings)` — extracts CTR business_impact + business_impact_position/actual_ctr/expected_ctr, content_depth_gate (when word_ratio < 0.8), intent_diffusion (when distinct_categories ≥ 3), foundational_signal (first red finding as proxy until is_foundational is persisted), and critical_caveats (additional reds).
+- New helper `renderForecastAuditSection(ctx)` — emits two markdown sections:
+  - `## Audit-anchored opportunity (current-position recovery)` — table of missed clicks / expected clicks / dollar range / position, plus explanation that this layer stacks additively with the rank-improvement forecast above
+  - `## Forecast preconditions (audit-identified)` — foundational fix candidate, content depth gate (with quantified downward adjustment if ignored), intent diffusion ceiling, other red signals
+- Forecast handler appends `auditSection` to the rendered body when audit data is available
+- Output gains `_audit_anchored` metadata for downstream (client_update, internal_handover, reconciliation)
+- `honest_note` extended with audit-anchored signal summary
+
+**Why it's additive (not replacement):**
+The forecast engine's modeled targets stay as-is. Audit data ENRICHES the artifact with verified opportunity quantification but doesn't override the modeled projections — clients see both views and can reconcile their own assumptions.
+
+**Verification:**
+- Vercel runtime TS clean (touched files + runner).
+- Frontend baseline: 27 (unchanged). API ceiling: 12 (unchanged). Vite green.
+- Smoke test with 4 fixtures (empty, real alphasoftware-shape, CTR-without-business_impact, content-depth-only) all pass.
+- Real alphasoftware fixture extracted 5 signals (business_impact $970-$2,910/mo, foundational keyword-mismatch, depth gate 36%, intent diffusion 4 categories, 1 additional red).
+- Rendered section shows both opportunity layer table AND preconditions bulleted list with quantified depth adjustment.
+- Test 3 (CTR without business_impact) correctly returns null — no actionable signal.
+- Test 4 (only content depth gate) correctly returns just the preconditions section (no opportunity section).
+
+**Diff:** 1 file changed, 192 insertions, 6 deletions in `season-pipeline-rank-for-keyword.ts`.
 
 ### Session handoff for tech audit work
 
