@@ -1492,6 +1492,217 @@ ${checks}
 `;
 }
 
+/* ─── Phase 17.4 — Audit context for client_update + internal_handover ──
+   These two steps are the distribution layer of the pipeline — what the
+   client sees + what the PM acts on. Both need to reflect what the audit
+   actually found, not generic "we researched competitors" talking points.
+
+   The client update LLM gets audit context injected into its userMessage
+   so Manav's voice still composes naturally around real findings. The
+   internal handover (template-only) gets a deterministic effort-map
+   section appended. Same source extractor, two render paths. */
+
+interface DistAuditContext {
+  business_impact: { missed_clicks: number; expected_clicks: number; dollar_low: number; dollar_high: number } | null;
+  foundational_signal: string | null;
+  content_depth_gate: { current_words: number; target_words: number; ratio_pct: number; words_to_add: number } | null;
+  first_para_issue: string | null;
+  schema_recommendation: string | null;
+  paa_gap_count: number | null;
+  ai_overview_present: boolean;
+  intent_diffusion: { categories: number } | null;
+  red_findings: string[];
+  amber_findings_count: number;
+  source_count: number;
+}
+
+function extractDistAuditContext(
+  findings: Array<{ audit_kind: string; severity: string; finding_title: string; finding_detail?: string; recommendation?: string; evidence?: any }>,
+): DistAuditContext | null {
+  if (!findings || findings.length === 0) return null;
+
+  let sourceCount = 0;
+
+  /* Business impact (dollar opportunity from CTR recovery) */
+  const ctr = findings.find(f => /CTR is \d+%|CTR underperformance|CTR.*of expected/i.test(f.finding_title));
+  const ctrEv = ctr?.evidence || {};
+  const biRaw = ctrEv.business_impact;
+  const business_impact = (biRaw && typeof biRaw === 'object' && biRaw.dollar_low !== undefined)
+    ? {
+        missed_clicks: Number(biRaw.missed_clicks),
+        expected_clicks: Number(biRaw.expected_clicks),
+        dollar_low: Number(biRaw.dollar_low),
+        dollar_high: Number(biRaw.dollar_high),
+      }
+    : null;
+  if (business_impact) sourceCount++;
+
+  /* AI Overview present (changes the work emphasis materially) */
+  const ai_overview_present = !!ctrEv.ai_overview;
+  if (ai_overview_present) sourceCount++;
+
+  /* Foundational signal — first red as proxy until is_foundational is persisted */
+  const reds = findings.filter(f => f.severity === 'red');
+  const foundational_signal = reds.length > 0 ? reds[0].finding_title : null;
+  if (foundational_signal) sourceCount++;
+  const red_findings: string[] = reds.map(f => f.finding_title);
+
+  /* Content depth gate */
+  const compContent = findings.find(f => /Content depth.*SERP median|content exceeds SERP median/i.test(f.finding_title));
+  const ccEv = compContent?.evidence || {};
+  let content_depth_gate: { current_words: number; target_words: number; ratio_pct: number; words_to_add: number } | null = null;
+  if (ccEv.audited_word_count && ccEv.competitor_median && ccEv.word_ratio !== undefined && Number(ccEv.word_ratio) < 0.8) {
+    const cw = Number(ccEv.audited_word_count);
+    const tw = Number(ccEv.competitor_median);
+    content_depth_gate = {
+      current_words: cw,
+      target_words: tw,
+      ratio_pct: Math.round(Number(ccEv.word_ratio) * 100),
+      words_to_add: Math.max(0, tw - cw),
+    };
+    sourceCount++;
+  }
+
+  /* First paragraph issue */
+  const firstParaOff = findings.find(f => /First paragraph is off-topic/i.test(f.finding_title));
+  const firstParaWeak = findings.find(f => /First paragraph weakly aligned/i.test(f.finding_title));
+  const first_para_issue = firstParaOff
+    ? firstParaOff.finding_title
+    : (firstParaWeak ? firstParaWeak.finding_title : null);
+  if (first_para_issue) sourceCount++;
+
+  /* Schema */
+  const schemaMissing = findings.find(f => /(Schema|structured data).+(missing|absent|invalid)/i.test(f.finding_title));
+  const schema_recommendation = schemaMissing
+    ? `${schemaMissing.finding_title}${schemaMissing.recommendation ? ' — ' + schemaMissing.recommendation.slice(0, 150) : ''}`
+    : null;
+  if (schema_recommendation) sourceCount++;
+
+  /* PAA gap count */
+  const paaGap = findings.find(f => /PAA questions.+(NOT addressed|not addressed)/i.test(f.finding_title));
+  const paaEv = paaGap?.evidence || {};
+  const paa_gap_count = (Array.isArray(paaEv.unanswered) && paaEv.unanswered.length > 0) ? paaEv.unanswered.length : null;
+  if (paa_gap_count !== null) sourceCount++;
+
+  /* Intent diffusion */
+  const diffuse = findings.find(f => /Diffuse-intent SERP/i.test(f.finding_title));
+  const diffEv = diffuse?.evidence || {};
+  const intent_diffusion = (diffuse && diffEv.distinct_categories >= 3)
+    ? { categories: Number(diffEv.distinct_categories) }
+    : null;
+  if (intent_diffusion) sourceCount++;
+
+  const amber_findings_count = findings.filter(f => f.severity === 'amber').length;
+
+  if (sourceCount === 0) return null;
+
+  return {
+    business_impact,
+    foundational_signal,
+    content_depth_gate,
+    first_para_issue,
+    schema_recommendation,
+    paa_gap_count,
+    ai_overview_present,
+    intent_diffusion,
+    red_findings,
+    amber_findings_count,
+    source_count: sourceCount,
+  };
+}
+
+/* For LLM injection into client_update prompt. Tone-neutral facts that the
+   LLM will weave into Manav's voice. No bullet-spam — concise statements. */
+function formatAuditContextForClientUpdate(ctx: DistAuditContext): string {
+  const lines: string[] = [];
+  lines.push('AUDIT FINDINGS THE CLIENT SHOULD HEAR ABOUT (weave these into the email naturally, do NOT mention "audit" or "pipeline"):');
+
+  if (ctx.foundational_signal) {
+    lines.push(`- The biggest single issue blocking progress: ${ctx.foundational_signal}. This is the work that compounds — talk about it as the priority before tactical fixes.`);
+  }
+  if (ctx.business_impact) {
+    lines.push(`- Concrete opportunity available right now (without ranking improvements): roughly $${ctx.business_impact.dollar_low.toLocaleString()}–$${ctx.business_impact.dollar_high.toLocaleString()} per month from fixing how the existing position converts to clicks. ~${ctx.business_impact.missed_clicks} additional clicks/month at current rank.`);
+  }
+  if (ctx.content_depth_gate) {
+    lines.push(`- Content needs ~${ctx.content_depth_gate.words_to_add.toLocaleString()} more words to match what's competing in the top-10 (currently at ${ctx.content_depth_gate.ratio_pct}% of the SERP median). Mention this is a content investment, not a quick fix.`);
+  }
+  if (ctx.first_para_issue) {
+    lines.push(`- The page's opening paragraph isn't aligned with the target query — that's a quick rewrite that improves both reader experience and search relevance.`);
+  }
+  if (ctx.ai_overview_present) {
+    lines.push(`- Google now shows an AI Overview on this query. That changes the work emphasis: content needs to be structured for citation (direct answers, scannable lists, structured data) — not just to rank.`);
+  }
+  if (ctx.paa_gap_count) {
+    lines.push(`- ${ctx.paa_gap_count} live People-Also-Ask questions aren't covered by the current page. The content brief addresses these directly.`);
+  }
+  if (ctx.intent_diffusion) {
+    lines.push(`- The SERP for this query is split across ${ctx.intent_diffusion.categories} different intent types — important context for setting realistic expectations.`);
+  }
+  return lines.join('\n');
+}
+
+/* For internal_handover. Deterministic markdown — PM/strategist reads this
+   to know what to action. Priority-ordered, effort-categorized. */
+function renderHandoverAuditSection(ctx: DistAuditContext): string {
+  const lines: string[] = [];
+  lines.push('');
+  lines.push('## Audit-identified work items (priority-ordered)');
+  lines.push('');
+  lines.push(`Source: technical audit. ${ctx.red_findings.length} red-severity, ${ctx.amber_findings_count} amber-severity findings consumed.`);
+  lines.push('');
+
+  /* P0 — foundational */
+  if (ctx.foundational_signal) {
+    lines.push(`### 🎯 P0 — Foundational fix (work compounding starts here)`);
+    lines.push(`- ${ctx.foundational_signal}`);
+    lines.push(`- _Why P0:_ until this lands, tactical work has limited effect. Address before iterating on title/meta/snippet tweaks.`);
+    lines.push('');
+  }
+
+  /* P1 — red findings beyond foundational */
+  const otherReds = ctx.red_findings.slice(1);
+  if (otherReds.length > 0) {
+    lines.push(`### ⚠️ P1 — Other critical (red) findings`);
+    otherReds.forEach(r => lines.push(`- ${r}`));
+    lines.push('');
+  }
+
+  /* P2 — quantified opportunities */
+  const p2Items: string[] = [];
+  if (ctx.business_impact) {
+    p2Items.push(`**CTR recovery** — ~${ctx.business_impact.missed_clicks} missed clicks/mo at current position; \\$${ctx.business_impact.dollar_low.toLocaleString()}–\\$${ctx.business_impact.dollar_high.toLocaleString()}/mo opportunity. Effort: medium (title/meta rewrite + snippet structure). Sequence after foundational fix.`);
+  }
+  if (ctx.content_depth_gate) {
+    p2Items.push(`**Content depth expansion** — page at ${ctx.content_depth_gate.ratio_pct}% of SERP median. Add ~${ctx.content_depth_gate.words_to_add.toLocaleString()} words anchored to the content brief's PAA H2 candidates. Effort: high (writer-hours, editorial review).`);
+  }
+  if (ctx.first_para_issue) {
+    p2Items.push(`**First paragraph rewrite** — 40-60w direct answer, primary keyword in sentence 1. Effort: low (~30 min). Schedule with CTR recovery batch.`);
+  }
+  if (ctx.schema_recommendation) {
+    p2Items.push(`**Schema implementation** — ${ctx.schema_recommendation}. Effort: low-to-medium (depends on stack; FAQPage often easiest first move).`);
+  }
+  if (ctx.paa_gap_count) {
+    p2Items.push(`**PAA-question H2 coverage** — ${ctx.paa_gap_count} live PAA questions need verbatim H2 coverage. The content brief carries these as mandatory headings. Effort: bundled into depth expansion.`);
+  }
+  if (ctx.ai_overview_present) {
+    p2Items.push(`**AI Overview citation optimization** — direct-answer paragraph (40-60w) within first 100 words, FAQ schema, scannable lists. Effort: medium (structural rewrite of intro + schema work).`);
+  }
+  if (p2Items.length > 0) {
+    lines.push(`### 🛠 P2 — Quantified opportunities`);
+    p2Items.forEach(item => lines.push(`- ${item}`));
+    lines.push('');
+  }
+
+  /* Constraint / ceiling notes */
+  if (ctx.intent_diffusion) {
+    lines.push(`### ⚠ Ceiling constraint`);
+    lines.push(`- SERP is intent-diffuse (${ctx.intent_diffusion.categories} categories in top-10). Even perfect execution has a CTR ceiling because of audience fragmentation. Plan accordingly — single intent class, tightly executed, beats blended-audience content for this keyword.`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
 /* ─── STEP 6: Client-facing progress update (Manav's voice) ──── */
 
 const stepClientUpdate = {
@@ -1508,13 +1719,22 @@ const stepClientUpdate = {
     const competitors = ctx.prior.competitor_snapshot || {};
     const research = ctx.prior.keyword_research || {};
 
+    /* Phase 17.4 — extract audit context. When available, inject it into
+       the LLM's userMessage so Manav's voice composes naturally around
+       real findings (foundational issue, dollar opportunity, depth gate,
+       AI Overview presence) instead of generic "we analyzed competitors"
+       talking points. */
+    const auditCtx = extractDistAuditContext(ctx.audit_findings);
+    const auditBlock = auditCtx ? formatAuditContextForClientUpdate(auditCtx) : '';
+
     const sys = `You are drafting an email update from Manav (an SEO operator) to his client. Speak in his voice: direct, plain English, no fluff, no AI references, no pipeline jargon. Reply with ONLY valid JSON:
 {
   "subject": "...",
   "body": "the full email — markdown OK"
 }
 Keep it under 350 words. Lead with what's been done. Then what's coming. Then what we expect.
-Honesty: don't claim impact that hasn't happened. Talk about the work and the timeline.`;
+Honesty: don't claim impact that hasn't happened. Talk about the work and the timeline.
+When the user provides AUDIT FINDINGS THE CLIENT SHOULD HEAR ABOUT, weave the most material 2-3 of them into the email naturally — they're the real substance the client cares about. Never use the words "audit" or "pipeline" or mention any tooling.`;
     const usr = `Draft a progress update for the client about our work on ranking for "${keyword}".
 
 WHAT WE'VE COMPLETED:
@@ -1525,7 +1745,7 @@ WHAT WE'VE COMPLETED:
 
 WHAT'S NEXT:
 ${(strategy.phases || []).map((p: any) => `- ${p.phase}: ${(p.deliverables || []).join(', ')}`).join('\n')}
-
+${auditBlock ? '\n' + auditBlock + '\n' : ''}
 CONTEXT FOR YOUR TONE:
 - Manav is competent, not chatty
 - Numbers when they exist, no inflated promises
@@ -1536,13 +1756,25 @@ CONTEXT FOR YOUR TONE:
     }
     return {
       ok: true,
-      output: r.parsed,
+      output: {
+        ...r.parsed,
+        /* Phase 17.4 — surface which audit signals informed the draft so
+           downstream consumers / human reviewers see what was anchored. */
+        _audit_signals_used: auditCtx ? {
+          source_count:        auditCtx.source_count,
+          dollar_opportunity:  auditCtx.business_impact ? `$${auditCtx.business_impact.dollar_low.toLocaleString()}-$${auditCtx.business_impact.dollar_high.toLocaleString()}/mo` : null,
+          foundational:        auditCtx.foundational_signal,
+          ai_overview_present: auditCtx.ai_overview_present,
+        } : null,
+      },
       artifact: {
         kind: 'email',
         title: `Client update: "${keyword}"`,
         body: `Subject: ${r.parsed.subject || `Update on ${keyword}`}\n\n${r.parsed.body || ''}`,
       },
-      honest_note: 'Drafted in Manav\'s voice for client review. Edit freely before sending.',
+      honest_note: auditCtx
+        ? `Drafted in Manav's voice for client review. Anchored to ${auditCtx.source_count} audit signal(s) including ${auditCtx.business_impact ? `$${auditCtx.business_impact.dollar_low.toLocaleString()}-$${auditCtx.business_impact.dollar_high.toLocaleString()}/mo opportunity` : 'critical findings'}. Edit freely before sending.`
+        : `Drafted in Manav's voice for client review. Edit freely before sending.`,
       llm_calls: 1,
     };
   },
@@ -1565,6 +1797,11 @@ const stepInternalHandover = {
     const competitors = ctx.prior.competitor_snapshot || {};
     const gsc = ctx.prior.gsc_context || {};
 
+    /* Phase 17.4 — extract audit context. Template-only, deterministic
+       markdown appended below. No LLM cost. */
+    const auditCtx = extractDistAuditContext(ctx.audit_findings);
+    const auditSection = auditCtx ? renderHandoverAuditSection(auditCtx) : '';
+
     /* No LLM needed — pure template. Faster and cheaper. */
     const body = `# Internal Handover: Rank-for-Keyword Pipeline
 **Target keyword:** ${keyword}
@@ -1579,6 +1816,7 @@ This document is the *internal* counterpart to the client-facing update. Accurac
 - Keyword research: ${research.primary_intent ? `live (${research.competitive_difficulty} difficulty)` : 'fallback to training knowledge'}
 - GSC: ${gsc.current_ranking ? `currently at position ${gsc.current_ranking.position?.toFixed?.(1)}` : (gsc.neighboring?.length > 0 ? `${gsc.neighboring.length} neighboring queries found` : 'no GSC data available for this keyword')}
 - Competitor snapshot: ${competitors.top_pages?.length || 0} pages analyzed
+- Technical audit: ${auditCtx ? `${auditCtx.source_count} signal(s) consumed (see "Audit-identified work items" below)` : 'no audit findings available — was the audit run before this pipeline?'}
 
 ## Strategy outline
 
@@ -1589,13 +1827,14 @@ ${(strategy.phases || []).map((p: any) => `- ${p.phase} (${p.duration_days}d): $
 
 **Expected impact:** ${strategy.expected_impact || '—'}
 **Risks flagged:** ${(strategy.risks_and_mitigations || []).length}
-
+${auditSection}
 ## For the PM
 
 - Created strategy can be moved to the planning board manually, or wait for next pipeline phase that creates it directly
 - Content brief is in the artifacts list — ready to assign to a writer
 - All artifacts produced this run are in season_pipeline_runs.final_artifacts for this run ID
 - Manav's client update is ready in artifacts — review and send
+${auditCtx ? `- The "Audit-identified work items" section above is the actionable backlog. P0 ships before P1, P1 before P2 — sequencing matters because tactical work on top of an unaddressed foundational issue has limited compounding effect.` : ''}
 
 ## Next steps if a human were doing this
 
@@ -1603,17 +1842,37 @@ ${(strategy.phases || []).map((p: any) => `- ${p.phase} (${p.duration_days}d): $
 2. Review content brief — assign to writer with target date
 3. Track new page ranking weekly for the first month
 4. Watch ${(strategy.kpi_to_watch || ['organic clicks']).join(', ')} for the strategy's KPI window
+${auditCtx?.business_impact ? `5. Re-audit after CTR-recovery work ships to verify the \\$${auditCtx.business_impact.dollar_low.toLocaleString()}-\\$${auditCtx.business_impact.dollar_high.toLocaleString()}/mo opportunity is being captured — reconciliation feeds back into forecast accuracy.` : ''}
 `;
 
     return {
       ok: true,
-      output: { generated: true },
+      output: {
+        generated: true,
+        /* Phase 17.4 — surface the audit-anchored backlog so downstream
+           consumers (PM module, kanban_task auto-creation in future phases)
+           can read structured signals rather than parsing markdown. */
+        _audit_anchored_backlog: auditCtx ? {
+          source_count:        auditCtx.source_count,
+          foundational:        auditCtx.foundational_signal,
+          red_findings:        auditCtx.red_findings,
+          dollar_opportunity:  auditCtx.business_impact,
+          depth_gate:          auditCtx.content_depth_gate,
+          first_para_issue:    auditCtx.first_para_issue,
+          schema:              auditCtx.schema_recommendation,
+          paa_gap_count:       auditCtx.paa_gap_count,
+          ai_overview_present: auditCtx.ai_overview_present,
+          intent_diffusion:    auditCtx.intent_diffusion,
+        } : null,
+      },
       artifact: {
         kind: 'internal_doc',
         title: `Internal handover: "${keyword}"`,
         body,
       },
-      honest_note: 'Internal doc keeps full provenance — S.E.A.S.O.N. attribution preserved. Client update keeps Manav\'s voice. Both deliverables are now in the run\'s artifacts.',
+      honest_note: auditCtx
+        ? `Internal doc + ${auditCtx.source_count}-signal audit backlog. S.E.A.S.O.N. attribution preserved. Client update keeps Manav's voice. PM has priority-ordered work items.`
+        : `Internal doc keeps full provenance — S.E.A.S.O.N. attribution preserved. Client update keeps Manav's voice. Both deliverables are now in the run's artifacts.`,
     };
   },
 };

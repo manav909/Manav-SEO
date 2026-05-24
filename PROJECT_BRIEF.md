@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.3 forecast wire-in) · **Live commit:** `bff58e5` (Phase 17.2 content_brief audit-anchored). Phase 17.3 wires the forecast step to expose audit's CTR business_impact + forecast preconditions. The artifact now shows two additive opportunity layers — current-position CTR recovery (dollar-anchored from audit) + rank-improvement projection (modeled forecast). Forecast preconditions (foundational fix, content depth gate, intent diffusion ceiling, critical red findings) are surfaced as explicit gates. Manifesto work was completed 2026-05-23; SEO Season pivot is in progress along STRATEGY.md Track 2.
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.4 client_update + internal_handover wire-in) · **Live commit:** `dece854` (Phase 17.3 forecast audit-anchored). Phase 17.4 wires the pipeline's distribution layer — what the client sees + what the PM acts on. The LLM-driven `client_update` gets audit findings injected into its userMessage so Manav's voice composes around real numbers ($X-Y/mo opportunity, foundational fix, AI Overview presence, content depth gap) instead of generic talking points. The template-only `internal_handover` gets a deterministic priority-ordered effort map appended (P0/P1/P2 with effort estimates). All artifact-producing pipeline steps that benefit from audit data are now wired (17.0-17.4). Remaining sequence (17.5-17.6) is about distribution and refresh, not new artifact wiring.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -973,6 +973,51 @@ The forecast engine's modeled targets stay as-is. Audit data ENRICHES the artifa
 - Test 4 (only content depth gate) correctly returns just the preconditions section (no opportunity section).
 
 **Diff:** 1 file changed, 192 insertions, 6 deletions in `season-pipeline-rank-for-keyword.ts`.
+
+### Phase 17.4 — client_update + internal_handover wire-in (2026-05-24)
+
+Wires the pipeline's distribution layer to audit reality. Both step handlers now reflect what the audit actually found instead of generic "we analyzed competitors" talking points.
+
+**What it does:**
+
+**Shared extractor** `extractDistAuditContext(findings)` produces 10 signals: business_impact (CTR-recovery dollar opportunity), foundational_signal (first red as proxy), content_depth_gate (words_to_add quantified), first_para_issue, schema_recommendation, paa_gap_count, ai_overview_present (boolean), intent_diffusion, red_findings array, amber_findings_count.
+
+**Two render paths:**
+
+1. **`formatAuditContextForClientUpdate(ctx)`** — produces a tone-neutral facts block injected into the client_update LLM's userMessage. The system prompt explicitly forbids the words "audit" or "pipeline" — Manav's voice naturally weaves real findings ($X-Y/mo opportunity, "the biggest single issue", content investment requirement, AI Overview implication) without exposing tooling.
+
+2. **`renderHandoverAuditSection(ctx)`** — deterministic markdown appended to the template-only internal_handover. PM-ready priority-ordered backlog: P0 (foundational fix), P1 (other reds), P2 (quantified opportunities with effort estimates), ceiling constraints (intent diffusion). No LLM cost.
+
+**Wired into both handlers:**
+- `client_update` handler injects auditBlock into userMessage, surfaces `_audit_signals_used` metadata in output, extends honest_note to confirm audit anchoring
+- `internal_handover` handler appends auditSection to body, surfaces `_audit_anchored_backlog` in output (structured signals for downstream PM module / future kanban_task auto-creation), extends honest_note
+
+**Real-output example (alphasoftware fixture, 8 signals):**
+
+Client update LLM prompt now includes facts like "Concrete opportunity available right now: roughly $970–$2,910/mo from fixing how the existing position converts to clicks. ~97 additional clicks/month at current rank." The LLM weaves this into Manav's voice without mentioning audit/pipeline.
+
+Internal handover now appends:
+```
+## Audit-identified work items (priority-ordered)
+### 🎯 P0 — Foundational fix: Campaign keyword "app maker" missing from title + H1
+### ⚠️ P1 — First paragraph is off-topic
+### 🛠 P2 — Quantified opportunities:
+- CTR recovery $970-$2,910/mo (medium effort)
+- Content depth: add ~1,956 words (high effort)
+- First paragraph rewrite (low effort, 30 min)
+- Schema implementation (low-to-medium)
+- PAA H2 coverage (bundled into depth)
+- AI Overview citation optimization (medium)
+### ⚠ Ceiling constraint: SERP is intent-diffuse (4 categories)
+```
+
+**Verification:**
+- Vercel runtime TS clean (touched files + runner).
+- Frontend baseline: 27 (unchanged). API ceiling: 12 (unchanged). Vite green.
+- Smoke test with 3 fixtures (empty, full alphasoftware-shape, sparse foundational-only) all pass.
+- Full fixture extracted 8 signals, generated 7-bullet LLM injection block + complete P0/P1/P2 handover section.
+
+**Diff:** 1 file changed, 266 insertions, 7 deletions in `season-pipeline-rank-for-keyword.ts`.
 
 ### Session handoff for tech audit work
 
