@@ -2,12 +2,8 @@
    src/pages/manifesto/chapters/ChVision.tsx
    Chapter 02 — The Vision. Spring.
 
-   The founding quote, now attributed. Anonymous statements feel like
-   product copy. Attributed ones feel like a person who can be called
-   to account if they break the commitment.
-
-   The body paragraphs reframe the agency as built backwards from a
-   commitment, not forward from a technology stack.
+   All prose localized via copy.ts: vision_quote, vision_attribution,
+   vision_1..4.
 ══════════════════════════════════════════════════════════════════════ */
 
 import { motion } from 'framer-motion';
@@ -20,11 +16,7 @@ export function ChVision({ t }: { t: TFn }) {
     <ChapterShell id="vision" no="02" season="spring" titleKey="ch02" t={t}>
       <VisionStyles />
 
-      <FoundingQuote delay={0.4}>
-        Make the inside of an SEO engagement so transparent that the client can
-        verify every claim, every action, every change — in real time, from the
-        same dashboard the operator uses.
-      </FoundingQuote>
+      <FoundingQuote delay={0.4}>{t('vision_quote')}</FoundingQuote>
 
       <motion.div
         className="founding-attribution"
@@ -33,35 +25,13 @@ export function ChVision({ t }: { t: TFn }) {
         viewport={{ once: true, margin: '-15%' }}
         transition={{ duration: 1.2, ease: FEATHER, delay: 0.9 }}
       >
-        — Manav, on day one
+        {t('vision_attribution')}
       </motion.div>
 
-      <Prose delay={1.1}>
-        SEO SEASON was built backwards from that commitment, not forward from
-        a technology stack. The agency exists first. The infrastructure exists
-        to make the agency keep its word.
-      </Prose>
-
-      <Prose delay={1.3}>
-        And it was built by hand. Not commissioned to a development shop. Not
-        assembled from off-the-shelf SaaS bolted together. Not acquired from
-        someone else and rebranded. Every line of code, every interface, every
-        decision rule authored by the same person who runs the agency.
-      </Prose>
-
-      <Prose delay={1.5}>
-        Per-campaign baselines, source-cited charts, honest gaps acknowledged
-        out loud, decisions logged in the moment they were made — these aren't
-        features added to a product. They're the rules the agency operates
-        under, encoded so they cannot be quietly broken later.
-      </Prose>
-
-      <Prose delay={1.7}>
-        When a client opens their SEO SEASON dashboard, they see the same view
-        their account manager opens. Not a sanitized client portal. Not a slide
-        with last week's screenshots. The same operator interface, with the
-        same data, refreshed at the same cadence.
-      </Prose>
+      <Prose delay={1.1}>{t('vision_1')}</Prose>
+      <Prose delay={1.3}>{t('vision_2')}</Prose>
+      <Prose delay={1.5}>{t('vision_3')}</Prose>
+      <Prose delay={1.7}>{t('vision_4')}</Prose>
     </ChapterShell>
   );
 }

@@ -2,14 +2,8 @@
    src/pages/manifesto/chapters/ChFounder.tsx
    Chapter 11 — A Letter from the Founder. Harvest (continuing).
 
-   Manav's voice. First person. The only chapter in the codex
-   written in first person; every other chapter uses operator-grade
-   third person. The shift is deliberate — it marks the moment the
-   reader meets the person behind the architecture.
-
-   Each paragraph reveals on scroll-in independently, with the two
-   closing single-sentence paragraphs landing last. The signoff
-   ("— Manav") arrives quietly at the end.
+   All paragraphs localized: founder_para_1..6 + founder_final_1..2.
+   Signoff "— Manav" stays hardcoded (a proper name, not text).
 ══════════════════════════════════════════════════════════════════════ */
 
 import { motion } from 'framer-motion';
@@ -17,19 +11,16 @@ import { ChapterShell } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-const PARAS: string[] = [
-  "I've spent years inside SEO from every position that exists — as an operator running campaigns, as a consultant advising on architecture, as the client who couldn't get a straight answer from their agency. I learned how the work actually happens by doing it from every angle.",
-  "What I saw, across every angle, wasn't a tooling problem. It was a trust problem. Agencies that knew exactly what they were doing — and clients who couldn't verify any of it.",
-  "Nobody handed me a foundation to build on top of. No firm to inherit, no playbook to copy. What I have is years of working from inside this industry — long enough that the patterns became visible, and the gap between what agencies sell and what clients actually receive became impossible to ignore.",
-  "So I built the answer myself. Every system in SEO SEASON, I designed and shipped — every data engine, every dashboard, every audit trail, every line of code, every database schema, every architectural decision. Hiring engineers wouldn't have produced this. The problem required someone who had lived it, and the system required a single architect who could hold the whole shape in their head while building it.",
-  "The depth of what's been built is the proof of the years that went into understanding what was needed. You don't architect this kind of system without having seen, in detail, what the alternatives leave on the floor.",
-  "I run this agency the way I built the system underneath it: hands on every part. When you hire SEO SEASON, you hire that. The infrastructure isn't a vendor I plug into. The work isn't outsourced to a team you'll never meet. You get the agency, the system, and the builder — all the same person, all the same standard.",
-];
+const PARA_KEYS = [
+  'founder_para_1',
+  'founder_para_2',
+  'founder_para_3',
+  'founder_para_4',
+  'founder_para_5',
+  'founder_para_6',
+] as const;
 
-const PARAS_FINAL: string[] = [
-  'This is what I wanted to exist.',
-  'So I built it — every layer of it — and now I run an agency on it.',
-];
+const FINAL_KEYS = ['founder_final_1', 'founder_final_2'] as const;
 
 export function ChFounder({ t }: { t: TFn }) {
   return (
@@ -37,29 +28,29 @@ export function ChFounder({ t }: { t: TFn }) {
       <FounderStyles />
 
       <motion.blockquote className="founder-letter mt-10">
-        {PARAS.map((p, i) => (
+        {PARA_KEYS.map((key, i) => (
           <motion.p
-            key={i}
+            key={key}
             className="founder-para"
             initial={{ opacity: 0, y: 14 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-15%' }}
             transition={{ duration: 1.2, ease: FEATHER, delay: 0.2 + i * 0.2 }}
           >
-            {p}
+            {t(key)}
           </motion.p>
         ))}
 
-        {PARAS_FINAL.map((p, i) => (
+        {FINAL_KEYS.map((key, i) => (
           <motion.p
-            key={`f-${i}`}
+            key={key}
             className="founder-para founder-para-final"
             initial={{ opacity: 0, y: 14 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-15%' }}
             transition={{ duration: 1.6, ease: FEATHER, delay: 1.2 + i * 0.4 }}
           >
-            {p}
+            {t(key)}
           </motion.p>
         ))}
 
@@ -76,8 +67,6 @@ export function ChFounder({ t }: { t: TFn }) {
     </ChapterShell>
   );
 }
-
-/* ─── Inline styles for this chapter ─────────────────────────────── */
 
 function FounderStyles() {
   return (

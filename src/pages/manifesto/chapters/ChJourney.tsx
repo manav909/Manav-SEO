@@ -2,12 +2,8 @@
    src/pages/manifesto/chapters/ChJourney.tsx
    Chapter 05 — A Client's Journey. Summer (continuing).
 
-   Vertical timeline. Each step is a row: a node + connecting spine
-   on the left, a labeled milestone on the right. Steps reveal in
-   sequence as the user scrolls past them.
-
-   Times shown are the actual cadences SEO SEASON operates on. Not
-   marketing horizons.
+   All prose localized: journey_intro + journey_N_when, _title, _body
+   for N=1..7.
 ══════════════════════════════════════════════════════════════════════ */
 
 import { motion } from 'framer-motion';
@@ -15,68 +11,24 @@ import { ChapterShell, Prose } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-interface Step {
-  when:  string;
-  title: string;
-  body:  string;
-}
-
-const STEPS: Step[] = [
-  {
-    when:  'Day 0',
-    title: 'Onboarding',
-    body:  "Connect Google Search Console and Google Analytics 4. Baseline snapshot taken. Project created in the system. The clock starts here — not at agency-promised date.",
-  },
-  {
-    when:  'Week 1',
-    title: 'Audit & cluster proposal',
-    body:  "Technical audit runs against the live site. First campaign's cluster map proposed with head terms, supporting terms, and intent gaps named. You review and refine. Nothing ships without your sign-off.",
-  },
-  {
-    when:  'Weeks 2-4',
-    title: 'First pillar cycle',
-    body:  'Content drafted against the cluster map. Internal links inserted. Off-page outreach begins. Monitoring baseline snapshot frozen. Every action logged with a timestamp and a source.',
-  },
-  {
-    when:  'Month 2',
-    title: 'First measurable movement',
-    body:  'Visibility pulse chart shows what changed. Keyword movers report names winners and losers — both, by name, with deltas. Plateau pages flagged for refinement.',
-  },
-  {
-    when:  'Month 3',
-    title: 'Second campaign starts',
-    body:  'First campaign continues compounding on its own cadence. Second campaign repeats the five-pillar cycle on a different topic. Portfolio building begins; each campaign at its own stage.',
-  },
-  {
-    when:  'Month 6',
-    title: 'Shape becomes visible',
-    body:  "Click curve emerges. Hero pages identified by data, not opinion. Conversion attribution where GA4 events exist; gaps named honestly where they don't.",
-  },
-  {
-    when:  'Month 12',
-    title: 'Portfolio maturity',
-    body:  'Each campaign at a different stage. Some defended. Some climbing. Some retired. The work compounds because the architecture compounds — not because anyone got lucky.',
-  },
-];
+const STEP_INDICES = [1, 2, 3, 4, 5, 6, 7] as const;
 
 export function ChJourney({ t }: { t: TFn }) {
   return (
     <ChapterShell id="journey" no="05" season="summer" titleKey="ch05" t={t}>
       <JourneyStyles />
 
-      <Prose delay={0.4}>
-        What happens when a client signs. Step by step. The journey is
-        deterministic — surprises are reported, not hidden, and the milestones
-        below describe a cadence that's already running on existing engagements.
-      </Prose>
+      <Prose delay={0.4}>{t('journey_intro')}</Prose>
 
       <ol className="journey-stack mt-14">
-        {STEPS.map((s, i) => (
+        {STEP_INDICES.map((n, i) => (
           <JourneyStep
-            key={i}
-            step={s}
+            key={n}
+            when={t(`journey_${n}_when`)}
+            title={t(`journey_${n}_title`)}
+            body={t(`journey_${n}_body`)}
             index={i}
-            isLast={i === STEPS.length - 1}
+            isLast={i === STEP_INDICES.length - 1}
           />
         ))}
       </ol>
@@ -85,9 +37,11 @@ export function ChJourney({ t }: { t: TFn }) {
 }
 
 function JourneyStep({
-  step, index, isLast,
+  when, title, body, index, isLast,
 }: {
-  step:   Step;
+  when:   string;
+  title:  string;
+  body:   string;
   index:  number;
   isLast: boolean;
 }) {
@@ -104,15 +58,13 @@ function JourneyStep({
         {!isLast && <div className="journey-line" />}
       </div>
       <div className="journey-content">
-        <div className="journey-when">{step.when}</div>
-        <div className="journey-title">{step.title}</div>
-        <div className="journey-body">{step.body}</div>
+        <div className="journey-when">{when}</div>
+        <div className="journey-title">{title}</div>
+        <div className="journey-body">{body}</div>
       </div>
     </motion.li>
   );
 }
-
-/* ─── Inline styles for this chapter ─────────────────────────────── */
 
 function JourneyStyles() {
   return (

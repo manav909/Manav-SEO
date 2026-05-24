@@ -2,18 +2,11 @@
    src/pages/manifesto/chapters/ChPillars.tsx
    Chapter 04 — The Five Pillars. Summer.
 
-   The structural heart of every SEO SEASON campaign. Five pillars,
-   each a distinct phase of work, each with its own color. Rendered
-   as five columns side by side; each column has a vertical bar that
-   grows from bottom on scroll-in.
+   All prose localized: pillars_intro, pillars_equilibrium,
+   pillars_objection, pillars_close, plus pillar_N_name and
+   pillar_N_body for N=1..5.
 
-   Order matters — the pillars run in roughly the sequence they
-   execute on a campaign:
-     1 Cluster Map        the architecture (cyan)
-     2 Internal Linking   the wiring         (green)
-     3 Off-Page Authority outward signal     (amber)
-     4 Content            the surface itself (amethyst)
-     5 Monitoring         the feedback loop  (rose-orange)
+   Icons + hues stay hardcoded (visual identity).
 ══════════════════════════════════════════════════════════════════════ */
 
 import { motion } from 'framer-motion';
@@ -24,44 +17,18 @@ import { ChapterShell, Prose } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-interface Pillar {
-  name:  string;
-  icon:  React.ReactNode;
-  hue:   number;
-  body:  string;
+interface PillarMeta {
+  n:    1 | 2 | 3 | 4 | 5;
+  icon: React.ReactNode;
+  hue:  number;
 }
 
-const PILLARS: Pillar[] = [
-  {
-    name: 'Cluster Map',
-    icon: <Network className="h-5 w-5" />,
-    hue:  188,
-    body: 'The topic and its sub-topics, mapped as a graph. Head terms, supporting terms, intent gaps named explicitly. The map exists before the writing.',
-  },
-  {
-    name: 'Internal Linking',
-    icon: <Activity className="h-5 w-5" />,
-    hue:  142,
-    body: 'Existing pages get refreshed link patterns to the new content. New content gets contextual links from authority pages. Every decision recorded.',
-  },
-  {
-    name: 'Off-Page Authority',
-    icon: <Telescope className="h-5 w-5" />,
-    hue:  38,
-    body: 'Outreach, citations, brand mentions tracked as actions with timestamps. No purchased links. Ever.',
-  },
-  {
-    name: 'Content',
-    icon: <Layers className="h-5 w-5" />,
-    hue:  268,
-    body: 'Pages written to fill the gaps the cluster map identifies. Each page knows which cluster term it serves. No orphan content.',
-  },
-  {
-    name: 'Monitoring',
-    icon: <Eye className="h-5 w-5" />,
-    hue:  22,
-    body: 'Every campaign carries a baseline snapshot taken at launch. Every movement reports against that baseline. No retroactive comparisons.',
-  },
+const PILLAR_META: PillarMeta[] = [
+  { n: 1, icon: <Network className="h-5 w-5" />,   hue: 188 },
+  { n: 2, icon: <Activity className="h-5 w-5" />,  hue: 142 },
+  { n: 3, icon: <Telescope className="h-5 w-5" />, hue:  38 },
+  { n: 4, icon: <Layers className="h-5 w-5" />,    hue: 268 },
+  { n: 5, icon: <Eye className="h-5 w-5" />,       hue:  22 },
 ];
 
 export function ChPillars({ t }: { t: TFn }) {
@@ -69,44 +36,39 @@ export function ChPillars({ t }: { t: TFn }) {
     <ChapterShell id="pillars" no="04" season="summer" titleKey="ch04" t={t}>
       <PillarsStyles />
 
-      <Prose delay={0.4}>
-        Every campaign in SEO SEASON has exactly five pillars. Not four. Not six.
-        Five. The number is structural, not stylistic — fewer pillars leaves
-        gaps, more pillars dilute attention.
-      </Prose>
+      <Prose delay={0.4}>{t('pillars_intro')}</Prose>
 
       <div className="pillars-stage mt-16">
-        {PILLARS.map((p, i) => (
-          <PillarColumn key={p.name} pillar={p} index={i} />
+        {PILLAR_META.map((p, i) => (
+          <PillarColumn
+            key={p.n}
+            n={p.n}
+            icon={p.icon}
+            hue={p.hue}
+            name={t(`pillar_${p.n}_name`)}
+            body={t(`pillar_${p.n}_body`)}
+            index={i}
+          />
         ))}
       </div>
 
-      <Prose delay={1.4} className="mt-16">
-        A campaign with four pillars is incomplete; a missing pillar shows up
-        three months later as an unexplained plateau. A campaign with six is
-        over-engineered and harder to defend in year three. Five is the
-        equilibrium SEO SEASON enforces by construction.
-      </Prose>
-
-      <Prose delay={1.55}>
-        The obvious objection: what about featured snippets, FAQ schema,
-        Knowledge Graph entities — are those not their own pillars? They
-        are not. They are tactics inside one of the five — surface treatments
-        applied at the Content layer once the cluster has been mapped and
-        the page exists. Promoting tactics to pillar rank is how agencies
-        invent work to bill against. The pillars stay structural.
-      </Prose>
-
-      <Prose delay={1.75}>
-        The pillar structure is what makes the work compounding instead of
-        episodic — each pillar feeds the next, year over year, on the same
-        baseline you signed off on at launch.
-      </Prose>
+      <Prose delay={1.4} className="mt-16">{t('pillars_equilibrium')}</Prose>
+      <Prose delay={1.55}>{t('pillars_objection')}</Prose>
+      <Prose delay={1.75}>{t('pillars_close')}</Prose>
     </ChapterShell>
   );
 }
 
-function PillarColumn({ pillar, index }: { pillar: Pillar; index: number }) {
+function PillarColumn({
+  n, icon, hue, name, body, index,
+}: {
+  n:     number;
+  icon:  React.ReactNode;
+  hue:   number;
+  name:  string;
+  body:  string;
+  index: number;
+}) {
   return (
     <motion.div
       className="pillar-column"
@@ -114,7 +76,7 @@ function PillarColumn({ pillar, index }: { pillar: Pillar; index: number }) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-12%' }}
       transition={{ duration: 1.2, ease: FEATHER, delay: 0.15 + index * 0.1 }}
-      style={{ ['--pillar-hue' as any]: pillar.hue } as React.CSSProperties}
+      style={{ ['--pillar-hue' as any]: hue } as React.CSSProperties}
     >
       <div className="pillar-bar">
         <motion.div
@@ -125,15 +87,13 @@ function PillarColumn({ pillar, index }: { pillar: Pillar; index: number }) {
           transition={{ duration: 1.8, ease: FEATHER, delay: 0.35 + index * 0.12 }}
         />
       </div>
-      <div className="pillar-icon">{pillar.icon}</div>
-      <div className="pillar-name">{pillar.name}</div>
-      <div className="pillar-body">{pillar.body}</div>
-      <div className="pillar-no">{String(index + 1).padStart(2, '0')}</div>
+      <div className="pillar-icon">{icon}</div>
+      <div className="pillar-name">{name}</div>
+      <div className="pillar-body">{body}</div>
+      <div className="pillar-no">{String(n).padStart(2, '0')}</div>
     </motion.div>
   );
 }
-
-/* ─── Inline styles for this chapter ─────────────────────────────── */
 
 function PillarsStyles() {
   return (

@@ -2,16 +2,7 @@
    src/pages/manifesto/chapters/ChEthics.tsx
    Chapter 08 — What We Will & Won't Do. Autumn.
 
-   Two columns. Hard operating constraints, not stated preferences.
-   The software is built so we couldn't quietly break these even if
-   we wanted to.
-
-     LEFT  We will       (emerald checks)
-     RIGHT We will not   (rose x marks)
-
-   These are the lines a client can hold us to. If we cross any of
-   them, the client has grounds to terminate immediately. Stating
-   them publicly is the only honest commitment.
+   All prose, column labels, and 14 will/wont lines localized.
 ══════════════════════════════════════════════════════════════════════ */
 
 import { motion } from 'framer-motion';
@@ -20,58 +11,31 @@ import { ChapterShell, Prose } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-const WILL: string[] = [
-  'Show you the raw data alongside the interpreted version.',
-  "Tell you when something didn't work — and why.",
-  "Recommend you do less work, not more, when more wouldn't help.",
-  "Decline campaigns that don't make commercial sense for you.",
-  "Cite our sources, even when it would be easier not to.",
-  'Document the methodology behind every metric we display.',
-  'Acknowledge the gaps in our own data, honestly and by name.',
-];
-
-const WONT: string[] = [
-  'Buy links.',
-  'Purchase reviews or astroturf social signals.',
-  'Generate AI content farms.',
-  "Make claims we can't verify in the data layer.",
-  'Use psychological pressure tactics — fake urgency, contrived scarcity.',
-  'Promise rankings. Rankings are commitments search engines make, not us.',
-  'Retroactively recompute baselines to make our work look better.',
-];
+const N7 = [1, 2, 3, 4, 5, 6, 7] as const;
 
 export function ChEthics({ t }: { t: TFn }) {
   return (
     <ChapterShell id="ethics" no="08" season="autumn" titleKey="ch08" t={t}>
       <EthicsStyles />
 
-      <Prose delay={0.4}>
-        These aren't preferences. They are operating constraints. The software
-        is built so we couldn't break them quietly even if we wanted to —
-        every action writes to an audit trail the client can read.
-      </Prose>
+      <Prose delay={0.4}>{t('ethics_intro')}</Prose>
 
       <div className="ethics-grid mt-14">
         <div className="ethics-col">
-          <div className="ethics-col-label ethics-will">We will</div>
-          {WILL.map((line, i) => (
-            <EthicsLine key={i} text={line} kind="will" index={i} />
+          <div className="ethics-col-label ethics-will">{t('ethics_col_will')}</div>
+          {N7.map((n, i) => (
+            <EthicsLine key={`w-${n}`} text={t(`ethics_will_${n}`)} kind="will" index={i} />
           ))}
         </div>
         <div className="ethics-col">
-          <div className="ethics-col-label ethics-wont">We will not</div>
-          {WONT.map((line, i) => (
-            <EthicsLine key={i} text={line} kind="wont" index={i} />
+          <div className="ethics-col-label ethics-wont">{t('ethics_col_wont')}</div>
+          {N7.map((n, i) => (
+            <EthicsLine key={`x-${n}`} text={t(`ethics_wont_${n}`)} kind="wont" index={i} />
           ))}
         </div>
       </div>
 
-      <Prose delay={1.6} className="mt-14">
-        The list isn't aspirational. It's enforceable. Every commitment on the
-        left side has a corresponding mechanism in the system that makes it
-        observable; every prohibition on the right has a corresponding absence
-        of capability — there is no UI for buying links in this software.
-      </Prose>
+      <Prose delay={1.6} className="mt-14">{t('ethics_close')}</Prose>
     </ChapterShell>
   );
 }
@@ -79,8 +43,8 @@ export function ChEthics({ t }: { t: TFn }) {
 function EthicsLine({
   text, kind, index,
 }: {
-  text: string;
-  kind: 'will' | 'wont';
+  text:  string;
+  kind:  'will' | 'wont';
   index: number;
 }) {
   return (
@@ -100,8 +64,6 @@ function EthicsLine({
     </motion.div>
   );
 }
-
-/* ─── Inline styles for this chapter ─────────────────────────────── */
 
 function EthicsStyles() {
   return (

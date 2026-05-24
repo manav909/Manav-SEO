@@ -2,14 +2,10 @@
    src/pages/manifesto/chapters/ChData.tsx
    Chapter 09 — Authentic Data Doctrine. Autumn (continuing).
 
-   Two source-of-truth cards. No third. No synthesis. No third-party
-   rank trackers plugged in to look real. Each card has a slow-
-   pulsing live dot that signals "continuous sync" — visual analog
-   for the data layer being alive.
-
-   Then a closing statement about gaps: the dashboard that lies
-   about its own gaps is the same dashboard that will lie about
-   your performance. That sentence is the entire chapter.
+   All prose localized: data_intro, data_gaps, data_inferred_html
+   (uses <em> tags via dangerouslySetInnerHTML), data_statement,
+   data_source_1_name/_role, data_source_2_name/_role,
+   data_source_status (shared between the two source cards).
 ══════════════════════════════════════════════════════════════════════ */
 
 import { motion } from 'framer-motion';
@@ -17,64 +13,42 @@ import { ChapterShell, Prose, Statement } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-interface Source {
-  name:   string;
-  role:   string;
-  status: string;
-}
-
-const SOURCES: Source[] = [
-  {
-    name:   'Google Search Console',
-    role:   'What queries surface your site, and how.',
-    status: 'Continuous sync',
-  },
-  {
-    name:   'Google Analytics 4',
-    role:   'What visitors do once they arrive.',
-    status: 'Continuous sync',
-  },
-];
-
 export function ChData({ t }: { t: TFn }) {
   return (
     <ChapterShell id="data" no="09" season="autumn" titleKey="ch09" t={t}>
       <DataStyles />
 
-      <Prose delay={0.4}>
-        Two authoritative sources of truth. No third. No synthesis. No estimates
-        dressed as data.
-      </Prose>
+      <Prose delay={0.4}>{t('data_intro')}</Prose>
 
       <div className="data-sources mt-14">
-        {SOURCES.map((s, i) => (
-          <DataSourceCard key={i} source={s} delay={0.2 + i * 0.2} />
-        ))}
+        <DataSourceCard
+          name={t('data_source_1_name')}
+          role={t('data_source_1_role')}
+          status={t('data_source_status')}
+          delay={0.2}
+        />
+        <DataSourceCard
+          name={t('data_source_2_name')}
+          role={t('data_source_2_role')}
+          status={t('data_source_status')}
+          delay={0.4}
+        />
       </div>
 
-      <Prose delay={1.0} className="mt-12">
-        When a number is unknown, we mark it unknown. The reports honestly
-        enumerate the gaps: revenue attribution without enhanced ecommerce
-        events, true backlink count without a dedicated backlink monitor,
-        competitor SERP positions without a third-party rank database,
-        algorithm update timing — we infer; Google doesn't announce.
-      </Prose>
+      <Prose delay={1.0} className="mt-12">{t('data_gaps')}</Prose>
 
       <Prose delay={1.2}>
-        Anything beyond these two sources is labeled honestly: <em>inferred</em>,
-        <em> third-party</em>, or <em>unknown</em>. The client always knows the
-        provenance of the number they're looking at.
+        <span dangerouslySetInnerHTML={{ __html: t('data_inferred_html') }} />
       </Prose>
 
-      <Statement delay={1.4}>
-        A dashboard that lies about its own gaps is the same dashboard that
-        will lie about your performance. We don't ship that dashboard.
-      </Statement>
+      <Statement delay={1.4}>{t('data_statement')}</Statement>
     </ChapterShell>
   );
 }
 
-function DataSourceCard({ source, delay }: { source: Source; delay: number }) {
+function DataSourceCard({
+  name, role, status, delay,
+}: { name: string; role: string; status: string; delay: number }) {
   return (
     <motion.div
       className="data-source"
@@ -89,15 +63,13 @@ function DataSourceCard({ source, delay }: { source: Source; delay: number }) {
           animate={{ opacity: [0.4, 1, 0.4], scale: [1, 1.5, 1] }}
           transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
         />
-        <span className="data-source-status">{source.status}</span>
+        <span className="data-source-status">{status}</span>
       </div>
-      <div className="data-source-name">{source.name}</div>
-      <div className="data-source-role">{source.role}</div>
+      <div className="data-source-name">{name}</div>
+      <div className="data-source-role">{role}</div>
     </motion.div>
   );
 }
-
-/* ─── Inline styles for this chapter ─────────────────────────────── */
 
 function DataStyles() {
   return (

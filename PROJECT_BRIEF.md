@@ -408,6 +408,13 @@ Updated `lang_note` (the small note inside the language picker) from "Structural
 
 🟢 **i18n parity guard** — shipped 2026-05-24. New file `src/pages/manifesto/copy.assert.ts` runs at module load time and verifies every key in `COPY.en` is present in every other language with a non-empty value. Posts the summary to the browser console on every page load (`[i18n] all 5 languages parity-checked against 287 EN keys — no gaps.`). Sets `data-i18n-ok` and `data-i18n-keys` attributes on the manifesto root so you can verify deployment status from DevTools without any code. If any future regression silently drops a translation, the console fires a `console.warn` listing exactly which keys are missing or empty per language. This makes the kind of issue you spotted in the screenshots impossible to ship without a console warning.
 
+🔴 **Root cause of the screenshots** — diagnosed 2026-05-24. The screenshots showing English body prose in Spanish mode were not a translation gap. They were a **deploy gap**. Re-cloning `github.com/manav909/Manav-SEO` revealed that **nine chapter files on the main branch have zero `t()` calls** — they render hardcoded English prose regardless of the language picker:
+- ChCompare, ChData, ChEthics, ChFounder, ChHowSearch, ChJourney, ChPillars, ChProblem, ChVision
+
+The `t()`-using versions of these chapters lived only in my workspace. Each previous turn's deploy command only listed the files I touched that turn, so the per-turn approach silently left the original hardcoded chapters in place on production. The brief's claim that all chapters were wired was based on a stale assumption.
+
+**Operating lesson:** at the start of every session, re-clone from GitHub to see ground truth — not just the brief. The brief documents intent; the repo documents reality.
+
 **Deployment verification path** — after running the deploy command and waiting for Vercel:
 1. Open browser DevTools console on `/manifesto`. You should see `[i18n] all 5 languages parity-checked against 287 EN keys — no gaps.`
 2. Inspect the root `<div class="manifesto-root">` — it should carry `data-i18n-ok="true"` and `data-i18n-keys="287"`.

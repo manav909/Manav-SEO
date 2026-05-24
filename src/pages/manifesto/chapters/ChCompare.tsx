@@ -2,17 +2,7 @@
    src/pages/manifesto/chapters/ChCompare.tsx
    Chapter 07 — Why This, Not That. Monsoon (continuing).
 
-   Four-column comparison table. Each row is a capability;
-   each column is a class of provider (SEO SEASON / Traditional
-   Agency / DIY Tool). Cell values render as glyphs:
-     check  yes
-     minus  partial / sometimes
-     x      no
-     text   for free-form values
-
-   The SEO SEASON column is highlighted via accent border. No false
-   modesty — these comparisons reflect what the software actually
-   does versus what is observable in the market.
+   All prose, headers, row labels, and text-value cells localized.
 ══════════════════════════════════════════════════════════════════════ */
 
 import { useMemo } from 'react';
@@ -22,26 +12,24 @@ import { ChapterShell, Prose } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-interface Row {
-  capability: string;
-  season:     string;
-  agency:     string;
-  diy:        string;
-}
+/* Row schema: each row's text cells are either symbol codes ('yes',
+   'partial', 'no') OR free-form values which are themselves localized
+   via dedicated keys (compare_val_adhoc, compare_val_rare, etc). */
+type CellValue = 'yes' | 'partial' | 'no' | 'rare' | 'adhoc' | 'monthly';
 
-const ROWS: Row[] = [
-  { capability: 'Live data, not retrospective',          season: 'yes', agency: 'no',     diy: 'partial' },
-  { capability: 'Per-campaign baselines',                season: 'yes', agency: 'no',     diy: 'no'      },
-  { capability: 'Honest gap acknowledgment',             season: 'yes', agency: 'no',     diy: 'no'      },
-  { capability: 'Client audits every action',            season: 'yes', agency: 'no',     diy: 'no'      },
-  { capability: 'AI-era ready (LLM visibility)',         season: 'yes', agency: 'rare',   diy: 'yes'     },
-  { capability: 'No black-box reports',                  season: 'yes', agency: 'no',     diy: 'partial' },
-  { capability: 'Pillar-based architecture',             season: 'yes', agency: 'ad hoc', diy: 'no'      },
-  { capability: 'Source-cited recommendations',          season: 'yes', agency: 'rare',   diy: 'no'      },
-  { capability: 'Human accountability',                  season: 'yes', agency: 'yes',    diy: 'no'      },
-  { capability: 'Years of operator experience',          season: 'yes', agency: 'yes',    diy: 'no'      },
-  { capability: 'Single architect for the entire system', season: 'yes', agency: 'no',     diy: 'no'      },
-  { capability: 'Charges for work done, not retainer',   season: 'yes', agency: 'no',     diy: 'monthly' },
+const ROWS: { n: number; season: CellValue; agency: CellValue; diy: CellValue }[] = [
+  { n: 1,  season: 'yes', agency: 'no',     diy: 'partial' },
+  { n: 2,  season: 'yes', agency: 'no',     diy: 'no'      },
+  { n: 3,  season: 'yes', agency: 'no',     diy: 'no'      },
+  { n: 4,  season: 'yes', agency: 'no',     diy: 'no'      },
+  { n: 5,  season: 'yes', agency: 'rare',   diy: 'yes'     },
+  { n: 6,  season: 'yes', agency: 'no',     diy: 'partial' },
+  { n: 7,  season: 'yes', agency: 'adhoc',  diy: 'no'      },
+  { n: 8,  season: 'yes', agency: 'rare',   diy: 'no'      },
+  { n: 9,  season: 'yes', agency: 'yes',    diy: 'no'      },
+  { n: 10, season: 'yes', agency: 'yes',    diy: 'no'      },
+  { n: 11, season: 'yes', agency: 'no',     diy: 'no'      },
+  { n: 12, season: 'yes', agency: 'no',     diy: 'monthly' },
 ];
 
 export function ChCompare({ t }: { t: TFn }) {
@@ -49,18 +37,8 @@ export function ChCompare({ t }: { t: TFn }) {
     <ChapterShell id="compare" no="07" season="monsoon" titleKey="ch07" t={t}>
       <CompareStyles />
 
-      <Prose delay={0.4}>
-        Three ways a serious brand can do SEO today. Pick a traditional agency
-        and accept the opacity. Pick an AI-only platform and accept that
-        nobody is accountable. Or hire an agency that runs on its own
-        verifiable infrastructure.
-      </Prose>
-
-      <Prose delay={0.6}>
-        Direct comparison below. No softening. The question isn't whether
-        SEO SEASON is "good" — it's whether the alternatives can do what a
-        serious brand needs in 2026.
-      </Prose>
+      <Prose delay={0.4}>{t('compare_1')}</Prose>
+      <Prose delay={0.6}>{t('compare_2')}</Prose>
 
       <motion.div
         className="compare-table mt-12"
@@ -70,46 +48,48 @@ export function ChCompare({ t }: { t: TFn }) {
         transition={{ duration: 1.2, ease: FEATHER, delay: 0.2 }}
       >
         <div className="compare-row compare-row-head">
-          <div className="compare-cell compare-cell-cap">Capability</div>
-          <div className="compare-cell compare-cell-season">SEO SEASON</div>
-          <div className="compare-cell">Traditional Agency</div>
-          <div className="compare-cell">AI-Only Platform</div>
+          <div className="compare-cell compare-cell-cap">{t('compare_header_cap')}</div>
+          <div className="compare-cell compare-cell-season">{t('compare_header_season')}</div>
+          <div className="compare-cell">{t('compare_header_agency')}</div>
+          <div className="compare-cell">{t('compare_header_diy')}</div>
         </div>
 
         {ROWS.map((r, i) => (
           <motion.div
-            key={i}
+            key={r.n}
             className="compare-row"
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true, margin: '-8%' }}
             transition={{ duration: 0.8, ease: FEATHER, delay: 0.05 + i * 0.04 }}
           >
-            <div className="compare-cell compare-cell-cap">{r.capability}</div>
-            <CompareCell value={r.season} highlight />
-            <CompareCell value={r.agency} />
-            <CompareCell value={r.diy} />
+            <div className="compare-cell compare-cell-cap">{t(`compare_row_${r.n}`)}</div>
+            <CompareCell value={r.season} t={t} highlight />
+            <CompareCell value={r.agency} t={t} />
+            <CompareCell value={r.diy}    t={t} />
           </motion.div>
         ))}
       </motion.div>
 
-      <Prose delay={1.4} className="mt-12">
-        Pricing note: traditional agencies charge a retainer regardless of
-        work shipped. AI-only platforms charge a subscription regardless of
-        work shipped. SEO SEASON charges for actual work — every action
-        timestamped, every line item counted, every invoice defensible.
-      </Prose>
+      <Prose delay={1.4} className="mt-12">{t('compare_close')}</Prose>
     </ChapterShell>
   );
 }
 
-function CompareCell({ value, highlight = false }: { value: string; highlight?: boolean }) {
+function CompareCell({
+  value, t, highlight = false,
+}: { value: CellValue; t: TFn; highlight?: boolean }) {
   const rendered = useMemo(() => {
-    if (value === 'yes')     return { node: <Check className="h-3.5 w-3.5" />, cls: 'cv-yes'   };
+    if (value === 'yes')     return { node: <Check className="h-3.5 w-3.5" />, cls: 'cv-yes'     };
     if (value === 'partial') return { node: <Minus className="h-3.5 w-3.5" />, cls: 'cv-partial' };
-    if (value === 'no')      return { node: <X className="h-3.5 w-3.5" />,     cls: 'cv-no'    };
-    return { node: <span className="cv-text-label">{value}</span>, cls: 'cv-text' };
-  }, [value]);
+    if (value === 'no')      return { node: <X className="h-3.5 w-3.5" />,     cls: 'cv-no'      };
+    /* Text values are localized via compare_val_* keys */
+    const textKey =
+      value === 'rare'    ? 'compare_val_rare' :
+      value === 'adhoc'   ? 'compare_val_adhoc' :
+      value === 'monthly' ? 'compare_val_monthly' : '';
+    return { node: <span className="cv-text-label">{t(textKey)}</span>, cls: 'cv-text' };
+  }, [value, t]);
 
   return (
     <div className={`compare-cell compare-value ${rendered.cls} ${highlight ? 'compare-value-highlight' : ''}`}>
@@ -117,8 +97,6 @@ function CompareCell({ value, highlight = false }: { value: string; highlight?: 
     </div>
   );
 }
-
-/* ─── Inline styles for this chapter ─────────────────────────────── */
 
 function CompareStyles() {
   return (
@@ -165,29 +143,23 @@ function CompareStyles() {
         height: 24px;
       }
       .cv-yes     { color: hsla(142, 65%, 72%, 0.95); }
-      .cv-partial { color: hsla(48, 70%, 70%, 0.85); }
-      .cv-no      { color: rgba(255,255,255,0.28); }
-      .cv-text-label {
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        font-size: 0.75rem;
-        letter-spacing: 0.06em;
-        color: var(--m-ink-soft);
-        text-transform: lowercase;
+      .cv-partial { color: hsla(38, 70%, 75%, 0.85); }
+      .cv-no      { color: hsla(0, 60%, 70%, 0.7); }
+      .cv-text    {
+        color: var(--m-ink-medium);
+        font-size: 0.78rem;
+        font-style: italic;
       }
-      .compare-value-highlight {
-        position: relative;
-      }
-      .compare-value-highlight::before {
-        content: '';
-        position: absolute;
-        inset: -4px -8px;
-        border-radius: 8px;
-        background: hsla(var(--ch-hue), 60%, 50%, 0.08);
-        border: 0.5px solid hsla(var(--ch-hue), 60%, 55%, 0.25);
-        z-index: -1;
+      .compare-value-highlight.cv-yes {
+        color: hsla(142, 75%, 78%, 1);
+        text-shadow: 0 0 12px hsla(142, 75%, 60%, 0.4);
       }
       @media (max-width: 720px) {
-        .compare-row { grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 0.3rem; font-size: 0.78rem; }
+        .compare-row {
+          grid-template-columns: 1.6fr 1fr 1fr 1fr;
+          font-size: 0.85rem;
+          gap: 0.3rem;
+        }
         .compare-cell-cap { font-size: 0.85rem; }
       }
     `}</style>
