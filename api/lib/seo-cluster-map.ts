@@ -65,6 +65,15 @@ interface Cluster {
      with rows persisted before this field existed. */
   sources_used?:     ClusterSourceKey[];
   confidence_score?: number;            // 0..100 weighted mean
+  /* Phase 16.0.4 — Senior DMS quality checks (2026-05-24 PM).
+     Added after a real audit on alphasoftware.com / keyword "app maker"
+     showed the engine could mark a cluster "covered" while the campaign
+     keyword itself ranked at position 36.5. These fields surface the
+     gaps a Senior SEO Specialist would expect to see. */
+  campaign_keyword_position?: number | null;   // position of campaign kw in this cluster's queries (null if absent)
+  hub_alignment?: 'strong' | 'partial' | 'weak' | 'no_hub';
+  cohesion_position_spread?: number;           // max(pos) - min(pos) within cluster
+  is_thin?: boolean;                           // <5 queries OR <500 impressions
 }
 
 interface ClusterFinding {
@@ -134,6 +143,127 @@ function weightedClusterConfidence(clusters: Cluster[]): {
   if (sourced.length === 0) return { mean: 0, sourced_count: 0, unattributed_count: unattributed };
   const total = sourced.reduce((acc, s) => acc + s, 0);
   return { mean: Math.round(total / sourced.length), sourced_count: sourced.length, unattributed_count: unattributed };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   KEYWORD MATCHING + QUALITY CHECKS (Phase 16.0.4 — Senior DMS uplift)
+   Added 2026-05-24 PM after the cluster-map output on alphasoftware.com /
+   keyword "app maker" was marked "covered" despite the campaign keyword
+   itself ranking at position 36.5 (page 4) and the inferred hub being
+   an audit-app URL with no keyword presence.
+
+   Helpers duplicate the pattern from seo-technical-audit (same logic,
+   intentionally kept local per the standalone-engine convention).
+═══════════════════════════════════════════════════════════════════ */
+
+type KeywordMatchStrength = 'exact' | 'full' | 'partial' | 'none';
+
+function normalizeForKeywordMatch(s: string): string {
+  return (s || '').toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenMatchesWord(token: string, word: string): boolean {
+  if (token === word) return true;
+  if (token + 's' === word) return true;
+  if (token === word + 's') return true;
+  return false;
+}
+
+function tokenInText(token: string, normalizedText: string): boolean {
+  return normalizedText.split(' ').some(w => tokenMatchesWord(token, w));
+}
+
+function classifyKeywordMatch(rawText: string, keyword: string): KeywordMatchStrength {
+  if (!rawText) return 'none';
+  const text = normalizeForKeywordMatch(rawText);
+  const kw   = normalizeForKeywordMatch(keyword);
+  if (!text || !kw) return 'none';
+  const tokens = kw.split(' ').filter(Boolean);
+  if (tokens.length === 0) return 'none';
+  const padded = ' ' + text + ' ';
+  if (padded.includes(' ' + kw + ' ')) return 'exact';
+  let hits = 0;
+  for (const t of tokens) if (tokenInText(t, text)) hits++;
+  if (hits === tokens.length) return 'full';
+  if (hits > 0)               return 'partial';
+  return 'none';
+}
+
+/** Find the campaign keyword's position within a cluster's queries.
+ *  Returns the position of the best-matching query (exact > full > partial)
+ *  or null if no token-level match exists in any query. */
+function findCampaignKeywordPosition(queries: GscQueryRow[], keyword: string): {
+  position: number | null;
+  matched_query: string | null;
+  match_strength: KeywordMatchStrength;
+} {
+  if (!keyword || !queries || queries.length === 0) {
+    return { position: null, matched_query: null, match_strength: 'none' };
+  }
+  let best: { position: number; query: string; strength: KeywordMatchStrength } | null = null;
+  const rank = (s: KeywordMatchStrength) => s === 'exact' ? 3 : s === 'full' ? 2 : s === 'partial' ? 1 : 0;
+  for (const q of queries) {
+    const strength = classifyKeywordMatch(q.query, keyword);
+    if (strength === 'none') continue;
+    if (!best || rank(strength) > rank(best.strength)) {
+      best = { position: q.position, query: q.query, strength };
+    }
+  }
+  return best
+    ? { position: best.position, matched_query: best.query, match_strength: best.strength }
+    : { position: null, matched_query: null, match_strength: 'none' };
+}
+
+/** Assess whether the inferred hub URL carries the campaign keyword tokens.
+ *  A Senior SEO Specialist expects the hub for a "${keyword}" cluster to
+ *  visibly contain ${keyword} in its slug. If it doesn't, the heuristic
+ *  has likely locked onto an adjacent-topic URL rather than the real hub. */
+function assessHubAlignment(hubUrl: string | null, keyword: string): {
+  alignment: 'strong' | 'partial' | 'weak' | 'no_hub';
+  slug: string;
+  match: KeywordMatchStrength;
+} {
+  if (!hubUrl) return { alignment: 'no_hub', slug: '', match: 'none' };
+  let slug = '';
+  try {
+    const u = new URL(hubUrl);
+    slug = u.pathname.replace(/[-_/?=&]/g, ' ');
+  } catch {
+    slug = hubUrl.replace(/[-_/?=&]/g, ' ');
+  }
+  const match = classifyKeywordMatch(slug, keyword);
+  const alignment: 'strong' | 'partial' | 'weak' | 'no_hub' =
+    match === 'exact' || match === 'full' ? 'strong' :
+    match === 'partial'                   ? 'partial' :
+                                            'weak';
+  return { alignment, slug: slug.trim(), match };
+}
+
+/** Compute cluster cohesion as the position spread (max - min) across
+ *  queries that have meaningful impressions. A spread > 20 ranks suggests
+ *  the cluster is over-aggregated — queries from very different SERPs
+ *  got grouped because their tokens overlap, but they're not the same
+ *  topical universe. */
+function clusterPositionSpread(queries: GscQueryRow[]): number {
+  const positions = queries
+    .filter(q => q.impressions >= 5 && q.position > 0)
+    .map(q => q.position);
+  if (positions.length < 2) return 0;
+  return Math.max(...positions) - Math.min(...positions);
+}
+
+/** Banner severity for a campaign keyword position. Returns null if the
+ *  keyword has no measurable ranking in the cluster's queries. */
+function campaignKeywordSeverity(pos: number | null): 'green' | 'amber' | 'red' | 'red_critical' | 'absent' {
+  if (pos === null) return 'absent';
+  if (pos <= 3)     return 'green';
+  if (pos <= 10)    return 'amber';
+  if (pos <= 20)    return 'amber';
+  if (pos <= 50)    return 'red';
+  return 'red_critical';
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -231,6 +361,43 @@ export async function runClusterMap(opts: {
       if (cl.competitor_owners && cl.competitor_owners.length > 0) keys.push('llm_ownership');
       cl.sources_used = keys;
       cl.confidence_score = clusterSourcesConfidence(keys);
+    }
+
+    /* 6c. Phase 16.0.4 — Senior DMS quality checks per cluster.
+       Computes: campaign keyword position WITHIN the cluster's queries,
+       hub URL alignment, position-spread cohesion, and thin-cluster flag.
+       Then applies a coverage_status post-fix: a cluster cannot be
+       "covered" if the campaign keyword itself ranks below position 20,
+       regardless of cluster aggregates — that's synthesis-as-fact otherwise. */
+    for (const cl of withCoverage) {
+      const kwPos        = findCampaignKeywordPosition(cl.queries, c.keyword);
+      const hubAlign     = assessHubAlignment(cl.hub_page_url, c.keyword);
+      const spread       = clusterPositionSpread(cl.queries);
+      const thin         = cl.query_count < 5 || cl.total_impressions < 500;
+      cl.campaign_keyword_position = kwPos.position;
+      cl.hub_alignment             = hubAlign.alignment;
+      cl.cohesion_position_spread  = spread;
+      cl.is_thin                   = thin;
+
+      /* Coverage post-fix — Senior DMS bar */
+      if (cl.coverage_status === 'covered' && kwPos.position !== null && kwPos.position > 20) {
+        cl.coverage_status = 'partial';
+      }
+      /* If hub doesn't carry the keyword at all (weak alignment) AND we'd
+         called this "covered", downgrade — the heuristic likely locked
+         onto an adjacent-topic URL, not a real hub. */
+      if (cl.coverage_status === 'covered' && hubAlign.alignment === 'weak') {
+        cl.coverage_status = 'partial';
+      }
+      /* If the cluster is thin AND we'd called it covered, downgrade —
+         can't claim coverage on 4 queries of evidence. */
+      if (cl.coverage_status === 'covered' && thin) {
+        cl.coverage_status = 'partial';
+      }
+      /* Thin clusters get reduced confidence regardless of source-quality */
+      if (thin && typeof cl.confidence_score === 'number') {
+        cl.confidence_score = Math.min(cl.confidence_score, 60);
+      }
     }
 
     /* 7. Persist clusters + write report */
@@ -1312,6 +1479,136 @@ function summarizeCompetitors(competitors: any[]): string {
 function computeFindings(clusters: Cluster[], keyword: string, totalGscQueries: number, relatedCount: number): ClusterFinding[] {
   const findings: ClusterFinding[] = [];
 
+  /* ══════════════════════════════════════════════════════════════
+     PHASE 16.0.4 — Senior DMS uplift findings (BANNER + quality)
+
+     These come FIRST in the report because they answer the question a
+     paying client opens the report to ask: "Where do I rank for my
+     target keyword, and is the page that ranks the right one?"
+  ══════════════════════════════════════════════════════════════ */
+
+  /* Banner: where does the campaign keyword itself rank?
+     Look across ALL clusters' queries for the best-matching position. */
+  const allQueries = clusters.flatMap(c => c.queries);
+  const kwPos = findCampaignKeywordPosition(allQueries, keyword);
+  const sev   = campaignKeywordSeverity(kwPos.position);
+
+  if (sev === 'absent') {
+    findings.push({
+      severity: 'red',
+      title:    `Campaign keyword "${keyword}" has NO measurable ranking`,
+      detail:   `The campaign keyword "${keyword}" did not appear in any of the ${relatedCount} GSC queries clustered for this campaign. The project may rank for related/adjacent terms, but NOT for the target keyword itself.\n\nThis means the current pages have no organic visibility for "${keyword}". Either the keyword is wrong for the site, or a dedicated landing page is needed.`,
+      sources_used: ['gsc_queries'],
+      confidence_score: 95,
+    });
+  } else if (sev === 'red_critical') {
+    findings.push({
+      severity: 'red',
+      title:    `Campaign keyword "${keyword}" ranks at position ${kwPos.position!.toFixed(1)} (deep page rank)`,
+      detail:   `Best match: "${kwPos.matched_query}" at position ${kwPos.position!.toFixed(1)} — beyond page 5 of Google. At this depth the page is effectively invisible to organic searchers. Match type: ${kwPos.match_strength}.\n\nThis cluster cannot be considered "covered" until the campaign keyword breaks into at least the top 20.`,
+      sources_used: ['gsc_queries'],
+      confidence_score: 95,
+    });
+  } else if (sev === 'red') {
+    findings.push({
+      severity: 'red',
+      title:    `Campaign keyword "${keyword}" ranks at position ${kwPos.position!.toFixed(1)} (page 3-5)`,
+      detail:   `Best match: "${kwPos.matched_query}" at position ${kwPos.position!.toFixed(1)}. Pages 3-5 receive less than 1% of organic clicks for most queries. The page may be indexed and topically relevant, but is not earning meaningful traffic for the target keyword. Match type: ${kwPos.match_strength}.\n\nGap to top 10: ${(kwPos.position! - 10).toFixed(0)} positions. Gap to top 3: ${(kwPos.position! - 3).toFixed(0)} positions.`,
+      sources_used: ['gsc_queries'],
+      confidence_score: 95,
+    });
+  } else if (sev === 'amber') {
+    findings.push({
+      severity: 'amber',
+      title:    `Campaign keyword "${keyword}" ranks at position ${kwPos.position!.toFixed(1)}`,
+      detail:   `Best match: "${kwPos.matched_query}" at position ${kwPos.position!.toFixed(1)}. ${kwPos.position! <= 10 ? 'Page 1, but not top 3 — measurable headroom exists.' : 'Page 2 — close to top-10 visibility but not yet capturing meaningful clicks.'} Match type: ${kwPos.match_strength}.`,
+      sources_used: ['gsc_queries'],
+      confidence_score: 95,
+    });
+  } else if (sev === 'green') {
+    findings.push({
+      severity: 'green',
+      title:    `Campaign keyword "${keyword}" ranks in top 3 (position ${kwPos.position!.toFixed(1)})`,
+      detail:   `Best match: "${kwPos.matched_query}" at position ${kwPos.position!.toFixed(1)}. Strong organic visibility — preserve the ranking page and look for cluster-expansion opportunities.`,
+      sources_used: ['gsc_queries'],
+      confidence_score: 95,
+    });
+  }
+
+  /* Hub alignment findings — per cluster where the hub doesn't carry the keyword */
+  const weakHubClusters    = clusters.filter(c => c.hub_alignment === 'weak' && c.hub_page_url);
+  const partialHubClusters = clusters.filter(c => c.hub_alignment === 'partial');
+  const noHubClusters      = clusters.filter(c => c.hub_alignment === 'no_hub');
+
+  for (const cl of weakHubClusters) {
+    findings.push({
+      severity: 'red',
+      title:    `Hub URL for cluster "${cl.cluster_name}" does NOT carry the keyword "${keyword}"`,
+      detail:   `Inferred hub: ${cl.hub_page_url}\n\nThe URL slug contains no tokens from "${keyword}". The URL-slug heuristic has likely locked onto an adjacent-topic page rather than a real hub for this keyword. A Senior SEO Specialist would never trust this page as the hub.\n\nRecommendation: either (a) identify the correct hub page manually and update the campaign's target_url, or (b) accept that there is NO hub yet for "${keyword}" and treat this as a content gap.`,
+      sources_used: ['gsc_pages_slug', 'gsc_queries'],
+      confidence_score: 88,
+    });
+  }
+
+  if (partialHubClusters.length > 0) {
+    const names = partialHubClusters.slice(0, 3).map(c => `"${c.cluster_name}" → ${c.hub_page_url}`).join('; ');
+    findings.push({
+      severity: 'amber',
+      title:    `${partialHubClusters.length} cluster${partialHubClusters.length === 1 ? '' : 's'} have hubs with only partial keyword alignment`,
+      detail:   `Hub URL slugs contain some but not all keyword tokens. The page may rank for adjacent terms but not the campaign keyword itself.\n\n${names}\n\nRecommendation: verify each hub manually against the live SERP for the campaign keyword.`,
+      sources_used: ['gsc_pages_slug', 'gsc_queries'],
+      confidence_score: 80,
+    });
+  }
+
+  for (const cl of noHubClusters) {
+    findings.push({
+      severity: 'amber',
+      title:    `No hub identified for cluster "${cl.cluster_name}"`,
+      detail:   `No GSC top_page slug overlapped with this cluster's tokens. The cluster represents a content gap — there is no page on the site that the URL-slug heuristic could associate with these queries.\n\nRecommendation: this is a candidate for new-content creation. If a page already exists that should rank, its URL slug doesn't reflect the topic — consider a rename or canonicalization.`,
+      sources_used: ['gsc_queries'],
+      confidence_score: 85,
+    });
+  }
+
+  /* Cohesion findings — over-aggregated clusters */
+  const overAggregated = clusters.filter(c =>
+    typeof c.cohesion_position_spread === 'number' &&
+    c.cohesion_position_spread > 20 &&
+    c.queries.length >= 3,
+  );
+  for (const cl of overAggregated) {
+    const positions = cl.queries
+      .filter(q => q.impressions >= 5 && q.position > 0)
+      .map(q => `"${q.query}" at ${q.position.toFixed(1)}`)
+      .slice(0, 4)
+      .join(', ');
+    findings.push({
+      severity: 'amber',
+      title:    `Cluster "${cl.cluster_name}" is over-aggregated (position spread ${cl.cohesion_position_spread!.toFixed(0)})`,
+      detail:   `Queries within this cluster span ${cl.cohesion_position_spread!.toFixed(0)} ranks (>20 = significant spread). This usually means the lexical clustering grouped queries that share tokens but actually have different SERPs and intents.\n\nExamples: ${positions}.\n\nRecommendation: these queries likely warrant separate hubs or pages. Manual review of the SERP for each query will confirm.`,
+      sources_used: ['gsc_queries', 'llm_naming'],
+      confidence_score: 85,
+    });
+  }
+
+  /* Thin-cluster honesty */
+  const thinClusters = clusters.filter(c => c.is_thin);
+  if (thinClusters.length > 0) {
+    const examples = thinClusters.slice(0, 3).map(c => `"${c.cluster_name}" (${c.query_count} queries, ${c.total_impressions.toLocaleString()} impressions)`).join('; ');
+    findings.push({
+      severity: 'amber',
+      title:    `${thinClusters.length} cluster${thinClusters.length === 1 ? '' : 's'} built on thin data — low confidence`,
+      detail:   `Clusters with fewer than 5 queries OR fewer than 500 impressions are statistically thin. The analysis is directional, not definitive.\n\n${examples}\n\nA Senior SEO Specialist would validate these manually via live SERP checks before acting. As GSC accumulates more data over time, these clusters should be re-run.`,
+      sources_used: ['gsc_queries'],
+      confidence_score: 95,  /* the thinness observation itself is high-confidence */
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     Pre-existing findings (gap / partial_losing / partial / covered)
+  ══════════════════════════════════════════════════════════════ */
+
   const gapCount           = clusters.filter(c => c.coverage_status === 'gap').length;
   const partialCount       = clusters.filter(c => c.coverage_status === 'partial').length;
   const partialLosingCount = clusters.filter(c => c.coverage_status === 'partial_losing').length;
@@ -1501,10 +1798,51 @@ function renderClusterMapReport(opts: {
       lines.push(`*Sources · ${labels} · weighted confidence ${cl.confidence_score}/100*`);
     }
     lines.push('');
+
+    /* Phase 16.0.4 — Senior DMS quality summary line per cluster.
+       Shows the consequential signals a senior practitioner reads first:
+       where the campaign keyword itself ranks, whether the hub is
+       keyword-aligned, position spread, and thin-data warning. */
+    const qualityBits: string[] = [];
+    if (cl.campaign_keyword_position !== null && typeof cl.campaign_keyword_position === 'number') {
+      const pos = cl.campaign_keyword_position;
+      const posIcon = pos <= 3 ? '🟢' : pos <= 10 ? '🟡' : pos <= 20 ? '🟡' : '🔴';
+      qualityBits.push(`${posIcon} Campaign kw "${keyword}" at position ${pos.toFixed(1)}`);
+    } else if (cl.campaign_keyword_position === null) {
+      qualityBits.push(`🔴 Campaign kw "${keyword}" not in this cluster's queries`);
+    }
+    if (cl.hub_alignment) {
+      const hubIcon = cl.hub_alignment === 'strong'  ? '🟢'
+                   : cl.hub_alignment === 'partial' ? '🟡'
+                   : cl.hub_alignment === 'weak'    ? '🔴' : '🔴';
+      const hubLabel = cl.hub_alignment === 'strong'  ? 'hub carries keyword'
+                    : cl.hub_alignment === 'partial' ? 'hub partial keyword'
+                    : cl.hub_alignment === 'weak'    ? 'hub does NOT carry keyword'
+                                                     : 'no hub';
+      qualityBits.push(`${hubIcon} ${hubLabel}`);
+    }
+    if (typeof cl.cohesion_position_spread === 'number' && cl.cohesion_position_spread > 20) {
+      qualityBits.push(`🟡 over-aggregated (spread ${cl.cohesion_position_spread.toFixed(0)})`);
+    }
+    if (cl.is_thin) {
+      qualityBits.push(`🟡 thin data (${cl.query_count} queries, ${cl.total_impressions} impr)`);
+    }
+    if (qualityBits.length > 0) {
+      lines.push(`**Quality signals:** ${qualityBits.join(' · ')}`);
+      lines.push('');
+    }
+
     if (cl.hub_page_url) {
       lines.push(`**Inferred hub:** [${cl.hub_page_url}](${cl.hub_page_url})`);
+      if (cl.hub_alignment === 'weak') {
+        lines.push('');
+        lines.push(`⚠️ This URL slug does NOT contain tokens from "${keyword}". The URL-slug heuristic has likely picked an adjacent-topic page rather than a real hub for this keyword. Treat as unreliable.`);
+      } else if (cl.hub_alignment === 'partial') {
+        lines.push('');
+        lines.push(`⚠️ This URL slug contains some but not all tokens of "${keyword}". May rank for adjacent terms rather than the campaign keyword itself. Verify against the live SERP.`);
+      }
     } else {
-      lines.push(`**Inferred hub:** _none found_`);
+      lines.push(`**Inferred hub:** _none found — this cluster has no page on the site whose URL slug overlaps with its tokens. Likely a content gap._`);
     }
     if (cl.spoke_pages && cl.spoke_pages.length > 0) {
       lines.push('');
@@ -1522,12 +1860,31 @@ function renderClusterMapReport(opts: {
       }
     } else {
       lines.push('');
-      lines.push(`**Domains owning this cluster:** _LLM couldn't identify with confidence — investigate manually via SERP check._`);
+      lines.push(`**Domains owning this cluster:** _LLM couldn't identify with confidence — investigate manually via SERP check. Without competitive evidence, "coverage" claims should be treated as provisional._`);
+    }
+
+    /* Phase 16.0.4 — recommendation now incorporates actual data signals,
+       not generic platitudes. If the LLM-generated recommendation refers
+       to "the primary keyword landing page" but no such page exists (weak
+       hub), prepend a correction. */
+    const overrideBits: string[] = [];
+    if (cl.hub_alignment === 'weak' && cl.hub_page_url) {
+      overrideBits.push(`**First fix the hub.** The inferred hub (${cl.hub_page_url}) does not carry "${keyword}" in its URL. Either identify the correct hub manually, or build a dedicated landing page for "${keyword}" before pursuing the deeper recommendation below.`);
+    }
+    if (cl.campaign_keyword_position !== null && cl.campaign_keyword_position !== undefined && cl.campaign_keyword_position > 20) {
+      overrideBits.push(`**Reality check on "covered" status.** "${keyword}" itself ranks at position ${cl.campaign_keyword_position.toFixed(1)} — significant gap to top 10. The LLM-generated recommendation below treats the page as a coverage starting point; in practice, more foundational work (title/H1/content alignment) is required first.`);
+    }
+    if (cl.is_thin) {
+      overrideBits.push(`**Thin-data caveat.** This cluster is built from only ${cl.query_count} queries / ${cl.total_impressions.toLocaleString()} impressions. The recommendation below is directional, not definitive — validate via manual SERP check before committing resources.`);
+    }
+    if (overrideBits.length > 0) {
+      lines.push('');
+      for (const bit of overrideBits) lines.push(`> ${bit}`);
     }
 
     if (cl.recommendation) {
       lines.push('');
-      lines.push(`**Recommendation:** ${cl.recommendation}`);
+      lines.push(`**Recommendation (LLM-generated):** ${cl.recommendation}`);
     }
     lines.push('');
     lines.push(`**Sample queries** (top ${Math.min(10, cl.queries.length)} by impressions):`);
@@ -1552,7 +1909,15 @@ function renderClusterMapReport(opts: {
   lines.push('');
   lines.push('**How `partial_losing` is detected:** Cluster has a hub AND decent average position, BUT 3+ competitor domains were identified for the cluster AND your average position isn\'t top-3. This means you\'re technically covered but losing the cluster competitively. Worth surfacing because it\'s a strategic decision point: invest more here, or pivot to gap clusters where you can dominate.');
   lines.push('');
-  lines.push('**Not yet covered:** Real SERP fetch per cluster (currently competitor_owners is LLM-cited, not measured), semantic similarity via embeddings, project-wide cluster maps across campaigns, automatic content-roadmap generation as kanban tasks, visual graph rendering.');
+  lines.push('**Phase 16.0.4 — Senior DMS quality checks (2026-05-24):**');
+  lines.push('');
+  lines.push('- **Campaign keyword position banner:** scans cluster queries for the campaign keyword (exact > full > partial match) and surfaces its ranking position as the lead finding. Severity by rank: 1-3 green, 4-20 amber, 21-50 red, >50 red-critical, absent red.');
+  lines.push('- **Hub alignment check:** verifies the inferred hub URL slug carries the campaign keyword tokens. A hub URL that ranks for adjacent terms but does not contain the keyword cannot be trusted as a real hub.');
+  lines.push('- **Coverage downgrade rules:** a cluster cannot be `covered` if (a) the campaign keyword itself ranks below position 20, (b) the hub does not carry the keyword (weak alignment), or (c) the cluster is thin (<5 queries OR <500 impressions). These downgrades prevent synthesis-as-fact verdicts.');
+  lines.push('- **Cluster cohesion:** position spread (max − min) within a cluster. Spread > 20 ranks flags over-aggregation — different SERPs / different intents grouped together because their tokens overlapped.');
+  lines.push('- **Thin-cluster honesty:** clusters with <5 queries OR <500 impressions are marked thin and have their confidence capped at 60. The recommendation is treated as directional, not definitive.');
+  lines.push('');
+  lines.push('**Not yet covered:** Real SERP fetch per cluster (currently competitor_owners is LLM-cited, not measured), semantic similarity via embeddings, project-wide cluster maps across campaigns, automatic content-roadmap generation as kanban tasks, visual graph rendering, intent classification per query (informational / commercial / navigational / transactional) to flag over-aggregation by intent mismatch.');
 
   return lines.join('\n');
 }
