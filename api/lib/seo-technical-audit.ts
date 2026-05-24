@@ -175,6 +175,10 @@ export async function runTechnicalAudit(opts: {
       checkCoreWebVitals(target.url, c.project_id),
       checkEngagementSignals(target.url, c.project_id),
       checkSchemaMarkup(target.url),
+      /* Phase 15.2 — Senior DMS uplift 2026-05-24 */
+      checkKeywordPresence(target.url, c.keyword),
+      checkCtrVsExpected(target.url, c.project_id),
+      checkQueryDistribution(target.url, c.project_id, c.keyword),
     ]);
 
     const findings: Finding[] = [];
@@ -184,7 +188,7 @@ export async function runTechnicalAudit(opts: {
       if (r.status === 'fulfilled') {
         findings.push(...r.value);
       } else {
-        const checkName = ['indexability','on_page','cwv','engagement','schema'][i];
+        const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution'][i];
         failedChecks.push(checkName);
       }
     }
@@ -670,18 +674,46 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
     });
   }
 
-  /* Images without alt */
+  /* Images without alt — list specific images for actionable fixes */
   const imgMatches = html.match(/<img[^>]+>/gi) || [];
   const imgsWithoutAlt = imgMatches.filter(img => !/\salt=/i.test(img));
   if (imgMatches.length > 0 && imgsWithoutAlt.length > 0) {
     const pct = Math.round((imgsWithoutAlt.length / imgMatches.length) * 100);
+    /* Extract specific src URLs of images missing alt for actionable fix */
+    const missingSrcs = imgsWithoutAlt
+      .map(img => {
+        const m = /\ssrc=["']([^"']+)["']/i.exec(img);
+        return m?.[1] || null;
+      })
+      .filter((s): s is string => !!s)
+      .slice(0, 8);
+    /* Also count short/generic alts on the ones that DO have alt */
+    const imgsWithShortAlt = imgMatches.filter(img => {
+      const m = /\salt=["']([^"']*)["']/i.exec(img);
+      if (!m) return false;
+      const a = m[1].trim();
+      return a.length > 0 && a.length < 5;
+    }).length;
+    const detailLines = [
+      `${imgsWithoutAlt.length} of ${imgMatches.length} images (${pct}%) have no alt attribute.`,
+    ];
+    if (missingSrcs.length > 0) {
+      detailLines.push('', '**Specific images missing alt:**');
+      for (const src of missingSrcs) detailLines.push(`- ${src}`);
+      if (imgsWithoutAlt.length > missingSrcs.length) {
+        detailLines.push(`- _(${imgsWithoutAlt.length - missingSrcs.length} more)_`);
+      }
+    }
+    if (imgsWithShortAlt > 0) {
+      detailLines.push('', `Additionally, ${imgsWithShortAlt} image(s) have very short alt text (<5 chars) — likely insufficient.`);
+    }
     findings.push({
       audit_kind: 'on_page_fundamentals',
       severity: pct > 50 ? 'amber' : 'info',
       finding_title:  `${imgsWithoutAlt.length} of ${imgMatches.length} images missing alt text (${pct}%)`,
-      finding_detail: 'Alt text helps screen readers, image search ranking, and acts as backup if images fail to load.',
-      recommendation: 'Add descriptive alt text to every meaningful image. Decorative images can use alt="".',
-      evidence: { total_images: imgMatches.length, missing_alt: imgsWithoutAlt.length },
+      finding_detail: detailLines.join('\n') + '\n\nAlt text helps screen readers, image search ranking, and acts as backup if images fail to load.',
+      recommendation: 'Add descriptive alt text to every meaningful image. Decorative images can use alt="". For the listed image URLs, write 5-12 word descriptions of what the image shows.',
+      evidence: { total_images: imgMatches.length, missing_alt: imgsWithoutAlt.length, missing_alt_srcs: missingSrcs, short_alt_count: imgsWithShortAlt },
       data_source: 'html_fetch',
     });
   }
@@ -744,6 +776,436 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
     });
   }
 
+  return findings;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CHECK 6: KEYWORD PRESENCE  (Phase 15.2 — Senior DMS uplift 2026-05-24)
+
+   Verifies that the campaign keyword appears in the 5 high-leverage
+   on-page locations a senior practitioner would expect:
+     1. <title>
+     2. <h1>
+     3. URL slug
+     4. <meta name="description">
+     5. First ~120 words of body text
+
+   Severity logic (worst-case dominant):
+     • Keyword absent from title AND h1                  → 🔴 RED critical
+     • Keyword in title XOR h1, but not both             → 🟡 AMBER
+     • Keyword in both title AND h1 but missing elsewhere → 🟡 AMBER (improvable)
+     • Full coverage across all 5 locations              → 🟢 GREEN
+
+   Match strengths per location:
+     • 'exact'   — full phrase present (case-insensitive, word-bounded)
+     • 'full'    — every token of the keyword present (any order, word-bounded)
+     • 'partial' — at least one token present (counts as weak match)
+     • 'none'    — no token match
+
+   Word-boundary matching plus light pluralization tolerance ("app" matches
+   "apps" via simple +s/-s normalization). NOT semantic synonym matching —
+   intentional: a Senior DMS wants to see the campaign keyword visible, not
+   inferred. If "app maker" is the campaign target and the page says only
+   "Power Apps" — that's a real gap, not a synonym match.
+═══════════════════════════════════════════════════════════════ */
+
+type KeywordMatchStrength = 'exact' | 'full' | 'partial' | 'none';
+
+interface KeywordCoverageResult {
+  location:       'title' | 'h1' | 'url' | 'meta_description' | 'first_paragraph';
+  match_strength: KeywordMatchStrength;
+  observed:       string;
+  matched_tokens: string[];
+}
+
+/* Normalize a text fragment for keyword matching: lowercase, strip non-word
+   chars, collapse whitespace. */
+function normalizeForKeywordMatch(s: string): string {
+  return (s || '').toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* Light pluralization: "app" stems against "app" and "apps"; "maker" against
+   "maker" and "makers". One-character +s/-s tolerance only — intentionally
+   conservative. */
+function tokenMatchesWord(token: string, word: string): boolean {
+  if (token === word) return true;
+  if (token + 's' === word) return true;
+  if (token === word + 's') return true;
+  return false;
+}
+
+function tokenInText(token: string, normalizedText: string): boolean {
+  const words = normalizedText.split(' ');
+  return words.some(w => tokenMatchesWord(token, w));
+}
+
+function classifyKeywordMatch(rawText: string, keyword: string): KeywordMatchStrength {
+  if (!rawText) return 'none';
+  const text = normalizeForKeywordMatch(rawText);
+  const kw   = normalizeForKeywordMatch(keyword);
+  if (!text || !kw) return 'none';
+  const tokens = kw.split(' ').filter(Boolean);
+  if (tokens.length === 0) return 'none';
+
+  /* Exact phrase: kw appears as a contiguous substring on word boundaries. */
+  const padded = ' ' + text + ' ';
+  if (padded.includes(' ' + kw + ' ')) return 'exact';
+
+  /* Token coverage */
+  let hits = 0;
+  for (const t of tokens) if (tokenInText(t, text)) hits++;
+  if (hits === tokens.length) return 'full';
+  if (hits > 0)               return 'partial';
+  return 'none';
+}
+
+function urlSlug(url: string): string {
+  try {
+    const u = new URL(url);
+    return (u.pathname + ' ' + u.search).replace(/[-_/?=&]/g, ' ');
+  } catch {
+    return url.replace(/[-_/?=&]/g, ' ');
+  }
+}
+
+function firstParagraphText(html: string, charLimit = 800): string {
+  /* Strip script/style first. Look for the FIRST substantive <p>...</p>
+     block. Fall back to the first body chunk after the first H1. */
+  const cleaned = html.replace(/<script[\s\S]*?<\/script>/gi, '')
+                      .replace(/<style[\s\S]*?<\/style>/gi, '');
+  const pMatches = cleaned.match(/<p[^>]*>([\s\S]*?)<\/p>/gi) || [];
+  for (const block of pMatches) {
+    const text = block.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (text.length >= 60) return text.slice(0, charLimit);  // substantive paragraph found
+  }
+  /* Fallback: first 800 chars of body text after first H1 */
+  const afterH1 = cleaned.split(/<\/h1>/i)[1] || cleaned;
+  return afterH1.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, charLimit);
+}
+
+async function checkKeywordPresence(url: string, keyword: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  if (!keyword || !keyword.trim()) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'info',
+      finding_title: 'Keyword presence check skipped — no campaign keyword set',
+      finding_detail: 'Set a target keyword on the campaign so the audit can verify on-page keyword coverage.',
+      data_source: 'html_fetch',
+    });
+    return findings;
+  }
+
+  const r = await fetchWithTimeout(url, 12000);
+  if (!r.ok || !r.html) return findings;  /* indexability check already flagged this */
+  const html = r.html;
+
+  /* Extract the 5 locations */
+  const titleMatch    = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
+  const title         = titleMatch?.[1]?.trim() || '';
+  const h1Match       = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+  const h1            = h1Match ? h1Match[1].replace(/<[^>]+>/g, '').trim() : '';
+  const metaDescMatch = /<meta\s+[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(html);
+  const metaDesc      = metaDescMatch?.[1]?.trim() || '';
+  const slug          = urlSlug(url);
+  const firstPara     = firstParagraphText(html);
+
+  /* Classify each location */
+  const coverage: KeywordCoverageResult[] = [
+    { location: 'title',            match_strength: classifyKeywordMatch(title,     keyword), observed: title.slice(0, 120),     matched_tokens: [] },
+    { location: 'h1',               match_strength: classifyKeywordMatch(h1,        keyword), observed: h1.slice(0, 120),        matched_tokens: [] },
+    { location: 'url',              match_strength: classifyKeywordMatch(slug,      keyword), observed: slug.trim().slice(0, 200), matched_tokens: [] },
+    { location: 'meta_description', match_strength: classifyKeywordMatch(metaDesc,  keyword), observed: metaDesc.slice(0, 160),  matched_tokens: [] },
+    { location: 'first_paragraph',  match_strength: classifyKeywordMatch(firstPara, keyword), observed: firstPara.slice(0, 200), matched_tokens: [] },
+  ];
+
+  /* Severity logic — title and H1 dominate */
+  const titleMatch_  = coverage[0].match_strength;
+  const h1Match_     = coverage[1].match_strength;
+  const titleStrong  = titleMatch_ === 'exact' || titleMatch_ === 'full';
+  const h1Strong     = h1Match_ === 'exact' || h1Match_ === 'full';
+  const titleAnyMatch = titleMatch_ !== 'none';
+  const h1AnyMatch    = h1Match_ !== 'none';
+  const kwTokens     = normalizeForKeywordMatch(keyword).split(' ').filter(Boolean);
+  const multiToken   = kwTokens.length >= 2;
+  /* Senior DMS bar: for a multi-token keyword, BOTH title and H1 being
+     partial (missing tokens) is a significant alignment failure — the
+     page doesn't carry the full keyword phrase anywhere it counts most. */
+  const bothPartial  = multiToken && titleMatch_ === 'partial' && h1Match_ === 'partial';
+
+  const otherStrongCount = coverage.slice(2).filter(c => c.match_strength === 'exact' || c.match_strength === 'full').length;
+
+  /* Build a readable coverage table for the finding */
+  const tableRows = coverage.map(c => {
+    const icon = c.match_strength === 'exact' ? '✅ exact'
+              : c.match_strength === 'full'  ? '✅ all tokens'
+              : c.match_strength === 'partial' ? '⚠️ partial'
+              : '❌ missing';
+    return `  • ${c.location.padEnd(18)} → ${icon}  "${c.observed || '(empty)'}"`;
+  }).join('\n');
+
+  if (!titleAnyMatch && !h1AnyMatch) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals', severity: 'red',
+      finding_title:  `Campaign keyword "${keyword}" missing from both title and H1`,
+      finding_detail: `The keyword "${keyword}" does not appear in either the page title or the H1. These are the two strongest on-page ranking signals a Senior SEO Specialist would expect to align with the campaign target.\n\nCoverage breakdown:\n${tableRows}\n\nThe page may rank for this keyword via topical relevance, but absent of explicit keyword presence in title/H1, it will plateau well below top-3.`,
+      recommendation: `Rewrite the page title and H1 to contain "${keyword}" naturally. If "${keyword}" is genuinely off-topic for this page, the campaign keyword is wrong — recheck whether this URL is the right target.`,
+      evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword) },
+      data_source: 'html_fetch',
+    });
+  } else if (bothPartial) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals', severity: 'red',
+      finding_title:  `Campaign keyword "${keyword}" only partially present in both title and H1 — significant alignment gap`,
+      finding_detail: `Neither the title nor the H1 carries the full keyword phrase. Both have **partial** token coverage only — some tokens of "${keyword}" appear, others are absent.\n\nCoverage breakdown:\n${tableRows}\n\nThe page may be optimized for a related but distinct keyword — not the campaign target. A Senior SEO Specialist would call this a content-strategy mismatch: either the page needs rewriting, or the campaign keyword needs reassignment.`,
+      recommendation: `Two options: (a) Rewrite the title and H1 to carry the full "${keyword}" phrase naturally — if it fits the page intent. (b) Change the campaign keyword to one that already matches the page's actual content. Don't try to rank a page for a keyword its title/H1 doesn't carry.`,
+      evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword), missing_tokens_in_title: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(title))), missing_tokens_in_h1: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(h1))) },
+      data_source: 'html_fetch',
+    });
+  } else if (!titleStrong && !h1Strong) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals', severity: 'amber',
+      finding_title:  `Campaign keyword "${keyword}" appears only weakly in title/H1`,
+      finding_detail: `The keyword "${keyword}" has only partial token coverage in the title and H1 — close but not the full phrase or all tokens. A clean phrase match in either of these locations correlates strongly with top-3 ranking.\n\nCoverage breakdown:\n${tableRows}`,
+      recommendation: `Rewrite the title or H1 to contain the full keyword phrase. Aim for natural placement — Google can detect over-optimization.`,
+      evidence: { keyword, coverage },
+      data_source: 'html_fetch',
+    });
+  } else if (!(titleStrong && h1Strong)) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals', severity: 'amber',
+      finding_title:  `Campaign keyword "${keyword}" present in only one of title/H1`,
+      finding_detail: `Strong keyword match in ${titleStrong ? 'title' : 'H1'} but not in ${titleStrong ? 'H1' : 'title'}. Both should carry the keyword for maximum signal.\n\nCoverage breakdown:\n${tableRows}`,
+      recommendation: `Update ${titleStrong ? 'the H1' : 'the title'} to include "${keyword}".`,
+      evidence: { keyword, coverage },
+      data_source: 'html_fetch',
+    });
+  } else if (otherStrongCount < 2) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals', severity: 'amber',
+      finding_title:  `Keyword "${keyword}" strong in title + H1, but missing from supporting locations`,
+      finding_detail: `Title and H1 carry the keyword well — primary signal is intact. Supporting locations (URL, meta description, first paragraph) have weak or no coverage. Each adds incremental ranking + CTR signal.\n\nCoverage breakdown:\n${tableRows}`,
+      recommendation: `Aim to include "${keyword}" naturally in the URL slug, meta description, and first paragraph as well.`,
+      evidence: { keyword, coverage },
+      data_source: 'html_fetch',
+    });
+  } else {
+    findings.push({
+      audit_kind: 'on_page_fundamentals', severity: 'green',
+      finding_title:  `Keyword "${keyword}" coverage is strong across on-page locations`,
+      finding_detail: `Coverage breakdown:\n${tableRows}`,
+      evidence: { keyword, coverage },
+      data_source: 'html_fetch',
+    });
+  }
+
+  return findings;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CHECK 7: CTR vs EXPECTED-FOR-POSITION  (Phase 15.2 — Senior DMS uplift)
+
+   Compares the audited URL's actual CTR against published CTR benchmarks
+   for its position. Significant underperformance (actual < 50% of
+   expected) signals a weak title/meta-description even if ranking is OK.
+   Significant over-performance signals a strong title (preserve it).
+
+   Benchmark sources (current as of 2025-2026; methodologies vary so the
+   table below uses conservative midpoints):
+   • AdvancedWebRanking organic CTR study (rolling)
+   • Backlinko 2023 large-scale study
+   • FirstPageSage 2024 SERP CTR research
+
+   These are AVERAGES across all SERP types — feature-rich SERPs (PAA,
+   featured snippets, AI Overview) reduce organic CTR significantly,
+   so a finding below expected may also reflect SERP-feature presence
+   rather than a title issue. The recommendation acknowledges both.
+═══════════════════════════════════════════════════════════════ */
+
+const POSITION_CTR_BENCHMARK: Record<number, number> = {
+  1: 28, 2: 15, 3: 10, 4: 7, 5: 5, 6: 4, 7: 3, 8: 2.5, 9: 2, 10: 1.6,
+};
+
+function expectedCtrForPosition(position: number): number {
+  if (position <= 0)  return 0;
+  if (position <= 1)  return POSITION_CTR_BENCHMARK[1];
+  if (position >= 11) return 1.0;
+  const lo = Math.floor(position);
+  const hi = Math.ceil(position);
+  if (lo === hi) return POSITION_CTR_BENCHMARK[lo];
+  const w = position - lo;
+  return POSITION_CTR_BENCHMARK[lo] * (1 - w) + POSITION_CTR_BENCHMARK[hi] * w;
+}
+
+async function checkCtrVsExpected(url: string, projectId: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  try {
+    const { data: pagesRow } = await db().from("project_knowledge")
+      .select("field_value").eq("project_id", projectId)
+      .eq("category", "analytics").eq("field_key", "gsc_top_pages").maybeSingle();
+    if (!pagesRow) return findings;
+    const pages = JSON.parse((pagesRow as any).field_value);
+    const match = (pages || []).find((p: any) =>
+      (p.page || '').replace(/\/$/, '').toLowerCase() === url.replace(/\/$/, '').toLowerCase()
+    );
+    if (!match) return findings;  /* indexability sub-check D already noted no-GSC-presence */
+
+    const clicks      = Number(match.clicks || 0);
+    const impressions = Number(match.impressions || 0);
+    const position    = Number(match.position || 0);
+    if (impressions < 100 || position <= 0) {
+      /* Sample size too small for a credible CTR finding */
+      findings.push({
+        audit_kind:    'engagement_signals',
+        severity:      'info',
+        finding_title: `CTR analysis skipped — only ${impressions} impressions on record`,
+        finding_detail: `Need ~100+ impressions to make a credible CTR-vs-benchmark comparison. Current sample (${clicks} clicks / ${impressions} impressions / position ${position.toFixed(1)}) is too small.`,
+        data_source:   'gsc',
+      });
+      return findings;
+    }
+    const actualCtr   = (clicks / impressions) * 100;
+    const expectedCtr = expectedCtrForPosition(position);
+    const ratio       = expectedCtr > 0 ? (actualCtr / expectedCtr) : 0;
+
+    const detail = `**Actual:** ${clicks} clicks / ${impressions.toLocaleString()} impressions = **${actualCtr.toFixed(2)}% CTR** at average position **${position.toFixed(1)}**.\n\n**Expected at position ${position.toFixed(1)}:** ~${expectedCtr.toFixed(1)}% (benchmark midpoint from AdvancedWebRanking / Backlinko / FirstPageSage).\n\n**Ratio:** actual is **${Math.round(ratio * 100)}%** of expected.`;
+
+    if (ratio < 0.5) {
+      findings.push({
+        audit_kind: 'engagement_signals',
+        severity:   'red',
+        finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — significant underperformance`,
+        finding_detail: detail + `\n\nThis is a major underperformance signal. Either (a) the title/meta description is uncompelling at the SERP, or (b) the SERP for this query is dominated by features (AI Overview, featured snippet, PAA) that suppress organic CTR. Both are addressable.`,
+        recommendation: `Rewrite the title and meta description for click appeal — front-load the benefit, include a number or specific outcome, and ensure the keyword sits at the start. Then check the live SERP for features that may be siphoning clicks.`,
+        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100) },
+        data_source: 'gsc',
+      });
+    } else if (ratio < 0.8) {
+      findings.push({
+        audit_kind: 'engagement_signals',
+        severity:   'amber',
+        finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — mild underperformance`,
+        finding_detail: detail + `\n\nNot critical, but a clearer title or stronger meta description could earn measurably more clicks at this position.`,
+        recommendation: `A/B candidates: lead the title with the searcher's intent verb, include a specific year/number for freshness, add a clear value proposition in the meta description.`,
+        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100) },
+        data_source: 'gsc',
+      });
+    } else if (ratio > 1.3) {
+      findings.push({
+        audit_kind: 'engagement_signals',
+        severity:   'green',
+        finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected — strong title/snippet performance`,
+        finding_detail: detail + `\n\nThe title and meta description are out-performing the position. Preserve the structure; replicate the pattern across similar pages.`,
+        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100) },
+        data_source: 'gsc',
+      });
+    } else {
+      findings.push({
+        audit_kind: 'engagement_signals',
+        severity:   'green',
+        finding_title:  `CTR is in line with expected for position ${position.toFixed(1)}`,
+        finding_detail: detail,
+        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100) },
+        data_source: 'gsc',
+      });
+    }
+  } catch (e: any) {
+    /* GSC data unavailable or parse error — skip silently; the upstream
+       indexability sub-check already flagged any GSC absence. */
+  }
+  return findings;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CHECK 8: GSC QUERY DISTRIBUTION for the audited URL
+   (Phase 15.2 — Senior DMS uplift; uses gsc_query_page_pairs persisted
+   by pm-gsc.ts since 2026-05-24)
+
+   Surfaces the top queries this specific URL ranks for. Reveals:
+     • Whether the campaign keyword is even in the top-10 queries
+     • Distribution of query intent (informational vs commercial)
+     • Per-query CTR (highlights titles that don't speak to the query)
+═══════════════════════════════════════════════════════════════ */
+
+async function checkQueryDistribution(url: string, projectId: string, keyword: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  try {
+    const { data: pairsRow } = await db().from("project_knowledge")
+      .select("field_value").eq("project_id", projectId)
+      .eq("category", "analytics").eq("field_key", "gsc_query_page_pairs").maybeSingle();
+    if (!pairsRow) {
+      findings.push({
+        audit_kind: 'on_page_fundamentals',
+        severity:   'info',
+        finding_title:  'Query distribution data not yet available',
+        finding_detail: 'GSC query×page dimension pairs are pulled by the 6am UTC cron. After the next cron tick (or a manual GSC refresh), this check will surface the top queries this URL actually ranks for.',
+        data_source: 'gsc',
+      });
+      return findings;
+    }
+    const allPairs: Array<{ query: string; page: string; clicks: number; impressions: number; position: number }> =
+      JSON.parse((pairsRow as any).field_value) || [];
+    const normUrl = url.replace(/\/$/, '').toLowerCase();
+    const forUrl = allPairs
+      .filter(p => (p.page || '').replace(/\/$/, '').toLowerCase() === normUrl)
+      .sort((a, b) => b.impressions - a.impressions);
+
+    if (forUrl.length === 0) {
+      findings.push({
+        audit_kind: 'on_page_fundamentals',
+        severity:   'info',
+        finding_title:  'No query×page data for this URL yet',
+        finding_detail: 'GSC has not returned query×page pairs for this URL in the audit window. The page may have very low impressions, or GSC may not yet have surfaced it in the paired dataset.',
+        data_source: 'gsc',
+      });
+      return findings;
+    }
+
+    const top = forUrl.slice(0, 10);
+    const totalImpr = top.reduce((s, q) => s + (q.impressions || 0), 0);
+    const totalClicks = top.reduce((s, q) => s + (q.clicks || 0), 0);
+
+    /* Does the campaign keyword appear in the top-10 queries? */
+    const kwNorm = normalizeForKeywordMatch(keyword || '');
+    const keywordInTop10 = kwNorm
+      ? top.some(q => classifyKeywordMatch(q.query || '', keyword) === 'exact' || classifyKeywordMatch(q.query || '', keyword) === 'full')
+      : null;
+
+    const queryLines = top.map((q, i) => {
+      const ctr = q.impressions > 0 ? ((q.clicks / q.impressions) * 100).toFixed(2) : '0.00';
+      const match = kwNorm ? classifyKeywordMatch(q.query, keyword) : 'none';
+      const matchIcon = match === 'exact' ? ' 🎯' : match === 'full' ? ' ✓' : match === 'partial' ? ' ~' : '';
+      return `${(i+1).toString().padStart(2, ' ')}. "${q.query}"${matchIcon} · pos ${q.position.toFixed(1)} · ${q.impressions.toLocaleString()} impr · ${q.clicks} clicks · ${ctr}% CTR`;
+    }).join('\n');
+
+    if (keywordInTop10 === false && kwNorm) {
+      findings.push({
+        audit_kind: 'on_page_fundamentals',
+        severity:   'amber',
+        finding_title:  `Campaign keyword "${keyword}" is NOT in this URL's top-10 actual queries`,
+        finding_detail: `GSC reports this URL ranks for ${forUrl.length} distinct queries. None of the top 10 by impressions match "${keyword}". The page is ranking for adjacent/related terms, not the campaign target.\n\nTop 10 queries for this URL:\n${queryLines}\n\nTotal: ${totalImpr.toLocaleString()} impressions, ${totalClicks} clicks across top 10.`,
+        recommendation: `Two options: (a) Re-target this campaign to the keyword that actually carries traffic on this page, or (b) revise the page content to align stronger with "${keyword}" (title, H1, body, intent).`,
+        evidence: { keyword, top_queries: top, total_queries: forUrl.length },
+        data_source: 'gsc',
+      });
+    } else {
+      findings.push({
+        audit_kind: 'on_page_fundamentals',
+        severity:   keywordInTop10 ? 'green' : 'info',
+        finding_title:  keywordInTop10
+          ? `Campaign keyword found in this URL's top queries`
+          : `Top queries this URL ranks for`,
+        finding_detail: `GSC reports ${forUrl.length} distinct queries for this URL.\n\nTop 10 by impressions:\n${queryLines}\n\nTotal: ${totalImpr.toLocaleString()} impressions, ${totalClicks} clicks across top 10.`,
+        evidence: { keyword, top_queries: top, total_queries: forUrl.length, keyword_in_top10: keywordInTop10 },
+        data_source: 'gsc',
+      });
+    }
+  } catch (e: any) {
+    /* Skip silently if the data is unparseable */
+  }
   return findings;
 }
 
@@ -869,7 +1331,12 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
 async function checkEngagementSignals(url: string, projectId: string): Promise<Finding[]> {
   const findings: Finding[] = [];
 
-  /* Read site-wide GA4 engagement metrics from project_knowledge */
+  /* Read site-wide GA4 engagement metrics from project_knowledge.
+     IMPORTANT: GA4 currently persists only site-wide aggregates; per-URL
+     engagement requires a future pm-ga4 enhancement (top-pages dimension).
+     Until then, this check is INFO-level only — it is NOT a page-level
+     pass/fail. Marking it green would be synthesis-as-fact (claiming the
+     page is engaging when we're really measuring the whole site). */
   const fetchField = async (key: string) => {
     const { data } = await db().from("project_knowledge")
       .select("field_value").eq("project_id", projectId)
@@ -890,22 +1357,25 @@ async function checkEngagementSignals(url: string, projectId: string): Promise<F
     return findings;
   }
 
-  /* Engagement rate thresholds */
+  /* Engagement rate context — surfaced as INFO since this is site-wide,
+     not page-specific. Senior DMS rule: don't dress site-wide stats as
+     page-level performance. */
   if (engagementRate < 40) {
     findings.push({
       audit_kind: 'engagement_signals', severity: 'amber',
-      finding_title:  `Site-wide engagement rate is low (${engagementRate.toFixed(1)}%)`,
-      finding_detail: `Engagement rate below 40% suggests visitors don\'t find what they expect. While this is a site-wide metric (not page-specific), it provides context for how this page may perform.`,
-      recommendation: 'Audit content for matching search intent. Improve above-the-fold clarity. Check for intrusive popups or slow load times.',
-      evidence: { engagement_rate_pct: engagementRate, source: 'site-wide' },
+      finding_title:  `Site-wide engagement rate is low (${engagementRate.toFixed(1)}%) — context only`,
+      finding_detail: `Engagement rate below 40% suggests visitors don't find what they expect across the site. This is a **site-wide** metric, not page-specific — it provides backdrop, not a verdict on this page.`,
+      recommendation: 'Audit content for matching search intent. Improve above-the-fold clarity. Check for intrusive popups or slow load times. Per-page engagement requires a pm-ga4 enhancement to pull top_pages with engagement metrics.',
+      evidence: { engagement_rate_pct: engagementRate, scope: 'site-wide' },
       data_source: 'ga4',
     });
   } else {
     findings.push({
-      audit_kind: 'engagement_signals', severity: 'green',
-      finding_title:  `Site-wide engagement rate: ${engagementRate.toFixed(1)}%`,
-      finding_detail: 'Healthy engagement provides a positive backdrop for individual pages.',
-      evidence: { engagement_rate_pct: engagementRate },
+      audit_kind: 'engagement_signals', severity: 'info',
+      finding_title:  `Site-wide engagement rate: ${engagementRate.toFixed(1)}% (site-wide, not page-specific)`,
+      finding_detail: 'Healthy site-wide engagement provides a positive backdrop for individual pages. **This is not a page-level verdict** — per-URL GA4 metrics require a pm-ga4 top-pages-by-engagement query that has not yet been added.',
+      recommendation: 'To turn this into a page-level signal: add a per-page GA4 fetch to pm-ga4.ts (dimensions: pagePath, metrics: engagementRate, averageSessionDuration, eventsPerSession).',
+      evidence: { engagement_rate_pct: engagementRate, scope: 'site-wide' },
       data_source: 'ga4',
     });
   }
@@ -913,10 +1383,10 @@ async function checkEngagementSignals(url: string, projectId: string): Promise<F
   if (avgSessionSec > 0 && avgSessionSec < 30) {
     findings.push({
       audit_kind: 'engagement_signals', severity: 'amber',
-      finding_title:  `Site-wide avg session duration is short (${Math.round(avgSessionSec)}s)`,
-      finding_detail: 'Short sessions across the site suggest content either doesn\'t hold attention or visitors find what they need quickly.',
-      recommendation: 'For content pages, surface related content, add table of contents, embed videos. For tools, this metric is less meaningful.',
-      evidence: { avg_session_sec: avgSessionSec },
+      finding_title:  `Site-wide avg session duration is short (${Math.round(avgSessionSec)}s) — context only`,
+      finding_detail: 'Short sessions across the site suggest content either doesn\'t hold attention or visitors find what they need quickly. **Site-wide signal**, not page-specific.',
+      recommendation: 'For content pages, surface related content, add table of contents, embed videos. For tools, this metric is less meaningful. Per-page session duration requires the pm-ga4 enhancement noted above.',
+      evidence: { avg_session_sec: avgSessionSec, scope: 'site-wide' },
       data_source: 'ga4',
     });
   }
@@ -1159,9 +1629,9 @@ function renderAuditReport(opts: {
   /* Honest note about scope */
   lines.push('## Audit scope');
   lines.push('');
-  lines.push('This audit checks: indexability (HTTP status, robots directives, GSC presence), on-page fundamentals (title, meta description, H1, word count, alt text, canonical, internal links), Core Web Vitals (LCP, INP, CLS — mobile + desktop), engagement signals (site-wide GA4), and schema markup (JSON-LD types).');
+  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (site-wide GA4 — context only), **schema markup** (JSON-LD types), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks), and **GSC query distribution** (top queries this URL actually ranks for, with per-query CTR and campaign-keyword match check).');
   lines.push('');
-  lines.push('Not yet covered: page-specific GA4 metrics, full site crawl, manual penalty checks, log file analysis, image weight breakdown, font loading, hreflang. These will come in later phases.');
+  lines.push('Not yet covered: **per-page GA4 metrics** (engagement, bounce, sessions by URL — requires a pm-ga4 top-pages-by-engagement query), **SERP feature awareness** (featured snippet, PAA, AI Overview presence — requires SerpAPI integration), **competitive content benchmark** (word count + topical coverage vs top-10 ranking pages), **schema validation** (currently checks presence, not validity), **full site crawl**, **manual penalty checks**, **log file analysis**, **image weight breakdown**, **font loading**, **hreflang**. These will come in later phases.');
 
   return lines.join('\n');
 }

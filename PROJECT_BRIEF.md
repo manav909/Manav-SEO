@@ -514,7 +514,23 @@ A senior practitioner reading the intro can now scrutinize the figure and find i
 - ✅ `seo-internal-linking.ts` — **SHIPPED 2026-05-24.** `LINK_SOURCE_META` (4 keys: gsc_top_pages, html_fetch, cluster_data, llm_anchor). `attachFindingSources` post-emission, `findingKindSources` maps each of the 6 finding_kinds to its sources. Honest rating now combines fetch coverage AND source quality.
 - ✅ `seo-off-page.ts` — **SHIPPED 2026-05-24.** `OFFPAGE_SOURCE_META` (6 keys, most LLM-heavy of the 5 pillars). Rating capped at medium for pure LLM strategy outputs; "to reach high requires future SerpAPI integration (Block 4)" surfaced explicitly. Per-finding source mapping for all 6 finding_kinds.
 - ✅ `seo-monitoring.ts` — **SHIPPED 2026-05-24.** `MONITOR_SOURCE_META` (5 keys, gsc_snapshot dominant). Most data-grounded pillar; every delta traces to a real GSC snapshot. LLM narrative explicitly framed as "synthesis layer above measured deltas, does not raise overall confidence." 10+ finding_kinds mapped per-kind to sources.
-- ✅ `seo-technical-audit.ts` — **SHIPPED 2026-05-24** (template established).
+- ✅ `seo-technical-audit.ts` — **SHIPPED 2026-05-24** (template established). **EXTENDED 2026-05-24 PM** with Senior DMS uplift after real-audit critique on alphasoftware.com / keyword "app maker":
+  - Added `checkKeywordPresence` — verifies campaign keyword presence in title / H1 / URL / meta description / first paragraph. **RED** when keyword absent from both title and H1; **RED** when multi-token keyword is only partial in both. Was the #1 missing check.
+  - Added `checkCtrVsExpected` — actual CTR vs position-benchmark (AdvancedWebRanking / Backlinko / FirstPageSage midpoints in `POSITION_CTR_BENCHMARK` table). Flags significant underperformance (<50% of expected) as RED, mild underperformance (<80%) as AMBER, over-performance (>130%) as GREEN.
+  - Added `checkQueryDistribution` — uses the `gsc_query_page_pairs` data wired earlier for cannibalization. Shows top 10 queries this URL actually ranks for, with per-query CTR. Flags AMBER when the campaign keyword is NOT in the URL's top 10 queries.
+  - Enriched image-alt: now lists specific image src URLs missing alt + counts short/insufficient alts (<5 chars).
+  - Engagement-signals fix: site-wide GA4 is no longer marked green at page-level — it's INFO with explicit "site-wide, not page-specific" framing. Synthesis-as-fact closed.
+  - Audit scope footer rewritten — surfaces 8 categories now, lists per-page GA4 / SERP feature awareness / competitive content benchmark / schema validation as future-phase gaps.
+
+### Backlog spawned from the technical-audit Senior DMS pass
+
+**P0 — Per-page GA4 fetch.** Currently GA4 persists only site-wide aggregates (`ga4_users_monthly`, `ga4_engagement_rate`, `ga4_top_countries`, etc.). Per-URL engagement / bounce / sessions requires extending `pm-gsc.ts` pattern to `pm-ga4.ts` with `dimensions: ['pagePath'], metrics: ['engagementRate', 'averageSessionDuration', 'sessions']`. Once shipped, the technical-audit engagement check upgrades from site-wide INFO to per-page GREEN/AMBER/RED.
+
+**P1 — SerpAPI integration (Block 4 plan).** Unlocks: featured-snippet presence detection, AI Overview detection, PAA box queries, competitive content benchmark (word count + topical coverage vs top-10 ranking pages). Currently flagged as a phase-gap in every pillar's "not yet covered" footer.
+
+**P1 — Schema validation, not just presence.** Technical-audit currently reports schema TYPES present. Senior DMS expects validation against Google's structured data testing rules: required fields, recommended fields, type-specific gotchas (e.g. FAQPage requires Q&A pairs that match on-page content).
+
+**P1 — Apply the same uplift pattern to the other 4 pillars.** The keyword-presence + per-finding evidence pattern shipped on technical-audit could be replicated in cluster-map (per-cluster keyword coverage), internal-linking (anchor text quality), off-page (asset-keyword fit), monitoring (per-finding evidence trail).
 
 **C. Industry-default discipline — pm-engine gap surfaced 2026-05-24**
 Audited 6 call sites:
