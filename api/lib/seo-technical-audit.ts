@@ -40,6 +40,61 @@ interface Finding {
   data_source?:   'gsc' | 'ga4' | 'psi' | 'html_fetch' | 'schema_parser';
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   SOURCE-CONFIDENCE MAPPING — added 2026-05-24 as part of the Senior DMS
+   pillar source-tracing template (P0 backbone rule).
+
+   Each finding's `data_source` is mapped to:
+   • confidence — 0..100, aligned with intelligenceFabric.ts scale where
+     gsc_live=95, ga_live=95, audit_run=88, crawl_jina=85, claude_inference=65
+   • label      — human-readable source for the markdown report
+   • sourceType — the corresponding intelligenceFabric SourceType
+     (used by downstream consumers that want to flow through the fabric)
+
+   PSI is mapped to audit_run (88) — it's a real external audit from
+   Google's PageSpeed API, slightly less direct than GSC/GA4 but more
+   structured than a generic crawl.
+   html_fetch and schema_parser map to crawl_jina (85, normalised to 87
+   here because raw HTTP fetch is well-defined for the metrics we extract).
+═══════════════════════════════════════════════════════════════════ */
+
+const DATA_SOURCE_META: Record<
+  NonNullable<Finding['data_source']>,
+  { confidence: number; label: string; sourceType: string }
+> = {
+  gsc:           { confidence: 95, label: 'Google Search Console (live)', sourceType: 'gsc_live' },
+  ga4:           { confidence: 95, label: 'Google Analytics 4 (live)',    sourceType: 'ga_live' },
+  psi:           { confidence: 92, label: 'PageSpeed Insights API',       sourceType: 'audit_run' },
+  html_fetch:    { confidence: 87, label: 'Live HTML fetch',              sourceType: 'crawl_jina' },
+  schema_parser: { confidence: 87, label: 'Schema parser (HTML-derived)', sourceType: 'crawl_jina' },
+};
+
+/** Confidence and source label for a single finding. Returns null for
+ *  findings without a declared data_source — those should be flagged as
+ *  needing source attribution (synthesis-as-fact risk). */
+function findingSourceMeta(f: Finding): { confidence: number; label: string; sourceType: string } | null {
+  if (!f.data_source) return null;
+  return DATA_SOURCE_META[f.data_source];
+}
+
+/** Weighted-mean confidence across all findings that declare a source.
+ *  Findings without `data_source` are EXCLUDED from the mean and surfaced
+ *  separately as "unattributed" — they're a synthesis risk that should
+ *  not silently inflate confidence either way. */
+function weightedFindingConfidence(findings: Finding[]): {
+  mean: number;          // 0..100; 0 if no sourced findings
+  sourced_count: number;
+  unattributed_count: number;
+} {
+  const sourced = findings
+    .map(f => findingSourceMeta(f))
+    .filter((m): m is { confidence: number; label: string; sourceType: string } => m !== null);
+  const unattributed = findings.length - sourced.length;
+  if (sourced.length === 0) return { mean: 0, sourced_count: 0, unattributed_count: unattributed };
+  const total = sourced.reduce((acc, m) => acc + m.confidence, 0);
+  return { mean: Math.round(total / sourced.length), sourced_count: sourced.length, unattributed_count: unattributed };
+}
+
 /* ════════════════════════════════════════════════════════════════
    PUBLIC API
 ═══════════════════════════════════════════════════════════════ */
@@ -164,6 +219,23 @@ export async function runTechnicalAudit(opts: {
       findings, failedChecks, runId: auditRunId,
     });
 
+    /* Honest confidence rating — combines per-finding source quality AND
+       check-execution failures. Either dimension dropping low pulls the
+       overall rating down. Previously this only counted failed checks,
+       which meant a "green" verdict from a single html_fetch was rated
+       the same as one cross-confirmed across GSC+GA4+audit. */
+    const sourceConf = weightedFindingConfidence(findings);
+    const ratingFromSources: 'high' | 'medium' | 'low' =
+      sourceConf.sourced_count === 0 ? 'low' :
+      sourceConf.mean >= 88           ? 'high' :
+      sourceConf.mean >= 75           ? 'medium' : 'low';
+    const ratingFromFailures: 'high' | 'medium' | 'low' =
+      failedChecks.length === 0       ? 'high' :
+      failedChecks.length <= 2        ? 'medium' : 'low';
+    const overallRating: 'high' | 'medium' | 'low' =
+      (ratingFromSources === 'low'    || ratingFromFailures === 'low')    ? 'low' :
+      (ratingFromSources === 'medium' || ratingFromFailures === 'medium') ? 'medium' : 'high';
+
     const reportR = await writeReportToPanel({
       campaignId:       opts.campaignId,
       projectId:        c.project_id,
@@ -172,10 +244,18 @@ export async function runTechnicalAudit(opts: {
       reportKind:       triggeredBy === 'cron' ? 'scheduled_recheck' : 'manual_refresh',
       generatedBy:      triggeredBy,
       dataSources:      collectDataSources(findings),
-      confidenceRating: failedChecks.length === 0 ? 'high' : failedChecks.length <= 2 ? 'medium' : 'low',
-      confidenceReason: failedChecks.length === 0
-        ? 'All audit checks completed successfully.'
-        : `${failedChecks.length} check(s) failed to execute: ${failedChecks.join(', ')}. Findings may be incomplete.`,
+      confidenceRating: overallRating,
+      confidenceReason: [
+        failedChecks.length === 0
+          ? 'All audit checks completed.'
+          : `${failedChecks.length} check(s) failed to execute: ${failedChecks.join(', ')}. Findings below are partial.`,
+        sourceConf.sourced_count > 0
+          ? `Source-weighted confidence across ${sourceConf.sourced_count} sourced finding(s): ${sourceConf.mean}/100 (${ratingFromSources}).`
+          : `No findings declared a data source — confidence treated as low.`,
+        sourceConf.unattributed_count > 0
+          ? `${sourceConf.unattributed_count} finding(s) lack a data_source attribution and were excluded from the confidence calculation.`
+          : null,
+      ].filter(Boolean).join(' '),
       title:            `Technical audit: ${cleanUrl(target.url)}`,
       bodyMd,
       summary:          headline,
@@ -1000,6 +1080,32 @@ function renderAuditReport(opts: {
   lines.push(`| ℹ️ Info     | ${info.length} |`);
   lines.push('');
 
+  /* Source confidence — surface upfront so the reader can calibrate the
+     report's trustworthiness BEFORE reading individual findings. */
+  const conf = weightedFindingConfidence(opts.findings);
+  lines.push('## Source confidence');
+  lines.push('');
+  if (conf.sourced_count > 0) {
+    lines.push(`**Weighted confidence:** ${conf.mean}/100 across ${conf.sourced_count} sourced finding(s).`);
+    const sourceCounts: Record<string, number> = {};
+    for (const f of opts.findings) {
+      const m = findingSourceMeta(f);
+      if (m) sourceCounts[m.label] = (sourceCounts[m.label] || 0) + 1;
+    }
+    const sourceList = Object.entries(sourceCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => `${label} (${count})`)
+      .join(', ');
+    lines.push(`**Sources used:** ${sourceList}.`);
+  } else {
+    lines.push('**No findings declared a data source.** Confidence treated as low — investigate before acting.');
+  }
+  if (conf.unattributed_count > 0) {
+    lines.push('');
+    lines.push(`⚠️ ${conf.unattributed_count} finding(s) lack a data-source attribution. Confidence calculation excluded them.`);
+  }
+  lines.push('');
+
   /* Critical first */
   if (red.length > 0) {
     lines.push('## 🔴 Critical issues (fix first)');
@@ -1008,6 +1114,8 @@ function renderAuditReport(opts: {
       lines.push(`### ${f.finding_title}`);
       if (f.finding_detail)  lines.push(f.finding_detail);
       if (f.recommendation)  { lines.push(''); lines.push(`**Recommendation:** ${f.recommendation}`); }
+      const meta = findingSourceMeta(f);
+      if (meta) lines.push(`*Source · ${meta.label} · confidence ${meta.confidence}/100*`);
       lines.push('');
     }
   }
@@ -1019,6 +1127,8 @@ function renderAuditReport(opts: {
       lines.push(`### ${f.finding_title}`);
       if (f.finding_detail)  lines.push(f.finding_detail);
       if (f.recommendation)  { lines.push(''); lines.push(`**Recommendation:** ${f.recommendation}`); }
+      const meta = findingSourceMeta(f);
+      if (meta) lines.push(`*Source · ${meta.label} · confidence ${meta.confidence}/100*`);
       lines.push('');
     }
   }
@@ -1027,7 +1137,9 @@ function renderAuditReport(opts: {
     lines.push('## 🟢 Passing checks');
     lines.push('');
     for (const f of green) {
-      lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}`);
+      const meta = findingSourceMeta(f);
+      const sourceTag = meta ? ` · *${meta.label}*` : '';
+      lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}${sourceTag}`);
     }
     lines.push('');
   }
@@ -1036,7 +1148,9 @@ function renderAuditReport(opts: {
     lines.push('## ℹ️ Information');
     lines.push('');
     for (const f of info) {
-      lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}`);
+      const meta = findingSourceMeta(f);
+      const sourceTag = meta ? ` · *${meta.label}*` : '';
+      lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}${sourceTag}`);
       if (f.recommendation) lines.push(`  - ${f.recommendation}`);
     }
     lines.push('');

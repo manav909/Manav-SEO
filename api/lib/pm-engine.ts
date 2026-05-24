@@ -475,6 +475,7 @@ async function pmGatherRequirements(projectId: string) {
     if (!audits.length)          gaps.push("No audit run yet");
     if (!crawlPages.length)      gaps.push("No pages crawled — competitive comparison unavailable");
     if (!dr("access", "gsc_access")) gaps.push("Tool access not recorded — card prerequisites may be incomplete");
+    if (!clientIndustry)         gaps.push("Client industry not set — outputs will be generic across vertical-specific patterns");
     if (projError)               gaps.push(`Project record could not be read: ${projError}`);
 
     const context = {

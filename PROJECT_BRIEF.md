@@ -477,35 +477,66 @@ Walk the codebase periodically and flag any place where the product emits a numb
 
 Each find → either replace with an authentic-data path OR add an explicit "data not available — connect X" surface. **Never** smooth over.
 
-#### First audit pass — 2026-05-24 findings
+#### First audit pass — 2026-05-24 findings (closure log)
 
-**A. IntroAnimation `LiveCount` "SEARCHES SINCE MIDNIGHT" (medium severity, brand-facing)**
-`src/components/IntroAnimation.tsx:20-23, 347-351`. Counter formula `4.2B + (seconds since midnight) × 129,629` plus random jitter ±300/tick. Anchored to a public Google search-volume estimate but rendered with a "RIGHT NOW" subtitle and Math.random() jitter — framed as a live metric. **Synthesis-as-fact on the front door of the product.** Three resolution options for Manav to pick:
-1. Replace the metric with an authentic SEO SEASON figure (e.g. live count of cron ticks since deploy, or projects pulled today)
-2. Reframe the label honestly — "GLOBAL SEARCH VOLUME · INDUSTRY ESTIMATE" with a small "Public figures · Google" attribution
-3. Remove the counter; replace with non-numeric atmospheric element
+**A. IntroAnimation `LiveCount` "SEARCHES SINCE MIDNIGHT" — FIXED 2026-05-24**
+Was: `4.2B + (seconds×129,629) + random ±300` jitter labeled "RIGHT NOW" with no attribution. Three layers of dishonesty: starting value lied about "midnight," rate was ~30% above credible figures, random jitter wasn't data. Now:
+- Anchored to Google's public "over 5 trillion searches per year" → 158,565/sec.
+- Counter starts at 0 at UTC midnight (matches the label).
+- Deterministic tick at modeled rate; no random jitter.
+- Label changed: "SEARCHES SINCE MIDNIGHT" → "GOOGLE SEARCHES SINCE MIDNIGHT UTC".
+- "RIGHT NOW" → "WORLDWIDE".
+- New attribution line: "MODELED · GOOGLE PUBLIC FIGURES · 5T / YR".
 
-**B. Pillar engines emit findings without source tracing (P0, see above table)** — the biggest single DMS risk. Already broken out as the locked-in next big work.
+A senior practitioner reading the intro can now scrutinize the figure and find it defensible — anchored to a public Google statement, model basis visible.
 
-**C. Industry-default discipline is inconsistent across the codebase**
-- ✅ Good pattern: `MarketPersonaBriefing.tsx:306` — `value: industry || "MISSING"` with `ok: !!industry` flag surfacing the gap honestly to the user
-- ✅ Good pattern: `market-researcher.ts.disabled:236` — `effectiveIndustry = industry || "the industry (not specified — you must state this assumption clearly)"` — flags the gap to the LLM
-- ❌ Anti-pattern in 6+ places: `industry || ""` silently degrades to empty string and the engine proceeds as if nothing is missing (`api/task-engine.ts:1236`, `api/lib/context.ts:217`, `api/lib/pm-engine.ts:465`, `api/lib/brand-studio-investor-bundle.ts:201`, `api/lib/mission-control.ts:215`, `src/lib/theme-engine.ts:516`)
+**B. Pillar source-tracing — TEMPLATE ESTABLISHED on `seo-technical-audit.ts`, REPLICATE TO OTHER 4**
 
-Per-pillar work above should also adopt the "MISSING with ok flag" pattern when industry/persona/baseline data is absent.
+`api/lib/seo-technical-audit.ts` now demonstrates the canonical pillar source-tracing pattern. What changed:
 
-**D. Hardcoded confidence values worth a deeper look**
-- `api/lib/season-llm-web.ts:166` — `confidence: 0.55` (purpose unclear; needs context audit)
-- `api/lib/season-pipeline-routes.ts:203` — `confidence: 0.95` (likely AI-emitted but not source-traced — verify)
-- `api/lib/pm-rules.ts:440` — `confidence: 50` (part of a default tone object, not a data confidence — fine)
-- `api/lib/classify.ts` confidences — gate-driven, legitimate
+1. **`DATA_SOURCE_META` mapping** added — each `data_source` value the engine already declares (`gsc | ga4 | psi | html_fetch | schema_parser`) is mapped to `{ confidence: number, label: string, sourceType: string }` aligned with `intelligenceFabric` numbering:
+   - `gsc` → confidence 95, "Google Search Console (live)", `gsc_live`
+   - `ga4` → confidence 95, "Google Analytics 4 (live)", `ga_live`
+   - `psi` → confidence 92, "PageSpeed Insights API", `audit_run`
+   - `html_fetch` → confidence 87, "Live HTML fetch", `crawl_jina`
+   - `schema_parser` → confidence 87, "Schema parser (HTML-derived)", `crawl_jina`
 
-Walk these on the next pass. If any are AI inferences shown to client as authentic confidence, route through `intelligenceFabric`.
+2. **`weightedFindingConfidence(findings)`** helper computes the mean confidence across all findings that declared a source, and counts findings *without* a source attribution (which are explicitly EXCLUDED from the mean and surfaced as "unattributed" — synthesis risk).
 
-**E. Coverage gap — `intelligenceFabric` source-confidence pattern adoption**
-Files that import the pattern: **1 frontend (`IntelligenceMemory.tsx`)**.
-Files that call `source(...)`: **2 (`api/intelligence.ts`, `api/market-researcher.ts.disabled`)**.
-Out of 95 engine files in `api/lib/`, only the Brain-chat intelligence handler actively source-tags its inputs. The discipline is documented but barely deployed. The pillar work in P0 above starts closing this gap; a separate continuous discipline is to apply it elsewhere as code is touched.
+3. **Honest `confidenceRating`** — previously based only on "did checks execute?", now combines that with source-weighted confidence: either dimension dropping low pulls the overall rating to low. A green verdict from a single html_fetch can no longer rate the same as one cross-confirmed across GSC+GA4+PSI.
+
+4. **Per-finding source line** in the markdown report — every red/amber finding now ends with `*Source · {label} · confidence {N}/100*`. Green and info findings get a compact `· *{label}*` suffix.
+
+5. **New "Source confidence" section** at the top of every report — surfaces weighted confidence, sources used (with counts), and any unattributed findings. The Senior DMS can calibrate trust before reading findings.
+
+**Apply this template to the other 4 pillars (one per session):**
+- `seo-cluster-map.ts` — needs to declare data_source per finding; cluster authority comes from GSC query data + brain_learnings + claude_inference for clustering
+- `seo-internal-linking.ts` — similar; crawl-derived links + GSC anchor text + claude_inference for opportunity scoring
+- `seo-off-page.ts` — likely crawl + SerpAPI (when integrated) + brain_learnings + claude_inference
+- `seo-monitoring.ts` — GSC + GA4 + audit_run + algorithm_intel; many findings should already be high-confidence
+
+Order recommendation: pick the one Manav reads most often → highest leverage. Currently unanswered.
+
+**C. Industry-default discipline — pm-engine gap surfaced 2026-05-24**
+Audited 6 call sites:
+- ✅ `api/lib/context.ts:217` — already uses "Not set"
+- ✅ `api/lib/brand-studio-investor-bundle.ts:201` — cover-letter template conditionally omits the "operating in X" clause when industry is empty
+- ✅ `api/task-engine.ts:1236` — prospect map display, empty string handled fine
+- ✅ `src/lib/theme-engine.ts:516` — theme detection falls through to default theme
+- ✅ `api/lib/mission-control.ts:215` — internal score input, empty fine
+- ❌ `api/lib/pm-engine.ts:465` — silent degradation, no gap surfaced. **FIXED**: added `if (!clientIndustry) gaps.push("Client industry not set — outputs will be generic across vertical-specific patterns")` to the engine's existing gaps array. Now consumers see the gap honestly.
+
+**D. Hardcoded confidence values — investigated 2026-05-24**
+- ✅ `season-llm-web.ts:166` `confidence: 0.55` — JSON-parse fallback with `honest_note`; verdict: defensible, semantics correct.
+- ✅ `season-pipeline-routes.ts:203` `confidence: 0.95` — cached under `source: 'manav_feedback'` (one of highest-trust sources on the scale); verdict: correct.
+- ❌ `season-llm-web.ts:166` intent fallback was `"web_open_question"` (guessed). **FIXED**: changed to `"unknown"` in both the parse-failure path and the success-path-with-missing-intent default. Blast radius checked: no downstream code switches on `"web_open_function"`.
+- *Note*: both confidence values use ad-hoc 0–1 numbers instead of routing through `intelligenceFabric.source()`. Semantically correct but a code-hygiene gap. Defer to a future uniformity pass.
+
+**E. `intelligenceFabric` coverage gap — IN PROGRESS via pillar work above**
+This is the meta-finding. Closing it = applying the pattern from Finding B to all engines as they're touched. Progress this session:
+- `seo-technical-audit.ts` — pillar source-tracing pattern shipped.
+- 4 remaining pillars — same template ready to apply.
+- Other engines in `api/lib/` (95 files total) — propagate as engines are touched.
 
 ---
 

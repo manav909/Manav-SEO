@@ -160,9 +160,12 @@ export async function seasonLlmWebHandle(opts: {
     const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
     parsed = JSON.parse(cleaned);
   } catch {
-    /* Non-JSON response — wrap as plain chunk */
+    /* Non-JSON response — wrap as plain chunk. Intent is "unknown" rather
+       than guessed; we couldn't even parse the response, so claiming we
+       know its intent would be synthesis-as-fact. honest_note flags the
+       degradation; downstream code can route on intent === "unknown". */
     return {
-      intent: "web_open_question",
+      intent: "unknown",
       confidence: 0.55,
       chunks: [{ kind: "plain", content: text.slice(0, 2000) }],
       sources_used: webUsed ? ["web_search"] : [],
@@ -186,7 +189,7 @@ export async function seasonLlmWebHandle(opts: {
   } catch { /* non-fatal */ }
 
   return {
-    intent:        String(parsed.intent || "web_open_question"),
+    intent:        String(parsed.intent || "unknown"),
     confidence:    Number(parsed.confidence ?? 0.7),
     chunks:        Array.isArray(parsed.chunks) ? parsed.chunks.slice(0, 12) : [],
     artifacts:     Array.isArray(parsed.artifacts) ? parsed.artifacts.slice(0, 4) : undefined,

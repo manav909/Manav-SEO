@@ -17,9 +17,25 @@ const eo3 = (t:number) => 1-Math.pow(1-cl(t,0,1),3);
 const eo5 = (t:number) => 1-Math.pow(1-cl(t,0,1),5);
 const eio = (t:number) => { const c=cl(t,0,1); return c<.5?2*c*c:1-Math.pow(-2*c+2,2)/2; };
 
+/* ─── Modeled live count of global Google searches since UTC midnight ─────
+   Anchored to Google's public statement of "over 5 trillion searches per
+   year" (≈13.7B/day ≈ 158,565/sec; see Google public communications and
+   2025-2026 industry reporting that converges on this figure).
+
+   Honest framing: this is a *modeled* visualization, not a real-time API
+   feed. The counter starts at 0 at UTC midnight (matching the "since
+   midnight UTC" label) and increments at the modeled rate without
+   synthetic random jitter — for a commercial SaaS where clients pay for
+   authenticity, the visceral liveliness of fake jitter is not worth the
+   credibility hit. The small attribution line under the counter
+   ("MODELED · GOOGLE PUBLIC FIGURES · 5T / YR") states the basis. */
+const SEARCHES_PER_SECOND = 158_565;
+
 const getLiveBase = () => {
   const n = new Date();
-  return 4_200_000_000 + (n.getHours()*3600 + n.getMinutes()*60 + n.getSeconds()) * 129_629;
+  const utcSecondsSinceMidnight =
+    n.getUTCHours() * 3600 + n.getUTCMinutes() * 60 + n.getUTCSeconds();
+  return utcSecondsSinceMidnight * SEARCHES_PER_SECOND;
 };
 
 /* ─── Capsules ─── */
@@ -346,7 +362,13 @@ const TOP:React.CSSProperties={
 
 function LiveCount(){
   const [v,setV]=useState(getLiveBase);
-  useEffect(()=>{const iv=setInterval(()=>setV(c=>c+Math.round(129629/4+(Math.random()-.5)*600)),250);return()=>clearInterval(iv);},[]);
+  useEffect(()=>{
+    /* Deterministic tick at modeled rate (158,565/sec ÷ 4 = ~39,641/250ms).
+       Previously this had ±300 random jitter per tick which was synthesis-
+       as-fact dressed as live data — removed. */
+    const iv=setInterval(()=>setV(c=>c+Math.round(SEARCHES_PER_SECOND/4)),250);
+    return()=>clearInterval(iv);
+  },[]);
   return <>{v.toLocaleString()}</>;
 }
 
@@ -357,10 +379,11 @@ function ActOverlay({act}:{act:number}){
   return (
     <>
       {act===0&&(<div key="I" style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'clamp(6px,1.1vh,11px)',...MONO,pointerEvents:'none',animation:'textIn 1s cubic-bezier(0.22,1,0.36,1) forwards'}}>
-        <div style={{fontSize:'clamp(0.4rem,min(0.7vw,1.05vh),0.58rem)',letterSpacing:'0.55em',color:'rgba(0,255,209,0.32)'}}>{today} · RIGHT NOW</div>
+        <div style={{fontSize:'clamp(0.4rem,min(0.7vw,1.05vh),0.58rem)',letterSpacing:'0.55em',color:'rgba(0,255,209,0.32)'}}>{today} · WORLDWIDE</div>
         <div style={{textAlign:'center',lineHeight:1.05}}>
           <div style={{fontSize:'clamp(1.8rem,min(5.5vw,8vh),4.5rem)',fontWeight:200,color:WHT,letterSpacing:'-0.02em',textShadow:'0 0 60px rgba(0,255,209,0.08)'}}><LiveCount/></div>
-          <div style={{fontSize:'clamp(0.5rem,min(0.88vw,1.35vh),0.7rem)',color:'rgba(255,255,255,0.24)',letterSpacing:'0.25em',marginTop:5}}>SEARCHES SINCE MIDNIGHT</div>
+          <div style={{fontSize:'clamp(0.5rem,min(0.88vw,1.35vh),0.7rem)',color:'rgba(255,255,255,0.24)',letterSpacing:'0.25em',marginTop:5}}>GOOGLE SEARCHES SINCE MIDNIGHT UTC</div>
+          <div style={{fontSize:'clamp(0.38rem,min(0.62vw,0.95vh),0.5rem)',color:'rgba(255,255,255,0.14)',letterSpacing:'0.18em',marginTop:3,fontStyle:'italic'}}>MODELED · GOOGLE PUBLIC FIGURES · 5T / YR</div>
         </div>
         <div style={{height:1,width:'clamp(70px,9vw,110px)',background:'linear-gradient(90deg,transparent,rgba(0,255,209,0.2),transparent)'}}/>
         <div style={{...h1,animation:'fadeUp 0.7s 1.2s ease forwards',opacity:0,textAlign:'center',maxWidth:'min(500px,78vw)'}}>The internet has a pulse.</div>
