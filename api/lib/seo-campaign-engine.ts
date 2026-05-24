@@ -418,7 +418,7 @@ export async function writeReportToPanel(opts: {
       panelId = (p as any)?.id;
     }
 
-    const { data: inserted, error: insertErr } = await db().from("seo_campaign_reports").insert({
+    const insertRow: Record<string, any> = {
       campaign_id:        opts.campaignId,
       panel_id:           panelId,
       project_id:         opts.projectId,
@@ -440,7 +440,21 @@ export async function writeReportToPanel(opts: {
       searchable_text:    opts.searchableText
                             ? opts.searchableText.slice(0, 8000)
                             : `${opts.title}\n${opts.summary || ''}\n${opts.bodyMd.slice(0, 3000)}`.slice(0, 8000),
-    }).select("id").maybeSingle();
+    };
+    let { data: inserted, error: insertErr } = await db().from("seo_campaign_reports").insert(insertRow).select("id").maybeSingle();
+
+    /* Phase 16.11 hotfix — body_html column is part of the SQL migration
+       shipped alongside the HTML renderer. If the migration hasn't been
+       applied yet, the insert fails because the column doesn't exist.
+       Detect that specific case and retry without body_html so the
+       audit can still save its markdown report. */
+    if (insertErr && /body_html/.test(insertErr.message || '')) {
+      console.warn('[seo-campaign-engine] body_html column missing — retrying insert without it. Apply sql/phase-16-11-body-html.sql in Supabase to enable HTML persistence.');
+      const { body_html: _omit, ...rowWithoutHtml } = insertRow;
+      const retry = await db().from("seo_campaign_reports").insert(rowWithoutHtml).select("id").maybeSingle();
+      inserted = retry.data;
+      insertErr = retry.error;
+    }
 
     if (insertErr || !inserted) return { success: false, error: insertErr?.message || 'report insert failed' };
 

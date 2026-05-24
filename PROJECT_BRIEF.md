@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 16.11) · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality. Phase 16.11 adds HTML renderer for deep audit report (alongside existing markdown).
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 16.11.1 hotfix) · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality. Phase 16.11 adds HTML renderer for deep audit report (alongside existing markdown). Phase 16.11.1 hotfix wraps HTML render in try/catch and makes report insert resilient to missing body_html column.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -818,6 +818,20 @@ After deploy, the next audit produces both renderers' output. Sanity check:
 - **Always `.js` extension** on relative imports (Vercel runtime requirement)
 - **Pre-deploy ritual mandatory**: `npx tsc --module nodenext --moduleResolution nodenext --noEmit` on touched api/lib files. Only pre-existing error in `seo-campaign-engine.ts:1005` (TS2554) is acceptable.
 - **Smoke test against production-shaped fixtures** — Phase 16.9 lesson: fixtures using renderer-friendly shapes hide bugs that appear with real audit evidence shapes.
+
+### Phase 16.11.1 hotfix (2026-05-24)
+
+Symptom: audits appeared to start then stop in microseconds with no visible result.
+
+Most likely cause: SQL migration `phase-16-11-body-html.sql` was not applied to production before code deploy, so every audit completed its 15 checks but the final `INSERT INTO seo_campaign_reports` failed on the missing `body_html` column. `runTechnicalAudit` doesn't check `writeReportToPanel`'s return value, so it returned `success: true` to the frontend with the toast firing — but no new row landed in the DB, and the panel had nothing new to display.
+
+Two defensive changes:
+
+1. `seo-technical-audit.ts:518` — `renderDeepAuditReportHtml(deepReportInputs)` now wrapped in try/catch. If the renderer throws on any unanticipated finding shape, the audit logs the error and continues with markdown only. HTML is a convenience export layer, never a blocker.
+
+2. `seo-campaign-engine.ts` `writeReportToPanel` — if the insert fails with an error containing `body_html`, retry the insert with that field omitted. The markdown report still gets saved; HTML persistence is silently skipped until the SQL migration is applied. Warning is logged so Vercel logs surface the missing-migration state.
+
+After this hotfix, audits work regardless of whether the SQL migration ran. Applying the migration in Supabase enables `body_html` persistence; not applying it just keeps the current markdown-only behavior.
 
 ### Session handoff for tech audit work
 

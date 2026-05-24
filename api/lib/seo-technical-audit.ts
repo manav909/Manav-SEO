@@ -517,7 +517,17 @@ export async function runTechnicalAudit(opts: {
       converging_banner:    convergingBanner,
     };
     const bodyMd = renderDeepAuditReport(deepReportInputs);
-    const bodyHtml = renderDeepAuditReportHtml(deepReportInputs);
+    /* Phase 16.11 hotfix — HTML render is best-effort. If anything in the
+       renderer throws, log it and continue with bodyHtml=undefined. The
+       audit's primary deliverable is the markdown; HTML is the export
+       convenience layer and must never block the audit from completing. */
+    let bodyHtml: string | undefined;
+    try {
+      bodyHtml = renderDeepAuditReportHtml(deepReportInputs);
+    } catch (htmlErr: any) {
+      console.error('[tech-audit] HTML render failed (continuing with markdown only):', htmlErr?.message || htmlErr);
+      bodyHtml = undefined;
+    }
 
     /* Honest confidence rating — combines per-finding source quality AND
        check-execution failures. Either dimension dropping low pulls the
