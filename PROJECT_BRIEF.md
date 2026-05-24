@@ -64,7 +64,7 @@ Core: `projects`, `clients`, `metrics`, `audit_reports`, `task_executions`, `tas
 | `task-engine.ts` duplicate empty `requirements` stub | ✅ Fixed |
 | `Audit.tsx` calling `/api/audit-orchestrator.disabled` | ✅ Fixed (now `/api/run-analysis`) |
 | Missing `check_system_health` + `get_revenue_records` handlers | ✅ Fixed |
-| `extractAndSaveLearning` dead imports in `algorithm-intel.ts`, `seo-agent.ts`, `crawl.ts`, `run-analysis.ts` | 🟡 Cosmetic cleanup pending |
+| `extractAndSaveLearning` dead imports | ✅ Verified clean 2026-05-23 — zero references in algorithm-intel / seo-agent / crawl / run-analysis. Function lives in `ai-cache.ts` with one active caller at `task-engine.ts:2679`. |
 
 **Verification rule (learned 2026-05-23)**: brief and memory CAN go stale silently. Before proposing work on any "documented bug," verify it in current main code first. Distinguish "noted in past sessions" from "verified to still exist." When documentation contradicts reality, surface the contradiction — never paper over.
 
@@ -363,11 +363,9 @@ Placeholders are flagged with `◆ TBD` comments inline so Manav can find/edit i
 1. Casual mode empty left space when sidebar is closed
 2. Persistent left rail attempt (Block 2.24 v1 was wrong — overlapped Pro mode)
 
-🟡 **AIConcierge + profile avatar visible on `/manifesto`** — visual clutter on cinematic page. The Block 2.16 "AIConcierge hidden on Season pages" fix didn't cover the manifesto route. Optional fix: route check + skip render for `pathname === '/manifesto'`. Awaiting Manav's go-ahead.
+🟢 **AIConcierge + profile avatar on `/manifesto`** — fixed 2026-05-23. `/manifesto` added to `HIDE_ON_PATHS` in `AIConcierge.tsx`. Cinematic page now stays clean.
 
-🟡 **`extractAndSaveLearning` dead imports** in `algorithm-intel.ts`, `seo-agent.ts`, `crawl.ts`, `run-analysis.ts` — cosmetic cleanup.
-
-🟡 **ChWhom full localization** — chapter currently has hardcoded English archetype titles + bodies (matches the chapter's existing pattern). If multi-language manifesto is a priority for non-EN prospects, the 5 titles + 5 bodies + intro Prose need to move into `copy.ts` across all 5 langs. Estimated ~15 new keys.
+🟢 **ChWhom full localization** — shipped 2026-05-23. All 11 keys (`whom_intro` + 5 × `whom_N_title` + 5 × `whom_N_body`) now in `copy.ts` across EN/HI/ES/FR/DE. ChWhom.tsx reads everything via `t()`; no hardcoded English remains.
 
 ---
 

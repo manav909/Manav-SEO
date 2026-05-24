@@ -6,10 +6,9 @@
    models, different goals. The infrastructure underneath is the
    same; what shifts is the lens the client brings to it.
 
-   Reframed from a role-based audience map (clients / customers /
-   investors / stakeholders / team) to a client-archetype map that
-   helps a prospect identify themselves and see how SEASON serves
-   their specific situation.
+   All titles and bodies are now localized via copy.ts under
+   keys whom_intro, whom_N_title, whom_N_body for N = 1..5.
+   Supported languages: EN, HI, ES, FR, DE.
 
    Ordered by recognition speed — most readers find themselves in
    1 or 2 before continuing:
@@ -25,57 +24,32 @@ import { ChapterShell, Prose } from '../shared';
 import type { TFn } from '../types';
 import { FEATHER } from '../types';
 
-interface ClientArchetype {
-  title: string;
-  body:  string;
-}
-
-const ARCHETYPES: ClientArchetype[] = [
-  {
-    title: 'The founder building organic on limited runway',
-    body:  "You can't gamble on six-month retainers that ship PDFs instead of progress. SEASON shows every task done this week, every metric refreshed today, every gap acknowledged. SEO becomes an asset on your balance sheet — spend defensible to you, your team, and the next round of investors.",
-  },
-  {
-    title: 'The marketing leader who reports to a board',
-    body:  "Your CFO asks where the number came from. SEASON's answer is: from this source, at this timestamp, traceable to this action. Every chart cites itself. Every metric is defensible. Channel-of-record reporting, not retrospective storytelling. The board update writes itself; you frame the narrative.",
-  },
-  {
-    title: 'The local business that has to be the obvious choice',
-    body:  "Your customers find you through \u201cnear me,\u201d map packs, voice queries, AI-generated answers \u2014 usually before they ever land on your site. SEASON treats local search with the same rigor as enterprise organic: entity consistency, schema correctness, review velocity, citation density. With weekly visibility into where you rank against the firms you actually compete with.",
-  },
-  {
-    title: 'The ecommerce operator competing in the AI-search era',
-    body:  "When ChatGPT names brands in your category, is yours among them? When Google's AI Overview compiles \u201cbest [your product]\u201d guides, are your pages cited? Commercial intent is increasingly resolved before the click. SEASON tracks AI-engine citation alongside traditional rankings and structures your pages for what AI engines actually consume.",
-  },
-  {
-    title: 'The agency or consultancy that needs operating infrastructure',
-    body:  "You sold the engagement on strategy and judgment. You don't want to build a crawl orchestration, a data layer, or an audit framework to deliver it. SEASON is the substrate \u2014 white-label or co-branded. You bring the client relationship; SEASON brings the always-on intelligence. Your client sees one consistent operation.",
-  },
-];
+const ARCHETYPE_KEYS = [1, 2, 3, 4, 5] as const;
 
 export function ChWhom({ t }: { t: TFn }) {
   return (
     <ChapterShell id="whom" no="10" season="harvest" titleKey="ch10" t={t}>
       <WhomStyles />
 
-      <Prose delay={0.4}>
-        Five archetypes &mdash; from the founder funding growth on limited
-        runway to the consultancy delivering client work on borrowed
-        infrastructure. The system underneath is the same; what shifts
-        is the goal it serves. Find the one closest to your situation;
-        the rest will still hold.
-      </Prose>
+      <Prose delay={0.4}>{t('whom_intro')}</Prose>
 
       <div className="whom-stack mt-14">
-        {ARCHETYPES.map((a, i) => (
-          <WhomBlock key={i} archetype={a} index={i} />
+        {ARCHETYPE_KEYS.map((n, i) => (
+          <WhomBlock
+            key={n}
+            title={t(`whom_${n}_title`)}
+            body={t(`whom_${n}_body`)}
+            index={i}
+          />
         ))}
       </div>
     </ChapterShell>
   );
 }
 
-function WhomBlock({ archetype, index }: { archetype: ClientArchetype; index: number }) {
+function WhomBlock({
+  title, body, index,
+}: { title: string; body: string; index: number }) {
   return (
     <motion.div
       className="whom-block"
@@ -86,8 +60,8 @@ function WhomBlock({ archetype, index }: { archetype: ClientArchetype; index: nu
     >
       <div className="whom-marker" />
       <div className="whom-body">
-        <div className="whom-title">{archetype.title}</div>
-        <div className="whom-text">{archetype.body}</div>
+        <div className="whom-title">{title}</div>
+        <div className="whom-text">{body}</div>
       </div>
     </motion.div>
   );
