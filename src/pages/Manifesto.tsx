@@ -45,6 +45,13 @@ import { ChFAQ }        from './manifesto/chapters/ChFAQ';
 import { ChInPractice } from './manifesto/chapters/ChInPractice';
 import { ChFuture }     from './manifesto/chapters/ChFuture';
 
+import {
+  LocaleDateline,
+  InterstitialA,
+  InterstitialB,
+  InterstitialC,
+} from './manifesto/LocaleInterstitial';
+
 export default function Manifesto() {
   const [lang, setLang] = useState<Lang>('en');
   const [activeChapter, setActiveChapter] = useState<string>('cold-open');
@@ -146,18 +153,22 @@ export default function Manifesto() {
 
         <main className="manifesto-stage">
           <ChColdOpen  t={t} lang={lang} />
+          <LocaleDateline lang={lang} t={t} />
           <ChProblem   t={t} />
           <ChVision    t={t} />
           <ChHowSearch t={t} />
           <ChPillars   t={t} />
+          <InterstitialA lang={lang} t={t} />
           <ChJourney   t={t} />
           <ChEngine    t={t} />
           <ChCompare   t={t} />
           <ChEthics    t={t} />
+          <InterstitialB lang={lang} t={t} />
           <ChData      t={t} />
           <ChWhom        t={t} />
           <ChFounder     t={t} />
           <ChFAQ         t={t} />
+          <InterstitialC lang={lang} t={t} />
           <ChInPractice  t={t} />
           <ChFuture      t={t} />
         </main>

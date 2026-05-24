@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit:** `b130a01` — Pending deploy: ChEngine 12-engine naming + GSC 48h honesty, ChPillars 5-pillar defense, ChVision audit-trail repetition trimmed
+**Maintained by:** Manav · **Last updated:** 2026-05-24 · **Live commit:** `8f4a0db` — Pending deploy: full manifesto localization (all 11 remaining chapters extracted to ~175 keys × 5 langs in copy.ts; previously only 4 chapters used t())
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -368,7 +368,22 @@ Placeholders are flagged with `◆ TBD` comments inline so Manav can find/edit i
 
 🟢 **ChWhom full localization** — shipped 2026-05-23. All 11 keys (`whom_intro` + 5 × `whom_N_title` + 5 × `whom_N_body`) now in `copy.ts` across EN/HI/ES/FR/DE. ChWhom.tsx reads everything via `t()`; no hardcoded English remains.
 
-🟢 **Full manifesto localization** — shipped 2026-05-24. All 15 chapters now render correctly in all 5 languages. `copy.ts` holds 262 keys per language (1,310 total strings). Previously HI was complete but ES/FR/DE were each missing 180 keys — chapters were already wired to `t()`, but missing keys fell back to EN, which is why language switching looked half-working. Fixed by adding all missing translations.
+🟢 **Full manifesto localization** — shipped 2026-05-24. All 15 chapters now render correctly in all 5 languages. `copy.ts` holds 267 keys per language (1,335 total strings). Previously HI was complete but ES/FR/DE were each missing 180 keys — chapters were already wired to `t()`, but missing keys fell back to EN, which is why language switching looked half-working. Fixed by adding all missing translations.
+
+🟢 **Cultural interstitials** — shipped 2026-05-24. New `LocaleInterstitial.tsx` adds language-resonant atmospheric elements distributed along the manifesto length:
+- `LocaleDateline` (just after ColdOpen) — quiet single-line geographic anchor: cities + locale timezone tag.
+- `InterstitialA` (after Ch04 Pillars, before Ch05 Journey) — cities · cultural-motif SVG · italic maxim.
+- `InterstitialB` (after Ch08 Ethics, before Ch09 Data) — maxim · hairline rule · motif · monospaced coord tag.
+- `InterstitialC` (after Ch12 FAQ, before Ch13 InPractice) — motif · pre-dawn maxim · cities.
+
+Each renders a small language-specific architectural sketch as inline SVG:
+- HI · Mughal jaali six-point star in a hexagon
+- ES · Andalusian eight-point star (zellige tile geometry)
+- FR · Haussmann mansard roof with dormers and chimneys
+- DE · Bauhaus primary geometry (square / circle / triangle / square)
+- EN · operator audit nodes joined by a hairline rule
+
+Five new copy keys driving the locale flavor: `locale_cities`, `locale_coord`, `locale_maxim_1`, `locale_maxim_2`, `locale_maxim_3`. Voice rules respected — feather-light opacity (~0.7), generous vertical padding (4.5rem), italic serif maxim, wide-tracked sans cities. Never loud.
 
 🟢 **Chapter 13 "In Practice"** — shipped 2026-05-23. Anonymized 4:47 AM scenario showing the drift engine catching AI Overview cannibalization. Three timestamped scene beats (04:47 alert → 11:00 three response paths → 12:30 client got audit trail before they had the problem) + Statement + close. Localized 5 langs (8 keys × 5 langs = 40 strings). ChFuture shifted to Ch14. Honest framing: "scenario is composite, patterned on the class of incident SEASON catches in active engagements, told as it would actually unfold."
 
