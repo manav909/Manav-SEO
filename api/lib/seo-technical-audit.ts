@@ -55,7 +55,7 @@ export interface Finding {
   data_source?:   'gsc' | 'ga4' | 'psi' | 'html_fetch' | 'schema_parser';
   enrichment_sources?: Array<'serpapi'>;
   is_foundational?: boolean;
-  signals?: Array<'keyword_mismatch' | 'url_not_in_top_10' | 'serp_topic_mismatch' | 'first_paragraph_off_topic'>;
+  signals?: Array<'keyword_mismatch' | 'url_not_in_top_10' | 'serp_topic_mismatch' | 'first_paragraph_off_topic' | 'keyword_pivot_cluster'>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -192,15 +192,68 @@ function pickFoundationalCritical(findings: Finding[]): void {
     f.audit_kind === 'indexability' &&
     /(noindex|blocked|robots\.txt|x-robots-tag)/i.test(f.finding_title));
   if (indexBlocked) { indexBlocked.is_foundational = true; return; }
-  /* Rule 2: keyword-presence Critical with pivot recommendation */
-  const kwPivot = reds.find(f =>
-    f.audit_kind === 'on_page_fundamentals' &&
-    /keyword/i.test(f.finding_title) &&
-    f.recommendation && /change the campaign keyword|rewrite.*title/i.test(f.recommendation));
+  /* Rule 2: keyword-presence Critical with pivot recommendation.
+     Phase 16.10 — broadened to catch the bothPartial branch's "alignment gap"
+     title phrasing AND any keyword-finding whose signals include keyword_mismatch
+     (the most reliable structural signal). Previous regex worked on
+     finding_title containing "keyword" + recommendation containing
+     "change the campaign keyword" — but if either upstream string changes
+     phrasing the rule silently misses. Now: title-OR-signal match plus
+     recommendation-OR-detail keyword-pivot intent. */
+  const kwPivot = reds.find(f => {
+    if (f.audit_kind !== 'on_page_fundamentals') return false;
+    const titleHit = /keyword/i.test(f.finding_title);
+    const signalHit = Array.isArray(f.signals) && f.signals.includes('keyword_mismatch');
+    if (!titleHit && !signalHit) return false;
+    const recAndDetail = `${f.recommendation || ''} ${f.finding_detail || ''}`;
+    return /change the campaign keyword|rewrite the (page )?title|rewrite the title and h1|content overhaul|campaign keyword is wrong|page is built for|content-strategy mismatch/i.test(recAndDetail);
+  });
   if (kwPivot) { kwPivot.is_foundational = true; return; }
   /* Rule 3: first-paragraph topicality */
   const firstParaCrit = reds.find(f => /first paragraph/i.test(f.finding_title));
   if (firstParaCrit) { firstParaCrit.is_foundational = true; return; }
+}
+
+/** Phase 16.10 — propagate a shared cluster signal across the four findings
+ *  that corroborate a keyword-pivot diagnosis. The convergence detector
+ *  (detectConvergingEvidence) already identifies these four signals; this
+ *  function tags each carrying finding with an additional cluster signal
+ *  (`keyword_pivot_cluster`) so the deep-doc renderer's signal-based
+ *  cross-reference engine wires them together. Without this, each finding
+ *  has a unique single signal and the cross-ref graph stays leaf-only —
+ *  §3.1 ↔ §3.2 ↔ §3.3 ↔ §3.9 never link, even though §4.2 correctly
+ *  identifies them as corroborating evidence.
+ *
+ *  Only runs when pickFoundationalCritical has flagged a foundational
+ *  finding AND the convergence detector would fire (2+ candidates with
+ *  signals in the keyword-pivot family). */
+function propagateKeywordPivotClusterSignal(findings: Finding[]): void {
+  const PIVOT_FAMILY = ['keyword_mismatch', 'url_not_in_top_10', 'serp_topic_mismatch', 'first_paragraph_off_topic'] as const;
+  const candidates = findings.filter(f =>
+    (f.severity === 'red' || f.severity === 'amber') &&
+    Array.isArray(f.signals) &&
+    f.signals.some(s => (PIVOT_FAMILY as readonly string[]).includes(s)));
+  if (candidates.length < 2) return;
+  for (const f of candidates) {
+    if (!Array.isArray(f.signals)) f.signals = [];
+    if (!f.signals.includes('keyword_pivot_cluster')) {
+      f.signals.push('keyword_pivot_cluster');
+    }
+  }
+  /* Also tag the foundational finding itself (which may not have any of
+     the pivot-family signals — keyword-presence finding's only signal is
+     keyword_mismatch but the bothPartial branch may have been built before
+     signals were added). Find by is_foundational + audit_kind. */
+  const foundationalKw = findings.find(f =>
+    f.is_foundational === true &&
+    f.audit_kind === 'on_page_fundamentals' &&
+    /keyword/i.test(f.finding_title));
+  if (foundationalKw) {
+    if (!Array.isArray(foundationalKw.signals)) foundationalKw.signals = [];
+    if (!foundationalKw.signals.includes('keyword_pivot_cluster')) {
+      foundationalKw.signals.push('keyword_pivot_cluster');
+    }
+  }
 }
 
 /** Detect when 2+ Critical findings share signals that converge on the
@@ -415,7 +468,21 @@ export async function runTechnicalAudit(opts: {
        any LLM uploaded the doc derives role-specific views (PM tasks,
        content briefs, client summaries, sales hooks) by querying the
        cross-reference graph. The lens module remains in the repo as
-       dormant code for one phase before deletion. */
+       dormant code for one phase before deletion.
+
+       Phase 16.10 — pre-render passes restored. The legacy renderAuditReport
+       called pickFoundationalCritical + detectConvergingEvidence; the
+       deep-doc wire-in missed them, so is_foundational was never set,
+       which cascaded into §6.1 empty, §0.2 numbering hole, §3.1 missing
+       🎯 badge, and §7.1 phantom T1.x dependencies. Restored here, plus
+       a new cluster-signal propagation step: when a foundational finding
+       is identified, the corroborating signal-tagged findings get a
+       shared `keyword_pivot_cluster` signal so the renderer's signal-
+       based cross-ref engine wires them together (§3.1 ↔ §3.2 ↔ §3.3 ↔ §3.9). */
+    pickFoundationalCritical(findings);
+    propagateKeywordPivotClusterSignal(findings);
+    const convergingBanner = detectConvergingEvidence(findings);
+
     const sourceConf = weightedFindingConfidence(findings);
     const sourceCounts: Record<string, number> = {};
     for (const f of findings) {
@@ -446,6 +513,7 @@ export async function runTechnicalAudit(opts: {
         unattributed_count:  sourceConf.unattributed_count,
         by_source:           sourceCounts,
       },
+      converging_banner:    convergingBanner,
     };
     const bodyMd = renderDeepAuditReport(deepReportInputs);
 
@@ -3064,9 +3132,35 @@ async function checkImageOptimization(url: string): Promise<Finding[]> {
   const lazyRatio    = total > 0 ? withLazy / total : 0;
   const altRatio     = total > 0 ? withAlt / total : 0;
   const srcsetRatio  = total > 0 ? withSrcset / total : 0;
+  /* Phase 16.10 — unclassified format count (SVG, data: URIs, no extension,
+     CDN URLs without explicit format). Previous code silently dropped these
+     from the legacy/modern partition which made titles like "all 9 images
+     are jpg/png/gif" lie when total was 17 and 8 were SVG icons. */
+  const otherFormat = Math.max(0, total - modernFormat - legacyFormat);
 
-  /* Build the per-finding details inline so the report shows the full picture */
-  const summary = `${total} content image(s) detected (tracking pixels filtered): **${withLazy} lazy-loaded** (${Math.round(lazyRatio * 100)}%), **${withAlt} with alt text** (${Math.round(altRatio * 100)}%), **${withSrcset} with srcset** (${Math.round(srcsetRatio * 100)}%), **${modernFormat} modern format** (webp/avif), **${legacyFormat} legacy** (jpg/png/gif).`;
+  /* Build the per-finding details inline so the report shows the full picture.
+     Phase 16.10 — include unclassified count when present so the breakdown
+     adds up. */
+  const otherFmtNote = otherFormat > 0 ? `, **${otherFormat} other** (svg/data-uri/cdn-no-ext)` : '';
+  const summary = `${total} content image(s) detected (tracking pixels filtered): **${withLazy} lazy-loaded** (${Math.round(lazyRatio * 100)}%), **${withAlt} with alt text** (${Math.round(altRatio * 100)}%), **${withSrcset} with srcset** (${Math.round(srcsetRatio * 100)}%), **${modernFormat} modern format** (webp/avif), **${legacyFormat} legacy** (jpg/png/gif)${otherFmtNote}.`;
+
+  /* Phase 16.10 — shared evidence object pushed into EVERY image finding
+     so the deep-doc renderer's §1.4 inventory table can extract any field
+     from any finding regardless of which one fired. Previously each finding
+     only carried its own narrow evidence subset and §1.4 came up empty. */
+  const sharedEvidence = {
+    total_images: total,
+    with_lazy:    withLazy,
+    lazy_ratio:   Number(lazyRatio.toFixed(2)),
+    with_alt:     withAlt,
+    missing_alt:  total - withAlt,
+    alt_ratio:    Number(altRatio.toFixed(2)),
+    with_srcset:  withSrcset,
+    srcset_ratio: Number(srcsetRatio.toFixed(2)),
+    modern_format: modernFormat,
+    legacy_format: legacyFormat,
+    other_format:  otherFormat,
+  };
 
   /* Lazy-loading severity */
   if (total >= 10 && lazyRatio < 0.5) {
@@ -3076,20 +3170,27 @@ async function checkImageOptimization(url: string): Promise<Finding[]> {
       finding_title: `Lazy-loading coverage is low — ${Math.round(lazyRatio * 100)}% of ${total} images use loading="lazy"`,
       finding_detail: `${summary}\n\nWith ${total} images on the page and only ${withLazy} marked \`loading="lazy"\`, browsers download all non-lazy images upfront — inflating LCP and bandwidth on mobile.`,
       recommendation: `Add \`loading="lazy"\` to all images below the fold (typically all but the first 1-3). Keep eager loading only on hero/above-fold images. This is a free CWV improvement requiring no asset re-encoding.`,
-      evidence: { total_images: total, with_lazy: withLazy, lazy_ratio: Number(lazyRatio.toFixed(2)) },
+      evidence: { ...sharedEvidence },
       data_source: 'html_fetch',
     });
   }
 
-  /* Modern format severity */
+  /* Modern format severity. Phase 16.10 — title rewritten so it does NOT
+     lie when total != legacyFormat. The previous "all ${legacyFormat}
+     images are jpg/png/gif" misled readers when other formats (SVG icons)
+     made up the rest of the image set. */
   if (total >= 5 && modernFormat === 0 && legacyFormat > 0) {
+    const legacyShare = Math.round((legacyFormat / total) * 100);
+    const titleSuffix = legacyFormat === total
+      ? `all ${total} images are jpg/png/gif`
+      : `${legacyFormat} of ${total} images are jpg/png/gif (${legacyShare}%)`;
     findings.push({
       audit_kind: 'page_load',
       severity: 'amber',
-      finding_title: `No modern image formats used — all ${legacyFormat} images are jpg/png/gif`,
+      finding_title: `No modern image formats used — ${titleSuffix}`,
       finding_detail: `${summary}\n\nLegacy formats (jpg/png/gif) are typically 25-50% larger than equivalent webp, and 40-70% larger than avif at equivalent visual quality. On pages with multiple images this is a measurable LCP and bandwidth hit.`,
       recommendation: `Convert content images to webp (broadest compatibility, 95%+ browser support) or avif (best compression, 90%+ browser support). Most image CDNs (Cloudflare Images, Imgix, ImageKit) can serve format-on-demand based on Accept headers. Use \`<picture>\` with format fallbacks for graceful degradation.`,
-      evidence: { total_images: total, modern_format: modernFormat, legacy_format: legacyFormat },
+      evidence: { ...sharedEvidence },
       data_source: 'html_fetch',
     });
   }
@@ -3103,7 +3204,7 @@ async function checkImageOptimization(url: string): Promise<Finding[]> {
       finding_title: `${missing} of ${total} images missing alt text (${Math.round((1 - altRatio) * 100)}%)`,
       finding_detail: `${summary}\n\nMissing alt text is both an accessibility failure (screen readers can't describe the image) and a missed SEO signal (Google uses alt text as a topical signal, particularly for image search). The ≥80% alt-coverage threshold is the industry baseline.`,
       recommendation: `Add descriptive alt text to all content images. Decorative images (purely visual flourishes) should use \`alt=""\` explicitly to signal "intentionally empty." Avoid generic alts like "image" or "photo" — describe what the image actually shows in 5-15 words.`,
-      evidence: { total_images: total, with_alt: withAlt, missing_alt: missing, alt_ratio: Number(altRatio.toFixed(2)) },
+      evidence: { ...sharedEvidence },
       data_source: 'html_fetch',
     });
   }
@@ -3115,7 +3216,7 @@ async function checkImageOptimization(url: string): Promise<Finding[]> {
       severity: 'green',
       finding_title: `Image optimization signals look healthy — ${total} images, ${Math.round(lazyRatio * 100)}% lazy, ${Math.round(altRatio * 100)}% with alt`,
       finding_detail: summary,
-      evidence: { total_images: total, with_lazy: withLazy, with_alt: withAlt, modern_format: modernFormat, legacy_format: legacyFormat },
+      evidence: { ...sharedEvidence },
       data_source: 'html_fetch',
     });
   } else if (total < 5) {
@@ -3125,6 +3226,7 @@ async function checkImageOptimization(url: string): Promise<Finding[]> {
       severity: 'info',
       finding_title: `${total} content image(s) on this page — too few for optimization-pattern verdicts`,
       finding_detail: summary,
+      evidence: { ...sharedEvidence },
       data_source: 'html_fetch',
     });
   }

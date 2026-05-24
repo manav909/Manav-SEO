@@ -145,7 +145,17 @@ function diffuseIntentFinding(m: FindingWithId[]) {
   return firstFindingBy(m, f => /Diffuse-intent SERP|Tight-intent SERP/i.test(f.finding_title));
 }
 function competitiveContentFinding(m: FindingWithId[]) {
-  return firstFindingBy(m, f => /Content depth|word count|SERP median/i.test(f.finding_title));
+  /* Phase 16.10 — only match findings that carry the actual comparison
+     evidence (audited_word_count + competitor_median), not the basic
+     "Word count: ~3052 words" pass finding which has only `word_count`.
+     The previous regex /word count/i matched §3.15 first (basic word
+     count) and §2.5 inventory came up empty. */
+  return firstFindingBy(m, f => {
+    const ev = f.evidence || {};
+    const titleHit = /Content depth|content exceeds SERP median|word count.*competitor|competitor median|SERP median/i.test(f.finding_title);
+    const evidenceHit = (ev.audited_word_count !== undefined && ev.competitor_median !== undefined);
+    return titleHit || evidenceHit;
+  });
 }
 function perPageGa4Finding(m: FindingWithId[]) {
   return firstFindingBy(m, f => /Per-page engagement rate|Per-page avg session/i.test(f.finding_title));
@@ -324,7 +334,19 @@ function renderExecutiveSummary(lines: string[], I: DeepReportInputs, m: Finding
   lines.push(`### §0.1 Diagnosis`);
   lines.push('');
   if (kw && ctr) {
-    lines.push(`This page is targeted at \`${I.keyword}\` but the underlying content is built for **${suggestedPivot || 'a different keyword'}**. Four independent measurements corroborate this diagnosis ${xref(foundational)} ${xref(ctr)} ${xref(firstParagraphFinding(m))} ${xref(diffuse)}. The convergence is documented in §4.2.`);
+    /* Phase 16.10 — dynamic cross-ref construction. Previous version
+       hardcoded "Four independent measurements" while emitting xref(null)
+       for any missing finding, producing a count mismatch. Now: build the
+       list from non-null cross-refs and number-name accordingly. */
+    const firstPara = firstParagraphFinding(m);
+    const diagXrefs: FindingWithId[] = [];
+    if (foundational) diagXrefs.push(foundational);
+    if (ctr && ctr !== foundational) diagXrefs.push(ctr);
+    if (firstPara && firstPara !== foundational) diagXrefs.push(firstPara);
+    if (diffuse && diffuse !== foundational) diagXrefs.push(diffuse);
+    const numberWord = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six'][diagXrefs.length] || `${diagXrefs.length}`;
+    const xrefList = diagXrefs.map(fi => xref(fi)).join(', ');
+    lines.push(`This page is targeted at \`${I.keyword}\` but the underlying content is built for **${suggestedPivot || 'a different keyword'}**. ${numberWord} independent measurement(s) corroborate this diagnosis: ${xrefList}. The convergence is documented in §4.2.`);
     lines.push('');
     if (ctrEv.ratio_pct !== undefined && businessImpact) {
       lines.push(`The keyword mismatch produces a measurable revenue gap: actual CTR is **${ctrEv.ratio_pct}%** of expected for position **${ctrEv.position?.toFixed(1)}**, translating to **~${num(businessImpact.missed_clicks)} missed monthly clicks** worth **${dollars(businessImpact.dollar_low, businessImpact.dollar_high)} monthly** at B2B SaaS commercial-page click values. Full business-impact model in §8.`);
@@ -345,18 +367,43 @@ function renderExecutiveSummary(lines: string[], I: DeepReportInputs, m: Finding
 
   lines.push(`### §0.2 Top three actions (in execution order)`);
   lines.push('');
+  /* Phase 16.10 — dynamic numbering. Previous version hardcoded **1.** for
+     foundational, **2.** for PAA gap, **3.** for zero-conversion — so
+     when foundational was null the list started at "2." with no "1.",
+     producing a numbering hole. Now we build the action list as
+     {bold_lead, tail} pairs and render them sequentially with correct
+     bold scoping. */
+  type Action = { lead: string; tail: string };
+  const actionItems: Action[] = [];
   if (foundational) {
-    lines.push(`**1. ${foundational.finding.finding_title}** — foundational fix ${xref(foundational)}. Detail in §6.1.`);
-    lines.push('');
+    actionItems.push({
+      lead: foundational.finding.finding_title,
+      tail: ` — foundational fix ${xref(foundational)}. Detail in §6.1.`,
+    });
   }
   const paaGap = paaGapFinding(m);
   if (paaGap) {
     const paaCount = paaGap.finding.evidence?.unanswered?.length || paaGap.finding.evidence?.paa_total || 0;
-    lines.push(`**2. Add ${paaCount} new H2 sections answering live PAA questions** ${xref(paaGap)}. Each section needs a 40-80 word direct answer as its first sentence. Detail and per-question briefs in §6.2.1.`);
-    lines.push('');
+    actionItems.push({
+      lead: `Add ${paaCount} new H2 sections answering live PAA questions`,
+      tail: ` ${xref(paaGap)}. Each section needs a 40-80 word direct answer as its first sentence. Detail and per-question briefs in §6.2.1.`,
+    });
   }
   if (zeroConv) {
-    lines.push(`**3. Verify GA4 conversion tracking** ${xref(zeroConv)}. Zero conversions on ${num(zeroConv.finding.evidence?.sessions)} sessions is either a measurement gap or a real funnel problem — needs analyst diagnosis before any traffic-recovery work pays off. Detail in §6.3.1.`);
+    actionItems.push({
+      lead: `Verify GA4 conversion tracking`,
+      tail: ` ${xref(zeroConv)}. Zero conversions on ${num(zeroConv.finding.evidence?.sessions)} sessions is either a measurement gap or a real funnel problem — needs analyst diagnosis before any traffic-recovery work pays off. Detail in §6.3.1.`,
+    });
+  }
+  /* Fallback when none of the standard action sources fired */
+  if (actionItems.length === 0) {
+    const firstRed = m.find(f => f.finding.severity === 'red');
+    if (firstRed) actionItems.push({ lead: firstRed.finding.finding_title, tail: ` ${xref(firstRed)}. See §6 for full sequencing.` });
+    else actionItems.push({ lead: 'No Critical-severity actions surfaced', tail: '. See §6.3 for Phase-3 parallel work that can still ship.' });
+  }
+  for (let i = 0; i < actionItems.length; i++) {
+    const a = actionItems[i];
+    lines.push(`**${i + 1}. ${a.lead}**${a.tail}`);
     lines.push('');
   }
 
@@ -471,8 +518,13 @@ function renderPageInventory(lines: string[], I: DeepReportInputs, m: FindingWit
     lines.push(`| Total content images (tracking pixels filtered) | ${ev.total_images ?? '—'} |`);
     lines.push(`| With alt text | ${ev.with_alt ?? '—'}${ev.with_alt && ev.total_images ? ` (${Math.round((ev.with_alt / ev.total_images) * 100)}%)` : ''} |`);
     lines.push(`| Lazy-loaded | ${ev.with_lazy ?? '—'}${ev.with_lazy && ev.total_images ? ` (${Math.round((ev.with_lazy / ev.total_images) * 100)}%)` : ''} |`);
+    lines.push(`| Responsive (srcset) | ${ev.with_srcset ?? '—'}${ev.with_srcset && ev.total_images ? ` (${Math.round((ev.with_srcset / ev.total_images) * 100)}%)` : ''} |`);
     lines.push(`| Modern format (webp/avif) | ${ev.modern_format ?? '—'} |`);
     lines.push(`| Legacy format (jpg/png/gif) | ${ev.legacy_format ?? '—'} |`);
+    /* Phase 16.10 — show unclassified images so the breakdown sums to total */
+    if (ev.other_format !== undefined && ev.other_format > 0) {
+      lines.push(`| Other format (svg/data-uri/cdn-no-ext) | ${ev.other_format} |`);
+    }
     lines.push('');
     lines.push(`Related findings: ${imgs.map(f => xrefShort(f)).join(', ')}`);
   } else {
@@ -695,11 +747,31 @@ function renderSearchPerformanceBaseline(lines: string[], I: DeepReportInputs, m
       lines.push(`**${dev.distinct_categories} distinct intent categories** detected in the live top-10.`);
       lines.push('');
     }
-    if (Array.isArray(dev.categories) && dev.categories.length > 0) {
+    /* Phase 16.10 — normalize categories shape. The audit's
+       checkDiffuseIntentSerp produces categories as an OBJECT MAP
+       `{categoryName: [domain1, domain2]}` but the renderer was written
+       expecting an ARRAY of `{name, count, domains[]}`. Accept both. */
+    let normalizedCats: Array<{ name: string; count: number; domains: string[] }> = [];
+    if (Array.isArray(dev.categories)) {
+      normalizedCats = dev.categories.map((c: any) => ({
+        name: c.name || '',
+        count: c.count ?? (Array.isArray(c.domains) ? c.domains.length : 0),
+        domains: Array.isArray(c.domains) ? c.domains : [],
+      })).filter((c) => c.name);
+    } else if (dev.categories && typeof dev.categories === 'object') {
+      normalizedCats = Object.entries(dev.categories).map(([name, domains]) => ({
+        name,
+        count: Array.isArray(domains) ? domains.length : 0,
+        domains: Array.isArray(domains) ? domains as string[] : [],
+      }));
+    }
+    /* Sort by count desc so the biggest intent category shows first */
+    normalizedCats.sort((a, b) => b.count - a.count);
+    if (normalizedCats.length > 0) {
       lines.push(`| Intent category | Count | Example domains |`);
       lines.push(`|---|---|---|`);
-      for (const c of dev.categories) {
-        lines.push(`| ${c.name} | ${c.count} | ${(c.domains || []).slice(0, 4).map((d: string) => '`' + d + '`').join(', ')} |`);
+      for (const c of normalizedCats) {
+        lines.push(`| ${c.name} | ${c.count} | ${c.domains.slice(0, 4).map((d: string) => '`' + d + '`').join(', ')} |`);
       }
       lines.push('');
     }
@@ -1129,16 +1201,32 @@ function renderRecommendations(lines: string[], I: DeepReportInputs, m: FindingW
     }
     lines.push(`**Why first:** every Phase 2 recommendation resets against the keyword decision. Doing Phase 2 before this lands means redoing it after the decision changes the target.`);
     lines.push('');
-    lines.push(`**Cross-references:** ${xref(ctrFinding(m))}, ${xref(diffuseIntentFinding(m))}, ${xref(firstParagraphFinding(m))} — all four converge on this diagnosis (see §4.2).`);
+    /* Phase 16.10 — cross-references built from non-null cited findings only.
+       Previous version called xref(null) for missing findings producing
+       blank cross-ref slots. */
+    const xrefList = [ctrFinding(m), diffuseIntentFinding(m), firstParagraphFinding(m)]
+      .filter((fi): fi is FindingWithId => fi !== null && fi !== foundational)
+      .map(fi => xref(fi));
+    if (xrefList.length > 0) {
+      lines.push(`**Cross-references:** ${xrefList.join(', ')} — these findings converge on the same diagnosis (see §4.2).`);
+    } else {
+      lines.push(`**Cross-references:** see §4.2 for the convergence analysis.`);
+    }
   } else {
-    lines.push(`No foundational fix identified for this audit. Either no Critical findings, or no finding matched the foundational-detection rules (see §11.3 for the heuristic).`);
+    /* Phase 16.10 — explicit empty-Phase-1 messaging. No foundational
+       fix means Phase 2 acts as the lead phase; this is normal for audits
+       on pages that already match their keyword and just have tactical
+       gaps. Tell the reader directly rather than leaving them to infer. */
+    lines.push(`**No Phase 1 foundational fix required for this audit.**`);
+    lines.push('');
+    lines.push(`No finding triggered the foundational-fix heuristic (indexability blocker, keyword-pivot recommendation, or first-paragraph topicality failure — see §11.3). This means Phase 2 work below can begin at kickoff without waiting on a client decision. The phase numbering retains §6.2 / §6.3 for cross-reference stability across audit runs.`);
   }
   lines.push('');
 
   /* §6.2 — Content overhaul */
-  lines.push(`### §6.2 — Phase 2: Content overhaul`);
+  lines.push(`### §6.2 — Phase 2: ${foundational ? 'Content overhaul' : 'Content overhaul (lead phase)'}`);
   lines.push('');
-  lines.push(`Goal: implement all content changes aligned to the Phase 1 decision. Each subsection below maps to a specific finding.`);
+  lines.push(`Goal: ${foundational ? 'implement all content changes aligned to the Phase 1 decision' : 'implement the content changes the audit surfaced'}. Each subsection below maps to a specific finding.`);
   lines.push('');
 
   const paaGap = paaGapFinding(m);
@@ -1255,22 +1343,41 @@ function renderRecommendations(lines: string[], I: DeepReportInputs, m: FindingW
   lines.push('');
 }
 
-/** Per-PAA-question body-guidance — content writer brief. */
+/** Per-PAA-question body-guidance — content writer brief.
+ *  Phase 16.10 — router order fixed. The "what is X" check used to fire
+ *  before the "good/best X" check, so "what is a good app maker?" matched
+ *  the category-definition branch instead of the comparison branch (which
+ *  caused §6.2.1.2 and §6.2.1.3 to render IDENTICAL guidance in the
+ *  alphasoftware audit). Now: quality/comparison check first, then
+ *  category-definition only for plain "what is" questions. */
 function paaQuestionBodyGuidance(q: string): string {
   const ql = q.toLowerCase();
-  if (/how.*create.*app|how.*build.*app|how.*make.*app/.test(ql)) {
-    return 'Step-by-step process from idea to deployment (numbered list); skill level required (no-code/low-code/dev needed); typical time-to-build; tools/platforms compared; beginner pitfalls.';
+  /* Quality/comparison/recommendation intent — must check BEFORE "what is"
+     because "what is a good X" should route here, not to category definition. */
+  if (/\b(good|best|top|recommend|popular|leading|ideal)\b/.test(ql)) {
+    return 'Selection criteria framework (3-5 evaluation dimensions); honest comparison table of leading options including this product; use-case specifics (small business vs enterprise, technical vs no-code audience); pricing/licensing structural differences; how to evaluate (free tiers, sandboxes, proof-of-concept timelines). End with a decision-tree paragraph: "if you need X, pick A; if Y, pick B."';
   }
-  if (/what is.*app maker|what is.*tool|what is.*platform/.test(ql)) {
-    return 'Concise category definition (the citation candidate); distinguishing capabilities; target audience; category history; comparison to adjacent categories (form builders, IDEs, design tools).';
+  /* How-to / process intent */
+  if (/\b(how to|how can|how do)\b.*\b(create|build|make|develop|launch|set up|setup|start)\b/.test(ql)) {
+    return 'Step-by-step process from idea to deployment (numbered list); skill level required (no-code/low-code/dev needed); typical time-to-build; tools/platforms compared; beginner pitfalls; cost considerations at each stage.';
   }
-  if (/good.*app maker|best.*app maker|top|recommend/.test(ql)) {
-    return 'Selection criteria framework (3-5 evaluation dimensions); honest comparison table of leading options including this product; use-case specifics; pricing/licensing structural differences; how to evaluate (free tiers, sandboxes).';
+  /* Cost / pricing intent */
+  if (/\b(free|cost|cheap|price|expensive|affordable|budget|pricing)\b/.test(ql)) {
+    return 'What\'s actually free vs free-tier-with-limits; hidden cost categories (connectors, capacity, premium features); cost comparison at small/medium/enterprise scale; total cost of ownership including learning curve and switching cost; when free is enough vs when paid features are needed; pricing-model patterns (per-user, per-app, per-resource).';
   }
-  if (/free|cost|cheap|price|expensive/.test(ql)) {
-    return 'What\'s actually free vs free-tier-with-limits; hidden cost categories (connectors, capacity, premium features); cost comparison at small/medium/enterprise scale; total cost of ownership including learning curve; when free is enough vs when paid features are needed.';
+  /* "What is X" — plain category-definition intent (no quality modifier) */
+  if (/^what (is|are)\b/.test(ql)) {
+    return 'Concise category definition (the citation candidate); distinguishing capabilities; target audience; category history and how it evolved; comparison to adjacent categories (form builders, IDEs, design tools); when to use this category vs alternatives.';
   }
-  return 'Direct answer to the question (citation candidate); why this question matters (searcher\'s underlying concern); practical implications/steps; common follow-on questions; authoritative source citation.';
+  /* "Why X" — rationale / justification intent */
+  if (/^why\b/.test(ql)) {
+    return 'The underlying problem this addresses (open with searcher pain); three to five distinct reasons with concrete examples; common misconceptions debunked; real-world outcome scenarios; counter-considerations (when this is the wrong answer).';
+  }
+  /* "Can I X" — feasibility / permission intent */
+  if (/^can (i|you|we)\b/.test(ql)) {
+    return 'Direct yes/no answer in the first sentence (citation candidate); conditions and constraints (when yes, when no, when partial); concrete examples of each case; common mistakes / unexpected failures; how to verify your specific situation.';
+  }
+  return 'Direct answer to the question (citation candidate, 40-80 words); why this question matters (searcher\'s underlying concern); practical implications and concrete steps; common follow-on questions; authoritative source citation.';
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1283,13 +1390,20 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   lines.push(`> Each task cross-references the §6 recommendation it implements (and through it, the §3 finding that motivates it). Designed to be ingestible by a downstream PM pipeline.`);
   lines.push('');
 
+  const foundational = foundationalFinding(m);
+  /* Phase 16.10 — task-dependency anchor. When foundational exists,
+     Phase 2 work depends on T1.4 (the documented decision). When it
+     doesn't, Phase 2 acts as the lead phase and tasks have no Phase 1
+     dependency. Previously T2.* dependencies hardcoded "T1.4" which
+     produced phantom references when foundational was null. */
+  const phase2DepLabel = foundational ? 'T1.4' : 'None';
+
   /* §7.1 — Task inventory */
   lines.push(`### §7.1 — Task inventory`);
   lines.push('');
   lines.push(`| Task ID | Task | Owner | Effort | Dependencies | Implements |`);
   lines.push(`|---|---|---|---|---|---|`);
 
-  const foundational = foundationalFinding(m);
   if (foundational) {
     lines.push(`| T1.1 | Prepare keyword-direction options brief (pivot vs rewrite, with pros/cons) | Senior DMS | 2 hrs | None | §6.1.1 |`);
     lines.push(`| T1.2 | Schedule 30-min client review call | PM | 30 min | T1.1 | §6.1.1 |`);
@@ -1300,18 +1414,18 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   const paaGap = paaGapFinding(m);
   const unansweredArr = paaGap?.finding.evidence?.unanswered;
   if (paaGap && Array.isArray(unansweredArr) && unansweredArr.length > 0) {
-    lines.push(`| T2.1 | Write ${unansweredArr.length} new H2 sections per PAA questions (each 350-580 words) | Content Writer | 3-4 days | T1.4 | §6.2.1 |`);
+    lines.push(`| T2.1 | Write ${unansweredArr.length} new H2 sections per PAA questions (each 350-580 words) | Content Writer | 3-4 days | ${phase2DepLabel} | §6.2.1 |`);
     lines.push(`| T2.2 | Gather external citations (vendor docs, Gartner, G2) — 2 per section minimum | Content Writer | 1 day | T2.1 in progress | §6.2.1 |`);
   }
 
   const firstPara = firstParagraphFinding(m);
   if (firstPara && firstPara.finding.severity !== 'green') {
-    lines.push(`| T2.3 | Rewrite first paragraph (3-sentence structure, 60-100 words) | Content Writer | 2 hrs | T1.4 | §6.2.2 |`);
+    lines.push(`| T2.3 | Rewrite first paragraph (3-sentence structure, 60-100 words) | Content Writer | 2 hrs | ${phase2DepLabel} | §6.2.2 |`);
   }
 
   const meta = metaDescFinding(m);
   if (meta && meta.finding.severity === 'amber') {
-    lines.push(`| T2.4 | Trim meta description to 140-160 chars | Content Writer | 15 min | T1.4 | §6.2.3 |`);
+    lines.push(`| T2.4 | Trim meta description to 140-160 chars | Content Writer | 15 min | ${phase2DepLabel} | §6.2.3 |`);
   }
 
   const schema = schemaFinding(m);
@@ -1344,21 +1458,38 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   lines.push(`| T3.6 | Compare pre/post metrics across §3 findings | DMS + Analyst | 2 hrs | Re-audit complete | §6.3.4 |`);
   lines.push('');
 
-  /* §7.2 — Critical path */
+  /* §7.2 — Critical path. Phase 16.10 — render Phase 1 lane only when
+     foundational exists; otherwise show Phase 2 as the lead phase with
+     no Phase 1 swimlane and no T1.3 bottleneck text. */
   lines.push(`### §7.2 — Critical path`);
   lines.push('');
   lines.push('```');
-  lines.push(`Phase 1 (Week 1) ────► Phase 2 (Weeks 2-3) ────► Phase 2 Deploy (end Week 3)`);
-  lines.push(`     │                                                       │`);
-  lines.push(`     │   Phase 3 parallel (Weeks 2-4, no Phase 1/2 blockers) │`);
-  lines.push(`     ├─► T3.1/T3.2 conversion-tracking audit                 │`);
-  lines.push(`     ├─► T3.3 image format conversion                       │`);
-  lines.push(`     ├─► T3.4 PSI key config                                │`);
-  lines.push(`     │                                                       ▼`);
-  lines.push(`     └──────────────────────────────────► Re-audit (Week 5-6)`);
+  if (foundational) {
+    lines.push(`Phase 1 (Week 1) ────► Phase 2 (Weeks 2-3) ────► Phase 2 Deploy (end Week 3)`);
+    lines.push(`     │                                                       │`);
+    lines.push(`     │   Phase 3 parallel (Weeks 2-4, no Phase 1/2 blockers) │`);
+    lines.push(`     ├─► T3.1/T3.2 conversion-tracking audit                 │`);
+    lines.push(`     ├─► T3.3 image format conversion                       │`);
+    lines.push(`     ├─► T3.4 PSI key config                                │`);
+    lines.push(`     │                                                       ▼`);
+    lines.push(`     └──────────────────────────────────► Re-audit (Week 5-6)`);
+  } else {
+    lines.push(`Phase 2 (Weeks 1-2) ────► Phase 2 Deploy (end Week 2)`);
+    lines.push(`     │                                            │`);
+    lines.push(`     │   Phase 3 parallel (no Phase 2 blockers)   │`);
+    lines.push(`     ├─► T3.1/T3.2 conversion-tracking audit      │`);
+    lines.push(`     ├─► T3.3 image format conversion             │`);
+    lines.push(`     ├─► T3.4 PSI key config                      │`);
+    lines.push(`     │                                            ▼`);
+    lines.push(`     └────────────────────► Re-audit (Week 4-5)`);
+  }
   lines.push('```');
   lines.push('');
-  lines.push(`**Bottleneck:** T1.3 (client decision). Phase 2 cannot start until this lands. PM should escalate if T1.3 exceeds 5 business days.`);
+  if (foundational) {
+    lines.push(`**Bottleneck:** T1.3 (client decision). Phase 2 cannot start until this lands. PM should escalate if T1.3 exceeds 5 business days.`);
+  } else {
+    lines.push(`**No Phase 1 bottleneck:** the audit produced no foundational fix requiring client decision before tactical work begins. Phase 2 work starts at kickoff. PM should still book Phase 2 review and deploy windows up front (T2.6, T2.8, T2.9).`);
+  }
   lines.push('');
 
   /* §7.3 — Risks */
@@ -1398,17 +1529,32 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   lines.push(`- [ ] T3.6: pre/post metric comparison delivered to client`);
   lines.push('');
 
-  /* §7.5 — Resource & access needs */
+  /* §7.5 — Resource & access needs. Phase 16.10 — DMS task list is
+     conditional on which T-tasks actually exist; previously T1.1/T1.4
+     were always cited even when no foundational. */
   lines.push(`### §7.5 — Resource & access requirements`);
   lines.push('');
   lines.push(`Confirm at kickoff:`);
   lines.push('');
-  lines.push(`- **Senior DMS** — ~6-8 hours total across project (T1.1, T1.4, T2.6, T3.6)`);
-  lines.push(`- **Content Writer** — ~5-6 days during Weeks 2-3 (T2.1, T2.2, T2.3, T2.4)`);
-  lines.push(`- **Dev** — ~1-2 days total (T2.5, T2.7, T2.9, T3.3)`);
+  const dmsTasks: string[] = [];
+  if (foundational) { dmsTasks.push('T1.1', 'T1.4'); }
+  dmsTasks.push('T2.6', 'T3.6');
+  lines.push(`- **Senior DMS** — ~${foundational ? '6-8' : '4-6'} hours total across project (${dmsTasks.join(', ')})`);
+  const writerTasks: string[] = [];
+  if (paaGap && unansweredArr && unansweredArr.length > 0) writerTasks.push('T2.1', 'T2.2');
+  if (firstPara && firstPara.finding.severity !== 'green') writerTasks.push('T2.3');
+  if (meta && meta.finding.severity === 'amber') writerTasks.push('T2.4');
+  if (writerTasks.length > 0) {
+    lines.push(`- **Content Writer** — ~5-6 days during Weeks 2-3 (${writerTasks.join(', ')})`);
+  }
+  const devTasks: string[] = [];
+  if (schema && paaGap) devTasks.push('T2.5');
+  devTasks.push('T2.7', 'T2.9');
+  if (imgs.length > 0) devTasks.push('T3.3');
+  lines.push(`- **Dev** — ~1-2 days total (${devTasks.join(', ')})`);
   if (zeroConv) lines.push(`- **Analytics dev** — ~4-12 hours depending on T3.1 diagnosis (T3.2 scope varies)`);
   lines.push(`- **Project Manager** — ongoing coordination across all phases`);
-  lines.push(`- **GA4 admin access** — required for T3.1 + re-audit baseline`);
+  if (zeroConv) lines.push(`- **GA4 admin access** — required for T3.1 + re-audit baseline`);
   lines.push(`- **GSC owner access** — required for §2.6 query-distribution refresh`);
   lines.push(`- **CMS write access** — required for T2.7 + T2.9 deploy`);
   lines.push('');
