@@ -400,6 +400,7 @@ export async function writeReportToPanel(opts: {
   confidenceReason?: string;
   title:             string;
   bodyMd:            string;
+  bodyHtml?:         string;        // Phase 16.11 — HTML render alongside markdown
   summary?:          string;
   metricSnapshot?:   any;
   tags?:             string[];        // Phase 14.0.2 — findability
@@ -432,6 +433,7 @@ export async function writeReportToPanel(opts: {
       confidence_reason:  opts.confidenceReason || null,
       title:              opts.title.slice(0, 240),
       body_md:            opts.bodyMd,
+      body_html:          opts.bodyHtml || null,
       summary:            opts.summary?.slice(0, 1000) || null,
       metric_snapshot:    opts.metricSnapshot || null,
       tags:               opts.tags && opts.tags.length > 0 ? opts.tags.slice(0, 30) : null,

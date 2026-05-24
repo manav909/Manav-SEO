@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality.
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 16.11) · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality. Phase 16.11 adds HTML renderer for deep audit report (alongside existing markdown).
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -745,3 +745,80 @@ The `t()`-using versions of these chapters lived only in my workspace. Each prev
 ## 17. Session handoff prompt for next chat
 
 > "Continuing SEO SEASON. Brief attached. Manifesto now 14 chapters with new ChFAQ (Doubts Resolved) as Ch12 + Live Ops panel in ChEngine. Cold open ACT 5 now ends with animated SVG signature of 'Manav Sharma' drawn with Allison handwriting font + glowing pen tip (1.9s write, ~2.8s total). Layout work paused. Don't change anything without confirming."
+
+---
+
+## 18. Technical audit pipeline (Phase 16.x)
+
+The technical audit is the headline deliverable Manav sends clients. It runs 15 checks per audit, produces a single deep-doc report with stable §-IDs, and is the most-iterated-on part of the SEO Season codebase.
+
+### Architecture (post-Phase 16.11)
+
+```
+runTechnicalAudit (api/lib/seo-technical-audit.ts, ~3540 lines)
+  ├── 15 checks → Finding[]
+  ├── pickFoundationalCritical → flags is_foundational
+  ├── propagateKeywordPivotClusterSignal → cross-finding signal
+  ├── detectConvergingEvidence → banner
+  └── deepReportInputs: DeepReportInputs
+        ├── renderDeepAuditReport(inputs)       → markdown  (body_md)
+        └── renderDeepAuditReportHtml(inputs)   → HTML      (body_html)  ← Phase 16.11
+              ↓
+        writeReportToPanel({ bodyMd, bodyHtml, ... })
+              ↓
+        seo_campaign_reports table
+              ↓
+        Panel UI / download endpoints
+```
+
+### Files
+
+- `api/lib/seo-technical-audit.ts` — 3542 lines. The check orchestration, finding emission, post-processing pipeline.
+- `api/lib/seo-technical-audit-deep-report.ts` — 1884 lines. Markdown renderer + all evidence extractors. Extractors are exported and reused by the HTML renderer.
+- `api/lib/seo-technical-audit-html.ts` — NEW Phase 16.11 (~1300 lines). HTML renderer producing self-contained HTML with embedded CSS, semantic anchors, clickable cross-refs, print-optimized @page rules, CSS critical-path diagram (no ASCII art).
+- `api/lib/seo-technical-audit-lenses.ts` — 1613 lines, dormant. Retired in Phase 16.9 when multi-lens was replaced by deep-doc.
+- `api/lib/seo-campaign-engine.ts` — adds `bodyHtml?: string` to `writeReportToPanel`, persists to `body_html` column.
+
+### Storage
+
+Same row in `seo_campaign_reports` carries both formats:
+- `body_md` — markdown (existing, unchanged)
+- `body_html` — HTML (Phase 16.11; nullable for legacy reports)
+
+The HTML is the same content, semantically richer (clickable §-anchors, severity badges with CSS, collapsible JSON evidence). Frontend can offer "Download as HTML" → save as `.html`, then user opens in Word for native DOCX conversion, or prints in browser for native PDF.
+
+### Phase ship log
+
+- **16.1–16.7**: SerpAPI leverage; senior-DMS uplift (per-page GA4, schema validation, anchor-text); freshness/image/hreflang checks; converging-evidence banner. All DEPLOYED.
+- **16.8**: Multi-lens architecture. DEPLOYED, RETIRED 16.9.
+- **16.9**: Deep-doc architecture replaces multi-lens. DEPLOYED; had ~26 small bugs surfaced in production audit on `alphasoftware.com`.
+- **16.10**: 8-fix surgical pass — `pickFoundationalCritical` wire-in, `propagateKeywordPivotClusterSignal` cluster signal, §0.1 dynamic xref count, §0.2 sequential numbering, image inventory full population, competitive content evidence completeness, PAA body guidance, empty-Phase-1 handling. DEPLOYED, VERIFIED 21/21 fixes working in production output (2026-05-23 re-audit).
+- **16.11**: HTML renderer for clean DOCX/PDF export. SHIPPING NOW. Tier 2 of three options (Tier 1 = markdown polish only, Tier 3 = native DOCX+PDF generators). HTML is the universal pivot — browser print-to-PDF + Word "Open HTML" both produce production-grade output.
+
+### Phase 16.11 deploy notes
+
+1. **SQL migration is required FIRST** in Supabase Dashboard before code deploys. The migration adds the nullable `body_html` column to `seo_campaign_reports`. Without it, the audit insert will fail.
+2. **Frontend download/toggle is NOT in this ship.** This phase ships the renderer + storage. Frontend "Download HTML" button is Phase 16.12 work (or Manav can wire it up with a simple Supabase query → blob → download flow).
+3. **Existing audit reports remain readable** — `body_html` is nullable; older reports just have `body_md` populated. No backfill required.
+4. **HTML is regenerated per audit run** — no caching, no separate generator endpoint. Same source of truth as markdown.
+
+### Verification at next audit run
+
+After deploy, the next audit produces both renderers' output. Sanity check:
+- `seo_campaign_reports.body_html` is populated for the new row
+- HTML file size is ~50-120 KB depending on findings count
+- Opening the HTML in browser shows: clickable TOC, severity badges with color, collapsible Raw evidence sections, working internal §-anchors
+- Browser File → Print → Save as PDF produces a clean PDF with page breaks before each §-section
+- Opening the same HTML in Word produces a structured doc with native heading styles
+
+### Code rules (enforced)
+
+- **Never patch** — deliver complete files only
+- **Never add new `api/*.ts`** — at 12-function hard ceiling
+- **Always `.js` extension** on relative imports (Vercel runtime requirement)
+- **Pre-deploy ritual mandatory**: `npx tsc --module nodenext --moduleResolution nodenext --noEmit` on touched api/lib files. Only pre-existing error in `seo-campaign-engine.ts:1005` (TS2554) is acceptable.
+- **Smoke test against production-shaped fixtures** — Phase 16.9 lesson: fixtures using renderer-friendly shapes hide bugs that appear with real audit evidence shapes.
+
+### Session handoff for tech audit work
+
+> "Continuing SEO SEASON tech audit. Brief attached + ARCHITECTURE.md available. Phase 16.11 HTML renderer shipped. Last verified production audit was on alphasoftware.com / 'app maker' keyword 2026-05-23. Re-audit to validate Phase 16.11 HTML output not yet run. Don't add new api/*.ts files — at 12-function ceiling. Don't patch — complete files only."

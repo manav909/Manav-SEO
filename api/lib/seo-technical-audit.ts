@@ -30,6 +30,7 @@ import { ga4PullPageMetrics } from "./pm-ga4.js";
    at render time. seo-technical-audit-lenses.ts remains in the repo
    for one phase as a safety hedge but is no longer imported. */
 import { renderDeepAuditReport, type DeepReportInputs } from "./seo-technical-audit-deep-report.js";
+import { renderDeepAuditReportHtml } from "./seo-technical-audit-html.js";
 
 /* Phase 16.4 — ANTHROPIC_API_KEY needed for diffuse-intent classifier
    in checkDiffuseIntentSerp. Single LLM call per audit run when SerpAPI
@@ -516,6 +517,7 @@ export async function runTechnicalAudit(opts: {
       converging_banner:    convergingBanner,
     };
     const bodyMd = renderDeepAuditReport(deepReportInputs);
+    const bodyHtml = renderDeepAuditReportHtml(deepReportInputs);
 
     /* Honest confidence rating — combines per-finding source quality AND
        check-execution failures. Either dimension dropping low pulls the
@@ -555,6 +557,7 @@ export async function runTechnicalAudit(opts: {
       ].filter(Boolean).join(' '),
       title:            `Technical audit: ${cleanUrl(target.url)}`,
       bodyMd,
+      bodyHtml,
       summary:          headline,
       tags:             ['technical_audit', `severity:${panelStatus}`, `url:${cleanUrl(target.url)}`,
                          ...(redCount > 0   ? ['has_red'] : []),
