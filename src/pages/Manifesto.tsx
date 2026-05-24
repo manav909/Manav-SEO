@@ -5,7 +5,7 @@
    Thin file by design. Owns:
      - Active language state (persists for this page session).
      - Active chapter state, driven by an IntersectionObserver
-       watching all 14 chapter sections.
+       watching all 15 chapter sections.
      - Jump-to-chapter callback for the floating nav.
 
    Everything else lives in /pages/manifesto/. Each chapter is a
@@ -39,10 +39,11 @@ import { ChEngine }    from './manifesto/chapters/ChEngine';
 import { ChCompare }   from './manifesto/chapters/ChCompare';
 import { ChEthics }    from './manifesto/chapters/ChEthics';
 import { ChData }      from './manifesto/chapters/ChData';
-import { ChWhom }      from './manifesto/chapters/ChWhom';
-import { ChFounder }   from './manifesto/chapters/ChFounder';
-import { ChFAQ }       from './manifesto/chapters/ChFAQ';
-import { ChFuture }    from './manifesto/chapters/ChFuture';
+import { ChWhom }       from './manifesto/chapters/ChWhom';
+import { ChFounder }    from './manifesto/chapters/ChFounder';
+import { ChFAQ }        from './manifesto/chapters/ChFAQ';
+import { ChInPractice } from './manifesto/chapters/ChInPractice';
+import { ChFuture }     from './manifesto/chapters/ChFuture';
 
 export default function Manifesto() {
   const [lang, setLang] = useState<Lang>('en');
@@ -154,10 +155,11 @@ export default function Manifesto() {
           <ChCompare   t={t} />
           <ChEthics    t={t} />
           <ChData      t={t} />
-          <ChWhom      t={t} />
-          <ChFounder   t={t} />
-          <ChFAQ       t={t} />
-          <ChFuture    t={t} />
+          <ChWhom        t={t} />
+          <ChFounder     t={t} />
+          <ChFAQ         t={t} />
+          <ChInPractice  t={t} />
+          <ChFuture      t={t} />
         </main>
 
         <FooterMark t={t} />

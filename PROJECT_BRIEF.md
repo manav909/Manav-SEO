@@ -190,7 +190,7 @@ Changes analytical lens, not just tone.
 
 (Previously called "The Codex" — renamed 2026-05-23 because "method" reads more operator-grade and accessible, matches the JARVIS voice throughout the document, and signals what the click actually delivers: a documented operating method.)
 
-### 12.1 Architecture — 28 files total
+### 12.1 Architecture — 29 files total
 
 ```
 src/pages/Manifesto.tsx                   root orchestrator (~115 lines)
@@ -198,15 +198,15 @@ src/pages/manifesto/                      foundation + infrastructure (11 files)
   types.ts                                Lang, SeasonId, Season, ChapterDef, TFn, FEATHER
   copy.ts                                 5-language COPY (EN/HI/ES/FR/DE)
   seasons.tsx                             SEASONS tokens × 7 seasons
-  chapters.ts                             14-chapter narrative manifest
+  chapters.ts                             15-chapter narrative manifest
   shared.tsx                              ChapterShell, ChapterHeader, Prose, Statement, FoundingQuote, TextReveal, CounterNumber, ScrollHint
   styles.tsx                              global CSS (~480 lines)
   AmbientCanvas.tsx                       7 distinct particle systems
   ProgressBar.tsx                         top rail hue-morphing scroll progress
   TopBar.tsx                              brand wordmark + language picker + close
-  FloatingNav.tsx                         14 chapter dots, IntersectionObserver
+  FloatingNav.tsx                         15 chapter dots, scrollspy-driven
   FooterMark.tsx                          closing brand line
-  chapters/                               14 chapter files
+  chapters/                               15 chapter files
     ChColdOpen.tsx                        Eternal Spring · Cold Open
     ChProblem.tsx                         Winter · Agency black-box pain
     ChVision.tsx                          Spring · Founding quote
@@ -217,10 +217,11 @@ src/pages/manifesto/                      foundation + infrastructure (11 files)
     ChCompare.tsx                         Monsoon · Three-column comparison
     ChEthics.tsx                          Autumn · Will/won't constraints
     ChData.tsx                            Autumn · GSC + GA4 only
-    ChWhom.tsx                            Harvest · Five client archetypes
+    ChWhom.tsx                            Harvest · Five client archetypes (localized 5 langs)
     ChFounder.tsx                         Harvest · Founder letter
-    ChFAQ.tsx                             Harvest · Doubts, Resolved (NEW)
-    ChFuture.tsx                          Eternal Spring · Selective close
+    ChFAQ.tsx                             Harvest · Doubts, Resolved (tap-to-resolve)
+    ChInPractice.tsx                      Harvest · 4:47 AM scenario (localized 5 langs)
+    ChFuture.tsx                          Eternal Spring · Selective close + 3 CTAs
 ```
 
 ### 12.2 Seasons map
@@ -366,6 +367,8 @@ Placeholders are flagged with `◆ TBD` comments inline so Manav can find/edit i
 🟢 **AIConcierge + profile avatar on `/manifesto`** — fixed 2026-05-23. `/manifesto` added to `HIDE_ON_PATHS` in `AIConcierge.tsx`. Cinematic page now stays clean.
 
 🟢 **ChWhom full localization** — shipped 2026-05-23. All 11 keys (`whom_intro` + 5 × `whom_N_title` + 5 × `whom_N_body`) now in `copy.ts` across EN/HI/ES/FR/DE. ChWhom.tsx reads everything via `t()`; no hardcoded English remains.
+
+🟢 **Chapter 13 "In Practice"** — shipped 2026-05-23. Anonymized 4:47 AM scenario showing the drift engine catching AI Overview cannibalization. Three timestamped scene beats (04:47 alert → 11:00 three response paths → 12:30 client got audit trail before they had the problem) + Statement + close. Localized 5 langs (8 keys × 5 langs = 40 strings). ChFuture shifted to Ch14. Honest framing: "scenario is composite, patterned on the class of incident SEASON catches in active engagements, told as it would actually unfold."
 
 ---
 
