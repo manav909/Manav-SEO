@@ -54,12 +54,6 @@ interface ValidationRule {
 }
 
 const STATIC_RULES: Record<string, Record<string, ValidationRule>> = {
-  "/api/market-researcher": {
-    build_persona:         { requiredFields: ["projectId"], notes: "projectId is mandatory — persona is project-specific" },
-    suggest_goals:         { requiredFields: ["projectId"], notes: "projectId required to build goal plan for this project" },
-    cross_project_patterns:{ requiredFields: ["industry"],  notes: "industry string required for pattern synthesis" },
-    research_market:       { requiredFields: ["projectId"], notes: "projectId required for market research context" },
-  },
   "/api/algorithm-intel": {
     fetch_topic:   { requiredFields: ["topicId"],   notes: "topicId is required to fetch specific algorithm intel" },
     save_intel:    { requiredFields: ["title"],      notes: "title is required when saving algorithm intel" },
@@ -184,8 +178,8 @@ export class RuntimeCompiler {
     }
     if (body.includes("returned invalid json") || body.includes("invalid json") || body.includes("hit token limit") || body.includes("stop:max_tokens")) {
       return {
-        diagnosis: "Claude's response was truncated (max_tokens hit) or malformed. The persona/output JSON couldn't be parsed.",
-        action: "Server already retries with brace-repair. If you still see this: (1) reduce input context (fill fewer Data Room fields temporarily, or trim live URL fetches), or (2) bump max_tokens further in api/market-researcher.ts.",
+        diagnosis: "Claude's response was truncated (max_tokens hit) or malformed. The output JSON couldn't be parsed.",
+        action: "Server already retries with brace-repair. If you still see this: (1) reduce input context (fill fewer Data Room fields temporarily, or trim live URL fetches), or (2) bump max_tokens further in the handler that raised this error.",
       };
     }
     if (body.includes("column") && body.includes("does not exist")) {

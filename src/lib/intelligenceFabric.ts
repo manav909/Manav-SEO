@@ -10,8 +10,10 @@
    5. Field-update proposals      — protected fields go through approval queue
    6. Outcome feedback loop       — track which outputs led to real results
 
-   Used by: market-researcher, intelligence (Brain chat), task-engine,
-   BrainCommand UI, Audit, Strategy, Algorithm Intelligence, etc.
+   Used by: intelligence (Brain chat), task-engine, BrainCommand UI,
+   Audit, Strategy, Algorithm Intelligence, etc. (Also used by
+   `market-researcher.ts.disabled` when that function is re-enabled —
+   the disabled file inlines a mirror of these helpers.)
 ═══════════════════════════════════════════════════════════ */
 
 /* ───────────────────────── SOURCE CONFIDENCE ─────────────────────────

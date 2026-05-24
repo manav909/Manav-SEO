@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 · **Live commit:** `8f4a0db` — Pending deploy: full manifesto localization (all 11 remaining chapters extracted to ~175 keys × 5 langs in copy.ts; previously only 4 chapters used t())
+**Maintained by:** Manav · **Last updated:** 2026-05-24 · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -49,7 +49,17 @@ Core: `projects`, `clients`, `metrics`, `audit_reports`, `task_executions`, `tas
 
 ### 2.3 Frontend
 
-42 pages. Router is `src/App.tsx` (36 routes). `src/pages/App.tsx` is legacy/unused. Six React contexts: Auth, Project, Nav, Theme, Demo, Tour. Largest pages: DataRoom, BdePanel, AlgorithmIntel, Admin, Dashboard, Audit. Most pages are thin UI over `/api/task-engine` actions.
+**49 pages** in `src/pages/`. Router is `src/App.tsx` with **54 routes**. `src/pages/App.tsx` is legacy/unused (114 lines, not in router). Six React contexts: Auth, Project, Nav, Theme, Demo, Tour. Largest pages by LOC: DataRoom (2,505), BdePanel (2,427), Command (2,076), AlgorithmIntel (1,788), Admin (1,449), Dashboard (1,150), Audit (1,130), BrainLearning (934), Intake (887), GuestTour (863), ClientComms (751), ClientWorkspace (673). Most pages are thin UI over `/api/task-engine` actions.
+
+### 2.3.1 Backend engines
+
+**`api/lib/` has 95 files** (engines, helpers, runners). Old brief said 22 — the directory has grown substantially. Pillar engines specifically: `seo-cluster-map.ts`, `seo-internal-linking.ts`, `seo-off-page.ts`, `seo-monitoring.ts`, `seo-technical-audit.ts`. Plus `seo-research`, `seo-campaign-engine.ts`, `seo-campaign-routes.ts`, `season-pipeline-runner.ts`, `client-showcase-engine.ts`, and many more.
+
+### 2.3.2 Disabled API endpoints
+
+Two functions sit alongside the 12 active ones, with `.disabled` extension:
+- `api/bridge.ts.disabled`
+- `api/market-researcher.ts.disabled` ⚠️ still referenced in `src/lib/runtimeCompiler.ts:57` and an error message at line 188. Runtime call would 404.
 
 ### 2.4 Auto-learning
 
@@ -358,13 +368,77 @@ Placeholders are flagged with `◆ TBD` comments inline so Manav can find/edit i
 
 ---
 
-## 14. In-flight / open backlog
+## 14. Open backlog — prioritized (2026-05-24, verified against live repo)
 
-🟡 **Layout PAUSED as of 2026-05-23** — Manav explicitly asked to stop layout iteration after 10+ blocks of UX thrashing. Default response to layout complaints: acknowledge, log to backlog, do not build. Layout backlog (frozen):
-1. Casual mode empty left space when sidebar is closed
-2. Persistent left rail attempt (Block 2.24 v1 was wrong — overlapped Pro mode)
+### P0 — the locked-in next big work (carried from 2026-05-23 backlog triage)
 
-🟢 **AIConcierge + profile avatar on `/manifesto`** — fixed 2026-05-23. `/manifesto` added to `HIDE_ON_PATHS` in `AIConcierge.tsx`. Cinematic page now stays clean.
+**Pillar quality + hallucination guards.** Five pillar engines exist in `api/lib/`:
+- `seo-cluster-map.ts`
+- `seo-internal-linking.ts`
+- `seo-off-page.ts`
+- `seo-monitoring.ts`
+- `seo-technical-audit.ts`
+
+(Plus `seo-research` work distributed across other files.)
+
+Each needs: source-required gates, partial-data acknowledgments, "I don't have enough data to say X" patterns where appropriate, hallucination guards before client-facing output. **One pillar per session**, validated against a real project before shipping. Open question for the start of pillar work: **which pillar does Manav read most often?** That's the one to attack first.
+
+### P1 — quick wins (each takes <2 hours, no scope creep)
+
+1. **Living Overview cron wiring** — engine code exists (`client-showcase-engine.ts`, `season-pipeline-runner.ts`, etc.) but `vercel.json` has only ONE cron (`/api/task-engine` at 6am daily, runs `run_scheduled_verifications`). Living Overview nightly never got its own schedule. Wire a second cron OR fold its invocation into the existing 6am task-engine cron.
+2. **`create_strategy` action stub** — `src/lib/season-actions/registry.ts:96` maps `create_strategy` to `create_strategy_stub`. Real implementation missing.
+3. **`pm-analytics-intel.ts:1070` cannibalization TODO** — needs query×page dimension pair on GSC data.
+4. **Manifesto 2 × `◆ TBD` placeholders** in `ChEngine.tsx` LiveOps panel (`Continuous Since`, `Data Points / Day`) — Manav fills in 30 seconds.
+
+### P2 — client-facing stubs (visible in production right now)
+
+6. **`ClientWorkspace.tsx:143`** — investor session-mode data not wired (only bare_token mode populates)
+7. **`ClientWorkspace.tsx:241`** — "Workspace not yet configured" empty state — needs the actual modules-enabled flow
+8. **`ClientWorkspace.tsx:579`** — "Market & Competitive — coming soon" panel — needs share-of-voice + competitor monitoring data sources
+9. **`BrandStudio.tsx:333`** — placeholder card for tabs not yet built
+10. **`components/pm/AnalyticsIntelPanel.tsx:116`** — "Intelligence not yet computed" empty state — verify what computes it and whether anyone triggers that path
+
+### P2 — features after platform is solid
+
+11. LLM-generated ticker lines from Brain Learnings + Pick corpus
+12. Multi-turn chat scrollback in Pro mode (Command page)
+13. Per-project widget layout preferences (currently global)
+
+### P3 — when client trials grow into paying clients
+
+14. SerpAPI competitive radar (Block 4 plan — defer until budget warrants)
+15. `decisions_avoided` dedicated surface (Block 5 plan)
+16. Client PDF export per pillar (Block 6 plan)
+
+### Deferred indefinitely (do not start without explicit go)
+
+- Mobile bottom-sheet drawer + mobile Command layout
+- Drag-and-drop widget reordering (↑↓ arrows work)
+- PDF export of Pro mode
+- Tone preference toggle + 👍/👎 feedback loop on ticker
+
+### Frozen (do not touch without explicit "yes, layout")
+
+- Casual mode empty left space when sidebar is closed
+- Persistent left rail attempt (Block 2.24 v1 was wrong)
+
+### ✅ Verified done (carry forward — do not re-litigate)
+
+| Item | Verified |
+|---|---|
+| 5 P0 platform bugs (requirements stub, audit endpoint, 2 missing handlers, dead imports) | 2026-05-24 |
+| Phase 21 Blocks 2.13–2.22 (Pick engine, widget gallery, ticker, layout polish, etc.) | Live at commit `467ebcf` lineage |
+| Manifesto full localization — 287 keys × 5 languages, Devanagari grapheme fix, html.lang + tab title sync, i18n parity guard | Live at commit `8d4e066` |
+| AIConcierge hidden on `/manifesto` | 2026-05-23 |
+| **`/api/market-researcher` dead reference cleanup** — STATIC_RULES block removed from `runtimeCompiler.ts:57`, dead-file mention removed from error message at line 188, doc-comment in `intelligenceFabric.ts:15` updated to flag the function as `.disabled` so future devs aren't confused. The `.ts.disabled` file itself untouched (re-enable later if needed). Build green, TS=26, no /api/market-researcher in bundle. | 2026-05-24 |
+
+---
+
+## 14b. Session log — historical record of manifesto work (2026-05-23 to 2026-05-24)
+
+The below entries describe what shipped in the manifesto arc. Kept for context, not active work.
+
+
 
 🟢 **ChWhom full localization** — shipped 2026-05-23. All 11 keys (`whom_intro` + 5 × `whom_N_title` + 5 × `whom_N_body`) now in `copy.ts` across EN/HI/ES/FR/DE. ChWhom.tsx reads everything via `t()`; no hardcoded English remains.
 
