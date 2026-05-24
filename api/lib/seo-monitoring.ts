@@ -75,6 +75,94 @@ interface Finding {
   evidence?:       any;
   delta_value?:    number;
   affected_pillar?: string;
+  /* Phase 19.1 — Senior DMS source-tracing (2026-05-24) */
+  sources_used?:     MonitorSourceKey[];
+  confidence_score?: number;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SOURCE-CONFIDENCE MAPPING for monitoring outputs (Phase 19.1)
+   Added 2026-05-24 — Senior DMS pillar source-tracing template.
+
+   Monitoring is the most data-grounded of the 5 pillars. Every delta is
+   derived from real GSC snapshots taken at two points in time. The LLM
+   narrative is optional synthesis layered ON TOP of those measured deltas.
+
+   Sources:
+   • gsc_snapshot   — GSC pull at a point in time (highest-trust)
+   • cluster_data   — Phase 16 cluster aggregate (intelligence_output)
+   • pillar_status  — Phase 15-18 panel status changes (intelligence_output)
+   • opp_counts     — opportunity-count changes (intelligence_output)
+   • llm_narrative  — Claude synthesis of the changes (claude_inference)
+═══════════════════════════════════════════════════════════════════ */
+
+type MonitorSourceKey =
+  | 'gsc_snapshot'
+  | 'cluster_data'
+  | 'pillar_status'
+  | 'opp_counts'
+  | 'llm_narrative';
+
+const MONITOR_SOURCE_META: Record<
+  MonitorSourceKey,
+  { confidence: number; label: string; sourceType: string }
+> = {
+  gsc_snapshot:  { confidence: 95, label: 'GSC snapshot delta (live)',     sourceType: 'gsc_live' },
+  cluster_data:  { confidence: 80, label: 'Cluster-map intelligence',      sourceType: 'intelligence_output' },
+  pillar_status: { confidence: 80, label: 'Pillar status change',          sourceType: 'intelligence_output' },
+  opp_counts:    { confidence: 80, label: 'Opportunity inbox counts',      sourceType: 'intelligence_output' },
+  llm_narrative: { confidence: 65, label: 'Claude narrative synthesis',    sourceType: 'claude_inference' },
+};
+
+function monitorSourcesConfidence(keys: MonitorSourceKey[]): number {
+  if (!keys || keys.length === 0) return 0;
+  const total = keys.reduce((acc, k) => acc + MONITOR_SOURCE_META[k].confidence, 0);
+  return Math.round(total / keys.length);
+}
+
+function monitorFindingKindSources(kind: string): MonitorSourceKey[] {
+  switch (kind) {
+    case 'keyword_rank_drop':
+    case 'keyword_rank_gain':            return ['gsc_snapshot'];
+    case 'target_url_drop':
+    case 'target_url_gain':              return ['gsc_snapshot'];
+    case 'cluster_impressions_drop':
+    case 'cluster_impressions_gain':
+    case 'cluster_clicks_drop':
+    case 'cluster_clicks_gain':          return ['gsc_snapshot', 'cluster_data'];
+    case 'panel_status_regression':
+    case 'panel_status_improvement':     return ['pillar_status'];
+    case 'new_opportunity_spike':        return ['opp_counts'];
+    case 'baseline_established':
+    case 'no_change':                    return ['gsc_snapshot'];
+    default:                             return ['gsc_snapshot'];
+  }
+}
+
+function attachMonitorFindingSources(findings: Finding[]): void {
+  for (const f of findings) {
+    if (f.sources_used && f.sources_used.length > 0) continue;
+    const sources = monitorFindingKindSources(f.finding_kind);
+    f.sources_used = sources;
+    f.confidence_score = monitorSourcesConfidence(sources);
+  }
+}
+
+function weightedMonitorFindingConfidence(findings: Finding[]): {
+  mean: number;
+  sourced_count: number;
+  unattributed_count: number;
+} {
+  const sourced = findings
+    .map(f => f.confidence_score)
+    .filter((s): s is number => typeof s === 'number');
+  const unattributed = findings.length - sourced.length;
+  if (sourced.length === 0) return { mean: 0, sourced_count: 0, unattributed_count: unattributed };
+  return {
+    mean: Math.round(sourced.reduce((a, b) => a + b, 0) / sourced.length),
+    sourced_count: sourced.length,
+    unattributed_count: unattributed,
+  };
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -201,6 +289,11 @@ export async function runMonitoringCheck(opts: {
     }
 
     /* 7. Persist findings */
+    /* 7a. Phase 19.1 — attach source attribution per finding (post-compute,
+       pre-persist). Monitoring is the most data-grounded pillar: every
+       finding traces to a real GSC delta or panel-state change. */
+    attachMonitorFindingSources(findings);
+
     if (findings.length > 0) {
       const findingRows = findings.map(f => ({
         run_id:         runId,
@@ -239,6 +332,18 @@ export async function runMonitoringCheck(opts: {
       amberCount > 0 ? 'amber' :
       greenCount > 0 ? 'green' : 'green';
 
+    /* Honest confidence rating — baseline_established is always low (no
+       comparison possible). When comparing, rating is driven by per-finding
+       source confidence (high if mostly GSC-derived, medium if many fall
+       to narrative/inference). LLM narrative is a *layer* on top of the
+       measured findings — its presence doesn't itself raise confidence. */
+    const sourceConf = weightedMonitorFindingConfidence(findings);
+    const overallRating: 'high' | 'medium' | 'low' =
+      baselineEstablished              ? 'low' :
+      sourceConf.sourced_count === 0   ? 'low' :
+      sourceConf.mean >= 88            ? 'high' :
+      sourceConf.mean >= 75            ? 'medium' : 'low';
+
     const reportR = await writeReportToPanel({
       campaignId:        opts.campaignId,
       projectId:         c.project_id,
@@ -250,12 +355,20 @@ export async function runMonitoringCheck(opts: {
       dataSources:       baselineEstablished
                           ? ['gsc']
                           : ['gsc', ...(narrative ? ['llm' as const] : [])],
-      confidenceRating:  baselineEstablished ? 'low' : narrative ? 'high' : 'medium',
-      confidenceReason:  baselineEstablished
-                          ? `First snapshot — no prior data to compare against. Comparison becomes available after ~${windowDays} days.`
-                          : narrative
-                          ? `Comparing current state to snapshot from ${windowDays} days ago. LLM narrative synthesizes meaningful changes.`
-                          : `Comparing current state to snapshot from ${windowDays} days ago. LLM narrative unavailable; raw findings only.`,
+      confidenceRating:  overallRating,
+      confidenceReason:  [
+        baselineEstablished
+          ? `First snapshot — no prior data to compare against. Comparison becomes available after ~${windowDays} days.`
+          : `Comparing current state to snapshot from ${windowDays} days ago.`,
+        !baselineEstablished && sourceConf.sourced_count > 0
+          ? `Source-weighted confidence across ${sourceConf.sourced_count} finding(s): ${sourceConf.mean}/100.`
+          : null,
+        narrative
+          ? `LLM narrative synthesizes meaningful changes (claude_inference, confidence 65 — layered on top of measured deltas, does not raise overall confidence).`
+          : !baselineEstablished
+          ? `LLM narrative unavailable; raw findings only.`
+          : null,
+      ].filter(Boolean).join(' '),
       title:             baselineEstablished
                           ? `Monitoring baseline established for "${c.keyword}"`
                           : `Monitoring check: ${findings.length} change${findings.length === 1 ? '' : 's'} detected for "${c.keyword}"`,
@@ -933,6 +1046,36 @@ function renderMonitoringReport(opts: {
     const green  = findings.filter(f => f.severity === 'green');
     const info   = findings.filter(f => f.severity === 'info');
 
+    /* Source confidence — surface upfront. Monitoring is the most
+       data-grounded pillar; this section makes the GSC backbone visible. */
+    const conf = weightedMonitorFindingConfidence(findings);
+    lines.push('## Source confidence');
+    lines.push('');
+    if (conf.sourced_count > 0) {
+      lines.push(`**Weighted confidence:** ${conf.mean}/100 across ${conf.sourced_count} finding(s).`);
+      const sourceCounts: Record<string, number> = {};
+      for (const f of findings) {
+        for (const k of f.sources_used || []) {
+          const lbl = MONITOR_SOURCE_META[k].label;
+          sourceCounts[lbl] = (sourceCounts[lbl] || 0) + 1;
+        }
+      }
+      const sourceList = Object.entries(sourceCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, count]) => `${label} (${count})`)
+        .join(', ');
+      lines.push(`**Sources used:** ${sourceList}.`);
+      lines.push('');
+      lines.push('Every change reported is a measured delta between two GSC snapshots — not inference. The LLM narrative (if present) is a synthesis layer above the measured findings; it does not introduce new data.');
+    } else {
+      lines.push('**No comparison findings yet.** This is the baseline run.');
+    }
+    if (conf.unattributed_count > 0) {
+      lines.push('');
+      lines.push(`⚠️ ${conf.unattributed_count} finding(s) lack source attribution.`);
+    }
+    lines.push('');
+
     if (red.length > 0) {
       lines.push('## 🔴 Critical changes');
       lines.push('');
@@ -940,6 +1083,10 @@ function renderMonitoringReport(opts: {
         lines.push(`### ${f.finding_title}`);
         if (f.finding_detail) lines.push(f.finding_detail);
         if (f.recommendation) { lines.push(''); lines.push(`**Recommendation:** ${f.recommendation}`); }
+        if (f.sources_used && f.sources_used.length > 0 && typeof f.confidence_score === 'number') {
+          const labels = f.sources_used.map(k => MONITOR_SOURCE_META[k].label).join(' + ');
+          lines.push(`*Source · ${labels} · confidence ${f.confidence_score}/100*`);
+        }
         lines.push('');
       }
     }
@@ -951,6 +1098,10 @@ function renderMonitoringReport(opts: {
         lines.push(`### ${f.finding_title}`);
         if (f.finding_detail) lines.push(f.finding_detail);
         if (f.recommendation) { lines.push(''); lines.push(`**Recommendation:** ${f.recommendation}`); }
+        if (f.sources_used && f.sources_used.length > 0 && typeof f.confidence_score === 'number') {
+          const labels = f.sources_used.map(k => MONITOR_SOURCE_META[k].label).join(' + ');
+          lines.push(`*Source · ${labels} · confidence ${f.confidence_score}/100*`);
+        }
         lines.push('');
       }
     }
@@ -959,7 +1110,10 @@ function renderMonitoringReport(opts: {
       lines.push('## 🟢 Positive movements');
       lines.push('');
       for (const f of green) {
-        lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}`);
+        const meta = (f.sources_used && f.sources_used.length > 0)
+          ? ` · *${f.sources_used.map(k => MONITOR_SOURCE_META[k].label).join(' + ')}*`
+          : '';
+        lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}${meta}`);
       }
       lines.push('');
     }
@@ -968,7 +1122,10 @@ function renderMonitoringReport(opts: {
       lines.push('## ℹ️ Notes');
       lines.push('');
       for (const f of info) {
-        lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}`);
+        const meta = (f.sources_used && f.sources_used.length > 0)
+          ? ` · *${f.sources_used.map(k => MONITOR_SOURCE_META[k].label).join(' + ')}*`
+          : '';
+        lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}${meta}`);
       }
       lines.push('');
     }

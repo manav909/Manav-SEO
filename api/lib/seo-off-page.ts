@@ -99,6 +99,92 @@ interface Finding {
   finding_detail?: string;
   recommendation?: string;
   evidence?:       any;
+  /* Phase 18.1 — Senior DMS source-tracing (2026-05-24) */
+  sources_used?:     OffPageSourceKey[];
+  confidence_score?: number;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SOURCE-CONFIDENCE MAPPING for off-page outputs (Phase 18.1)
+   Added 2026-05-24 — Senior DMS pillar source-tracing pattern.
+
+   IMPORTANT: this pillar is the most LLM-heavy of the five. The file's
+   own header says it explicitly: "this is strategy generation, not
+   measurement. No real backlink profiling." Most outputs are claude_inference
+   (65). The Senior DMS lens demands this be VISIBLE — clients reading the
+   report need to know which findings rest on GSC anchors vs LLM strategy.
+
+   Sources:
+   • gsc_top_pages         — for existing-asset identification
+   • cluster_data          — Phase 16 cluster mapping (intelligence_output)
+   • pipeline_research     — competitor snapshot
+   • llm_existing_assets   — Claude classifies GSC pages as linkable
+   • llm_aspirational      — Claude invents asset ideas (no measurement anchor)
+   • llm_prospects         — Claude generates prospect categories + angles
+═══════════════════════════════════════════════════════════════════ */
+
+type OffPageSourceKey =
+  | 'gsc_top_pages'
+  | 'cluster_data'
+  | 'pipeline_research'
+  | 'llm_existing_assets'
+  | 'llm_aspirational'
+  | 'llm_prospects';
+
+const OFFPAGE_SOURCE_META: Record<
+  OffPageSourceKey,
+  { confidence: number; label: string; sourceType: string }
+> = {
+  gsc_top_pages:       { confidence: 95, label: 'GSC top_pages (live)',              sourceType: 'gsc_live' },
+  cluster_data:        { confidence: 80, label: 'Cluster-map intelligence (Phase 16)', sourceType: 'intelligence_output' },
+  pipeline_research:   { confidence: 80, label: 'Pipeline research (competitor)',    sourceType: 'intelligence_output' },
+  llm_existing_assets: { confidence: 65, label: 'Claude linkable-asset classification', sourceType: 'claude_inference' },
+  llm_aspirational:    { confidence: 65, label: 'Claude asset-gap strategy',         sourceType: 'claude_inference' },
+  llm_prospects:       { confidence: 65, label: 'Claude prospect-category strategy', sourceType: 'claude_inference' },
+};
+
+function offPageSourcesConfidence(keys: OffPageSourceKey[]): number {
+  if (!keys || keys.length === 0) return 0;
+  const total = keys.reduce((acc, k) => acc + OFFPAGE_SOURCE_META[k].confidence, 0);
+  return Math.round(total / keys.length);
+}
+
+function offPageFindingKindSources(kind: Finding['finding_kind']): OffPageSourceKey[] {
+  switch (kind) {
+    case 'no_linkable_assets':       return ['gsc_top_pages', 'llm_existing_assets'];
+    case 'asset_gap':                return ['llm_aspirational', 'cluster_data'];
+    case 'prospect_drought':         return ['llm_prospects'];
+    case 'competitor_link_dominance': return ['pipeline_research', 'llm_prospects'];
+    case 'asset_readiness_strong':   return ['gsc_top_pages', 'llm_existing_assets'];
+    case 'outreach_strategy_ready':  return ['llm_prospects'];
+    default:                         return ['llm_aspirational'];
+  }
+}
+
+function attachOffPageFindingSources(findings: Finding[]): void {
+  for (const f of findings) {
+    if (f.sources_used && f.sources_used.length > 0) continue;
+    const sources = offPageFindingKindSources(f.finding_kind);
+    f.sources_used = sources;
+    f.confidence_score = offPageSourcesConfidence(sources);
+  }
+}
+
+function weightedOffPageFindingConfidence(findings: Finding[]): {
+  mean: number;
+  sourced_count: number;
+  unattributed_count: number;
+} {
+  const sourced = findings
+    .map(f => f.confidence_score)
+    .filter((s): s is number => typeof s === 'number');
+  const unattributed = findings.length - sourced.length;
+  if (sourced.length === 0) return { mean: 0, sourced_count: 0, unattributed_count: unattributed };
+  return {
+    mean: Math.round(sourced.reduce((a, b) => a + b, 0) / sourced.length),
+    sourced_count: sourced.length,
+    unattributed_count: unattributed,
+  };
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -181,6 +267,8 @@ export async function runOffPageStrategy(opts: {
       existingAssets, aspirationalAssets, prospects,
       gscPages, clusters, competitors,
     });
+    /* 5b. Phase 18.1 — attach source attribution per finding */
+    attachOffPageFindingSources(findings);
 
     /* 6. Persist run */
     const durationMs = Date.now() - startTime;
@@ -286,6 +374,18 @@ export async function runOffPageStrategy(opts: {
       redCount > 0   ? 'red'   :
       amberCount > 0 ? 'amber' : 'green';
 
+    /* Honest confidence rating — off-page is LLM-heavy by design (strategy
+       generation, no real backlink measurement). Per-finding source-weighted
+       confidence drives the rating; the LLM ceiling means even "best case"
+       comes out at medium when most findings rest on claude_inference (65).
+       To reach 'high' would require a future Block-4 SerpAPI integration
+       producing measured competitive-link evidence. */
+    const sourceConf = weightedOffPageFindingConfidence(findings);
+    const sourceRating: 'high' | 'medium' | 'low' =
+      sourceConf.sourced_count === 0 ? 'low' :
+      sourceConf.mean >= 82           ? 'high' :   // requires GSC anchors in majority of findings
+      sourceConf.mean >= 70           ? 'medium' : 'low';
+
     const reportR = await writeReportToPanel({
       campaignId:        opts.campaignId,
       projectId:         c.project_id,
@@ -299,9 +399,14 @@ export async function runOffPageStrategy(opts: {
         ...(gscPages.length    > 0 ? ['gsc' as const]               : []),
         ...(clusters.length    > 0 ? ['pipeline_research' as const] : []),
       ],
-      confidenceRating:  existingAssets.length > 0 && prospects.length >= 3 ? 'high'
-                        : prospects.length >= 2 ? 'medium' : 'low',
-      confidenceReason:  buildConfidenceReason(existingAssets.length, aspirationalAssets.length, prospects.length, gscPages.length, clusters.length, competitors.length),
+      confidenceRating:  sourceRating,
+      confidenceReason:  [
+        buildConfidenceReason(existingAssets.length, aspirationalAssets.length, prospects.length, gscPages.length, clusters.length, competitors.length),
+        sourceConf.sourced_count > 0
+          ? `Source-weighted confidence: ${sourceConf.mean}/100 across ${sourceConf.sourced_count} finding(s) (${sourceRating}).`
+          : 'No findings produced — confidence treated as low.',
+        'Off-page is strategy generation; absolute high confidence requires future SerpAPI/backlink-API integration (Block 4).',
+      ].filter(Boolean).join(' '),
       title:             `Off-page strategy: ${existingAssets.length} existing assets, ${aspirationalAssets.length} to build, ${prospects.length} prospect categories`,
       bodyMd:            renderReport({
         keyword: c.keyword,
@@ -871,6 +976,37 @@ function renderReport(opts: {
   lines.push(`| ℹ️ Info     | ${info} |`);
   lines.push('');
 
+  /* Source confidence — surface upfront. Off-page is LLM-heavy by design,
+     so the reader needs to know which findings rest on GSC anchors and
+     which rest purely on strategy reasoning. */
+  const conf = weightedOffPageFindingConfidence(findings);
+  lines.push('## Source confidence');
+  lines.push('');
+  if (conf.sourced_count > 0) {
+    lines.push(`**Weighted confidence:** ${conf.mean}/100 across ${conf.sourced_count} sourced finding(s).`);
+    const sourceCounts: Record<string, number> = {};
+    for (const f of findings) {
+      for (const k of f.sources_used || []) {
+        const lbl = OFFPAGE_SOURCE_META[k].label;
+        sourceCounts[lbl] = (sourceCounts[lbl] || 0) + 1;
+      }
+    }
+    const sourceList = Object.entries(sourceCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => `${label} (${count})`)
+      .join(', ');
+    lines.push(`**Sources used:** ${sourceList}.`);
+    lines.push('');
+    lines.push('Note: this pillar is **strategy generation, not measurement.** No backlink-data APIs are queried. Recommendations rest primarily on Claude reasoning grounded by GSC pages, cluster mapping, and competitor snapshot context. A future SerpAPI/backlink integration would raise the confidence ceiling.');
+  } else {
+    lines.push('**No findings produced.** Confidence treated as low.');
+  }
+  if (conf.unattributed_count > 0) {
+    lines.push('');
+    lines.push(`⚠️ ${conf.unattributed_count} finding(s) lack source attribution.`);
+  }
+  lines.push('');
+
   /* Findings */
   if (findings.length > 0) {
     lines.push('## Findings');
@@ -880,6 +1016,10 @@ function renderReport(opts: {
       lines.push(`### ${icon} ${f.finding_title}`);
       if (f.finding_detail) lines.push(f.finding_detail);
       if (f.recommendation) { lines.push(''); lines.push(`**Recommendation:** ${f.recommendation}`); }
+      if (f.sources_used && f.sources_used.length > 0 && typeof f.confidence_score === 'number') {
+        const labels = f.sources_used.map(k => OFFPAGE_SOURCE_META[k].label).join(' + ');
+        lines.push(`*Source · ${labels} · confidence ${f.confidence_score}/100*`);
+      }
       lines.push('');
     }
   }

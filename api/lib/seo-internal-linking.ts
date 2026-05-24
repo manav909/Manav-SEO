@@ -107,6 +107,94 @@ interface Finding {
   recommendation?: string;
   affected_url?:   string;
   evidence?:       any;
+  /* Phase 17.1 — Senior DMS source-tracing (2026-05-24) */
+  sources_used?:     LinkSourceKey[];
+  confidence_score?: number;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SOURCE-CONFIDENCE MAPPING for internal-linking outputs (Phase 17.1)
+   Added 2026-05-24 as part of the Senior DMS pillar source-tracing
+   template (established on seo-technical-audit, replicated to all 5).
+
+   This engine's findings combine:
+   • gsc_top_pages — live GSC top_pages (the page universe)
+   • html_fetch    — fetched page HTML + parsed anchor graph
+   • cluster_data  — Phase 16 cluster mapping (hub/spoke assignments)
+   • llm_anchor    — Claude-generated anchor text + placement suggestions
+
+   Numbers align with intelligenceFabric: gsc_live=95, crawl_jina=85
+   (we use 87 for html_fetch since the metrics we extract — anchors,
+   inlinks — are well-defined DOM observations), intelligence_output=80
+   (cluster_data is a derived intelligence output from the cluster_map
+   pillar), claude_inference=65.
+═══════════════════════════════════════════════════════════════════ */
+
+type LinkSourceKey =
+  | 'gsc_top_pages'
+  | 'html_fetch'
+  | 'cluster_data'
+  | 'llm_anchor';
+
+const LINK_SOURCE_META: Record<
+  LinkSourceKey,
+  { confidence: number; label: string; sourceType: string }
+> = {
+  gsc_top_pages: { confidence: 95, label: 'GSC top_pages (live)',                  sourceType: 'gsc_live' },
+  html_fetch:    { confidence: 87, label: 'Live HTML fetch + anchor graph',        sourceType: 'crawl_jina' },
+  cluster_data:  { confidence: 80, label: 'Cluster-map intelligence (Phase 16)',   sourceType: 'intelligence_output' },
+  llm_anchor:    { confidence: 65, label: 'Claude anchor + placement suggestions', sourceType: 'claude_inference' },
+};
+
+function linkSourcesConfidence(keys: LinkSourceKey[]): number {
+  if (!keys || keys.length === 0) return 0;
+  const total = keys.reduce((acc, k) => acc + LINK_SOURCE_META[k].confidence, 0);
+  return Math.round(total / keys.length);
+}
+
+/** Map a finding_kind to the sources that informed it. Some kinds rely on
+ *  multiple data sources (e.g. orphan_page needs both GSC impression data
+ *  and the anchor graph from html_fetch); others rely on a single source
+ *  (e.g. generic_anchors is pure html_fetch). */
+function findingKindSources(kind: Finding['finding_kind']): LinkSourceKey[] {
+  switch (kind) {
+    case 'orphan_page':               return ['gsc_top_pages', 'html_fetch'];
+    case 'low_inlinks':               return ['gsc_top_pages', 'html_fetch'];
+    case 'thin_outlinks':             return ['html_fetch'];
+    case 'generic_anchors':           return ['html_fetch'];
+    case 'cluster_hub_isolated':      return ['html_fetch', 'cluster_data'];
+    case 'high_value_underconnected': return ['gsc_top_pages', 'html_fetch'];
+    default:                          return ['html_fetch'];
+  }
+}
+
+/** Decorate findings with source attribution post-emission. Idempotent —
+ *  if a finding already has sources_used, it's left alone. Findings that
+ *  fail to map are surfaced separately as unattributed. */
+function attachFindingSources(findings: Finding[]): void {
+  for (const f of findings) {
+    if (f.sources_used && f.sources_used.length > 0) continue;
+    const sources = findingKindSources(f.finding_kind);
+    f.sources_used = sources;
+    f.confidence_score = linkSourcesConfidence(sources);
+  }
+}
+
+function weightedLinkFindingConfidence(findings: Finding[]): {
+  mean: number;
+  sourced_count: number;
+  unattributed_count: number;
+} {
+  const sourced = findings
+    .map(f => f.confidence_score)
+    .filter((s): s is number => typeof s === 'number');
+  const unattributed = findings.length - sourced.length;
+  if (sourced.length === 0) return { mean: 0, sourced_count: 0, unattributed_count: unattributed };
+  return {
+    mean: Math.round(sourced.reduce((a, b) => a + b, 0) / sourced.length),
+    sourced_count: sourced.length,
+    unattributed_count: unattributed,
+  };
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -183,6 +271,10 @@ export async function runInternalLinkingAudit(opts: {
 
     /* 6. Compute findings */
     const findings = computeLinkGraphFindings(pageNodes, clusterTargets);
+    /* 6b. Phase 17.1 — attach source attribution per finding (post-compute,
+       idempotent). Each finding_kind maps to the data sources that informed
+       it; per-finding confidence is the weighted-mean across those sources. */
+    attachFindingSources(findings);
 
     /* 7. Build recommendations: shortlist candidates per target, then LLM-enrich */
     const allTargets: LinkTarget[] = [...clusterTargets, ...campaignTargets];
@@ -271,6 +363,22 @@ export async function runInternalLinkingAudit(opts: {
     const amberCount = findings.filter(f => f.severity === 'amber').length;
     const panelStatus: 'red' | 'amber' | 'green' = redCount > 0 ? 'red' : amberCount > 0 ? 'amber' : 'green';
 
+    /* Honest confidence rating — combines fetch coverage (how much of the
+       audit scope actually succeeded) AND source quality (weighted-mean
+       confidence across findings). Either dimension dropping low pulls the
+       overall rating down. Previously only fetch coverage was considered. */
+    const sourceConf = weightedLinkFindingConfidence(findings);
+    const fetchRating: 'high' | 'medium' | 'low' =
+      fetchedCount >= pageNodes.length * 0.8 ? 'high' :
+      fetchedCount >= pageNodes.length * 0.5 ? 'medium' : 'low';
+    const sourceRating: 'high' | 'medium' | 'low' =
+      sourceConf.sourced_count === 0 ? 'low' :
+      sourceConf.mean >= 85           ? 'high' :
+      sourceConf.mean >= 72           ? 'medium' : 'low';
+    const overallRating: 'high' | 'medium' | 'low' =
+      (fetchRating === 'low'    || sourceRating === 'low')    ? 'low' :
+      (fetchRating === 'medium' || sourceRating === 'medium') ? 'medium' : 'high';
+
     const reportR = await writeReportToPanel({
       campaignId:        opts.campaignId,
       projectId:         c.project_id,
@@ -280,8 +388,18 @@ export async function runInternalLinkingAudit(opts: {
       generatedBy:       triggeredBy,
       llmCallsUsed,
       dataSources:       ['gsc', 'html_fetch', 'llm'],
-      confidenceRating:  fetchedCount >= pageNodes.length * 0.8 ? 'high' : fetchedCount >= pageNodes.length * 0.5 ? 'medium' : 'low',
-      confidenceReason:  `Fetched ${fetchedCount} of ${pageNodes.length} pages. Audit scope is the GSC top_pages universe — full-site crawl is out of scope. ${llmCallsUsed} LLM calls used for anchor/placement suggestions.`,
+      confidenceRating:  overallRating,
+      confidenceReason:  [
+        `Fetched ${fetchedCount} of ${pageNodes.length} pages (${fetchRating}).`,
+        sourceConf.sourced_count > 0
+          ? `Source-weighted confidence across ${sourceConf.sourced_count} finding(s): ${sourceConf.mean}/100 (${sourceRating}).`
+          : 'No findings produced — confidence treated as low.',
+        sourceConf.unattributed_count > 0
+          ? `${sourceConf.unattributed_count} finding(s) lack source attribution.`
+          : null,
+        `Audit scope is the GSC top_pages universe — full-site crawl is out of scope.`,
+        `${llmCallsUsed} LLM calls used for anchor/placement suggestions (claude_inference, confidence 65).`,
+      ].filter(Boolean).join(' '),
       title:             `Internal linking audit: ${fetchedCount} pages, ${recommendations.length} recommendations`,
       bodyMd:            renderReport({
         keyword:         c.keyword,
@@ -1081,6 +1199,34 @@ function renderReport(opts: {
   lines.push(`| ℹ️ Info     | ${info} |`);
   lines.push('');
 
+  /* Source confidence — surface upfront so the reader calibrates trust
+     BEFORE reading findings. */
+  const conf = weightedLinkFindingConfidence(findings);
+  lines.push('## Source confidence');
+  lines.push('');
+  if (conf.sourced_count > 0) {
+    lines.push(`**Weighted confidence:** ${conf.mean}/100 across ${conf.sourced_count} sourced finding(s).`);
+    const sourceCounts: Record<string, number> = {};
+    for (const f of findings) {
+      for (const k of f.sources_used || []) {
+        const lbl = LINK_SOURCE_META[k].label;
+        sourceCounts[lbl] = (sourceCounts[lbl] || 0) + 1;
+      }
+    }
+    const sourceList = Object.entries(sourceCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => `${label} (${count})`)
+      .join(', ');
+    lines.push(`**Sources used:** ${sourceList}.`);
+  } else {
+    lines.push('**No findings produced.** Confidence treated as low.');
+  }
+  if (conf.unattributed_count > 0) {
+    lines.push('');
+    lines.push(`⚠️ ${conf.unattributed_count} finding(s) lack source attribution.`);
+  }
+  lines.push('');
+
   /* Critical findings */
   const redFindings = findings.filter(f => f.severity === 'red');
   if (redFindings.length > 0) {
@@ -1090,6 +1236,10 @@ function renderReport(opts: {
       lines.push(`### ${f.finding_title}`);
       if (f.finding_detail)  lines.push(f.finding_detail);
       if (f.recommendation)  { lines.push(''); lines.push(`**Recommendation:** ${f.recommendation}`); }
+      if (f.sources_used && f.sources_used.length > 0 && typeof f.confidence_score === 'number') {
+        const labels = f.sources_used.map(k => LINK_SOURCE_META[k].label).join(' + ');
+        lines.push(`*Source · ${labels} · confidence ${f.confidence_score}/100*`);
+      }
       lines.push('');
     }
   }
@@ -1103,6 +1253,10 @@ function renderReport(opts: {
       lines.push(`### ${f.finding_title}`);
       if (f.finding_detail)  lines.push(f.finding_detail);
       if (f.recommendation)  { lines.push(''); lines.push(`**Recommendation:** ${f.recommendation}`); }
+      if (f.sources_used && f.sources_used.length > 0 && typeof f.confidence_score === 'number') {
+        const labels = f.sources_used.map(k => LINK_SOURCE_META[k].label).join(' + ');
+        lines.push(`*Source · ${labels} · confidence ${f.confidence_score}/100*`);
+      }
       lines.push('');
     }
   }
@@ -1113,7 +1267,10 @@ function renderReport(opts: {
     lines.push('## ℹ️ Notes');
     lines.push('');
     for (const f of infoFindings) {
-      lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}`);
+      const meta = (f.sources_used && f.sources_used.length > 0)
+        ? ` · *${f.sources_used.map(k => LINK_SOURCE_META[k].label).join(' + ')}*`
+        : '';
+      lines.push(`- **${f.finding_title}**${f.finding_detail ? ` — ${f.finding_detail}` : ''}${meta}`);
       if (f.recommendation) lines.push(`  - ${f.recommendation}`);
     }
     lines.push('');

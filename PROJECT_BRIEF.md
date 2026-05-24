@@ -510,12 +510,11 @@ A senior practitioner reading the intro can now scrutinize the figure and find i
 5. **New "Source confidence" section** at the top of every report — surfaces weighted confidence, sources used (with counts), and any unattributed findings. The Senior DMS can calibrate trust before reading findings.
 
 **Apply this template to the other 4 pillars (one per session):**
-- `seo-cluster-map.ts` — needs to declare data_source per finding; cluster authority comes from GSC query data + brain_learnings + claude_inference for clustering
-- `seo-internal-linking.ts` — similar; crawl-derived links + GSC anchor text + claude_inference for opportunity scoring
-- `seo-off-page.ts` — likely crawl + SerpAPI (when integrated) + brain_learnings + claude_inference
-- `seo-monitoring.ts` — GSC + GA4 + audit_run + algorithm_intel; many findings should already be high-confidence
-
-Order recommendation: pick the one Manav reads most often → highest leverage. Currently unanswered.
+- ✅ `seo-cluster-map.ts` — **SHIPPED 2026-05-24.** `CLUSTER_SOURCE_META` mapping (6 source keys: gsc_queries, gsc_pages_slug, pipeline_research, llm_naming, llm_ownership, brain_learning). Each cluster gets `sources_used` + `confidence_score` post-enrichment. Aspirational path was already honest ("no GSC grounding, illustrative not measured"). Main path's misleading "more findings = higher confidence" rating replaced with weighted source-confidence + data-volume cross-check. Per-cluster source line + report Source-confidence section.
+- ✅ `seo-internal-linking.ts` — **SHIPPED 2026-05-24.** `LINK_SOURCE_META` (4 keys: gsc_top_pages, html_fetch, cluster_data, llm_anchor). `attachFindingSources` post-emission, `findingKindSources` maps each of the 6 finding_kinds to its sources. Honest rating now combines fetch coverage AND source quality.
+- ✅ `seo-off-page.ts` — **SHIPPED 2026-05-24.** `OFFPAGE_SOURCE_META` (6 keys, most LLM-heavy of the 5 pillars). Rating capped at medium for pure LLM strategy outputs; "to reach high requires future SerpAPI integration (Block 4)" surfaced explicitly. Per-finding source mapping for all 6 finding_kinds.
+- ✅ `seo-monitoring.ts` — **SHIPPED 2026-05-24.** `MONITOR_SOURCE_META` (5 keys, gsc_snapshot dominant). Most data-grounded pillar; every delta traces to a real GSC snapshot. LLM narrative explicitly framed as "synthesis layer above measured deltas, does not raise overall confidence." 10+ finding_kinds mapped per-kind to sources.
+- ✅ `seo-technical-audit.ts` — **SHIPPED 2026-05-24** (template established).
 
 **C. Industry-default discipline — pm-engine gap surfaced 2026-05-24**
 Audited 6 call sites:

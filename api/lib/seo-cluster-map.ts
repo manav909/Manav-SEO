@@ -59,12 +59,81 @@ interface Cluster {
   shared_tokens:    string[];          // tokens that defined this cluster
   /* Phase 16.0.2 — competitive ownership */
   competitor_owners: string[];          // domains/URLs that own this cluster
+  /* Phase 16.0.3 — Senior DMS pillar source-tracing (2026-05-24).
+     Each cluster declares which sources informed it; consumers compute
+     a weighted-mean confidence from these. Optional for backward compat
+     with rows persisted before this field existed. */
+  sources_used?:     ClusterSourceKey[];
+  confidence_score?: number;            // 0..100 weighted mean
 }
 
 interface ClusterFinding {
   severity: 'green' | 'amber' | 'red' | 'info';
   title:    string;
   detail:   string;
+  sources_used?: ClusterSourceKey[];
+  confidence_score?: number;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SOURCE-CONFIDENCE MAPPING for cluster-map outputs
+   Phase 16.0.3 — added 2026-05-24 as part of the Senior DMS pillar
+   source-tracing pattern (template established on seo-technical-audit).
+
+   Cluster-map outputs aggregate multiple sources per cluster:
+   • gsc_queries        — live GSC query data (the strongest anchor)
+   • gsc_pages_slug     — GSC pages filtered by URL-slug match (heuristic; degraded confidence)
+   • pipeline_research  — competitor snapshot from pipeline research output
+   • llm_naming         — Claude clustering + intent labeling
+   • llm_ownership      — Claude competitor-ownership inference per cluster
+   • brain_learning     — cross-project pattern lookups (when used)
+
+   Numbers align with intelligenceFabric.ts: gsc_live=95, intelligence_output=80,
+   claude_inference=65, brain_learning=80. Heuristic-derived GSC data lands at
+   80 (between gsc_live and the LLM tier) to reflect the heuristic uncertainty.
+═══════════════════════════════════════════════════════════════════ */
+
+type ClusterSourceKey =
+  | 'gsc_queries'
+  | 'gsc_pages_slug'
+  | 'pipeline_research'
+  | 'llm_naming'
+  | 'llm_ownership'
+  | 'brain_learning';
+
+const CLUSTER_SOURCE_META: Record<
+  ClusterSourceKey,
+  { confidence: number; label: string; sourceType: string }
+> = {
+  gsc_queries:       { confidence: 95, label: 'GSC queries (live)',                 sourceType: 'gsc_live' },
+  gsc_pages_slug:    { confidence: 80, label: 'GSC pages (URL-slug heuristic)',     sourceType: 'gsc_live' },
+  pipeline_research: { confidence: 80, label: 'Pipeline research (competitor)',     sourceType: 'intelligence_output' },
+  llm_naming:        { confidence: 65, label: 'Claude clustering + intent naming',  sourceType: 'claude_inference' },
+  llm_ownership:     { confidence: 65, label: 'Claude competitor-ownership',        sourceType: 'claude_inference' },
+  brain_learning:    { confidence: 80, label: 'Brain learnings (cross-project)',    sourceType: 'brain_learning' },
+};
+
+function clusterSourcesConfidence(keys: ClusterSourceKey[]): number {
+  if (!keys || keys.length === 0) return 0;
+  const total = keys.reduce((acc, k) => acc + CLUSTER_SOURCE_META[k].confidence, 0);
+  return Math.round(total / keys.length);
+}
+
+/** Weighted-mean confidence across an array of clusters (each having its own
+ *  declared sources). Clusters without `sources_used` are excluded from the
+ *  mean and surfaced separately as unattributed. */
+function weightedClusterConfidence(clusters: Cluster[]): {
+  mean: number;
+  sourced_count: number;
+  unattributed_count: number;
+} {
+  const sourced = clusters
+    .map(c => c.confidence_score)
+    .filter((s): s is number => typeof s === 'number');
+  const unattributed = clusters.length - sourced.length;
+  if (sourced.length === 0) return { mean: 0, sourced_count: 0, unattributed_count: unattributed };
+  const total = sourced.reduce((acc, s) => acc + s, 0);
+  return { mean: Math.round(total / sourced.length), sourced_count: sourced.length, unattributed_count: unattributed };
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -146,6 +215,24 @@ export async function runClusterMap(opts: {
     const competitorTopics = extractCompetitorTopics(competitors);
     const withCoverage = withOwnership.map(cluster => assessCoverage(cluster, competitorTopics));
 
+    /* 6b. Phase 16.0.3 — Senior DMS source attribution.
+       Every cluster declares the sources that informed it:
+       • gsc_queries — always present (we already filtered/clustered live GSC data)
+       • gsc_pages_slug — present when a hub or spokes were inferred
+       • pipeline_research — present when competitor snapshot is non-empty
+       • llm_naming — always (we always run labelAndLabelClusters)
+       • llm_ownership — present when ownership enrichment produced names
+       Confidence is a per-cluster weighted mean across these sources. */
+    const hasCompetitorData = competitors.length > 0;
+    for (const cl of withCoverage) {
+      const keys: ClusterSourceKey[] = ['gsc_queries', 'llm_naming'];
+      if (cl.hub_page_url || (cl.spoke_pages && cl.spoke_pages.length > 0)) keys.push('gsc_pages_slug');
+      if (hasCompetitorData) keys.push('pipeline_research');
+      if (cl.competitor_owners && cl.competitor_owners.length > 0) keys.push('llm_ownership');
+      cl.sources_used = keys;
+      cl.confidence_score = clusterSourcesConfidence(keys);
+    }
+
     /* 7. Persist clusters + write report */
     const auditRunId = crypto.randomUUID();
     if (withCoverage.length > 0) {
@@ -179,6 +266,21 @@ export async function runClusterMap(opts: {
     /* LLM call accounting: 1 for labelAndLabelClusters + 1 per cluster for ownership */
     const llmCallsUsed = 1 + withCoverage.length;
 
+    /* Honest confidence rating — was previously inverted ("more findings =
+       higher confidence" which is illogical). Now derived from per-cluster
+       source confidence (the data-quality signal) cross-checked with the
+       data volume signal (how much GSC anchor we had to work with). */
+    const sourceConf = weightedClusterConfidence(withCoverage);
+    const dataVolumeSignal: 'high' | 'medium' | 'low' =
+      relatedQueries.length >= 30 ? 'high' :
+      relatedQueries.length >= 10 ? 'medium' : 'low';
+    const sourceQualitySignal: 'high' | 'medium' | 'low' =
+      sourceConf.mean >= 85 ? 'high' :
+      sourceConf.mean >= 72 ? 'medium' : 'low';
+    const overallRating: 'high' | 'medium' | 'low' =
+      (dataVolumeSignal === 'low'    || sourceQualitySignal === 'low')    ? 'low' :
+      (dataVolumeSignal === 'medium' || sourceQualitySignal === 'medium') ? 'medium' : 'high';
+
     const reportR = await writeReportToPanel({
       campaignId:       opts.campaignId,
       projectId:        c.project_id,
@@ -188,8 +290,14 @@ export async function runClusterMap(opts: {
       generatedBy:      triggeredBy,
       llmCallsUsed,
       dataSources:      ['gsc', 'llm', ...(competitors.length > 0 ? ['pipeline_research' as const] : [])],
-      confidenceRating: gapCount > 0 || partialCount > 0 || partialLosingCount > 0 ? 'high' : 'medium',
-      confidenceReason: `Clustered ${relatedQueries.length} GSC queries into ${withCoverage.length} clusters. Hub/spoke inference uses URL-slug heuristic. Per-cluster competitor ownership identified via ${withCoverage.length} LLM calls.`,
+      confidenceRating: overallRating,
+      confidenceReason: [
+        `Clustered ${relatedQueries.length} GSC queries into ${withCoverage.length} clusters.`,
+        `Per-cluster source-weighted confidence: ${sourceConf.mean}/100 across ${sourceConf.sourced_count} clusters (${sourceQualitySignal}).`,
+        `Data volume signal: ${relatedQueries.length} related queries (${dataVolumeSignal}).`,
+        'Hub/spoke inference uses URL-slug heuristic — degraded GSC confidence.',
+        `Per-cluster competitor ownership identified via ${withCoverage.length} LLM calls (claude_inference, confidence 65).`,
+      ].join(' '),
       title:            `Cluster map: ${withCoverage.length} clusters for "${c.keyword}"`,
       bodyMd:           renderClusterMapReport({
         keyword: c.keyword, clusters: withCoverage, findings,
@@ -1324,6 +1432,37 @@ function renderClusterMapReport(opts: {
   lines.push(`| ❔ Unknown | ${unknown} | Insufficient data to assess |`);
   lines.push('');
 
+  /* Source confidence — surface upfront so the reader calibrates trust
+     BEFORE reading findings or cluster recommendations. */
+  const conf = weightedClusterConfidence(clusters);
+  lines.push('## Source confidence');
+  lines.push('');
+  if (conf.sourced_count > 0) {
+    lines.push(`**Weighted confidence:** ${conf.mean}/100 across ${conf.sourced_count} cluster(s).`);
+    /* Aggregate which sources appeared, and how often */
+    const sourceCounts: Record<string, number> = {};
+    for (const cl of clusters) {
+      for (const k of cl.sources_used || []) {
+        const lbl = CLUSTER_SOURCE_META[k].label;
+        sourceCounts[lbl] = (sourceCounts[lbl] || 0) + 1;
+      }
+    }
+    const sourceList = Object.entries(sourceCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => `${label} (${count} clusters)`)
+      .join(', ');
+    lines.push(`**Sources used:** ${sourceList}.`);
+    lines.push('');
+    lines.push('Cluster identities are GSC-anchored (live query data, confidence 95). Names and recommendations are Claude-derived (confidence 65). Hub/spoke inference uses a URL-slug heuristic (confidence 80) — see Methodology below.');
+  } else {
+    lines.push('**No source attribution available.** Confidence treated as low — investigate before acting.');
+  }
+  if (conf.unattributed_count > 0) {
+    lines.push('');
+    lines.push(`⚠️ ${conf.unattributed_count} cluster(s) lack source attribution. Excluded from the confidence calculation.`);
+  }
+  lines.push('');
+
   /* Findings */
   if (findings.length > 0) {
     lines.push('## Findings');
@@ -1357,6 +1496,10 @@ function renderClusterMapReport(opts: {
     if (cl.topic_summary) lines.push(`_${cl.topic_summary}_`);
     lines.push('');
     lines.push(`**Coverage status:** ${cl.coverage_status} · **Intent:** ${cl.primary_intent} · **Queries:** ${cl.query_count} · **Impressions:** ${cl.total_impressions.toLocaleString()} · **Clicks:** ${cl.total_clicks.toLocaleString()} · **Avg position:** ${cl.avg_position.toFixed(1)}`);
+    if (typeof cl.confidence_score === 'number' && cl.sources_used && cl.sources_used.length > 0) {
+      const labels = cl.sources_used.map(k => CLUSTER_SOURCE_META[k].label).join(' + ');
+      lines.push(`*Sources · ${labels} · weighted confidence ${cl.confidence_score}/100*`);
+    }
     lines.push('');
     if (cl.hub_page_url) {
       lines.push(`**Inferred hub:** [${cl.hub_page_url}](${cl.hub_page_url})`);
