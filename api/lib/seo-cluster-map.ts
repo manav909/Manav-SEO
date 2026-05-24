@@ -23,6 +23,7 @@
 
 import { db } from "./db.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
+import { fetchSerpFeatures } from "./serpapi.js";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const MODEL = "claude-sonnet-4-6";
@@ -81,6 +82,14 @@ interface Cluster {
   hub_alignment?: 'strong' | 'partial' | 'weak' | 'no_hub';
   cohesion_position_spread?: number;           // max(pos) - min(pos) within cluster
   is_thin?: boolean;                           // <5 queries OR <500 impressions
+  /* Phase 16.2 — SerpAPI verified competitive intelligence (2026-05-24).
+     When SerpAPI is configured for the project, the primary query of each
+     cluster is fetched live and these fields are populated. When set, the
+     LLM-cited competitor_owners path is skipped (saves an LLM call AND
+     produces measured-not-inferred data). */
+  competitors_source?: 'serpapi' | 'llm' | null;  // provenance of competitor_owners
+  own_url_in_top_10?: { url: string; position: number } | null;  // verified hub signal — if project's own URL appears in top-10 for this cluster's primary query
+  primary_query_for_serp?: string;            // which query was used to fetch the SERP (for audit-trail)
 }
 
 interface ClusterFinding {
@@ -115,6 +124,7 @@ type ClusterSourceKey =
   | 'pipeline_research'
   | 'llm_naming'
   | 'llm_ownership'
+  | 'serpapi_top10'
   | 'brain_learning';
 
 const CLUSTER_SOURCE_META: Record<
@@ -126,6 +136,7 @@ const CLUSTER_SOURCE_META: Record<
   pipeline_research: { confidence: 80, label: 'Pipeline research (competitor)',     sourceType: 'intelligence_output' },
   llm_naming:        { confidence: 65, label: 'Claude clustering + intent naming',  sourceType: 'claude_inference' },
   llm_ownership:     { confidence: 65, label: 'Claude competitor-ownership',        sourceType: 'claude_inference' },
+  serpapi_top10:     { confidence: 90, label: 'SerpAPI top-10 (live SERP fetch)',   sourceType: 'serpapi_live' },
   brain_learning:    { confidence: 80, label: 'Brain learnings (cross-project)',    sourceType: 'brain_learning' },
 };
 
@@ -355,8 +366,23 @@ export async function runClusterMap(opts: {
     /* 5. Hub/spoke inference for each cluster */
     const enriched = labeled.map(cluster => enrichWithPages(cluster, pages));
 
-    /* 5b. Phase 16.0.2 — per-cluster competitor ownership (parallelized LLM calls) */
-    const withOwnership = await enrichWithCompetitorOwnership(enriched, c.keyword, competitors);
+    /* 5b. Phase 16.2 — try SerpAPI-verified competitor_owners FIRST.
+       For each cluster, fetches live top-10 SERP for the primary query,
+       extracts competitor domains and detects whether the project's own
+       URL appears in top-10 (gold-standard hub signal). Falls back to
+       the LLM-cited path (5c) ONLY for clusters where SerpAPI returned
+       null (no key, no usable query, or fetch failure). */
+    const withSerpCompetitors = await enrichClustersWithSerpApiCompetitors(enriched, c.project_id, projectUrl);
+
+    /* 5c. Phase 16.0.2 — LLM-cited competitor ownership.
+       Only fires for clusters that SerpAPI couldn't enrich. Splits the
+       cluster list into "needs LLM" vs "already has SerpAPI data". */
+    const needsLlmOwnership   = withSerpCompetitors.filter(cl => cl.competitors_source !== 'serpapi');
+    const hasSerpapiOwnership = withSerpCompetitors.filter(cl => cl.competitors_source === 'serpapi');
+    const llmEnriched         = needsLlmOwnership.length > 0
+      ? await enrichWithCompetitorOwnership(needsLlmOwnership, c.keyword, competitors)
+      : [];
+    const withOwnership = [...hasSerpapiOwnership, ...llmEnriched];
 
     /* 6. Gap + dominance detection */
     const competitorTopics = extractCompetitorTopics(competitors);
@@ -375,7 +401,14 @@ export async function runClusterMap(opts: {
       const keys: ClusterSourceKey[] = ['gsc_queries', 'llm_naming'];
       if (cl.hub_page_url || (cl.spoke_pages && cl.spoke_pages.length > 0)) keys.push('gsc_pages_slug');
       if (hasCompetitorData) keys.push('pipeline_research');
-      if (cl.competitor_owners && cl.competitor_owners.length > 0) keys.push('llm_ownership');
+      /* Phase 16.2 — credit the actual source of competitor_owners.
+         When SerpAPI fired, use the 'serpapi_top10' key (confidence 90,
+         live SERP fetch). When LLM was the source, use 'llm_ownership'
+         (confidence 65, claude inference). */
+      if (cl.competitor_owners && cl.competitor_owners.length > 0) {
+        if (cl.competitors_source === 'serpapi') keys.push('serpapi_top10');
+        else keys.push('llm_ownership');
+      }
       cl.sources_used = keys;
       cl.confidence_score = clusterSourcesConfidence(keys);
     }
@@ -1385,7 +1418,102 @@ function assessCoverage(cluster: Cluster, competitorTokens: Set<string>): Cluste
    Parallelized across all clusters. Honest "[]" if the LLM is unsure.
 ═══════════════════════════════════════════════════════════════ */
 
-async function enrichWithCompetitorOwnership(
+/* ═══════════════════════════════════════════════════════════════════
+   SERPAPI-VERIFIED COMPETITIVE INTELLIGENCE (Phase 16.2, 2026-05-24)
+
+   Replaces the LLM-cited competitor_owners path with verified live SERP
+   data when a SerpAPI key is configured for the project. Per cluster:
+
+   1. Pick the PRIMARY QUERY (highest impressions) as the SERP fetch target
+   2. Call fetchSerpFeatures(primary_query) — cache 7 days platform-wide
+   3. Extract top_10_domains, filter out project's own domain → competitor_owners
+   4. Check if project's own URL appears anywhere in top_10_urls → own_url_in_top_10
+   5. Mark cluster.competitors_source = 'serpapi' so the LLM path is skipped
+
+   When SerpAPI returns null (no key, fetch fail, no impressions on primary
+   query), we fall back to the existing LLM-cited path — the function is a
+   non-breaking enhancement. Clusters where SerpAPI succeeded get
+   confidence 90 ('serpapi_top10' source); clusters that fell back retain
+   confidence 65 ('llm_ownership').
+
+   Cost discipline: 1 SerpAPI call per cluster per cache-window (7 days).
+   For a project with 5 clusters auditing monthly: ~5 calls/month/project.
+   Platform-wide cache means multiple projects targeting the same keyword
+   share a single fetch.
+═══════════════════════════════════════════════════════════════════ */
+
+function extractDomainFromUrl(url: string): string {
+  if (!url) return '';
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+async function enrichClustersWithSerpApiCompetitors(
+  clusters: Cluster[],
+  projectId: string,
+  projectUrl: string,
+): Promise<Cluster[]> {
+  if (!projectId || clusters.length === 0) return clusters;
+  const ownDomain = extractDomainFromUrl(projectUrl).toLowerCase();
+
+  /* Parallelize across clusters — each cluster's SerpAPI call is
+     independent and cache-keyed by query, so concurrent fetches don't
+     duplicate API spend. */
+  const enriched = await Promise.all(clusters.map(async (cluster) => {
+    /* Pick the primary query — highest impressions, excluding zero-impression
+       and overly-short queries that produce noisy SERPs. */
+    const candidates = [...cluster.queries]
+      .filter(q => q.impressions > 0 && q.query && q.query.length >= 3)
+      .sort((a, b) => b.impressions - a.impressions);
+    if (candidates.length === 0) {
+      /* No usable query in this cluster — leave LLM path to handle */
+      return cluster;
+    }
+    const primaryQuery = candidates[0].query;
+
+    /* Fetch live SERP. Returns null on no-key, fetch failure, or parse error. */
+    const serp = await fetchSerpFeatures(primaryQuery, projectId);
+    if (!serp || !Array.isArray(serp.top_10_domains) || serp.top_10_domains.length === 0) {
+      /* SerpAPI unavailable or empty result — fall through to LLM path */
+      return cluster;
+    }
+
+    /* Extract competitors: top-10 domains excluding the project's own domain.
+       Take up to 5 for display parity with the LLM-cited path. */
+    const competitorDomains = serp.top_10_domains
+      .filter(d => d && d !== ownDomain && !d.endsWith(`.${ownDomain}`))
+      .slice(0, 5);
+
+    /* Check if project's own URL appears anywhere in top-10. This is the
+       gold-standard hub signal — measurable, not URL-slug-inferred. */
+    let ownUrlInTop10: { url: string; position: number } | null = null;
+    if (ownDomain) {
+      for (let i = 0; i < serp.top_10_urls.length; i++) {
+        const u = serp.top_10_urls[i];
+        const d = extractDomainFromUrl(u).toLowerCase();
+        if (d === ownDomain || d.endsWith(`.${ownDomain}`)) {
+          ownUrlInTop10 = { url: u, position: i + 1 };
+          break;
+        }
+      }
+    }
+
+    return {
+      ...cluster,
+      competitor_owners:        competitorDomains,
+      competitors_source:       'serpapi' as const,
+      own_url_in_top_10:        ownUrlInTop10,
+      primary_query_for_serp:   primaryQuery,
+    };
+  }));
+
+  return enriched;
+}
+
+
   clusters: Cluster[],
   campaignKeyword: string,
   competitors: any[],
@@ -2223,17 +2351,28 @@ function renderClusterMapReport(opts: {
       for (const sp of cl.spoke_pages) lines.push(`- [${sp}](${sp})`);
     }
 
-    /* Phase 16.0.2 — competitor ownership prominently shown */
+    /* Phase 16.0.2 + 16.2 — competitor ownership with source provenance */
     if (cl.competitor_owners && cl.competitor_owners.length > 0) {
       lines.push('');
-      lines.push(`**Domains currently owning this cluster:** ${cl.competitor_owners.map(d => `\`${d}\``).join(', ')}`);
+      const sourceLabel = cl.competitors_source === 'serpapi'
+        ? '_(SerpAPI top-10, live SERP fetch)_'
+        : '_(LLM-cited, claude inference)_';
+      lines.push(`**Domains currently owning this cluster:** ${cl.competitor_owners.map(d => `\`${d}\``).join(', ')} ${sourceLabel}`);
       if (cl.coverage_status === 'partial_losing') {
         lines.push('');
         lines.push(`⚠️ **You have a hub for this cluster, but ${cl.competitor_owners.length} competitors dominate it.** Beating them requires either dramatically better content, link equity, or a niche-down angle. Consider whether the effort is worth it vs investing in gap clusters where you can establish first-mover advantage.`);
       }
+      /* Phase 16.2 — Own-URL-in-top-10 verified hub signal */
+      if (cl.competitors_source === 'serpapi' && cl.own_url_in_top_10) {
+        lines.push('');
+        lines.push(`🎯 **Verified hub signal (SerpAPI):** your URL [${cl.own_url_in_top_10.url}](${cl.own_url_in_top_10.url}) ranks at position **${cl.own_url_in_top_10.position}** in the live top-10 for "${cl.primary_query_for_serp}". This is the actual hub for this cluster — more reliable than the URL-slug heuristic inference above.`);
+      } else if (cl.competitors_source === 'serpapi' && !cl.own_url_in_top_10) {
+        lines.push('');
+        lines.push(`ℹ️ **No URL from your domain appears in the live top-10** for "${cl.primary_query_for_serp}". The URL-slug-inferred hub above (if any) is your best on-site candidate but the cluster is dominated by competitor pages — this is a coverage gap, not a ranking opportunity.`);
+      }
     } else {
       lines.push('');
-      lines.push(`**Domains owning this cluster:** _LLM couldn't identify with confidence — investigate manually via SERP check. Without competitive evidence, "coverage" claims should be treated as provisional._`);
+      lines.push(`**Domains owning this cluster:** _SerpAPI returned no top-10 data for this cluster's primary query (or no SerpAPI key configured). Investigate manually via SERP check._`);
     }
 
     /* Phase 16.0.4 — recommendation now incorporates actual data signals,
@@ -2298,7 +2437,7 @@ function renderClusterMapReport(opts: {
   lines.push('');
   lines.push('**How clusters were formed:** Lexical similarity (shared non-stopword, non-keyword tokens) on GSC queries semantically related to the campaign keyword. Clusters were LLM-labeled with names, intents, and recommendations in a single batched API call.');
   lines.push('');
-  lines.push('**How competitor ownership was identified:** One LLM call per cluster, asking which domains own this specific cluster\'s topical real estate. Based on competitor_snapshot data + LLM\'s knowledge of common ranking patterns. If unsure, the LLM returns an empty list rather than inventing domains.');
+  lines.push('**How competitor ownership was identified:** When a SerpAPI key is configured, the platform fetches the LIVE top-10 SERP for each cluster\'s primary query (highest-impressions) and extracts the domains directly — verified, not inferred. Cached platform-wide for 7 days. When SerpAPI is unavailable, falls back to an LLM call per cluster asking which domains own this cluster\'s topical real estate, with explicit instructions to return [] rather than invent. Each cluster\'s `Domains currently owning this cluster:` line is labelled with the source (`SerpAPI top-10` or `LLM-cited`).');
   lines.push('');
   lines.push('**How hub/spoke was inferred:** URL-slug token matching against GSC top_pages. This is a heuristic — GSC does not expose query→page mapping at scale. If a cluster\'s queries don\'t match any URL token, hub will be null.');
   lines.push('');
@@ -2317,7 +2456,7 @@ function renderClusterMapReport(opts: {
   lines.push('- **Per-query intent classification:** one batched LLM call classifies each GSC query as informational / commercial / navigational / transactional / branded / unknown. Combined with a heuristic branded-detector that catches queries containing project-domain tokens. Surfaces in the per-cluster query table and powers two new findings: (a) intent-diversity (3+ distinct intents in one cluster = over-aggregation by intent, not just by token overlap) and (b) branded-query contamination (branded queries that should not influence organic strategy decisions).');
   lines.push('- **Strategic Recommendation section:** when the campaign keyword has no measurable ranking OR ranks below position 20 AND a better non-branded alternative exists in GSC data, the report surfaces a decision-tree recommendation at the TOP (above findings): pivot the campaign keyword to one the site already ranks for, OR build a dedicated new landing page. Branded queries are excluded from pivot candidates. The principle: lead with the strategic call, not the diagnostic findings.');
   lines.push('');
-  lines.push('**Not yet covered:** Real SERP fetch per cluster (currently competitor_owners is LLM-cited, not measured), semantic similarity via embeddings, project-wide cluster maps across campaigns, automatic content-roadmap generation as kanban tasks, visual graph rendering, hub-candidate ranking with explanation (show top-3 URL candidates with token-match scores instead of single hub).');
+  lines.push('**Not yet covered:** Semantic similarity clustering via embeddings (current clustering is lexical token overlap; misses synonym pairs like "build my own app" and "create a custom application"), project-wide cluster maps across campaigns (currently 1 campaign = 1 cluster map; no view of cross-campaign cannibalization), automatic content-roadmap generation as kanban tasks, visual graph rendering of cluster relationships, SERP-overlap-based cluster cohesion check (currently using lexical-token spread as a proxy — SerpAPI top-10 overlap between two queries would be the gold-standard signal but costs 1 call per query, deferred until cache discipline is proven).');
 
   return lines.join('\n');
 }

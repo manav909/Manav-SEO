@@ -1331,30 +1331,74 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
 
     const detail = `**Actual:** ${clicks} clicks / ${impressions.toLocaleString()} impressions = **${actualCtr.toFixed(2)}% CTR** at average position **${position.toFixed(1)}**.\n\n**Expected at position ${position.toFixed(1)}:** ~${expectedCtr.toFixed(1)}% (benchmark midpoint from AdvancedWebRanking / Backlinko / FirstPageSage).\n\n**Ratio:** actual is **${Math.round(ratio * 100)}%** of expected.`;
 
-    /* Phase 16.1 — SerpAPI enrichment for underperformance cases.
-       The CTR finding used to leave the reader with a hypothesis:
-       "either (a) title/meta is weak OR (b) SERP features are siphoning
-       clicks." SerpAPI resolves the hypothesis by fetching the actual
-       SERP and listing what features are present. When SerpAPI is
-       unavailable (no key configured, fetch failure, no campaign
-       keyword) we fall through to the original recommendation text.
+    /* Phase 16.1 + 16.2 — SerpAPI enrichment for underperformance cases.
+       Phase 16.1 resolved the (a)-or-(b) CTR hypothesis with verified
+       SERP feature detection. Phase 16.2 extracts MORE from the same
+       SerpAPI call (no additional API spend):
 
-       Only fires for RED (ratio < 0.5) and AMBER (0.5 ≤ ratio < 0.8)
-       cases — when there's a real CTR gap to diagnose. Green cases
-       don't need SERP context. */
+       a) PAA questions verbatim — surface the actual questions so
+          content writers can use them as section-heading candidates
+          for AI Overview citation optimization.
+       b) Top-10 competitor domains — "Competitive landscape" mini-
+          section so the operator knows who they're up against.
+       c) SERP-position verification — does the audited URL appear in
+          the live top-10? If yes, at what position? If GSC says
+          position 7.1 but live SERP says position 12, ranking has
+          shifted since GSC last updated — surface as a delta.
+
+       All three use data already in the fetched SerpFeatures response. */
     const ctrUnderperforming = ratio < 0.8;
     let serpEnrichment: { detail_addendum: string; recommendation: string } | null = null;
     if (ctrUnderperforming && campaignKeyword && campaignKeyword.trim()) {
       const serpFeatures = await fetchSerpFeatures(campaignKeyword, projectId);
       if (serpFeatures) {
         const featuresSummary = summarizeSerpFeatures(serpFeatures);
+        /* Build the supplementary blocks once — used in both feature-present
+           and plain-SERP branches. */
+        const buildPaaBlock = (): string => {
+          if (!serpFeatures.paa_questions || serpFeatures.paa_questions.length === 0) return '';
+          return `\n\n**PAA questions on this SERP** (use as section-heading candidates for content gap closure):\n${serpFeatures.paa_questions.map(q => `- ${q}`).join('\n')}`;
+        };
+        const buildCompetitorBlock = (): string => {
+          if (!serpFeatures.top_10_domains || serpFeatures.top_10_domains.length === 0) return '';
+          return `\n\n**Competitive landscape (live top-10 domains for "${campaignKeyword}"):** ${serpFeatures.top_10_domains.slice(0, 10).map(d => `\`${d}\``).join(', ')}`;
+        };
+        const buildPositionBlock = (): string => {
+          /* Find if the audited URL appears in the live top-100. SerpAPI
+             returns top-10 organic in `top_10_urls` (we capped num=10 in
+             the fetch). Position verification: does GSC's avg position
+             match SerpAPI's live position? */
+          const normalizedAudited = url.replace(/\/$/, '').toLowerCase();
+          let livePosition: number | null = null;
+          for (let i = 0; i < serpFeatures.top_10_urls.length; i++) {
+            const u = (serpFeatures.top_10_urls[i] || '').replace(/\/$/, '').toLowerCase();
+            if (u === normalizedAudited) {
+              livePosition = i + 1;
+              break;
+            }
+          }
+          if (livePosition === null) {
+            /* Audited URL not in top-10 of live SERP for the campaign keyword */
+            return `\n\n**Live SERP position check:** the audited URL does NOT appear in the live top-10 for "${campaignKeyword}". GSC reports average position ${position.toFixed(1)} (aggregated across queries and time); the live SERP for the campaign keyword specifically has this URL at position 11+. The GSC average is therefore driven by other queries — see GSC query distribution finding for which queries actually rank this URL.`;
+          }
+          const gscLive = Math.abs(livePosition - position);
+          if (gscLive >= 3) {
+            return `\n\n**Live SERP position check:** the audited URL ranks at live position **${livePosition}** for "${campaignKeyword}" — GSC reports average position **${position.toFixed(1)}**. A delta of **${gscLive.toFixed(1)} positions** suggests ranking has shifted since GSC's last data window (GSC typically lags 2-3 days). Worth re-running GSC freshness pull to confirm the trend.`;
+          }
+          return `\n\n**Live SERP position check:** the audited URL ranks at live position **${livePosition}** for "${campaignKeyword}", consistent with GSC's average of **${position.toFixed(1)}**. Position is stable across data windows.`;
+        };
+        const paaBlock         = buildPaaBlock();
+        const competitorBlock  = buildCompetitorBlock();
+        const positionBlock    = buildPositionBlock();
+        const cacheNote        = serpFeatures.cache_hit ? '_(SERP features cached within last 7 days)_' : '_(Fresh SERP fetch)_';
+
         if (featuresSummary) {
           /* SERP has notable features siphoning organic CTR */
-          const detail_addendum = `\n\n**SerpAPI verification — what's actually on the SERP for "${campaignKeyword}":**\n- ${featuresSummary}\n\n${serpFeatures.cache_hit ? '_(SERP features cached within last 7 days)_' : '_(Fresh SERP fetch)_'}`;
+          const detail_addendum = `\n\n**SerpAPI verification — what's actually on the SERP for "${campaignKeyword}":**\n- ${featuresSummary}${paaBlock}${competitorBlock}${positionBlock}\n\n${cacheNote}`;
           /* Tailor recommendation based on dominant feature */
           let rec = '';
           if (serpFeatures.ai_overview) {
-            rec = `**Optimize for AI Overview citation, not just position.** With an AI Overview present, top-3 organic positions can lose 30-50% of clicks to the AI summary. Tactics: (1) answer the query in 40-60 words within the first paragraph (citation candidate), (2) ensure FAQPage or HowTo schema is valid and matches visible content, (3) cite authoritative external sources Google's models trust, (4) structure key facts as scannable lists.`;
+            rec = `**Optimize for AI Overview citation, not just position.** With an AI Overview present, top-3 organic positions can lose 30-50% of clicks to the AI summary. Tactics: (1) answer the query in 40-60 words within the first paragraph (citation candidate), (2) ensure FAQPage or HowTo schema is valid and matches visible content, (3) cite authoritative external sources Google's models trust (for SaaS pricing topics: official vendor docs, Gartner, G2 reviews), (4) structure key facts as scannable lists, (5) add H2 sections that answer the PAA questions listed above verbatim — these often surface as AI Overview citation candidates.`;
           } else if (serpFeatures.featured_snippet && serpFeatures.featured_snippet_owner) {
             rec = `**A competitor (\`${serpFeatures.featured_snippet_owner}\`) owns the featured snippet** — target that snippet. Write a concise 40-60 word direct answer to the query, placed within the first 100 words of the page, in the snippet format Google extracts (paragraph for "what is", numbered list for "how to", table for comparisons). Then rewrite the title/meta as the secondary lift.`;
           } else if (serpFeatures.featured_snippet) {
@@ -1369,9 +1413,11 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
         } else {
           /* SerpAPI succeeded but found no notable features — the SERP
              is plain organic. That MEANS the CTR problem really IS the
-             title/meta. Tighten recommendation accordingly. */
+             title/meta. Tighten recommendation accordingly. PAA, competitor
+             landscape, and position blocks still surface (they're not
+             "features" but they're still useful intel). */
           serpEnrichment = {
-            detail_addendum: `\n\n**SerpAPI verification — what's actually on the SERP for "${campaignKeyword}":** plain organic SERP — no AI Overview, no featured snippet, no PAA box, no heavy ad density. The CTR gap is NOT caused by SERP features.\n\n${serpFeatures.cache_hit ? '_(SERP features cached within last 7 days)_' : '_(Fresh SERP fetch)_'}`,
+            detail_addendum: `\n\n**SerpAPI verification — what's actually on the SERP for "${campaignKeyword}":** plain organic SERP — no AI Overview, no featured snippet, no PAA box, no heavy ad density. The CTR gap is NOT caused by SERP features.${paaBlock}${competitorBlock}${positionBlock}\n\n${cacheNote}`,
             recommendation: `**The SERP has no features siphoning clicks — the title/meta is the actual problem.** Rewrite the title and meta description for click appeal: front-load the benefit, include a number or specific outcome, ensure the keyword sits at the start. Don't waste effort optimizing for snippets/AI Overview that aren't on this SERP.`,
           };
         }
