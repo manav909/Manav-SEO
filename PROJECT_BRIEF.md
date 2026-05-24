@@ -415,6 +415,8 @@ The `t()`-using versions of these chapters lived only in my workspace. Each prev
 
 **Operating lesson:** at the start of every session, re-clone from GitHub to see ground truth — not just the brief. The brief documents intent; the repo documents reality.
 
+🟢 **Devanagari rendering fix** — shipped 2026-05-24. The `TextReveal` component in `src/pages/manifesto/shared.tsx` was splitting chapter titles by Unicode code points using `Array.from(word)`. Devanagari uses combining vowel marks (matras like `ि`, `ा`, `े`, `ं`) and halant (्) that must attach to their base consonant. Splitting by code point orphans these marks, and the browser renders them as dotted circles — Unicode's "no base to attach to" indicator. The Hindi chapter title `जिस समस्या को हम हल करते हैं` was being shredded into 28 separate animated spans where "जि" got torn into "ज" + "ि" and "स्या" into "स" + "्" + "य" + "ा". Fix: split by grapheme clusters using `Intl.Segmenter({ granularity: 'grapheme' })`, falling back to `Array.from` on browsers that predate it (Safari <14.1, Chrome <87). Same fix protects Tamil, Bengali, Arabic, emoji ZWJ sequences, and flag sequences. The animation timing is unchanged — each cluster still feathers in with the same per-character delay.
+
 **Deployment verification path** — after running the deploy command and waiting for Vercel:
 1. Open browser DevTools console on `/manifesto`. You should see `[i18n] all 5 languages parity-checked against 287 EN keys — no gaps.`
 2. Inspect the root `<div class="manifesto-root">` — it should carry `data-i18n-ok="true"` and `data-i18n-keys="287"`.

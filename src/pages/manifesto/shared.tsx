@@ -168,7 +168,27 @@ export function FoundingQuote({
 
 /* ═══════════════════════════════════════════════════════════════════
    TEXT REVEAL — character-stagger animation, respects reduced motion
+
+   Splits by GRAPHEME CLUSTERS, not code points. Devanagari (Hindi),
+   Arabic, Tamil, Bengali, and many other scripts use combining marks
+   that must stay attached to their base character. Splitting by code
+   points (Array.from) tears those apart and the browser renders the
+   orphaned matras as dotted circles — Unicode's "no base to attach
+   to" indicator. Emoji ZWJ sequences (e.g. 👨‍👩‍👧) and flag
+   sequences also break under code-point splitting. Intl.Segmenter
+   with granularity='grapheme' is the correct primitive; we fall
+   back to Array.from on the small percentage of browsers that
+   predate it (Safari <14.1, Chrome <87, Firefox <125).
 ═══════════════════════════════════════════════════════════════════ */
+
+function splitGraphemes(text: string): string[] {
+  if (typeof Intl !== 'undefined' && typeof (Intl as { Segmenter?: unknown }).Segmenter === 'function') {
+    const Segmenter = (Intl as unknown as { Segmenter: new (l?: string, o?: { granularity: 'grapheme' }) => { segment: (s: string) => Iterable<{ segment: string }> } }).Segmenter;
+    const seg = new Segmenter(undefined, { granularity: 'grapheme' });
+    return Array.from(seg.segment(text), (s) => s.segment);
+  }
+  return Array.from(text);
+}
 
 export function TextReveal({
   text, delay = 0, className = '',
@@ -187,9 +207,10 @@ export function TextReveal({
     <span className={className}>
       {words.map((w, wi) => {
         if (/^\s+$/.test(w)) return <span key={wi}>{w}</span>;
+        const graphemes = splitGraphemes(w);
         return (
           <span key={wi} style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
-            {Array.from(w).map((ch, ci) => {
+            {graphemes.map((ch, ci) => {
               const myIdx = charIdx++;
               return (
                 <motion.span
