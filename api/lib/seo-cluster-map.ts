@@ -1706,27 +1706,27 @@ function buildStrategicRecommendation(
     /* Campaign keyword absent entirely */
     lines.push(`## 🎯 Strategic recommendation`);
     lines.push('');
-    lines.push(`**The campaign keyword "${keyword}" has no measurable organic visibility** — it doesn't appear in any of this project's GSC queries. The site has no pages currently ranking for it.`);
+    lines.push(`**The campaign keyword "${keyword}" has no measurable organic visibility** — it does not appear in any of this project's GSC queries. The site has no pages currently ranking for it.`);
     lines.push('');
-    lines.push(`A Senior SEO Specialist would call this a **strategic decision point**, not an optimization task:`);
+    lines.push(`This is a strategic decision point, not an optimization task. Two paths exist:`);
     lines.push('');
     if (candidates.length > 0) {
       const top = candidates[0];
-      lines.push(`### Option A: Pivot the campaign keyword`);
+      lines.push(`### Pivot to a query the site already ranks for`);
       lines.push('');
-      lines.push(`Your strongest non-branded ranking query is **"${top.query}"** at position ${top.position.toFixed(1)} with ${top.impressions.toLocaleString()} impressions / ${top.clicks} clicks per month. Pivoting the campaign to this keyword turns existing organic traction into measurable gains — the foundation already exists.`);
+      lines.push(`The strongest non-branded ranking query is **"${top.query}"** at position ${top.position.toFixed(1)} with ${top.impressions.toLocaleString()} impressions / ${top.clicks} clicks per month. Pivoting the campaign to this keyword turns existing organic traction into measurable gains — the foundation already exists.`);
       lines.push('');
-      lines.push(`### Option B: Build a dedicated landing page for "${keyword}"`);
+      lines.push(`### Or build a dedicated landing page for "${keyword}"`);
       lines.push('');
-      lines.push(`If "${keyword}" is strategically more valuable to the business than the current top organic queries, create a new page specifically optimized for it. Plan for 6-12 months to break into top-10 for a competitive term with no existing organic anchor.`);
+      lines.push(`If "${keyword}" is strategically more valuable than the current top organic queries, create a new page specifically optimized for it. Plan for 6-12 months to break into top-10 for a competitive term with no existing organic anchor.`);
       lines.push('');
-      lines.push(`**Senior DMS view:** lead with Option A unless there's a clear business case the current organic strengths cannot serve. Don't chase keywords that don't match your site's actual content.`);
+      lines.push(`**Lower-cost path:** pivot. The site has an existing organic foundation for the alternative query; building a new page from scratch for a competitive keyword with no current ranking is measured in months and dollars. Choose to build only when "${keyword}" is strategically more valuable than the current organic strengths.`);
     } else {
-      lines.push(`### Option A: Build a dedicated landing page for "${keyword}"`);
+      lines.push(`### Build a dedicated landing page for "${keyword}"`);
       lines.push('');
       lines.push(`No suitable non-branded pivot candidate exists in current GSC data. If "${keyword}" is the strategic target, a new page is the only path — plan for 6-12 months to break into top-10.`);
       lines.push('');
-      lines.push(`### Option B: Reconsider the campaign target`);
+      lines.push(`### Or reconsider the campaign target`);
       lines.push('');
       lines.push(`Verify with the business that "${keyword}" is the right campaign target. The data shows no organic foundation for it on this site.`);
     }
@@ -1841,7 +1841,7 @@ function computeFindings(clusters: Cluster[], keyword: string, totalGscQueries: 
     findings.push({
       severity: 'red',
       title:    `Hub URL for cluster "${cl.cluster_name}" does NOT carry the keyword "${keyword}"`,
-      detail:   `Inferred hub: ${cl.hub_page_url}\n\nThe URL slug contains no tokens from "${keyword}". The URL-slug heuristic has likely locked onto an adjacent-topic page rather than a real hub for this keyword. A Senior SEO Specialist would never trust this page as the hub.\n\nRecommendation: either (a) identify the correct hub page manually and update the campaign's target_url, or (b) accept that there is NO hub yet for "${keyword}" and treat this as a content gap.`,
+      detail:   `Inferred hub: ${cl.hub_page_url}\n\nThe URL slug contains no tokens from "${keyword}". The URL-slug heuristic has locked onto an adjacent-topic page that cannot function as a real hub for this keyword.\n\nRecommendation: either identify the correct hub page manually and update the campaign's target_url, or accept that there is no hub yet for "${keyword}" and treat this as a content gap.`,
       sources_used: ['gsc_pages_slug', 'gsc_queries'],
       confidence_score: 88,
     });
@@ -1896,7 +1896,7 @@ function computeFindings(clusters: Cluster[], keyword: string, totalGscQueries: 
     findings.push({
       severity: 'amber',
       title:    `${thinClusters.length} cluster${thinClusters.length === 1 ? '' : 's'} built on thin data — low confidence`,
-      detail:   `Clusters with fewer than 5 queries OR fewer than 500 impressions are statistically thin. The analysis is directional, not definitive.\n\n${examples}\n\nA Senior SEO Specialist would validate these manually via live SERP checks before acting. As GSC accumulates more data over time, these clusters should be re-run.`,
+      detail:   `Clusters with fewer than 5 queries OR fewer than 500 impressions are statistically thin. The analysis is directional, not definitive.\n\n${examples}\n\nValidate these manually via live SERP checks before acting on them. As GSC accumulates more data over time, these clusters should be re-run.`,
       sources_used: ['gsc_queries'],
       confidence_score: 95,  /* the thinness observation itself is high-confidence */
     });
@@ -1926,7 +1926,7 @@ function computeFindings(clusters: Cluster[], keyword: string, totalGscQueries: 
       findings.push({
         severity: 'amber',
         title:    `Cluster "${cl.cluster_name}" mixes ${distinctIntents.size} distinct user intents`,
-        detail:   `Per-query intent classification (Phase 16.0.5) found ${distinctIntents.size} distinct intents within this cluster: ${intentSummary}.\n\nExamples: ${sample}.\n\nThis is over-aggregation by intent, not just by token overlap — queries with different user goals end up in the same cluster because their words happen to overlap. Each intent typically wants a different page type (informational → guide; commercial → comparison; transactional → pricing/signup). A single hub cannot serve all of them.`,
+        detail:   `Per-query intent classification found ${distinctIntents.size} distinct intents within this cluster: ${intentSummary}.\n\nExamples: ${sample}.\n\nThis is over-aggregation by intent, not just by token overlap — queries with different user goals end up in the same cluster because their words happen to overlap. Each intent typically wants a different page type (informational → guide; commercial → comparison; transactional → pricing/signup). A single hub cannot serve all of them.`,
         sources_used: ['gsc_queries', 'llm_naming'],
         confidence_score: 80,
       });
@@ -2272,7 +2272,7 @@ function renderClusterMapReport(opts: {
   lines.push('');
   lines.push('**How `partial_losing` is detected:** Cluster has a hub AND decent average position, BUT 3+ competitor domains were identified for the cluster AND your average position isn\'t top-3. This means you\'re technically covered but losing the cluster competitively. Worth surfacing because it\'s a strategic decision point: invest more here, or pivot to gap clusters where you can dominate.');
   lines.push('');
-  lines.push('**Phase 16.0.4 — Senior DMS quality checks (2026-05-24):**');
+  lines.push('**Phase 16.0.4 — Quality checks added 2026-05-24:**');
   lines.push('');
   lines.push('- **Campaign keyword position banner:** scans cluster queries for the campaign keyword (exact > full > partial match) and surfaces its ranking position as the lead finding. Severity by rank: 1-3 green, 4-20 amber, 21-50 red, >50 red-critical, absent red.');
   lines.push('- **Hub alignment check:** verifies the inferred hub URL slug carries the campaign keyword tokens. A hub URL that ranks for adjacent terms but does not contain the keyword cannot be trusted as a real hub.');
@@ -2280,10 +2280,10 @@ function renderClusterMapReport(opts: {
   lines.push('- **Cluster cohesion:** position spread (max − min) within a cluster. Spread > 20 ranks flags over-aggregation — different SERPs / different intents grouped together because their tokens overlapped.');
   lines.push('- **Thin-cluster honesty:** clusters with <5 queries OR <500 impressions are marked thin and have their confidence capped at 60. The recommendation is treated as directional, not definitive.');
   lines.push('');
-  lines.push('**Phase 16.0.5 — Senior DMS uplift batch 2 (2026-05-24 PM):**');
+  lines.push('**Phase 16.0.5 — Strategic intelligence layer added 2026-05-24:**');
   lines.push('');
   lines.push('- **Per-query intent classification:** one batched LLM call classifies each GSC query as informational / commercial / navigational / transactional / branded / unknown. Combined with a heuristic branded-detector that catches queries containing project-domain tokens. Surfaces in the per-cluster query table and powers two new findings: (a) intent-diversity (3+ distinct intents in one cluster = over-aggregation by intent, not just by token overlap) and (b) branded-query contamination (branded queries that should not influence organic strategy decisions).');
-  lines.push('- **Strategic Recommendation section:** when the campaign keyword has no measurable ranking OR ranks below position 20 AND a better non-branded alternative exists in GSC data, the report surfaces a decision-tree recommendation at the TOP (above findings): pivot the campaign keyword to one the site already ranks for, OR build a dedicated new landing page. Branded queries are excluded from pivot candidates. The Senior DMS bar: lead with the strategic call, not the diagnostic findings.');
+  lines.push('- **Strategic Recommendation section:** when the campaign keyword has no measurable ranking OR ranks below position 20 AND a better non-branded alternative exists in GSC data, the report surfaces a decision-tree recommendation at the TOP (above findings): pivot the campaign keyword to one the site already ranks for, OR build a dedicated new landing page. Branded queries are excluded from pivot candidates. The principle: lead with the strategic call, not the diagnostic findings.');
   lines.push('');
   lines.push('**Not yet covered:** Real SERP fetch per cluster (currently competitor_owners is LLM-cited, not measured), semantic similarity via embeddings, project-wide cluster maps across campaigns, automatic content-roadmap generation as kanban tasks, visual graph rendering, hub-candidate ranking with explanation (show top-3 URL candidates with token-match scores instead of single hub).');
 

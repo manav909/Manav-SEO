@@ -913,14 +913,26 @@ function firstParagraphText(html: string, charLimit = 800): string {
 ═══════════════════════════════════════════════════════════════════ */
 
 const STOPWORDS_FOR_TOPIC_INFERENCE = new Set([
-  'the', 'and', 'for', 'with', 'this', 'that', 'comprehensive', 'guide',
-  'best', 'top', 'free', 'how', 'what', 'why', 'when', 'where', 'who',
-  'your', 'about', 'from', 'into', 'over', 'under', 'plus', 'minus',
-  'new', 'old', 'good', 'bad', 'big', 'small', 'all', 'any', 'some',
-  'will', 'can', 'should', 'would', 'could', 'must', 'may', 'might',
-  '2020', '2021', '2022', '2023', '2024', '2025', '2026', '2027',
+  /* common English stopwords */
+  'the', 'and', 'for', 'with', 'this', 'that', 'than', 'then', 'there', 'their', 'they', 'them',
+  'will', 'can', 'should', 'would', 'could', 'must', 'may', 'might', 'have', 'has', 'had', 'been',
+  'into', 'over', 'under', 'plus', 'minus', 'are', 'was', 'were', 'all', 'any', 'some', 'each',
+  'how', 'what', 'why', 'when', 'where', 'who', 'which', 'your', 'about', 'from',
+  /* generic web/marketing chrome — these are never meaningful keyword targets,
+     and treating them as topic tokens leads to hallucinated keyword
+     suggestions like "welcome site" or "home page" */
+  'welcome', 'home', 'page', 'site', 'sites', 'website', 'websites', 'webpage',
+  'contact', 'about', 'click', 'here', 'read', 'more', 'less', 'learn', 'started',
+  'our', 'us', 'we', 'you', 'they', 'them',
+  /* generic article/tutorial fillers — useful in titles, useless as keyword targets */
+  'comprehensive', 'guide', 'guides', 'tutorial', 'tutorials',
+  'step', 'steps', 'instruction', 'instructions', 'method', 'methods',
+  'best', 'top', 'free', 'new', 'old', 'good', 'bad', 'big', 'small', 'right', 'left',
   'tips', 'tricks', 'review', 'reviews', 'complete', 'ultimate', 'simple',
-  'easy', 'quick', 'introduction', 'overview', 'beginner',
+  'easy', 'quick', 'introduction', 'overview', 'beginner', 'beginners',
+  'reasons', 'ways', 'examples', 'example',
+  /* years — never as topic */
+  '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026', '2027', '2028',
 ]);
 
 /** Compute the fraction of substantive (non-stopword) tokens in `text`
@@ -948,61 +960,78 @@ function topicalOverlapFraction(text: string, reference: string): number {
 /** Infer what topic the page is ACTUALLY built for, based on title + H1
  *  tokens (excluding stopwords and the campaign keyword's own tokens).
  *  Used when the keyword presence check fails — the audit should be able
- *  to say "the page is built for X, not the campaign keyword". */
+ *  to say "the page is built for X, not the campaign keyword".
+ *
+ *  Generality discipline: only fire when we can extract a HIGH-CONFIDENCE
+ *  phrase. The picked phrase must (a) come from a consecutive run of >=2
+ *  phrase-eligible title tokens, AND (b) the run must contain the FIRST
+ *  title-significant token. Reason: in well-formed titles, the topic
+ *  appears at the START — qualifiers, audience descriptors, and discourse
+ *  markers ("for first-time visitors", "you need to know") appear at
+ *  the end. The gate suppresses the worst hallucination mode where the
+ *  longest run is grammatically downstream of the actual topic.
+ *
+ *  When in doubt, return empty — better to make no call than the wrong call.
+ */
 function inferActualPageTopic(title: string, h1: string, campaignKw: string): {
   significant_tokens: string[];
   suggested_keyword_phrase: string;
 } {
   const kwTokens = new Set(normalizeForKeywordMatch(campaignKw).split(' '));
-
-  /* 1. Collect significant tokens (for the displayed list + as anchors for
-        phrase selection): non-stopword, non-numeric, NOT a campaign-kw token. */
-  const allTokens = normalizeForKeywordMatch(title + ' ' + h1).split(' ').filter(Boolean);
-  const seen = new Set<string>();
-  const significant: string[] = [];
-  for (const t of allTokens) {
-    if (t.length < 3) continue;
-    if (STOPWORDS_FOR_TOPIC_INFERENCE.has(t)) continue;
-    if (/^\d+$/.test(t)) continue;
-    let matchesKw = false;
-    for (const kt of kwTokens) {
-      if (tokenMatchesWord(t, kt) || tokenMatchesWord(kt, t)) { matchesKw = true; break; }
-    }
-    if (matchesKw) continue;
-    if (seen.has(t)) continue;
-    seen.add(t);
-    significant.push(t);
-    if (significant.length >= 6) break;
-  }
-
-  /* 2. Build the suggested phrase. Goal: capture the longest consecutive run
-        of non-stopword title tokens that contains AT LEAST ONE significant
-        token. Allow kw-overlapping tokens INSIDE the phrase (e.g. "Microsoft
-        Power Apps Pricing" should survive even though "Apps" overlaps with
-        the campaign keyword "app maker") — kw tokens still appear as natural
-        product-name fragments. Cap at 4 words for readability. */
-  const titleWords = normalizeForKeywordMatch(title).split(' ');
   const isPhraseEligible = (w: string) =>
     w.length >= 3 && !STOPWORDS_FOR_TOPIC_INFERENCE.has(w) && !/^\d+$/.test(w);
-  let bestPhrase = '';
-  let i = 0;
-  while (i < titleWords.length) {
-    if (!isPhraseEligible(titleWords[i])) { i++; continue; }
-    let j = i;
-    while (j < titleWords.length && isPhraseEligible(titleWords[j])) j++;
-    /* titleWords[i..j) is a run of phrase-eligible tokens */
-    const run = titleWords.slice(i, j);
-    const containsAnchor = run.some(w => significant.includes(w));
-    if (containsAnchor && run.length >= 2) {
-      const candidate = run.slice(0, 4).join(' ');
-      if (candidate.split(' ').length > bestPhrase.split(' ').length) {
-        bestPhrase = candidate;
-      }
+  const matchesKwStem = (t: string): boolean => {
+    for (const kt of kwTokens) {
+      if (tokenMatchesWord(t, kt) || tokenMatchesWord(kt, t)) return true;
     }
-    i = j + 1;
+    return false;
+  };
+
+  /* Collect significant tokens (non-stopword, non-numeric, non-kw-stem).
+     Two separate lists — title-only (for the gate + phrase building) and
+     combined title+H1 (for display in the recommendation evidence). */
+  function collectSignificant(text: string): string[] {
+    const tokens = normalizeForKeywordMatch(text).split(' ').filter(Boolean);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const t of tokens) {
+      if (t.length < 3 || STOPWORDS_FOR_TOPIC_INFERENCE.has(t) || /^\d+$/.test(t)) continue;
+      if (matchesKwStem(t)) continue;
+      if (seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+    }
+    return out;
   }
-  if (!bestPhrase && significant.length > 0) bestPhrase = significant.slice(0, 2).join(' ');
-  return { significant_tokens: significant, suggested_keyword_phrase: bestPhrase };
+  const titleSignificant = collectSignificant(title);
+  const h1Significant = collectSignificant(h1);
+  /* Combined for display, capped at 6 */
+  const significant: string[] = [...titleSignificant];
+  for (const t of h1Significant) if (!significant.includes(t)) significant.push(t);
+  const significantCapped = significant.slice(0, 6);
+
+  /* Phrase building (title only). Walk runs in order; the FIRST run that
+     (a) is >=2 phrase-eligible tokens long AND (b) contains the first
+     title-significant token wins. Cap at 4 words. */
+  const titleWords = normalizeForKeywordMatch(title).split(' ');
+  const firstTitleAnchor = titleSignificant[0];
+  let suggestedPhrase = '';
+  if (firstTitleAnchor) {
+    let i = 0;
+    while (i < titleWords.length) {
+      if (!isPhraseEligible(titleWords[i])) { i++; continue; }
+      let j = i;
+      while (j < titleWords.length && isPhraseEligible(titleWords[j])) j++;
+      /* titleWords[i..j) is a consecutive run of phrase-eligible tokens */
+      const run = titleWords.slice(i, j);
+      if (run.length >= 2 && run.includes(firstTitleAnchor)) {
+        suggestedPhrase = run.slice(0, 4).join(' ');
+        break;  /* first qualifying run wins — topics appear at start of titles */
+      }
+      i = j + 1;
+    }
+  }
+  return { significant_tokens: significantCapped, suggested_keyword_phrase: suggestedPhrase };
 }
 
 /** Tracking pixels appear as <img> tags with no alt by design — they are
@@ -1162,13 +1191,13 @@ async function checkKeywordPresence(url: string, keyword: string): Promise<Findi
     const makesTheCall = firstParaOverlapWithKeyword < 0.15 && actualTopic.suggested_keyword_phrase;
 
     const recommendation = makesTheCall
-      ? `**The data says option (b): change the campaign keyword.**\n\nBased on title, H1, and first paragraph evidence, this page is built for **"${actualTopic.suggested_keyword_phrase}"** (or a close variant), NOT "${keyword}". The campaign keyword and the page's actual topic do not match.\n\n- Title indicates: ${actualTopic.significant_tokens.slice(0, 5).join(', ')}\n- First paragraph relevance to "${keyword}": ${Math.round(firstParaOverlapWithKeyword * 100)}%\n\n**Recommended action:** Change the campaign target to "${actualTopic.suggested_keyword_phrase}" or a related phrase. Verify in GSC that the new target keyword is one this URL actually ranks for.\n\n_Alternative (option a): if you specifically want to rank this URL for "${keyword}", the page needs substantial rewrite of title, H1, and opening copy. Given the existing content depth on the actual topic, this is rarely the right answer._`
+      ? `Change the campaign keyword to "${actualTopic.suggested_keyword_phrase}" (or a close variant).\n\n**Evidence from this page:**\n- Title + H1 significant tokens: ${actualTopic.significant_tokens.slice(0, 5).join(', ')}\n- First paragraph relevance to "${keyword}": ${Math.round(firstParaOverlapWithKeyword * 100)}%\n- This page is built for "${actualTopic.suggested_keyword_phrase}", not "${keyword}".\n\n**Alternative:** if "${keyword}" is strategically more valuable than this page's actual topic, rewrite the title, H1, first paragraph, and opening section to genuinely cover "${keyword}". This is a content overhaul, not an optimization tweak.`
       : `Rewrite the page title and H1 to contain "${keyword}" naturally. If "${keyword}" is genuinely off-topic for this page, the campaign keyword is wrong — recheck whether this URL is the right target.`;
 
     findings.push({
       audit_kind: 'on_page_fundamentals', severity: 'red',
       finding_title:  `Campaign keyword "${keyword}" missing from both title and H1`,
-      finding_detail: `The keyword "${keyword}" does not appear in either the page title or the H1. These are the two strongest on-page ranking signals a Senior SEO Specialist would expect to align with the campaign target.\n\nCoverage breakdown:\n${tableRows}\n\nThe page may rank for this keyword via topical relevance, but absent of explicit keyword presence in title/H1, it will plateau well below top-3.`,
+      finding_detail: `The keyword "${keyword}" does not appear in either the page title or the H1 — the two strongest on-page ranking signals. Without explicit keyword presence in title/H1, the page will plateau well below top-3 for this query, regardless of topical relevance elsewhere on the page.\n\nCoverage breakdown:\n${tableRows}`,
       recommendation,
       evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword), inferred_actual_topic: actualTopic, first_para_keyword_overlap: Number(firstParaOverlapWithKeyword.toFixed(2)) },
       data_source: 'html_fetch',
@@ -1182,13 +1211,13 @@ async function checkKeywordPresence(url: string, keyword: string): Promise<Findi
     const makesTheCall = firstParaOverlapWithKeyword < 0.15 && actualTopic.suggested_keyword_phrase;
 
     const recommendation = makesTheCall
-      ? `**The data says option (b): change the campaign keyword.**\n\nThe page contains some tokens from "${keyword}" but is clearly built for a different target. Title, H1, and first paragraph all point to **"${actualTopic.suggested_keyword_phrase}"** (or close variant) as the real subject.\n\n- Page targets (from title+H1): ${actualTopic.significant_tokens.slice(0, 5).join(', ')}\n- First paragraph relevance to "${keyword}": ${Math.round(firstParaOverlapWithKeyword * 100)}%\n\n**Recommended action:** Change the campaign target to "${actualTopic.suggested_keyword_phrase}" or a closely related phrase. Don't try to retrofit a page about [actual topic] to rank for ["${keyword}"] — the SERPs for these queries are different.\n\n_Alternative (option a): rewrite title + H1 + first paragraph + at least the opening section to genuinely cover "${keyword}". This is a content overhaul, not a tweak. Recommended only if "${keyword}" is strategically more valuable than the current target._`
-      : `Two options: (a) Rewrite the title and H1 to carry the full "${keyword}" phrase naturally — if it fits the page intent. (b) Change the campaign keyword to one that already matches the page's actual content. Don't try to rank a page for a keyword its title/H1 doesn't carry.`;
+      ? `Change the campaign keyword to "${actualTopic.suggested_keyword_phrase}" (or a close variant).\n\n**Evidence from this page:**\n- Title + H1 significant tokens: ${actualTopic.significant_tokens.slice(0, 5).join(', ')}\n- First paragraph relevance to "${keyword}": ${Math.round(firstParaOverlapWithKeyword * 100)}%\n- The SERPs for "${keyword}" and "${actualTopic.suggested_keyword_phrase}" are different queries with different competitive sets — this page cannot serve both well.\n\n**Alternative:** if "${keyword}" is strategically more valuable than this page's actual topic, rewrite the title, H1, first paragraph, and opening section to genuinely cover "${keyword}". This is a content overhaul, not a tweak.`
+      : `Two paths exist: rewrite the title and H1 to carry the full "${keyword}" phrase naturally if it fits the page intent, OR change the campaign keyword to one that already matches the page's actual content. Don't try to rank a page for a keyword its title/H1 doesn't carry.`;
 
     findings.push({
       audit_kind: 'on_page_fundamentals', severity: 'red',
       finding_title:  `Campaign keyword "${keyword}" only partially present in both title and H1 — significant alignment gap`,
-      finding_detail: `Neither the title nor the H1 carries the full keyword phrase. Both have **partial** token coverage only — some tokens of "${keyword}" appear, others are absent.\n\nCoverage breakdown:\n${tableRows}\n\nThe page may be optimized for a related but distinct keyword — not the campaign target. A Senior SEO Specialist would call this a content-strategy mismatch: either the page needs rewriting, or the campaign keyword needs reassignment.`,
+      finding_detail: `Neither the title nor the H1 carries the full keyword phrase. Both have partial token coverage only — some tokens of "${keyword}" appear, others are absent.\n\nCoverage breakdown:\n${tableRows}\n\nThis is a content-strategy mismatch: the page is built for a related but distinct keyword, not the campaign target. Either the page needs rewriting, or the campaign keyword needs reassignment.`,
       recommendation,
       evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword), missing_tokens_in_title: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(title))), missing_tokens_in_h1: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(h1))), inferred_actual_topic: actualTopic, first_para_keyword_overlap: Number(firstParaOverlapWithKeyword.toFixed(2)) },
       data_source: 'html_fetch',
