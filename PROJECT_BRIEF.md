@@ -20,7 +20,65 @@
 
 ---
 
-## 2. Architecture — non-negotiables
+## 1.5. THE BACKBONE ROLE — Senior Digital Marketing Specialist (added 2026-05-24)
+
+**This section overrides every other quality consideration in the brief. Read this on every session start.**
+
+SEO SEASON is a commercial digital-marketing platform. Clients pay real money for results. Every output the product generates — pillar reports, audits, persona briefs, cannibalization findings, strategy plans, anything client-facing or operator-facing — must survive the lens of a Senior Digital Marketing Specialist who could be challenged by any expert in the field and would not flinch.
+
+This role is the **backbone quality gate** for the entire product. It takes precedence over speed, scope minimisation, or "good enough."
+
+### Hard rules (non-negotiable)
+
+1. **No assumptions. No synthesis dressed as fact.** If a number, claim, or finding can't be traced to authentic data, it doesn't ship. Period.
+
+2. **Fill data gaps with authentic tools — never with model inference.** When GSC has the answer, use GSC. When GA4 has it, use GA4. When a live crawl is the right source, run the crawl. When SerpAPI or another integration is required, integrate it. *Never* patch a data gap with a Claude best-guess.
+
+3. **Every report and engine output must be source-traceable.** Every claim → cited source → confidence level. The canonical pattern lives in `intelligenceFabric.ts`:
+   - `manual_user` = 98 · `user_comment` = 98 · `gsc_live` = 95 · `ga_live` = 95
+   - `audit_run` = 88 · `crawl_jina` = 85 · `algorithm_intel` = 82 · `brain_learning` = 80
+   - `intelligence_output` = 80 · `claude_inference` = 65 · `industry_pattern` = 45 · `unknown` = 30
+   - All new code that emits data follows this pattern.
+
+4. **PRE-DELETE CHECK before removing any feature, surface, or capability.** Before deleting anything, walk through:
+   - Does this help the client?
+   - Does this help an analyst review the work?
+   - Is this necessary for delivering results?
+   - Could a Senior DMS want to look at this?
+   - If ANY answer is yes, **do not delete.** Annotate it, defer it, mark it `.disabled` with a clear restoration path — but don't kill it.
+
+5. **Complete automation, not partial.** The product runs itself: daily cron pulls, recomputes, refreshes overviews, surfaces findings. Both Manav and the client can monitor every step end-to-end. No manual rituals to "kick" the system.
+
+6. **Hard fact-check on every output.** If a metric is uncertain or sparse, the output says so loudly. "I don't have enough data to say X" beats "Here's my best guess at X" every single time.
+
+7. **No overlooks.** Every detail covered. Every flag raised. Every edge case documented. Step-by-step automatic with authentic data — no synthesis hiding gaps.
+
+### What "verified by Senior DMS" means in practice
+
+Before claiming any backlog item done, run the work through these questions:
+- Could a senior practitioner challenge any specific claim in the output? If yes, fix or remove the claim.
+- Is every numeric value source-traced (table + timestamp, GSC pull, crawl ID, etc.)?
+- If the data is sparse, does the output acknowledge that sparsity rather than smooth over it?
+- Does the output give the client/operator a concrete next action, not vague hedging?
+- Would I pay money for this output if I were the client?
+
+### Commercial context (do not forget)
+
+Real money is on this product. Clients are paying for honest, defensible, result-oriented work. Trial-to-paid conversion depends entirely on the quality of what they see. Hallucinations or "AI assumptions" in client-facing output would damage trust irreversibly. **Every shortcut that "would be faster" but reduces traceability is wrong.**
+
+### Integration leverage targets (use these before any inference)
+
+| Source | What it answers | When to leverage |
+|---|---|---|
+| **GSC** | rankings, queries, pages, impressions, CTR, position over time, query×page splits | every keyword/page intelligence claim |
+| **GA4** | sessions, users, conversions, traffic source mix, device, geo, engagement | every traffic/conversion claim |
+| **Live crawl (Jina)** | H1, meta, schema, on-page facts | every "what does this page actually contain" question |
+| **algorithm-intel** | algorithm update tracking, scoring shifts | every "what changed" question |
+| **brain_learnings** | cross-project pattern accumulation | precedent / "have we seen this before" questions |
+| **SerpAPI** (Block 4 plan) | competitive radar, SERP feature analysis | competitive claims |
+| **Manav comments / user_comment** | strategic intent, business context, brand voice | qualitative grounding |
+
+When a missing integration would unlock honest answers (instead of synthesised ones), surface it as a backlog item — don't paper over with inference.
 
 ### 2.1 API layer (HARD LIMIT 12 functions, never add new `api/*.ts`)
 
@@ -370,18 +428,86 @@ Placeholders are flagged with `◆ TBD` comments inline so Manav can find/edit i
 
 ## 14. Open backlog — prioritized (2026-05-24, verified against live repo)
 
-### P0 — the locked-in next big work (carried from 2026-05-23 backlog triage)
+### P0 — the locked-in next big work (carried from 2026-05-23 backlog triage + reinforced by 2026-05-24 Senior DMS audit)
 
-**Pillar quality + hallucination guards.** Five pillar engines exist in `api/lib/`:
-- `seo-cluster-map.ts`
-- `seo-internal-linking.ts`
-- `seo-off-page.ts`
-- `seo-monitoring.ts`
-- `seo-technical-audit.ts`
+**Pillar quality + hallucination guards — now with audit evidence.**
 
-(Plus `seo-research` work distributed across other files.)
+The 5 pillar engines emit findings *without source tracing*. Audit run 2026-05-24:
 
-Each needs: source-required gates, partial-data acknowledgments, "I don't have enough data to say X" patterns where appropriate, hallucination guards before client-facing output. **One pillar per session**, validated against a real project before shipping. Open question for the start of pillar work: **which pillar does Manav read most often?** That's the one to attack first.
+| Engine | `source()` calls | `SourceUsage` refs | `intelligenceFabric` imports |
+|---|---|---|---|
+| `seo-cluster-map.ts` | 0 | 0 | 0 |
+| `seo-internal-linking.ts` | 0 | 0 | 0 |
+| `seo-off-page.ts` | 0 | 0 | 0 |
+| `seo-monitoring.ts` | 0 | 0 | 0 |
+| `seo-technical-audit.ts` | 0 | 0 | 0 |
+
+**This is the single biggest Senior-DMS risk in the codebase.** The pillar reports are the actual client deliverables, and they ship without the source-confidence model the rest of the brain uses. Translation: a senior practitioner reading a pillar report has no way to distinguish "based on 18,400 GSC clicks across 90 days" from "Claude's best guess given a sparse data room."
+
+**Template exists:** `api/intelligence.ts` lines 522-528 is the canonical pattern — every Claude reasoning input is wrapped in `source(type, { label, weight, count })` and `computeWeightedConfidence(sources)` produces the final score. Apply the same wrap to every pillar engine output.
+
+**Per-pillar work (one per session):**
+
+1. Identify every output the engine produces (findings, scores, recommendations, claims).
+2. For each output, trace the inputs (GSC tables, GA4 fields, audit data, brain learnings, Claude inference).
+3. Wrap each input in `source(type, { label, weight, count })`.
+4. Compute `weightedConfidence` and attach to every emitted finding.
+5. If a finding rests primarily on `claude_inference` (65) or `industry_pattern` (45) with no authentic anchor, the finding gets a "data sparse — connect X to strengthen this" surface instead of a confident claim.
+6. Add a hallucination guard: outputs below a confidence threshold (e.g. 60) get the "I don't have enough data to say X" treatment.
+
+Open question for the start of pillar work: **which pillar does Manav read most often?** That's the one to attack first. (Default for review: Senior SEO + Client.)
+
+### P0 — DMS-value recovery (from pre-delete audit 2026-05-24)
+
+**Revive the 4 market-researcher actions** — they are exactly the kind of client-facing DMS-grade outputs the platform is built to deliver:
+- `build_persona` → deep AI buyer persona JSON (analyst reviews with clients)
+- `suggest_goals` → phased goals + KPIs JSON (client-facing deliverable)
+- `research_market` → streaming market intelligence report (authentic-data output)
+- `cross_project_patterns` → mine `brain_learnings` for cross-project industry wisdom (institutional IQ)
+
+The standalone Lambda at `api/market-researcher.ts.disabled` (1,369 LOC) is well-implemented with inlined helpers (the previous FUNCTION_INVOCATION_FAILED on cold start was solved by inlining `intelligenceFabric` mirror). Cannot be reactivated as a separate Lambda (12-function ceiling). **Right path**: fold its 4 actions into `task-engine.ts` as additional action handlers, reading inputs from the request body using the validation contracts preserved in `runtimeCompiler.ts` (now restored as of 2026-05-24).
+
+### P0 — Synthesis audit (continuous discipline, added 2026-05-24)
+
+Walk the codebase periodically and flag any place where the product emits a number, claim, or finding that is *not* traceable to an authentic source. Specifically:
+- AI-only outputs without `intelligenceFabric` `source()` annotation
+- Hardcoded fallback values that look like "best guesses" being passed off as data
+- Empty arrays / placeholder shapes that render to clients as if they were "no findings" when in fact "data not yet pulled"
+- Defaults that fill in for missing GSC/GA4 data without saying so
+
+Each find → either replace with an authentic-data path OR add an explicit "data not available — connect X" surface. **Never** smooth over.
+
+#### First audit pass — 2026-05-24 findings
+
+**A. IntroAnimation `LiveCount` "SEARCHES SINCE MIDNIGHT" (medium severity, brand-facing)**
+`src/components/IntroAnimation.tsx:20-23, 347-351`. Counter formula `4.2B + (seconds since midnight) × 129,629` plus random jitter ±300/tick. Anchored to a public Google search-volume estimate but rendered with a "RIGHT NOW" subtitle and Math.random() jitter — framed as a live metric. **Synthesis-as-fact on the front door of the product.** Three resolution options for Manav to pick:
+1. Replace the metric with an authentic SEO SEASON figure (e.g. live count of cron ticks since deploy, or projects pulled today)
+2. Reframe the label honestly — "GLOBAL SEARCH VOLUME · INDUSTRY ESTIMATE" with a small "Public figures · Google" attribution
+3. Remove the counter; replace with non-numeric atmospheric element
+
+**B. Pillar engines emit findings without source tracing (P0, see above table)** — the biggest single DMS risk. Already broken out as the locked-in next big work.
+
+**C. Industry-default discipline is inconsistent across the codebase**
+- ✅ Good pattern: `MarketPersonaBriefing.tsx:306` — `value: industry || "MISSING"` with `ok: !!industry` flag surfacing the gap honestly to the user
+- ✅ Good pattern: `market-researcher.ts.disabled:236` — `effectiveIndustry = industry || "the industry (not specified — you must state this assumption clearly)"` — flags the gap to the LLM
+- ❌ Anti-pattern in 6+ places: `industry || ""` silently degrades to empty string and the engine proceeds as if nothing is missing (`api/task-engine.ts:1236`, `api/lib/context.ts:217`, `api/lib/pm-engine.ts:465`, `api/lib/brand-studio-investor-bundle.ts:201`, `api/lib/mission-control.ts:215`, `src/lib/theme-engine.ts:516`)
+
+Per-pillar work above should also adopt the "MISSING with ok flag" pattern when industry/persona/baseline data is absent.
+
+**D. Hardcoded confidence values worth a deeper look**
+- `api/lib/season-llm-web.ts:166` — `confidence: 0.55` (purpose unclear; needs context audit)
+- `api/lib/season-pipeline-routes.ts:203` — `confidence: 0.95` (likely AI-emitted but not source-traced — verify)
+- `api/lib/pm-rules.ts:440` — `confidence: 50` (part of a default tone object, not a data confidence — fine)
+- `api/lib/classify.ts` confidences — gate-driven, legitimate
+
+Walk these on the next pass. If any are AI inferences shown to client as authentic confidence, route through `intelligenceFabric`.
+
+**E. Coverage gap — `intelligenceFabric` source-confidence pattern adoption**
+Files that import the pattern: **1 frontend (`IntelligenceMemory.tsx`)**.
+Files that call `source(...)`: **2 (`api/intelligence.ts`, `api/market-researcher.ts.disabled`)**.
+Out of 95 engine files in `api/lib/`, only the Brain-chat intelligence handler actively source-tags its inputs. The discipline is documented but barely deployed. The pillar work in P0 above starts closing this gap; a separate continuous discipline is to apply it elsewhere as code is touched.
+
+---
 
 ### P1 — quick wins (each takes <2 hours, no scope creep)
 
@@ -427,7 +553,7 @@ Each needs: source-required gates, partial-data acknowledgments, "I don't have e
 | Phase 21 Blocks 2.13–2.22 (Pick engine, widget gallery, ticker, layout polish, etc.) | Live at commit `467ebcf` lineage |
 | Manifesto full localization — 287 keys × 5 languages, Devanagari grapheme fix, html.lang + tab title sync, i18n parity guard | Live at commit `8d4e066` |
 | AIConcierge hidden on `/manifesto` | 2026-05-23 |
-| **`/api/market-researcher` dead reference cleanup** — STATIC_RULES block removed from `runtimeCompiler.ts:57`, dead-file mention removed from error message at line 188, doc-comment in `intelligenceFabric.ts:15` updated to flag the function as `.disabled` so future devs aren't confused. The `.ts.disabled` file itself untouched (re-enable later if needed). Build green, TS=26, no /api/market-researcher in bundle. | 2026-05-24 |
+| **`/api/market-researcher` references — first attempt then corrected** — initially removed STATIC_RULES + error-message references on 2026-05-24 morning as "dead config cleanup." That was wrong: the rules document the validation contract for 4 DMS-grade actions (`build_persona`, `suggest_goals`, `research_market`, `cross_project_patterns`) — exactly the kind of client-facing analyst output the platform is built to deliver. The function is `.disabled` for past technical reasons (FUNCTION_INVOCATION_FAILED on cold start, since fixed via inlined helpers) plus the 12-function ceiling — not because the capability is unwanted. **Restored 2026-05-24 afternoon** with a clear deferred-status comment. The error-message generification at line 188 stays (the wording works for any handler now). Added P0 backlog item to revive the 4 actions by folding into `task-engine.ts`. Lesson logged in §1.5 pre-delete rule. | 2026-05-24 |
 | **Living Overview cron** — verified wired inside `run_scheduled_verifications` at task-engine.ts:2558-2566, runs alongside 6 other ticks (PM lifecycle, GSC/GA4 pull, rule engine, brand-studio monitors, forecast sweep, verification queue) at 6am UTC daily. `livingOverviewCronTick` in `seo-campaign-engine.ts:1358` skips fresh campaigns (no LLM call), hard-cap 50 campaigns, ~$0.50/day typical. URL fit is part of the in-flow campaign-build analysis (`seo-url-targeting.ts:53` UrlFitAnalysis used during `seo-campaign-grouping.ts:896`), not a separate nightly. The "Living Overview cron + URL fit nightly" item from the old backlog was already done — brief was stale. | 2026-05-24 |
 | **`create_strategy_stub` rename to `create_strategy_navigate`** — the alias at `registry.ts:96` and the registered action at line 705 were named "stub" but the implementation is intentional: it navigates the LLM-emitted `create_strategy` intent to `/planning` where strategies are actually built. Renamed for clarity + comment block explaining the navigation-only pattern. No behavior change. | 2026-05-24 |
 | **Cannibalization detection wired end-to-end** — `detectCannibalization` in `pm-analytics-intel.ts:963` was implemented but never called; the orchestrator at line 1070 was returning `[]` with a TODO. Wired: (1) `pm-gsc.ts` now fetches `["query","page"]` dimension pair (rowLimit 200) in the parallel cron pull, (2) shapes + persists as `gsc_query_page_pairs` in `project_knowledge`, (3) `pm-analytics-intel-orchestrator.ts` reads the new field, (4) `buildAnalyticsIntelligence` accepts `gscQueryPagePairs?` and calls `detectCannibalization` when data is present. Backward compatible — projects without the new field flow through as `[]`. Cost: 1 additional GSC API call per project per cron run. Thresholds in the engine (top ≥5 clicks, second ≥2, position spread ≤10) keep false positives low. First findings will appear after the next 6am UTC cron tick. | 2026-05-24 |

@@ -54,6 +54,23 @@ interface ValidationRule {
 }
 
 const STATIC_RULES: Record<string, Record<string, ValidationRule>> = {
+  /* /api/market-researcher is currently .disabled (the function lives at
+     api/market-researcher.ts.disabled, 1369 LOC; previously hit
+     FUNCTION_INVOCATION_FAILED on cold start, fixed in-file via inlined
+     helpers but the 12-function ceiling prevents reactivating it as a
+     standalone Lambda). These rules document the intended validation
+     contract for the four DMS-grade actions it exposes — preserve them
+     here so when the actions get folded into task-engine.ts (backlog
+     item) or the function is otherwise revived, the contract is intact.
+     PRE-DELETE rule: these support real client-facing capability
+     (buyer personas, goal plans, market intelligence, cross-project
+     pattern mining) — do not remove. */
+  "/api/market-researcher": {
+    build_persona:         { requiredFields: ["projectId"], notes: "projectId is mandatory — persona is project-specific" },
+    suggest_goals:         { requiredFields: ["projectId"], notes: "projectId required to build goal plan for this project" },
+    cross_project_patterns:{ requiredFields: ["industry"],  notes: "industry string required for pattern synthesis" },
+    research_market:       { requiredFields: ["projectId"], notes: "projectId required for market research context" },
+  },
   "/api/algorithm-intel": {
     fetch_topic:   { requiredFields: ["topicId"],   notes: "topicId is required to fetch specific algorithm intel" },
     save_intel:    { requiredFields: ["title"],      notes: "title is required when saving algorithm intel" },
