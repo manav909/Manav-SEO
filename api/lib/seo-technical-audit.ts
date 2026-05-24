@@ -23,6 +23,12 @@ import { db } from "./db.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
 import { fetchSerpFeatures, summarizeSerpFeatures } from "./serpapi.js";
 
+/* Phase 16.4 — ANTHROPIC_API_KEY needed for diffuse-intent classifier
+   in checkDiffuseIntentSerp. Single LLM call per audit run when SerpAPI
+   has top-10 data; ~$0.0003 per call at Haiku pricing. */
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const ANTHROPIC_MODEL   = "claude-haiku-4-5-20251001";
+
 interface TargetResolution {
   url:    string;
   source: 'manual' | 'gsc_top_page' | 'strategy_plan';
@@ -298,6 +304,15 @@ export async function runTechnicalAudit(opts: {
       checkQueryDistribution(target.url, c.project_id, c.keyword),
       /* Phase 15.3 — Senior DMS uplift batch 2 (2026-05-24 PM) */
       checkFirstParagraphTopicality(target.url),
+      /* Phase 16.4 — Tier 1 SerpAPI leverage (2026-05-24 evening).
+         All three call fetchSerpFeatures internally; second/third call
+         within an audit hits cache, so no extra SerpAPI spend. The
+         diffuse-intent check makes 1 LLM call (Haiku, ~$0.0003) when it
+         fires. competitive_content_benchmark fetches top-10 URLs in
+         parallel (best-effort, fetch failures tolerated). */
+      checkHeadingHierarchyVsPaa(target.url, c.project_id, c.keyword),
+      checkDiffuseIntentSerp(c.project_id, c.keyword),
+      checkCompetitiveContentBenchmark(target.url, c.project_id, c.keyword),
     ]);
 
     const findings: Finding[] = [];
@@ -307,7 +322,7 @@ export async function runTechnicalAudit(opts: {
       if (r.status === 'fulfilled') {
         findings.push(...r.value);
       } else {
-        const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution','first_para_topicality'][i];
+        const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution','first_para_topicality','heading_hierarchy_vs_paa','diffuse_intent_serp','competitive_content_benchmark'][i];
         failedChecks.push(checkName);
       }
     }
@@ -1783,7 +1798,7 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
       audit_kind: 'core_web_vitals', severity: 'amber',
       finding_title:  'PageSpeed Insights API failed for both strategies',
       finding_detail: `mobile: ${mobile.error}\ndesktop: ${desktop.error}`,
-      recommendation: apiKey ? `Verify your PSI API key is valid.` : `Add a PageSpeed Insights API key in Data Room → Integrations for more reliable CWV data. PSI without a key is heavily rate-limited.`,
+      recommendation: apiKey ? `Verify your PSI API key is valid.` : `Get a free PSI key at https://developers.google.com/speed/docs/insights/v5/get-started, then add it to the database: \`INSERT INTO project_integrations (project_id, provider, api_key, status) VALUES ('<project_id>', 'pagespeed', '<key>', 'connected');\`. _(A platform-wide env-var fallback for PSI — matching the SerpAPI pattern — is on the backlog so a single key serves all projects.)_`,
       data_source: 'psi',
     });
     return findings;
@@ -1837,7 +1852,7 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
       audit_kind: 'core_web_vitals', severity: 'info',
       finding_title:  'No PageSpeed Insights API key configured',
       finding_detail: 'CWV checks ran without an API key. PSI rate-limits keyless requests; future audits may fail or return cached data.',
-      recommendation: 'Get a free PSI key at https://developers.google.com/speed/docs/insights/v5/get-started and add it under Data Room → Integrations → PageSpeed Insights.',
+      recommendation: 'Get a free PSI key at https://developers.google.com/speed/docs/insights/v5/get-started, then INSERT it into the project_integrations table with provider=pagespeed. (A SERPAPI-style env-var fallback is on the backlog so one key serves all projects.)',
       data_source: 'psi',
     });
   }
@@ -1980,6 +1995,408 @@ async function checkSchemaMarkup(url: string): Promise<Finding[]> {
     });
   }
 
+  return findings;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Phase 16.4 CHECKS (2026-05-24 evening) — Tier 1 SerpAPI leverage:
+   three new findings that compound the SerpAPI data we already
+   capture, no additional API spend (SerpAPI cache covers the
+   second/third call within a single audit).
+
+   • checkHeadingHierarchyVsPaa  — extract page H2/H3, compare
+     against PAA questions, flag content gaps with section-heading
+     suggestions for each unanswered question.
+   • checkDiffuseIntentSerp      — LLM-classify top-10 domains
+     into 1-3 word intent categories; flag when 3+ distinct
+     categories appear (signal that the keyword has ambiguous
+     intent and SEO economics are harder).
+   • checkCompetitiveContentBenchmark — fetch top-10 URLs in
+     parallel, derive median word/H2 counts, compare audited
+     page's metrics to the SERP-grade benchmark.
+   ════════════════════════════════════════════════════════════ */
+
+/** Extract H2 and H3 headings from HTML. Strips inner tags and
+ *  decodes entities so headings render cleanly downstream. */
+function extractHeadings(html: string): { h2: string[]; h3: string[] } {
+  const h2Matches = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/gi) || [];
+  const h3Matches = html.match(/<h3[^>]*>([\s\S]*?)<\/h3>/gi) || [];
+  const h2 = h2Matches
+    .map(m => decodeHtmlEntities(m.replace(/<[^>]+>/g, '').trim()))
+    .filter(t => t.length > 0 && t.length < 200);
+  const h3 = h3Matches
+    .map(m => decodeHtmlEntities(m.replace(/<[^>]+>/g, '').trim()))
+    .filter(t => t.length > 0 && t.length < 200);
+  return { h2, h3 };
+}
+
+/** Normalize a string for token-overlap comparison. */
+function tokensFor(s: string): Set<string> {
+  return new Set(
+    s.toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, ' ')
+      .split(/\s+/)
+      .filter(t => t.length >= 3 && !STOPWORDS_FOR_HEADING_MATCH.has(t))
+  );
+}
+
+const STOPWORDS_FOR_HEADING_MATCH = new Set([
+  'the','and','for','what','how','can','you','your','our','with','from','that','this',
+  'are','was','were','have','has','will','its','into','about','any','all','one','two',
+  'when','where','why','who','which','than','then','more','most','some','some','same',
+]);
+
+/** Compute whether a PAA question is "answered" by any existing heading.
+ *  Threshold: at least 50% of the PAA question's content tokens appear
+ *  in the heading. Returns the matched heading text or null. */
+function findMatchingHeading(paaQuestion: string, headings: string[]): string | null {
+  const paaTokens = tokensFor(paaQuestion);
+  if (paaTokens.size === 0) return null;
+  for (const h of headings) {
+    const hTokens = tokensFor(h);
+    if (hTokens.size === 0) continue;
+    let matched = 0;
+    for (const t of paaTokens) if (hTokens.has(t)) matched++;
+    if (matched / paaTokens.size >= 0.5) return h;
+  }
+  return null;
+}
+
+/** Phase 16.4 — Heading-hierarchy vs PAA content-gap analysis.
+ *  When SerpAPI returned PAA questions, check whether the audited page
+ *  has H2/H3 sections that answer each one. Unanswered questions are
+ *  high-leverage content gaps — adding H2 sections that answer them
+ *  verbatim is one of the strongest tactics for AI Overview citation
+ *  AND PAA box appearance.
+ *
+ *  Fires only when SerpAPI key is configured AND ≥1 PAA question is
+ *  present. Always produces an Info-or-Critical finding (never blocks). */
+async function checkHeadingHierarchyVsPaa(
+  url: string,
+  projectId: string,
+  campaignKeyword: string,
+): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  if (!campaignKeyword || !campaignKeyword.trim()) return findings;
+  const serp = await fetchSerpFeatures(campaignKeyword, projectId);
+  if (!serp || !Array.isArray(serp.paa_questions) || serp.paa_questions.length === 0) {
+    return findings;
+  }
+  const r = await fetchWithTimeout(url, 12000);
+  if (!r.ok || !r.html) return findings;
+  const { h2, h3 } = extractHeadings(r.html);
+  const allHeadings = [...h2, ...h3];
+
+  const answered:    { paa: string; heading: string }[] = [];
+  const unanswered:  string[] = [];
+  for (const paa of serp.paa_questions) {
+    const match = findMatchingHeading(paa, allHeadings);
+    if (match) answered.push({ paa, heading: match });
+    else       unanswered.push(paa);
+  }
+
+  /* Build the finding. Severity reflects content-gap density:
+     • ALL PAA answered    → green (page is content-complete for the SERP intent)
+     • 0 answered          → red    (significant content gap; AI Overview & PAA capture both at risk)
+     • partial             → amber  */
+  const total = serp.paa_questions.length;
+  const answeredCount = answered.length;
+  const headingsListing = answered.length > 0
+    ? `\n\n**PAA questions ALREADY answered by your headings:**\n${answered.map(a => `- "${a.paa}" → matched by heading "${a.heading}"`).join('\n')}`
+    : '';
+  const gapListing = unanswered.length > 0
+    ? `\n\n**PAA questions NOT answered by your headings — content-gap candidates:**\n${unanswered.map(q => `- ${q}`).join('\n')}\n\nEach unanswered question is a candidate for a new H2 section. Word the H2 verbatim as the PAA question (or a tight rephrase) — Google's models match PAA boxes and AI Overview citations to literal question phrasings.`
+    : '';
+
+  if (answeredCount === total) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity:   'green',
+      finding_title: `All ${total} PAA questions for "${campaignKeyword}" are addressed by existing headings`,
+      finding_detail: `The page's heading outline (${h2.length} H2 + ${h3.length} H3) covers every PAA question on the live SERP. This is the ideal state for AI Overview citation and PAA box capture.${headingsListing}`,
+      evidence: { paa_total: total, answered_count: answeredCount, h2_count: h2.length, h3_count: h3.length },
+      data_source: 'html_fetch',
+      enrichment_sources: ['serpapi'],
+    });
+  } else if (answeredCount === 0) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity:   'red',
+      finding_title: `Content gap — none of the ${total} PAA questions for "${campaignKeyword}" are addressed by page headings`,
+      finding_detail: `The live SERP shows ${total} People Also Ask question(s), but the page's heading outline (${h2.length} H2 + ${h3.length} H3) doesn't address any of them. This is a significant content gap: AI Overview citation prefers pages that explicitly answer the questions Google's models are already showing on the SERP; PAA box capture requires the same.${gapListing}`,
+      recommendation: `Add ${total} new H2 sections, one per unanswered PAA question. Word each H2 as the question itself (or a tight rephrase that preserves the key tokens). Beneath each H2, provide a 40-80 word direct answer in the first sentence (citation-friendly format).`,
+      evidence: { paa_total: total, answered_count: 0, h2_count: h2.length, h3_count: h3.length, unanswered: unanswered },
+      data_source: 'html_fetch',
+      enrichment_sources: ['serpapi'],
+    });
+  } else {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity:   'amber',
+      finding_title: `${unanswered.length} of ${total} PAA questions for "${campaignKeyword}" are NOT addressed by page headings — content gap`,
+      finding_detail: `The page covers ${answeredCount} of ${total} PAA questions in its heading outline, leaving ${unanswered.length} unanswered. Each unanswered question is a content gap that competing pages may be filling.${headingsListing}${gapListing}`,
+      recommendation: `Add ${unanswered.length} new H2 section(s) for the unanswered PAA questions, with the H2 worded verbatim as the question. Each section should open with a 40-80 word direct answer for citation-friendliness.`,
+      evidence: { paa_total: total, answered_count: answeredCount, h2_count: h2.length, h3_count: h3.length, unanswered: unanswered, answered: answered },
+      data_source: 'html_fetch',
+      enrichment_sources: ['serpapi'],
+    });
+  }
+  return findings;
+}
+
+/** Phase 16.4 — Diffuse-intent SERP detection via LLM domain classification.
+ *  The senior-DMS read on a SERP like "app maker" (apps.apple.com, figma.com,
+ *  jotform.com, no-code builders, …) is that intent is diffuse — Google
+ *  can't decide what users want. This dramatically changes SEO economics:
+ *  ranking #1 still leaves you splitting clicks across intent buckets.
+ *
+ *  Heuristics on domain names alone would be brittle. One LLM call (Haiku,
+ *  ~$0.0003) classifying the top-10 domains by 1-3 word intent category
+ *  produces senior-grade output for negligible cost. */
+async function checkDiffuseIntentSerp(
+  projectId: string,
+  campaignKeyword: string,
+): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  if (!campaignKeyword || !campaignKeyword.trim()) return findings;
+  if (!ANTHROPIC_API_KEY) return findings;
+  const serp = await fetchSerpFeatures(campaignKeyword, projectId);
+  if (!serp || !Array.isArray(serp.top_10_domains) || serp.top_10_domains.length < 5) {
+    return findings;
+  }
+
+  const sys = `You classify the SEARCH INTENT of websites ranking for a Google query. Given a query and a list of top-10 ranking domains, you return a JSON object with each domain assigned to a 1-3 word intent category that describes what users get when they click that result.
+
+Common intent categories include (use these or coin your own):
+- "app marketplace browse" (apps.apple.com, play.google.com, microsoft.com/store)
+- "design tool" (figma.com, canva.com, sketch.com)
+- "form builder" (jotform.com, typeform.com, surveymonkey.com)
+- "no-code app builder" (bubble.io, adalo.com, thunkable.com, glideapps.com)
+- "informational article" (wikipedia.org, blog posts, guides)
+- "vendor product page" (specific SaaS pricing/feature pages)
+- "review/comparison" (g2.com, capterra.com, trustradius.com)
+- "developer documentation" (developer.mozilla.org, react.dev)
+
+The goal is to detect when a SERP has DIFFUSE INTENT — 3+ distinct categories among the top-10. This signals that Google itself isn't sure what users want, and ranking #1 still means competing against fundamentally different result types.
+
+Reply with ONLY valid JSON:
+{
+  "domains": [
+    { "domain": "...", "category": "..." }
+  ],
+  "distinct_categories": <number>,
+  "is_diffuse": <boolean, true if distinct_categories >= 3>,
+  "reasoning": "<one sentence explaining the intent landscape>"
+}`;
+
+  const user = `Query: "${campaignKeyword}"
+Top-10 ranking domains:
+${serp.top_10_domains.slice(0, 10).map((d, i) => `${i + 1}. ${d}`).join('\n')}
+
+Classify each by intent category, count distinct categories, decide if SERP is diffuse-intent (3+ categories).`;
+
+  let json: any;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key":         ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type":      "application/json",
+      },
+      body: JSON.stringify({
+        model:      ANTHROPIC_MODEL,
+        max_tokens: 600,
+        system:     sys,
+        messages:   [{ role: "user", content: user }],
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return findings;
+    const body = await res.json();
+    const text = body?.content?.[0]?.text || '';
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) return findings;
+    json = JSON.parse(m[0]);
+  } catch {
+    return findings;
+  }
+
+  if (!json || !Array.isArray(json.domains) || typeof json.distinct_categories !== 'number') {
+    return findings;
+  }
+
+  /* Group domains by category for display */
+  const byCategory: Record<string, string[]> = {};
+  for (const entry of json.domains) {
+    if (!entry?.domain || !entry?.category) continue;
+    const cat = String(entry.category).trim();
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(String(entry.domain).trim());
+  }
+  const categoryListing = Object.entries(byCategory)
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([cat, doms]) => `- **${cat}** (${doms.length}): ${doms.map(d => `\`${d}\``).join(', ')}`)
+    .join('\n');
+
+  if (json.is_diffuse) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity:   'amber',
+      finding_title: `Diffuse-intent SERP for "${campaignKeyword}" — ${json.distinct_categories} distinct intent categories in top-10`,
+      finding_detail: `The live top-10 SERP for "${campaignKeyword}" spans **${json.distinct_categories} distinct intent categories** — Google's own ranking signals show it isn't sure what users want from this query. ${json.reasoning || ''}
+
+**Intent breakdown:**
+${categoryListing}
+
+This matters for SEO economics: even ranking #1 still means competing for click-share against fundamentally different result types. A user searching "${campaignKeyword}" with one intent will skip top results that match a different intent. CTR ceilings are lower on diffuse SERPs than on tight-intent SERPs at the same position.`,
+      recommendation: `Either (a) pick a tighter-intent keyword variant whose SERP is single-category (use GSC query-distribution data to find which tight keywords this URL already gets impressions for), or (b) accept that this keyword's CTR ceiling is structurally limited and weight SEO investment accordingly. Don't expect normal CTR-vs-position economics on a diffuse SERP.`,
+      evidence: { campaign_keyword: campaignKeyword, distinct_categories: json.distinct_categories, categories: byCategory, reasoning: json.reasoning },
+      data_source: 'html_fetch',
+      enrichment_sources: ['serpapi'],
+      signals: ['serp_topic_mismatch'],
+    });
+  } else {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity:   'green',
+      finding_title: `Tight-intent SERP for "${campaignKeyword}" — ${json.distinct_categories} intent categor${json.distinct_categories === 1 ? 'y' : 'ies'} in top-10`,
+      finding_detail: `The live top-10 SERP for "${campaignKeyword}" has cohesive intent — Google's ranking signals point to a single (or near-single) user need. ${json.reasoning || ''}
+
+**Intent breakdown:**
+${categoryListing}
+
+Tight-intent SERPs follow normal CTR-vs-position economics; standard tactical fixes (title, snippet, snippet capture) translate directly to click gains.`,
+      evidence: { campaign_keyword: campaignKeyword, distinct_categories: json.distinct_categories, categories: byCategory },
+      data_source: 'html_fetch',
+      enrichment_sources: ['serpapi'],
+    });
+  }
+  return findings;
+}
+
+/** Phase 16.4 — Competitive content benchmark via top-10 URL fetching.
+ *
+ *  SerpAPI gives us the top-10 URLs. Fetching each in parallel + extracting
+ *  word count + heading count gives the audited page a measured benchmark
+ *  vs the SERP-winning pages, not an abstract "3000 words is good" claim.
+ *
+ *  Filters: skip non-article pages (app stores, YouTube, PDFs) where word
+ *  count isn't comparable to a content page. Best-effort — fetch failures
+ *  are tolerated and noted; partial benchmark is better than no benchmark. */
+async function checkCompetitiveContentBenchmark(
+  url: string,
+  projectId: string,
+  campaignKeyword: string,
+): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  if (!campaignKeyword || !campaignKeyword.trim()) return findings;
+  const serp = await fetchSerpFeatures(campaignKeyword, projectId);
+  if (!serp || !Array.isArray(serp.top_10_urls) || serp.top_10_urls.length < 3) {
+    return findings;
+  }
+  /* Filter out non-article URLs that would skew the word-count comparison.
+     App stores, YouTube, PDFs all have very different content shapes. */
+  const eligibleUrls = serp.top_10_urls.filter(u => {
+    const lower = (u || '').toLowerCase();
+    if (!lower.startsWith('http')) return false;
+    if (lower.includes('apps.apple.com'))       return false;
+    if (lower.includes('play.google.com'))      return false;
+    if (lower.includes('youtube.com'))          return false;
+    if (lower.includes('youtu.be'))             return false;
+    if (lower.endsWith('.pdf'))                 return false;
+    /* Skip the audited URL itself if it's in the SERP — we're benchmarking
+       against competitors, not measuring our own page twice. */
+    if (lower.replace(/\/$/, '') === url.toLowerCase().replace(/\/$/, '')) return false;
+    return true;
+  }).slice(0, 8);
+
+  if (eligibleUrls.length < 3) return findings;  /* not enough competitors for a credible median */
+
+  /* Fetch all eligible competitors in parallel (8s timeout per fetch).
+     Failures are tolerated — we just exclude them from the median. */
+  const competitorMetrics = await Promise.all(eligibleUrls.map(async (cUrl) => {
+    try {
+      const cr = await fetchWithTimeout(cUrl, 8000);
+      if (!cr.ok || !cr.html) return null;
+      /* Strip script/style + tags for word count */
+      const stripped = cr.html
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const wordCount = stripped ? stripped.split(/\s+/).length : 0;
+      const { h2, h3 } = extractHeadings(cr.html);
+      return { url: cUrl, word_count: wordCount, h2_count: h2.length, h3_count: h3.length };
+    } catch {
+      return null;
+    }
+  }));
+  const successful = competitorMetrics.filter((m): m is { url: string; word_count: number; h2_count: number; h3_count: number } => m !== null && m.word_count > 100);
+  if (successful.length < 3) return findings;  /* not enough successful fetches for a credible median */
+
+  /* Audited page's own metrics */
+  const r = await fetchWithTimeout(url, 12000);
+  if (!r.ok || !r.html) return findings;
+  const auditedStripped = r.html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const auditedWordCount = auditedStripped ? auditedStripped.split(/\s+/).length : 0;
+  const { h2: auditedH2, h3: auditedH3 } = extractHeadings(r.html);
+
+  /* Compute median word count */
+  const sortedWords = [...successful].map(s => s.word_count).sort((a, b) => a - b);
+  const medianWords = sortedWords[Math.floor(sortedWords.length / 2)];
+  const minWords    = sortedWords[0];
+  const maxWords    = sortedWords[sortedWords.length - 1];
+  const wordRatio   = medianWords > 0 ? auditedWordCount / medianWords : 1;
+
+  const competitorListing = successful
+    .sort((a, b) => b.word_count - a.word_count)
+    .map(s => `- ${s.url} — ${s.word_count.toLocaleString()} words, ${s.h2_count} H2 + ${s.h3_count} H3`)
+    .join('\n');
+
+  const skippedCount = eligibleUrls.length - successful.length;
+  const skippedNote  = skippedCount > 0 ? `\n\n_${skippedCount} top-10 URL(s) could not be fetched and are excluded from the median._` : '';
+  const filteredCount = serp.top_10_urls.length - eligibleUrls.length;
+  const filteredNote  = filteredCount > 0 ? ` _${filteredCount} top-10 URL(s) were filtered (app stores, video, PDF — not comparable as article content)._` : '';
+
+  if (wordRatio < 0.6) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity:   'amber',
+      finding_title: `Content depth below SERP median — ~${auditedWordCount.toLocaleString()} words vs competitor median ${medianWords.toLocaleString()}`,
+      finding_detail: `Your page has **${auditedWordCount.toLocaleString()} words** (${auditedH2.length} H2 + ${auditedH3.length} H3). The median for the top-10 SERP-ranking competitors is **${medianWords.toLocaleString()} words** (range ${minWords.toLocaleString()}-${maxWords.toLocaleString()}). At ${Math.round(wordRatio * 100)}% of competitive depth, the page may be under-covering topics that competitors expand on.${filteredNote}\n\n**Competitor benchmark (${successful.length} fetched):**\n${competitorListing}${skippedNote}`,
+      recommendation: `Expand content by ~${Math.max(0, medianWords - auditedWordCount).toLocaleString()} words to reach SERP median. Use the PAA-driven heading-hierarchy finding to identify which topical sections are most worth adding — depth without scope expansion is filler.`,
+      evidence: { audited_word_count: auditedWordCount, audited_h2: auditedH2.length, audited_h3: auditedH3.length, competitor_median: medianWords, competitor_min: minWords, competitor_max: maxWords, competitors_fetched: successful.length, word_ratio: Number(wordRatio.toFixed(2)) },
+      data_source: 'html_fetch',
+      enrichment_sources: ['serpapi'],
+    });
+  } else if (wordRatio > 1.8) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity:   'info',
+      finding_title: `Content depth significantly exceeds SERP median — ${auditedWordCount.toLocaleString()} words vs ${medianWords.toLocaleString()}`,
+      finding_detail: `Your page is **${Math.round(wordRatio * 100)}% of competitor median** — ${auditedWordCount.toLocaleString()} words vs ${medianWords.toLocaleString()} (range ${minWords.toLocaleString()}-${maxWords.toLocaleString()}). Long-form can outperform on competitive informational queries, but verify the extra length adds substance (PAA coverage, schema-eligible Q&A, fresh data) rather than filler.${filteredNote}\n\n**Competitor benchmark (${successful.length} fetched):**\n${competitorListing}${skippedNote}`,
+      evidence: { audited_word_count: auditedWordCount, competitor_median: medianWords, competitors_fetched: successful.length, word_ratio: Number(wordRatio.toFixed(2)) },
+      data_source: 'html_fetch',
+      enrichment_sources: ['serpapi'],
+    });
+  } else {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity:   'green',
+      finding_title: `Content depth in line with SERP — ${auditedWordCount.toLocaleString()} words vs competitor median ${medianWords.toLocaleString()}`,
+      finding_detail: `Your page has **${auditedWordCount.toLocaleString()} words** (${auditedH2.length} H2 + ${auditedH3.length} H3) vs competitor median ${medianWords.toLocaleString()} (${Math.round(wordRatio * 100)}% of median, range ${minWords.toLocaleString()}-${maxWords.toLocaleString()}). Content depth is competitive — focus on topical coverage and structural quality rather than raw length.${filteredNote}\n\n**Competitor benchmark (${successful.length} fetched):**\n${competitorListing}${skippedNote}`,
+      evidence: { audited_word_count: auditedWordCount, competitor_median: medianWords, competitors_fetched: successful.length, word_ratio: Number(wordRatio.toFixed(2)) },
+      data_source: 'html_fetch',
+      enrichment_sources: ['serpapi'],
+    });
+  }
   return findings;
 }
 
@@ -2180,9 +2597,9 @@ function renderAuditReport(opts: {
   /* Honest note about scope */
   lines.push('## Audit scope');
   lines.push('');
-  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links — tracking pixels filtered from the alt-text count), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (site-wide GA4 — context only), **schema markup** (JSON-LD types), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph, with decision-tree recommendation when page is built for a different topic), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks, with SerpAPI verification of SERP features — AI Overview, featured snippet, PAA, ads density — to resolve underperformance hypotheses when a SerpAPI key is configured), **GSC query distribution** (top queries this URL actually ranks for), and **first-paragraph topicality** (does above-the-fold copy actually relate to the title/H1, catching templated hero copy and product taglines that don\'t match the page\'s stated subject).');
+  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links — tracking pixels filtered from the alt-text count), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (site-wide GA4 — context only), **schema markup** (JSON-LD types), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph, with decision-tree recommendation when page is built for a different topic), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks, with SerpAPI verification of SERP features — AI Overview, featured snippet, PAA, ads density — to resolve underperformance hypotheses when a SerpAPI key is configured, plus business-impact translation to missed monthly clicks + dollar opportunity), **GSC query distribution** (top queries this URL actually ranks for), **first-paragraph topicality** (does above-the-fold copy actually relate to the title/H1, catching templated hero copy and product taglines that don\'t match the page\'s stated subject), **heading-hierarchy vs PAA content gap** (does the page\'s H2/H3 outline answer the People Also Ask questions on the live SERP — missing PAA coverage is a content gap that hurts both AI Overview citation and PAA capture), **diffuse-intent SERP detection** (LLM-classifies the top-10 domains by intent category — flags when 3+ distinct intents appear, signaling Google itself can\'t decide what users want and SEO economics are harder), **competitive content benchmark** (fetches top-10 ranking competitors, derives median word count + heading count, compares this page\'s depth to the SERP-grade benchmark), **converging-evidence detection** (when 2+ Critical findings share signals like keyword-mismatch and url-not-in-top-10, surfaces an explicit cross-finding reinforcement banner), **foundational-fix sequencing** (marks 🎯 on the Critical finding whose recommendation would reframe others if addressed first).');
   lines.push('');
-  lines.push('Not yet covered: **per-page GA4 metrics** (engagement, bounce, sessions by URL — requires a pm-ga4 top-pages-by-engagement query), **competitive content benchmark** (word count + topical coverage vs top-10 ranking pages — top-10 URLs are now available via SerpAPI, content fetching + comparison is the remaining work), **schema validation** (currently checks presence, not validity), **anchor text quality** (descriptive vs generic anchors for internal links), **heading hierarchy** (H1/H2/H3 outline vs keyword variants and PAA questions), **business-impact translation** (opportunity sizing in clicks/conversions), **content freshness** (Last-Modified header + sitemap lastmod), **full site crawl**, **manual penalty checks**, **log file analysis**, **image weight breakdown**, **font loading**, **hreflang**. These will come in later phases.');
+  lines.push('Not yet covered: **per-page GA4 metrics** (engagement, bounce, sessions by URL — requires a pm-ga4 top-pages-by-engagement query), **schema validation** (currently checks presence, not validity — Google rich-results testing API integration is the next step), **anchor text quality** (descriptive vs generic anchors for internal links), **content freshness** (Last-Modified header + sitemap lastmod + visible date staleness), **full site crawl**, **manual penalty checks**, **log file analysis**, **image weight breakdown**, **font loading**, **hreflang**. These will come in later phases.');
 
   return lines.join('\n');
 }
