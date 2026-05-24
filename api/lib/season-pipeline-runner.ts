@@ -28,6 +28,9 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+/* Phase 17.0 — type-only import so PipelineStepContext can expose audit_findings
+   without creating runtime coupling. Erased at compile time. */
+import type { Finding } from "./seo-technical-audit.js";
 
 /* ─── Public types ──────────────────────────────────────────── */
 
@@ -45,6 +48,13 @@ export interface PipelineStepContext {
   scope:            Record<string, any>;
   /* Outputs from prior steps, keyed by step_id */
   prior:            Record<string, any>;
+  /* Phase 17.0 — audit-to-pipeline bridge.
+     The most recent technical audit's findings for this campaign, if an
+     audit has run. Empty array when no audit exists (greenfield campaign)
+     or when no campaign is associated with the run (one-off pipelines).
+     Steps that want to leverage audit intelligence read from this; steps
+     that don't can ignore it. */
+  audit_findings:   Finding[];
 }
 
 export interface PipelineStepResult {
@@ -127,6 +137,68 @@ async function runStepWithTimeout(
   }
 }
 
+/* ─── Phase 17.0 — Audit findings loader ────────────────────
+   The bridge between the technical_audit pillar and the pipeline.
+   Loads the most-recent audit's findings for a campaign so step
+   handlers can leverage them via ctx.audit_findings.
+
+   Returns [] when:
+     • campaignId is null/undefined (one-off pipeline, no campaign)
+     • no audit has ever run on this campaign
+     • the table query fails (logged, caught — never throws upward)
+
+   Empty array is the "audit data unavailable" signal — distinct from
+   "audit ran and found nothing". Steps deciding whether to use audit
+   data should check `audit_findings.length > 0`. */
+async function loadLatestAuditFindings(campaignId: string | null | undefined): Promise<Finding[]> {
+  if (!campaignId) return [];
+  try {
+    const { data: rows, error } = await db().from("technical_audit_findings")
+      .select("audit_kind, severity, finding_title, finding_detail, recommendation, evidence, data_source, audit_run_id, created_at")
+      .eq("campaign_id", campaignId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) {
+      console.warn(`[pipeline-runner] audit findings load failed for campaign ${campaignId.slice(0,8)}: ${error.message}`);
+      return [];
+    }
+    if (!rows || rows.length === 0) return [];
+    const latestRunId = (rows[0] as any).audit_run_id;
+    if (!latestRunId) return [];
+    /* Filter to just the most recent audit run's findings */
+    const latestRows = (rows as any[]).filter(r => r.audit_run_id === latestRunId);
+    return latestRows.map(r => ({
+      audit_kind:     r.audit_kind,
+      severity:       r.severity,
+      finding_title:  r.finding_title,
+      finding_detail: r.finding_detail || undefined,
+      recommendation: r.recommendation || undefined,
+      evidence:       r.evidence || undefined,
+      data_source:    r.data_source || undefined,
+    })) as Finding[];
+  } catch (e: any) {
+    console.warn(`[pipeline-runner] audit findings load threw for campaign ${(campaignId || '').slice(0,8)}: ${e?.message || e}`);
+    return [];
+  }
+}
+
+/* Helper: resolve campaignId from runner opts. The route layer stamps
+   campaign_id onto season_pipeline_runs after the run is created (for
+   campaign-linked pipelines), so we look it up if not present in scope. */
+async function resolveCampaignIdForRun(runId: string, scope: Record<string, any>): Promise<string | null> {
+  /* Scope can carry campaignId directly (cleanest path when caller knows) */
+  if (scope?.campaignId && typeof scope.campaignId === 'string') return scope.campaignId;
+  if (scope?.campaign_id && typeof scope.campaign_id === 'string') return scope.campaign_id;
+  /* Otherwise read it from the run row */
+  try {
+    const { data: run } = await db().from("season_pipeline_runs")
+      .select("campaign_id").eq("id", runId).maybeSingle();
+    return ((run as any)?.campaign_id as string | undefined) || null;
+  } catch {
+    return null;
+  }
+}
+
 /* ─── Public entrypoint ─────────────────────────────────────── */
 
 export async function runPipeline(opts: {
@@ -182,6 +254,14 @@ export async function runPipeline(opts: {
   let stepsFailed    = 0;
   const honestNotes: string[] = [];
 
+  /* Phase 17.0 — load audit findings ONCE at run start, pass to every step.
+     Findings don't change mid-pipeline; reloading per step would be wasteful. */
+  const campaignIdForAudit = await resolveCampaignIdForRun(runId, opts.scope);
+  const auditFindings = await loadLatestAuditFindings(campaignIdForAudit);
+  if (auditFindings.length > 0) {
+    console.log(`[runPipeline] loaded ${auditFindings.length} audit findings for campaign ${(campaignIdForAudit || '').slice(0,8)} — available to all steps via ctx.audit_findings`);
+  }
+
   for (let i = 0; i < opts.definition.steps.length; i++) {
     const step = opts.definition.steps[i];
 
@@ -216,6 +296,7 @@ export async function runPipeline(opts: {
       awareness: opts.awareness,
       scope: opts.scope,
       prior: priorOutputs,
+      audit_findings: auditFindings,
     });
     const stepElapsed = Date.now() - stepStart;
     console.log(`[runPipeline] ${result.ok ? '✓' : '✗'} step ${i + 1}: ${step.id} done in ${stepElapsed}ms — ${result.ok ? 'ok' : 'failed: ' + (result.error || 'unknown')}`);
@@ -355,6 +436,13 @@ export async function runPipelineWithExistingRow(opts: {
   let stepsFailed    = 0;
   const honestNotes: string[] = [];
 
+  /* Phase 17.0 — load audit findings ONCE at run start, pass to every step. */
+  const campaignIdForAudit = await resolveCampaignIdForRun(runId, opts.scope);
+  const auditFindings = await loadLatestAuditFindings(campaignIdForAudit);
+  if (auditFindings.length > 0) {
+    console.log(`[runPipelineWithExistingRow] loaded ${auditFindings.length} audit findings for campaign ${(campaignIdForAudit || '').slice(0,8)} — available to all steps via ctx.audit_findings`);
+  }
+
   for (let i = 0; i < opts.definition.steps.length; i++) {
     const step = opts.definition.steps[i];
 
@@ -387,6 +475,7 @@ export async function runPipelineWithExistingRow(opts: {
       awareness: opts.awareness,
       scope: opts.scope,
       prior: priorOutputs,
+      audit_findings: auditFindings,
     });
     const stepElapsed = Date.now() - stepStart;
     console.log(`[runPipeline] ${result.ok ? '✓' : '✗'} step ${i + 1}: ${step.id} done in ${stepElapsed}ms — ${result.ok ? 'ok' : 'failed: ' + (result.error || 'unknown')}`);
@@ -572,10 +661,14 @@ export async function retryStep(opts: {
   const step = opts.definition.steps[opts.stepIndex];
   if (!step) return { ok: false, error: "step not in definition" };
 
+  /* Phase 17.0 — load audit findings for retry too */
+  const auditFindings = await loadLatestAuditFindings(r.campaign_id);
+
   const result = await runStepWithTimeout(step, {
     projectId: r.project_id,
     scope:     r.scope || {},
     prior:     priorOutputs,
+    audit_findings: auditFindings,
   });
 
   /* Persist the retry */
@@ -680,7 +773,7 @@ export async function executeNextPendingStep(opts: {
   try {
     /* Load run + completed steps to rebuild priorOutputs */
     const { data: run } = await db().from("season_pipeline_runs")
-      .select("id, project_id, scope, status, llm_calls_used, web_searches_used, steps_completed")
+      .select("id, project_id, campaign_id, scope, status, llm_calls_used, web_searches_used, steps_completed")
       .eq("id", opts.runId).maybeSingle();
     if (!run)   return { error: "run not found" };
     /* Phase 14.2 — accept 'retrying' (after a retry/skip op) as well as 'running' */
@@ -749,10 +842,18 @@ export async function executeNextPendingStep(opts: {
     /* Execute the step with timeout protection */
     const stepStart = Date.now();
     console.log(`[execute_step] \u25b6 run ${opts.runId.slice(0,8)} step ${(pending as any).step_index + 1}/${opts.definition.steps.length}: ${stepDef.id}`);
+    /* Phase 17.0 — load audit findings for this step. One DB query per step
+       (this function executes one step per call), so the per-step cost is
+       a single read against an indexed column. */
+    const auditFindings = await loadLatestAuditFindings((run as any).campaign_id);
+    if (auditFindings.length > 0) {
+      console.log(`[execute_step] loaded ${auditFindings.length} audit findings for campaign ${((run as any).campaign_id || '').slice(0,8)} — passing to ctx.audit_findings`);
+    }
     const result = await runStepWithTimeout(stepDef, {
       projectId: (run as any).project_id,
       scope:     (run as any).scope || {},
       prior:     priorOutputs,
+      audit_findings: auditFindings,
     });
     const stepElapsed = Date.now() - stepStart;
     console.log(`[execute_step] ${result.ok ? '\u2713' : '\u2717'} step ${(pending as any).step_index + 1}: ${stepDef.id} done in ${stepElapsed}ms`);

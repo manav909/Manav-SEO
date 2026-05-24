@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 16.11.2 rollback) · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality. Phase 16.11 shipped an HTML renderer alongside markdown; Phase 16.11.1 hotfix did not resolve "audits stop fast in production" symptom; Phase 16.11.2 rolls back the HTML render wire-in (import + call) pending runtime evidence on the actual cause. The renderer file + SQL migration remain in the repo for re-introduction once root cause is confirmed.
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.0 audit-to-pipeline bridge) · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality. Phase 16.11 shipped an HTML renderer alongside markdown; Phase 16.11.1 hotfix did not resolve "audits stop fast in production" symptom; Phase 16.11.2 rolls back the HTML render wire-in pending runtime evidence. Phase 17.0 ships the foundational bridge between technical_audit findings and the season pipeline — `ctx.audit_findings` now available to every step (no step behavior changed yet).
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -850,6 +850,38 @@ Diagnostic value:
 - **If audits still don't work after this rollback** → cause is OUTSIDE Phase 16.11. Look at Vercel function quota / invocation count, Supabase project state (paused, exceeded), GSC/GA4 auth token expiry, or upstream code changes I'm not aware of.
 
 The senior-DMS rule applies: don't add the HTML rendering back until the underlying symptom is root-caused with runtime evidence (Vercel function log line for a failing audit invocation). The renderer is convenience; the audit is the product.
+
+### Phase 17.0 — Audit-to-pipeline bridge (2026-05-24)
+
+First foundational ship of Track 2 from STRATEGY.md. Makes the technical_audit pillar's findings available to every season pipeline step via `ctx.audit_findings`.
+
+**What it does:**
+
+- `PipelineStepContext` interface gained `audit_findings: Finding[]` (required field, defaults to empty array)
+- New helper `loadLatestAuditFindings(campaignId): Promise<Finding[]>` in `season-pipeline-runner.ts` — queries `technical_audit_findings`, returns the most-recent audit run's findings, gracefully returns `[]` on any failure
+- New helper `resolveCampaignIdForRun(runId, scope)` — reads campaignId from scope first, falls back to looking up `season_pipeline_runs.campaign_id`
+- All four ctx-construction sites wired: `runPipeline`, `runPipelineWithExistingRow`, `executeNextPendingStep`, the in-loop `retryStep`
+- Loading is once-per-runner-invocation (cached for the run's lifetime), so no per-step DB query overhead
+
+**What it explicitly does NOT do (yet):**
+
+- Doesn't change any step's behavior. Every existing step handler ignores `ctx.audit_findings` because it didn't exist before. Steps that want to leverage audit intelligence will be wired in subsequent phases (17.1+).
+- Doesn't introduce new pipeline triggering. Pipelines still run once at campaign creation; the rerun problem from STRATEGY.md remains open.
+
+**Verification:**
+- Vercel runtime TS check on touched files clean (only pre-existing `seo-campaign-engine.ts:1021` error remains).
+- Frontend TS baseline: 27 (unchanged).
+- API ceiling: 12 (unchanged).
+- Vite build green.
+- No runtime smoke test — change is purely additive infrastructure; verification will be in Phase 17.1 when the first step uses the new data.
+
+**Next phases queued (per STRATEGY.md Section 5, Track 2):**
+- Phase 17.1 — wire `competitor_snapshot` to use audit's SerpAPI top-10 instead of LLM-guessed top-5 (highest-leverage first step; eliminates one LLM call + hallucination risk per pipeline)
+- Phase 17.2 — wire `content_brief` to consume PAA gap, first-paragraph topicality, schema policy, competitive content benchmark from audit
+- Phase 17.3 — wire `forecast` to use audit's `business_impact` for dollar-anchored projections
+- Phase 17.4 — wire `client_update` + `internal_handover` to consume audit's §0 + §7
+- Phase 17.5 — L1 manual "Refresh from audit" panel button + task-engine action wrapping `retryFromStep`
+- Phase 17.6 — L2 step-level dependency declarations + material-change gate for cron-driven refresh
 
 ### Session handoff for tech audit work
 
