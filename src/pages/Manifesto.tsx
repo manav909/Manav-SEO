@@ -20,6 +20,7 @@ import { MotionConfig } from 'framer-motion';
 
 import type { Lang } from './manifesto/types';
 import { COPY } from './manifesto/copy';
+import { I18N_REPORT } from './manifesto/copy.assert';
 import { CHAPTERS } from './manifesto/chapters';
 import { SEASONS } from './manifesto/seasons';
 import { ManifestoStyles } from './manifesto/styles';
@@ -155,7 +156,12 @@ export default function Manifesto() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="manifesto-root" data-season={currentSeason.id}>
+      <div
+        className="manifesto-root"
+        data-season={currentSeason.id}
+        data-i18n-ok={I18N_REPORT.ok ? 'true' : 'false'}
+        data-i18n-keys={I18N_REPORT.enKeyCount}
+      >
         <ManifestoStyles />
         <AmbientCanvas season={currentSeason} />
         <ProgressBar />

@@ -406,6 +406,14 @@ Total now 287 keys per language (1,435 total strings). The bundle has been verif
 
 Updated `lang_note` (the small note inside the language picker) from "Structural copy localized. Technical deep-dives in English." to "Fully localized." — the disclaimer was inaccurate after the full sweep.
 
+🟢 **i18n parity guard** — shipped 2026-05-24. New file `src/pages/manifesto/copy.assert.ts` runs at module load time and verifies every key in `COPY.en` is present in every other language with a non-empty value. Posts the summary to the browser console on every page load (`[i18n] all 5 languages parity-checked against 287 EN keys — no gaps.`). Sets `data-i18n-ok` and `data-i18n-keys` attributes on the manifesto root so you can verify deployment status from DevTools without any code. If any future regression silently drops a translation, the console fires a `console.warn` listing exactly which keys are missing or empty per language. This makes the kind of issue you spotted in the screenshots impossible to ship without a console warning.
+
+**Deployment verification path** — after running the deploy command and waiting for Vercel:
+1. Open browser DevTools console on `/manifesto`. You should see `[i18n] all 5 languages parity-checked against 287 EN keys — no gaps.`
+2. Inspect the root `<div class="manifesto-root">` — it should carry `data-i18n-ok="true"` and `data-i18n-keys="287"`.
+3. The JS bundle filename includes a content hash. After a successful deploy the hash changes (e.g. `index-D2tYDKna.js`), which guarantees the user's browser downloads the fresh code instead of serving a cached older bundle.
+4. If the screenshots still show English in non-English mode after that, the issue is on the deploy/Vercel side — not in the source.
+
 🟢 **Chapter 13 "In Practice"** — shipped 2026-05-23. Anonymized 4:47 AM scenario showing the drift engine catching AI Overview cannibalization. Three timestamped scene beats (04:47 alert → 11:00 three response paths → 12:30 client got audit trail before they had the problem) + Statement + close. Localized 5 langs (8 keys × 5 langs = 40 strings). ChFuture shifted to Ch14. Honest framing: "scenario is composite, patterned on the class of incident SEASON catches in active engagements, told as it would actually unfold."
 
 ---
