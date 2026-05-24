@@ -88,23 +88,6 @@ export function ChFuture({ t }: { t: TFn }) {
           >
             {t('audit_cta')}
           </motion.a>
-
-          {/* Tertiary — viral artifact: save as PDF.
-              Uses browser's native print dialog ("Save as PDF" is the
-              standard option in every modern browser). The @media print
-              rules in styles.tsx switch the manifesto to a light, ink-
-              friendly layout with chapter breaks, hidden chrome, and
-              all animated content forced to its final state. */}
-          <motion.button
-            onClick={() => window.print()}
-            className="closing-button closing-button-ghost"
-            whileHover={{ scale: 1.02, y: -1 }}
-            whileTap={{ scale: 0.98 }}
-            transition={{ duration: 0.4, ease: FEATHER }}
-            type="button"
-          >
-            {t('pdf_cta')}
-          </motion.button>
         </div>
       </motion.div>
     </ChapterShell>

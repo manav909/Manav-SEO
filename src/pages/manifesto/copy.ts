@@ -97,7 +97,6 @@ export const COPY: Record<Lang, Record<string, string>> = {
 
     join_cta:                   'Become a client',
     audit_cta:                  'Request a free audit',
-    pdf_cta:                    'Save as PDF',
     closing_cta:                'You can join now, while the curve is still gentle.',
 
     whom_intro:                 'Five archetypes — from the founder funding growth on limited runway to the consultancy delivering client work on borrowed infrastructure. The system underneath is the same; what shifts is the goal it serves. Find the one closest to your situation; the rest will still hold.',
@@ -192,7 +191,6 @@ export const COPY: Record<Lang, Record<string, string>> = {
 
     join_cta:                   'ग्राहक बनें',
     audit_cta:                  'मुफ्त ऑडिट का अनुरोध करें',
-    pdf_cta:                    'PDF के रूप में सहेजें',
     closing_cta:                'आप अभी शामिल हो सकते हैं, जब वक्र अभी भी कोमल है।',
 
     whom_intro:                 'पाँच आदर्श चरित्र — सीमित संसाधनों पर विकास का वित्तपोषण कर रहे संस्थापक से लेकर उधार ली गई बुनियाद पर ग्राहक का काम पहुँचाने वाली कंसल्टेंसी तक। नीचे का तंत्र वही है; जो बदलता है वह उद्देश्य है जिसकी यह सेवा करता है। अपनी स्थिति के सबसे करीब वाले को खोजें; बाक़ी फिर भी मान्य रहेंगे।',
@@ -287,7 +285,6 @@ export const COPY: Record<Lang, Record<string, string>> = {
 
     join_cta:                   'Conviértete en cliente',
     audit_cta:                  'Solicitar una auditoría gratuita',
-    pdf_cta:                    'Guardar como PDF',
     closing_cta:                'Puedes unirte ahora, mientras la curva aún es suave.',
 
     whom_intro:                 'Cinco arquetipos — del fundador que financia el crecimiento con una pista limitada a la consultoría que entrega trabajo a clientes sobre infraestructura prestada. El sistema subyacente es el mismo; lo que cambia es el objetivo al que sirve. Encuentra el más cercano a tu situación; los demás seguirán siendo válidos.',
@@ -382,7 +379,6 @@ export const COPY: Record<Lang, Record<string, string>> = {
 
     join_cta:                   'Devenez client',
     audit_cta:                  'Demander un audit gratuit',
-    pdf_cta:                    'Enregistrer en PDF',
     closing_cta:                'Vous pouvez rejoindre maintenant, tant que la courbe reste douce.',
 
     whom_intro:                 "Cinq archétypes — du fondateur finançant la croissance sur une piste limitée à la conseil livrant le travail client sur une infrastructure empruntée. Le système sous-jacent est le même ; ce qui change est l'objectif qu'il sert. Trouvez celui le plus proche de votre situation ; les autres resteront valables.",
@@ -477,7 +473,6 @@ export const COPY: Record<Lang, Record<string, string>> = {
 
     join_cta:                   'Kunde werden',
     audit_cta:                  'Kostenloses Audit anfordern',
-    pdf_cta:                    'Als PDF speichern',
     closing_cta:                'Sie können jetzt beitreten, solange die Kurve noch sanft ist.',
 
     whom_intro:                 'Fünf Archetypen — vom Gründer, der Wachstum auf begrenzter Bahn finanziert, bis zur Beratung, die Kundenarbeit auf geliehener Infrastruktur liefert. Das System darunter ist dasselbe; was sich ändert, ist das Ziel, dem es dient. Finden Sie den, der Ihrer Situation am nächsten ist; die anderen werden weiterhin gelten.',

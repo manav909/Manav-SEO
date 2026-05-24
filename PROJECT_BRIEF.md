@@ -221,7 +221,7 @@ src/pages/manifesto/                      foundation + infrastructure (11 files)
     ChFounder.tsx                         Harvest · Founder letter
     ChFAQ.tsx                             Harvest · Doubts, Resolved (tap-to-resolve)
     ChInPractice.tsx                      Harvest · 4:47 AM scenario (localized 5 langs)
-    ChFuture.tsx                          Eternal Spring · Selective close + 3 CTAs
+    ChFuture.tsx                          Eternal Spring · Selective close + 2 CTAs
 ```
 
 ### 12.2 Seasons map
