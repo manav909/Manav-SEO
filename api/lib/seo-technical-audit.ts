@@ -23,6 +23,7 @@ import { db } from "./db.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
 import { fetchSerpFeatures, summarizeSerpFeatures } from "./serpapi.js";
 import { ga4PullPageMetrics } from "./pm-ga4.js";
+import { renderAuditForAllLenses, concatenateLensReports, type LensInputs } from "./seo-technical-audit-lenses.js";
 
 /* Phase 16.4 — ANTHROPIC_API_KEY needed for diffuse-intent classifier
    in checkDiffuseIntentSerp. Single LLM call per audit run when SerpAPI
@@ -36,7 +37,7 @@ interface TargetResolution {
   note?:  string;
 }
 
-interface Finding {
+export interface Finding {
   audit_kind: 'indexability' | 'on_page_fundamentals' | 'core_web_vitals' | 'engagement_signals'
             | 'mobile_friendliness' | 'page_load' | 'schema_markup' | 'meta_tags'
             | 'internal_links' | 'canonical' | 'robots' | 'redirect';
@@ -46,17 +47,8 @@ interface Finding {
   recommendation?: string;
   evidence?:      any;
   data_source?:   'gsc' | 'ga4' | 'psi' | 'html_fetch' | 'schema_parser';
-  /* Phase 16.3 — secondary sources that ENRICHED this finding without being
-     the primary data source. E.g. CTR is primarily sourced from GSC but
-     enriched by SerpAPI's live SERP fetch. Used for source attribution in
-     the footer and confidence multiplier when multi-sourced. */
   enrichment_sources?: Array<'serpapi'>;
-  /* Phase 16.3 — true when this is the foundational Critical finding —
-     the one whose recommendation, if adopted, would obsolete or reframe
-     other findings. Used to render 🎯 badge for sequencing. */
   is_foundational?: boolean;
-  /* Phase 16.3 — internal tags used by cross-finding reinforcement detection.
-     Not rendered; used by detectConvergingEvidence(). */
   signals?: Array<'keyword_mismatch' | 'url_not_in_top_10' | 'serp_topic_mismatch' | 'first_paragraph_off_topic'>;
 }
 
@@ -402,19 +394,55 @@ export async function runTechnicalAudit(opts: {
     const redCount   = findings.filter(f => f.severity === 'red').length;
     const amberCount = findings.filter(f => f.severity === 'amber').length;
     const greenCount = findings.filter(f => f.severity === 'green').length;
+    const infoCount  = findings.filter(f => f.severity === 'info').length;
     const panelStatus: 'red' | 'amber' | 'green' = redCount > 0 ? 'red' : amberCount > 0 ? 'amber' : 'green';
     const headline = buildHeadline({ url: target.url, redCount, amberCount, greenCount, failedChecks });
-    const bodyMd = renderAuditReport({
-      keyword: c.keyword, url: target.url, source: target.source, sourceNote: target.note,
-      findings, failedChecks, runId: auditRunId,
-    });
+
+    /* Phase 16.8 — Multi-lens audit rendering.
+       Manav 2026-05-24: instead of one mixed-audience report, generate
+       six role-tailored documents and concatenate with TOC + dividers.
+       Same findings, six fundamentally different framings — Senior DMS,
+       Client, Content Writer, PM, Sales, Junior SEO Exec. The old
+       renderAuditReport function is retained but no longer called. */
+    const sourceConf = weightedFindingConfidence(findings);
+    const sourceCounts: Record<string, number> = {};
+    for (const f of findings) {
+      const m = findingSourceMeta(f);
+      if (m) sourceCounts[m.label] = (sourceCounts[m.label] || 0) + 1;
+    }
+    const serpapiEnrichedCount = findings.filter(f =>
+      Array.isArray(f.enrichment_sources) && f.enrichment_sources.includes('serpapi')).length;
+    if (serpapiEnrichedCount > 0) {
+      sourceCounts['SerpAPI (live SERP enrichment)'] = serpapiEnrichedCount;
+    }
+    const lensInputs: LensInputs = {
+      url:          target.url,
+      keyword:      c.keyword,
+      source:       target.source,
+      source_note:  target.note,
+      run_id:       auditRunId,
+      audited_at:   new Date().toISOString(),
+      failed_checks: failedChecks,
+      findings,
+      red_count:    redCount,
+      amber_count:  amberCount,
+      green_count:  greenCount,
+      info_count:   infoCount,
+      confidence: {
+        weighted_mean:       sourceConf.mean,
+        sourced_count:       sourceConf.sourced_count,
+        unattributed_count:  sourceConf.unattributed_count,
+        by_source:           sourceCounts,
+      },
+    };
+    const lenses = renderAuditForAllLenses(lensInputs);
+    const bodyMd = concatenateLensReports(lenses, lensInputs);
 
     /* Honest confidence rating — combines per-finding source quality AND
        check-execution failures. Either dimension dropping low pulls the
        overall rating down. Previously this only counted failed checks,
        which meant a "green" verdict from a single html_fetch was rated
        the same as one cross-confirmed across GSC+GA4+audit. */
-    const sourceConf = weightedFindingConfidence(findings);
     const ratingFromSources: 'high' | 'medium' | 'low' =
       sourceConf.sourced_count === 0 ? 'low' :
       sourceConf.mean >= 88           ? 'high' :
