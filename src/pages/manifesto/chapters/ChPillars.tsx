@@ -88,10 +88,19 @@ export function ChPillars({ t }: { t: TFn }) {
         equilibrium SEO SEASON enforces by construction.
       </Prose>
 
-      <Prose delay={1.6}>
-        Every pillar produces its own audit trail. Every action a pillar takes
-        writes to a row the client can inspect. The pillar structure is what
-        makes the work compounding instead of episodic.
+      <Prose delay={1.55}>
+        The obvious objection: what about featured snippets, FAQ schema,
+        Knowledge Graph entities — are those not their own pillars? They
+        are not. They are tactics inside one of the five — surface treatments
+        applied at the Content layer once the cluster has been mapped and
+        the page exists. Promoting tactics to pillar rank is how agencies
+        invent work to bill against. The pillars stay structural.
+      </Prose>
+
+      <Prose delay={1.75}>
+        The pillar structure is what makes the work compounding instead of
+        episodic — each pillar feeds the next, year over year, on the same
+        baseline you signed off on at launch.
       </Prose>
     </ChapterShell>
   );

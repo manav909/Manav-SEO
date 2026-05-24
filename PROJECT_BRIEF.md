@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit before this turn:** `b2b9300` (ChColdOpen regression repaired) — Pending deploy: ChFAQ click-only + operator-first rewrite, ChFuture numbering fix, "The Codex" → "The Method" rename, animated signature in cold open
+**Maintained by:** Manav · **Last updated:** 2026-05-23 · **Live commit:** `b130a01` — Pending deploy: ChEngine 12-engine naming + GSC 48h honesty, ChPillars 5-pillar defense, ChVision audit-trail repetition trimmed
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 

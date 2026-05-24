@@ -46,14 +46,14 @@ export function ChVision({ t }: { t: TFn }) {
         And it was built by hand. Not commissioned to a development shop. Not
         assembled from off-the-shelf SaaS bolted together. Not acquired from
         someone else and rebranded. Every line of code, every interface, every
-        audit trail authored by the same person who runs the agency.
+        decision rule authored by the same person who runs the agency.
       </Prose>
 
       <Prose delay={1.5}>
-        Per-campaign baselines, source-cited charts, audit trails the client can
-        read, honest gaps acknowledged out loud — these aren't features added to
-        a product. They're the rules the agency operates under, encoded so they
-        cannot be quietly broken later.
+        Per-campaign baselines, source-cited charts, honest gaps acknowledged
+        out loud, decisions logged in the moment they were made — these aren't
+        features added to a product. They're the rules the agency operates
+        under, encoded so they cannot be quietly broken later.
       </Prose>
 
       <Prose delay={1.7}>

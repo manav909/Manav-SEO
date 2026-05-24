@@ -41,14 +41,14 @@ const SPECS: Spec[] = [
     value:      '12',
     unit:       '',
     label:      'Intelligence Engines',
-    descriptor: "Twelve specialized engines fire in sequence — query analysis, content gap detection, backlink intelligence, cluster mapping, internal link orchestration, off-page authority tracking, technical drift, conversion attribution, audit logging, real-time alerting, and two more. Each independent. None pausing.",
+    descriptor: "Twelve specialized engines fire in sequence — query analysis, content gap detection, backlink intelligence, cluster mapping, internal link orchestration, off-page authority tracking, technical drift detection, conversion attribution, AI-surface monitoring, SERP volatility scanning, audit logging, and real-time alerting. Each independent. None pausing.",
     icon:       <Cpu className="h-4 w-4" />,
   },
   {
     value:      'MIN',
     unit:       'cadence',
     label:      'Continuous Refresh',
-    descriptor: "Data refreshes in minutes, not the monthly cadence agencies invented to hide latency. Every query movement, every traffic shift, every backlink change registers before your competitor's monthly meeting agenda is written.",
+    descriptor: "Our pull cadence is minutes — every query movement, every traffic shift, every backlink change registers as soon as the source publishes it. The publishing latency at Google's end (~48 hours for most query data in Search Console) is theirs, not ours; we name it openly on every chart and tell you exactly when the source last updated. Nothing in between is hidden behind a monthly meeting.",
     icon:       <Gauge className="h-4 w-4" />,
   },
   {
