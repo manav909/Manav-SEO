@@ -307,7 +307,7 @@ The five archetypes, in recognition order:
 4. **The ecommerce operator competing in the AI-search era** — DTC, niche ecom, marketplaces, retail
 5. **The agency or consultancy that needs operating infrastructure** — digital agencies, consultants, fractional CMOs
 
-Five archetypes covering ~20+ business types. Content hardcoded English (matches existing chapter pattern). Full localization is open backlog if needed.
+Five archetypes covering ~20+ business types. Fully localized across all 5 languages as of 2026-05-24 (alongside the rest of the manifesto).
 
 Intro Prose: *"Five archetypes — from the founder funding growth on limited runway to the consultancy delivering client work on borrowed infrastructure. The system underneath is the same; what shifts is the goal it serves. Find the one closest to your situation; the rest will still hold."*
 
@@ -367,6 +367,8 @@ Placeholders are flagged with `◆ TBD` comments inline so Manav can find/edit i
 🟢 **AIConcierge + profile avatar on `/manifesto`** — fixed 2026-05-23. `/manifesto` added to `HIDE_ON_PATHS` in `AIConcierge.tsx`. Cinematic page now stays clean.
 
 🟢 **ChWhom full localization** — shipped 2026-05-23. All 11 keys (`whom_intro` + 5 × `whom_N_title` + 5 × `whom_N_body`) now in `copy.ts` across EN/HI/ES/FR/DE. ChWhom.tsx reads everything via `t()`; no hardcoded English remains.
+
+🟢 **Full manifesto localization** — shipped 2026-05-24. All 15 chapters now render correctly in all 5 languages. `copy.ts` holds 262 keys per language (1,310 total strings). Previously HI was complete but ES/FR/DE were each missing 180 keys — chapters were already wired to `t()`, but missing keys fell back to EN, which is why language switching looked half-working. Fixed by adding all missing translations.
 
 🟢 **Chapter 13 "In Practice"** — shipped 2026-05-23. Anonymized 4:47 AM scenario showing the drift engine catching AI Overview cannibalization. Three timestamped scene beats (04:47 alert → 11:00 three response paths → 12:30 client got audit trail before they had the problem) + Statement + close. Localized 5 langs (8 keys × 5 langs = 40 strings). ChFuture shifted to Ch14. Honest framing: "scenario is composite, patterned on the class of incident SEASON catches in active engagements, told as it would actually unfold."
 
