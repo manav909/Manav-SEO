@@ -314,6 +314,13 @@ export async function runTechnicalAudit(opts: {
       checkHeadingHierarchyVsPaa(target.url, c.project_id, c.keyword),
       checkDiffuseIntentSerp(c.project_id, c.keyword),
       checkCompetitiveContentBenchmark(target.url, c.project_id, c.keyword),
+      /* Phase 16.6 — Tier 3 tech-audit-verifiable additions (2026-05-24 night, final).
+         All three self-contained: single HTML fetch each, no external API spend.
+         Closes the long-standing "Not yet covered" footer gaps for content
+         freshness, image optimization, and hreflang validation. */
+      checkContentFreshness(target.url),
+      checkImageOptimization(target.url),
+      checkHreflang(target.url),
     ]);
 
     const findings: Finding[] = [];
@@ -323,7 +330,7 @@ export async function runTechnicalAudit(opts: {
       if (r.status === 'fulfilled') {
         findings.push(...r.value);
       } else {
-        const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution','first_para_topicality','heading_hierarchy_vs_paa','diffuse_intent_serp','competitive_content_benchmark'][i];
+        const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution','first_para_topicality','heading_hierarchy_vs_paa','diffuse_intent_serp','competitive_content_benchmark','content_freshness','image_optimization','hreflang'][i];
         failedChecks.push(checkName);
       }
     }
@@ -2666,6 +2673,407 @@ async function checkCompetitiveContentBenchmark(
 }
 
 /* ════════════════════════════════════════════════════════════════
+   Phase 16.6 CHECKS (2026-05-24 night, final) — Tier 3 tech-audit
+   trio that closes the remaining "Not yet covered" gaps:
+
+   • checkContentFreshness — Last-Modified header, schema dates,
+     visible date detection. Pages older than 12 months on time-
+     sensitive topics underperform; stale dated content is one of
+     the strongest known under-performance signals.
+   • checkImageOptimization — image count, lazy-load coverage,
+     alt-text completeness, modern format usage (webp/avif).
+     Cannot weigh actual bytes without fetching each asset, but
+     structural signals correlate well with CWV outcomes.
+   • checkHreflang — detect hreflang tags, validate language
+     codes + self-reference + x-default. Only fires when hreflang
+     is present (single-locale pages don't need it).
+
+   All three are self-contained (single HTML fetch, no external
+   API spend). Verifiable on next audit run.
+   ════════════════════════════════════════════════════════════ */
+
+/** Phase 16.6 — Content-freshness signal aggregator.
+ *
+ *  Pulls freshness signals from four sources, picks the most recent
+ *  reliable date, scores staleness:
+ *    1. Last-Modified HTTP header (when present and not the same as fetch time)
+ *    2. Article/BlogPosting schema's dateModified / datePublished
+ *    3. Visible page text — "Updated: <date>" / "Published: <date>" patterns
+ *    4. Year in title (e.g., "2024 Guide" → year is the freshness hint)
+ *
+ *  Severity:
+ *    • >24 months stale → red (likely losing rankings to fresher competitors)
+ *    • 12-24 months   → amber
+ *    • <12 months     → green
+ *    • No date found  → info (can't assess) */
+async function checkContentFreshness(url: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  const r = await fetchWithTimeout(url, 12000);
+  if (!r.ok || !r.html) return findings;
+  const html = r.html;
+
+  const detected: { source: string; date: Date; raw: string }[] = [];
+  const now = new Date();
+
+  /* 1. Last-Modified header (rarely set correctly by modern frameworks, but
+        when it's present and not equal to Date header, it's authoritative) */
+  const lastModifiedHeader = r.response?.headers.get('last-modified');
+  if (lastModifiedHeader) {
+    const d = new Date(lastModifiedHeader);
+    if (!isNaN(d.getTime()) && d.getTime() < now.getTime() && d.getTime() > new Date('2000-01-01').getTime()) {
+      detected.push({ source: 'Last-Modified header', date: d, raw: lastModifiedHeader });
+    }
+  }
+
+  /* 2. JSON-LD Article schema dates */
+  const jsonLdMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+  for (const block of jsonLdMatches) {
+    const content = block.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '').trim();
+    try {
+      const parsed = JSON.parse(content);
+      const collectDates = (obj: any) => {
+        if (!obj) return;
+        if (Array.isArray(obj)) { obj.forEach(collectDates); return; }
+        if (obj.dateModified) {
+          const d = new Date(obj.dateModified);
+          if (!isNaN(d.getTime())) detected.push({ source: 'schema dateModified', date: d, raw: String(obj.dateModified) });
+        }
+        if (obj.datePublished) {
+          const d = new Date(obj.datePublished);
+          if (!isNaN(d.getTime())) detected.push({ source: 'schema datePublished', date: d, raw: String(obj.datePublished) });
+        }
+        if (obj['@graph']) collectDates(obj['@graph']);
+      };
+      collectDates(parsed);
+    } catch { /* ignore parse errors here — checkSchemaMarkup handles those */ }
+  }
+
+  /* 3. Visible date patterns — "Updated <date>" / "Published <date>" / "Last updated: ..."
+        Matches common formats: "Jan 15, 2024", "January 15, 2024", "2024-01-15", "15/01/2024" */
+  const datePatternStrings: { pattern: RegExp; label: string }[] = [
+    { pattern: /(?:last\s+updated|updated|published|posted)[\s:on,]+([a-z]{3,9}\s+\d{1,2},?\s+\d{4})/gi, label: 'visible "Updated:" pattern' },
+    { pattern: /(?:last\s+updated|updated|published|posted)[\s:on,]+(\d{4}-\d{2}-\d{2})/gi,                    label: 'visible "Updated:" ISO pattern' },
+  ];
+  const visibleText = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ');
+  for (const { pattern, label } of datePatternStrings) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(visibleText)) !== null) {
+      const d = new Date(match[1]);
+      if (!isNaN(d.getTime()) && d.getTime() < now.getTime() && d.getTime() > new Date('2000-01-01').getTime()) {
+        detected.push({ source: label, date: d, raw: match[1] });
+      }
+      if (detected.length > 30) break;  /* safety cap on regex iteration */
+    }
+  }
+
+  /* 4. Year in title — e.g. "Microsoft Power Apps Pricing 2026: ...". This is
+        a strong intent signal that the page is positioned as time-sensitive. */
+  const titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
+  const title = titleMatch?.[1] || '';
+  const yearInTitleMatch = title.match(/\b(20\d{2})\b/);
+  let yearInTitle: number | null = null;
+  if (yearInTitleMatch) {
+    yearInTitle = parseInt(yearInTitleMatch[1], 10);
+  }
+
+  /* Pick the most recent reliable date for staleness assessment */
+  if (detected.length === 0 && yearInTitle === null) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'info',
+      finding_title: 'No content-freshness signal detected on the page',
+      finding_detail: 'No Last-Modified header, schema dateModified/datePublished, visible "Updated:" pattern, or year-in-title was detected. Without a freshness signal, neither Google nor users can assess whether the content is current. For time-sensitive topics this is a competitive disadvantage.',
+      recommendation: 'Add a visible "Last updated: <date>" label near the page title AND add `dateModified` to the Article JSON-LD schema with the same date. Update both whenever you genuinely refresh the content.',
+      data_source: 'html_fetch',
+    });
+    return findings;
+  }
+
+  detected.sort((a, b) => b.date.getTime() - a.date.getTime());
+  const mostRecent = detected[0] || null;
+  const dateForScoring = mostRecent ? mostRecent.date : null;
+
+  /* If title says "2026" but no detected date is from 2026, that's a
+     promise-vs-content mismatch worth surfacing. */
+  if (yearInTitle && dateForScoring) {
+    const detectedYear = dateForScoring.getFullYear();
+    if (yearInTitle > detectedYear + 1) {
+      findings.push({
+        audit_kind: 'on_page_fundamentals',
+        severity: 'amber',
+        finding_title: `Title promises ${yearInTitle} but most-recent date signal is ${detectedYear}`,
+        finding_detail: `The page title contains "${yearInTitle}" (signaling time-sensitive currency), but the most-recent detectable date on the page is from **${dateForScoring.toISOString().slice(0, 10)}** (source: ${mostRecent.source}). Users clicking expecting ${yearInTitle} content find ${detectedYear}-era information — a trust hit that compounds CTR loss.`,
+        recommendation: `Either (a) update the content (and dateModified schema + visible "Updated:" label) to genuinely reflect ${yearInTitle}, or (b) remove "${yearInTitle}" from the title until the content matches.`,
+        evidence: { title_year: yearInTitle, detected_year: detectedYear, detected_source: mostRecent.source },
+        data_source: 'html_fetch',
+      });
+    }
+  }
+
+  /* Staleness scoring on the most-recent detected date */
+  if (dateForScoring) {
+    const ageMs = now.getTime() - dateForScoring.getTime();
+    const ageMonths = ageMs / (1000 * 60 * 60 * 24 * 30);
+    const datesSummary = detected.slice(0, 4).map(d => `- ${d.source}: ${d.date.toISOString().slice(0, 10)} (raw: "${d.raw}")`).join('\n');
+    if (ageMonths > 24) {
+      findings.push({
+        audit_kind: 'on_page_fundamentals',
+        severity: 'red',
+        finding_title: `Content is stale — most-recent date signal is ${Math.round(ageMonths)} months old`,
+        finding_detail: `The most-recent freshness signal on this page is **${dateForScoring.toISOString().slice(0, 10)}** (${Math.round(ageMonths)} months ago, source: ${mostRecent.source}). For most informational/commercial topics, Google rewards recency — content >24 months old typically loses ground to fresher competitors. Pages with year-in-title content (pricing guides, "best of" lists, how-to tutorials) are hit hardest.\n\n**All freshness signals detected:**\n${datesSummary}`,
+        recommendation: `Refresh the content this quarter: review for outdated facts, prices, screenshots, and feature claims. Then update **both** the visible "Updated: <date>" label AND the JSON-LD schema's \`dateModified\`. Note: editing inconsequential filler doesn't count — Google's freshness signal weights material content changes, not date-stamp manipulation.`,
+        evidence: { age_months: Math.round(ageMonths), most_recent_date: dateForScoring.toISOString(), most_recent_source: mostRecent.source, all_dates: detected.slice(0, 6).map(d => ({ source: d.source, date: d.date.toISOString().slice(0, 10), raw: d.raw })) },
+        data_source: 'html_fetch',
+      });
+    } else if (ageMonths > 12) {
+      findings.push({
+        audit_kind: 'on_page_fundamentals',
+        severity: 'amber',
+        finding_title: `Content freshness aging — most-recent date signal is ${Math.round(ageMonths)} months old`,
+        finding_detail: `Most-recent freshness signal: **${dateForScoring.toISOString().slice(0, 10)}** (${Math.round(ageMonths)} months ago, source: ${mostRecent.source}). On time-sensitive topics this is on the older end of acceptable — competing pages refreshed in the last 6-12 months will gradually outrank.\n\n**All freshness signals detected:**\n${datesSummary}`,
+        recommendation: `Plan a content refresh in the next 1-3 months. Verify all facts/prices/features are current; update visible date label + schema dateModified once the refresh is genuine.`,
+        evidence: { age_months: Math.round(ageMonths), most_recent_date: dateForScoring.toISOString(), most_recent_source: mostRecent.source },
+        data_source: 'html_fetch',
+      });
+    } else {
+      findings.push({
+        audit_kind: 'on_page_fundamentals',
+        severity: 'green',
+        finding_title: `Content is fresh — most-recent date signal is ${Math.round(ageMonths)} months old`,
+        finding_detail: `Most-recent freshness signal: **${dateForScoring.toISOString().slice(0, 10)}** (${Math.round(ageMonths)} months ago, source: ${mostRecent.source}). Within the typical "recent" window for SERP freshness signals.\n\n**All freshness signals detected:**\n${datesSummary}`,
+        evidence: { age_months: Math.round(ageMonths), most_recent_date: dateForScoring.toISOString(), most_recent_source: mostRecent.source },
+        data_source: 'html_fetch',
+      });
+    }
+  }
+  return findings;
+}
+
+/** Phase 16.6 — Image optimization audit.
+ *
+ *  Structural signals (we don't fetch individual images, so byte-weight
+ *  isn't measured here — that would require N more HTTP requests). What we
+ *  CAN measure structurally:
+ *    • Image count
+ *    • Lazy-loading coverage (loading="lazy")
+ *    • Alt-text completeness (excluding tracking pixels — already filtered)
+ *    • Modern format usage (webp/avif) vs legacy (jpg/png)
+ *    • Responsive image markup (srcset/sizes presence)
+ *
+ *  Heuristic thresholds align with CWV-style guidance:
+ *    • <50% lazy-loaded on pages with 10+ images → amber
+ *    • Zero modern-format images on pages with 5+ images → amber  */
+async function checkImageOptimization(url: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  const r = await fetchWithTimeout(url, 12000);
+  if (!r.ok || !r.html) return findings;
+  const html = r.html;
+
+  /* Capture each <img> tag fully so we can inspect its attributes */
+  const imgMatches = html.match(/<img\s+[^>]*>/gi) || [];
+  if (imgMatches.length === 0) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'info',
+      finding_title: 'No <img> tags detected on this page',
+      finding_detail: 'Image optimization check skipped — the page has no img tags (or all images are CSS-backgrounds, which this check doesn\'t cover).',
+      data_source: 'html_fetch',
+    });
+    return findings;
+  }
+
+  /* Filter out 1x1 tracking pixels and obvious tracking-only images */
+  const realImages = imgMatches.filter(tag => {
+    if (/width=["']?1["']?/i.test(tag) && /height=["']?1["']?/i.test(tag)) return false;
+    if (/src=["'][^"']*\/(track|pixel|beacon|impressions?)\//i.test(tag)) return false;
+    if (/src=["'][^"']*\.(gif|png)[^"']*['"][^>]*1x1/i.test(tag)) return false;
+    return true;
+  });
+
+  let withLazy = 0, withAlt = 0, withSrcset = 0, modernFormat = 0, legacyFormat = 0;
+  for (const tag of realImages) {
+    if (/loading=["']lazy["']/i.test(tag)) withLazy++;
+    const altMatch = /\salt=["']([^"']*)["']/i.exec(tag);
+    if (altMatch && altMatch[1].trim().length > 0) withAlt++;
+    if (/srcset=/i.test(tag)) withSrcset++;
+    const srcMatch = /\ssrc=["']([^"']+)["']/i.exec(tag);
+    const src = srcMatch?.[1] || '';
+    if (/\.(webp|avif)(\?|#|$)/i.test(src)) modernFormat++;
+    else if (/\.(jpg|jpeg|png|gif)(\?|#|$)/i.test(src)) legacyFormat++;
+  }
+
+  const total = realImages.length;
+  const lazyRatio    = total > 0 ? withLazy / total : 0;
+  const altRatio     = total > 0 ? withAlt / total : 0;
+  const srcsetRatio  = total > 0 ? withSrcset / total : 0;
+
+  /* Build the per-finding details inline so the report shows the full picture */
+  const summary = `${total} content image(s) detected (tracking pixels filtered): **${withLazy} lazy-loaded** (${Math.round(lazyRatio * 100)}%), **${withAlt} with alt text** (${Math.round(altRatio * 100)}%), **${withSrcset} with srcset** (${Math.round(srcsetRatio * 100)}%), **${modernFormat} modern format** (webp/avif), **${legacyFormat} legacy** (jpg/png/gif).`;
+
+  /* Lazy-loading severity */
+  if (total >= 10 && lazyRatio < 0.5) {
+    findings.push({
+      audit_kind: 'page_load',
+      severity: 'amber',
+      finding_title: `Lazy-loading coverage is low — ${Math.round(lazyRatio * 100)}% of ${total} images use loading="lazy"`,
+      finding_detail: `${summary}\n\nWith ${total} images on the page and only ${withLazy} marked \`loading="lazy"\`, browsers download all non-lazy images upfront — inflating LCP and bandwidth on mobile.`,
+      recommendation: `Add \`loading="lazy"\` to all images below the fold (typically all but the first 1-3). Keep eager loading only on hero/above-fold images. This is a free CWV improvement requiring no asset re-encoding.`,
+      evidence: { total_images: total, with_lazy: withLazy, lazy_ratio: Number(lazyRatio.toFixed(2)) },
+      data_source: 'html_fetch',
+    });
+  }
+
+  /* Modern format severity */
+  if (total >= 5 && modernFormat === 0 && legacyFormat > 0) {
+    findings.push({
+      audit_kind: 'page_load',
+      severity: 'amber',
+      finding_title: `No modern image formats used — all ${legacyFormat} images are jpg/png/gif`,
+      finding_detail: `${summary}\n\nLegacy formats (jpg/png/gif) are typically 25-50% larger than equivalent webp, and 40-70% larger than avif at equivalent visual quality. On pages with multiple images this is a measurable LCP and bandwidth hit.`,
+      recommendation: `Convert content images to webp (broadest compatibility, 95%+ browser support) or avif (best compression, 90%+ browser support). Most image CDNs (Cloudflare Images, Imgix, ImageKit) can serve format-on-demand based on Accept headers. Use \`<picture>\` with format fallbacks for graceful degradation.`,
+      evidence: { total_images: total, modern_format: modernFormat, legacy_format: legacyFormat },
+      data_source: 'html_fetch',
+    });
+  }
+
+  /* Alt completeness — separate finding because it's an accessibility AND SEO issue */
+  if (total >= 5 && altRatio < 0.8) {
+    const missing = total - withAlt;
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'amber',
+      finding_title: `${missing} of ${total} images missing alt text (${Math.round((1 - altRatio) * 100)}%)`,
+      finding_detail: `${summary}\n\nMissing alt text is both an accessibility failure (screen readers can't describe the image) and a missed SEO signal (Google uses alt text as a topical signal, particularly for image search). The ≥80% alt-coverage threshold is the industry baseline.`,
+      recommendation: `Add descriptive alt text to all content images. Decorative images (purely visual flourishes) should use \`alt=""\` explicitly to signal "intentionally empty." Avoid generic alts like "image" or "photo" — describe what the image actually shows in 5-15 words.`,
+      evidence: { total_images: total, with_alt: withAlt, missing_alt: missing, alt_ratio: Number(altRatio.toFixed(2)) },
+      data_source: 'html_fetch',
+    });
+  }
+
+  /* Pass case — surface the structural metrics positively */
+  if (total >= 5 && lazyRatio >= 0.5 && altRatio >= 0.8 && (modernFormat > 0 || legacyFormat < 5)) {
+    findings.push({
+      audit_kind: 'page_load',
+      severity: 'green',
+      finding_title: `Image optimization signals look healthy — ${total} images, ${Math.round(lazyRatio * 100)}% lazy, ${Math.round(altRatio * 100)}% with alt`,
+      finding_detail: summary,
+      evidence: { total_images: total, with_lazy: withLazy, with_alt: withAlt, modern_format: modernFormat, legacy_format: legacyFormat },
+      data_source: 'html_fetch',
+    });
+  } else if (total < 5) {
+    /* Few-images case — surface as info, no severity verdict warranted */
+    findings.push({
+      audit_kind: 'page_load',
+      severity: 'info',
+      finding_title: `${total} content image(s) on this page — too few for optimization-pattern verdicts`,
+      finding_detail: summary,
+      data_source: 'html_fetch',
+    });
+  }
+  return findings;
+}
+
+/** Phase 16.6 — Hreflang validation.
+ *
+ *  Hreflang annotations tell Google which language/region variant of a page
+ *  to serve to which user. Misconfiguration is one of the most common
+ *  international-SEO failures. We can't fully validate reciprocity from a
+ *  single audited URL (that requires fetching each alternate), but we can:
+ *    • Detect presence
+ *    • Validate ISO language/region codes
+ *    • Check for x-default (recommended fallback)
+ *    • Check for self-reference (each page should list itself in its own
+ *      hreflang block)
+ *
+ *  This check fires ONLY when hreflang is present — single-locale pages
+ *  don't need it and shouldn't be penalized for lacking it. */
+async function checkHreflang(url: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  const r = await fetchWithTimeout(url, 12000);
+  if (!r.ok || !r.html) return findings;
+  const html = r.html;
+
+  /* Parse all hreflang <link> tags */
+  const linkPattern = /<link\s+[^>]*hreflang=["']([^"']+)["'][^>]*href=["']([^"']+)["']|<link\s+[^>]*href=["']([^"']+)["'][^>]*hreflang=["']([^"']+)["']/gi;
+  const entries: { hreflang: string; href: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = linkPattern.exec(html)) !== null) {
+    const hreflang = (m[1] || m[4] || '').trim();
+    const href     = (m[2] || m[3] || '').trim();
+    if (hreflang && href) entries.push({ hreflang, href });
+  }
+
+  if (entries.length === 0) {
+    /* No hreflang detected — only an issue if this is a multi-locale site,
+       which we can't infer from a single page. Skip silently. */
+    return findings;
+  }
+
+  /* Validate each entry's hreflang code */
+  const issues: string[] = [];
+  const validLangPattern = /^([a-z]{2,3}|x-default)(-[A-Z]{2,3})?$/;
+  for (const e of entries) {
+    if (!validLangPattern.test(e.hreflang)) {
+      issues.push(`Invalid hreflang code "\`${e.hreflang}\`" → ${e.href}. Use ISO 639-1 language codes optionally followed by ISO 3166-1 region codes (e.g. "en", "en-US", "es-MX", "x-default").`);
+    }
+  }
+
+  /* Self-reference check: does any entry's href match the audited URL? */
+  const normalizedAudited = url.replace(/\/$/, '').toLowerCase();
+  const hasSelfReference = entries.some(e => {
+    try {
+      const target = new URL(e.href, url).href.replace(/\/$/, '').toLowerCase();
+      return target === normalizedAudited;
+    } catch { return false; }
+  });
+  if (!hasSelfReference) {
+    issues.push(`The page does not list itself in its own hreflang annotations. Google requires self-reference — each page should declare its own \`hreflang\` entry pointing to itself.`);
+  }
+
+  /* x-default presence check */
+  const hasXDefault = entries.some(e => e.hreflang === 'x-default');
+  if (!hasXDefault) {
+    issues.push(`No \`x-default\` hreflang declared. Recommended for international pages — tells Google which version to serve when no specific language/region matches the user.`);
+  }
+
+  /* Duplicate hreflang values (different hrefs claiming same lang) */
+  const seenLangs: Record<string, string[]> = {};
+  for (const e of entries) {
+    if (!seenLangs[e.hreflang]) seenLangs[e.hreflang] = [];
+    seenLangs[e.hreflang].push(e.href);
+  }
+  for (const [lang, hrefs] of Object.entries(seenLangs)) {
+    if (hrefs.length > 1) {
+      issues.push(`Duplicate hreflang "\`${lang}\`" declared with conflicting hrefs: ${hrefs.map(h => `"${h}"`).join(', ')}. Each language/region should map to exactly one URL.`);
+    }
+  }
+
+  const summary = `${entries.length} hreflang annotation(s) detected on this page:\n${entries.slice(0, 12).map(e => `- \`${e.hreflang}\` → ${e.href}`).join('\n')}${entries.length > 12 ? `\n_(${entries.length - 12} more not shown)_` : ''}`;
+
+  if (issues.length > 0) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'amber',
+      finding_title: `Hreflang validation issues — ${issues.length} problem(s) detected`,
+      finding_detail: `${summary}\n\n**Issues found:**\n${issues.map(i => `- ${i}`).join('\n')}\n\nReciprocity (each alternate also listing this page) cannot be validated from a single audited URL — verify each alternate has its own complete hreflang block. Use Google's URL Inspection tool in Search Console to confirm Google sees the hreflang signals correctly.`,
+      recommendation: `Fix the listed issues. The required structure: each language/region variant declares the full set of hreflang links including itself AND x-default. Validate the full mesh with https://www.aleydasolis.com/english/international-seo-tools/hreflang-tags-generator/ or similar.`,
+      evidence: { entries, issues },
+      data_source: 'html_fetch',
+    });
+  } else {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'green',
+      finding_title: `Hreflang well-formed — ${entries.length} valid annotations including x-default and self-reference`,
+      finding_detail: summary,
+      evidence: { entries },
+      data_source: 'html_fetch',
+    });
+  }
+  return findings;
+}
+
+/* ════════════════════════════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════════════════════════ */
 
@@ -2862,9 +3270,9 @@ function renderAuditReport(opts: {
   /* Honest note about scope */
   lines.push('## Audit scope');
   lines.push('');
-  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links — tracking pixels filtered from the alt-text count), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (site-wide GA4 — context only), **schema markup** (JSON-LD types), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph, with decision-tree recommendation when page is built for a different topic), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks, with SerpAPI verification of SERP features — AI Overview, featured snippet, PAA, ads density — to resolve underperformance hypotheses when a SerpAPI key is configured, plus business-impact translation to missed monthly clicks + dollar opportunity), **GSC query distribution** (top queries this URL actually ranks for), **first-paragraph topicality** (does above-the-fold copy actually relate to the title/H1, catching templated hero copy and product taglines that don\'t match the page\'s stated subject), **heading-hierarchy vs PAA content gap** (does the page\'s H2/H3 outline answer the People Also Ask questions on the live SERP — missing PAA coverage is a content gap that hurts both AI Overview citation and PAA capture), **diffuse-intent SERP detection** (LLM-classifies the top-10 domains by intent category — flags when 3+ distinct intents appear, signaling Google itself can\'t decide what users want and SEO economics are harder), **competitive content benchmark** (fetches top-10 ranking competitors, derives median word count + heading count, compares this page\'s depth to the SERP-grade benchmark), **converging-evidence detection** (when 2+ Critical findings share signals like keyword-mismatch and url-not-in-top-10, surfaces an explicit cross-finding reinforcement banner), **foundational-fix sequencing** (marks 🎯 on the Critical finding whose recommendation would reframe others if addressed first).');
+  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links — tracking pixels filtered from the alt-text count), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (per-page GA4 with site-wide fallback — engagement rate, avg session duration, bounce rate, views, conversions for the audited URL), **schema markup** (JSON-LD types + per-type field validation including FAQPage Q&A structure and visible-content match, HowTo steps, Article/Product/Review required fields), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph, with decision-tree recommendation when page is built for a different topic), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks, with SerpAPI verification of SERP features — AI Overview, featured snippet, PAA, ads density — to resolve underperformance hypotheses when a SerpAPI key is configured, plus business-impact translation to missed monthly clicks + dollar opportunity), **GSC query distribution** (top queries this URL actually ranks for), **first-paragraph topicality** (does above-the-fold copy actually relate to the title/H1, catching templated hero copy and product taglines that don\'t match the page\'s stated subject), **heading-hierarchy vs PAA content gap** (does the page\'s H2/H3 outline answer the People Also Ask questions on the live SERP — missing PAA coverage is a content gap that hurts both AI Overview citation and PAA capture), **diffuse-intent SERP detection** (LLM-classifies the top-10 domains by intent category — flags when 3+ distinct intents appear, signaling Google itself can\'t decide what users want and SEO economics are harder), **competitive content benchmark** (fetches top-10 ranking competitors, derives median word count + heading count, compares this page\'s depth to the SERP-grade benchmark), **anchor-text quality** (classifies internal anchors as generic/url-based/single-word/descriptive; flags when >40% are generic-or-URL-based), **content freshness** (Last-Modified header + schema dateModified/datePublished + visible "Updated:" pattern detection + year-in-title vs detected-date mismatch; flags pages >24 months stale as red, 12-24 months as amber), **image optimization** (count, lazy-loading coverage, alt-text completeness, modern format usage — webp/avif vs jpg/png/gif; flags lazy-loading <50% on 10+ image pages and alt-coverage <80% on 5+ image pages), **hreflang validation** (when present: validates ISO language codes, self-reference, x-default presence, and duplicate-language conflicts), **converging-evidence detection** (when 2+ Critical findings share signals like keyword-mismatch and url-not-in-top-10, surfaces an explicit cross-finding reinforcement banner), **foundational-fix sequencing** (marks 🎯 on the Critical finding whose recommendation would reframe others if addressed first).');
   lines.push('');
-  lines.push('Not yet covered: **per-page GA4 metrics** (engagement, bounce, sessions by URL — requires a pm-ga4 top-pages-by-engagement query), **schema validation** (currently checks presence, not validity — Google rich-results testing API integration is the next step), **anchor text quality** (descriptive vs generic anchors for internal links), **content freshness** (Last-Modified header + sitemap lastmod + visible date staleness), **full site crawl**, **manual penalty checks**, **log file analysis**, **image weight breakdown**, **font loading**, **hreflang**. These will come in later phases.');
+  lines.push('Not yet covered: **schema rich-results testing** (currently uses offline per-type validation including FAQPage content-match; Google Rich Results Test API integration for authoritative confirmation is on the roadmap), **anchor reciprocity check** (currently analyzes outbound anchor quality; cross-domain inbound-anchor analysis requires a separate crawler or backlink API), **full site crawl**, **manual penalty checks**, **log file analysis**, **actual image byte-weight breakdown** (currently checks structural patterns; per-asset HEAD requests would add the bytes dimension), **font loading**, **HTTP/2 push and resource hints**, **CSP / security headers analysis**. These will come in later phases.');
 
   return lines.join('\n');
 }
