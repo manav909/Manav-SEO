@@ -1586,11 +1586,13 @@ async function enrichQueriesWithIntent(
 
   const sys = `You classify SEO search queries by primary user intent. The user gives you a list of queries from a project's Google Search Console. You return a JSON object where each query is classified as ONE of:
 
-- "informational" — user wants to learn (how, what, why, guide, tutorial, explainer, definition)
-- "commercial" — user comparing options (best, vs, top, review, compare, alternative)
-- "navigational" — user looking for a specific site by general term (NOT branded — see below)
-- "transactional" — user ready to act (download, signup, buy, pricing, free trial, get started)
-- "branded" — query contains a specific brand/product name (e.g. competitor names, or named SaaS products)
+- "informational" — user wants to learn (how, what, why, guide, tutorial, explainer, definition). Generic category exploration ("project management software", "app maker", "crm tool") is informational when the searcher is in awareness/discovery mode.
+- "commercial" — user comparing options to make a buying decision (best, vs, top, review, compare, alternative, "best X for Y", "X for small business")
+- "navigational" — user looking for a SPECIFIC NAMED entity (a known site, product, app, or service by exact name like "salesforce login", "notion templates", "github desktop"). DO NOT classify generic category searches as navigational — "app maker", "project management tool", "email marketing platform" are commercial or informational, NOT navigational. Use navigational ONLY when the query clearly targets one specific identifiable entity by its name.
+- "transactional" — user ready to act (download, signup, buy, pricing, free trial, get started, demo)
+- "branded" — query contains a specific brand/product name (competitor names, named SaaS products, or the project's own brand)
+
+Decision rule for the navigational vs commercial vs informational distinction: if you can substitute the query with "site:[domain]" without changing what the user wants, it's navigational. Otherwise it isn't.
 
 Pick the BEST SINGLE intent per query. If a query is mixed or ambiguous, pick the dominant intent. If you genuinely cannot tell, use "unknown" — never invent.
 
@@ -1673,10 +1675,20 @@ ${queryList}`;
    warranted — the section is suppressed in that case.
 ═══════════════════════════════════════════════════════════════════ */
 
+interface StrategicRecResult {
+  markdown: string;
+  /** When the recommendation is to pivot to an existing-ranking query,
+   *  this carries that query string. When the recommendation is "build a
+   *  new page" (no viable pivot candidate), this is null. Downstream
+   *  cluster rendering uses this to suppress the contradictory
+   *  per-cluster LLM recommendation when a pivot has been recommended. */
+  pivot_target: string | null;
+}
+
 function buildStrategicRecommendation(
   clusters: Cluster[],
   keyword: string,
-): string | null {
+): StrategicRecResult | null {
   const allQueries = clusters.flatMap(c => c.queries);
   if (allQueries.length === 0) return null;
   const kwPos = findCampaignKeywordPosition(allQueries, keyword);
@@ -1721,6 +1733,8 @@ function buildStrategicRecommendation(
       lines.push(`If "${keyword}" is strategically more valuable than the current top organic queries, create a new page specifically optimized for it. Plan for 6-12 months to break into top-10 for a competitive term with no existing organic anchor.`);
       lines.push('');
       lines.push(`**Lower-cost path:** pivot. The site has an existing organic foundation for the alternative query; building a new page from scratch for a competitive keyword with no current ranking is measured in months and dollars. Choose to build only when "${keyword}" is strategically more valuable than the current organic strengths.`);
+      lines.push('');
+      return { markdown: lines.join('\n'), pivot_target: top.query };
     } else {
       lines.push(`### Build a dedicated landing page for "${keyword}"`);
       lines.push('');
@@ -1729,9 +1743,9 @@ function buildStrategicRecommendation(
       lines.push(`### Or reconsider the campaign target`);
       lines.push('');
       lines.push(`Verify with the business that "${keyword}" is the right campaign target. The data shows no organic foundation for it on this site.`);
+      lines.push('');
+      return { markdown: lines.join('\n'), pivot_target: null };
     }
-    lines.push('');
-    return lines.join('\n');
   }
 
   if (kwPos.position > 20 && candidates.length > 0) {
@@ -1744,7 +1758,7 @@ function buildStrategicRecommendation(
     lines.push(`|---|---|`);
     lines.push(`| **"${keyword}"** | **"${top.query}"** |`);
     lines.push(`| Position ${kwPos.position.toFixed(1)} ${kwPos.position > 50 ? '(beyond page 5)' : '(page 3-5)'} | Position ${top.position.toFixed(1)} ${top.position <= 3 ? '(top 3)' : top.position <= 10 ? '(page 1)' : '(page 2)'} |`);
-    lines.push(`| Match: ${kwPos.match_strength} | Match: existing organic visibility |`);
+    lines.push(`| GSC presence: confirmed | GSC presence: confirmed |`);
     lines.push('');
     lines.push(`**Why this matters:** Moving from position ${kwPos.position.toFixed(1)} → 3 for "${keyword}" requires substantial title/H1/content overhaul plus competitive backlink investment — measured in months and dollars. Moving from position ${top.position.toFixed(1)} → 3 for "${top.query}" is a smaller, faster win, and the site already has the content foundation.`);
     lines.push('');
@@ -1763,7 +1777,7 @@ function buildStrategicRecommendation(
     lines.push('');
     lines.push(`*This recommendation is based on GSC query data and per-query intent classification. Branded queries (e.g. queries containing your own brand name) are excluded from pivot candidates.*`);
     lines.push('');
-    return lines.join('\n');
+    return { markdown: lines.join('\n'), pivot_target: top.query };
   }
 
   return null;  /* No pivot warranted — keyword position is OK or no candidates */
@@ -2106,10 +2120,17 @@ function renderClusterMapReport(opts: {
   /* Phase 16.0.5 — Strategic Recommendation section.
      Surfaces ABOVE findings when the campaign keyword is misaligned with
      the project's actual organic strengths. Suppressed when no pivot is
-     warranted. This is the section a Senior DMS opens the report to find. */
-  const strategicSection = buildStrategicRecommendation(clusters, keyword);
-  if (strategicSection) {
-    lines.push(strategicSection);
+     warranted. This is the section a Senior DMS opens the report to find.
+
+     The result also carries `pivot_target` — when non-null, downstream
+     per-cluster rendering suppresses the contradictory LLM recommendation
+     for the cluster containing the campaign keyword, replacing it with an
+     aligned next-step that points to the pivot target. Same report must
+     not tell the reader two different things. */
+  const strategicResult = buildStrategicRecommendation(clusters, keyword);
+  const strategicPivotTarget = strategicResult?.pivot_target ?? null;
+  if (strategicResult) {
+    lines.push(strategicResult.markdown);
   }
 
   /* Findings */
@@ -2236,7 +2257,18 @@ function renderClusterMapReport(opts: {
 
     if (cl.recommendation) {
       lines.push('');
-      lines.push(`**Recommendation (LLM-generated):** ${cl.recommendation}`);
+      /* When the report has fired a Strategic Recommendation with a pivot
+         direction, the per-cluster LLM recommendation for the cluster
+         CONTAINING the misaligned campaign keyword must not contradict it.
+         Suppress the LLM rec and replace with an aligned next-step pointer
+         to the pivot target. Other clusters retain their LLM rec since the
+         pivot doesn't speak to them. */
+      const clusterContainsCampaignKw = cl.campaign_keyword_position !== null && cl.campaign_keyword_position !== undefined;
+      if (strategicPivotTarget && clusterContainsCampaignKw) {
+        lines.push(`**Recommendation (aligned with Strategic Recommendation above):** deprioritize optimization on this cluster's current hub for "${keyword}". The recommended next step is to run the Technical Audit on the URL ranking for "${strategicPivotTarget}", and if content alignment confirms, create a new campaign targeting that keyword instead.`);
+      } else {
+        lines.push(`**Recommendation (LLM-generated):** ${cl.recommendation}`);
+      }
     }
     lines.push('');
     lines.push(`**Sample queries** (top ${Math.min(10, cl.queries.length)} by impressions):`);
