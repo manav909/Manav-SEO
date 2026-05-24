@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 16.11.1 hotfix) · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality. Phase 16.11 adds HTML renderer for deep audit report (alongside existing markdown). Phase 16.11.1 hotfix wraps HTML render in try/catch and makes report insert resilient to missing body_html column.
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 16.11.2 rollback) · **Live commit:** `8d4e066` — manifesto fully localized (287 keys × 5 langs deployed) + TextReveal grapheme fix for Devanagari. Manifesto work COMPLETE; pivot to broader SEO SEASON functionality. Phase 16.11 shipped an HTML renderer alongside markdown; Phase 16.11.1 hotfix did not resolve "audits stop fast in production" symptom; Phase 16.11.2 rolls back the HTML render wire-in (import + call) pending runtime evidence on the actual cause. The renderer file + SQL migration remain in the repo for re-introduction once root cause is confirmed.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -832,6 +832,24 @@ Two defensive changes:
 2. `seo-campaign-engine.ts` `writeReportToPanel` — if the insert fails with an error containing `body_html`, retry the insert with that field omitted. The markdown report still gets saved; HTML persistence is silently skipped until the SQL migration is applied. Warning is logged so Vercel logs surface the missing-migration state.
 
 After this hotfix, audits work regardless of whether the SQL migration ran. Applying the migration in Supabase enables `body_html` persistence; not applying it just keeps the current markdown-only behavior.
+
+### Phase 16.11.2 rollback (2026-05-24)
+
+After Phase 16.11.1 hotfix did not restore audits, the HTML render wire-in was rolled back to isolate it from runtime entirely:
+
+- `seo-technical-audit.ts:33` — `import { renderDeepAuditReportHtml } from "./seo-technical-audit-html.js";` commented out.
+- `seo-technical-audit.ts:518` — `renderDeepAuditReportHtml(deepReportInputs)` call removed; `bodyHtml` set to `undefined` unconditionally.
+- `writeReportToPanel` retains its `bodyHtml` parameter and the missing-column retry guard (cheap safety net, no behavioral change when `bodyHtml` is undefined).
+- `api/lib/seo-technical-audit-html.ts` remains in the repo, untouched, unreferenced at runtime.
+- `sql/phase-16-11-body-html.sql` is harmless whether applied or not (adds a nullable column that nothing writes to until the rollback is reverted).
+
+Effect: returns the audit module to the Phase 16.10 verified-working state. No HTML renderer code participates in cold-start or runtime.
+
+Diagnostic value:
+- **If audits work after this rollback** → Phase 16.11 was the cause. Next iteration: introduce the HTML renderer behind a feature flag, log the loading sequence, identify the actual runtime failure mode.
+- **If audits still don't work after this rollback** → cause is OUTSIDE Phase 16.11. Look at Vercel function quota / invocation count, Supabase project state (paused, exceeded), GSC/GA4 auth token expiry, or upstream code changes I'm not aware of.
+
+The senior-DMS rule applies: don't add the HTML rendering back until the underlying symptom is root-caused with runtime evidence (Vercel function log line for a failing audit invocation). The renderer is convenience; the audit is the product.
 
 ### Session handoff for tech audit work
 

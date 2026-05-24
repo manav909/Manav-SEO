@@ -30,7 +30,12 @@ import { ga4PullPageMetrics } from "./pm-ga4.js";
    at render time. seo-technical-audit-lenses.ts remains in the repo
    for one phase as a safety hedge but is no longer imported. */
 import { renderDeepAuditReport, type DeepReportInputs } from "./seo-technical-audit-deep-report.js";
-import { renderDeepAuditReportHtml } from "./seo-technical-audit-html.js";
+/* Phase 16.11.2 rollback — HTML renderer import removed from the audit's
+   load chain. The renderer file remains in api/lib/ but is unreferenced
+   at runtime so it cannot affect cold-start. Re-introduce after the
+   underlying "audits stop fast" symptom is root-caused with runtime
+   evidence. */
+// import { renderDeepAuditReportHtml } from "./seo-technical-audit-html.js";
 
 /* Phase 16.4 — ANTHROPIC_API_KEY needed for diffuse-intent classifier
    in checkDiffuseIntentSerp. Single LLM call per audit run when SerpAPI
@@ -517,17 +522,14 @@ export async function runTechnicalAudit(opts: {
       converging_banner:    convergingBanner,
     };
     const bodyMd = renderDeepAuditReport(deepReportInputs);
-    /* Phase 16.11 hotfix — HTML render is best-effort. If anything in the
-       renderer throws, log it and continue with bodyHtml=undefined. The
-       audit's primary deliverable is the markdown; HTML is the export
-       convenience layer and must never block the audit from completing. */
-    let bodyHtml: string | undefined;
-    try {
-      bodyHtml = renderDeepAuditReportHtml(deepReportInputs);
-    } catch (htmlErr: any) {
-      console.error('[tech-audit] HTML render failed (continuing with markdown only):', htmlErr?.message || htmlErr);
-      bodyHtml = undefined;
-    }
+    /* Phase 16.11.2 rollback — HTML render call disabled after audits started
+       failing fast in production with no toast and no visible result. The
+       renderer file itself remains in the repo (api/lib/seo-technical-audit-html.ts)
+       and the SQL migration adding body_html is harmless if applied. The two
+       hotfixes (try/catch on render, retry-without-body_html on insert) did
+       not resolve the symptom, so the wire-in is rolled back to the
+       Phase 16.10 working state pending diagnosis with runtime evidence. */
+    const bodyHtml: string | undefined = undefined;
 
     /* Honest confidence rating — combines per-finding source quality AND
        check-execution failures. Either dimension dropping low pulls the
