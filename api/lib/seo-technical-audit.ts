@@ -21,6 +21,7 @@
 
 import { db } from "./db.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
+import { fetchSerpFeatures, summarizeSerpFeatures } from "./serpapi.js";
 
 interface TargetResolution {
   url:    string;
@@ -177,7 +178,7 @@ export async function runTechnicalAudit(opts: {
       checkSchemaMarkup(target.url),
       /* Phase 15.2 — Senior DMS uplift 2026-05-24 */
       checkKeywordPresence(target.url, c.keyword),
-      checkCtrVsExpected(target.url, c.project_id),
+      checkCtrVsExpected(target.url, c.project_id, c.keyword),
       checkQueryDistribution(target.url, c.project_id, c.keyword),
       /* Phase 15.3 — Senior DMS uplift batch 2 (2026-05-24 PM) */
       checkFirstParagraphTopicality(target.url),
@@ -1297,7 +1298,7 @@ function expectedCtrForPosition(position: number): number {
   return POSITION_CTR_BENCHMARK[lo] * (1 - w) + POSITION_CTR_BENCHMARK[hi] * w;
 }
 
-async function checkCtrVsExpected(url: string, projectId: string): Promise<Finding[]> {
+async function checkCtrVsExpected(url: string, projectId: string, campaignKeyword?: string): Promise<Finding[]> {
   const findings: Finding[] = [];
   try {
     const { data: pagesRow } = await db().from("project_knowledge")
@@ -1330,24 +1331,73 @@ async function checkCtrVsExpected(url: string, projectId: string): Promise<Findi
 
     const detail = `**Actual:** ${clicks} clicks / ${impressions.toLocaleString()} impressions = **${actualCtr.toFixed(2)}% CTR** at average position **${position.toFixed(1)}**.\n\n**Expected at position ${position.toFixed(1)}:** ~${expectedCtr.toFixed(1)}% (benchmark midpoint from AdvancedWebRanking / Backlinko / FirstPageSage).\n\n**Ratio:** actual is **${Math.round(ratio * 100)}%** of expected.`;
 
+    /* Phase 16.1 — SerpAPI enrichment for underperformance cases.
+       The CTR finding used to leave the reader with a hypothesis:
+       "either (a) title/meta is weak OR (b) SERP features are siphoning
+       clicks." SerpAPI resolves the hypothesis by fetching the actual
+       SERP and listing what features are present. When SerpAPI is
+       unavailable (no key configured, fetch failure, no campaign
+       keyword) we fall through to the original recommendation text.
+
+       Only fires for RED (ratio < 0.5) and AMBER (0.5 ≤ ratio < 0.8)
+       cases — when there's a real CTR gap to diagnose. Green cases
+       don't need SERP context. */
+    const ctrUnderperforming = ratio < 0.8;
+    let serpEnrichment: { detail_addendum: string; recommendation: string } | null = null;
+    if (ctrUnderperforming && campaignKeyword && campaignKeyword.trim()) {
+      const serpFeatures = await fetchSerpFeatures(campaignKeyword, projectId);
+      if (serpFeatures) {
+        const featuresSummary = summarizeSerpFeatures(serpFeatures);
+        if (featuresSummary) {
+          /* SERP has notable features siphoning organic CTR */
+          const detail_addendum = `\n\n**SerpAPI verification — what's actually on the SERP for "${campaignKeyword}":**\n- ${featuresSummary}\n\n${serpFeatures.cache_hit ? '_(SERP features cached within last 7 days)_' : '_(Fresh SERP fetch)_'}`;
+          /* Tailor recommendation based on dominant feature */
+          let rec = '';
+          if (serpFeatures.ai_overview) {
+            rec = `**Optimize for AI Overview citation, not just position.** With an AI Overview present, top-3 organic positions can lose 30-50% of clicks to the AI summary. Tactics: (1) answer the query in 40-60 words within the first paragraph (citation candidate), (2) ensure FAQPage or HowTo schema is valid and matches visible content, (3) cite authoritative external sources Google's models trust, (4) structure key facts as scannable lists.`;
+          } else if (serpFeatures.featured_snippet && serpFeatures.featured_snippet_owner) {
+            rec = `**A competitor (\`${serpFeatures.featured_snippet_owner}\`) owns the featured snippet** — target that snippet. Write a concise 40-60 word direct answer to the query, placed within the first 100 words of the page, in the snippet format Google extracts (paragraph for "what is", numbered list for "how to", table for comparisons). Then rewrite the title/meta as the secondary lift.`;
+          } else if (serpFeatures.featured_snippet) {
+            rec = `**Featured snippet is captured by an unknown owner** — write a concise 40-60 word direct answer to the query within the first 100 words of the page, formatted in the structure Google extracts. This is the highest-leverage SERP real estate.`;
+          } else if (serpFeatures.ads_top >= 3) {
+            rec = `**Heavy paid placement (${serpFeatures.ads_top} top ads) is compressing organic visibility.** Title/meta clarity matters even more — front-load the differentiator that paid ads typically don't offer (expertise depth, real numbers, original research). Consider whether the keyword is fundamentally commercial-search territory where SEO economics are unfavorable.`;
+          } else {
+            /* Some features present but none dominant — generic SERP-aware advice */
+            rec = `Rewrite the title and meta description for click appeal — front-load the benefit, include a number or specific outcome, and ensure the keyword sits at the start. The SERP features listed above are also pulling attention; consider whether structured-data + answer-first content could win those positions too.`;
+          }
+          serpEnrichment = { detail_addendum, recommendation: rec };
+        } else {
+          /* SerpAPI succeeded but found no notable features — the SERP
+             is plain organic. That MEANS the CTR problem really IS the
+             title/meta. Tighten recommendation accordingly. */
+          serpEnrichment = {
+            detail_addendum: `\n\n**SerpAPI verification — what's actually on the SERP for "${campaignKeyword}":** plain organic SERP — no AI Overview, no featured snippet, no PAA box, no heavy ad density. The CTR gap is NOT caused by SERP features.\n\n${serpFeatures.cache_hit ? '_(SERP features cached within last 7 days)_' : '_(Fresh SERP fetch)_'}`,
+            recommendation: `**The SERP has no features siphoning clicks — the title/meta is the actual problem.** Rewrite the title and meta description for click appeal: front-load the benefit, include a number or specific outcome, ensure the keyword sits at the start. Don't waste effort optimizing for snippets/AI Overview that aren't on this SERP.`,
+          };
+        }
+      }
+    }
+
     if (ratio < 0.5) {
+      const baseDetail = detail + `\n\nThis is a major underperformance signal. ${serpEnrichment ? '' : 'Either (a) the title/meta description is uncompelling at the SERP, or (b) the SERP for this query is dominated by features (AI Overview, featured snippet, PAA) that suppress organic CTR. Both are addressable.'}`;
       findings.push({
         audit_kind: 'engagement_signals',
         severity:   'red',
         finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — significant underperformance`,
-        finding_detail: detail + `\n\nThis is a major underperformance signal. Either (a) the title/meta description is uncompelling at the SERP, or (b) the SERP for this query is dominated by features (AI Overview, featured snippet, PAA) that suppress organic CTR. Both are addressable.`,
-        recommendation: `Rewrite the title and meta description for click appeal — front-load the benefit, include a number or specific outcome, and ensure the keyword sits at the start. Then check the live SERP for features that may be siphoning clicks.`,
-        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100) },
+        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || ''),
+        recommendation: serpEnrichment?.recommendation || `Rewrite the title and meta description for click appeal — front-load the benefit, include a number or specific outcome, and ensure the keyword sits at the start. Then check the live SERP for features that may be siphoning clicks. _Add a SerpAPI key in Data Room → Integrations to have the platform verify SERP features automatically._`,
+        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100), serp_verified: !!serpEnrichment },
         data_source: 'gsc',
       });
     } else if (ratio < 0.8) {
+      const baseDetail = detail + `\n\nNot critical, but a clearer title or stronger meta description could earn measurably more clicks at this position.`;
       findings.push({
         audit_kind: 'engagement_signals',
         severity:   'amber',
         finding_title:  `CTR is ${Math.round(ratio * 100)}% of expected for position ${position.toFixed(1)} — mild underperformance`,
-        finding_detail: detail + `\n\nNot critical, but a clearer title or stronger meta description could earn measurably more clicks at this position.`,
-        recommendation: `A/B candidates: lead the title with the searcher's intent verb, include a specific year/number for freshness, add a clear value proposition in the meta description.`,
-        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100) },
+        finding_detail: baseDetail + (serpEnrichment?.detail_addendum || ''),
+        recommendation: serpEnrichment?.recommendation || `A/B candidates: lead the title with the searcher's intent verb, include a specific year/number for freshness, add a clear value proposition in the meta description.`,
+        evidence: { actual_ctr_pct: Number(actualCtr.toFixed(2)), expected_ctr_pct: Number(expectedCtr.toFixed(1)), position, clicks, impressions, ratio_pct: Math.round(ratio * 100), serp_verified: !!serpEnrichment },
         data_source: 'gsc',
       });
     } else if (ratio > 1.3) {
@@ -1886,9 +1936,9 @@ function renderAuditReport(opts: {
   /* Honest note about scope */
   lines.push('## Audit scope');
   lines.push('');
-  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links — tracking pixels filtered from the alt-text count), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (site-wide GA4 — context only), **schema markup** (JSON-LD types), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph, with decision-tree recommendation when page is built for a different topic), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks), **GSC query distribution** (top queries this URL actually ranks for), and **first-paragraph topicality** (does above-the-fold copy actually relate to the title/H1, catching templated hero copy and product taglines that don\'t match the page\'s stated subject).');
+  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links — tracking pixels filtered from the alt-text count), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (site-wide GA4 — context only), **schema markup** (JSON-LD types), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph, with decision-tree recommendation when page is built for a different topic), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks, with SerpAPI verification of SERP features — AI Overview, featured snippet, PAA, ads density — to resolve underperformance hypotheses when a SerpAPI key is configured), **GSC query distribution** (top queries this URL actually ranks for), and **first-paragraph topicality** (does above-the-fold copy actually relate to the title/H1, catching templated hero copy and product taglines that don\'t match the page\'s stated subject).');
   lines.push('');
-  lines.push('Not yet covered: **per-page GA4 metrics** (engagement, bounce, sessions by URL — requires a pm-ga4 top-pages-by-engagement query), **SERP feature awareness** (featured snippet, PAA, AI Overview presence — requires SerpAPI integration), **competitive content benchmark** (word count + topical coverage vs top-10 ranking pages), **schema validation** (currently checks presence, not validity), **anchor text quality** (descriptive vs generic anchors for internal links), **business-impact translation** (opportunity sizing in clicks/conversions), **content freshness** (Last-Modified header + sitemap lastmod), **full site crawl**, **manual penalty checks**, **log file analysis**, **image weight breakdown**, **font loading**, **hreflang**. These will come in later phases.');
+  lines.push('Not yet covered: **per-page GA4 metrics** (engagement, bounce, sessions by URL — requires a pm-ga4 top-pages-by-engagement query), **competitive content benchmark** (word count + topical coverage vs top-10 ranking pages — top-10 URLs are now available via SerpAPI, content fetching + comparison is the remaining work), **schema validation** (currently checks presence, not validity), **anchor text quality** (descriptive vs generic anchors for internal links), **heading hierarchy** (H1/H2/H3 outline vs keyword variants and PAA questions), **business-impact translation** (opportunity sizing in clicks/conversions), **content freshness** (Last-Modified header + sitemap lastmod), **full site crawl**, **manual penalty checks**, **log file analysis**, **image weight breakdown**, **font loading**, **hreflang**. These will come in later phases.');
 
   return lines.join('\n');
 }
