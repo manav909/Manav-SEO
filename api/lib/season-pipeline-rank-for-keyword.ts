@@ -836,6 +836,160 @@ ${risks || '(none flagged)'}
 `;
 }
 
+/* ─── Phase 17.2 — Audit context for content brief ──────────────
+   The skeleton stage of content_brief decides target word count, H2
+   headings, schema, and intent — all things the audit has empirical
+   ground truth for. Rather than letting the LLM guess these, we
+   inject the audit's findings as structured constraints. The LLM
+   still does creative work (title, meta, angle, expansion) but
+   anchors its structural decisions to verified data.
+
+   This is hybrid: audit constrains, LLM synthesizes within constraints. */
+
+interface BriefAuditContext {
+  target_word_count_hint: number | null;   /* from competitive_content_benchmark — competitor median */
+  competitor_range:       { min: number; max: number } | null;
+  mandatory_h2_candidates: string[];        /* from PAA gap — verbatim citation-eligible H2 candidates */
+  paa_total:              number | null;    /* total PAA questions on live SERP */
+  schema_guidance:        string | null;    /* derived from schema findings */
+  first_paragraph_guidance: string | null;  /* derived from first-paragraph topicality findings */
+  critical_signals:       string[];         /* red-severity findings the writer must know about */
+  serp_features_note:     string | null;    /* AI Overview / featured snippet context */
+  intent_warning:         string | null;    /* diffuse-intent SERP signal */
+  source_count:           number;           /* how many audit findings we drew from */
+}
+
+function extractAuditContextForBrief(
+  findings: Array<{ audit_kind: string; severity: string; finding_title: string; finding_detail?: string; recommendation?: string; evidence?: any }>,
+): BriefAuditContext | null {
+  if (!findings || findings.length === 0) return null;
+
+  let sourceCount = 0;
+
+  /* Target word count from competitive_content_benchmark */
+  const compContent = findings.find(f => /Content depth.*SERP median|content exceeds SERP median|Content depth in line/i.test(f.finding_title));
+  const ccEv = compContent?.evidence || {};
+  const target_word_count_hint = (ccEv.competitor_median && Number(ccEv.competitor_median) > 0) ? Number(ccEv.competitor_median) : null;
+  const competitor_range = (ccEv.competitor_min !== undefined && ccEv.competitor_max !== undefined)
+    ? { min: Number(ccEv.competitor_min), max: Number(ccEv.competitor_max) }
+    : null;
+  if (target_word_count_hint) sourceCount++;
+
+  /* PAA gap — the highest-leverage signal. These are verbatim citation-eligible
+     H2 candidates straight from the live SERP. */
+  const paaGap = findings.find(f => /PAA questions.+(NOT addressed|not addressed)|Content gap.+PAA/i.test(f.finding_title));
+  const paaEv = paaGap?.evidence || {};
+  const mandatory_h2_candidates: string[] = Array.isArray(paaEv.unanswered) ? paaEv.unanswered.slice(0, 6) : [];
+  const paa_total: number | null = paaEv.paa_total !== undefined ? Number(paaEv.paa_total) : null;
+  if (mandatory_h2_candidates.length > 0) sourceCount++;
+
+  /* Schema guidance — combine presence finding (what's there) + recommendation finding (what's missing/wrong) */
+  let schema_guidance: string | null = null;
+  const schemaPresent = findings.find(f => /Schema present:/i.test(f.finding_title));
+  const schemaMissing = findings.find(f => /(Schema|structured data).+(missing|absent|invalid)/i.test(f.finding_title));
+  if (schemaMissing) {
+    schema_guidance = `${schemaMissing.finding_title}${schemaMissing.recommendation ? ' — ' + schemaMissing.recommendation.slice(0, 200) : ''}`;
+    sourceCount++;
+  } else if (schemaPresent) {
+    schema_guidance = `Existing page already uses: ${schemaPresent.finding_title.replace('Schema present: ', '')}. Maintain consistency.`;
+    sourceCount++;
+  }
+
+  /* First paragraph guidance — critical for AI Overview citation eligibility */
+  let first_paragraph_guidance: string | null = null;
+  const firstParaOff = findings.find(f => /First paragraph is off-topic/i.test(f.finding_title));
+  const firstParaWeak = findings.find(f => /First paragraph weakly aligned/i.test(f.finding_title));
+  if (firstParaOff) {
+    first_paragraph_guidance = `Audit detected the existing page's first paragraph is off-topic. The new brief MUST require: first paragraph (40-60 words) directly answers the query "${'X'}" with the primary keyword in sentence 1.`;
+    sourceCount++;
+  } else if (firstParaWeak) {
+    first_paragraph_guidance = `Audit detected weak first-paragraph alignment. Brief must require first paragraph (40-60 words) using primary keyword in sentence 1 + named entity in sentence 2.`;
+    sourceCount++;
+  }
+
+  /* CTR finding — SERP features context (AI Overview presence shapes content strategy) */
+  const ctr = findings.find(f => /CTR is \d+%|CTR underperformance|CTR.*of expected/i.test(f.finding_title));
+  const ctrEv = ctr?.evidence || {};
+  let serp_features_note: string | null = null;
+  const features: string[] = [];
+  if (ctrEv.ai_overview) features.push('AI Overview present (citation eligibility > position)');
+  if (ctrEv.featured_snippet) features.push(`featured snippet${ctrEv.featured_snippet_owner ? ' owned by `' + ctrEv.featured_snippet_owner + '`' : ''} (40-60w direct-answer wins)`);
+  if (ctrEv.paa_count > 0) features.push(`${ctrEv.paa_count} PAA questions on SERP`);
+  if (ctrEv.ads_top >= 3) features.push(`${ctrEv.ads_top} top ads compressing organic visibility`);
+  if (features.length > 0) { serp_features_note = features.join(' · '); sourceCount++; }
+
+  /* Diffuse-intent SERP — warning that SERP is fragmented */
+  const diffuse = findings.find(f => /Diffuse-intent SERP/i.test(f.finding_title));
+  const diffEv = diffuse?.evidence || {};
+  let intent_warning: string | null = null;
+  if (diffuse && diffEv.distinct_categories >= 3) {
+    intent_warning = `SERP is intent-diffuse (${diffEv.distinct_categories} distinct categories in top-10). The brief should pick ONE intent class and execute it tightly — generic-coverage articles get punished here.`;
+    sourceCount++;
+  }
+
+  /* Critical signals — red-severity findings the writer absolutely needs to know */
+  const critical_signals: string[] = findings
+    .filter(f => f.severity === 'red')
+    .map(f => f.finding_title)
+    .slice(0, 5);
+  if (critical_signals.length > 0) sourceCount++;
+
+  if (sourceCount === 0) return null;
+
+  return {
+    target_word_count_hint,
+    competitor_range,
+    mandatory_h2_candidates,
+    paa_total,
+    schema_guidance,
+    first_paragraph_guidance,
+    critical_signals,
+    serp_features_note,
+    intent_warning,
+    source_count: sourceCount,
+  };
+}
+
+function formatBriefAuditContextForLlm(ctx: BriefAuditContext, keyword: string): string {
+  const lines: string[] = [];
+  lines.push('═══ AUDIT INTELLIGENCE (verified data — do not override) ═══');
+
+  if (ctx.target_word_count_hint) {
+    const range = ctx.competitor_range ? ` (range ${ctx.competitor_range.min.toLocaleString()}–${ctx.competitor_range.max.toLocaleString()})` : '';
+    lines.push(`TARGET WORD COUNT: ${ctx.target_word_count_hint.toLocaleString()} words — SERP median${range}. Set target_word_count to this value, not your own estimate.`);
+  }
+
+  if (ctx.mandatory_h2_candidates.length > 0) {
+    lines.push(`MANDATORY H2 CANDIDATES (live PAA questions from SERP — high citation-eligibility):`);
+    ctx.mandatory_h2_candidates.forEach((q, i) => lines.push(`  ${i + 1}. ${q}`));
+    lines.push(`These ${ctx.mandatory_h2_candidates.length} questions MUST appear in section_headings (verbatim where possible — they're what Google's AI Overview cites from). Add 2-4 additional H2s for full topical coverage.`);
+  }
+
+  if (ctx.schema_guidance) {
+    lines.push(`SCHEMA: ${ctx.schema_guidance}`);
+  }
+
+  if (ctx.first_paragraph_guidance) {
+    lines.push(`FIRST PARAGRAPH: ${ctx.first_paragraph_guidance.replace('"X"', `"${keyword}"`)}`);
+  }
+
+  if (ctx.serp_features_note) {
+    lines.push(`SERP FEATURES: ${ctx.serp_features_note}`);
+  }
+
+  if (ctx.intent_warning) {
+    lines.push(`INTENT WARNING: ${ctx.intent_warning}`);
+  }
+
+  if (ctx.critical_signals.length > 0) {
+    lines.push(`CRITICAL SIGNALS (red-severity audit findings — writer/strategist must address):`);
+    ctx.critical_signals.forEach((s, i) => lines.push(`  ${i + 1}. ${s}`));
+  }
+
+  lines.push('═══ END AUDIT INTELLIGENCE ═══');
+  return lines.join('\n');
+}
+
 /* ─── STEP 5: Content brief (leverages existing content-engine) ─── */
 
 const stepContentBrief = {
@@ -854,6 +1008,23 @@ const stepContentBrief = {
     let totalLlm = 0;
     let totalWeb = 0;
     const stepNotes: string[] = [];
+
+    /* Phase 17.2 — extract audit context. When available, this anchors the
+       skeleton stage to verified data (target word count, mandatory H2 candidates
+       from PAA, schema, first-paragraph requirements) rather than LLM guesses. */
+    const auditContext = extractAuditContextForBrief(ctx.audit_findings);
+    const auditContextBlock = auditContext ? formatBriefAuditContextForLlm(auditContext, keyword) : '';
+    if (auditContext) {
+      stepNotes.push(`Brief anchored to ${auditContext.source_count} audit signal(s): ${[
+        auditContext.target_word_count_hint && 'target word count',
+        auditContext.mandatory_h2_candidates.length > 0 && `${auditContext.mandatory_h2_candidates.length} PAA H2 candidates`,
+        auditContext.schema_guidance && 'schema',
+        auditContext.first_paragraph_guidance && 'first paragraph',
+        auditContext.serp_features_note && 'SERP features',
+        auditContext.intent_warning && 'intent diversity',
+        auditContext.critical_signals.length > 0 && `${auditContext.critical_signals.length} red findings`,
+      ].filter(Boolean).join(', ')}.`);
+    }
 
     /* ════════ STAGE 1 — SKELETON ═════════════════════════════════
        Title, meta, intent, H2 headings, unique angle, schema.
@@ -888,14 +1059,15 @@ Required shape:
 Rules:
 - 6-10 H2 headings, ordered for reader flow
 - Headings are specific, not generic
-- Secondary keywords are real variations searchers use, not synonyms`;
+- Secondary keywords are real variations searchers use, not synonyms
+- When the user provides an AUDIT INTELLIGENCE block, treat it as verified ground truth: use target_word_count from it, include mandatory H2 candidates verbatim in section_headings (you may add 2-4 of your own), honor schema guidance, and reflect the SERP features context in your unique_angle (e.g. if AI Overview is present, the angle should make the article AI-Overview-citation-ready)`;
 
     const skelUsr = `Keyword: "${keyword}"
 ${intentLine}
 ${gscLine}
 ${compLine}
 ${stratLine}
-
+${auditContextBlock ? '\n' + auditContextBlock + '\n' : ''}
 Produce the JSON skeleton.`;
 
     let skelR = await callLlmJson({ systemPrompt: skelSys, userMessage: skelUsr, maxTokens: 1200, timeoutMs: 90_000 });
@@ -1161,6 +1333,19 @@ Now write the writer's strategic brief.`;
       reader_persona:         writerBriefData.reader_persona || '',
       things_to_avoid:        writerBriefData.things_to_avoid || [],
       quality_checklist:      writerBriefData.quality_checklist || [],
+      /* Phase 17.2 — audit-sourced signals embedded as transparency metadata.
+         Downstream consumers (writers, editors, audit re-checks) can see which
+         brief decisions were anchored to verified audit data vs LLM judgment. */
+      _audit_sourced_signals: auditContext ? {
+        target_word_count_from_audit: auditContext.target_word_count_hint,
+        paa_h2_candidates:            auditContext.mandatory_h2_candidates,
+        schema_guidance_from_audit:   auditContext.schema_guidance,
+        first_para_guidance:          auditContext.first_paragraph_guidance,
+        serp_features:                auditContext.serp_features_note,
+        intent_warning:               auditContext.intent_warning,
+        critical_signals:             auditContext.critical_signals,
+        source_count:                 auditContext.source_count,
+      } : null,
     };
 
     const honestNote = stepNotes.length === 0
@@ -1237,6 +1422,27 @@ ${kp}${examples}${subs}`;
     ? (brief.secondary_keywords || []).join(', ')
     : '_(none specified)_';
 
+  /* Phase 17.2 — audit-sourced signals block. Surfaces the verified audit
+     intel that anchored this brief's key decisions, so writers/editors know
+     which structural choices came from real audit data vs LLM judgment. */
+  const audit = brief._audit_sourced_signals;
+  const auditBlock = audit ? `
+
+## 🎯 Audit-anchored decisions
+
+This brief's structural choices were anchored to the technical audit's verified findings (${audit.source_count} signal${audit.source_count === 1 ? '' : 's'} consumed):
+
+${audit.target_word_count_from_audit ? `- **Target word count** ${audit.target_word_count_from_audit.toLocaleString()} — pulled from competitive_content_benchmark (SERP median across fetched competitors)` : ''}
+${audit.paa_h2_candidates && audit.paa_h2_candidates.length > 0 ? `- **PAA H2 candidates** (live SERP — high citation-eligibility):\n${audit.paa_h2_candidates.map((q: string) => `  - "${q}"`).join('\n')}` : ''}
+${audit.schema_guidance ? `- **Schema guidance:** ${audit.schema_guidance}` : ''}
+${audit.first_para_guidance ? `- **First paragraph requirement:** ${audit.first_para_guidance}` : ''}
+${audit.serp_features ? `- **SERP features context:** ${audit.serp_features}` : ''}
+${audit.intent_warning ? `- **Intent warning:** ${audit.intent_warning}` : ''}
+${audit.critical_signals && audit.critical_signals.length > 0 ? `- **Critical (red) signals from audit:**\n${audit.critical_signals.map((s: string) => `  - ${s}`).join('\n')}` : ''}
+
+_Brief decisions that ignore these signals are knowingly overriding verified data._
+` : '';
+
   return `# Content Brief: "${keyword}"
 
 ## Top-line specs
@@ -1253,7 +1459,7 @@ ${kp}${examples}${subs}`;
 | **Reader persona** | ${brief.reader_persona || '—'} |
 
 **Secondary keywords:** ${secondary}
-
+${auditBlock}
 ## Unique angle
 
 ${brief.unique_angle || '_(none specified)_'}

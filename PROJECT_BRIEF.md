@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.1 competitor_snapshot wire-in) · **Live commit:** `c0f670f` (Phase 17.0 audit-to-pipeline bridge — `ctx.audit_findings` available to every step). Phase 17.1 wires the first step to consume that data: `competitor_snapshot` now uses the audit's verified SerpAPI top-10 instead of an LLM call when audit data is available. Saves ~$0.50/run + eliminates URL hallucination risk. Manifesto work was completed 2026-05-23; SEO Season pivot is in progress along STRATEGY.md Track 2 (pillar-to-pipeline integration).
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.2 content_brief wire-in) · **Live commit:** `c6e5841` (Phase 17.1 competitor_snapshot audit-sourced). Phase 17.2 wires the highest-UX-impact step: `content_brief`'s skeleton stage now anchors target word count, mandatory H2 candidates (from PAA gap), schema guidance, first-paragraph requirement, SERP features context, and critical signals to the audit. The brief output carries `_audit_sourced_signals` metadata for transparency, and the rendered artifact shows writers exactly which decisions came from audit ground truth vs LLM judgment. Manifesto work was completed 2026-05-23; SEO Season pivot is in progress along STRATEGY.md Track 2.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -908,6 +908,40 @@ First step to actually consume `ctx.audit_findings`. Replaces the LLM call with 
 - `_source_note` correctly reads 'cached SerpAPI snapshot' vs 'fresh SerpAPI fetch' from `evidence.cache_hit`.
 
 **Diff:** 1 file changed, 141 insertions, 7 deletions in `season-pipeline-rank-for-keyword.ts`.
+
+### Phase 17.2 — content_brief wire-in (2026-05-24)
+
+The first creative step to consume `ctx.audit_findings`. Highest UX-impact wire-in — writers read the brief artifact directly. Replaces LLM-guessed structural decisions with audit-anchored ones.
+
+**What it does:**
+- New helper `extractAuditContextForBrief(findings)` in `season-pipeline-rank-for-keyword.ts` — extracts structured signals from audit findings: target word count (from competitive_content_benchmark median), mandatory H2 candidates (from PAA gap's `evidence.unanswered`), schema guidance (from schema findings), first-paragraph requirement (from first-paragraph topicality findings), SERP features (AI Overview / featured snippet / PAA count / ads from CTR finding evidence), intent warning (from diffuse_intent), and red-severity critical signals.
+- New helper `formatBriefAuditContextForLlm(context, keyword)` produces a structured `AUDIT INTELLIGENCE` block that gets injected into Stage 1 (skeleton) of the brief's userMessage.
+- Stage 1 system prompt updated with explicit rule to honor the AUDIT INTELLIGENCE block as verified ground truth (use its target_word_count, include PAA H2 candidates verbatim in section_headings, honor schema guidance, reflect SERP features in unique_angle).
+- Brief output gains `_audit_sourced_signals` metadata for downstream transparency.
+- `renderBriefArtifact` adds a 🎯 **Audit-anchored decisions** section near the top so writers immediately see which structural choices came from audit ground truth vs LLM judgment.
+
+**Why it's hybrid (not full replacement like 17.1):**
+Brief skeleton needs creative judgment for title, meta description, unique angle, secondary keywords. Audit data ANCHORS the structural decisions (word count, H2 set, schema, intent class) but doesn't replace the LLM call entirely. Cost: same 1 LLM call. Quality: significantly higher (anchored not guessed).
+
+**What's anchored vs synthesized after Phase 17.2:**
+| Decision | Before | After (when audit available) |
+|---|---|---|
+| target_word_count | LLM guess (often 2500 default) | Competitor SERP median (verified) |
+| section_headings | LLM-generated 6-10 H2s | LLM plus 4-6 verbatim PAA H2 candidates |
+| schema_recommendation | LLM choice | Audit's recommendation honored |
+| First-paragraph topicality | Not addressed in skeleton | Required (40-60w, keyword in sentence 1) |
+| Critical signals visibility | Hidden in audit panel | Surfaced in brief's audit-anchored section |
+| AI Overview awareness | Not signaled | Explicit in unique_angle guidance |
+
+**Verification:**
+- Vercel runtime TS clean (touched files + runner).
+- Frontend baseline: 27 (unchanged). API ceiling: 12 (unchanged). Vite green.
+- Smoke test with 4 fixtures (empty, real alphasoftware-shape, sparse-single-signal, all-PAA-answered) all pass.
+- Real alphasoftware fixture extracted 7 signals (target word count 3052, 4 PAA candidates, schema guidance, first-paragraph requirement, SERP features note, intent warning, 2 red critical signals).
+- Production title regexes verified against actual finding emissions.
+- Formatted LLM block is rich, explicit, instructive — exactly what's needed for skeleton anchoring.
+
+**Diff:** 1 file changed, 209 insertions, 3 deletions in `season-pipeline-rank-for-keyword.ts`.
 
 ### Session handoff for tech audit work
 
