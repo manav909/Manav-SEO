@@ -179,6 +179,8 @@ export async function runTechnicalAudit(opts: {
       checkKeywordPresence(target.url, c.keyword),
       checkCtrVsExpected(target.url, c.project_id),
       checkQueryDistribution(target.url, c.project_id, c.keyword),
+      /* Phase 15.3 — Senior DMS uplift batch 2 (2026-05-24 PM) */
+      checkFirstParagraphTopicality(target.url),
     ]);
 
     const findings: Finding[] = [];
@@ -188,7 +190,7 @@ export async function runTechnicalAudit(opts: {
       if (r.status === 'fulfilled') {
         findings.push(...r.value);
       } else {
-        const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution'][i];
+        const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution','first_para_topicality'][i];
         failedChecks.push(checkName);
       }
     }
@@ -674,8 +676,13 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
     });
   }
 
-  /* Images without alt — list specific images for actionable fixes */
-  const imgMatches = html.match(/<img[^>]+>/gi) || [];
+  /* Images without alt — list specific images for actionable fixes.
+     Phase 15.3 — filter out known tracking pixels: they have no alt by
+     design (Facebook Pixel, GA, Pinterest, LinkedIn Insight, etc.) and
+     counting them as "missing alt" is noise that masks real findings. */
+  const allImgMatches = html.match(/<img[^>]+>/gi) || [];
+  const imgMatches    = allImgMatches.filter(img => !isTrackingPixel(img));
+  const trackingPixelsFiltered = allImgMatches.length - imgMatches.length;
   const imgsWithoutAlt = imgMatches.filter(img => !/\salt=/i.test(img));
   if (imgMatches.length > 0 && imgsWithoutAlt.length > 0) {
     const pct = Math.round((imgsWithoutAlt.length / imgMatches.length) * 100);
@@ -695,8 +702,11 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
       return a.length > 0 && a.length < 5;
     }).length;
     const detailLines = [
-      `${imgsWithoutAlt.length} of ${imgMatches.length} images (${pct}%) have no alt attribute.`,
+      `${imgsWithoutAlt.length} of ${imgMatches.length} content images (${pct}%) have no alt attribute.`,
     ];
+    if (trackingPixelsFiltered > 0) {
+      detailLines.push(`(${trackingPixelsFiltered} tracking pixel${trackingPixelsFiltered === 1 ? '' : 's'} filtered from the count — they have no alt by design.)`);
+    }
     if (missingSrcs.length > 0) {
       detailLines.push('', '**Specific images missing alt:**');
       for (const src of missingSrcs) detailLines.push(`- ${src}`);
@@ -710,10 +720,10 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
     findings.push({
       audit_kind: 'on_page_fundamentals',
       severity: pct > 50 ? 'amber' : 'info',
-      finding_title:  `${imgsWithoutAlt.length} of ${imgMatches.length} images missing alt text (${pct}%)`,
+      finding_title:  `${imgsWithoutAlt.length} of ${imgMatches.length} content images missing alt text (${pct}%)`,
       finding_detail: detailLines.join('\n') + '\n\nAlt text helps screen readers, image search ranking, and acts as backup if images fail to load.',
       recommendation: 'Add descriptive alt text to every meaningful image. Decorative images can use alt="". For the listed image URLs, write 5-12 word descriptions of what the image shows.',
-      evidence: { total_images: imgMatches.length, missing_alt: imgsWithoutAlt.length, missing_alt_srcs: missingSrcs, short_alt_count: imgsWithShortAlt },
+      evidence: { total_images: imgMatches.length, missing_alt: imgsWithoutAlt.length, missing_alt_srcs: missingSrcs, short_alt_count: imgsWithShortAlt, tracking_pixels_filtered: trackingPixelsFiltered },
       data_source: 'html_fetch',
     });
   }
@@ -886,6 +896,201 @@ function firstParagraphText(html: string, charLimit = 800): string {
   return afterH1.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, charLimit);
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 15.3 — Senior DMS uplift batch 2 (2026-05-24 PM)
+   After deploying the keyword-presence + CTR + query-distribution checks,
+   the alphasoftware audit revealed remaining gaps a senior practitioner
+   would still call out:
+     • First paragraph extracted from the page was a generic product
+       tagline, NOT about the page's stated topic → need a topical-relevance
+       check that compares first-para vs title+H1.
+     • Facebook tracking pixel was being counted as "image missing alt" →
+       need to filter known tracking-pixel domains from the alt-text count.
+     • When keyword absent AND first paragraph off-topic, the audit's
+       recommendation presented two options without making the call →
+       need decision-tree logic that picks (b) "change the keyword" when
+       the data clearly shows the page targets something else.
+═══════════════════════════════════════════════════════════════════ */
+
+const STOPWORDS_FOR_TOPIC_INFERENCE = new Set([
+  'the', 'and', 'for', 'with', 'this', 'that', 'comprehensive', 'guide',
+  'best', 'top', 'free', 'how', 'what', 'why', 'when', 'where', 'who',
+  'your', 'about', 'from', 'into', 'over', 'under', 'plus', 'minus',
+  'new', 'old', 'good', 'bad', 'big', 'small', 'all', 'any', 'some',
+  'will', 'can', 'should', 'would', 'could', 'must', 'may', 'might',
+  '2020', '2021', '2022', '2023', '2024', '2025', '2026', '2027',
+  'tips', 'tricks', 'review', 'reviews', 'complete', 'ultimate', 'simple',
+  'easy', 'quick', 'introduction', 'overview', 'beginner',
+]);
+
+/** Compute the fraction of substantive (non-stopword) tokens in `text`
+ *  that also appear in `reference`. Used to measure first-paragraph
+ *  topical relevance vs title+H1. Returns 0..1. */
+function topicalOverlapFraction(text: string, reference: string): number {
+  const textTokens = normalizeForKeywordMatch(text).split(' ')
+    .filter(t => t.length > 2 && !STOPWORDS_FOR_TOPIC_INFERENCE.has(t));
+  if (textTokens.length === 0) return 0;
+  const refTokens = new Set(
+    normalizeForKeywordMatch(reference).split(' ')
+      .filter(t => t.length > 2 && !STOPWORDS_FOR_TOPIC_INFERENCE.has(t))
+  );
+  if (refTokens.size === 0) return 0;
+  /* Count text tokens that have a stem-tolerant match in reference. */
+  let hits = 0;
+  for (const t of textTokens) {
+    for (const r of refTokens) {
+      if (tokenMatchesWord(t, r) || tokenMatchesWord(r, t)) { hits++; break; }
+    }
+  }
+  return hits / textTokens.length;
+}
+
+/** Infer what topic the page is ACTUALLY built for, based on title + H1
+ *  tokens (excluding stopwords and the campaign keyword's own tokens).
+ *  Used when the keyword presence check fails — the audit should be able
+ *  to say "the page is built for X, not the campaign keyword". */
+function inferActualPageTopic(title: string, h1: string, campaignKw: string): {
+  significant_tokens: string[];
+  suggested_keyword_phrase: string;
+} {
+  const kwTokens = new Set(normalizeForKeywordMatch(campaignKw).split(' '));
+
+  /* 1. Collect significant tokens (for the displayed list + as anchors for
+        phrase selection): non-stopword, non-numeric, NOT a campaign-kw token. */
+  const allTokens = normalizeForKeywordMatch(title + ' ' + h1).split(' ').filter(Boolean);
+  const seen = new Set<string>();
+  const significant: string[] = [];
+  for (const t of allTokens) {
+    if (t.length < 3) continue;
+    if (STOPWORDS_FOR_TOPIC_INFERENCE.has(t)) continue;
+    if (/^\d+$/.test(t)) continue;
+    let matchesKw = false;
+    for (const kt of kwTokens) {
+      if (tokenMatchesWord(t, kt) || tokenMatchesWord(kt, t)) { matchesKw = true; break; }
+    }
+    if (matchesKw) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    significant.push(t);
+    if (significant.length >= 6) break;
+  }
+
+  /* 2. Build the suggested phrase. Goal: capture the longest consecutive run
+        of non-stopword title tokens that contains AT LEAST ONE significant
+        token. Allow kw-overlapping tokens INSIDE the phrase (e.g. "Microsoft
+        Power Apps Pricing" should survive even though "Apps" overlaps with
+        the campaign keyword "app maker") — kw tokens still appear as natural
+        product-name fragments. Cap at 4 words for readability. */
+  const titleWords = normalizeForKeywordMatch(title).split(' ');
+  const isPhraseEligible = (w: string) =>
+    w.length >= 3 && !STOPWORDS_FOR_TOPIC_INFERENCE.has(w) && !/^\d+$/.test(w);
+  let bestPhrase = '';
+  let i = 0;
+  while (i < titleWords.length) {
+    if (!isPhraseEligible(titleWords[i])) { i++; continue; }
+    let j = i;
+    while (j < titleWords.length && isPhraseEligible(titleWords[j])) j++;
+    /* titleWords[i..j) is a run of phrase-eligible tokens */
+    const run = titleWords.slice(i, j);
+    const containsAnchor = run.some(w => significant.includes(w));
+    if (containsAnchor && run.length >= 2) {
+      const candidate = run.slice(0, 4).join(' ');
+      if (candidate.split(' ').length > bestPhrase.split(' ').length) {
+        bestPhrase = candidate;
+      }
+    }
+    i = j + 1;
+  }
+  if (!bestPhrase && significant.length > 0) bestPhrase = significant.slice(0, 2).join(' ');
+  return { significant_tokens: significant, suggested_keyword_phrase: bestPhrase };
+}
+
+/** Tracking pixels appear as <img> tags with no alt by design — they are
+ *  analytics infrastructure, not content. Counting them as "missing alt"
+ *  is noise. Filter known patterns. */
+const TRACKING_PIXEL_PATTERNS: RegExp[] = [
+  /facebook\.com\/tr/i,
+  /pixel\.facebook\.com/i,
+  /google-analytics\.com/i,
+  /googletagmanager\.com/i,
+  /doubleclick\.net/i,
+  /ct\.pinterest\.com/i,
+  /analytics\.twitter\.com/i,
+  /linkedin\.com\/li[\/.]/i,
+  /bat\.bing\.com/i,
+  /hotjar\.com/i,
+  /amplitude\.com.*\/event/i,
+  /segment\.io/i,
+  /mixpanel\.com/i,
+  /sentry\.io/i,
+  /\/pixel[\.\/?]/i,
+  /\/__utm/i,
+  /\/collect\?/i,
+];
+
+function isTrackingPixel(imgTag: string): boolean {
+  const srcMatch = /\ssrc=["']([^"']+)["']/i.exec(imgTag);
+  if (!srcMatch) return false;
+  const src = srcMatch[1];
+  /* Tracking pixels typically have width=1 height=1 too — secondary signal */
+  const looksLikePixelDimensions = /\swidth=["']?1["']?/i.test(imgTag) && /\sheight=["']?1["']?/i.test(imgTag);
+  for (const pat of TRACKING_PIXEL_PATTERNS) {
+    if (pat.test(src)) return true;
+  }
+  if (looksLikePixelDimensions) return true;
+  return false;
+}
+
+/** New standalone check (Phase 15.3): does the first paragraph of the page
+ *  actually relate to the title/H1? Catches the pattern where pages have
+ *  templated hero copy (product tagline, generic CTA) that doesn't reflect
+ *  the article's stated topic. Independent of campaign keyword. */
+async function checkFirstParagraphTopicality(url: string): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  const r = await fetchWithTimeout(url, 12000);
+  if (!r.ok || !r.html) return findings;
+  const html = r.html;
+  const titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
+  const title      = titleMatch?.[1]?.trim() || '';
+  const h1Match    = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+  const h1         = h1Match ? h1Match[1].replace(/<[^>]+>/g, '').trim() : '';
+  const firstPara  = firstParagraphText(html);
+  if (!title || !firstPara) return findings;
+  const reference = title + ' ' + h1;
+  const overlap = topicalOverlapFraction(firstPara, reference);
+  if (overlap === 0) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'red',
+      finding_title: `First paragraph is off-topic — no overlap with title/H1`,
+      finding_detail: `Above-the-fold content shares zero substantive tokens with the page's title or H1. The first paragraph appears to be templated copy (product tagline, generic CTA, marketing hero) rather than content about the page's stated topic.\n\n**First paragraph:** "${firstPara.slice(0, 240)}${firstPara.length > 240 ? '…' : ''}"\n\n**Title:** "${title}"\n**H1:** "${h1}"\n\nGoogle's content-quality models weigh first-paragraph relevance heavily — searchers landing on this page see content that doesn't match what the SERP promised them.`,
+      recommendation: `Rewrite the first paragraph to directly address the page's stated topic. Open with the searcher's problem or question, then frame how the page answers it. Do not lead with product taglines or generic marketing copy.`,
+      evidence: { overlap_fraction: 0, first_paragraph: firstPara.slice(0, 400), title, h1 },
+      data_source: 'html_fetch',
+    });
+  } else if (overlap < 0.2) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'amber',
+      finding_title: `First paragraph weakly aligned with page topic (${Math.round(overlap * 100)}% overlap)`,
+      finding_detail: `Above-the-fold content shares only ${Math.round(overlap * 100)}% of its substantive tokens with the title/H1. The opening copy partially relates to the topic but reads more like a generic intro than a topic-anchored opener.\n\n**First paragraph:** "${firstPara.slice(0, 240)}${firstPara.length > 240 ? '…' : ''}"`,
+      recommendation: `Tighten the first paragraph so it explicitly addresses the title's promise. Aim for ≥40% token overlap with the title/H1 in the opening 100 words.`,
+      evidence: { overlap_fraction: Number(overlap.toFixed(2)), first_paragraph: firstPara.slice(0, 400) },
+      data_source: 'html_fetch',
+    });
+  } else if (overlap >= 0.4) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals',
+      severity: 'green',
+      finding_title: `First paragraph well-aligned with page topic (${Math.round(overlap * 100)}% token overlap)`,
+      finding_detail: `Opening content explicitly addresses the title's topic — strong topical anchor.`,
+      evidence: { overlap_fraction: Number(overlap.toFixed(2)) },
+      data_source: 'html_fetch',
+    });
+  }
+  return findings;
+}
+
 async function checkKeywordPresence(url: string, keyword: string): Promise<Finding[]> {
   const findings: Finding[] = [];
   if (!keyword || !keyword.trim()) {
@@ -948,21 +1153,44 @@ async function checkKeywordPresence(url: string, keyword: string): Promise<Findi
   }).join('\n');
 
   if (!titleAnyMatch && !h1AnyMatch) {
+    /* Phase 15.3 — decision-tree logic. When the keyword is absent from
+       title AND H1, AND the first paragraph is also off-topic from the
+       campaign keyword, infer what the page IS targeting and make the
+       call instead of presenting two neutral options. */
+    const firstParaOverlapWithKeyword = topicalOverlapFraction(firstPara, keyword);
+    const actualTopic = inferActualPageTopic(title, h1, keyword);
+    const makesTheCall = firstParaOverlapWithKeyword < 0.15 && actualTopic.suggested_keyword_phrase;
+
+    const recommendation = makesTheCall
+      ? `**The data says option (b): change the campaign keyword.**\n\nBased on title, H1, and first paragraph evidence, this page is built for **"${actualTopic.suggested_keyword_phrase}"** (or a close variant), NOT "${keyword}". The campaign keyword and the page's actual topic do not match.\n\n- Title indicates: ${actualTopic.significant_tokens.slice(0, 5).join(', ')}\n- First paragraph relevance to "${keyword}": ${Math.round(firstParaOverlapWithKeyword * 100)}%\n\n**Recommended action:** Change the campaign target to "${actualTopic.suggested_keyword_phrase}" or a related phrase. Verify in GSC that the new target keyword is one this URL actually ranks for.\n\n_Alternative (option a): if you specifically want to rank this URL for "${keyword}", the page needs substantial rewrite of title, H1, and opening copy. Given the existing content depth on the actual topic, this is rarely the right answer._`
+      : `Rewrite the page title and H1 to contain "${keyword}" naturally. If "${keyword}" is genuinely off-topic for this page, the campaign keyword is wrong — recheck whether this URL is the right target.`;
+
     findings.push({
       audit_kind: 'on_page_fundamentals', severity: 'red',
       finding_title:  `Campaign keyword "${keyword}" missing from both title and H1`,
       finding_detail: `The keyword "${keyword}" does not appear in either the page title or the H1. These are the two strongest on-page ranking signals a Senior SEO Specialist would expect to align with the campaign target.\n\nCoverage breakdown:\n${tableRows}\n\nThe page may rank for this keyword via topical relevance, but absent of explicit keyword presence in title/H1, it will plateau well below top-3.`,
-      recommendation: `Rewrite the page title and H1 to contain "${keyword}" naturally. If "${keyword}" is genuinely off-topic for this page, the campaign keyword is wrong — recheck whether this URL is the right target.`,
-      evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword) },
+      recommendation,
+      evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword), inferred_actual_topic: actualTopic, first_para_keyword_overlap: Number(firstParaOverlapWithKeyword.toFixed(2)) },
       data_source: 'html_fetch',
     });
   } else if (bothPartial) {
+    /* Phase 15.3 — same decision-tree for the bothPartial case (alphasoftware).
+       Partial in both title AND H1 + first-para off-topic = strong evidence
+       the campaign keyword is wrong. */
+    const firstParaOverlapWithKeyword = topicalOverlapFraction(firstPara, keyword);
+    const actualTopic = inferActualPageTopic(title, h1, keyword);
+    const makesTheCall = firstParaOverlapWithKeyword < 0.15 && actualTopic.suggested_keyword_phrase;
+
+    const recommendation = makesTheCall
+      ? `**The data says option (b): change the campaign keyword.**\n\nThe page contains some tokens from "${keyword}" but is clearly built for a different target. Title, H1, and first paragraph all point to **"${actualTopic.suggested_keyword_phrase}"** (or close variant) as the real subject.\n\n- Page targets (from title+H1): ${actualTopic.significant_tokens.slice(0, 5).join(', ')}\n- First paragraph relevance to "${keyword}": ${Math.round(firstParaOverlapWithKeyword * 100)}%\n\n**Recommended action:** Change the campaign target to "${actualTopic.suggested_keyword_phrase}" or a closely related phrase. Don't try to retrofit a page about [actual topic] to rank for ["${keyword}"] — the SERPs for these queries are different.\n\n_Alternative (option a): rewrite title + H1 + first paragraph + at least the opening section to genuinely cover "${keyword}". This is a content overhaul, not a tweak. Recommended only if "${keyword}" is strategically more valuable than the current target._`
+      : `Two options: (a) Rewrite the title and H1 to carry the full "${keyword}" phrase naturally — if it fits the page intent. (b) Change the campaign keyword to one that already matches the page's actual content. Don't try to rank a page for a keyword its title/H1 doesn't carry.`;
+
     findings.push({
       audit_kind: 'on_page_fundamentals', severity: 'red',
       finding_title:  `Campaign keyword "${keyword}" only partially present in both title and H1 — significant alignment gap`,
       finding_detail: `Neither the title nor the H1 carries the full keyword phrase. Both have **partial** token coverage only — some tokens of "${keyword}" appear, others are absent.\n\nCoverage breakdown:\n${tableRows}\n\nThe page may be optimized for a related but distinct keyword — not the campaign target. A Senior SEO Specialist would call this a content-strategy mismatch: either the page needs rewriting, or the campaign keyword needs reassignment.`,
-      recommendation: `Two options: (a) Rewrite the title and H1 to carry the full "${keyword}" phrase naturally — if it fits the page intent. (b) Change the campaign keyword to one that already matches the page's actual content. Don't try to rank a page for a keyword its title/H1 doesn't carry.`,
-      evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword), missing_tokens_in_title: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(title))), missing_tokens_in_h1: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(h1))) },
+      recommendation,
+      evidence: { keyword, coverage, normalized_keyword: normalizeForKeywordMatch(keyword), missing_tokens_in_title: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(title))), missing_tokens_in_h1: kwTokens.filter(t => !tokenInText(t, normalizeForKeywordMatch(h1))), inferred_actual_topic: actualTopic, first_para_keyword_overlap: Number(firstParaOverlapWithKeyword.toFixed(2)) },
       data_source: 'html_fetch',
     });
   } else if (!titleStrong && !h1Strong) {
@@ -1629,9 +1857,9 @@ function renderAuditReport(opts: {
   /* Honest note about scope */
   lines.push('## Audit scope');
   lines.push('');
-  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (site-wide GA4 — context only), **schema markup** (JSON-LD types), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks), and **GSC query distribution** (top queries this URL actually ranks for, with per-query CTR and campaign-keyword match check).');
+  lines.push('This audit checks: **indexability** (HTTP status, robots directives, GSC presence), **on-page fundamentals** (title, meta description, H1, word count, alt text, canonical, internal links — tracking pixels filtered from the alt-text count), **Core Web Vitals** (LCP, INP, CLS — mobile + desktop), **engagement signals** (site-wide GA4 — context only), **schema markup** (JSON-LD types), **keyword presence** (campaign keyword in title/H1/URL/meta/first paragraph, with decision-tree recommendation when page is built for a different topic), **CTR vs expected-for-position** (actual click-through rate vs published position benchmarks), **GSC query distribution** (top queries this URL actually ranks for), and **first-paragraph topicality** (does above-the-fold copy actually relate to the title/H1, catching templated hero copy and product taglines that don\'t match the page\'s stated subject).');
   lines.push('');
-  lines.push('Not yet covered: **per-page GA4 metrics** (engagement, bounce, sessions by URL — requires a pm-ga4 top-pages-by-engagement query), **SERP feature awareness** (featured snippet, PAA, AI Overview presence — requires SerpAPI integration), **competitive content benchmark** (word count + topical coverage vs top-10 ranking pages), **schema validation** (currently checks presence, not validity), **full site crawl**, **manual penalty checks**, **log file analysis**, **image weight breakdown**, **font loading**, **hreflang**. These will come in later phases.');
+  lines.push('Not yet covered: **per-page GA4 metrics** (engagement, bounce, sessions by URL — requires a pm-ga4 top-pages-by-engagement query), **SERP feature awareness** (featured snippet, PAA, AI Overview presence — requires SerpAPI integration), **competitive content benchmark** (word count + topical coverage vs top-10 ranking pages), **schema validation** (currently checks presence, not validity), **anchor text quality** (descriptive vs generic anchors for internal links), **business-impact translation** (opportunity sizing in clicks/conversions), **content freshness** (Last-Modified header + sitemap lastmod), **full site crawl**, **manual penalty checks**, **log file analysis**, **image weight breakdown**, **font loading**, **hreflang**. These will come in later phases.');
 
   return lines.join('\n');
 }

@@ -33,7 +33,14 @@ interface GscQueryRow {
   impressions: number;
   ctr: number;
   position: number;
+  /* Phase 16.0.5 — Senior DMS uplift batch 2 (2026-05-24 PM).
+     Optional intent classification, populated by enrichQueriesWithIntent
+     before clustering. Used for cluster-diversity finding + branded-query
+     filtering when proposing pivot candidates. */
+  intent?: QueryIntent;
 }
+
+type QueryIntent = 'informational' | 'commercial' | 'navigational' | 'transactional' | 'branded' | 'unknown';
 
 interface GscPageRow {
   page: string;
@@ -297,13 +304,16 @@ export async function runClusterMap(opts: {
     }
     if (!panelId) return { success: false, error: 'no cluster_map panel found for this campaign' };
 
-    /* 1. Fetch GSC data */
-    const [queries, pages, competitors, gscFreshnessAt] = await Promise.all([
+    /* 1. Fetch GSC data + project URL (the URL is used for heuristic
+       branded-query detection in intent classification — Phase 16.0.5). */
+    const [queries, pages, competitors, gscFreshnessAt, projectRow] = await Promise.all([
       readGscQueries(c.project_id),
       readGscPages(c.project_id),
       readCompetitorSnapshot(opts.campaignId),
       readGscFreshness(c.project_id),
+      db().from("projects").select("url").eq("id", c.project_id).maybeSingle(),
     ]);
+    const projectUrl: string = ((projectRow as any)?.data?.url as string) || '';
 
     /* 2. Filter to keyword-related queries */
     const relatedQueries = filterRelatedQueries(queries, c.keyword);
@@ -324,6 +334,13 @@ export async function runClusterMap(opts: {
         gscFreshnessAt,
       });
     }
+
+    /* 2b. Phase 16.0.5 — enrich queries with per-query intent classification.
+       Hybrid: heuristic branded-detection (domain tokens) + LLM call for the
+       rest. Decorates each GscQueryRow with q.intent. Intent flows through
+       clustering automatically since lexicalClusters preserves references. */
+    const intentResult = await enrichQueriesWithIntent(relatedQueries, c.keyword, projectUrl);
+    const intentLlmCalls = intentResult.llmCalls;
 
     /* 3. Cluster lexically */
     const rawClusters = lexicalClusters(relatedQueries, c.keyword);
@@ -431,7 +448,9 @@ export async function runClusterMap(opts: {
     const partialLosingCount = withCoverage.filter(cl => cl.coverage_status === 'partial_losing').length;
 
     /* LLM call accounting: 1 for labelAndLabelClusters + 1 per cluster for ownership */
-    const llmCallsUsed = 1 + withCoverage.length;
+    /* LLM call accounting: 1 for labelAndLabelClusters + 1 per cluster for
+       ownership + 0/1 for intent classification (Phase 16.0.5). */
+    const llmCallsUsed = 1 + withCoverage.length + intentLlmCalls;
 
     /* Honest confidence rating — was previously inverted ("more findings =
        higher confidence" which is illogical). Now derived from per-cluster
@@ -1472,6 +1491,284 @@ function summarizeCompetitors(competitors: any[]): string {
   return `Top ${Math.min(competitors.length, 5)} competitors:\n${top}`;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   PER-QUERY INTENT CLASSIFICATION (Phase 16.0.5 — Senior DMS uplift)
+
+   Classifies each GSC query by primary user intent:
+     • informational  — user wants to learn (how/what/why/guide/tutorial)
+     • commercial     — comparing options (best/vs/top/review)
+     • navigational   — looking for specific site (brand + general term)
+     • transactional  — ready to act (download/signup/pricing/free)
+     • branded        — contains a brand/product name
+     • unknown        — LLM unsure or call failed
+
+   Branded detection is hybrid: a heuristic pre-pass detects queries
+   containing the project's own domain-derived brand tokens (e.g.
+   "alpha" for alphasoftware.com), and the LLM classifies the rest.
+   Both signals can flag branded — heuristic catches the obvious cases
+   the LLM might miss; LLM catches third-party brand names the
+   heuristic can't predict.
+
+   Failure mode: graceful — if the LLM call fails, queries without a
+   heuristic match are marked 'unknown' and findings degrade quietly.
+═══════════════════════════════════════════════════════════════════ */
+
+function deriveBrandTokensFromDomain(projectUrl: string): string[] {
+  if (!projectUrl) return [];
+  let host = '';
+  try { host = new URL(projectUrl.startsWith('http') ? projectUrl : 'https://' + projectUrl).hostname; }
+  catch { host = projectUrl.replace(/^https?:\/\//, '').split('/')[0]; }
+  /* Strip TLD + common subdomains */
+  const base = host.replace(/\.(com|org|net|io|co|app|ai|dev|me|tech|store|shop|biz|info|us|uk|in|au|ca|de|fr|jp)(\.[a-z]{2,3})?$/i, '');
+  const cleaned = base.replace(/^(www|app|api|blog|shop|store|m|en|de|fr|jp|in)\./i, '');
+  /* Tokenize on . and - */
+  return cleaned.split(/[.\-]/).map(t => t.toLowerCase()).filter(t => t.length >= 3);
+}
+
+/** Branded-query heuristic check. Catches the common pattern of
+ *  compound-word brands where the GSC query uses a fragment of the
+ *  full domain — e.g. domain "alphasoftware.com" produces brand
+ *  token "alphasoftware" but the actual branded query is "alpha app"
+ *  (no separator between "alpha" and "software" in the domain).
+ *
+ *  Strategy:
+ *   - Tokenize query into words of length >= 4
+ *   - For each query word, check whether any brand token starts with
+ *     it OR contains it as a substring (when query word is >= 5 chars)
+ *  Conservative — avoids over-flagging by minimum length thresholds.
+ */
+function isQueryBrandedHeuristic(query: string, brandTokens: string[]): boolean {
+  if (!query || brandTokens.length === 0) return false;
+  const queryWords = query.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 4);
+  for (const word of queryWords) {
+    for (const bt of brandTokens) {
+      if (bt === word) return true;                                    // exact
+      if (bt.startsWith(word) && word.length >= 4) return true;        // prefix (alphasoftware ← alpha)
+      if (bt.includes(word) && word.length >= 5) return true;          // substring (5-char min)
+      if (word.startsWith(bt) && bt.length >= 4) return true;          // brand token is prefix of query word
+    }
+  }
+  return false;
+}
+
+async function enrichQueriesWithIntent(
+  queries: GscQueryRow[],
+  campaignKeyword: string,
+  projectUrl: string,
+): Promise<{ enriched: GscQueryRow[]; llmCalls: number; }> {
+  if (queries.length === 0) return { enriched: queries, llmCalls: 0 };
+
+  /* 1. Heuristic branded detection — pre-mark queries containing project's
+        domain-derived brand tokens (with substring/prefix tolerance for
+        compound-word domains like "alphasoftware.com" matching "alpha app").
+        Senior DMS rule: brand-defense queries should not influence
+        organic-keyword strategy decisions. */
+  const brandTokens = deriveBrandTokensFromDomain(projectUrl);
+  for (const q of queries) {
+    if (isQueryBrandedHeuristic(q.query || '', brandTokens)) {
+      q.intent = 'branded';
+    }
+  }
+
+  /* 2. LLM classify the remaining (non-heuristic-branded) queries.
+        Batched single call. Failure → 'unknown' on each query. */
+  const toClassify = queries.filter(q => !q.intent);
+  if (toClassify.length === 0) return { enriched: queries, llmCalls: 0 };
+
+  /* Cap to first 40 queries to keep prompt size reasonable; queries
+     beyond that get 'unknown' and the report flags it. */
+  const SLICE = 40;
+  const sliced = toClassify.slice(0, SLICE);
+  const queryList = sliced.map((q, i) => `${i + 1}. "${q.query}"`).join('\n');
+
+  const sys = `You classify SEO search queries by primary user intent. The user gives you a list of queries from a project's Google Search Console. You return a JSON object where each query is classified as ONE of:
+
+- "informational" — user wants to learn (how, what, why, guide, tutorial, explainer, definition)
+- "commercial" — user comparing options (best, vs, top, review, compare, alternative)
+- "navigational" — user looking for a specific site by general term (NOT branded — see below)
+- "transactional" — user ready to act (download, signup, buy, pricing, free trial, get started)
+- "branded" — query contains a specific brand/product name (e.g. competitor names, or named SaaS products)
+
+Pick the BEST SINGLE intent per query. If a query is mixed or ambiguous, pick the dominant intent. If you genuinely cannot tell, use "unknown" — never invent.
+
+Return ONLY valid JSON in this exact shape, no preamble, no markdown fences:
+{"classifications": [{"query": "<exact original query>", "intent": "<one of the categories>"}]}
+
+The "query" field MUST be the exact query string from the user's list (case-sensitive copy). Do not modify, summarize, or paraphrase.`;
+
+  const user = `Project domain: ${projectUrl || '(unknown)'}
+Campaign keyword: "${campaignKeyword || '(none)'}"
+
+Queries to classify (${sliced.length}):
+${queryList}`;
+
+  let llmCalls = 0;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 4000,
+        system: sys,
+        messages: [{ role: "user", content: user }],
+      }),
+    });
+    llmCalls = 1;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const raw = (data?.content?.[0]?.text || '').trim();
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+    const parsed = JSON.parse(cleaned);
+    const classifications: Array<{ query: string; intent: string }> = parsed?.classifications || [];
+    const allowed: Set<QueryIntent> = new Set(['informational', 'commercial', 'navigational', 'transactional', 'branded', 'unknown']);
+    /* Build a lookup so the order of returned items doesn't matter */
+    const byQuery: Map<string, QueryIntent> = new Map();
+    for (const c of classifications) {
+      if (typeof c.query !== 'string') continue;
+      const intent = (c.intent || '').toLowerCase() as QueryIntent;
+      if (!allowed.has(intent)) continue;
+      byQuery.set(c.query.toLowerCase(), intent);
+    }
+    /* Apply to the queries we asked about. Anything not matched stays 'unknown'. */
+    for (const q of sliced) {
+      const intent = byQuery.get(q.query.toLowerCase());
+      q.intent = intent || 'unknown';
+    }
+  } catch (e: any) {
+    console.log(`[enrichQueriesWithIntent] failed: ${e?.message} — falling back to 'unknown' on ${sliced.length} queries`);
+    for (const q of sliced) {
+      if (!q.intent) q.intent = 'unknown';
+    }
+  }
+
+  /* Mark any queries beyond the SLICE as 'unknown' (not classified) */
+  for (let i = SLICE; i < toClassify.length; i++) {
+    toClassify[i].intent = 'unknown';
+  }
+
+  return { enriched: queries, llmCalls };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STRATEGIC RECOMMENDATION (Phase 16.0.5 — Senior DMS decision-tree)
+
+   When the data shows the campaign keyword is misaligned with the
+   project's actual organic strengths, this section makes the strategic
+   call instead of leaving the user to interpret the findings:
+     • If campaign kw is absent from all GSC queries → suggest building
+       a new dedicated page OR pivoting to a query the site DOES rank for.
+     • If campaign kw ranks below position 20 AND a better non-branded
+       alternative exists → suggest pivoting the campaign keyword.
+
+   The output goes at the TOP of the report (before Findings) so it
+   anchors the reader's attention. Returns null when no pivot is
+   warranted — the section is suppressed in that case.
+═══════════════════════════════════════════════════════════════════ */
+
+function buildStrategicRecommendation(
+  clusters: Cluster[],
+  keyword: string,
+): string | null {
+  const allQueries = clusters.flatMap(c => c.queries);
+  if (allQueries.length === 0) return null;
+  const kwPos = findCampaignKeywordPosition(allQueries, keyword);
+
+  /* Find pivot candidates: non-branded, non-campaign-kw, better position
+     than the campaign keyword, with meaningful sample. Prioritize by
+     (position ASC, impressions DESC). */
+  const candidates = allQueries
+    .filter(q => {
+      if (classifyKeywordMatch(q.query, keyword) === 'exact') return false;
+      if (q.intent === 'branded') return false;
+      if (q.impressions < 10) return false;
+      if (q.position <= 0) return false;
+      /* If we have a campaign keyword position, candidate must be better.
+         If we don't (kw absent), any query with reasonable position counts. */
+      if (kwPos.position !== null && q.position >= kwPos.position) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (Math.abs(a.position - b.position) > 1) return a.position - b.position;
+      return b.impressions - a.impressions;
+    });
+
+  const lines: string[] = [];
+
+  if (kwPos.position === null) {
+    /* Campaign keyword absent entirely */
+    lines.push(`## 🎯 Strategic recommendation`);
+    lines.push('');
+    lines.push(`**The campaign keyword "${keyword}" has no measurable organic visibility** — it doesn't appear in any of this project's GSC queries. The site has no pages currently ranking for it.`);
+    lines.push('');
+    lines.push(`A Senior SEO Specialist would call this a **strategic decision point**, not an optimization task:`);
+    lines.push('');
+    if (candidates.length > 0) {
+      const top = candidates[0];
+      lines.push(`### Option A: Pivot the campaign keyword`);
+      lines.push('');
+      lines.push(`Your strongest non-branded ranking query is **"${top.query}"** at position ${top.position.toFixed(1)} with ${top.impressions.toLocaleString()} impressions / ${top.clicks} clicks per month. Pivoting the campaign to this keyword turns existing organic traction into measurable gains — the foundation already exists.`);
+      lines.push('');
+      lines.push(`### Option B: Build a dedicated landing page for "${keyword}"`);
+      lines.push('');
+      lines.push(`If "${keyword}" is strategically more valuable to the business than the current top organic queries, create a new page specifically optimized for it. Plan for 6-12 months to break into top-10 for a competitive term with no existing organic anchor.`);
+      lines.push('');
+      lines.push(`**Senior DMS view:** lead with Option A unless there's a clear business case the current organic strengths cannot serve. Don't chase keywords that don't match your site's actual content.`);
+    } else {
+      lines.push(`### Option A: Build a dedicated landing page for "${keyword}"`);
+      lines.push('');
+      lines.push(`No suitable non-branded pivot candidate exists in current GSC data. If "${keyword}" is the strategic target, a new page is the only path — plan for 6-12 months to break into top-10.`);
+      lines.push('');
+      lines.push(`### Option B: Reconsider the campaign target`);
+      lines.push('');
+      lines.push(`Verify with the business that "${keyword}" is the right campaign target. The data shows no organic foundation for it on this site.`);
+    }
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  if (kwPos.position > 20 && candidates.length > 0) {
+    const top = candidates[0];
+    lines.push(`## 🎯 Strategic recommendation: consider pivoting the campaign keyword`);
+    lines.push('');
+    lines.push(`The data shows a significant misalignment between **"${keyword}"** and what this site actually ranks for organically:`);
+    lines.push('');
+    lines.push(`| Current target | Strongest alternative |`);
+    lines.push(`|---|---|`);
+    lines.push(`| **"${keyword}"** | **"${top.query}"** |`);
+    lines.push(`| Position ${kwPos.position.toFixed(1)} ${kwPos.position > 50 ? '(beyond page 5)' : '(page 3-5)'} | Position ${top.position.toFixed(1)} ${top.position <= 3 ? '(top 3)' : top.position <= 10 ? '(page 1)' : '(page 2)'} |`);
+    lines.push(`| Match: ${kwPos.match_strength} | Match: existing organic visibility |`);
+    lines.push('');
+    lines.push(`**Why this matters:** Moving from position ${kwPos.position.toFixed(1)} → 3 for "${keyword}" requires substantial title/H1/content overhaul plus competitive backlink investment — measured in months and dollars. Moving from position ${top.position.toFixed(1)} → 3 for "${top.query}" is a smaller, faster win, and the site already has the content foundation.`);
+    lines.push('');
+    /* Show next 2-3 alternatives for context */
+    if (candidates.length >= 2) {
+      lines.push(`**Other non-branded queries the site ranks for** (sorted by position):`);
+      lines.push('');
+      lines.push(`| Query | Position | Impressions | Clicks |`);
+      lines.push(`|---|---:|---:|---:|`);
+      for (const c of candidates.slice(0, 5)) {
+        lines.push(`| ${c.query} | ${c.position.toFixed(1)} | ${c.impressions.toLocaleString()} | ${c.clicks} |`);
+      }
+      lines.push('');
+    }
+    lines.push(`**Recommended action:** Run the Technical Audit on the URL that ranks for "${top.query}" to verify content fit. If aligned, create a new campaign with "${top.query}" or a closely-related phrase as the target. Don't abandon "${keyword}" if it's strategically valuable — but recognize the cost differential before committing resources.`);
+    lines.push('');
+    lines.push(`*This recommendation is based on GSC query data and per-query intent classification. Branded queries (e.g. queries containing your own brand name) are excluded from pivot candidates.*`);
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  return null;  /* No pivot warranted — keyword position is OK or no candidates */
+}
+
 /* ════════════════════════════════════════════════════════════════
    FINDINGS + REPORT RENDERING
 ═══════════════════════════════════════════════════════════════ */
@@ -1603,6 +1900,52 @@ function computeFindings(clusters: Cluster[], keyword: string, totalGscQueries: 
       sources_used: ['gsc_queries'],
       confidence_score: 95,  /* the thinness observation itself is high-confidence */
     });
+  }
+
+  /* Phase 16.0.5 — intent diversity per cluster. A cluster mixing 3+ distinct
+     non-unknown intents is over-aggregated by intent (not just by position).
+     Distinct intents catch the case where lexical clustering groups queries
+     that share tokens but represent fundamentally different user goals. */
+  for (const cl of clusters) {
+    const intents = (cl.queries || [])
+      .map(q => q.intent)
+      .filter((i): i is QueryIntent => !!i && i !== 'unknown');
+    const distinctIntents = new Set(intents);
+    if (distinctIntents.size >= 3) {
+      const counts: Record<string, number> = {};
+      for (const i of intents) counts[i] = (counts[i] || 0) + 1;
+      const intentSummary = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([intent, count]) => `${intent} (${count})`)
+        .join(', ');
+      const sample = cl.queries
+        .filter(q => q.intent && q.intent !== 'unknown')
+        .slice(0, 4)
+        .map(q => `"${q.query}" → ${q.intent}`)
+        .join('; ');
+      findings.push({
+        severity: 'amber',
+        title:    `Cluster "${cl.cluster_name}" mixes ${distinctIntents.size} distinct user intents`,
+        detail:   `Per-query intent classification (Phase 16.0.5) found ${distinctIntents.size} distinct intents within this cluster: ${intentSummary}.\n\nExamples: ${sample}.\n\nThis is over-aggregation by intent, not just by token overlap — queries with different user goals end up in the same cluster because their words happen to overlap. Each intent typically wants a different page type (informational → guide; commercial → comparison; transactional → pricing/signup). A single hub cannot serve all of them.`,
+        sources_used: ['gsc_queries', 'llm_naming'],
+        confidence_score: 80,
+      });
+    }
+
+    /* Branded query contamination — a cluster meant to inform organic strategy
+       contains branded queries (which are typically brand-defense traffic, not
+       organic-strategy signal). */
+    const brandedQueries = (cl.queries || []).filter(q => q.intent === 'branded');
+    if (brandedQueries.length > 0 && cl.queries && cl.queries.length > brandedQueries.length) {
+      const brandedSample = brandedQueries.slice(0, 3).map(q => `"${q.query}" (${q.impressions} impressions)`).join(', ');
+      findings.push({
+        severity: 'info',
+        title:    `Cluster "${cl.cluster_name}" contains ${brandedQueries.length} branded quer${brandedQueries.length === 1 ? 'y' : 'ies'}`,
+        detail:   `${brandedSample}\n\nBranded queries are brand-defense traffic (people searching for your site by name), not organic-keyword opportunities. They should typically not influence cluster strategy decisions. Consider treating them as a separate brand-protection campaign.`,
+        sources_used: ['gsc_queries'],
+        confidence_score: 90,
+      });
+    }
   }
 
   /* ══════════════════════════════════════════════════════════════
@@ -1760,6 +2103,15 @@ function renderClusterMapReport(opts: {
   }
   lines.push('');
 
+  /* Phase 16.0.5 — Strategic Recommendation section.
+     Surfaces ABOVE findings when the campaign keyword is misaligned with
+     the project's actual organic strengths. Suppressed when no pivot is
+     warranted. This is the section a Senior DMS opens the report to find. */
+  const strategicSection = buildStrategicRecommendation(clusters, keyword);
+  if (strategicSection) {
+    lines.push(strategicSection);
+  }
+
   /* Findings */
   if (findings.length > 0) {
     lines.push('## Findings');
@@ -1890,10 +2242,21 @@ function renderClusterMapReport(opts: {
     lines.push(`**Sample queries** (top ${Math.min(10, cl.queries.length)} by impressions):`);
     const top = [...cl.queries].sort((a, b) => b.impressions - a.impressions).slice(0, 10);
     lines.push('');
-    lines.push(`| Query | Position | Impressions | Clicks |`);
-    lines.push(`|---|---:|---:|---:|`);
-    for (const q of top) {
-      lines.push(`| ${q.query} | ${q.position.toFixed(1)} | ${q.impressions.toLocaleString()} | ${q.clicks.toLocaleString()} |`);
+    /* Phase 16.0.5 — show per-query intent if classification was successful */
+    const anyClassified = top.some(q => q.intent && q.intent !== 'unknown');
+    if (anyClassified) {
+      lines.push(`| Query | Intent | Position | Impressions | Clicks |`);
+      lines.push(`|---|---|---:|---:|---:|`);
+      for (const q of top) {
+        const intentLabel = q.intent && q.intent !== 'unknown' ? q.intent : '_unknown_';
+        lines.push(`| ${q.query} | ${intentLabel} | ${q.position.toFixed(1)} | ${q.impressions.toLocaleString()} | ${q.clicks.toLocaleString()} |`);
+      }
+    } else {
+      lines.push(`| Query | Position | Impressions | Clicks |`);
+      lines.push(`|---|---:|---:|---:|`);
+      for (const q of top) {
+        lines.push(`| ${q.query} | ${q.position.toFixed(1)} | ${q.impressions.toLocaleString()} | ${q.clicks.toLocaleString()} |`);
+      }
     }
     lines.push('');
   }
@@ -1917,7 +2280,12 @@ function renderClusterMapReport(opts: {
   lines.push('- **Cluster cohesion:** position spread (max − min) within a cluster. Spread > 20 ranks flags over-aggregation — different SERPs / different intents grouped together because their tokens overlapped.');
   lines.push('- **Thin-cluster honesty:** clusters with <5 queries OR <500 impressions are marked thin and have their confidence capped at 60. The recommendation is treated as directional, not definitive.');
   lines.push('');
-  lines.push('**Not yet covered:** Real SERP fetch per cluster (currently competitor_owners is LLM-cited, not measured), semantic similarity via embeddings, project-wide cluster maps across campaigns, automatic content-roadmap generation as kanban tasks, visual graph rendering, intent classification per query (informational / commercial / navigational / transactional) to flag over-aggregation by intent mismatch.');
+  lines.push('**Phase 16.0.5 — Senior DMS uplift batch 2 (2026-05-24 PM):**');
+  lines.push('');
+  lines.push('- **Per-query intent classification:** one batched LLM call classifies each GSC query as informational / commercial / navigational / transactional / branded / unknown. Combined with a heuristic branded-detector that catches queries containing project-domain tokens. Surfaces in the per-cluster query table and powers two new findings: (a) intent-diversity (3+ distinct intents in one cluster = over-aggregation by intent, not just by token overlap) and (b) branded-query contamination (branded queries that should not influence organic strategy decisions).');
+  lines.push('- **Strategic Recommendation section:** when the campaign keyword has no measurable ranking OR ranks below position 20 AND a better non-branded alternative exists in GSC data, the report surfaces a decision-tree recommendation at the TOP (above findings): pivot the campaign keyword to one the site already ranks for, OR build a dedicated new landing page. Branded queries are excluded from pivot candidates. The Senior DMS bar: lead with the strategic call, not the diagnostic findings.');
+  lines.push('');
+  lines.push('**Not yet covered:** Real SERP fetch per cluster (currently competitor_owners is LLM-cited, not measured), semantic similarity via embeddings, project-wide cluster maps across campaigns, automatic content-roadmap generation as kanban tasks, visual graph rendering, hub-candidate ranking with explanation (show top-3 URL candidates with token-match scores instead of single hub).');
 
   return lines.join('\n');
 }
