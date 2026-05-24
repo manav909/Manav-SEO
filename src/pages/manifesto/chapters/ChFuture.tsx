@@ -21,41 +21,15 @@ export function ChFuture({ t }: { t: TFn }) {
     <ChapterShell id="future" no="14" season="eternal-spring" titleKey="ch14" t={t}>
       <FutureStyles />
 
-      <Prose delay={0.4}>
-        SEO has always rewarded patience and punished shortcuts. The next era —
-        generative answers, LLM mentions, conversational queries — rewards the
-        same things, just amplified.
-      </Prose>
+      <Prose delay={0.4}>{t('future_1')}</Prose>
 
-      <Prose delay={0.6}>
-        Topical authority compounds. Schema that LLMs can parse matters more.
-        Brand presence across training data matters more. Real expertise
-        demonstrated through real content matters more. The fundamentals
-        didn't change. The amplification did.
-      </Prose>
+      <Prose delay={0.6}>{t('future_2')}</Prose>
 
-      <Prose delay={0.8}>
-        SEO SEASON is positioned for the next decade, not the last one.
-        Multi-engine visibility. Schema-first architecture. Cluster authority
-        that compounds. Honest reporting clients can take to their board
-        without a translator.
-      </Prose>
+      <Prose delay={0.8}>{t('future_3')}</Prose>
 
-      <Prose delay={1.0}>
-        The market will consolidate. Agencies running on PDF decks and
-        rank-tracker screenshots will not survive 2027. AI-only platforms
-        with no human accountability will be exposed by the first client
-        who can't reach anyone when their traffic dips. The agencies that
-        survive will look more like SEO SEASON — verifiable, auditable,
-        accountable, with operators behind the work.
-      </Prose>
+      <Prose delay={1.0}>{t('future_4')}</Prose>
 
-      <Prose delay={1.2}>
-        Few agencies are positioned for this era. Fewer are operating from
-        infrastructure built to last it. Almost none are run by the person
-        who designed every part of it. We are taking on new clients while
-        the curve is still gentle.
-      </Prose>
+      <Prose delay={1.2}>{t('future_5')}</Prose>
 
       <motion.div
         className="closing-cta mt-20"

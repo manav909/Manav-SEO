@@ -385,6 +385,8 @@ Each renders a small language-specific architectural sketch as inline SVG:
 
 Five new copy keys driving the locale flavor: `locale_cities`, `locale_coord`, `locale_maxim_1`, `locale_maxim_2`, `locale_maxim_3`. Voice rules respected — feather-light opacity (~0.7), generous vertical padding (4.5rem), italic serif maxim, wide-tracked sans cities. Never loud.
 
+🟢 **ChFuture localization** — shipped 2026-05-24. Caught five hardcoded-English `<Prose>` blocks in `ChFuture.tsx` (the chapter's whole body was untranslated). Extracted to keys `future_1` through `future_5`, added translations across all 5 languages. Now 272 keys per language (1,360 total strings). Audit script in repo to catch this pattern: any line that looks like substantive prose JSX content but is not a `t()` call, template literal, or comment.
+
 🟢 **Chapter 13 "In Practice"** — shipped 2026-05-23. Anonymized 4:47 AM scenario showing the drift engine catching AI Overview cannibalization. Three timestamped scene beats (04:47 alert → 11:00 three response paths → 12:30 client got audit trail before they had the problem) + Statement + close. Localized 5 langs (8 keys × 5 langs = 40 strings). ChFuture shifted to Ch14. Honest framing: "scenario is composite, patterned on the class of incident SEASON catches in active engagements, told as it would actually unfold."
 
 ---

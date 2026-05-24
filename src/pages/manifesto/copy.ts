@@ -321,6 +321,11 @@ export const COPY: Record<Lang, Record<string, string>> = {
     locale_maxim_1: 'Built for the operator who counts.',
     locale_maxim_2: 'A discipline is a promise you keep on a quiet Tuesday.',
     locale_maxim_3: 'The morning belongs to the operator who arrived first.',
+    future_1: 'SEO has always rewarded patience and punished shortcuts. The next era — generative answers, LLM mentions, conversational queries — rewards the same things, just amplified.',
+    future_2: "Topical authority compounds. Schema that LLMs can parse matters more. Brand presence across training data matters more. Real expertise demonstrated through real content matters more. The fundamentals didn't change. The amplification did.",
+    future_3: 'SEO SEASON is positioned for the next decade, not the last one. Multi-engine visibility. Schema-first architecture. Cluster authority that compounds. Honest reporting clients can take to their board without a translator.',
+    future_4: "The market will consolidate. Agencies running on PDF decks and rank-tracker screenshots will not survive 2027. AI-only platforms with no human accountability will be exposed by the first client who can't reach anyone when their traffic dips. The agencies that survive will look more like SEO SEASON — verifiable, auditable, accountable, with operators behind the work.",
+    future_5: 'Few agencies are positioned for this era. Fewer are operating from infrastructure built to last it. Almost none are run by the person who designed every part of it. We are taking on new clients while the curve is still gentle.',
   },
 
   /* ═══════════════ HINDI ═══════════════ */
@@ -623,6 +628,11 @@ export const COPY: Record<Lang, Record<string, string>> = {
     locale_maxim_1: 'धैर्य के साथ बनाया गया। हर पत्थर अपनी जगह।',
     locale_maxim_2: 'अनुशासन वह वचन है जो किसी शांत मंगलवार को भी निभाया जाता है।',
     locale_maxim_3: 'सुबह उस ऑपरेटर की होती है जो सबसे पहले पहुँचता है।',
+    future_1: 'SEO ने हमेशा धैर्य को पुरस्कृत किया है और शॉर्टकट को दंडित किया है। अगला युग — जनरेटिव उत्तर, LLM उल्लेख, संवादी क्वेरीज़ — उन्हीं चीज़ों को पुरस्कृत करता है, बस बढ़ाकर।',
+    future_2: 'विषयगत प्राधिकरण चक्रवृद्धि करता है। ऐसा स्कीमा जिसे LLMs पार्स कर सकते हैं अधिक मायने रखता है। प्रशिक्षण डेटा में ब्रांड उपस्थिति अधिक मायने रखती है। वास्तविक सामग्री के माध्यम से प्रदर्शित वास्तविक विशेषज्ञता अधिक मायने रखती है। मूलभूत बातें नहीं बदलीं। प्रवर्धन बदला।',
+    future_3: 'SEO SEASON अगले दशक के लिए स्थित है, पिछले के लिए नहीं। मल्टी-इंजन दृश्यता। स्कीमा-प्रथम वास्तुकला। क्लस्टर प्राधिकरण जो चक्रवृद्धि करता है। ईमानदार रिपोर्टिंग जिसे क्लाइंट बिना अनुवादक के अपने बोर्ड तक ले जा सकते हैं।',
+    future_4: 'बाज़ार समेकित होगा। PDF डेक और रैंक-ट्रैकर स्क्रीनशॉट पर चलने वाली एजेंसियाँ 2027 तक नहीं टिकेंगी। मानवीय जवाबदेही के बिना केवल-AI प्लेटफ़ॉर्म पहले उस क्लाइंट द्वारा उजागर हो जाएँगे जिसका ट्रैफ़िक गिरने पर कोई जवाब नहीं देता। जो एजेंसियाँ टिकेंगी वे SEO SEASON जैसी दिखेंगी — सत्यापन योग्य, ऑडिट योग्य, जवाबदेह, काम के पीछे ऑपरेटरों के साथ।',
+    future_5: 'कम एजेंसियाँ इस युग के लिए स्थित हैं। कम इसे टिकाने के लिए बनाई गई बुनियाद से संचालन कर रही हैं। लगभग कोई भी उस व्यक्ति द्वारा नहीं चलाई जाती जिसने इसके हर हिस्से को डिज़ाइन किया। हम नए क्लाइंट ले रहे हैं जबकि वक्र अभी भी सौम्य है।',
   },
 
   /* ═══════════════ SPANISH ═══════════════ */
@@ -925,6 +935,11 @@ export const COPY: Record<Lang, Record<string, string>> = {
     locale_maxim_1: 'Construido con rigor. Defendido con datos.',
     locale_maxim_2: 'Una disciplina es una promesa que se mantiene un martes tranquilo.',
     locale_maxim_3: 'La mañana pertenece al operador que llegó primero.',
+    future_1: 'El SEO siempre ha recompensado la paciencia y castigado los atajos. La próxima era — respuestas generativas, menciones en LLMs, consultas conversacionales — recompensa las mismas cosas, solo amplificadas.',
+    future_2: 'La autoridad temática se acumula. El schema que los LLMs pueden parsear importa más. La presencia de marca en los datos de entrenamiento importa más. La experiencia real demostrada a través de contenido real importa más. Los fundamentos no cambiaron. La amplificación sí.',
+    future_3: 'SEO SEASON está posicionado para la próxima década, no la pasada. Visibilidad multi-motor. Arquitectura schema-first. Autoridad de clúster que se acumula. Reportes honestos que los clientes pueden llevar a su junta sin traductor.',
+    future_4: 'El mercado se consolidará. Las agencias que operan con presentaciones PDF y capturas de rank-tracker no sobrevivirán a 2027. Las plataformas solo-IA sin responsabilidad humana serán expuestas por el primer cliente que no pueda contactar a nadie cuando su tráfico caiga. Las agencias que sobrevivan se parecerán más a SEO SEASON — verificables, auditables, responsables, con operadores detrás del trabajo.',
+    future_5: 'Pocas agencias están posicionadas para esta era. Menos operan desde una infraestructura construida para resistirla. Casi ninguna está dirigida por la persona que diseñó cada parte de ella. Estamos tomando nuevos clientes mientras la curva sigue siendo suave.',
   },
 
   /* ═══════════════ FRENCH ═══════════════ */
@@ -1227,6 +1242,11 @@ export const COPY: Record<Lang, Record<string, string>> = {
     locale_maxim_1: 'Bâti avec rigueur. Défendu avec des chiffres.',
     locale_maxim_2: 'Une discipline est une promesse tenue un mardi calme.',
     locale_maxim_3: "Le matin appartient à l'opérateur arrivé le premier.",
+    future_1: 'Le SEO a toujours récompensé la patience et puni les raccourcis. La prochaine ère — réponses génératives, mentions dans les LLMs, requêtes conversationnelles — récompense les mêmes choses, juste amplifiées.',
+    future_2: "L'autorité thématique se cumule. Le schéma que les LLMs peuvent parser compte davantage. La présence de marque dans les données d'entraînement compte davantage. L'expertise réelle démontrée par un contenu réel compte davantage. Les fondamentaux n'ont pas changé. L'amplification, si.",
+    future_3: "SEO SEASON est positionné pour la prochaine décennie, pas la précédente. Visibilité multi-moteurs. Architecture schéma-d'abord. Autorité de cluster qui se cumule. Rapports honnêtes que les clients peuvent apporter à leur conseil sans traducteur.",
+    future_4: 'Le marché se consolidera. Les agences fonctionnant sur des présentations PDF et des captures de rank-tracker ne survivront pas à 2027. Les plateformes uniquement IA sans responsabilité humaine seront exposées par le premier client qui ne peut joindre personne quand son trafic chute. Les agences qui survivront ressembleront davantage à SEO SEASON — vérifiables, auditables, responsables, avec des opérateurs derrière le travail.',
+    future_5: "Peu d'agences sont positionnées pour cette ère. Encore moins opèrent depuis une infrastructure construite pour la traverser. Presque aucune n'est dirigée par la personne qui a conçu chaque partie. Nous prenons de nouveaux clients pendant que la courbe est encore douce.",
   },
 
   /* ═══════════════ GERMAN ═══════════════ */
@@ -1529,5 +1549,10 @@ export const COPY: Record<Lang, Record<string, string>> = {
     locale_maxim_1: 'Mit Präzision gebaut. Mit Daten verteidigt.',
     locale_maxim_2: 'Disziplin ist ein Versprechen, das man auch an einem stillen Dienstag hält.',
     locale_maxim_3: 'Der Morgen gehört dem Operator, der als Erster da war.',
+    future_1: 'SEO hat schon immer Geduld belohnt und Abkürzungen bestraft. Die nächste Ära — generative Antworten, LLM-Erwähnungen, konversationelle Suchanfragen — belohnt dieselben Dinge, nur verstärkt.',
+    future_2: 'Topische Autorität kumuliert. Schema, das LLMs parsen können, zählt mehr. Markenpräsenz in Trainingsdaten zählt mehr. Echte Expertise, durch echten Content gezeigt, zählt mehr. Die Grundlagen haben sich nicht geändert. Die Verstärkung schon.',
+    future_3: 'SEO SEASON ist für das nächste Jahrzehnt positioniert, nicht das letzte. Multi-Engine-Sichtbarkeit. Schema-first-Architektur. Cluster-Autorität, die kumuliert. Ehrliche Berichte, die Kunden ohne Übersetzer in ihren Vorstand bringen können.',
+    future_4: 'Der Markt wird sich konsolidieren. Agenturen, die auf PDF-Decks und Rank-Tracker-Screenshots laufen, werden 2027 nicht überstehen. Reine KI-Plattformen ohne menschliche Verantwortung werden vom ersten Kunden entlarvt, der niemanden erreichen kann, wenn sein Traffic einbricht. Die Agenturen, die überleben, werden eher wie SEO SEASON aussehen — verifizierbar, auditierbar, verantwortlich, mit Operatoren hinter der Arbeit.',
+    future_5: 'Wenige Agenturen sind für diese Ära positioniert. Noch weniger arbeiten aus einer Infrastruktur heraus, die dafür gebaut wurde. Fast keine wird von der Person geleitet, die jeden Teil davon entworfen hat. Wir nehmen neue Kunden auf, solange die Kurve noch sanft ist.',
   },
 };
