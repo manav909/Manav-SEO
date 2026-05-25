@@ -54,6 +54,7 @@ import LLMVisibility from "@/pages/LLMVisibility";
 import AlertCenter from "@/pages/AlertCenter";
 import HealthDashboard from "@/pages/HealthDashboard";
 import Reports from "@/pages/Reports";
+import Documents from "@/pages/Documents";
 import ContentHub from "@/pages/ContentHub";
 import Intake from "@/pages/Intake";
 import PresentationView from "@/pages/PresentationView";
@@ -155,6 +156,7 @@ const AppRoutes = () => {
           <Route path="/alerts" element={<AlertCenter />} />
           <Route path="/health" element={<HealthDashboard />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/documents" element={<StaffGuard perm="data_room"><Documents /></StaffGuard>} />
           <Route path="/content-hub" element={<ContentHub />} />
           <Route path="/intake" element={<Intake />} />
           <Route path="/presentation/:token" element={<PresentationView />} />

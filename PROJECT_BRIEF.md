@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D2 — artifacts backend routes) · **Live commit:** `66c6617` (Phase D1 artifacts table foundation). Phase D2 exposes the artifacts table (D1) via 8 backend endpoints — `bs_artifacts_list / get / search / supersede / mark_reviewed / mark_sent / history / portfolio_kpis`. List returns summaries only (no body, no metadata, no search_vector — bandwidth protection); get returns the full row plus chronologically composed supersession chain (forward walk via superseded_by + backward walk via reverse-lookup with cycle guard). Search uses Supabase's `.textSearch()` mapping to `plainto_tsquery` (safe for arbitrary input). All filters are multi-select arrays (projectIds[], campaignIds[], panelIds[], artifactKinds[]). Workflow ops (reviewed, sent, supersede) are reversible — pass `false` to unset. Portfolio KPIs returns 6 metrics in one round-trip: artifacts_this_week, artifacts_this_month, llm_spend_mtd_usd, awaiting_review_count, awaiting_review_oldest_days, red_severity_audits. Dispatched through existing `handleBrandStudio` cases — no new `api/*.ts` function added (ceiling preserved at 12). Foundation complete for Phase D3 (Documents page UI).
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D3 — Documents page UI) · **Live commit:** `798c473` (Phase D2 artifacts backend routes). Phase D3 ships the senior-PM working surface: new `/documents` route with three-pane layout (filters sidebar | KPI strip + search + artifact list | detail pane). Default view "what needs me right now" — unreviewed current artifacts, oldest first. Four quick filters (Needs me / All current / Recently sent / Red audits 7d) auto-set their own filter combinations. Multi-select filters for projects, artifact kinds, status. Tri-state booleans for pm_reviewed and client_sent. Full-text search bar via `artifactsSearch` (Postgres tsquery). URL deep-linkable via `?artifact=<id>`. Detail pane renders markdown body, version history chain (highlights current row), workflow actions (mark reviewed, mark sent — both reversible with optimistic UI), copy-to-clipboard, optional metadata panel, optional PM notes panel. KPI strip shows 6 metrics: artifacts this week / this month / LLM spend MTD / awaiting review / oldest unreviewed days / red audits 7d — refetches on workflow change. 8 typed API client methods added to `src/components/pm/api.ts` matching the 8 D2 endpoints exactly. New page is 1016 lines, single file, 4 sub-components inline. Foundation complete for Phase D4 (embedded viewers on SeoCampaignsPanel + ClientLens) and D5 (bulk ops + comparison view).
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1416,6 +1416,56 @@ Walks every existing `season_pipeline_runs` with a non-empty `final_artifacts` a
 **Diff:** 37 lines added to brand-studio.ts dispatcher + new 511-line artifacts-routes.ts library file.
 
 **Discipline lesson logged:** When a piece of code exists from a prior session (artifacts-routes.ts was already in the workspace, locally only, never committed), the honest move is to read it carefully, verify it against current state, and ship if correct — not to rewrite from scratch and discard valid work. Re-writing would have lost the docblocks, the supersession chain logic, and the careful PostgREST patterns. Verification + integration is faster than reinvention.
+
+### Phase D3 — Documents page UI (2026-05-25)
+
+**Why this exists:** D1 created the data foundation, D2 exposed it via API, D3 is what Manav actually sees and uses. Without D3, all the prior work is invisible — backfilled historical artifacts are queryable but only via SQL in Supabase Dashboard, not usable for daily PM work at 100+ project scale.
+
+**The page in one paragraph:** New `/documents` route, three-pane layout, designed for senior PM managing portfolio. Filters sidebar (projects, kinds, status, workflow tristate, date range) on left. Center pane: 6-metric KPI strip + search bar + artifact list with row badges (kind color dot, "Review" tag if unreviewed, send icon if sent, status badge if not current). Right pane: detail viewer with markdown body, version chain, workflow buttons (mark reviewed / mark sent — both reversible), copy-to-clipboard, optional metadata + PM notes sections.
+
+**Architecture decisions:**
+
+| Decision | Reason |
+|---|---|
+| Default view = "what needs me right now" (unreviewed, current, oldest-first) | A senior PM landing on the page should immediately see triage queue, not noise. Quick-filter buttons let them switch views in one click. |
+| 4 quick filters override their own filter combinations atomically | "Recently sent" / "Red audits 7d" / "All current" each have specific filter combos that would take 3-4 clicks to construct manually. One click = curated view. |
+| Three-pane layout fixed-width sidebars, fluid detail | Filter sidebar = 256px, list = 420px, detail = remaining. Optimized for desktop PM work, not mobile. |
+| Multi-select via checkbox lists with counts in section headers | "Projects (5)" in the header tells you at a glance how filtered you are. Reduces forgotten-filter confusion. |
+| TriState boolean filters (Any / Yes / No) for pmReviewed + clientSent | Booleans always have 3 meaningful filter states, not 2 — "any" matters as much as "yes/no". |
+| URL-deep-linkable via `?artifact=<id>` | PM can paste a link to a specific artifact into Slack/email. Mounts straight into detail view. |
+| Optimistic workflow updates + KPI refetch | Click "mark reviewed" → button flips instantly + list row updates instantly + KPIs refetch async. Avoids loading-state stutter. |
+| Search input → API switch | Type → calls `artifactsSearch(q, filters)`. Empty → calls `artifactsList(filters)`. Same filter combo applies either way. |
+| Pagination at 50/page, auto-reset offset on any filter change | Avoids the "I'm on page 4 but my filter changed and now nothing shows" footgun. |
+| Markdown body via ReactMarkdown + remark-gfm | Matches existing brand-studio/DocumentViewer.tsx convention. Tables, lists, code blocks render properly. |
+| Version chain inline at bottom of detail, highlights current | "Version 2 of 5" badge in header + scrollable list at bottom. Setup for D5 comparison view. |
+| Reset button preserves quickFilter selection | "Reset" clears all manual filters but keeps the operator's chosen view mode (Needs me, Recent sent, etc). |
+| Project labels via brand_name → client_name → company_name fallback | Matches the convention in PortalNav. Falls back to short ID prefix if nothing usable. |
+
+**Files changed:**
+- `src/pages/Documents.tsx` — NEW, 1016 lines, 4 sub-components inline (KpiStrip, FiltersSidebar, ArtifactRow, DetailPane), plus TriState + Section helpers
+- `src/components/pm/api.ts` — appended 119 lines: 4 type interfaces (ArtifactSummary, ArtifactDetail, ArtifactListFilters, PortfolioKpis) + 8 typed methods (artifactsList, artifactsGet, artifactsSearch, artifactsSupersede, artifactsMarkReviewed, artifactsMarkSent, artifactsHistory, artifactsPortfolioKpis)
+- `src/App.tsx` — 2 lines: import Documents + `<Route path="/documents" element={<StaffGuard perm="data_room"><Documents /></StaffGuard>} />`
+
+**Verification:**
+- Frontend TS check: 27 errors total (baseline unchanged — 0 new errors introduced by D3)
+- Documents.tsx: 0 TS errors
+- App.tsx: 0 TS errors after route addition
+- Vite build green
+- API ceiling: 12 (no backend changes — D3 is FE only)
+- 16 smoke categories, 63 sub-checks all pass: 8 API methods present, 4 type interfaces exported, 5+1 methods imported in page, 4 sub-components defined, default view is "needs me right now" with correct filter combo, multi-select via toggleArray, search switches between list/search APIs, URL deep-link works both directions, workflow ops update optimistically + refetch KPIs, markdown body rendered, supersession chain UI works, pagination disabled correctly + auto-resets on filter change, all 4 empty states present (no list / no selection / loading / error), project labels use right fallback chain, route wired behind StaffGuard, 5 senior-DMS UX details (6 KPI metrics, TriState filters, collapsible date range, reset preserves quickFilter, refresh button)
+
+**Diff:** 1 new page file (1016 lines) + 2 file edits (api.ts +119 lines, App.tsx +2 lines).
+
+**What this gives you immediately:**
+1. Navigate to `/documents` — see all your portfolio artifacts in one place
+2. Default view: anything unreviewed across all projects, oldest first → triage queue ready
+3. Search box: type any keyword → finds artifacts mentioning it (full-text via Postgres tsquery)
+4. Click an artifact → detail pane with markdown body, version history, workflow buttons
+5. Mark reviewed / mark sent → optimistic update, KPIs refresh, list row updates
+6. Filter by project → KPI strip rescopes to that project subset
+7. Deep-link an artifact → paste `https://yourapp/documents?artifact=<uuid>` and someone lands exactly there
+
+**Discipline lesson logged:** A 1016-line page in a single file is fine when the page is one cohesive workflow surface. Splitting into 5-6 separate files for "cleanliness" would have made the data flow harder to follow — useEffect dependencies + state lifting are easier to verify in one file. The DataRoom.tsx and SeoCampaignsPanel.tsx precedents (similar size, similar structure) confirm this is the house style. Code organization should match the work being done, not abstract ideals.
 
 ### Session handoff for tech audit work
 

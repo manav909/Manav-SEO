@@ -4072,3 +4072,122 @@ export async function seoClientLensLoad(opts: { projectId: string }): Promise<{
   if (!r?.success) return { error: r?.error };
   return { lens: r.lens };
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Phase D2/D3 — Artifacts management API client
+   Mirrors the 8 endpoints in api/lib/artifacts-routes.ts.
+═══════════════════════════════════════════════════════════════════════════ */
+
+export interface ArtifactSummary {
+  id:                   string;
+  project_id:           string;
+  campaign_id:          string | null;
+  panel_id:             string | null;
+  source_kind:          string;
+  source_id:            string;
+  source_step_id:       string | null;
+  artifact_kind:        string;
+  title:                string;
+  keyword:              string | null;
+  target_url:           string | null;
+  body_format:          string;
+  status:               'current' | 'superseded' | 'archived';
+  superseded_by:        string | null;
+  generated_at:         string;
+  generation_cost_usd:  number | null;
+  llm_calls:            number;
+  serpapi_calls:        number;
+  pm_reviewed:          boolean;
+  pm_reviewed_at:       string | null;
+  pm_reviewed_by:       string | null;
+  client_sent:          boolean;
+  client_sent_at:       string | null;
+}
+
+export interface ArtifactDetail extends ArtifactSummary {
+  body:                 string;
+  metadata:             any;
+  pm_notes:             string | null;
+  superseded_at:        string | null;
+}
+
+export interface ArtifactListFilters {
+  projectIds?:        string[];
+  campaignIds?:       string[];
+  panelIds?:          string[];
+  artifactKinds?:     string[];
+  status?:            'current' | 'superseded' | 'archived';
+  keyword?:           string;
+  pmReviewed?:        boolean;
+  clientSent?:        boolean;
+  generatedAfter?:    string;
+  generatedBefore?:   string;
+  sort?:              'newest' | 'oldest' | 'most_expensive';
+  limit?:             number;
+  offset?:            number;
+}
+
+export interface PortfolioKpis {
+  artifacts_this_week:          number;
+  artifacts_this_month:         number;
+  llm_spend_mtd_usd:            number;
+  awaiting_review_count:        number;
+  awaiting_review_oldest_days:  number | null;
+  red_severity_audits:          number;
+}
+
+export async function artifactsList(filters: ArtifactListFilters = {}):
+  Promise<{ artifacts?: ArtifactSummary[]; total?: number; limit?: number; offset?: number; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_artifacts_list', ...filters });
+  if (!r?.success) return { error: r?.error };
+  return { artifacts: r.artifacts, total: r.total, limit: r.limit, offset: r.offset };
+}
+
+export async function artifactsGet(opts: { artifactId: string; includeChain?: boolean }):
+  Promise<{ artifact?: ArtifactDetail; chain?: ArtifactSummary[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_artifacts_get', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { artifact: r.artifact, chain: r.chain };
+}
+
+export async function artifactsSearch(opts: { q: string } & ArtifactListFilters):
+  Promise<{ artifacts?: ArtifactSummary[]; total?: number; query?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_artifacts_search', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { artifacts: r.artifacts, total: r.total, query: r.query };
+}
+
+export async function artifactsSupersede(opts: { artifactId: string; supersededBy?: string }):
+  Promise<{ artifact?: ArtifactSummary; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_artifacts_supersede', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { artifact: r.artifact };
+}
+
+export async function artifactsMarkReviewed(opts: { artifactId: string; reviewerId?: string; note?: string; reviewed?: boolean }):
+  Promise<{ artifact?: ArtifactSummary; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_artifacts_mark_reviewed', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { artifact: r.artifact };
+}
+
+export async function artifactsMarkSent(opts: { artifactId: string; sent?: boolean }):
+  Promise<{ artifact?: ArtifactSummary; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_artifacts_mark_sent', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { artifact: r.artifact };
+}
+
+export async function artifactsHistory(opts: { artifactId: string }):
+  Promise<{ chain?: ArtifactSummary[]; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_artifacts_history', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { chain: r.chain };
+}
+
+export async function artifactsPortfolioKpis(opts: { projectIds?: string[] } = {}):
+  Promise<{ kpis?: PortfolioKpis; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_artifacts_portfolio_kpis', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return { kpis: r.kpis };
+}
