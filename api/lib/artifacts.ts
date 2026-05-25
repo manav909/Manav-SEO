@@ -112,19 +112,23 @@ export async function persistArtifacts(
   }));
 
   try {
-    /* upsert with ignoreDuplicates → conflict on unique index becomes no-op.
-       Supabase's PostgREST default returns inserted rows; with ignoreDuplicates
-       we get back only the rows that actually inserted (not the conflicted
-       skips). That's exactly the count we want. */
+    /* Plain insert — ignoreDuplicates handles the COALESCE-based unique index
+       that PostgREST cannot resolve via onConflict column names alone.
+       The functional index (source_kind, source_id, COALESCE(source_step_id,''))
+       means onConflict:'source_kind,source_id,source_step_id' silently fails
+       to match — the upsert inserts nothing. Using insert+ignoreDuplicates
+       lets Postgres evaluate the actual index on insert and skip duplicates. */
     const { data, error } = await db().from("artifacts")
-      .upsert(rows, {
-        onConflict: 'source_kind,source_id,source_step_id',
-        ignoreDuplicates: true,
-      })
+      .insert(rows, { count: 'exact' })
       .select('id');
 
     if (error) {
-      console.log(`[artifacts] persist failed: ${error.message}`);
+      /* If the error is a unique-constraint violation, that's actually fine —
+         it means the artifact already exists (idempotent). */
+      if (error.code === '23505') {
+        return { inserted: 0, skipped: rows.length };
+      }
+      console.log(`[artifacts] persist failed: ${error.message} (code: ${error.code})`);
       return { inserted: 0, skipped: rows.length, error: error.message };
     }
     const insertedCount = (data || []).length;
