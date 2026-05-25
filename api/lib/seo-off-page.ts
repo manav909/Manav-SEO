@@ -59,14 +59,20 @@ type ProspectKind =
   'directory' | 'podcast_or_video' | 'resource_page' | 'broken_link_target' | 'other';
 
 interface ExistingAsset {
-  asset_type:     AssetType;
-  title:          string;
-  url:            string;
-  description:    string;
-  why_linkable:   string;
-  gsc_impressions: number;
-  gsc_clicks:     number;
-  gsc_position:   number;
+  asset_type:        AssetType;
+  title:             string;
+  url:               string;
+  description:       string;
+  why_linkable:      string;
+  gsc_impressions:   number;
+  gsc_clicks:        number;
+  gsc_position:      number;
+  /* Phase 18.2 — keyword fit scoring. Does this asset attract links
+     relevant to the campaign keyword? Scored 0-100, classified as
+     high / medium / low. Computed heuristically (no LLM call). */
+  keyword_fit_score: number;
+  keyword_fit_label: 'high' | 'medium' | 'low';
+  keyword_fit_signals: string[];
 }
 
 interface AspirationalAsset {
@@ -93,7 +99,7 @@ interface ProspectCategory {
 interface Finding {
   finding_kind:    'no_linkable_assets' | 'asset_gap' | 'prospect_drought'
                  | 'competitor_link_dominance' | 'asset_readiness_strong'
-                 | 'outreach_strategy_ready';
+                 | 'outreach_strategy_ready' | 'asset_keyword_fit_weak';
   severity:        'green' | 'amber' | 'red' | 'info';
   finding_title:   string;
   finding_detail?: string;
@@ -614,6 +620,65 @@ async function readCompetitorSnapshot(campaignId: string): Promise<any[]> {
    LLM CALL A — Identify existing linkable assets
 ═══════════════════════════════════════════════════════════════ */
 
+/* Phase 18.2 — Asset-keyword fit scoring.
+   Evaluates whether a linkable asset is topically relevant to the campaign
+   keyword — i.e., would a link TO this asset from content about the keyword
+   make sense, and would it attract links FROM pages covering the keyword
+   topic area?
+   Heuristic scoring: no LLM call, computed from URL slug, title tokens,
+   and why_linkable text. Score 0-100, label high/medium/low. */
+function scoreAssetKeywordFit(
+  url: string, title: string, whyLinkable: string, keyword: string
+): { score: number; label: 'high' | 'medium' | 'low'; signals: string[] } {
+  const kwTokens = new Set(
+    keyword.toLowerCase().split(/\s+/).filter(t => t.length > 2)
+  );
+  const signals: string[] = [];
+  let score = 0;
+
+  const urlSlug = url.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+  const titleLower = title.toLowerCase();
+  const whyLower = whyLinkable.toLowerCase();
+
+  /* URL slug token overlap */
+  const urlMatches = [...kwTokens].filter(t => urlSlug.includes(t));
+  if (urlMatches.length >= 2) {
+    score += 35;
+    signals.push(`URL slug contains ${urlMatches.length} keyword tokens (${urlMatches.join(', ')})`);
+  } else if (urlMatches.length === 1) {
+    score += 20;
+    signals.push(`URL slug contains keyword token "${urlMatches[0]}"`);
+  }
+
+  /* Title token overlap */
+  const titleMatches = [...kwTokens].filter(t => titleLower.includes(t));
+  if (titleMatches.length >= 2) {
+    score += 30;
+    signals.push(`Title contains ${titleMatches.length} keyword tokens`);
+  } else if (titleMatches.length === 1) {
+    score += 15;
+    signals.push(`Title contains keyword token "${titleMatches[0]}"`);
+  }
+
+  /* why_linkable mentions keyword topic */
+  const whyMatches = [...kwTokens].filter(t => whyLower.includes(t));
+  if (whyMatches.length >= 2) {
+    score += 25;
+    signals.push(`Linkability rationale explicitly covers keyword topic`);
+  } else if (whyMatches.length >= 1) {
+    score += 10;
+    signals.push(`Linkability rationale partially covers keyword topic`);
+  }
+
+  /* Cap and classify */
+  score = Math.min(100, score);
+  if (signals.length === 0) {
+    signals.push(`No keyword tokens found in URL, title, or linkability rationale — this asset may attract links from a different topic area`);
+  }
+  const label: 'high' | 'medium' | 'low' = score >= 60 ? 'high' : score >= 30 ? 'medium' : 'low';
+  return { score, label, signals };
+}
+
 async function identifyExistingAssets(keyword: string, gscPages: GscPageRow[]): Promise<ExistingAsset[]> {
   if (gscPages.length === 0) return [];
 
@@ -654,15 +719,19 @@ Which of these are genuinely linkable assets? Drop weak ones — return ${Math.m
       if (!a.url || typeof a.url !== 'string') continue;
       const gscPage = gscPages.find(p => p.page === a.url);
       if (!gscPage) continue;
+      const fit = scoreAssetKeywordFit(a.url, String(a.title || ''), String(a.why_linkable || ''), keyword);
       result.push({
-        asset_type:      validateAssetType(a.asset_type),
-        title:           String(a.title || 'Untitled asset').slice(0, 200),
-        url:             a.url,
-        description:     String(a.description || '').slice(0, 800),
-        why_linkable:    String(a.why_linkable || '').slice(0, 800),
-        gsc_impressions: gscPage.impressions,
-        gsc_clicks:      gscPage.clicks,
-        gsc_position:    gscPage.position,
+        asset_type:          validateAssetType(a.asset_type),
+        title:               String(a.title || 'Untitled asset').slice(0, 200),
+        url:                 a.url,
+        description:         String(a.description || '').slice(0, 800),
+        why_linkable:        String(a.why_linkable || '').slice(0, 800),
+        gsc_impressions:     gscPage.impressions,
+        gsc_clicks:          gscPage.clicks,
+        gsc_position:        gscPage.position,
+        keyword_fit_score:   fit.score,
+        keyword_fit_label:   fit.label,
+        keyword_fit_signals: fit.signals,
       });
     }
     return result;
@@ -915,6 +984,30 @@ function computeFindings(opts: {
     });
   }
 
+  /* Phase 18.2 — Asset-keyword fit warning: when existing assets are identified
+     but none score high on keyword fit, surface it as an amber finding. A link
+     from "app maker tutorial" to a "free PDF export tool" doesn't help rank for
+     "app maker" — the linker's audience and the asset topic must overlap. */
+  if (opts.existingAssets.length > 0) {
+    const highFit = opts.existingAssets.filter(a => a.keyword_fit_label === 'high').length;
+    const lowFit  = opts.existingAssets.filter(a => a.keyword_fit_label === 'low').length;
+    if (highFit === 0 && opts.existingAssets.length >= 2) {
+      findings.push({
+        finding_kind:   'asset_keyword_fit_weak',
+        severity:       'amber',
+        finding_title:  `None of ${opts.existingAssets.length} identified assets score high on keyword fit`,
+        finding_detail: `The identified linkable assets may attract editorial links, but those links would come from content covering different topics than the campaign keyword. Links from off-topic content carry reduced topical authority for your target keyword.\n\nKeyword fit breakdown:\n${opts.existingAssets.map(a => `- ${a.title}: ${a.keyword_fit_label} fit (${a.keyword_fit_score}/100) — ${(a.keyword_fit_signals || []).join('; ')}`).join('\n')}`,
+        recommendation: `Either build assets that are topically aligned with your campaign keyword, or accept that off-page will build general domain authority rather than keyword-specific authority. Consider which aspirational assets (below) have the highest keyword alignment.`,
+        evidence: {
+          assets_checked:  opts.existingAssets.length,
+          high_fit_count:  highFit,
+          low_fit_count:   lowFit,
+          fit_scores:      opts.existingAssets.map(a => ({ title: a.title, score: a.keyword_fit_score, label: a.keyword_fit_label })),
+        },
+      });
+    }
+  }
+
   return findings;
 }
 
@@ -1034,11 +1127,15 @@ function renderReport(opts: {
     lines.push('');
     for (let i = 0; i < existingAssets.length; i++) {
       const a = existingAssets[i];
+      const fitIcon  = a.keyword_fit_label === 'high' ? '🎯' : a.keyword_fit_label === 'medium' ? '🟡' : '⚠️';
+      const fitLabel = a.keyword_fit_label === 'high' ? 'High keyword fit' : a.keyword_fit_label === 'medium' ? 'Medium keyword fit' : 'Low keyword fit';
       lines.push(`### ${i + 1}. ${a.title} (${formatAssetType(a.asset_type)})`);
       lines.push('');
       lines.push(`**URL:** [${a.url}](${a.url})`);
       lines.push('');
       lines.push(`**GSC stats:** ${a.gsc_impressions.toLocaleString()} impressions · ${a.gsc_clicks.toLocaleString()} clicks · avg position ${a.gsc_position.toFixed(1)}`);
+      lines.push('');
+      lines.push(`**Keyword fit:** ${fitIcon} ${fitLabel} (${a.keyword_fit_score}/100) — ${(a.keyword_fit_signals || []).join('; ')}`);
       lines.push('');
       lines.push(`**What it is:** ${a.description}`);
       lines.push('');

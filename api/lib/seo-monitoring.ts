@@ -139,6 +139,33 @@ function monitorFindingKindSources(kind: string): MonitorSourceKey[] {
   }
 }
 
+/* Phase 18.2 — attach snapshot provenance to every delta finding's evidence.
+   A Senior DMS verifying a "position dropped 4 spots" finding needs to know
+   WHICH two snapshots produced that delta — date, ID, and actual window.
+   Post-process pass, same pattern as attachMonitorFindingSources. */
+function attachSnapshotTrail(findings: Finding[], curr: Snapshot, base: Snapshot): void {
+  const windowDaysActual = (base.created_at && curr.created_at)
+    ? Math.round(
+        (new Date(curr.created_at).getTime() - new Date(base.created_at).getTime())
+        / 86_400_000
+      )
+    : null;
+
+  const trail = {
+    baseline_date:        base.created_at   || null,
+    current_date:         curr.created_at   || null,
+    window_days_actual:   windowDaysActual,
+    baseline_snapshot_id: base.id           || null,
+    current_snapshot_id:  curr.id           || null,
+  };
+
+  for (const f of findings) {
+    /* baseline_established finding has no delta — skip */
+    if (f.finding_kind === 'baseline_established' || f.finding_kind === 'no_change') continue;
+    f.evidence = { ...(f.evidence || {}), ...trail };
+  }
+}
+
 function attachMonitorFindingSources(findings: Finding[]): void {
   for (const f of findings) {
     if (f.sources_used && f.sources_used.length > 0) continue;
@@ -267,6 +294,8 @@ export async function runMonitoringCheck(opts: {
       }];
     } else {
       findings = computeDeltaFindings(currentSnap, baselineSnap);
+      /* Phase 18.2 — attach snapshot evidence trail to every delta finding */
+      attachSnapshotTrail(findings, currentSnap, baselineSnap);
     }
 
     /* 6. ONE LLM call for narrative synthesis (skip on baseline) */

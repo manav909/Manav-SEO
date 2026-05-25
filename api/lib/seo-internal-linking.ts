@@ -270,7 +270,7 @@ export async function runInternalLinkingAudit(opts: {
     computeInlinks(pageNodes);
 
     /* 6. Compute findings */
-    const findings = computeLinkGraphFindings(pageNodes, clusterTargets);
+    const findings = computeLinkGraphFindings(pageNodes, clusterTargets, c.keyword || '');
     /* 6b. Phase 17.1 — attach source attribution per finding (post-compute,
        idempotent). Each finding_kind maps to the data sources that informed
        it; per-finding confidence is the weighted-mean across those sources. */
@@ -851,7 +851,7 @@ function computeInlinks(nodes: PageNode[]): void {
    FINDINGS
 ═══════════════════════════════════════════════════════════════ */
 
-function computeLinkGraphFindings(nodes: PageNode[], clusterTargets: LinkTarget[]): Finding[] {
+function computeLinkGraphFindings(nodes: PageNode[], clusterTargets: LinkTarget[], campaignKeyword: string): Finding[] {
   const findings: Finding[] = [];
   const fetched = nodes.filter(n => n.fetched);
 
@@ -909,23 +909,61 @@ function computeLinkGraphFindings(nodes: PageNode[], clusterTargets: LinkTarget[
     });
   }
 
-  /* Generic anchor over-representation */
+  /* Phase 18.2 — Anchor quality breakdown (batch-2 uplift).
+     3-way classification: keyword_rich | descriptive | generic. */
+  const kwTokens = new Set(tokenize(campaignKeyword));
+  /* AnchorEntry already has source_url + target_url fields — no need to remap */
   const allAnchors = fetched.flatMap(n => n.outlinks);
   if (allAnchors.length > 0) {
-    const genericCount = allAnchors.filter(a => a.is_generic).length;
-    const pct = Math.round((genericCount / allAnchors.length) * 100);
-    if (pct >= 20) {
+    const genericList      = allAnchors.filter(a => a.is_generic);
+    const keywordRichList  = allAnchors.filter(a => !a.is_generic && tokenize(a.anchor_text).some(t => kwTokens.has(t)));
+    const descriptiveList  = allAnchors.filter(a => !a.is_generic && !tokenize(a.anchor_text).some(t => kwTokens.has(t)));
+    const genericCount     = genericList.length;
+    const kwRichCount      = keywordRichList.length;
+    const descriptiveCount = descriptiveList.length;
+    const genericPct       = Math.round((genericCount  / allAnchors.length) * 100);
+    const kwRichPct        = Math.round((kwRichCount   / allAnchors.length) * 100);
+    const descriptivePct   = Math.round((descriptiveCount / allAnchors.length) * 100);
+    const topGenericToFix  = genericList.slice(0, 10).map(a => ({
+      anchor:     a.anchor_text,
+      source_url: a.source_url || '',
+      target_url: a.target_url,
+    }));
+
+    if (genericPct >= 20) {
       findings.push({
         finding_kind:   'generic_anchors',
-        severity:       pct >= 40 ? 'amber' : 'info',
-        finding_title:  `${pct}% of internal anchors are generic ("${Array.from(new Set(allAnchors.filter(a => a.is_generic).map(a => a.anchor_text).slice(0, 3))).join('", "')}")`,
-        finding_detail: `Out of ${allAnchors.length} internal links analyzed, ${genericCount} use generic anchor text (click here, read more, etc). Generic anchors waste a strong on-page ranking signal — Google uses anchor text to understand what the linked page is about.`,
-        recommendation: `Audit your most-linked pages and rewrite generic anchors to be descriptive. Use keyword-rich phrases that describe the target page's topic. Aim for <10% generic anchors.`,
-        evidence:       {
-          total_anchors:   allAnchors.length,
-          generic_anchors: genericCount,
-          generic_pct:     pct,
+        severity:       genericPct >= 40 ? 'amber' : 'info',
+        finding_title:  `${genericPct}% of internal anchors are generic (${genericCount} of ${allAnchors.length})`,
+        finding_detail: `**Anchor quality breakdown** across ${allAnchors.length} internal links:\n\n` +
+          `| Category | Count | % | What it means |\n` +
+          `|---|---|---|---|\n` +
+          `| 🔑 Keyword-rich | ${kwRichCount} | ${kwRichPct}% | Contains "${campaignKeyword}" tokens — passes topical signal |\n` +
+          `| 📝 Descriptive | ${descriptiveCount} | ${descriptivePct}% | Specific but not keyword-bearing |\n` +
+          `| ⚠️ Generic | ${genericCount} | ${genericPct}% | "Click here", "read more" — zero ranking signal |\n\n` +
+          `Generic anchors waste a strong on-page signal. Google uses anchor text to understand what the linked page is about.\n\n` +
+          (topGenericToFix.length > 0
+            ? `**Top generic anchors to rewrite:**\n${topGenericToFix.map((g, i) => `${i + 1}. \`${g.anchor}\` · [${g.source_url}](${g.source_url}) → [${g.target_url}](${g.target_url})`).join('\n')}`
+            : ''),
+        recommendation: `Rewrite the anchors above to be descriptive. Use keyword-rich phrases when linking to cluster hub pages. Aim for <10% generic anchors.`,
+        evidence: {
+          total_anchors: allAnchors.length, generic_anchors: genericCount, keyword_rich: kwRichCount,
+          descriptive: descriptiveCount, generic_pct: genericPct, keyword_rich_pct: kwRichPct,
+          top_generic_to_fix: topGenericToFix,
         },
+      });
+    } else if (kwRichPct < 10 && allAnchors.length >= 20) {
+      findings.push({
+        finding_kind:   'generic_anchors',
+        severity:       'info',
+        finding_title:  `Internal anchor keyword-richness is low (${kwRichPct}% carry "${campaignKeyword}" tokens)`,
+        finding_detail: `**Anchor quality breakdown:**\n\n| Category | Count | % |\n|---|---|---|\n` +
+          `| 🔑 Keyword-rich | ${kwRichCount} | ${kwRichPct}% |\n` +
+          `| 📝 Descriptive | ${descriptiveCount} | ${descriptivePct}% |\n` +
+          `| ⚠️ Generic | ${genericCount} | ${genericPct}% |\n\n` +
+          `Only ${kwRichCount} of ${allAnchors.length} links carry "${campaignKeyword}" tokens. Add keyword context to anchors pointing at the hub page.`,
+        recommendation: `Use "${campaignKeyword}" or its primary tokens in anchor text when linking to the campaign hub page.`,
+        evidence: { total_anchors: allAnchors.length, generic_anchors: genericCount, keyword_rich: kwRichCount, generic_pct: genericPct, keyword_rich_pct: kwRichPct },
       });
     }
   }
