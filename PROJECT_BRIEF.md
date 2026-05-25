@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.4 client_update + internal_handover wire-in) · **Live commit:** `dece854` (Phase 17.3 forecast audit-anchored). Phase 17.4 wires the pipeline's distribution layer — what the client sees + what the PM acts on. The LLM-driven `client_update` gets audit findings injected into its userMessage so Manav's voice composes around real numbers ($X-Y/mo opportunity, foundational fix, AI Overview presence, content depth gap) instead of generic talking points. The template-only `internal_handover` gets a deterministic priority-ordered effort map appended (P0/P1/P2 with effort estimates). All artifact-producing pipeline steps that benefit from audit data are now wired (17.0-17.4). Remaining sequence (17.5-17.6) is about distribution and refresh, not new artifact wiring.
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.5 manual refresh-from-audit button) · **Live commit:** `2846688` (Phase 17.4 client_update + internal_handover audit-anchored). Phase 17.5 ships the L1 refresh primitive — a manual "Refresh from audit" button next to each completed pipeline run in SeoCampaignsPanel. When clicked, resets the 5 audit-consuming steps (competitor_snapshot, content_brief, forecast, client_update, internal_handover) to pending so they re-run with the latest audit findings. Touches 6 files (1 interface tag, 5 step taggings, new helper, new backend route, dispatcher case, typed client function, UI button + handler). All artifact-producing audit-consuming steps now have a manual refresh path. Phase 17.6 (cron-driven selective auto-refresh) is next.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1018,6 +1018,48 @@ Internal handover now appends:
 - Full fixture extracted 8 signals, generated 7-bullet LLM injection block + complete P0/P1/P2 handover section.
 
 **Diff:** 1 file changed, 266 insertions, 7 deletions in `season-pipeline-rank-for-keyword.ts`.
+
+### Phase 17.5 — Manual refresh from audit (2026-05-24)
+
+L1 refresh primitive. Solves the "pipeline ran once, audit refreshed, artifacts stayed frozen" problem at the smallest possible scope: a manual button per pipeline run that resets all audit-consuming steps to pending so they re-run with the latest audit findings.
+
+**What it does:**
+
+| File | Change |
+|---|---|
+| `api/lib/season-pipeline-runner.ts` | Added `consumes_audit?: boolean` field to `PipelineStep` interface |
+| `api/lib/season-pipeline-rank-for-keyword.ts` | Tagged the 5 audit-consuming steps (`competitor_snapshot`, `content_brief`, `forecast`, `client_update`, `internal_handover`) with `consumes_audit: true`. Added exported helper `findFirstAuditDependentStepIndex(definition)` that returns the earliest such step's index. |
+| `api/lib/season-pipeline-routes.ts` | New `bsSeasonPipelineRefreshFromAudit(body)` route function. Validates `runId` → loads run + verifies it's campaign-linked → checks an audit has actually run for that campaign (clear error if not) → builds the pipeline definition for `pipeline_type` → locates first audit-consuming step → calls existing `retryFromStep(runId, stepIndex)` to reset all steps from that index forward. Returns `{ success, steps_reset, first_step_index, first_step_id, first_step_label, audit_run_id, note }`. |
+| `api/lib/brand-studio.ts` | New dispatcher case `bs_season_pipeline_refresh_from_audit` |
+| `src/components/pm/api.ts` | New typed client function `seasonPipelineRefreshFromAudit({ runId })` |
+| `src/components/pm/SeoCampaignsPanel.tsx` | New "Refresh from audit" button on each completed pipeline run row in the campaign detail drawer. Includes `refreshingRunId` state + `handleRefreshPipelineFromAudit` handler with confirm dialog + toast feedback. After successful reset, calls `load()` to refresh the panel state. Button tooltip explains exactly which steps reset. |
+
+**How the user flow works:**
+1. User opens a campaign's detail drawer in SeoCampaignsPanel
+2. Sees list of pipeline runs (the existing read-only listing)
+3. For any `completed` run, sees a "Refresh from audit" button
+4. Click → confirm dialog → backend resets the 5 audit-consuming steps to pending
+5. Toast confirms reset, mentions the dashboard where re-execution can be driven
+6. Panel reloads showing updated state (status now 'retrying', steps_completed reduced)
+7. To actually re-run, user navigates to the pipeline dashboard which has the execute loop
+
+**Architectural notes:**
+- Reuses existing `retryFromStep` primitive (no new execution machinery)
+- `consumes_audit` flag on PipelineStep is the foundation for Phase 17.6's dependency-based selective refresh
+- Backend validates audit existence BEFORE reset (no orphan retries)
+- Frontend doesn't auto-drive execution from the panel — keeps the panel scoped to status display; full re-execution happens in the dashboard where the loop already exists
+
+**What this explicitly does NOT do (yet):**
+- No automatic refresh on audit cron (that's Phase 17.6 with material-change gate)
+- No per-step granular refresh (always resets ALL audit-consuming steps, in order)
+- Doesn't auto-drive execution after reset (user opens dashboard)
+
+**Verification:**
+- Vercel runtime TS clean on touched files (`seo-campaign-engine.ts:1021` pre-existing + 3 other pre-existing errors in war-room/grouping confirmed via diff vs origin/main).
+- Frontend baseline: 27 (unchanged). API ceiling: 12 (unchanged). Vite green.
+- 5 smoke tests of `findFirstAuditDependentStepIndex` (multi-step definition with first audit-consumer at idx 2, no audit consumers, only-last audit consumer, null definition, no-steps definition) all pass.
+
+**Diff:** 7 files changed, 209 insertions, 11 deletions.
 
 ### Session handoff for tech audit work
 

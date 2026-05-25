@@ -24,6 +24,7 @@ import {
   seoInternalLinkingRun,
   seoOffPageRun,
   seoMonitoringRun,
+  seasonPipelineRefreshFromAudit,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
 } from './api';
 
@@ -525,6 +526,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [offPageBusyPanel, setOffPageBusyPanel] = useState<string | null>(null);
   /* Phase 19 — monitoring state */
   const [monitoringBusyPanel, setMonitoringBusyPanel] = useState<string | null>(null);
+  /* Phase 17.5 — refresh-from-audit busy state per pipeline run */
+  const [refreshingRunId, setRefreshingRunId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -549,6 +552,33 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     else toast({ title: 'Overview regenerated' });
     await load();
     setRefreshingOverview(false);
+  };
+
+  /* Phase 17.5 — refresh pipeline run from latest audit. Resets the
+     audit-consuming steps (competitor_snapshot, content_brief, forecast,
+     client_update, internal_handover) so they re-run with fresh findings.
+     Drives execution forward via the pipeline dashboard's resume loop —
+     for now, this just kicks the reset; user opens the dashboard to watch
+     re-execution. */
+  const handleRefreshPipelineFromAudit = async (runId: string) => {
+    if (!confirm('Reset all audit-consuming pipeline steps (competitor snapshot, content brief, forecast, client update, internal handover) so they re-run with the latest technical audit\'s findings?\n\nThis will replace those artifacts with fresh ones. Other steps (keyword research, GSC context, strategy plan) are not affected.')) return;
+    setRefreshingRunId(runId);
+    try {
+      const r = await seasonPipelineRefreshFromAudit({ runId });
+      if (r.error) {
+        toast({ title: 'Refresh failed', description: r.error, variant: 'destructive' });
+        return;
+      }
+      toast({
+        title: 'Pipeline reset',
+        description: `${r.steps_reset || 0} step(s) reset starting at "${r.first_step_label || r.first_step_id}". Open the pipeline dashboard to drive re-execution.`,
+      });
+      await load();
+    } catch (e: any) {
+      toast({ title: 'Refresh failed', description: e?.message || 'unknown', variant: 'destructive' });
+    } finally {
+      setRefreshingRunId(null);
+    }
   };
 
   /* Phase 15 — audit handlers */
@@ -861,16 +891,45 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
               <div style={{ marginBottom: 20 }}>
                 <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>Pipeline runs in this campaign</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {data.pipeline_runs.map((r: any) => (
-                    <div key={r.id} style={{ fontSize: 11.5, padding: 8, background: 'rgba(255,255,255,0.02)', borderRadius: 6, display: 'flex', justifyContent: 'space-between' }}>
-                      <span>
-                        <code style={{ fontSize: 10 }}>{r.id.slice(0, 8)}</code> · {r.pipeline_type} · {r.status}
-                      </span>
-                      <span style={{ color: 'rgba(150,150,170,0.7)' }}>
-                        {r.steps_completed || 0}/{r.step_count} steps · {new Date(r.started_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  ))}
+                  {data.pipeline_runs.map((r: any) => {
+                    const isCompleted = r.status === 'completed';
+                    const isRefreshing = refreshingRunId === r.id;
+                    return (
+                      <div key={r.id} style={{ fontSize: 11.5, padding: 8, background: 'rgba(255,255,255,0.02)', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <span>
+                          <code style={{ fontSize: 10 }}>{r.id.slice(0, 8)}</code> · {r.pipeline_type} · {r.status}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ color: 'rgba(150,150,170,0.7)' }}>
+                            {r.steps_completed || 0}/{r.step_count} steps · {new Date(r.started_at).toLocaleDateString()}
+                          </span>
+                          {/* Phase 17.5 — Refresh from audit button */}
+                          {isCompleted && (
+                            <button
+                              onClick={() => handleRefreshPipelineFromAudit(r.id)}
+                              disabled={isRefreshing}
+                              title="Reset audit-consuming steps (competitor_snapshot, content_brief, forecast, client_update, internal_handover) so they re-run with the latest technical audit's findings"
+                              style={{
+                                fontSize: 10,
+                                padding: '3px 8px',
+                                borderRadius: 4,
+                                background: isRefreshing ? 'rgba(140,140,160,0.1)' : 'rgba(120,160,255,0.12)',
+                                border: '1px solid rgba(120,160,255,0.3)',
+                                color: 'rgba(180,200,255,0.95)',
+                                cursor: isRefreshing ? 'wait' : 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              {isRefreshing ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                              {isRefreshing ? 'Refreshing…' : 'Refresh from audit'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -311,6 +311,17 @@ export function buildRankForKeywordPipeline(): PipelineDefinition {
   };
 }
 
+/* Phase 17.5 — find the earliest step in a pipeline definition whose handler
+   consumes ctx.audit_findings. Used by refresh-from-audit to know where to
+   reset and re-run from. Returns -1 if no step consumes audit data. */
+export function findFirstAuditDependentStepIndex(definition: PipelineDefinition): number {
+  if (!definition || !Array.isArray(definition.steps)) return -1;
+  for (let i = 0; i < definition.steps.length; i++) {
+    if ((definition.steps[i] as any).consumes_audit === true) return i;
+  }
+  return -1;
+}
+
 /* ─── STEP 1: Keyword research ──────────────────────────────── */
 
 const stepKeywordResearch = {
@@ -487,6 +498,7 @@ const stepCompetitorSnapshot = {
   label: 'Snapshot the top 5 competing pages',
   description: 'What kind of pages win for this keyword and what makes them win',
   artifact_kind: 'competitor_snapshot',
+  consumes_audit: true,  /* Phase 17.5 — wired in Phase 17.1 */
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
     const cacheKey = `comp:${keyword.toLowerCase().slice(0, 100)}`;
@@ -998,6 +1010,7 @@ const stepContentBrief = {
   description: 'Five-stage sub-pipeline: skeleton + per-section expansion + facts research + internal links + writer brief',
   artifact_kind: 'brief',
   continue_on_fail: true,
+  consumes_audit: true,  /* Phase 17.5 — wired in Phase 17.2 */
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword    = ctx.scope.keyword as string;
     const research   = ctx.prior.keyword_research || {};
@@ -1713,6 +1726,7 @@ const stepClientUpdate = {
   /* If something upstream failed, the client update can still be drafted
      describing what WAS completed honestly. Don't block on upstream failures. */
   continue_on_fail: true,
+  consumes_audit: true,  /* Phase 17.5 — wired in Phase 17.4 */
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
     const strategy = ctx.prior.strategy_plan || {};
@@ -1790,6 +1804,7 @@ const stepInternalHandover = {
   /* The internal handover MUST run even when other steps failed — it documents
      what happened, including the failures. Template-only (no LLM), so always cheap. */
   continue_on_fail: true,
+  consumes_audit: true,  /* Phase 17.5 — wired in Phase 17.4 */
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
     const research = ctx.prior.keyword_research || {};
@@ -2038,6 +2053,7 @@ const stepForecast = {
   label: 'Set realistic expectations and schedule monitoring',
   description: 'Emit forecasts for rank/clicks/impressions/CTR with trajectory + confidence + checkpoints',
   artifact_kind: 'forecast',
+  consumes_audit: true,  /* Phase 17.5 — wired in Phase 17.3 */
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
     const research = ctx.prior.keyword_research || {};

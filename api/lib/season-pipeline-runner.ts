@@ -76,6 +76,11 @@ export interface PipelineStep {
   /* If true, a failure here doesn't abort the whole pipeline.
      Useful for "nice to have" steps. */
   continue_on_fail?: boolean;
+  /* Phase 17.5 — set to true when the step's handler reads ctx.audit_findings.
+     Used by refresh-from-audit to identify which steps to reset when the
+     technical audit refreshes. The earliest such step is the entry point
+     for selective re-execution. */
+  consumes_audit?:   boolean;
 }
 
 export interface PipelineDefinition {

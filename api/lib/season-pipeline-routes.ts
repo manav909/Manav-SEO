@@ -411,3 +411,87 @@ export async function bsSeasonPipelineSkipStep(body: any): Promise<any> {
   const { skipStep } = await import("./season-pipeline-runner.js");
   return skipStep({ runId, stepIndex, reason });
 }
+
+/* Phase 17.5 — L1 manual "Refresh from audit" trigger.
+
+   When the technical_audit refreshes (cron or manual), the existing pipeline
+   run's downstream artifacts (competitor_snapshot, content_brief, forecast,
+   client_update, internal_handover) stay frozen at first-run state. This
+   action resets all audit-consuming steps to pending so they re-run with
+   the fresh ctx.audit_findings.
+
+   Flow:
+     1. Load the run + its pipeline_type + campaign_id
+     2. Verify an audit has actually run for the campaign (else clear error)
+     3. Build the pipeline definition + locate the first audit-consuming step
+     4. Reset all steps from that index forward via retryFromStep
+     5. Caller's frontend then drives execution via bs_season_pipeline_execute_next
+
+   Returns:
+     { success, steps_reset, first_step_index, first_step_id, audit_run_id }
+   or { success: false, error }                                              */
+export async function bsSeasonPipelineRefreshFromAudit(body: any): Promise<any> {
+  const { runId } = body || {};
+  if (!runId) return { success: false, error: "runId required" };
+
+  try {
+    /* Load the run to know its pipeline_type + campaign_id */
+    const { data: run, error: runErr } = await db().from("season_pipeline_runs")
+      .select("id, pipeline_type, campaign_id, status, project_id")
+      .eq("id", runId).maybeSingle();
+    if (runErr || !run) {
+      return { success: false, error: `Run not found: ${runErr?.message || 'no row'}` };
+    }
+    const r = run as any;
+    if (!r.campaign_id) {
+      return { success: false, error: "This pipeline run isn't linked to a campaign, so it has no associated audit. Refresh-from-audit only applies to campaign-linked runs." };
+    }
+
+    /* Verify an audit has run for this campaign */
+    const { data: auditRow } = await db().from("technical_audit_findings")
+      .select("audit_run_id, created_at")
+      .eq("campaign_id", r.campaign_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!auditRow || !(auditRow as any).audit_run_id) {
+      return { success: false, error: "No technical audit has been run for this campaign yet. Run the audit first, then refresh the pipeline from it." };
+    }
+    const auditRunId = (auditRow as any).audit_run_id as string;
+
+    /* Build the definition for this pipeline_type */
+    let definition: any;
+    let firstAuditStepIndex: number = -1;
+    if (r.pipeline_type === 'rank_for_keyword') {
+      const { buildRankForKeywordPipeline, findFirstAuditDependentStepIndex } = await import("./season-pipeline-rank-for-keyword.js");
+      definition = buildRankForKeywordPipeline();
+      firstAuditStepIndex = findFirstAuditDependentStepIndex(definition);
+    } else {
+      return { success: false, error: `Refresh-from-audit not implemented for pipeline_type '${r.pipeline_type}' yet.` };
+    }
+
+    if (firstAuditStepIndex < 0) {
+      return { success: false, error: "Pipeline definition has no audit-consuming steps. Nothing to refresh." };
+    }
+    const firstStep = definition.steps[firstAuditStepIndex];
+
+    /* Reset all steps from that index forward */
+    const { retryFromStep } = await import("./season-pipeline-runner.js");
+    const reset = await retryFromStep({ runId, stepIndex: firstAuditStepIndex });
+    if (!reset.success) {
+      return { success: false, error: reset.error || 'retryFromStep failed' };
+    }
+
+    return {
+      success: true,
+      steps_reset: reset.steps_reset,
+      first_step_index: firstAuditStepIndex,
+      first_step_id:    firstStep.id,
+      first_step_label: firstStep.label,
+      audit_run_id:     auditRunId,
+      note: `Reset ${reset.steps_reset} step${reset.steps_reset === 1 ? '' : 's'} starting at "${firstStep.label}". Drive execution forward via bs_season_pipeline_execute_next to re-run with fresh audit data.`,
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'refresh-from-audit failed unexpectedly' };
+  }
+}

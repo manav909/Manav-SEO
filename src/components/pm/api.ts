@@ -2977,6 +2977,34 @@ export async function seasonPipelineSkipStep(opts: {
   return { success: true };
 }
 
+/* Phase 17.5 — manually trigger a refresh of all audit-consuming pipeline steps.
+   Resets steps from the first audit-dependent index onward to 'pending'.
+   The frontend should then drive execution forward via seasonPipelineExecuteNext. */
+export async function seasonPipelineRefreshFromAudit(opts: {
+  runId: string;
+}): Promise<{
+  success?: boolean;
+  steps_reset?: number;
+  first_step_index?: number;
+  first_step_id?: string;
+  first_step_label?: string;
+  audit_run_id?: string;
+  note?: string;
+  error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'bs_season_pipeline_refresh_from_audit', ...opts });
+  if (!r?.success) return { error: r?.error };
+  return {
+    success: true,
+    steps_reset: r.steps_reset,
+    first_step_index: r.first_step_index,
+    first_step_id: r.first_step_id,
+    first_step_label: r.first_step_label,
+    audit_run_id: r.audit_run_id,
+    note: r.note,
+  };
+}
+
 /* ════════════════════════════════════════════════════════════════
    Phase 15 — Technical Audit client methods
 ═══════════════════════════════════════════════════════════════ */
