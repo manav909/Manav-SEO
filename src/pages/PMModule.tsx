@@ -22,8 +22,9 @@ import ReportsPanel from '@/components/pm/ReportsPanel';
 import AutopilotPanel from '@/components/pm/AutopilotPanel';
 import SeoCampaignsPanel from '@/components/pm/SeoCampaignsPanel';
 import SeoInboxPanel from '@/components/pm/SeoInboxPanel';
+import Documents from '@/pages/Documents';
 
-type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox';
+type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox' | 'documents';
 
 export default function PMModule() {
   const { selectedProject, selectedProjectId } = useProject();
@@ -60,6 +61,7 @@ export default function PMModule() {
     { id: 'autopilot',      label: 'Auto-pilot' },
     { id: 'seo_campaigns',  label: 'SEO Campaigns' },
     { id: 'seo_inbox',      label: 'SEO Inbox' },
+    { id: 'documents',      label: 'Documents' },
   ];
 
   return (
@@ -159,6 +161,11 @@ export default function PMModule() {
             )}
             {tab === 'seo_inbox' && (
               <SeoInboxPanel projectId={selectedProjectId} />
+            )}
+            {tab === 'documents' && (
+              <div className="h-[calc(100vh-200px)] rounded-xl overflow-hidden border border-border/40">
+                <Documents embedded />
+              </div>
             )}
           </>
         )}

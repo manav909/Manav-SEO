@@ -692,7 +692,7 @@ function DetailPane({
 
 /* ─── Main page ──────────────────────────────────────────────────────────── */
 
-export default function Documents() {
+export default function Documents({ embedded = false }: { embedded?: boolean }) {
   const { projects } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -978,9 +978,9 @@ export default function Documents() {
   useEffect(() => { setOffset(0); }, [filters, searchQuery, sort]);
 
   return (
-    <div className="h-screen flex flex-col bg-background relative overflow-hidden">
-      <AnimatedBg />
-      <PortalNav />
+    <div className={embedded ? "h-full flex flex-col bg-background relative overflow-hidden" : "h-screen flex flex-col bg-background relative overflow-hidden"}>
+      {!embedded && <AnimatedBg />}
+      {!embedded && <PortalNav />}
 
       <div className="flex-1 flex flex-col relative z-10 overflow-hidden min-h-0">
         {/* Page header */}

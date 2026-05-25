@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D-audit + Phase 17.1-fix) · **Live commit:** `34c274a` (Phase D4.2 scroll fix). Two fixes shipped this session: (1) tech audits now appear in Documents; (2) competitor snapshot restored to full competitive intelligence.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D4.3 — Documents tab in PM) · **Live commit:** `34c274a` (Phase D4.2 scroll fix).
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1635,6 +1635,20 @@ Documents.tsx and CampaignDocumentsSection.tsx both now use `<ArtifactMarkdown b
 
 **Discipline lesson logged:** "Avoid hallucination" ≠ "avoid LLM." Phase 17.1 conflated the two. The correct principle is: use real data for facts that can be verified (URLs, word counts, SERP features — all from SerpAPI); use LLM for interpretation of known facts (what does this real URL's page look like, why does it rank). The boundary is verification, not participation.
 
-### Session handoff for tech audit work
+### Phase D4.3 — Documents tab in PM Module (2026-05-25)
 
-> "Continuing SEO SEASON. Brief attached. Phase D-audit + 17.1-fix shipped: tech audits now appear in Documents (audit_report kind), competitor snapshots restored to full intelligence (SerpAPI URLs + LLM page analysis). Live HEAD: 34c274a. TS=27, functions=12. Refresh from audit on any existing campaign to get enriched competitor snapshots. Don't add new api/*.ts files — at 12-function ceiling. Don't patch — complete files only."
+**Change:** Added "Documents" as the final tab in `/pm` (Project Manager), sitting after SEO Inbox. Clicking the tab renders the full Documents three-pane layout inside a `calc(100vh - 200px)` height container with a rounded border — no separate navigation required.
+
+**How it works:**
+- `Documents.tsx` gained an `embedded?: boolean` prop (default `false`, no behavior change to standalone `/documents` route).
+- When `embedded=true`: skips `<AnimatedBg />` and `<PortalNav />`, uses `h-full` instead of `h-screen` on the root div so it fills its container.
+- `PMModule.tsx` imports `Documents`, adds `'documents'` to the `Tab` union, adds the tab entry to `TABS[]`, and renders `<Documents embedded />` inside a fixed-height wrapper when selected.
+- The Documents page inside the tab is fully functional — filters, search, detail pane, mark reviewed, mark sent all work.
+
+**Files changed:** `src/pages/Documents.tsx` (+3 lines), `src/pages/PMModule.tsx` (+5 lines).
+
+**Verification:** Frontend TS 26 (baseline unchanged). Vite green 30s.
+
+### Session handoff
+
+> "Continuing SEO SEASON. Brief attached. Phases shipped: D-audit (audits in Documents), 17.1-fix (competitor snapshot intelligence), D4.3 (Documents tab in PM). Live HEAD: 34c274a. TS=26, functions=12. Don't add new api/*.ts files. Don't patch — complete files only."
