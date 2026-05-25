@@ -3093,6 +3093,16 @@ HTML: ${html.slice(0,2000)}`}]})});
     } catch(e:any) { return ok(res, { success:false, error: e.message }); }
   }
 
+  if (action === 'delete_staff') {
+    const { staffId } = body;
+    if (!staffId) return ok(res, { error: 'staffId required' });
+    try {
+      const { error } = await db().from('staff_members').delete().eq('id', staffId);
+      if (error) return ok(res, { success:false, error: error.message });
+      return ok(res, { success:true });
+    } catch(e:any) { return ok(res, { success:false, error: e.message }); }
+  }
+
   if (action === 'update_staff_permissions') {
     const{staffId,permissions}=body;
     if(!staffId) return ok(res,{error:'staffId required'});

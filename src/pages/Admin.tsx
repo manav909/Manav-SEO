@@ -1751,6 +1751,17 @@ export default function Admin() {
                               >
                                 <Mail className="h-3 w-3" />Resend
                               </button>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`Remove ${s.name} from staff? This restores owner access if you used your own email.`)) return;
+                                  const res = await fetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'delete_staff', staffId: s.id }) }).then(r=>r.json());
+                                  if (res.success) { toast({ title:'Staff record removed' }); fetchAll(); }
+                                  else toast({ title:'Error', description: res.error, variant:'destructive' });
+                                }}
+                                className="h-7 px-2 rounded-lg border border-red-500/30 bg-red-500/5 text-xs flex items-center gap-1 text-red-400 hover:bg-red-500/10"
+                              >
+                                <Trash2 className="h-3 w-3" />Remove
+                              </button>
                             </div>
                           </div>
 
