@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.2 production hotfix — remove dead duplicate retryStep) · **Live commit:** `ddfe623` (Phase 17.5.1 inline progress). Phase 17.5.2 removes a long-dormant duplicate `retryStep` declaration in season-pipeline-runner.ts (lines 645-695, the old 3-arg signature with zero callers) that local TS tolerated via skipLibCheck but Vercel's Node ESM nodenext runtime correctly rejected with `SyntaxError: Identifier 'retryStep' has already been declared`. The error surfaced on Phase 17.5's refresh-from-audit production run — that route was the first to import the runner module via a fresh code path. Discipline lesson: pre-existing TS warnings need root-cause investigation before being filed as "noise" — they're sometimes pointing at real production bugs.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.3 — diagnostic surface on refresh failure) · **Live commit:** `2980315` (Phase 17.5.2 duplicate-retryStep hotfix). Phase 17.5.3: when the refresh-from-audit execution loop ends in a failed state, the inline strip now fetches `seasonPipelineGet` and surfaces WHICH step failed + the actual `error_message` from the step row. The generic "Run ended with status: failed" was useless for triage. Also extended auto-clear timeouts on failure states (60s for execution failures, 30s for reset/crash) so the user has time to read the diagnosis. Manav reported run `81f36f07` ran for multiple steps and failed at last — this phase makes the next such failure self-diagnosable from the panel.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1120,6 +1120,47 @@ The legacy version had **zero callers** in `api/` or `src/` — confirmed with g
 **Discipline lesson logged:** Pre-existing TS compiler warnings need root-cause investigation, not pattern-matched dismissal. The Phase 17.0-17.4 verifications all noted "duplicate retryStep — pre-existing, runtime uses the second one" without testing that assumption. The Vercel runtime test is `node --check` on the compiled output, not "do other parts of the system work." Should have been verified once and fixed, not deferred across five phases. Pre-ship checklist update: any duplicate-identifier TS error gets investigated before the next ship, regardless of whether it "seems unrelated."
 
 **Diff:** 1 file changed, 12 insertions, 51 deletions.
+
+### Phase 17.5.3 — Refresh failure diagnostic surface (2026-05-25)
+
+**Why this exists:** Manav ran refresh-from-audit on run `81f36f07`. It ran for multiple steps then failed at the last one. The inline strip from 17.5.1 showed `Refresh failed: Run ended with status: failed` — useless for triage. The actual error (which step + why) lives in `season_pipeline_steps.error_message`, accessible via `seasonPipelineGet` — but the user had to know to navigate to the pipeline dashboard inside the Season modal to see it.
+
+**What 17.5.3 fixes:**
+When the execute loop ends in a failed state, the handler now:
+1. Calls `seasonPipelineGet({ runId })` to fetch all step rows
+2. Filters to `status === 'failed'` steps, sorts by `step_index` ascending
+3. Takes the EARLIEST failed step (typically the root cause — later steps may have cascaded)
+4. Extracts `step_label`, `step_index`, `error_message` into `RefreshState`
+5. The inline strip renders the step name as a heading, then the error_message in monospace below for easy reading
+
+Toast also upgraded: when a step has failed, the title becomes `Step failed: "<label>"` and the description becomes the first 200 chars of the error message. No more generic "Refresh paused."
+
+**Other changes:**
+- Failure auto-clear timeout extended 10s → 30s (reset/crash failures) and 12s → 60s (execution failures). Reading and acting on a diagnostic takes longer than 10s.
+- Completed-state timeout unchanged at 12s (success doesn't need study).
+- Failed-state container restructured into a flex-column so the heading + monospace error block can stack cleanly with proper word-wrapping for long messages.
+
+**What this does NOT do (still pending):**
+- No deep-link to SeasonPipelineDashboard for the failed run (dashboard is mounted inside SeasonModal, not a routable path — would need a routing change to support this; deferred).
+- No automatic retry of the failed step (manual decision — user might want to investigate before re-triggering).
+
+**Diagnostic Manav can use NOW for run `81f36f07`:**
+Without this phase shipped yet, he can open Supabase SQL editor and run:
+```sql
+SELECT step_index, step_id, step_label, status, error_message, llm_calls, duration_ms
+FROM season_pipeline_steps
+WHERE run_id = '81f36f07-...'  -- full uuid
+ORDER BY step_index;
+```
+That returns the failure cause directly. Most likely candidates given the step order are content_brief (idx 5, complex 5-stage LLM sub-pipeline) or forecast (idx 4, can fail if forecast engine baseline data is malformed).
+
+**Files changed:** 1 (`src/components/pm/SeoCampaignsPanel.tsx`).
+
+**Verification:**
+- Frontend TS baseline: 27 (unchanged). No errors in SeoCampaignsPanel.
+- Vite build green.
+
+**Diff:** 1 file changed, 76 insertions, 13 deletions.
 
 ### Session handoff for tech audit work
 

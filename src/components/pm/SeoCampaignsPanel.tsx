@@ -26,6 +26,7 @@ import {
   seoMonitoringRun,
   seasonPipelineRefreshFromAudit,
   seasonPipelineExecuteNext,
+  seasonPipelineGet,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
   type PipelineType,
 } from './api';
@@ -531,7 +532,10 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   /* Phase 17.5.1 — refresh-from-audit per-run progress.
      Tracks the live execution of audit-consuming steps so the user sees what's
      happening in real time, not a vanished toast. Map keyed by runId.
-     Phase = current lifecycle stage; progress = "step X of Y running". */
+     Phase = current lifecycle stage; progress = "step X of Y running".
+     Phase 17.5.3 — extended to capture which step failed + its error_message
+     so the inline strip can show the specific cause rather than a generic
+     "Run ended with status: failed". */
   type RefreshState = {
     phase: 'resetting' | 'executing' | 'completed' | 'failed';
     stepsReset?: number;
@@ -541,6 +545,9 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     currentStepLabel?: string;
     totalSteps?: number;
     error?: string;
+    failedStepLabel?: string;     /* Phase 17.5.3 */
+    failedStepIndex?: number;     /* Phase 17.5.3 */
+    failedStepError?: string;     /* Phase 17.5.3 — the actual error_message from the step row */
   };
   const [refreshProgress, setRefreshProgress] = useState<Record<string, RefreshState>>({});
   /* Guard so a single refresh execution loop doesn't double-fire */
@@ -596,10 +603,10 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
       if (reset.error || !reset.success) {
         setRefreshProgress(prev => ({ ...prev, [runId]: { phase: 'failed', error: reset.error || 'reset failed' } }));
         toast({ title: 'Refresh failed', description: reset.error || 'reset failed', variant: 'destructive' });
-        /* Clear the failed state after 10s so the user sees it then it goes away */
+        /* Clear the failed state after 30s so the user has time to read the error */
         setTimeout(() => {
           setRefreshProgress(prev => { const n = { ...prev }; delete n[runId]; return n; });
-        }, 10000);
+        }, 30000);
         return;
       }
 
@@ -663,28 +670,67 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
         });
         await load();  /* Reload campaign panel so the fresh artifacts surface */
       } else {
+        /* Phase 17.5.3 — fetch the run's steps to find WHICH one failed and WHY.
+           The execute_next loop only knows "the run is in failed state" — the
+           specific cause lives in season_pipeline_steps.error_message. Without
+           this lookup, the inline strip just says "Run ended with status: failed"
+           which forces the user to navigate to the pipeline dashboard to learn
+           anything. */
+        let failedStepLabel: string | undefined;
+        let failedStepIndex: number | undefined;
+        let failedStepError: string | undefined;
+        try {
+          const detail = await seasonPipelineGet({ runId });
+          if (detail.steps) {
+            const failedSteps = detail.steps.filter(s => s.status === 'failed');
+            if (failedSteps.length > 0) {
+              /* Find the EARLIEST failed step — that's typically the root cause.
+                 Later steps may have failed because they depend on the earlier
+                 one's output. */
+              const earliest = failedSteps.sort((a, b) => a.step_index - b.step_index)[0];
+              failedStepLabel = earliest.step_label;
+              failedStepIndex = earliest.step_index;
+              failedStepError = earliest.error_message || undefined;
+            }
+          }
+        } catch (e) {
+          /* Diagnostic lookup failed — fall back to the loop's failedReason */
+        }
         setRefreshProgress(prev => ({
           ...prev,
-          [runId]: { ...prev[runId], phase: 'failed', error: failedReason || 'execution loop ended without completing' },
+          [runId]: {
+            ...prev[runId],
+            phase: 'failed',
+            error: failedReason || 'execution loop ended without completing',
+            failedStepLabel,
+            failedStepIndex,
+            failedStepError,
+          },
         }));
         toast({
-          title: 'Refresh paused',
-          description: failedReason || 'Execution didn\'t reach a clean completion — check the pipeline dashboard for details.',
+          title: failedStepLabel ? `Step failed: "${failedStepLabel}"` : 'Refresh paused',
+          description: failedStepError
+            ? failedStepError.slice(0, 200)
+            : (failedReason || 'Execution didn\'t reach a clean completion — check the pipeline dashboard for details.'),
           variant: 'destructive',
         });
       }
 
-      /* Clear the final state after 12s so the user has time to see it */
+      /* Auto-clear inline state after a timeout. Completed states fade fast
+         (12s — user just wants confirmation, then it's done). Failed states
+         persist much longer (60s) because the user needs time to read the
+         step name + error_message before deciding what to do. */
+      const clearAfterMs = completed ? 12000 : 60000;
       setTimeout(() => {
         setRefreshProgress(prev => { const n = { ...prev }; delete n[runId]; return n; });
-      }, 12000);
+      }, clearAfterMs);
 
     } catch (e: any) {
       setRefreshProgress(prev => ({ ...prev, [runId]: { phase: 'failed', error: e?.message || 'unknown' } }));
       toast({ title: 'Refresh crashed', description: e?.message || 'unknown', variant: 'destructive' });
       setTimeout(() => {
         setRefreshProgress(prev => { const n = { ...prev }; delete n[runId]; return n; });
-      }, 10000);
+      }, 30000);
     } finally {
       refreshingRunsRef.current.delete(runId);
     }
@@ -1084,10 +1130,27 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                               </>
                             )}
                             {progress.phase === 'failed' && (
-                              <>
-                                <AlertCircle size={12} style={{ color: 'rgba(220,90,90,0.95)' }} />
-                                <span>Refresh failed: {progress.error || 'unknown reason'}</span>
-                              </>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                  <AlertCircle size={12} style={{ color: 'rgba(220,90,90,0.95)', marginTop: 1, flexShrink: 0 }} />
+                                  <div style={{ flex: 1 }}>
+                                    {progress.failedStepLabel ? (
+                                      <>
+                                        <div style={{ fontWeight: 600 }}>
+                                          Step {(progress.failedStepIndex ?? 0) + 1} failed: "{progress.failedStepLabel}"
+                                        </div>
+                                        {progress.failedStepError && (
+                                          <div style={{ marginTop: 3, color: 'rgba(220,180,180,0.95)', fontFamily: 'ui-monospace, monospace', fontSize: 10.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                            {progress.failedStepError}
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span>Refresh failed: {progress.error || 'unknown reason'}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
                             )}
                           </div>
                         )}
