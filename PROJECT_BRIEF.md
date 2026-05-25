@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.4 — refresh opens live dashboard) · **Live commit:** `ed72af2` (Phase 17.5.3 failure diagnostics). Phase 17.5.4: clicking "Refresh from audit" now opens the same SEASON live pipeline dashboard the user originally saw when launching from chat. The 8-block visualization mounts via a custom `season:open-pipeline-dashboard` window event consumed by SeasonModal. The dashboard is `mounted-outside-modal-gate` so it appears regardless of whether the SEASON modal panel itself is open. Manav's symptom — "why am I not seeing the visual campaign as it showed all 8 blocks first time" — fixed. Panel still owns execution driving; dashboard owns display. Two-component separation maintained.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.5 — counter drift fix + button gate) · **Live commit:** `de75dea` (Phase 17.5.4 live SEASON dashboard). Phase 17.5.5: two bugs surfaced by Manav's screenshot of run `81f36f07` showing "12/8 steps · failed". (1) `retryFromStep` and `retryStep` were resetting step rows to pending without decrementing run-level `steps_completed` and `steps_failed` — counters drifted past `step_count` on every refresh. Now both functions recompute counters from actual step rows after reset. (2) Refresh button was gated on `status === 'completed'` — wrong, failed runs are exactly when refresh is most useful. Now gated on `status NOT IN ('running','retrying')` so completed AND failed AND interrupted runs all show the button. Includes `sql/phase-17-5-5-recompute-counters.sql` to repair existing drifted runs in production.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1203,6 +1203,33 @@ The refresh-from-audit flow from `SeoCampaignsPanel` reset steps + drove executi
 **Diff:** 2 files changed, 60 insertions, 4 deletions.
 
 **Discipline lesson logged:** When wiring new UX flows that touch existing user-visible primitives (like "the pipeline dashboard"), use the existing primitive directly rather than re-implementing inline. Phases 17.5.1-17.5.3 built inline-progress UI in the panel — useful, but it was reinventing what the dashboard already did better. Should have asked from 17.5 onward: "what does the user already see when this kind of thing happens, and can I just reuse that?"
+
+### Phase 17.5.5 — Counter drift + button gate fix (2026-05-25)
+
+**Manav's screenshot:** `81f36f07 · rank_for_keyword · failed · 12/8 steps · 22/05/2026` with no refresh button visible.
+
+**Bug 1: counter drift past total.**
+`12/8 steps` is impossible in a healthy state — rank_for_keyword has exactly 8 steps. Root cause: `retryFromStep` and `retryStep` in season-pipeline-runner.ts reset step rows to `pending` but never decremented the run-level `steps_completed` counter. Meanwhile `executeNextPendingStep` (line 866) increments `steps_completed` by 1 on every success. So when a run that already had `steps_completed=8` got refresh-from-audit-reset (5 steps to pending), the runner re-executed those 5 and incremented to 13. Same drift applies to `steps_failed`. The numbers were lies — the actual step row statuses were correct.
+
+**Fix:** Both `retryFromStep` and `retryStep` now recompute `steps_completed`, `steps_failed`, `llm_calls_used`, `web_searches_used`, `estimated_cost_usd` from the actual step rows after reset. Idempotent — safe even if no rows changed.
+
+**Bug 2: refresh button hidden on failed runs.**
+Phase 17.5's button render gate was `isCompleted = r.status === 'completed'`. That means clicking refresh on a failed run was impossible — but failed runs are exactly when you want to refresh from a fresh audit. (E.g. if the original failure was upstream from an audit data issue, fixing the audit and re-running from there is the recovery path.)
+
+**Fix:** Gate changed to `canRefresh = !(r.status === 'running' || r.status === 'retrying')`. Now shown on `completed`, `failed`, `interrupted`, `cancelled`. Hidden only while a step is actively executing (which would step on its own toes).
+
+**Production repair migration:** `sql/phase-17-5-5-recompute-counters.sql` reapplies the same recompute to any drifted runs already in the database, so `81f36f07` and any siblings get correct counters retroactively. Idempotent (safe to re-run). Includes inspection query to identify drifted runs first, before the UPDATE.
+
+**Files changed:** 2 — `api/lib/season-pipeline-runner.ts`, `src/components/pm/SeoCampaignsPanel.tsx`. Plus the SQL migration file.
+
+**Verification:**
+- Vercel runtime TS clean on touched files (pre-existing `seo-campaign-engine.ts:1021` only).
+- Frontend baseline 27 (unchanged).
+- Vite green.
+
+**Diff:** 2 files changed, 55 insertions, 3 deletions + 1 new SQL file.
+
+**Discipline lesson logged:** When a backend operation rewrites entity state, ALL derived aggregates need to be recomputed in the same transaction, not just the obvious ones. `retryFromStep` was correctly resetting step rows but ignored that step counts were *also* state on the run row. This was latent for the entire Phase 14.2 retry lifetime — the resilience model assumed only single-step retries, where one failed step going pending didn't cause visible aggregate drift. Phase 17.5's refresh-from-audit was the first thing to invoke retry mechanics at multi-step scale, which made the drift visible immediately.
 
 ### Session handoff for tech audit work
 

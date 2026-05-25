@@ -1066,7 +1066,12 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                 <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>Pipeline runs in this campaign</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {data.pipeline_runs.map((r: any) => {
-                    const isCompleted = r.status === 'completed';
+                    /* Phase 17.5.5 — allow refresh on any run in a terminal-or-near-terminal
+                       state (completed/failed/interrupted/cancelled). Excluding failed runs
+                       from refresh was wrong: failed is when you most want to re-trigger from
+                       audit. Only block while a step is actively executing. */
+                    const isMidFlight = r.status === 'running' || r.status === 'retrying';
+                    const canRefresh  = !isMidFlight;
                     const progress = refreshProgress[r.id];
                     const isRefreshing = !!progress && (progress.phase === 'resetting' || progress.phase === 'executing');
                     return (
@@ -1079,8 +1084,9 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                             <span style={{ color: 'rgba(150,150,170,0.7)' }}>
                               {r.steps_completed || 0}/{r.step_count} steps · {new Date(r.started_at).toLocaleDateString()}
                             </span>
-                            {/* Phase 17.5 — Refresh from audit button (only on completed runs that aren't currently being refreshed) */}
-                            {isCompleted && !isRefreshing && (
+                            {/* Phase 17.5 — Refresh from audit button.
+                                Phase 17.5.5: shown on completed AND failed runs, hidden during mid-flight execution. */}
+                            {canRefresh && !isRefreshing && (
                               <button
                                 onClick={() => handleRefreshPipelineFromAudit(
                                   r.id,

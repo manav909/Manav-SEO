@@ -1355,6 +1355,27 @@ export async function retryStep(opts: {
       honest_summary: `Step ${opts.stepIndex + 1} "${s.step_label}" being retried (attempt ${newCount}/${ceiling}).`,
     }).eq("id", opts.runId);
 
+    /* Phase 17.5.5 — same recompute as retryFromStep. A single-step retry
+       changes one row from failed/skipped → pending; counters need to
+       reflect that or steps_failed accumulates across retries. */
+    const { data: allSteps } = await db().from("season_pipeline_steps")
+      .select("status, llm_calls, web_searches")
+      .eq("run_id", opts.runId);
+    if (allSteps && (allSteps as any[]).length > 0) {
+      const rows = allSteps as any[];
+      const recomputedDone   = rows.filter(s => s.status === 'completed').length;
+      const recomputedFailed = rows.filter(s => s.status === 'failed').length;
+      const recomputedLlm    = rows.reduce((sum, s) => sum + (s.llm_calls    || 0), 0);
+      const recomputedWeb    = rows.reduce((sum, s) => sum + (s.web_searches || 0), 0);
+      await db().from("season_pipeline_runs").update({
+        steps_completed:    recomputedDone,
+        steps_failed:       recomputedFailed,
+        llm_calls_used:     recomputedLlm,
+        web_searches_used:  recomputedWeb,
+        estimated_cost_usd: Number((recomputedLlm * COST_PER_CALL).toFixed(4)),
+      }).eq("id", opts.runId);
+    }
+
     /* Log */
     const { data: run } = await db().from("season_pipeline_runs").select("project_id").eq("id", opts.runId).maybeSingle();
     if (run) {
@@ -1423,6 +1444,31 @@ export async function retryFromStep(opts: {
       finished_at:    null,
       honest_summary: `Resuming from step ${opts.stepIndex + 1}. ${resetCount} step${resetCount === 1 ? '' : 's'} reset to pending.`,
     }).eq("id", opts.runId);
+
+    /* Phase 17.5.5 — recompute run-level counters from actual step rows.
+       Without this, retryFromStep silently corrupts the run state:
+       executeNextPendingStep increments steps_completed by 1 per success,
+       but never DECREMENTS when a previously-completed step is reset to
+       pending. So a refresh of 5 of 8 steps that already completed
+       produces counters like 13/8 completed + N/8 failed — visibly wrong
+       in the panel and confusing for the runner's terminal-state logic. */
+    const { data: allSteps } = await db().from("season_pipeline_steps")
+      .select("status, llm_calls, web_searches")
+      .eq("run_id", opts.runId);
+    if (allSteps && (allSteps as any[]).length > 0) {
+      const rows = allSteps as any[];
+      const recomputedDone   = rows.filter(s => s.status === 'completed').length;
+      const recomputedFailed = rows.filter(s => s.status === 'failed').length;
+      const recomputedLlm    = rows.reduce((sum, s) => sum + (s.llm_calls    || 0), 0);
+      const recomputedWeb    = rows.reduce((sum, s) => sum + (s.web_searches || 0), 0);
+      await db().from("season_pipeline_runs").update({
+        steps_completed:    recomputedDone,
+        steps_failed:       recomputedFailed,
+        llm_calls_used:     recomputedLlm,
+        web_searches_used:  recomputedWeb,
+        estimated_cost_usd: Number((recomputedLlm * COST_PER_CALL).toFixed(4)),
+      }).eq("id", opts.runId);
+    }
 
     const { data: run } = await db().from("season_pipeline_runs").select("project_id").eq("id", opts.runId).maybeSingle();
     if (run) {
