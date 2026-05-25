@@ -21,6 +21,7 @@
 
 import { db } from "./db.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
+import { fetchSerpFeatures } from "./serpapi.js";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const MODEL = "claude-sonnet-4-6";
@@ -64,6 +65,10 @@ interface Snapshot {
   panel_statuses:             Record<string, string | null>;
   opp_counts:                 Record<string, number>;
   created_at?:                string;
+  /* Phase 18.3 — GA4 engagement snapshot fields */
+  ga4_engagement_rate?:       number | null;   // site-wide, pct
+  ga4_users_monthly?:         number | null;
+  ga4_engaged_sessions?:      number | null;
 }
 
 interface Finding {
@@ -296,6 +301,32 @@ export async function runMonitoringCheck(opts: {
       findings = computeDeltaFindings(currentSnap, baselineSnap);
       /* Phase 18.2 — attach snapshot evidence trail to every delta finding */
       attachSnapshotTrail(findings, currentSnap, baselineSnap);
+
+      /* Phase 18.3 — SerpAPI live SERP enrichment on position drops.
+         When a keyword_rank_drop fires, fetch the live top-10 to show who
+         displaced the site. Best-effort; never blocks the monitoring run. */
+      const hasDrop = findings.some(f =>
+        f.finding_kind === 'keyword_rank_drop' && (f.severity === 'red' || f.severity === 'amber')
+      );
+      if (hasDrop) {
+        try {
+          const serpData = await fetchSerpFeatures(c.project_id, c.keyword);
+          if (serpData && (serpData.top_10_domains || []).length > 0) {
+            for (const f of findings) {
+              if (f.finding_kind !== 'keyword_rank_drop') continue;
+              f.evidence = {
+                ...(f.evidence || {}),
+                live_serp_top10_domains: serpData.top_10_domains?.slice(0, 8) || [],
+                live_serp_fetched_at:    new Date().toISOString(),
+                serp_cache_hit:          serpData.cache_hit || false,
+              };
+              const topDomains = (serpData.top_10_domains || []).slice(0, 5).join(', ');
+              f.finding_detail = (f.finding_detail || '') +
+                `\n\n**Live SERP top-10 at time of detection:** ${topDomains}${(serpData.top_10_domains?.length || 0) > 5 ? ` + ${(serpData.top_10_domains?.length || 0) - 5} more` : ''}. Cross-reference with the Cluster Map to identify which competitor strengthened their position.`;
+            }
+          }
+        } catch { /* SerpAPI not configured or failed — skip enrichment */ }
+      }
     }
 
     /* 6. ONE LLM call for narrative synthesis (skip on baseline) */
@@ -560,6 +591,9 @@ async function captureSnapshot(opts: {
     cluster_count:              null,
     panel_statuses:             {},
     opp_counts:                 {},
+    ga4_engagement_rate:        null,
+    ga4_users_monthly:          null,
+    ga4_engaged_sessions:       null,
   };
 
   /* GSC queries → find row matching the campaign keyword */
@@ -631,6 +665,25 @@ async function captureSnapshot(opts: {
     }
     snap.opp_counts = counts;
   } catch { /* skip */ }
+
+  /* GA4 site-wide engagement — from project_knowledge (populated by cron pull).
+     These fields let monitoring detect engagement drops even when GSC position
+     holds steady — a leading indicator of content quality issues. */
+  try {
+    const readPk = async (key: string) => {
+      const { data } = await db().from('project_knowledge').select('field_value')
+        .eq('project_id', opts.projectId).eq('category', 'analytics').eq('field_key', key).maybeSingle();
+      return (data as any)?.field_value ?? null;
+    };
+    const [engRate, users, engaged] = await Promise.all([
+      readPk('ga4_engagement_rate'),
+      readPk('ga4_users_monthly'),
+      readPk('ga4_engaged_sessions_monthly'),
+    ]);
+    if (engRate !== null)  snap.ga4_engagement_rate  = parseFloat(String(engRate).replace('%','')) || null;
+    if (users !== null)    snap.ga4_users_monthly    = parseInt(String(users), 10) || null;
+    if (engaged !== null)  snap.ga4_engaged_sessions = parseInt(String(engaged), 10) || null;
+  } catch { /* skip — GA4 not connected */ }
 
   return snap;
 }
@@ -794,6 +847,26 @@ function computeDeltaFindings(curr: Snapshot, base: Snapshot): Finding[] {
       delta_value:     currTotal - baseTotal,
     });
   }
+
+  /* Phase 18.3 — GA4 engagement deltas. Engagement rate drop while position
+     holds is a leading indicator of content quality degradation. Fires only
+     when both snapshots have GA4 data. */
+  pushPctFinding(findings, {
+    metric:   'ga4_engagement',
+    current:  curr.ga4_engagement_rate   ?? null,
+    baseline: base.ga4_engagement_rate   ?? null,
+    dropKind: 'ga4_engagement_drop',
+    gainKind: 'ga4_engagement_gain',
+    label:    'Site-wide GA4 engagement rate',
+  });
+  pushPctFinding(findings, {
+    metric:   'ga4_users',
+    current:  curr.ga4_users_monthly  ?? null,
+    baseline: base.ga4_users_monthly  ?? null,
+    dropKind: 'ga4_users_drop',
+    gainKind: 'ga4_users_gain',
+    label:    'GA4 monthly users (organic)',
+  });
 
   /* If nothing meaningful changed, surface that explicitly */
   if (findings.length === 0) {

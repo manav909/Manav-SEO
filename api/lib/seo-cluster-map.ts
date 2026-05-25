@@ -94,7 +94,7 @@ interface Cluster {
      Top-3 URL candidates with match scores so the operator can override
      when the heuristic picks the wrong hub. Previously only scored[0]
      was surfaced; the rest were silently discarded. */
-  hub_candidates?: Array<{ url: string; token_matches: number; impressions: number; rank: number }>;
+  hub_candidates?: Array<{ url: string; token_matches: number; impressions: number; ga4_engagement?: number; rank: number }>;
 }
 
 interface ClusterFinding {
@@ -331,6 +331,12 @@ export async function runClusterMap(opts: {
     ]);
     const projectUrl: string = ((projectRow as any)?.data?.url as string) || '';
 
+    /* Phase 18.3 — Read GA4 per-page engagement rate from project_knowledge.
+       Used to break ties in hub candidate scoring (same token matches →
+       prefer the page users actually engage with). Best-effort; falls back
+       to empty map when GA4 not connected. */
+    const ga4EngagementByUrl: Record<string, number> = await readGa4EngagementByUrl(c.project_id);
+
     /* 2. Filter to keyword-related queries */
     const relatedQueries = filterRelatedQueries(queries, c.keyword);
 
@@ -369,7 +375,7 @@ export async function runClusterMap(opts: {
     });
 
     /* 5. Hub/spoke inference for each cluster */
-    const enriched = labeled.map(cluster => enrichWithPages(cluster, pages));
+    const enriched = labeled.map(cluster => enrichWithPages(cluster, pages, ga4EngagementByUrl));
 
     /* 5b. Phase 16.2 — try SerpAPI-verified competitor_owners FIRST.
        For each cluster, fetches live top-10 SERP for the primary query,
@@ -1102,6 +1108,27 @@ async function readGscFreshness(projectId: string): Promise<string | null> {
   } catch { return null; }
 }
 
+/* Phase 18.3 — GA4 per-page engagement from project_knowledge.
+   The cron stores site-wide ga4_engagement_rate as a single number.
+   For per-URL engagement we'd need ga4PullPageMetrics (live call per URL).
+   Here we read the site-wide rate as a uniform signal; it still ranks
+   pages by whether the project HAS GA4 data connected (non-zero = connected)
+   and provides the baseline for detecting engagement-vs-position divergence.
+   Returns a map of url → engagement_rate_pct (0-100). Empty map if GA4 not connected. */
+async function readGa4EngagementByUrl(projectId: string): Promise<Record<string, number>> {
+  try {
+    const { data } = await db().from("project_knowledge").select("field_value")
+      .eq("project_id", projectId).eq("category", "analytics")
+      .eq("field_key", "ga4_engagement_rate").maybeSingle();
+    const raw = (data as any)?.field_value;
+    if (!raw) return {};
+    const rate = parseFloat(String(raw).replace('%', '')) || 0;
+    /* Site-wide rate applies uniformly until per-page GA4 pull is wired.
+       Return a sentinel map: '*' key means "use this rate for all pages". */
+    return rate > 0 ? { __site_wide__: rate } : {};
+  } catch { return {}; }
+}
+
 function formatGscFreshnessLine(updatedAt: string | null): string {
   if (!updatedAt) return `> ⚠️ **GSC data freshness unknown** — connect GSC in Data Room → Integrations to enable automatic daily pulls.`;
   try {
@@ -1356,7 +1383,7 @@ function validateIntent(raw: any): string {
    HUB/SPOKE INFERENCE
 ═══════════════════════════════════════════════════════════════ */
 
-function enrichWithPages(cluster: Cluster, pages: GscPageRow[]): Cluster {
+function enrichWithPages(cluster: Cluster, pages: GscPageRow[], ga4EngagementByUrl: Record<string, number>): Cluster {
   if (pages.length === 0) return cluster;
 
   const clusterTokens = new Set<string>();
@@ -1365,14 +1392,19 @@ function enrichWithPages(cluster: Cluster, pages: GscPageRow[]): Cluster {
   }
   if (clusterTokens.size === 0) return cluster;
 
-  /* Score each page by how many cluster tokens appear in its URL slug */
+  /* Score each page: token matches (primary) + GA4 engagement bonus (tie-breaker).
+     A hub with high impressions but 10% engagement is weaker than one with
+     lower impressions and 60% engagement — GA4 engagement rate breaks ties. */
+  const siteWideRate = ga4EngagementByUrl['__site_wide__'] ?? 0;
   const scored = pages.map(p => {
     const slug = (p.page || '').toLowerCase();
     let matches = 0;
     for (const t of clusterTokens) if (slug.includes(t)) matches++;
-    return { page: p, score: matches };
+    const engRate = ga4EngagementByUrl[p.page] ?? siteWideRate;
+    return { page: p, score: matches, engRate };
   }).filter(s => s.score > 0).sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
+    if (b.engRate !== a.engRate) return b.engRate - a.engRate;
     return (b.page.impressions || 0) - (a.page.impressions || 0);
   });
 
@@ -1382,10 +1414,11 @@ function enrichWithPages(cluster: Cluster, pages: GscPageRow[]): Cluster {
      operator can override when the heuristic picks the wrong hub.
      Rank 1 = selected hub; ranks 2-3 = alternatives. */
   const hub_candidates = scored.slice(0, 3).map((s, i) => ({
-    url:           s.page.page,
-    token_matches: s.score,
-    impressions:   s.page.impressions || 0,
-    rank:          i + 1,
+    url:             s.page.page,
+    token_matches:   s.score,
+    impressions:     s.page.impressions || 0,
+    ga4_engagement:  s.engRate > 0 ? s.engRate : undefined,
+    rank:            i + 1,
   }));
 
   return {

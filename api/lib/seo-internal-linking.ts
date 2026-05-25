@@ -234,10 +234,11 @@ export async function runInternalLinkingAudit(opts: {
     }
     if (!panelId) return { success: false, error: 'no internal_linking panel found for this campaign' };
 
-    /* 1. Pull GSC top_pages (audit universe) */
-    const [gscPages, gscFreshnessAt] = await Promise.all([
+    /* 1. Pull GSC top_pages (audit universe) + GA4 site-wide engagement */
+    const [gscPages, gscFreshnessAt, ga4Engagement] = await Promise.all([
       readGscPages(c.project_id),
       readGscFreshness(c.project_id),
+      readGa4SiteEngagement(c.project_id),
     ]);
     if (gscPages.length === 0) {
       return await writePendingReport(c, opts.campaignId, panelId, triggeredBy,
@@ -270,7 +271,7 @@ export async function runInternalLinkingAudit(opts: {
     computeInlinks(pageNodes);
 
     /* 6. Compute findings */
-    const findings = computeLinkGraphFindings(pageNodes, clusterTargets, c.keyword || '');
+    const findings = computeLinkGraphFindings(pageNodes, clusterTargets, c.keyword || '', ga4Engagement);
     /* 6b. Phase 17.1 — attach source attribution per finding (post-compute,
        idempotent). Each finding_kind maps to the data sources that informed
        it; per-finding confidence is the weighted-mean across those sources. */
@@ -851,9 +852,31 @@ function computeInlinks(nodes: PageNode[]): void {
    FINDINGS
 ═══════════════════════════════════════════════════════════════ */
 
-function computeLinkGraphFindings(nodes: PageNode[], clusterTargets: LinkTarget[], campaignKeyword: string): Finding[] {
+function computeLinkGraphFindings(nodes: PageNode[], clusterTargets: LinkTarget[], campaignKeyword: string, ga4: { engagement_rate: number | null; users: number | null }): Finding[] {
   const findings: Finding[] = [];
   const fetched = nodes.filter(n => n.fetched);
+
+  /* Phase 18.3 — GA4 context finding: when GA4 engagement is available,
+     surface site-wide rate upfront so the link-quality analysis has context.
+     Low site-wide engagement + generic anchors → double signal: visitors
+     arriving AND not finding what they expect. */
+  if (ga4.engagement_rate !== null && ga4.engagement_rate > 0) {
+    const engLabel = ga4.engagement_rate >= 55 ? 'healthy' : ga4.engagement_rate >= 40 ? 'moderate' : 'low';
+    const engSev: 'green' | 'amber' | 'info' = ga4.engagement_rate >= 55 ? 'green' : ga4.engagement_rate >= 40 ? 'amber' : 'amber';
+    findings.push({
+      finding_kind:   'ga4_engagement_context' as any,
+      severity:       engSev,
+      finding_title:  `Site-wide GA4 engagement rate: ${ga4.engagement_rate.toFixed(1)}% (${engLabel})`,
+      finding_detail: `GA4 organic engagement rate is ${ga4.engagement_rate.toFixed(1)}%${ga4.users ? ` across ~${ga4.users.toLocaleString()} monthly users` : ''}.` +
+        (ga4.engagement_rate < 40
+          ? ` A ${ga4.engagement_rate.toFixed(1)}% engagement rate means over ${(100 - ga4.engagement_rate).toFixed(0)}% of organic visitors leave without engaging. Internal linking is one lever: well-placed contextual links reduce bounce by giving visitors a next step. Cross-reference with the generic anchor and orphan findings below — fixing those will compound with any engagement improvements from other channels.`
+          : ` Internal linking can further improve engagement by guiding visitors from entry pages to conversion-relevant content.`),
+      recommendation: ga4.engagement_rate < 40
+        ? `Prioritize internal links on high-impression entry pages (top of the orphan/low-inlinks list). Direct visitors toward pages that match the query intent they arrived with.`
+        : `Monitor engagement impact as you add internal links. Track whether pages receiving new inbound links show engagement rate improvement in GA4.`,
+      evidence: { engagement_rate_pct: ga4.engagement_rate, users_monthly: ga4.users, source: 'ga4_site_wide' },
+    });
+  }
 
   /* Orphans — fetched pages with 0 inlinks */
   const orphans = fetched.filter(n => n.inlinks.length === 0);
@@ -1453,6 +1476,22 @@ async function readGscFreshness(projectId: string): Promise<string | null> {
       .maybeSingle();
     return (data as any)?.updated_at || null;
   } catch { return null; }
+}
+
+/* Phase 18.3 — Read GA4 site-wide engagement from project_knowledge. */
+async function readGa4SiteEngagement(projectId: string): Promise<{ engagement_rate: number | null; users: number | null }> {
+  try {
+    const readPk = async (key: string) => {
+      const { data } = await db().from('project_knowledge').select('field_value')
+        .eq('project_id', projectId).eq('category', 'analytics').eq('field_key', key).maybeSingle();
+      return (data as any)?.field_value ?? null;
+    };
+    const [eng, users] = await Promise.all([readPk('ga4_engagement_rate'), readPk('ga4_users_monthly')]);
+    return {
+      engagement_rate: eng ? parseFloat(String(eng).replace('%','')) || null : null,
+      users:           users ? parseInt(String(users), 10) || null : null,
+    };
+  } catch { return { engagement_rate: null, users: null }; }
 }
 
 function formatGscFreshnessLine(updatedAt: string | null): string {

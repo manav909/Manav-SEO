@@ -73,6 +73,8 @@ interface ExistingAsset {
   keyword_fit_score: number;
   keyword_fit_label: 'high' | 'medium' | 'low';
   keyword_fit_signals: string[];
+  /* Phase 18.3 — GA4 priority signal */
+  ga4_priority?: 'high_engagement' | 'low_engagement' | null;
 }
 
 interface AspirationalAsset {
@@ -229,11 +231,12 @@ export async function runOffPageStrategy(opts: {
     if (!panelId) return { success: false, error: 'no off_page panel found for this campaign' };
 
     /* 1. Gather context */
-    const [gscPages, clusters, competitors, gscFreshnessAt] = await Promise.all([
+    const [gscPages, clusters, competitors, gscFreshnessAt, ga4Data] = await Promise.all([
       readGscPages(c.project_id),
       readClusters(opts.campaignId),
       readCompetitorSnapshot(opts.campaignId),
       readGscFreshness(c.project_id),
+      readGa4ForOffPage(c.project_id),
     ]);
 
     /* If we have NO data at all, write a pending report */
@@ -262,7 +265,7 @@ export async function runOffPageStrategy(opts: {
     const auditRunId = crypto.randomUUID();
 
     const [existingAssets, aspirationalAssets, prospects] = await Promise.all([
-      identifyExistingAssets(c.keyword, gscPages),
+      identifyExistingAssets(c.keyword, gscPages, ga4Data),
       identifyAssetGaps(c.keyword, gscPages, clusters, competitors),
       generateProspectStrategy(c.keyword, clusters, competitors),
     ]);
@@ -271,7 +274,7 @@ export async function runOffPageStrategy(opts: {
     /* 5. Compute findings */
     const findings = computeFindings({
       existingAssets, aspirationalAssets, prospects,
-      gscPages, clusters, competitors,
+      gscPages, clusters, competitors, ga4Data,
     });
     /* 5b. Phase 18.1 — attach source attribution per finding */
     attachOffPageFindingSources(findings);
@@ -577,6 +580,22 @@ async function readGscFreshness(projectId: string): Promise<string | null> {
   } catch { return null; }
 }
 
+/* Phase 18.3 — Read GA4 site-wide engagement from project_knowledge for off-page. */
+async function readGa4ForOffPage(projectId: string): Promise<{ engagement_rate: number | null; users: number | null }> {
+  try {
+    const readPk = async (key: string) => {
+      const { data } = await db().from('project_knowledge').select('field_value')
+        .eq('project_id', projectId).eq('category', 'analytics').eq('field_key', key).maybeSingle();
+      return (data as any)?.field_value ?? null;
+    };
+    const [eng, users] = await Promise.all([readPk('ga4_engagement_rate'), readPk('ga4_users_monthly')]);
+    return {
+      engagement_rate: eng   ? parseFloat(String(eng).replace('%',''))  || null : null,
+      users:           users ? parseInt(String(users), 10)               || null : null,
+    };
+  } catch { return { engagement_rate: null, users: null }; }
+}
+
 function formatGscFreshnessLine(updatedAt: string | null): string {
   if (!updatedAt) return `> ⚠️ **GSC data freshness unknown** — connect GSC in Data Room → Integrations to enable automatic daily pulls.`;
   try {
@@ -679,7 +698,7 @@ function scoreAssetKeywordFit(
   return { score, label, signals };
 }
 
-async function identifyExistingAssets(keyword: string, gscPages: GscPageRow[]): Promise<ExistingAsset[]> {
+async function identifyExistingAssets(keyword: string, gscPages: GscPageRow[], ga4Data: { engagement_rate: number | null; users: number | null }): Promise<ExistingAsset[]> {
   if (gscPages.length === 0) return [];
 
   const topPages = gscPages.slice(0, 25).map(p => ({
@@ -720,6 +739,14 @@ Which of these are genuinely linkable assets? Drop weak ones — return ${Math.m
       const gscPage = gscPages.find(p => p.page === a.url);
       if (!gscPage) continue;
       const fit = scoreAssetKeywordFit(a.url, String(a.title || ''), String(a.why_linkable || ''), keyword);
+      /* GA4 priority: pages with higher-than-average CTR (gsc_ctr) are
+         better link targets since they convert visitors. Site-wide engagement
+         rate is the only GA4 signal available here without per-page live pull. */
+      const siteEngRate = ga4Data.engagement_rate ?? 0;
+      const pageCtr = gscPage.ctr || 0;
+      const ga4_priority: ExistingAsset['ga4_priority'] =
+        siteEngRate >= 55 && pageCtr > 0.03 ? 'high_engagement' :
+        siteEngRate < 35 && pageCtr < 0.01  ? 'low_engagement'  : null;
       result.push({
         asset_type:          validateAssetType(a.asset_type),
         title:               String(a.title || 'Untitled asset').slice(0, 200),
@@ -732,6 +759,7 @@ Which of these are genuinely linkable assets? Drop weak ones — return ${Math.m
         keyword_fit_score:   fit.score,
         keyword_fit_label:   fit.label,
         keyword_fit_signals: fit.signals,
+        ga4_priority,
       });
     }
     return result;
@@ -903,6 +931,7 @@ function computeFindings(opts: {
   gscPages:            GscPageRow[];
   clusters:            ClusterRow[];
   competitors:         any[];
+  ga4Data:             { engagement_rate: number | null; users: number | null };
 }): Finding[] {
   const findings: Finding[] = [];
 
