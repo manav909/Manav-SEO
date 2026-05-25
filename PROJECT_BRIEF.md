@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D4.1 — project names + markdown formatting bugfix) · **Live commit:** `a73fe3a` (Phase D4 embedded viewers). Phase D4.1 fixes two bugs Manav reported after deploying D4: (1) Projects filter showed "Project 4c4e49" style ID slices because the projectLabel fallback chain was looking at client-shaped fields (brand_name/client_name/company_name) when `useAuth().projects` actually returns rows from the `projects` table where the display field is `.name`. Fixed: prefer `p.name`, fall back to `new URL(p.url).hostname` as a useful secondary, then client-shaped fields, then ID slice as last resort. (2) Opened artifact body rendered as unstyled raw text because `@tailwindcss/typography` was in package.json but NOT enabled in tailwind.config.ts — so `prose prose-sm dark:prose-invert` classes did nothing. Fixed: enabled the plugin AND extracted a shared `ArtifactMarkdown` component (mirroring the existing DocumentViewer.tsx pattern) with explicit component overrides for h1/h2/h3/h4/p/ul/ol/li/blockquote/a/strong/em/table/code so rendering is deterministic regardless of plugin theme. Component accepts `accent` (kind color) and `size` (sm|md) props. Used in both Documents page detail pane and CampaignDocumentsSection inline expand. Foundation complete for Phase D5 (bulk ops + comparison view) or pivot to Q-arc.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D4.2 — Documents scroll layout fix) · **Live commit:** `48b8b8e` (Phase D4.1 project names + markdown formatting). Phase D4.2 fixes the scroll bug Manav reported: scrolling the list pane or detail pane caused the whole page to scroll instead of the inner pane. Root cause: page used `min-h-screen` (grows past viewport) instead of `h-screen overflow-hidden` (viewport-locked). Plus the flex chain leaked because intermediate `flex-1` containers lacked `min-h-0` — flex children compute height from content by default, defeating `overflow-hidden`. Fixed 7 spots in `Documents.tsx`: root `min-h-screen` → `h-screen overflow-hidden`, added `min-h-0` to inner flex column + three-pane row + list pane + list ScrollArea + detail body ScrollArea, added `min-h-0 min-w-0` to DetailPane root + its loading/empty states. Result: PortalNav + page header + KPI strip + (optional campaign filter banner) stay fixed; only the sidebar, list, and detail body scroll within their own panes.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1566,6 +1566,40 @@ Documents.tsx and CampaignDocumentsSection.tsx both now use `<ArtifactMarkdown b
 **Diff:** 1 new file (~130 lines), 3 file edits (tailwind config 1 line, Documents.tsx ~30 lines, CampaignDocumentsSection.tsx ~10 lines).
 
 **Discipline lesson logged:** Verify that the dependencies you import actually work, not just that they're installed. `@tailwindcss/typography` being in `package.json` only means it's available — it has to be loaded in `tailwind.config.ts` to do anything. The smoke tests in D3 didn't catch this because they checked "ReactMarkdown imported" (yes) and "remarkGfm imported" (yes) and "body rendered as markdown" (yes — but unstyled). The verification gap was visual — no smoke test for "headings actually have larger font size than paragraphs". Lesson: when wiring up CSS framework plugins, the smoke test should be "does the EMITTED CSS contain a `prose` class definition", not just "are the import strings in the source file".
+
+### Phase D4.2 — Documents scroll layout fix (2026-05-25)
+
+**Bug reported:** scrolling the list pane or the detail (reading) panel caused the whole page to scroll instead of the inner pane. Header, KPI strip, filters sidebar — everything slid up out of view.
+
+**Root cause — two related issues compounding:**
+
+1. **Root used `min-h-screen` instead of `h-screen`.** `min-h-screen` means "at least viewport tall, can grow taller" — when inner content overflows, the page itself grows past the viewport and the browser scrolls the whole `<html>` document. The correct primitive for an app-shell layout is `h-screen overflow-hidden` — viewport-locked, no body scroll possible.
+
+2. **The flex chain leaked height because intermediate `flex-1` containers lacked `min-h-0`.** This is the classic flexbox gotcha: a flex child's default `min-height` is `auto`, which means "as tall as content needs". So a `flex-1 overflow-hidden` parent can have a child that's taller than the parent, defeating the `overflow-hidden`. The fix is `min-h-0` on every flex column that contains a scrollable child. Same applies horizontally with `min-w-0` (which is why long titles in the detail header were pushing the page wider).
+
+**Fix — 7 small changes in Documents.tsx:**
+
+| Spot | Change |
+|---|---|
+| Page root | `min-h-screen flex flex-col ...` → `h-screen flex flex-col ... overflow-hidden` |
+| Inner flex column | added `min-h-0` |
+| Three-pane row container | added `min-h-0` |
+| List pane wrapper | added `min-h-0` |
+| List ScrollArea | added `min-h-0` (Radix ScrollArea needs constrained-height parent or falls back to content height) |
+| DetailPane root | added `min-h-0 min-w-0` |
+| DetailPane body ScrollArea | added `min-h-0` |
+| DetailPane loading + empty states | added `min-h-0 min-w-0` |
+
+**Result on deploy:** PortalNav + page header + KPI strip + active-filter banner all stay fixed at the top. Only the sidebar, the artifact list, and the detail body scroll within their own panes. The page itself can never scroll past viewport.
+
+**Verification:**
+- Frontend TS: 27 baseline preserved, 0 new errors
+- Vite build green
+- 18 smoke sub-checks all pass: root locked to viewport, no min-h-screen remaining, overflow-hidden on root, min-h-0 on inner column + three-pane + list pane + list ScrollArea + detail root + detail body ScrollArea + detail loading/empty states, no regression on AnimatedBg/PortalNav/KpiStrip/banner/search/pagination/4 URL patterns
+
+**Diff:** 1 file modified — `src/pages/Documents.tsx`, 9 line edits.
+
+**Discipline lesson logged:** App-shell pages need `h-screen overflow-hidden` on the root, not `min-h-screen`. And every flex column that wraps a scrollable child needs `min-h-0` (same for `min-w-0` horizontally). These two patterns together are the difference between "inner panes scroll independently like Slack/Discord" vs "whole page scrolls like a document". This is a foundational Tailwind+Radix layout pattern that should be documented somewhere central — file it in the brief for future reference.
 
 ### Session handoff for tech audit work
 

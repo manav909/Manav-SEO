@@ -508,7 +508,7 @@ function DetailPane({
 }) {
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground">
+      <div className="flex-1 flex items-center justify-center text-muted-foreground min-h-0 min-w-0">
         <Loader2 className="h-5 w-5 animate-spin mr-2" />
         Loading artifact…
       </div>
@@ -516,7 +516,7 @@ function DetailPane({
   }
   if (!artifact) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8">
+      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 min-h-0 min-w-0">
         <FileText className="h-12 w-12 mb-3 opacity-30" />
         <div className="text-sm">Select an artifact to view its content</div>
         <div className="text-xs mt-1 opacity-70">Or use the search box to find something specific</div>
@@ -534,7 +534,7 @@ function DetailPane({
   const myIndex = chain.findIndex(c => c.id === artifact.id);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
       {/* Header */}
       <div className="px-5 py-4 border-b border-border/40 bg-background/30">
         <div className="flex items-start justify-between gap-3 mb-2">
@@ -623,7 +623,7 @@ function DetailPane({
       </div>
 
       {/* Body */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="px-5 py-4">
           <ArtifactMarkdown body={artifact.body || '_No content_'} accent={meta.color} size="md" />
 
@@ -978,11 +978,11 @@ export default function Documents() {
   useEffect(() => { setOffset(0); }, [filters, searchQuery, sort]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background relative">
+    <div className="h-screen flex flex-col bg-background relative overflow-hidden">
       <AnimatedBg />
       <PortalNav />
 
-      <div className="flex-1 flex flex-col relative z-10 overflow-hidden">
+      <div className="flex-1 flex flex-col relative z-10 overflow-hidden min-h-0">
         {/* Page header */}
         <div className="px-4 py-3 border-b border-border/40 bg-background/30 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1023,7 +1023,7 @@ export default function Documents() {
         )}
 
         {/* Main three-pane layout */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden min-h-0">
           <FiltersSidebar
             filters={filters}
             setFilters={setFilters}
@@ -1032,7 +1032,7 @@ export default function Documents() {
           />
 
           {/* List + search */}
-          <div className="w-[420px] shrink-0 border-r border-border/40 flex flex-col overflow-hidden">
+          <div className="w-[420px] shrink-0 border-r border-border/40 flex flex-col overflow-hidden min-h-0">
             {/* Search bar + sort */}
             <div className="px-3 py-2 border-b border-border/40 bg-background/30">
               <div className="relative">
@@ -1071,7 +1071,7 @@ export default function Documents() {
             </div>
 
             {/* List */}
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1 min-h-0">
               {listError && (
                 <div className="p-4 text-xs text-destructive">
                   <AlertTriangle className="h-4 w-4 inline mr-2" />
