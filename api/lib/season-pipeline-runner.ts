@@ -982,9 +982,13 @@ export async function finalizeRun(opts: {
       stepsCompleted > 0 ? 'partial' : 'failed';
     const persistedStatus = finalStatus === 'partial' ? 'completed' : finalStatus;
 
-    const elapsedMs = (run as any).started_at
-      ? Date.now() - new Date((run as any).started_at).getTime()
-      : 0;
+    /* Phase 17.5.7 — compute elapsed from step duration_ms sums, not wall-clock
+       since run.started_at. The original computation gave wrong results after
+       retryFromStep / refresh-from-audit because started_at is the ORIGINAL run
+       launch timestamp, not when the latest refresh began — so a run refreshed
+       3 days later would report elapsed = 268,853s. Summing per-step durations
+       gives the true work time regardless of retry history. */
+    const elapsedMs = stepRows.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
 
     const honestSummary = buildHonestSummary({
       stepsCompleted, stepsFailed,

@@ -25,10 +25,8 @@ import {
   seoOffPageRun,
   seoMonitoringRun,
   seasonPipelineRefreshFromAudit,
-  seasonPipelineExecuteNext,
   seasonPipelineGet,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
-  type PipelineType,
 } from './api';
 
 interface Props {
@@ -633,7 +631,16 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
          sees the same 8-block visualization they saw on the original campaign
          launch. The dashboard polls the DB independently. Dispatching AFTER
          the reset succeeded means the dashboard's first poll sees status =
-         'retrying', not the stale 'failed'. */
+         'retrying', not the stale 'failed'.
+
+         Phase 17.5.7 — the dashboard's `driveExecution` (runs in useEffect on
+         mount) handles execution driving natively. Previously the panel ran
+         its OWN execute loop in parallel, which raced with the dashboard's
+         loop on the same runId — two callers reading "first pending step"
+         concurrently produced lost counter increments and partial finalize
+         calls (e.g. "7/8 steps completed" while the dashboard showed 8/8).
+         Now: panel resets, dispatches the dashboard mount event, then waits
+         for the run to settle via passive polling. Single execution driver. */
       window.dispatchEvent(new CustomEvent('season:open-pipeline-dashboard', {
         detail: {
           runId,
@@ -655,37 +662,48 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
         },
       }));
 
-      /* Step 2: drive execution loop. Mirrors SeasonPipelineDashboard's pattern.
-         Each call asks the server to execute exactly ONE step and return. */
+      /* Phase 17.5.7 — passive poll waiting for run to settle.
+         The dashboard owns execution driving (see its driveExecution useEffect).
+         The panel just watches the run's status here so it knows when to
+         reload campaign artifacts. ~3s interval since we're not in any hurry —
+         the user is watching the dashboard, not this panel-local strip. */
       let completed = false;
       let failedReason: string | null = null;
-      for (let safety = 0; safety < 30; safety++) {  /* hard cap at 30 step kicks */
-        const r = await seasonPipelineExecuteNext({ runId, pipelineType: pipelineType as PipelineType });
-        if (r.error) {
-          failedReason = r.error;
+      const POLL_INTERVAL_MS = 3000;
+      const MAX_WAIT_MS = 8 * 60 * 1000;  /* 8 min hard cap — pipeline rarely exceeds 4 min */
+      const startedWaiting = Date.now();
+      while (Date.now() - startedWaiting < MAX_WAIT_MS) {
+        await new Promise(res => setTimeout(res, POLL_INTERVAL_MS));
+        const detail = await seasonPipelineGet({ runId });
+        if (detail.error) {
+          failedReason = detail.error;
           break;
         }
-        /* Update inline progress with the step that just ran */
-        if (typeof r.step_index === 'number' && r.step_label) {
+        const status = detail.run?.status;
+        const pendingSteps = (detail.steps || []).filter(s => s.status === 'pending' || s.status === 'running');
+        /* Update inline strip with current step from poll */
+        const currentRunningStep = (detail.steps || []).find(s => s.status === 'running');
+        if (currentRunningStep) {
           setRefreshProgress(prev => ({
             ...prev,
             [runId]: {
               ...prev[runId],
-              currentStepIndex: r.step_index,
-              currentStepLabel: r.step_label,
+              currentStepIndex: currentRunningStep.step_index,
+              currentStepLabel: currentRunningStep.step_label,
             },
           }));
         }
-        if (r.no_more_steps || r.run_status === 'completed') {
-          completed = true;
+        /* Settle conditions: terminal status AND no pending/running steps */
+        const isTerminal = status === 'completed' || status === 'failed' || status === 'cancelled';
+        if (isTerminal && pendingSteps.length === 0) {
+          completed = status === 'completed' && (detail.run?.steps_failed || 0) === 0;
+          if (!completed && !failedReason) {
+            failedReason = status === 'completed'
+              ? `Run completed but ${detail.run?.steps_failed || 0} step(s) failed.`
+              : `Run ended with status: ${status}`;
+          }
           break;
         }
-        if (r.run_status === 'failed' || r.run_status === 'cancelled') {
-          failedReason = `Run ended with status: ${r.run_status}`;
-          break;
-        }
-        /* Tiny pause between step kicks so the polling loop can update UI */
-        await new Promise(res => setTimeout(res, 200));
       }
 
       if (completed) {

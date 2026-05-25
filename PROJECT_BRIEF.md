@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.6 — dashboard polling race + "Polling stopped" fix) · **Live commit:** `9936163` (Phase 17.5.5 counter drift). Phase 17.5.6 fixes a race exposed by Manav's screenshot showing the dashboard frozen at `00:01 — Polling stopped` with step 6 stuck "running" even though execution continued server-side. Two coordinated fixes: (1) `handleRefreshPipelineFromAudit` now calls `seasonPipelineRefreshFromAudit` (which flips run.status to 'retrying') BEFORE dispatching the dashboard-open event — previous order caused the dashboard's first poll to see stale 'failed' status and treat it as terminal. (2) `SeasonPipelineDashboard` polling now considers a run "really terminal" only when status is terminal AND no pending/running step rows exist — a run in 'failed' state with pending steps is mid-retry, not done.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.7 — single execution driver + correct elapsed) · **Live commit:** Phase 17.5.6 staged for deploy. Phase 17.5.7 — the refresh actually ran end-to-end successfully but Manav's final screenshot showed two cosmetic bugs: `Pipeline ran in 268853.1s` (74 hours) and `7/8 steps completed` despite all 8 cards showing green. Root cause of "7/8": TWO parallel execute loops — the panel's (added in 17.5.1) AND the dashboard's (existing in `driveExecution` useEffect) both called `seasonPipelineExecuteNext` on the same runId, racing on counter increments. Fix: panel no longer drives execution; only the dashboard does. Panel reverts to passive polling for the run-settled signal. Root cause of "268853s": `finalizeRun` computed elapsed from `Date.now() - run.started_at`, where `started_at` is the ORIGINAL run launch (3 days ago) not the refresh start. Fix: elapsed now sums per-step `duration_ms` values, which is always correct regardless of retry history.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1254,6 +1254,41 @@ Even with Bug 1 fixed, `SeasonPipelineDashboard`'s polling-stop condition is fra
 **Diff:** 2 files changed, 42 insertions, 17 deletions.
 
 **Discipline lesson logged:** When introducing new UX flows that mount UI components observing async state, verify the order: state-mutation → UI-observation. Reversing the order creates races that look like "the UI is broken" when actually the backend is fine. The race here was specifically that I treated dispatching the event as a "fire and forget" hint when it actually triggered immediate DB polling against state that hadn't transitioned yet. Should have asked from the start: "what does the dashboard's first poll see if it fires NOW, before the backend has done anything?" — and ordered the dispatch accordingly.
+
+### Phase 17.5.7 — Single execution driver + correct elapsed (2026-05-25)
+
+**Manav's final screenshot:** Refresh actually succeeded end-to-end. All 8 step cards COMPLETED. Every Phase 17.x audit-anchored output verified: competitor_snapshot used SerpAPI (0 LLM, 1.0s), forecast surfaced $1,540-$4,620 CTR-recovery layer, content_brief anchored to 7 audit signals, client_update anchored to 5 signals including dollar opportunity, internal_handover with 5-signal P0/P1/P2 backlog. The pillar-to-pipeline integration vision shipped.
+
+But the honest_summary at the bottom showed two bugs:
+- `Pipeline ran in 268853.1s` (74 hours — impossible)
+- `7/8 steps completed` (dashboard clearly shows all 8 green)
+
+**Bug A: Parallel execution loops racing.**
+The panel's `handleRefreshPipelineFromAudit` (Phase 17.5.1) ran an execute loop calling `seasonPipelineExecuteNext` repeatedly. SeasonPipelineDashboard's `driveExecution` useEffect (existing, fires on mount) ALSO ran an execute loop on the same runId. Two callers racing on the same backend operation:
+- Both called `seasonPipelineExecuteNext(runId)` concurrently
+- Both read "first pending step" — could be same or different
+- Both incremented `steps_completed` via line 866 without transactional safety
+- Lost increments produced the "7/8 completed" discrepancy
+- One loop's call to `finalizeRun` happened before the other loop's final step UPDATE was visible
+
+**Fix:** Panel no longer drives execution. The dashboard owns execution driving (it's designed for this). Panel now passively polls `seasonPipelineGet` every 3s until the run settles (terminal status + no pending/running steps). Single execution driver — single source of truth — no race.
+
+**Bug B: Elapsed time computed from wrong baseline.**
+`finalizeRun` at line 985-987 computed `elapsedMs = Date.now() - new Date(run.started_at).getTime()`. But `started_at` is the ORIGINAL run launch timestamp. After 3 days of sitting around then a 4-minute refresh, this gives 268,853 seconds.
+
+**Fix:** Compute elapsed as the sum of per-step `duration_ms` values. Always correct regardless of refresh history. Each step's duration_ms is measured fresh on every execution, including retries.
+
+**Files changed:** 2 — `src/components/pm/SeoCampaignsPanel.tsx` (panel loop removed, passive polling added), `api/lib/season-pipeline-runner.ts` (elapsed calculation fixed in finalizeRun).
+
+**Verification:**
+- Vercel runtime TS clean on touched files (pre-existing `seo-campaign-engine.ts:1021` only)
+- Frontend baseline 27 (unchanged)
+- Vite green
+- Removed `seasonPipelineExecuteNext` + `PipelineType` from panel imports (now unused)
+
+**Diff:** 2 files changed, 86 insertions, 41 deletions.
+
+**Discipline lesson logged:** When introducing a new execution-driving mechanism, check whether an EXISTING mechanism is already driving the same operation. The dashboard's `driveExecution` was there since Phase 13a — I added a parallel loop in 17.5.1 without checking. Two drivers on a single linear pipeline is always wrong; the backend's `seasonPipelineExecuteNext` doesn't have transactional safety for concurrent callers because it was designed assuming one driver. Should have read the dashboard's mount-time behavior before deciding the panel needed its own loop. The right architecture: only ONE component owns execution at a time, and the dashboard already had that role.
 
 ### Session handoff for tech audit work
 
