@@ -12,9 +12,10 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Maximize2, ArrowLeft } from 'lucide-react';
+import { Maximize2, ArrowLeft, Plus } from 'lucide-react';
 import PortalNav from '@/components/PortalNav';
 import { useProject } from '@/contexts/ProjectContext';
+import { useAuth } from '@/contexts/AuthContext';
 import type { TaskCard } from '@/components/pm/types';
 import * as pmApi from '@/components/pm/api';
 import RequirementsPanel from '@/components/pm/RequirementsPanel';
@@ -24,11 +25,14 @@ import AutopilotPanel from '@/components/pm/AutopilotPanel';
 import SeoCampaignsPanel from '@/components/pm/SeoCampaignsPanel';
 import SeoInboxPanel from '@/components/pm/SeoInboxPanel';
 import Documents from '@/pages/Documents';
+import PMOnboardingWizard from '@/components/pm/PMOnboardingWizard';
 
 type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox' | 'documents';
 
 export default function PMModule() {
-  const { selectedProject, selectedProjectId } = useProject();
+  const { selectedProject, selectedProjectId, setSelectedProjectId } = useProject();
+  const { projects, refreshData } = useAuth();
+  const [showWizard, setShowWizard] = useState(false);
   const [tab, setTab]             = useState<Tab>('board');
   const [docsFullscreen, setDocsFullscreen] = useState(false);
   const [cards, setCards]   = useState<TaskCard[]>([]);
@@ -67,6 +71,7 @@ export default function PMModule() {
   ];
 
   return (
+    <>
     <div className="min-h-screen bg-background text-foreground">
       <PortalNav />
       <div className="max-w-7xl mx-auto px-6 py-8">
@@ -78,17 +83,25 @@ export default function PMModule() {
             <p className="text-sm text-muted-foreground mt-1">
               {selectedProject
                 ? `${selectedProject.name} — ${cards.length} task${cards.length === 1 ? '' : 's'}, ${placedCount} on the board`
-                : 'Select a project to begin'}
+                : 'Set up a project to begin'}
             </p>
           </div>
-          {selectedProjectId && (
+          <div className="flex items-center gap-2">
+            {selectedProjectId && (
+              <button
+                onClick={loadCards}
+                className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              >
+                Refresh
+              </button>
+            )}
             <button
-              onClick={loadCards}
-              className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              onClick={() => setShowWizard(true)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-colors font-medium"
             >
-              Refresh
+              <Plus className="h-3.5 w-3.5" />New Project
             </button>
-          )}
+          </div>
         </div>
 
         {/* Tabs */}
@@ -113,13 +126,25 @@ export default function PMModule() {
           ))}
         </div>
 
-        {/* No project */}
+        {/* No project — show onboarding CTA */}
         {!selectedProjectId && (
-          <div className="rounded-2xl border border-border bg-card p-10 text-center">
-            <div className="text-3xl mb-3">📁</div>
-            <p className="text-sm text-muted-foreground">
-              Select a project from the navigation to manage its tasks.
+          <div className="rounded-2xl border border-dashed border-border bg-card/40 p-12 text-center">
+            <div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Plus className="h-8 w-8 text-primary" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">No project selected</h3>
+            <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto leading-relaxed">
+              {(projects || []).length === 0
+                ? "You don't have any projects yet. The setup wizard will walk you through creating a client, project, connecting data, and launching your first campaign."
+                : "Select a project from the navigation bar, or create a new one."}
             </p>
+            <button
+              onClick={() => setShowWizard(true)}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-[0_0_24px_hsl(var(--primary)/0.3)] hover:bg-primary/90 transition-all"
+            >
+              <Plus className="h-4 w-4" />
+              {(projects || []).length === 0 ? 'Set Up First Project' : 'Add New Project'}
+            </button>
           </div>
         )}
 
@@ -205,5 +230,18 @@ export default function PMModule() {
         )}
       </div>
     </div>
+
+    {/* Onboarding wizard — full screen overlay */}
+    {showWizard && (
+      <PMOnboardingWizard
+        onComplete={async (projectId) => {
+          await refreshData();
+          setSelectedProjectId(projectId);
+          setShowWizard(false);
+        }}
+        onDismiss={() => setShowWizard(false)}
+      />
+    )}
+    </>
   );
 }
