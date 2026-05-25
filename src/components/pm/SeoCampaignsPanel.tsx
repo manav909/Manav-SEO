@@ -8,7 +8,7 @@
      • Campaign detail drawer when one is selected
 ═══════════════════════════════════════════════════════════════ */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Target, Lightbulb, Play, Pause, Archive, RefreshCw, ChevronRight,
   CheckCircle2, AlertCircle, Loader2, X, Sparkles, FileText, TrendingUp,
@@ -25,7 +25,9 @@ import {
   seoOffPageRun,
   seoMonitoringRun,
   seasonPipelineRefreshFromAudit,
+  seasonPipelineExecuteNext,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
+  type PipelineType,
 } from './api';
 
 interface Props {
@@ -526,8 +528,23 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [offPageBusyPanel, setOffPageBusyPanel] = useState<string | null>(null);
   /* Phase 19 — monitoring state */
   const [monitoringBusyPanel, setMonitoringBusyPanel] = useState<string | null>(null);
-  /* Phase 17.5 — refresh-from-audit busy state per pipeline run */
-  const [refreshingRunId, setRefreshingRunId] = useState<string | null>(null);
+  /* Phase 17.5.1 — refresh-from-audit per-run progress.
+     Tracks the live execution of audit-consuming steps so the user sees what's
+     happening in real time, not a vanished toast. Map keyed by runId.
+     Phase = current lifecycle stage; progress = "step X of Y running". */
+  type RefreshState = {
+    phase: 'resetting' | 'executing' | 'completed' | 'failed';
+    stepsReset?: number;
+    firstStepIndex?: number;
+    firstStepLabel?: string;
+    currentStepIndex?: number;
+    currentStepLabel?: string;
+    totalSteps?: number;
+    error?: string;
+  };
+  const [refreshProgress, setRefreshProgress] = useState<Record<string, RefreshState>>({});
+  /* Guard so a single refresh execution loop doesn't double-fire */
+  const refreshingRunsRef = useRef<Set<string>>(new Set());
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -554,30 +571,122 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     setRefreshingOverview(false);
   };
 
-  /* Phase 17.5 — refresh pipeline run from latest audit. Resets the
-     audit-consuming steps (competitor_snapshot, content_brief, forecast,
-     client_update, internal_handover) so they re-run with fresh findings.
-     Drives execution forward via the pipeline dashboard's resume loop —
-     for now, this just kicks the reset; user opens the dashboard to watch
-     re-execution. */
-  const handleRefreshPipelineFromAudit = async (runId: string) => {
-    if (!confirm('Reset all audit-consuming pipeline steps (competitor snapshot, content brief, forecast, client update, internal handover) so they re-run with the latest technical audit\'s findings?\n\nThis will replace those artifacts with fresh ones. Other steps (keyword research, GSC context, strategy plan) are not affected.')) return;
-    setRefreshingRunId(runId);
+  /* Phase 17.5.1 — refresh pipeline run from latest audit + drive execution to completion.
+     The 17.5 version only reset steps and asked the user to navigate to the
+     dashboard. That was wrong — clicking a button and getting nothing visible
+     happen is broken UX. This version owns the full lifecycle:
+       1. Show 'resetting' state inline (not just toast)
+       2. Call backend to reset audit-consuming steps
+       3. Loop seasonPipelineExecuteNext until terminal or error
+       4. Update inline progress per step (current step name + count)
+       5. Reload campaign state at the end so artifacts refresh in UI
+       6. Show final completed/failed state for ~10s so user sees the result
+     The double-fire guard prevents the same run being refreshed twice if
+     the user clicks fast or React re-renders mid-flight. */
+  const handleRefreshPipelineFromAudit = async (runId: string, pipelineType: string) => {
+    if (refreshingRunsRef.current.has(runId)) return;
+    if (!confirm('Reset all audit-consuming pipeline steps (competitor snapshot, content brief, forecast, client update, internal handover) so they re-run with the latest technical audit\'s findings?\n\nThis will replace those artifacts with fresh ones. Other steps (keyword research, GSC context, strategy plan) are not affected. Re-execution runs immediately and may take 2-3 minutes.')) return;
+
+    refreshingRunsRef.current.add(runId);
+    setRefreshProgress(prev => ({ ...prev, [runId]: { phase: 'resetting' } }));
+
     try {
-      const r = await seasonPipelineRefreshFromAudit({ runId });
-      if (r.error) {
-        toast({ title: 'Refresh failed', description: r.error, variant: 'destructive' });
+      /* Step 1: reset audit-consuming steps */
+      const reset = await seasonPipelineRefreshFromAudit({ runId });
+      if (reset.error || !reset.success) {
+        setRefreshProgress(prev => ({ ...prev, [runId]: { phase: 'failed', error: reset.error || 'reset failed' } }));
+        toast({ title: 'Refresh failed', description: reset.error || 'reset failed', variant: 'destructive' });
+        /* Clear the failed state after 10s so the user sees it then it goes away */
+        setTimeout(() => {
+          setRefreshProgress(prev => { const n = { ...prev }; delete n[runId]; return n; });
+        }, 10000);
         return;
       }
-      toast({
-        title: 'Pipeline reset',
-        description: `${r.steps_reset || 0} step(s) reset starting at "${r.first_step_label || r.first_step_id}". Open the pipeline dashboard to drive re-execution.`,
-      });
-      await load();
+
+      const firstIdx = reset.first_step_index ?? 0;
+      const firstLabel = reset.first_step_label || reset.first_step_id || `step ${firstIdx + 1}`;
+      const stepsReset = reset.steps_reset || 0;
+
+      setRefreshProgress(prev => ({
+        ...prev,
+        [runId]: {
+          phase: 'executing',
+          stepsReset,
+          firstStepIndex: firstIdx,
+          firstStepLabel: firstLabel,
+          currentStepIndex: firstIdx,
+          totalSteps: firstIdx + stepsReset,
+        },
+      }));
+
+      /* Step 2: drive execution loop. Mirrors SeasonPipelineDashboard's pattern.
+         Each call asks the server to execute exactly ONE step and return. */
+      let completed = false;
+      let failedReason: string | null = null;
+      for (let safety = 0; safety < 30; safety++) {  /* hard cap at 30 step kicks */
+        const r = await seasonPipelineExecuteNext({ runId, pipelineType: pipelineType as PipelineType });
+        if (r.error) {
+          failedReason = r.error;
+          break;
+        }
+        /* Update inline progress with the step that just ran */
+        if (typeof r.step_index === 'number' && r.step_label) {
+          setRefreshProgress(prev => ({
+            ...prev,
+            [runId]: {
+              ...prev[runId],
+              currentStepIndex: r.step_index,
+              currentStepLabel: r.step_label,
+            },
+          }));
+        }
+        if (r.no_more_steps || r.run_status === 'completed') {
+          completed = true;
+          break;
+        }
+        if (r.run_status === 'failed' || r.run_status === 'cancelled') {
+          failedReason = `Run ended with status: ${r.run_status}`;
+          break;
+        }
+        /* Tiny pause between step kicks so the polling loop can update UI */
+        await new Promise(res => setTimeout(res, 200));
+      }
+
+      if (completed) {
+        setRefreshProgress(prev => ({
+          ...prev,
+          [runId]: { ...prev[runId], phase: 'completed' },
+        }));
+        toast({
+          title: 'Pipeline refreshed',
+          description: `Re-ran ${stepsReset} step(s) from "${firstLabel}" with latest audit findings. Artifacts are live.`,
+        });
+        await load();  /* Reload campaign panel so the fresh artifacts surface */
+      } else {
+        setRefreshProgress(prev => ({
+          ...prev,
+          [runId]: { ...prev[runId], phase: 'failed', error: failedReason || 'execution loop ended without completing' },
+        }));
+        toast({
+          title: 'Refresh paused',
+          description: failedReason || 'Execution didn\'t reach a clean completion — check the pipeline dashboard for details.',
+          variant: 'destructive',
+        });
+      }
+
+      /* Clear the final state after 12s so the user has time to see it */
+      setTimeout(() => {
+        setRefreshProgress(prev => { const n = { ...prev }; delete n[runId]; return n; });
+      }, 12000);
+
     } catch (e: any) {
-      toast({ title: 'Refresh failed', description: e?.message || 'unknown', variant: 'destructive' });
+      setRefreshProgress(prev => ({ ...prev, [runId]: { phase: 'failed', error: e?.message || 'unknown' } }));
+      toast({ title: 'Refresh crashed', description: e?.message || 'unknown', variant: 'destructive' });
+      setTimeout(() => {
+        setRefreshProgress(prev => { const n = { ...prev }; delete n[runId]; return n; });
+      }, 10000);
     } finally {
-      setRefreshingRunId(null);
+      refreshingRunsRef.current.delete(runId);
     }
   };
 
@@ -893,40 +1002,95 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {data.pipeline_runs.map((r: any) => {
                     const isCompleted = r.status === 'completed';
-                    const isRefreshing = refreshingRunId === r.id;
+                    const progress = refreshProgress[r.id];
+                    const isRefreshing = !!progress && (progress.phase === 'resetting' || progress.phase === 'executing');
                     return (
-                      <div key={r.id} style={{ fontSize: 11.5, padding: 8, background: 'rgba(255,255,255,0.02)', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                        <span>
-                          <code style={{ fontSize: 10 }}>{r.id.slice(0, 8)}</code> · {r.pipeline_type} · {r.status}
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ color: 'rgba(150,150,170,0.7)' }}>
-                            {r.steps_completed || 0}/{r.step_count} steps · {new Date(r.started_at).toLocaleDateString()}
+                      <div key={r.id} style={{ fontSize: 11.5, padding: 8, background: 'rgba(255,255,255,0.02)', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <span>
+                            <code style={{ fontSize: 10 }}>{r.id.slice(0, 8)}</code> · {r.pipeline_type} · {r.status}
                           </span>
-                          {/* Phase 17.5 — Refresh from audit button */}
-                          {isCompleted && (
-                            <button
-                              onClick={() => handleRefreshPipelineFromAudit(r.id)}
-                              disabled={isRefreshing}
-                              title="Reset audit-consuming steps (competitor_snapshot, content_brief, forecast, client_update, internal_handover) so they re-run with the latest technical audit's findings"
-                              style={{
-                                fontSize: 10,
-                                padding: '3px 8px',
-                                borderRadius: 4,
-                                background: isRefreshing ? 'rgba(140,140,160,0.1)' : 'rgba(120,160,255,0.12)',
-                                border: '1px solid rgba(120,160,255,0.3)',
-                                color: 'rgba(180,200,255,0.95)',
-                                cursor: isRefreshing ? 'wait' : 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                              }}
-                            >
-                              {isRefreshing ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-                              {isRefreshing ? 'Refreshing…' : 'Refresh from audit'}
-                            </button>
-                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ color: 'rgba(150,150,170,0.7)' }}>
+                              {r.steps_completed || 0}/{r.step_count} steps · {new Date(r.started_at).toLocaleDateString()}
+                            </span>
+                            {/* Phase 17.5 — Refresh from audit button (only on completed runs that aren't currently being refreshed) */}
+                            {isCompleted && !isRefreshing && (
+                              <button
+                                onClick={() => handleRefreshPipelineFromAudit(r.id, r.pipeline_type)}
+                                title="Reset audit-consuming steps (competitor_snapshot, content_brief, forecast, client_update, internal_handover) so they re-run with the latest technical audit's findings. Re-execution runs immediately."
+                                style={{
+                                  fontSize: 10,
+                                  padding: '3px 8px',
+                                  borderRadius: 4,
+                                  background: 'rgba(120,160,255,0.12)',
+                                  border: '1px solid rgba(120,160,255,0.3)',
+                                  color: 'rgba(180,200,255,0.95)',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}
+                              >
+                                <RefreshCw size={10} />
+                                Refresh from audit
+                              </button>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Phase 17.5.1 — inline progress display so user sees what's happening */}
+                        {progress && (
+                          <div style={{
+                            padding: '6px 8px',
+                            borderRadius: 4,
+                            background:
+                              progress.phase === 'failed'    ? 'rgba(220,90,90,0.10)' :
+                              progress.phase === 'completed' ? 'rgba(110,200,140,0.10)' :
+                                                               'rgba(120,160,255,0.10)',
+                            border: '1px solid ' + (
+                              progress.phase === 'failed'    ? 'rgba(220,90,90,0.30)' :
+                              progress.phase === 'completed' ? 'rgba(110,200,140,0.30)' :
+                                                               'rgba(120,160,255,0.30)'
+                            ),
+                            fontSize: 11,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}>
+                            {progress.phase === 'resetting' && (
+                              <>
+                                <Loader2 size={12} className="animate-spin" />
+                                <span>Resetting audit-consuming steps…</span>
+                              </>
+                            )}
+                            {progress.phase === 'executing' && (
+                              <>
+                                <Loader2 size={12} className="animate-spin" />
+                                <span>
+                                  Re-running step {(progress.currentStepIndex ?? 0) + 1}
+                                  {progress.totalSteps ? ` of ${progress.totalSteps}` : ''}
+                                  {progress.currentStepLabel ? `: "${progress.currentStepLabel}"` : ''}
+                                  {!progress.currentStepLabel && progress.firstStepLabel ? `: "${progress.firstStepLabel}"` : ''}
+                                </span>
+                              </>
+                            )}
+                            {progress.phase === 'completed' && (
+                              <>
+                                <CheckCircle2 size={12} style={{ color: 'rgba(110,200,140,0.95)' }} />
+                                <span>
+                                  Refreshed {progress.stepsReset || 0} step{(progress.stepsReset === 1) ? '' : 's'} with latest audit data. Artifacts are live.
+                                </span>
+                              </>
+                            )}
+                            {progress.phase === 'failed' && (
+                              <>
+                                <AlertCircle size={12} style={{ color: 'rgba(220,90,90,0.95)' }} />
+                                <span>Refresh failed: {progress.error || 'unknown reason'}</span>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

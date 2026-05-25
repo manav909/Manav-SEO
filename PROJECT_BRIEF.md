@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.5 manual refresh-from-audit button) · **Live commit:** `2846688` (Phase 17.4 client_update + internal_handover audit-anchored). Phase 17.5 ships the L1 refresh primitive — a manual "Refresh from audit" button next to each completed pipeline run in SeoCampaignsPanel. When clicked, resets the 5 audit-consuming steps (competitor_snapshot, content_brief, forecast, client_update, internal_handover) to pending so they re-run with the latest audit findings. Touches 6 files (1 interface tag, 5 step taggings, new helper, new backend route, dispatcher case, typed client function, UI button + handler). All artifact-producing audit-consuming steps now have a manual refresh path. Phase 17.6 (cron-driven selective auto-refresh) is next.
+**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.5.1 hotfix — refresh drives execution) · **Live commit:** `a578841` (Phase 17.5 manual refresh button). Phase 17.5.1 is a hotfix: 17.5's button reset steps but then asked the user to navigate to the pipeline dashboard to re-run. That's broken UX — user clicks, toast flashes, nothing visible happens. 17.5.1 owns the full lifecycle: reset → drive execution loop (mirrors SeasonPipelineDashboard's pattern) → inline progress display per step → final completed/failed state → reload campaign panel. The button now actually does what it says.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1060,6 +1060,41 @@ L1 refresh primitive. Solves the "pipeline ran once, audit refreshed, artifacts 
 - 5 smoke tests of `findFirstAuditDependentStepIndex` (multi-step definition with first audit-consumer at idx 2, no audit consumers, only-last audit consumer, null definition, no-steps definition) all pass.
 
 **Diff:** 7 files changed, 209 insertions, 11 deletions.
+
+### Phase 17.5.1 — Refresh button drives execution (hotfix, 2026-05-24)
+
+**Why this exists:** Phase 17.5 shipped a refresh button that reset audit-consuming steps but then displayed a toast saying "open the pipeline dashboard to drive re-execution." Manav clicked the button in production and reported "one confirmation pop up came and then started but stopped immediately and I couldn't see anything happened or result." That's exactly what 17.5's flow produced — backend silently did its job, toast disappeared in 3 seconds, nothing visible happened. The user shouldn't have to know there's a separate dashboard.
+
+**What 17.5.1 fixes:**
+The handler now owns the complete refresh lifecycle:
+1. **Resetting phase** — calls `seasonPipelineRefreshFromAudit`, shows inline "Resetting audit-consuming steps…" with spinner on the run row
+2. **Executing phase** — loops `seasonPipelineExecuteNext` calls (same pattern as SeasonPipelineDashboard's `driveExecution`), updating inline "Re-running step X of Y: 'step label'" as each step completes
+3. **Completed phase** — shows green check + "Refreshed N steps with latest audit data. Artifacts are live." for 12 seconds, then auto-clears
+4. **Failed phase** — shows red alert + specific error reason for 10 seconds
+
+**State architecture:**
+- `refreshProgress: Record<runId, RefreshState>` — per-run progress map so multiple runs can refresh in parallel (though usually only one at a time in practice)
+- `refreshingRunsRef: useRef<Set<string>>` — double-fire guard preventing the same run being refreshed twice
+- Per-step status updates flow from `seasonPipelineExecuteNext`'s return value (`step_index`, `step_label`, `run_status`, `no_more_steps`)
+
+**Loop safety:**
+- Hard cap at 30 step kicks (audit-consuming pipeline has 5 audit-dependent steps; the cap is generous safety margin)
+- Terminal states (`completed` / `failed` / `cancelled` / `no_more_steps`) break the loop immediately
+- 200ms sleep between kicks lets React render progress updates and the polling loop catch up
+
+**UI changes:**
+- Pipeline run rows became flex-column instead of flex-row to accommodate the inline progress strip below the row header
+- Refresh button hides during refresh (replaced by the inline strip)
+- Three distinct visual states (blue executing, green completed, red failed) — clear status at a glance, no ambiguity
+
+**Files changed:** 1 (`src/components/pm/SeoCampaignsPanel.tsx`).
+
+**Verification:**
+- Frontend TS baseline: 27 (unchanged). No errors introduced in SeoCampaignsPanel.
+- Vite build: green.
+- Pattern mirrors the proven SeasonPipelineDashboard execute loop — well-tested code path.
+
+**Diff:** 1 file changed, 217 insertions, 53 deletions.
 
 ### Session handoff for tech audit work
 
