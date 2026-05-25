@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D4.2 — Documents scroll layout fix) · **Live commit:** `48b8b8e` (Phase D4.1 project names + markdown formatting). Phase D4.2 fixes the scroll bug Manav reported: scrolling the list pane or detail pane caused the whole page to scroll instead of the inner pane. Root cause: page used `min-h-screen` (grows past viewport) instead of `h-screen overflow-hidden` (viewport-locked). Plus the flex chain leaked because intermediate `flex-1` containers lacked `min-h-0` — flex children compute height from content by default, defeating `overflow-hidden`. Fixed 7 spots in `Documents.tsx`: root `min-h-screen` → `h-screen overflow-hidden`, added `min-h-0` to inner flex column + three-pane row + list pane + list ScrollArea + detail body ScrollArea, added `min-h-0 min-w-0` to DetailPane root + its loading/empty states. Result: PortalNav + page header + KPI strip + (optional campaign filter banner) stay fixed; only the sidebar, list, and detail body scroll within their own panes.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D-audit + Phase 17.1-fix) · **Live commit:** `34c274a` (Phase D4.2 scroll fix). Two fixes shipped this session: (1) tech audits now appear in Documents; (2) competitor snapshot restored to full competitive intelligence.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1601,6 +1601,40 @@ Documents.tsx and CampaignDocumentsSection.tsx both now use `<ArtifactMarkdown b
 
 **Discipline lesson logged:** App-shell pages need `h-screen overflow-hidden` on the root, not `min-h-screen`. And every flex column that wraps a scrollable child needs `min-h-0` (same for `min-w-0` horizontally). These two patterns together are the difference between "inner panes scroll independently like Slack/Discord" vs "whole page scrolls like a document". This is a foundational Tailwind+Radix layout pattern that should be documented somewhere central — file it in the brief for future reference.
 
+### Phase D-audit — Wire tech audits into Documents (2026-05-25)
+
+**Problem:** Tech audits never appeared in Documents. Root cause: `writeReportToPanel` writes to `seo_campaign_reports`; the `artifacts` table (which Documents reads) was only populated by `persistPipelineRunArtifacts` in the pipeline runner. Tech audits run through a separate path (`runTechnicalAudit` → `writeReportToPanel`) with zero connection to `artifacts`. The Documents sidebar already showed "Audit Report" as a filter type — it was waiting for data that never arrived.
+
+**Fix:** Added `import { persistArtifacts } from "./artifacts.js"` to `seo-technical-audit.ts`. After every successful `writeReportToPanel` call, a best-effort `persistArtifacts` call writes the audit report into the `artifacts` table with `artifact_kind: 'audit_report'`, `source_kind: 'technical_audit'`, keyword from the campaign, target URL, and all panel/project/campaign IDs. Failure is logged and non-blocking — the audit completes regardless.
+
+**Files changed:** 1 — `api/lib/seo-technical-audit.ts` (+35 lines).
+
+**Verification:** Vercel runtime TS clean on touched file. Frontend baseline 27 / API ceiling 12 / Vite green.
+
+### Phase 17.1-fix — Restore competitor snapshot intelligence (2026-05-25)
+
+**Problem:** Phase 17.1 introduced `buildCompetitorSnapshotFromAudit` which used SerpAPI-verified URLs (good) but intentionally omitted `page_format`, `structure_pattern`, `why_it_ranks` (bad). The output was a URL-only list — no competitive intelligence. All 59 documents in production showed `1. apps.apple.com / URL: ...` with nothing else. LLM spend showed <$0.01 because `llm_calls: 0` was set for every audit-path snapshot.
+
+**Root cause statement:** Phase 17.1 was correct to eliminate LLM URL hallucination. It was wrong to eliminate all qualitative analysis. The constraint was "don't ask the LLM to find URLs" — not "don't ask the LLM about URLs you already have." These are different instructions.
+
+**Fix:** New `enrichCompetitorSnapshotWithLlm` function in `season-pipeline-rank-for-keyword.ts`. After `buildCompetitorSnapshotFromAudit` returns verified URLs, one targeted `callLlmJson` call (no web search, Sonnet-4-6, ~1200 tokens, 40s timeout) asks the LLM to characterise each known page: `page_format`, `word_count_estimate`, `structure_pattern`, `why_it_ranks`. The LLM receives the real URLs as grounding input — it cannot hallucinate the page identities because they're given to it. The result is merged back onto the SerpAPI top_pages. If the LLM call fails, the URL-only snapshot is returned as fallback. `llm_calls: 1` correctly reported on the step result. `_llm_enriched: true` flag on the output for observability.
+
+**What the competitor snapshot now looks like (audit path):**
+- `page_format`: "app_store_listing" / "tool" / "landing_page" etc — real answer, not guessed URL
+- `word_count_estimate`: LLM inference from domain/URL pattern
+- `structure_pattern`: "App store listing with ratings, screenshots, CTA, IAP detail" etc
+- `why_it_ranks`: "Domain authority of apps.apple.com + exact app-store intent match" etc
+- Shared patterns: SerpAPI-verified (AI Overview, PAA count, ads, diffuse intent)
+- Content gap: SerpAPI-verified (PAA unanswered, word-count gap)
+
+**Cost impact:** +~$0.10 per competitor snapshot step that uses the audit path (1 Sonnet call). Previously $0. Audit-sourced path is still cheaper than the LLM web-search fallback ($0.30-0.50).
+
+**Files changed:** 1 — `api/lib/season-pipeline-rank-for-keyword.ts` (+75 lines net).
+
+**Verification:** Vercel runtime TS clean. Frontend baseline 27 / API ceiling 12 / Vite green.
+
+**Discipline lesson logged:** "Avoid hallucination" ≠ "avoid LLM." Phase 17.1 conflated the two. The correct principle is: use real data for facts that can be verified (URLs, word counts, SERP features — all from SerpAPI); use LLM for interpretation of known facts (what does this real URL's page look like, why does it rank). The boundary is verification, not participation.
+
 ### Session handoff for tech audit work
 
-> "Continuing SEO SEASON tech audit. Brief attached + ARCHITECTURE.md available. Phase 16.11 HTML renderer shipped. Last verified production audit was on alphasoftware.com / 'app maker' keyword 2026-05-23. Re-audit to validate Phase 16.11 HTML output not yet run. Don't add new api/*.ts files — at 12-function ceiling. Don't patch — complete files only."
+> "Continuing SEO SEASON. Brief attached. Phase D-audit + 17.1-fix shipped: tech audits now appear in Documents (audit_report kind), competitor snapshots restored to full intelligence (SerpAPI URLs + LLM page analysis). Live HEAD: 34c274a. TS=27, functions=12. Refresh from audit on any existing campaign to get enriched competitor snapshots. Don't add new api/*.ts files — at 12-function ceiling. Don't patch — complete files only."

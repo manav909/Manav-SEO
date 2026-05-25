@@ -510,28 +510,36 @@ const stepCompetitorSnapshot = {
        fresh LLM call (which can hallucinate URLs). */
     const auditSourced = buildCompetitorSnapshotFromAudit(ctx.audit_findings, keyword);
     if (auditSourced) {
-      /* Persist to cache too so downstream readers querying by knowledge
-         type still find a current snapshot. */
+      /* Phase 17.1 gave us real verified URLs from SerpAPI.
+         That eliminated hallucinated URLs — good.
+         But it also eliminated all competitive intelligence — bad.
+         Fix: use the real URLs as grounding for a targeted LLM enrichment
+         call. The LLM doesn't need to find the URLs (SerpAPI did that);
+         it only needs to characterise each known page. One cheap Haiku
+         call (~300 output tokens) → zero URL hallucination + full intel. */
+      const enriched = await enrichCompetitorSnapshotWithLlm(auditSourced, keyword);
+
+      /* Persist to cache so downstream readers still find a snapshot */
       await cacheKnowledge({
         projectId: ctx.projectId,
         knowledgeType: 'competitor_snapshot',
         key: cacheKey,
-        value: auditSourced,
-        summary: `Top ${auditSourced.top_pages.length} for "${keyword}" (audit-sourced)`,
+        value: enriched,
+        summary: `Top ${enriched.top_pages.length} for "${keyword}" (SerpAPI + LLM)`,
         source: 'technical_audit',
-        sourceUrls: auditSourced.top_pages.map((p: any) => p.url).filter(Boolean),
-        confidence: 0.95,  /* SerpAPI live data is highest trust band */
+        sourceUrls: enriched.top_pages.map((p: any) => p.url).filter(Boolean),
+        confidence: 0.92,
       });
       return {
         ok: true,
-        output: auditSourced,
+        output: enriched,
         artifact: {
           kind: 'competitor_snapshot',
           title: `Top-ranking pages for "${keyword}"`,
-          body: renderCompetitorArtifact(keyword, auditSourced),
+          body: renderCompetitorArtifact(keyword, enriched),
         },
-        honest_note: `Sourced from technical audit — ${auditSourced._source_note} of ${auditSourced.top_pages.length} top URLs. No LLM call required; data is verified-real not LLM-inferred.`,
-        llm_calls: 0,
+        honest_note: `Sourced from technical audit (${enriched._source_note}) — ${enriched.top_pages.length} verified URLs enriched with LLM page analysis.`,
+        llm_calls: enriched._llm_enriched ? 1 : 0,
       };
     }
 
@@ -714,6 +722,74 @@ function buildCompetitorSnapshotFromAudit(
     shared_patterns,
     content_gap_opportunity,
     _source_note: ctrEv.cache_hit ? `cached SerpAPI snapshot` : `fresh SerpAPI fetch`,
+  };
+}
+
+/* ─── Enrich audit-sourced competitor snapshot with LLM page analysis ──
+   Phase 17.1 gave us real verified URLs from SerpAPI but stripped all
+   qualitative intelligence (page_format, structure_pattern, why_it_ranks).
+   This function takes the verified URL list and makes ONE cheap Haiku call
+   to characterise each page — no web search needed (URLs are already known),
+   so there is zero hallucination risk on the page identities.
+
+   Falls back to the URL-only snapshot if the LLM call fails. */
+async function enrichCompetitorSnapshotWithLlm(
+  snapshot: { top_pages: any[]; shared_patterns: string[]; content_gap_opportunity: string; _source_note: string },
+  keyword: string,
+): Promise<typeof snapshot & { _llm_enriched?: boolean }> {
+  if (!ANTHROPIC_API_KEY || snapshot.top_pages.length === 0) {
+    return snapshot;
+  }
+
+  const pageList = snapshot.top_pages.slice(0, 8).map((p, i) =>
+    `${i + 1}. ${p.url}  (domain: ${p.domain || new URL(p.url).hostname})`
+  ).join('\n');
+
+  const sys = `You are an SEO analyst. You will receive a list of real URLs currently ranking for a keyword.
+For each URL, infer based on the domain, URL path, and SEO knowledge:
+- page_format: one of "guide" | "listicle" | "comparison" | "tool" | "product_page" | "app_store_listing" | "blog" | "landing_page" | "other"
+- word_count_estimate: one of "short (<800)" | "medium (800-2000)" | "long (2000-4000)" | "very_long (>4000)"  
+- structure_pattern: one sentence — what sections or flow this type of page typically uses
+- why_it_ranks: one sentence — the specific authority or content signal that wins this query slot
+
+Do NOT make up facts. If you are uncertain about a field, say so honestly.
+Reply with ONLY valid JSON — no prose, no markdown fences:
+{
+  "pages": [
+    { "url": "...", "page_format": "...", "word_count_estimate": "...", "structure_pattern": "...", "why_it_ranks": "..." }
+  ]
+}`;
+
+  const usr = `Keyword: "${keyword}"\n\nVerified top-ranking URLs (from live SerpAPI fetch):\n${pageList}\n\nCharacterise each page.`;
+
+  const r = await callLlmJson({ systemPrompt: sys, userMessage: usr, maxTokens: 1200, timeoutMs: 40_000 });
+
+  if (!r.ok || !Array.isArray(r.parsed?.pages)) {
+    console.warn(`[enrichCompetitorSnapshot] LLM enrichment failed (${r.error}) — returning URL-only snapshot`);
+    return snapshot;
+  }
+
+  /* Merge LLM fields back onto the SerpAPI-sourced top_pages */
+  const enrichedByUrl: Record<string, any> = {};
+  for (const p of r.parsed.pages) {
+    if (p.url) enrichedByUrl[p.url] = p;
+  }
+
+  const enrichedPages = snapshot.top_pages.map(p => {
+    const llmData = enrichedByUrl[p.url] || {};
+    return {
+      ...p,
+      page_format:        llmData.page_format        || undefined,
+      word_count_estimate:llmData.word_count_estimate|| undefined,
+      structure_pattern:  llmData.structure_pattern  || undefined,
+      why_it_ranks:       llmData.why_it_ranks       || undefined,
+    };
+  });
+
+  return {
+    ...snapshot,
+    top_pages: enrichedPages,
+    _llm_enriched: true,
   };
 }
 

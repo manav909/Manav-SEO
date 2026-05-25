@@ -21,6 +21,7 @@
 
 import { db } from "./db.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
+import { persistArtifacts } from "./artifacts.js";
 import { fetchSerpFeatures, summarizeSerpFeatures } from "./serpapi.js";
 import { ga4PullPageMetrics } from "./pm-ga4.js";
 /* Phase 16.9 — retired the 6-lens module in favor of a single deep
@@ -578,6 +579,42 @@ export async function runTechnicalAudit(opts: {
       updatePanelStatus: true,
       newPanelStatus:    panelStatus,
     });
+
+    /* Phase D-audit — dual-write audit report into the artifacts table so
+       Documents page can surface it alongside pipeline artifacts.
+       Best-effort: failure is logged but does NOT block the audit return. */
+    if (reportR.success && reportR.report_id) {
+      try {
+        await persistArtifacts([{
+          source_kind:    'technical_audit',
+          source_id:      reportR.report_id,
+          source_step_id: 'technical_audit',
+          artifact_kind:  'audit_report',
+          title:          `Technical audit: ${cleanUrl(target.url)}`,
+          keyword:        c.keyword || null,
+          target_url:     target.url,
+          body:           bodyMd,
+          body_format:    'markdown',
+          metadata: {
+            audit_run_id:   auditRunId,
+            red_count:      redCount,
+            amber_count:    amberCount,
+            green_count:    greenCount,
+            panel_status:   panelStatus,
+            triggered_by:   triggeredBy,
+            confidence:     overallRating,
+          },
+          project_id:          c.project_id,
+          campaign_id:         opts.campaignId,
+          panel_id:            panelId || null,
+          generation_cost_usd: undefined,
+          llm_calls:           0,
+          serpapi_calls:       0,
+        }]);
+      } catch (artErr: any) {
+        console.warn(`[runTechnicalAudit] artifacts persist failed (non-blocking): ${artErr?.message}`);
+      }
+    }
 
     /* Create opportunities for every RED finding */
     for (const red of findings.filter(f => f.severity === 'red')) {
