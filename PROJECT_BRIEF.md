@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.3 — diagnostic surface on refresh failure) · **Live commit:** `2980315` (Phase 17.5.2 duplicate-retryStep hotfix). Phase 17.5.3: when the refresh-from-audit execution loop ends in a failed state, the inline strip now fetches `seasonPipelineGet` and surfaces WHICH step failed + the actual `error_message` from the step row. The generic "Run ended with status: failed" was useless for triage. Also extended auto-clear timeouts on failure states (60s for execution failures, 30s for reset/crash) so the user has time to read the diagnosis. Manav reported run `81f36f07` ran for multiple steps and failed at last — this phase makes the next such failure self-diagnosable from the panel.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.4 — refresh opens live dashboard) · **Live commit:** `ed72af2` (Phase 17.5.3 failure diagnostics). Phase 17.5.4: clicking "Refresh from audit" now opens the same SEASON live pipeline dashboard the user originally saw when launching from chat. The 8-block visualization mounts via a custom `season:open-pipeline-dashboard` window event consumed by SeasonModal. The dashboard is `mounted-outside-modal-gate` so it appears regardless of whether the SEASON modal panel itself is open. Manav's symptom — "why am I not seeing the visual campaign as it showed all 8 blocks first time" — fixed. Panel still owns execution driving; dashboard owns display. Two-component separation maintained.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1161,6 +1161,48 @@ That returns the failure cause directly. Most likely candidates given the step o
 - Vite build green.
 
 **Diff:** 1 file changed, 76 insertions, 13 deletions.
+
+### Phase 17.5.4 — Refresh opens live SEASON dashboard (2026-05-25)
+
+**Manav's question:** "Why am I not seeing the visual campaign as it showed all 8 blocks first time when campaign run from the chat?"
+
+**Root cause traced:** When a pipeline is launched from chat, `SeasonModal` directly sets `activeRunId` via `setActiveRunId(runResult.run_id)` — that triggers `SeasonPipelineDashboard` to mount in the AnimatePresence block. The dashboard renders the 8 step blocks with live polling.
+
+The refresh-from-audit flow from `SeoCampaignsPanel` reset steps + drove execution but **never told SeasonModal** to mount the dashboard. The panel's tiny inline progress strip from 17.5.1-17.5.3 was all the visual feedback available. Functionally the run was happening; visually it was invisible relative to the chat-launch experience.
+
+**The fix — event-driven dashboard mount:**
+
+`SeasonModal.tsx` (+31 lines): new `useEffect` that listens for `window` event `season:open-pipeline-dashboard` with detail `{ runId, pipelineType, stepCount, label }`. When fired, it sets `activeRunId` + companion state, causing the dashboard to mount with the supplied run. Key insight verified by reading the component: the dashboard renders OUTSIDE the `{isOpen && ...}` block — it appears whenever `activeRunId` is set, independent of modal panel state. So just setting state is enough; no need to also `open()` the modal.
+
+`SeoCampaignsPanel.tsx` (+29 lines):
+- `handleRefreshPipelineFromAudit` signature extended to accept `stepCount` + `keyword` so the dashboard mounts with correct expected-step count and label
+- Button onClick now passes `r.step_count` and `data.campaign.keyword`
+- Before driving execution, dispatches `season:open-pipeline-dashboard` with the four detail fields
+- Inline progress strip kept (still useful for the panel-local context) but copy updated: "Resetting audit-consuming steps… (live dashboard opening above)" and "see live dashboard above for per-step view"
+
+**Component separation:**
+- Panel owns: reset + drive execution + reload campaign state on completion
+- Dashboard owns: live display via its own DB polling loop
+- They communicate through database state — no coupling between them
+
+**What the user sees now:**
+1. Click "Refresh from audit" in panel
+2. Confirm dialog
+3. SEASON live pipeline dashboard cinematically expands from the orb (same animation as first chat launch)
+4. 8 step blocks render — first 3 already completed (gray check), audit-consuming ones now pending (queued)
+5. As panel drives execution, each block progresses through running → completed states with live timestamps + duration
+6. Panel's inline strip below shows panel-local context ("Re-running step 5 of 8: 'Generate the full content brief'") in case the user has scrolled away from the dashboard
+7. On completion: dashboard shows summary; panel reloads campaign with fresh artifacts; both pieces of UI converge
+
+**Files changed:** 2 — `src/components/season/SeasonModal.tsx`, `src/components/pm/SeoCampaignsPanel.tsx`.
+
+**Verification:**
+- Frontend TS baseline 27 (unchanged). No errors in either changed file.
+- Vite green.
+
+**Diff:** 2 files changed, 60 insertions, 4 deletions.
+
+**Discipline lesson logged:** When wiring new UX flows that touch existing user-visible primitives (like "the pipeline dashboard"), use the existing primitive directly rather than re-implementing inline. Phases 17.5.1-17.5.3 built inline-progress UI in the panel — useful, but it was reinventing what the dashboard already did better. Should have asked from 17.5 onward: "what does the user already see when this kind of thing happens, and can I just reuse that?"
 
 ### Session handoff for tech audit work
 

@@ -590,12 +590,31 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
        6. Show final completed/failed state for ~10s so user sees the result
      The double-fire guard prevents the same run being refreshed twice if
      the user clicks fast or React re-renders mid-flight. */
-  const handleRefreshPipelineFromAudit = async (runId: string, pipelineType: string) => {
+  const handleRefreshPipelineFromAudit = async (
+    runId: string,
+    pipelineType: string,
+    stepCount: number,
+    keyword: string,
+  ) => {
     if (refreshingRunsRef.current.has(runId)) return;
     if (!confirm('Reset all audit-consuming pipeline steps (competitor snapshot, content brief, forecast, client update, internal handover) so they re-run with the latest technical audit\'s findings?\n\nThis will replace those artifacts with fresh ones. Other steps (keyword research, GSC context, strategy plan) are not affected. Re-execution runs immediately and may take 2-3 minutes.')) return;
 
     refreshingRunsRef.current.add(runId);
     setRefreshProgress(prev => ({ ...prev, [runId]: { phase: 'resetting' } }));
+
+    /* Phase 17.5.4 — open the live SEASON pipeline dashboard so the user sees
+       the same 8-block visualization they saw on the original campaign launch.
+       The dashboard mounts via SeasonModal's window event listener — it polls
+       the DB independently and renders live progress per step. The panel
+       continues to own execution driving + reset; the dashboard owns display. */
+    window.dispatchEvent(new CustomEvent('season:open-pipeline-dashboard', {
+      detail: {
+        runId,
+        pipelineType,
+        stepCount,
+        label: keyword ? `Refreshing "${keyword}"` : 'Refreshing pipeline',
+      },
+    }));
 
     try {
       /* Step 1: reset audit-consuming steps */
@@ -1063,8 +1082,13 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                             {/* Phase 17.5 — Refresh from audit button (only on completed runs that aren't currently being refreshed) */}
                             {isCompleted && !isRefreshing && (
                               <button
-                                onClick={() => handleRefreshPipelineFromAudit(r.id, r.pipeline_type)}
-                                title="Reset audit-consuming steps (competitor_snapshot, content_brief, forecast, client_update, internal_handover) so they re-run with the latest technical audit's findings. Re-execution runs immediately."
+                                onClick={() => handleRefreshPipelineFromAudit(
+                                  r.id,
+                                  r.pipeline_type,
+                                  r.step_count || 8,
+                                  data.campaign.keyword || '',
+                                )}
+                                title="Reset audit-consuming steps (competitor_snapshot, content_brief, forecast, client_update, internal_handover) so they re-run with the latest technical audit's findings. The live 8-block pipeline dashboard will appear over the page so you can watch progress per step."
                                 style={{
                                   fontSize: 10,
                                   padding: '3px 8px',
@@ -1107,7 +1131,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                             {progress.phase === 'resetting' && (
                               <>
                                 <Loader2 size={12} className="animate-spin" />
-                                <span>Resetting audit-consuming steps…</span>
+                                <span>Resetting audit-consuming steps… <span style={{ color: 'rgba(150,170,210,0.85)' }}>(live dashboard opening above)</span></span>
                               </>
                             )}
                             {progress.phase === 'executing' && (
@@ -1118,6 +1142,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                                   {progress.totalSteps ? ` of ${progress.totalSteps}` : ''}
                                   {progress.currentStepLabel ? `: "${progress.currentStepLabel}"` : ''}
                                   {!progress.currentStepLabel && progress.firstStepLabel ? `: "${progress.firstStepLabel}"` : ''}
+                                  <span style={{ color: 'rgba(150,170,210,0.85)' }}> · see live dashboard above for per-step view</span>
                                 </span>
                               </>
                             )}

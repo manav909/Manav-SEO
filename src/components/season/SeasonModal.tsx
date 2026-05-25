@@ -252,6 +252,37 @@ export default function SeasonModal() {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [input, isOpen, selectedProjectId, pendingStructure, explorationResponse]);
 
+  /* Phase 17.5.4 — listen for external requests to open the live pipeline dashboard.
+     Used by the campaign panel's "Refresh from audit" button: when the panel
+     triggers a refresh, it dispatches `season:open-pipeline-dashboard` so the
+     same 8-block visualization the user saw on first campaign launch reappears.
+     Without this, the panel's tiny inline progress strip is all the user sees,
+     which is what prompted Manav to ask "why am I not seeing the visual campaign?".
+
+     The dashboard component renders OUTSIDE the modal's open/close gate (see
+     <AnimatePresence> below) — it appears whenever activeRunId is set,
+     independent of whether the SEASON modal panel itself is open. So we
+     just set the run state; the dashboard mounts on its own.
+
+     Event detail shape: { runId, pipelineType, stepCount, label } */
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        runId?: string;
+        pipelineType?: PipelineType;
+        stepCount?: number;
+        label?: string;
+      } | undefined;
+      if (!detail?.runId) return;
+      setActiveRunId(detail.runId);
+      setActiveRunStepCount(detail.stepCount || 8);
+      setActiveRunLabel(detail.label || 'Pipeline run');
+      setActiveRunType(detail.pipelineType || 'rank_for_keyword');
+    };
+    window.addEventListener('season:open-pipeline-dashboard', handler);
+    return () => window.removeEventListener('season:open-pipeline-dashboard', handler);
+  }, []);
+
   /* Phase 21 Block 2 — commit the campaign structure and launch the pipeline.
      This is what fires when the user clicks "Yes, set it up" in the preview
      panel. Two steps:
