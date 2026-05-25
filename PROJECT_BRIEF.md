@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.7 — single execution driver + correct elapsed) · **Live commit:** Phase 17.5.6 staged for deploy. Phase 17.5.7 — the refresh actually ran end-to-end successfully but Manav's final screenshot showed two cosmetic bugs: `Pipeline ran in 268853.1s` (74 hours) and `7/8 steps completed` despite all 8 cards showing green. Root cause of "7/8": TWO parallel execute loops — the panel's (added in 17.5.1) AND the dashboard's (existing in `driveExecution` useEffect) both called `seasonPipelineExecuteNext` on the same runId, racing on counter increments. Fix: panel no longer drives execution; only the dashboard does. Panel reverts to passive polling for the run-settled signal. Root cause of "268853s": `finalizeRun` computed elapsed from `Date.now() - run.started_at`, where `started_at` is the ORIGINAL run launch (3 days ago) not the refresh start. Fix: elapsed now sums per-step `duration_ms` values, which is always correct regardless of retry history.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.8 — reconcile route for damaged runs) · **Live commit:** `c5cddb9` (Phase 17.5.7 single execution driver). Phase 17.5.8 ships a reconcile primitive — backend route `bs_season_pipeline_reconcile` that re-runs finalizeRun with a new `force` flag, regenerating run.steps_completed / steps_failed / honest_summary / final_artifacts from the actual step row state. Used for repairing the runs damaged during the Phase 17.5.1-17.5.6 double-driver window where panel + dashboard raced on the same execution loop, producing inconsistent counters and stale honest_summary text (e.g. Manav's `81f36f07` screenshot showing top says "5 of 8 completed" while summary says "7/8" while all 8 step blocks render as completed). Includes SQL migration `sql/phase-17-5-8-reconcile-drifted-runs.sql` for inspecting + repairing counter columns immediately, plus invocation path for full reconcile (incl. honest_summary regeneration) via the new route.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1289,6 +1289,34 @@ The panel's `handleRefreshPipelineFromAudit` (Phase 17.5.1) ran an execute loop 
 **Diff:** 2 files changed, 86 insertions, 41 deletions.
 
 **Discipline lesson logged:** When introducing a new execution-driving mechanism, check whether an EXISTING mechanism is already driving the same operation. The dashboard's `driveExecution` was there since Phase 13a — I added a parallel loop in 17.5.1 without checking. Two drivers on a single linear pipeline is always wrong; the backend's `seasonPipelineExecuteNext` doesn't have transactional safety for concurrent callers because it was designed assuming one driver. Should have read the dashboard's mount-time behavior before deciding the panel needed its own loop. The right architecture: only ONE component owns execution at a time, and the dashboard already had that role.
+
+### Phase 17.5.8 — Reconcile route for damaged runs (2026-05-25)
+
+**Why this exists:** Phase 17.5.7 fixed the double-driver race so future runs are clean. But runs that completed during the broken window (17.5.1 deployed → 17.5.7 deployed) are in inconsistent DB state. Manav's run `81f36f07` is the canonical example: top progress says "5 of 8 completed", honest_summary text says "7/8 steps completed", and all 8 step rows show `status='completed'`. Three different stored "truths" for the same run, none matching reality.
+
+**The fix:**
+- `finalizeRun` (in `season-pipeline-runner.ts`) gained a `force?: boolean` param that bypasses the "already terminal, bail early" guard. Default false preserves the safety guard for normal execution paths.
+- New route `bsSeasonPipelineReconcile(body)` in `season-pipeline-routes.ts`: validates runId, loads the pipeline definition, calls `finalizeRun({ runId, definition, force: true })`. Returns before/after counter state plus a `changed: bool`.
+- New dispatcher case `bs_season_pipeline_reconcile` in brand-studio.
+- SQL migration `sql/phase-17-5-8-reconcile-drifted-runs.sql` provides a counter-only repair that doesn't require deploying first — useful for immediate cleanup before the route is callable.
+
+**What gets reconciled:**
+finalizeRun reads step row state and rewrites: `steps_completed`, `steps_failed`, `final_artifacts` (re-aggregated from step outputs), `honest_summary` (regenerated with post-17.5.7 elapsed-from-step-durations formula), `client_facing_summary`, `status` (computed from row state — completed/partial/failed).
+
+**Two-stage cleanup workflow:**
+1. **SQL repair** (immediate, no deploy needed) — `sql/phase-17-5-8-reconcile-drifted-runs.sql` identifies drifted runs, repairs counter columns, verifies. honest_summary text stays stale.
+2. **Route reconcile** (after this phase deploys) — `POST /api/task-engine { action: 'bs_season_pipeline_reconcile', runId: '...' }` regenerates honest_summary + everything else.
+
+**Files changed:** 3 — `api/lib/season-pipeline-runner.ts` (force param), `api/lib/season-pipeline-routes.ts` (new route), `api/lib/brand-studio.ts` (dispatcher case). Plus the SQL migration.
+
+**Verification:**
+- Vercel runtime TS clean on touched files (only pre-existing errors in war-room/grouping/campaign-engine).
+- Frontend baseline 27 (unchanged).
+- Vite green.
+
+**Diff:** 3 files changed, 83 insertions, 2 deletions + 1 new SQL file.
+
+**Discipline lesson logged:** When a bug is shipped to production and corrupts user data, ship the fix AND a repair tool for the corruption — not just the prevention. The reconcile route is reusable for any future drift scenario, not just this specific window. Investing in repair tooling at the moment of finding the bug is cheaper than building it later when more runs are damaged and more clients have already seen the broken display.
 
 ### Session handoff for tech audit work
 

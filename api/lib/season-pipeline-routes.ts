@@ -495,3 +495,71 @@ export async function bsSeasonPipelineRefreshFromAudit(body: any): Promise<any> 
     return { success: false, error: e?.message || 'refresh-from-audit failed unexpectedly' };
   }
 }
+
+/* Phase 17.5.8 — reconcile a run's counters + honest_summary against its
+   step row state. Used for repairing runs damaged during the brief Phase
+   17.5.5-17.5.6 window when the panel and dashboard both drove execution
+   in parallel, producing inconsistent counter increments. Idempotent —
+   safe to call on already-clean runs (will just rewrite identical state).
+
+   Specifically rebuilds:
+     - steps_completed / steps_failed (from step row statuses)
+     - llm_calls_used / web_searches_used (from step row sums)
+     - estimated_cost_usd
+     - honest_summary (re-rendered from current row state)
+     - final_artifacts (re-aggregated from completed step outputs)
+     - status (completed/partial/failed based on rows)
+
+   Calls finalizeRun internally with force=true to bypass the
+   "already terminal" early-return.                                       */
+export async function bsSeasonPipelineReconcile(body: any): Promise<any> {
+  const { runId } = body || {};
+  if (!runId) return { success: false, error: "runId required" };
+
+  try {
+    /* Load run to know its pipeline_type */
+    const { data: run } = await db().from("season_pipeline_runs")
+      .select("id, pipeline_type, status, steps_completed, steps_failed")
+      .eq("id", runId).maybeSingle();
+    if (!run) return { success: false, error: "run not found" };
+    const r = run as any;
+
+    /* Build the definition for this pipeline_type */
+    let definition: any;
+    if (r.pipeline_type === 'rank_for_keyword') {
+      const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
+      definition = buildRankForKeywordPipeline();
+    } else {
+      return { success: false, error: `Reconcile not implemented for pipeline_type '${r.pipeline_type}'` };
+    }
+
+    /* Capture before-state for the response so the caller can see what changed */
+    const beforeCompleted = r.steps_completed || 0;
+    const beforeFailed    = r.steps_failed    || 0;
+
+    /* Reconcile via finalizeRun with force=true */
+    const { finalizeRun } = await import("./season-pipeline-runner.js");
+    const result = await finalizeRun({ runId, definition, force: true });
+    if (!result.success) {
+      return { success: false, error: result.error || 'finalizeRun failed' };
+    }
+
+    /* Read after-state */
+    const { data: afterRun } = await db().from("season_pipeline_runs")
+      .select("status, steps_completed, steps_failed, honest_summary")
+      .eq("id", runId).maybeSingle();
+    const a = (afterRun as any) || {};
+
+    return {
+      success: true,
+      before: { steps_completed: beforeCompleted, steps_failed: beforeFailed },
+      after:  { status: a.status, steps_completed: a.steps_completed, steps_failed: a.steps_failed },
+      changed:
+        beforeCompleted !== (a.steps_completed || 0) ||
+        beforeFailed    !== (a.steps_failed    || 0),
+      note: `Reconciled. Before: ${beforeCompleted}/${a.steps_completed != null ? definition.steps.length : '?'} completed. After: ${a.steps_completed || 0}/${definition.steps.length} completed, ${a.steps_failed || 0} failed. Honest summary regenerated.`,
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'reconcile failed unexpectedly' };
+  }
+}

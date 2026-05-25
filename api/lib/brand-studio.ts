@@ -795,6 +795,12 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeasonPipelineRefreshFromAudit(body);
     }
 
+    /* Phase 17.5.8 — reconcile a run's counters + honest_summary against step row state */
+    case "bs_season_pipeline_reconcile": {
+      const { bsSeasonPipelineReconcile } = await import("./season-pipeline-routes.js");
+      return bsSeasonPipelineReconcile(body);
+    }
+
     /* Phase 14 — campaigns + opportunities */
     case "bs_seo_campaign_list": {
       const { bsSeoCampaignList } = await import("./seo-campaign-routes.js");

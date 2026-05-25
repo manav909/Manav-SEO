@@ -927,6 +927,13 @@ export async function executeNextPendingStep(opts: {
 export async function finalizeRun(opts: {
   runId: string;
   definition: PipelineDefinition;
+  /* Phase 17.5.8 — bypass the "already terminal" early-return.
+     Used by the repair route to reconcile drifted run state on runs
+     that completed during the Phase 17.5.5-17.5.6 window where the
+     dashboard + panel both drove execution and produced inconsistent
+     counters. Default false (preserves the safety guard for normal
+     execution paths). */
+  force?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     /* Load run + all step rows */
@@ -934,8 +941,8 @@ export async function finalizeRun(opts: {
       .select("*").eq("id", opts.runId).maybeSingle();
     if (!run) return { success: false, error: 'run not found' };
 
-    /* Already finalized? */
-    if (['completed', 'failed', 'cancelled'].includes((run as any).status)) {
+    /* Already finalized? Skip unless force=true. */
+    if (['completed', 'failed', 'cancelled'].includes((run as any).status) && !opts.force) {
       return { success: true };
     }
 
