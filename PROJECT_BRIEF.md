@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.5 — counter drift fix + button gate) · **Live commit:** `de75dea` (Phase 17.5.4 live SEASON dashboard). Phase 17.5.5: two bugs surfaced by Manav's screenshot of run `81f36f07` showing "12/8 steps · failed". (1) `retryFromStep` and `retryStep` were resetting step rows to pending without decrementing run-level `steps_completed` and `steps_failed` — counters drifted past `step_count` on every refresh. Now both functions recompute counters from actual step rows after reset. (2) Refresh button was gated on `status === 'completed'` — wrong, failed runs are exactly when refresh is most useful. Now gated on `status NOT IN ('running','retrying')` so completed AND failed AND interrupted runs all show the button. Includes `sql/phase-17-5-5-recompute-counters.sql` to repair existing drifted runs in production.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.6 — dashboard polling race + "Polling stopped" fix) · **Live commit:** `9936163` (Phase 17.5.5 counter drift). Phase 17.5.6 fixes a race exposed by Manav's screenshot showing the dashboard frozen at `00:01 — Polling stopped` with step 6 stuck "running" even though execution continued server-side. Two coordinated fixes: (1) `handleRefreshPipelineFromAudit` now calls `seasonPipelineRefreshFromAudit` (which flips run.status to 'retrying') BEFORE dispatching the dashboard-open event — previous order caused the dashboard's first poll to see stale 'failed' status and treat it as terminal. (2) `SeasonPipelineDashboard` polling now considers a run "really terminal" only when status is terminal AND no pending/running step rows exist — a run in 'failed' state with pending steps is mid-retry, not done.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1230,6 +1230,30 @@ Phase 17.5's button render gate was `isCompleted = r.status === 'completed'`. Th
 **Diff:** 2 files changed, 55 insertions, 3 deletions + 1 new SQL file.
 
 **Discipline lesson logged:** When a backend operation rewrites entity state, ALL derived aggregates need to be recomputed in the same transaction, not just the obvious ones. `retryFromStep` was correctly resetting step rows but ignored that step counts were *also* state on the run row. This was latent for the entire Phase 14.2 retry lifetime — the resilience model assumed only single-step retries, where one failed step going pending didn't cause visible aggregate drift. Phase 17.5's refresh-from-audit was the first thing to invoke retry mechanics at multi-step scale, which made the drift visible immediately.
+
+### Phase 17.5.6 — Dashboard polling race fix (2026-05-25)
+
+**Manav's screenshot:** SEASON dashboard open showing "Refreshing app maker", timer stuck at `00:01`, orange "Polling stopped" indicator, steps 1-5 marked completed, step 6 frozen "RUNNING", steps 7-8 pending. Execution was actually continuing server-side but no live updates reached the UI.
+
+**Bug 1: Dispatch order race in handleRefreshPipelineFromAudit.**
+Phase 17.5.4 dispatched the dashboard-open event FIRST, then called `seasonPipelineRefreshFromAudit`. The dashboard mounted and started polling within ~1 second. But `retryFromStep` hadn't yet flipped run.status to 'retrying' — it was still 'failed' from the previous run. Dashboard's polling logic at line 160 treated 'failed' as terminal, set `polling=false`, and never reconsidered. Execution proceeded server-side (steps re-ran and completed in the DB) but the UI was locked at its initial frozen snapshot.
+
+**Fix:** Call `seasonPipelineRefreshFromAudit` FIRST (which awaits the DB update flipping status to 'retrying'), THEN dispatch the dashboard-open event. By the time the dashboard mounts, the DB state is already 'retrying' — polling correctly identifies it as non-terminal. Trade-off: ~500ms-2s delay between user clicking confirm and dashboard appearing. Acceptable — the panel's inline progress strip from 17.5.1 already shows "Resetting audit-consuming steps…" during this gap.
+
+**Bug 2: Dashboard polling doesn't tolerate mid-retry terminal states.**
+Even with Bug 1 fixed, `SeasonPipelineDashboard`'s polling-stop condition is fragile: any time a run briefly appears in terminal status with pending steps still queued, polling stops. This can happen in retry-from-step flows where the runner momentarily sees the run as failed before the next step kicks. Should not be terminal in those cases.
+
+**Fix:** Changed terminal condition to `reallyTerminal = isTerminal && !hasPendingOrRunning`. A run with status='failed' AND pending step rows is mid-retry, not really done. Polling continues until both conditions are clean.
+
+**Files changed:** 2 — `src/components/pm/SeoCampaignsPanel.tsx`, `src/components/season/SeasonPipelineDashboard.tsx`.
+
+**Verification:**
+- Frontend baseline 27 unchanged. No errors in either changed file.
+- Vite green.
+
+**Diff:** 2 files changed, 42 insertions, 17 deletions.
+
+**Discipline lesson logged:** When introducing new UX flows that mount UI components observing async state, verify the order: state-mutation → UI-observation. Reversing the order creates races that look like "the UI is broken" when actually the backend is fine. The race here was specifically that I treated dispatching the event as a "fire and forget" hint when it actually triggered immediate DB polling against state that hadn't transitioned yet. Should have asked from the start: "what does the dashboard's first poll see if it fires NOW, before the backend has done anything?" — and ordered the dispatch accordingly.
 
 ### Session handoff for tech audit work
 

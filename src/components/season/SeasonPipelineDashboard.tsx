@@ -160,9 +160,24 @@ export default function SeasonPipelineDashboard({
         const isTerminal = runStatus && ['completed', 'failed', 'cancelled'].includes(runStatus);
         const hitMax = Date.now() - pollStartedAt.current > MAX_POLL_DURATION_MS;
 
-        if (isTerminal || hitMax) {
+        /* Phase 17.5.6 — refresh-from-audit recovery support.
+           A run can briefly appear in a terminal state (typically 'failed')
+           during the moment between the user clicking refresh and the
+           backend's retryFromStep flipping status to 'retrying'. If we stop
+           polling on that transient terminal state, we never see the
+           subsequent re-execution. Same applies to pending step rows
+           existing on a 'failed' run — that signals a retry is in flight.
+           So: don't stop on terminal if there are still pending or running
+           steps. Those steps will execute and the run status will flip back
+           to running/retrying within a few seconds. */
+        const hasPendingOrRunning = (r.steps || []).some(
+          s => s.status === 'pending' || s.status === 'running'
+        );
+        const reallyTerminal = isTerminal && !hasPendingOrRunning;
+
+        if (reallyTerminal || hitMax) {
           setPolling(false);
-          if (isTerminal && !completedRef.current && r.run) {
+          if (reallyTerminal && !completedRef.current && r.run) {
             completedRef.current = true;
             onComplete?.(r.run);
           }

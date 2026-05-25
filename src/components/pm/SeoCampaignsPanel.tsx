@@ -602,22 +602,18 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     refreshingRunsRef.current.add(runId);
     setRefreshProgress(prev => ({ ...prev, [runId]: { phase: 'resetting' } }));
 
-    /* Phase 17.5.4 — open the live SEASON pipeline dashboard so the user sees
-       the same 8-block visualization they saw on the original campaign launch.
-       The dashboard mounts via SeasonModal's window event listener — it polls
-       the DB independently and renders live progress per step. The panel
-       continues to own execution driving + reset; the dashboard owns display. */
-    window.dispatchEvent(new CustomEvent('season:open-pipeline-dashboard', {
-      detail: {
-        runId,
-        pipelineType,
-        stepCount,
-        label: keyword ? `Refreshing "${keyword}"` : 'Refreshing pipeline',
-      },
-    }));
-
     try {
-      /* Step 1: reset audit-consuming steps */
+      /* Step 1: reset audit-consuming steps.
+         Phase 17.5.6 — this MUST happen before dispatching the dashboard-open
+         event. The dashboard's polling loop treats status='failed' or
+         'cancelled' as terminal and stops. If we dispatch the event first
+         (mounting the dashboard) and THEN call the reset, the dashboard's
+         first poll fires within ~1s and sees the run's stale 'failed' status
+         from before the refresh, then immediately stops polling. After that
+         no live updates ever reach the UI — even though execution proceeds
+         server-side. Reversing the order so the reset (which flips the run
+         to 'retrying') completes first means the dashboard sees a valid
+         non-terminal status on its first poll. */
       const reset = await seasonPipelineRefreshFromAudit({ runId });
       if (reset.error || !reset.success) {
         setRefreshProgress(prev => ({ ...prev, [runId]: { phase: 'failed', error: reset.error || 'reset failed' } }));
@@ -632,6 +628,20 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
       const firstIdx = reset.first_step_index ?? 0;
       const firstLabel = reset.first_step_label || reset.first_step_id || `step ${firstIdx + 1}`;
       const stepsReset = reset.steps_reset || 0;
+
+      /* Phase 17.5.4 — open the live SEASON pipeline dashboard so the user
+         sees the same 8-block visualization they saw on the original campaign
+         launch. The dashboard polls the DB independently. Dispatching AFTER
+         the reset succeeded means the dashboard's first poll sees status =
+         'retrying', not the stale 'failed'. */
+      window.dispatchEvent(new CustomEvent('season:open-pipeline-dashboard', {
+        detail: {
+          runId,
+          pipelineType,
+          stepCount,
+          label: keyword ? `Refreshing "${keyword}"` : 'Refreshing pipeline',
+        },
+      }));
 
       setRefreshProgress(prev => ({
         ...prev,
