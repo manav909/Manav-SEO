@@ -394,6 +394,27 @@ export async function runPipeline(opts: {
     `Used ${totalLlm} LLM calls, ${totalWeb} web searches, ~$${(totalLlm * COST_PER_CALL).toFixed(2)}, ${(elapsedMs/1000).toFixed(1)}s total.`,
   );
 
+  /* Phase D1 — dual-write artifacts into the artifacts table.
+     Same logic as finalizeRun; this is the runPipeline (synchronous) path.
+     Best-effort; failures logged but don't block return. */
+  try {
+    const { persistPipelineRunArtifacts } = await import("./artifacts.js");
+    await persistPipelineRunArtifacts({
+      runId,
+      projectId:      opts.projectId,
+      campaignId:     (opts.scope?.campaign_id || opts.scope?.campaignId) as string | undefined,
+      panelId:        (opts.scope?.panel_id    || opts.scope?.panelId)    as string | undefined,
+      keyword:        (opts.scope?.keyword as string) || null,
+      targetUrl:      (opts.scope?.target_url as string) || null,
+      pipelineType:   opts.definition.type,
+      artifacts,
+      totalLlmCalls:  totalLlm,
+      totalCostUsd:   Number((totalLlm * COST_PER_CALL).toFixed(4)),
+    });
+  } catch (e: any) {
+    console.log(`[runPipeline] artifacts persist failed: ${e?.message || 'unknown'} — not blocking`);
+  }
+
   return {
     run_id: runId,
     status: finalStatus,
@@ -570,6 +591,25 @@ export async function runPipelineWithExistingRow(opts: {
     `Pipeline ${finalStatus}: ${opts.definition.type} (${stepsCompleted}/${opts.definition.steps.length} steps)`,
     `Used ${totalLlm} LLM calls, ${totalWeb} web searches, ~$${(totalLlm * COST_PER_CALL).toFixed(2)}, ${(elapsedMs/1000).toFixed(1)}s total.`,
   );
+
+  /* Phase D1 — dual-write artifacts. Same logic as finalizeRun + runPipeline. */
+  try {
+    const { persistPipelineRunArtifacts } = await import("./artifacts.js");
+    await persistPipelineRunArtifacts({
+      runId,
+      projectId:      opts.projectId,
+      campaignId:     (opts.scope?.campaign_id || opts.scope?.campaignId) as string | undefined,
+      panelId:        (opts.scope?.panel_id    || opts.scope?.panelId)    as string | undefined,
+      keyword:        (opts.scope?.keyword as string) || null,
+      targetUrl:      (opts.scope?.target_url as string) || null,
+      pipelineType:   opts.definition.type,
+      artifacts,
+      totalLlmCalls:  totalLlm,
+      totalCostUsd:   Number((totalLlm * COST_PER_CALL).toFixed(4)),
+    });
+  } catch (e: any) {
+    console.log(`[runPipelineWithExistingRow] artifacts persist failed: ${e?.message || 'unknown'} — not blocking`);
+  }
 
   return {
     run_id:                runId,
@@ -1024,6 +1064,38 @@ export async function finalizeRun(opts: {
       `Pipeline ${finalStatus}: ${opts.definition.type} (${stepsCompleted}/${opts.definition.steps.length} steps)`,
       honestSummary.slice(0, 500),
     );
+
+    /* Phase D1 (2026-05-25) — promote artifacts to first-class rows.
+       Dual-write each artifact into the `artifacts` table alongside the
+       legacy final_artifacts JSON column. The JSON stays for backward
+       compat; the artifacts table is the source of truth for portfolio
+       queries (Documents page, search, filter by keyword/campaign/etc).
+
+       Best-effort: failure does NOT block run finalization. Logs to
+       console for visibility. Idempotent — re-finalize (refresh-from-
+       audit, reconcile) is a no-op for already-stored artifacts.
+
+       Supersession: persistPipelineRunArtifacts calls the supersession
+       variant, so a refresh-from-audit producing a new content_brief
+       automatically marks the previous brief for the same panel as
+       status='superseded'. */
+    try {
+      const { persistPipelineRunArtifacts } = await import("./artifacts.js");
+      await persistPipelineRunArtifacts({
+        runId:          opts.runId,
+        projectId:      (run as any).project_id,
+        campaignId:     (run as any).campaign_id,
+        panelId:        (run as any).panel_id,
+        keyword:        (run as any).scope?.keyword || null,
+        targetUrl:      (run as any).scope?.target_url || null,
+        pipelineType:   opts.definition.type,
+        artifacts,
+        totalLlmCalls:  (run as any).llm_calls_used || 0,
+        totalCostUsd:   (run as any).estimated_cost_usd || 0,
+      });
+    } catch (e: any) {
+      console.log(`[finalizeRun] artifacts persist failed: ${e?.message || 'unknown'} — not blocking`);
+    }
 
     /* Phase 14 — if this run is linked to a campaign, write the artifact report
        to the content panel and refresh the living overview. Best-effort. */

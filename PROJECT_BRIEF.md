@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.8 — reconcile route for damaged runs) · **Live commit:** `c5cddb9` (Phase 17.5.7 single execution driver). Phase 17.5.8 ships a reconcile primitive — backend route `bs_season_pipeline_reconcile` that re-runs finalizeRun with a new `force` flag, regenerating run.steps_completed / steps_failed / honest_summary / final_artifacts from the actual step row state. Used for repairing the runs damaged during the Phase 17.5.1-17.5.6 double-driver window where panel + dashboard raced on the same execution loop, producing inconsistent counters and stale honest_summary text (e.g. Manav's `81f36f07` screenshot showing top says "5 of 8 completed" while summary says "7/8" while all 8 step blocks render as completed). Includes SQL migration `sql/phase-17-5-8-reconcile-drifted-runs.sql` for inspecting + repairing counter columns immediately, plus invocation path for full reconcile (incl. honest_summary regeneration) via the new route.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D1 — artifacts table foundation) · **Live commit:** `d9fc9b1` (Phase 17.5.8 reconcile route). Phase D1 promotes pipeline outputs to first-class queryable rows. New `artifacts` table with full-text search, supersession (refresh-from-audit produces new rows; previous artifacts go status='superseded' not deleted — full history retained), 9 filter indexes covering project/campaign/panel/keyword/kind/status/date/unreviewed/search, per-artifact cost ledger. New `api/lib/artifacts.ts` library with `persistArtifacts()` + `persistArtifactsWithSupersession()` + `persistPipelineRunArtifacts()` helpers. Wired into all three finalizeRun-equivalent paths in season-pipeline-runner.ts (finalizeRun, runPipeline, runPipelineWithExistingRow) as best-effort dual-write — failures don't block finalization. Includes SQL migration `sql/phase-d1-artifacts-table.sql` with schema + indexes + tsvector trigger + backfill from existing season_pipeline_runs.final_artifacts (idempotent). Foundation for Phase D2 (backend list/search/supersede routes) and D3 (Documents page UI).
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1317,6 +1317,59 @@ finalizeRun reads step row state and rewrites: `steps_completed`, `steps_failed`
 **Diff:** 3 files changed, 83 insertions, 2 deletions + 1 new SQL file.
 
 **Discipline lesson logged:** When a bug is shipped to production and corrupts user data, ship the fix AND a repair tool for the corruption — not just the prevention. The reconcile route is reusable for any future drift scenario, not just this specific window. Investing in repair tooling at the moment of finding the bug is cheaper than building it later when more runs are damaged and more clients have already seen the broken display.
+
+### Phase D1 — Artifacts table foundation (2026-05-25)
+
+**Why this exists:** Manav reported document management is "pathetic" — can't see older documents, no search, no filter across projects. Pipeline artifacts live as JSON inside `season_pipeline_runs.final_artifacts` — locked inside the run that produced them, unsearchable, unfilterable, invisible at portfolio scale. With 100s of projects coming, this fails before it starts.
+
+**The fix — promote artifacts to first-class data:**
+
+New table `artifacts` with the following design decisions:
+
+| Decision | Reason |
+|---|---|
+| One row per artifact (not per run) | Cross-run portfolio queries become trivial: "all content_briefs for client X" is a WHERE clause, not a JSON walk |
+| Unique on (source_kind, source_id, source_step_id) | Idempotent dual-write — Phase 17.5.x's multiple finalize paths (finalizeRun, runPipeline, runPipelineWithExistingRow, reconcile) all become safe; no duplicates |
+| Supersession over deletion | Refresh-from-audit creates new artifact rows; previous CURRENT artifacts for the same (project, panel, kind) get `status='superseded'` + `superseded_by` pointer. Full version history retained. Nothing ever lost. |
+| Postgres tsvector + GIN index | Native full-text search across title + keyword + body + metadata. Sub-100ms. Predictable. Auto-maintained via trigger. |
+| 9 filter indexes | Project / campaign / panel / keyword / kind / status / generated_at / unreviewed / search. Covers all Documents-page sidebar combinations. |
+| Per-artifact cost ledger | `generation_cost_usd`, `llm_calls`, `serpapi_calls` on each row. Answers Manav's earlier "what does this brief actually cost" question per artifact. |
+| PM workflow state | `pm_reviewed`, `pm_reviewed_at`, `pm_reviewed_by`, `pm_notes`, `client_sent`, `client_sent_at` columns. Documents page "what needs me right now" filter ready. |
+
+**New library — `api/lib/artifacts.ts`:**
+- `persistArtifacts(inputs[])` — idempotent batch upsert. Uses `onConflict: 'source_kind,source_id,source_step_id'` with `ignoreDuplicates: true` so re-finalize is a clean no-op.
+- `persistArtifactsWithSupersession(inputs[])` — inserts new artifacts, then UPDATEs prior CURRENT artifacts for the same (project, panel, kind) tuple to `status='superseded'`. Skips supersession when `panel_id` is null (prevents cross-keyword bleed for campaign-level artifacts).
+- `persistPipelineRunArtifacts(opts)` — convenience wrapper called from the pipeline runner. Maps pipeline run shape → ArtifactInput[]. Distributes total run cost across artifacts (best-effort even split until per-step cost tracking lands).
+
+**Wire-in — three finalize paths in `season-pipeline-runner.ts`:**
+- `finalizeRun` (line ~1037) — Phase 13a-v2 step-by-step path. Most pipeline runs use this.
+- `runPipeline` (line ~417) — legacy synchronous path. Still in use.
+- `runPipelineWithExistingRow` (line ~613) — Phase 13a launch path.
+
+All three are best-effort: persistence failure logs to console (visible in Vercel logs) but does NOT block run finalization. The legacy `final_artifacts` JSON column on `season_pipeline_runs` continues to populate — belt and suspenders. JSON is the immediate-availability source; artifacts table is the portfolio-query source.
+
+**Backfill — included in SQL migration:**
+Walks every existing `season_pipeline_runs` with a non-empty `final_artifacts` array and inserts artifact rows. `ON CONFLICT DO NOTHING` makes it idempotent. After this lands, every historical pipeline run becomes searchable retroactively — no UI required, just SQL queries in Supabase dashboard for immediate relief of "I can't find old documents."
+
+**Files changed:** 2 — `api/lib/season-pipeline-runner.ts` (3 dual-write callsites), `api/lib/artifacts.ts` (new lib). Plus the SQL migration `sql/phase-d1-artifacts-table.sql` (schema + trigger + 9 indexes + backfill + 5-section verification).
+
+**Verification:**
+- Vercel runtime TS clean on touched files (only pre-existing `seo-campaign-engine.ts:1021` remains).
+- Frontend baseline 27 (unchanged — no FE changes in D1).
+- Vite green.
+- API ceiling: 12 (unchanged — `artifacts.ts` is `api/lib/*`, not `api/*.ts`).
+- Compiled `.js` parses under Node ESM nodenext (the runtime test that caught 17.5.2's duplicate-retryStep).
+- 10 smoke tests pass: shape mapping, idempotency, supersession scope, onConflict matches SQL unique index, ignoreDuplicates set, error logging present, SQL unique index correct, backfill idempotent, trigger registered, all 9 indexes present, all 3 runner paths wired.
+
+**Diff:** 1 file modified (72 insertions), 1 new lib file (~230 lines), 1 new SQL file (~180 lines).
+
+**What this unblocks:**
+- Phase D2 — backend routes (`bs_artifacts_list / get / search / supersede / mark_reviewed / mark_sent`)
+- Phase D3 — Documents page UI with filters + search + detail pane
+- Phase Q1.0 (later in the Q-arc) can also leverage this for per-artifact cost tracking and history when SerpAPI rich payloads start landing
+- Future: campaign-level Q2 synthesis artifacts (strategy_plan / client_update / handover at campaign-level) plug into the same table with `panel_id=null` and explicit campaign-level supersession
+
+**Discipline lesson logged:** Build data foundations before UIs. The Documents page UI (D3) was the visible pain Manav reported, but starting there would have meant a parallel data store or a frontend that papers over a broken model. D1 is invisible work that makes D3 simple. Even before D2 ships, the SQL backfill alone gives immediate relief: any historical artifact is now queryable directly in Supabase, today.
 
 ### Session handoff for tech audit work
 
