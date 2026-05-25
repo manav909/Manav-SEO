@@ -26,6 +26,8 @@
 import { db } from "./db.js";
 import { cacheKnowledge, getKnowledge } from "./season-knowledge-cache.js";
 import type { PipelineDefinition, PipelineStepResult, PipelineStepContext } from "./season-pipeline-runner.js";
+import { fetchSerpFeatures } from "./serpapi.js";
+import { ga4PullPageMetrics } from "./pm-ga4.js";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const MODEL = "claude-sonnet-4-6";
@@ -286,6 +288,21 @@ async function readGscQueries(projectId: string): Promise<any[]> {
   } catch { return []; }
 }
 
+async function readGa4SiteWide(projectId: string): Promise<{ engagement_rate: number | null; users: number | null }> {
+  try {
+    const readPk = async (key: string) => {
+      const { data } = await db().from("project_knowledge").select("field_value")
+        .eq("project_id", projectId).eq("category", "analytics").eq("field_key", key).maybeSingle();
+      return (data as any)?.field_value ?? null;
+    };
+    const [eng, users] = await Promise.all([readPk("ga4_engagement_rate"), readPk("ga4_users_monthly")]);
+    return {
+      engagement_rate: eng   ? parseFloat(String(eng).replace("%","")) || null : null,
+      users:           users ? parseInt(String(users), 10)              || null : null,
+    };
+  } catch { return { engagement_rate: null, users: null }; }
+}
+
 /* ────────────────────────────────────────────────────────────
    THE PIPELINE DEFINITION
 ─────────────────────────────────────────────────────────── */
@@ -353,7 +370,25 @@ const stepKeywordResearch = {
       };
     }
 
-    /* Live research with web */
+    /* Live research — SerpAPI first (hard verified facts), web search second (intent/strategy) */
+
+    /* SerpAPI: PAA, AI Overview, featured snippet, top-10 domains — live SERP facts.
+       These override any LLM claim about SERP features. Best-effort: null if not configured. */
+    let serpData: any = null;
+    try { serpData = await fetchSerpFeatures(ctx.projectId, keyword as string); } catch { /* not configured */ }
+
+    /* GSC: does this project already rank for this keyword or its neighbors? */
+    const allGscQueries = await readGscQueries(ctx.projectId);
+    const kwLc = (keyword as string).toLowerCase();
+    const gscExactHit  = allGscQueries.find((q: any) => (q.query || '').toLowerCase() === kwLc);
+    const gscNearHits  = allGscQueries.filter((q: any) => {
+      const ql = (q.query || '').toLowerCase();
+      return ql !== kwLc && kwLc.split(' ').some((t: string) => t.length > 3 && ql.includes(t));
+    }).slice(0, 5);
+
+    const serpCtxBlock = serpData ? `\nLIVE SERP DATA (verified — use these facts directly):\n- AI Overview: ${serpData.ai_overview ? 'YES' : 'NO'}\n- Featured snippet: ${serpData.featured_snippet ? `YES (${serpData.featured_snippet_owner || 'unknown'})` : 'NO'}\n- PAA questions (${serpData.paa_count || 0}): ${(serpData.paa_questions || []).slice(0, 5).join(' | ') || 'none'}\n- Top-10 domains: ${(serpData.top_10_domains || []).slice(0, 8).join(', ') || 'unavailable'}\n- Ads at top: ${serpData.ads_top || 0}` : '';
+    const gscCtxBlock  = (gscExactHit || gscNearHits.length > 0) ? `\nCURRENT GSC TRACTION:\n${gscExactHit ? `- Already ranking at position ${gscExactHit.position?.toFixed(1)} (${gscExactHit.clicks} clicks, ${gscExactHit.impressions} impressions)` : '- No exact ranking'}\n${gscNearHits.length > 0 ? `- ${gscNearHits.length} near-neighbors: ${gscNearHits.map((q: any) => `"${q.query}" pos ${q.position?.toFixed(1)}`).join(', ')}` : ''}` : '';
+
     const sys = `You are S.E.A.S.O.N. researching an SEO keyword. Output ONLY valid JSON with this shape:
 {
   "keyword": "...",
@@ -367,25 +402,47 @@ const stepKeywordResearch = {
   "difficulty_reasoning": "what's competing for this — established brands? aggregators? thin content?",
   "ranking_strategy_hint": "what kind of content tends to win for this keyword (long-form guide, comparison, listicle, tool, etc.)"
 }
-Use web_search to verify current SERP shape. Be honest — if you can't determine something, say so.`;
-    const usr = `Research the keyword: "${keyword}"`;
+When LIVE SERP DATA is provided, copy those PAA questions and SERP features directly into your response — do not contradict verified data. Use web_search for intent, volume, difficulty reasoning, and anything not covered by the live data. Be honest — if you cannot determine something, say so.`;
+    const usr = `Research the keyword: "${keyword}"${serpCtxBlock}${gscCtxBlock}`;
     const r = await callLlmWeb({ systemPrompt: sys, userMessage: usr, maxTokens: 2000, maxUses: 4 });
+    if (!r.ok || !r.parsed) return { ok: false, error: r.error || 'no response', llm_calls: 1 };
 
-    if (!r.ok || !r.parsed) {
-      return { ok: false, error: r.error || 'no response', llm_calls: 1 };
+    /* Overwrite SERP fields with verified SerpAPI data — credible source wins */
+    if (serpData) {
+      if ((serpData.paa_questions || []).length > 0) r.parsed.people_also_ask = serpData.paa_questions.slice(0, 8);
+      const features: string[] = [];
+      if (serpData.ai_overview)     features.push('ai_overview');
+      if (serpData.featured_snippet) features.push(`featured_snippet`);
+      if ((serpData.paa_count || 0) > 0) features.push(`paa_box(${serpData.paa_count})`);
+      if ((serpData.ads_top || 0)   > 0) features.push(`paid_ads_top(${serpData.ads_top})`);
+      if (features.length > 0) r.parsed.serp_features = features;
+      r.parsed._serp_verified      = true;
+      r.parsed._serp_top10_domains = (serpData.top_10_domains || []).slice(0, 10);
+      r.parsed._ai_overview        = serpData.ai_overview || false;
+      r.parsed._featured_snippet   = serpData.featured_snippet || false;
+    }
+    if (gscExactHit) {
+      r.parsed._gsc_position    = gscExactHit.position;
+      r.parsed._gsc_clicks      = gscExactHit.clicks;
+      r.parsed._gsc_impressions = gscExactHit.impressions;
+      r.parsed._gsc_ctr         = gscExactHit.ctr;
     }
 
-    /* Cache it */
     await cacheKnowledge({
-      projectId: ctx.projectId,
-      knowledgeType: 'keyword_research',
-      key: cacheKey,
+      projectId: ctx.projectId, knowledgeType: 'keyword_research', key: cacheKey,
       value: r.parsed,
       summary: `${keyword} · ${r.parsed.primary_intent} · ${r.parsed.competitive_difficulty}`,
-      source: 'web_search',
+      source: serpData ? 'serpapi+web_search' : 'web_search',
       sourceUrls: r.citations?.map(c => c.url),
-      confidence: r.webUsed ? 0.8 : 0.6,
+      confidence: serpData ? 0.92 : (r.webUsed ? 0.80 : 0.60),
     });
+
+    const note = [
+      serpData   ? `SerpAPI live SERP facts (PAA, features, top-10 verified)` : null,
+      r.webUsed  ? `Web search: intent, volume, difficulty (${r.citations?.length || 0} sources)` : null,
+      gscExactHit? `GSC: project already ranking at position ${gscExactHit.position?.toFixed(1)}` : null,
+      !serpData && !r.webUsed ? `No live sources available — training knowledge only, confidence reduced` : null,
+    ].filter(Boolean).join(' · ');
 
     return {
       ok: true,
@@ -395,9 +452,7 @@ Use web_search to verify current SERP shape. Be honest — if you can't determin
         title: `Keyword research: "${keyword}"`,
         body: renderKeywordArtifact(keyword, r.parsed),
       },
-      honest_note: r.webUsed
-        ? `Researched live via web search (${r.citations?.length || 0} sources cited).`
-        : `Couldn't run a live SERP check — used training knowledge only. Confidence reduced.`,
+      honest_note: note,
       llm_calls: 1,
       web_searches: r.webUsed ? (r.citations?.length || 1) : 0,
     };
@@ -462,33 +517,68 @@ const stepGscContext = {
       return tokens.some(t => qLc.includes(t));
     }).slice(0, 15);
 
-    const output = { current_ranking: exact || null, neighboring };
+    const output: any = { current_ranking: exact || null, neighboring };
+
+    /* GA4 per-page engagement — when there's a ranking page, pull live GA4
+       metrics for it. This tells the strategy whether to refresh (high traffic,
+       low engagement) or build new (no ranking yet). Credible source over guessing. */
+    if (exact) {
+      try {
+        /* Try to find the target URL for this campaign's technical_audit panel */
+        const { data: techPanel } = await db().from("seo_campaign_panels")
+          .select("target_url").eq("campaign_id", ctx.scope.campaign_id as string).eq("pillar", "technical_audit").maybeSingle();
+        const targetUrl = (techPanel as any)?.target_url;
+        if (targetUrl) {
+          const pagePath = new URL(targetUrl).pathname;
+          const ga4 = await ga4PullPageMetrics({ projectId: ctx.projectId, pagePath, days: 28 });
+          if (ga4 && ga4.sessions > 0) {
+            output.ga4_page_metrics = {
+              engagement_rate_pct:  ga4.engagement_rate_pct,
+              avg_session_sec:      ga4.avg_session_sec,
+              bounce_rate_pct:      ga4.bounce_rate_pct,
+              sessions:             ga4.sessions,
+              conversions:          ga4.conversions,
+              target_url:           targetUrl,
+            };
+          }
+        }
+      } catch { /* GA4 not connected or URL not set — skip */ }
+    }
+
     return {
       ok: true,
       output,
       artifact: {
         kind: 'metric_table',
         title: `GSC check: "${keyword}"`,
-        body: renderGscArtifact(keyword, exact, neighboring),
+        body: renderGscArtifact(keyword, exact, neighboring, output.ga4_page_metrics),
       },
-      honest_note: exact
-        ? `Already ranking at position ${exact.position?.toFixed?.(1) || '?'} for the exact phrase.`
-        : neighboring.length > 0
-          ? `No exact match in GSC. Found ${neighboring.length} neighboring queries — likely earning some near-miss impressions.`
-          : `No GSC traction yet on this keyword or its tokens.`,
+      honest_note: [
+        exact
+          ? `Already ranking at position ${exact.position?.toFixed?.(1) || '?'} for the exact phrase.`
+          : neighboring.length > 0
+            ? `No exact match in GSC. Found ${neighboring.length} neighboring queries.`
+            : `No GSC traction yet.`,
+        output.ga4_page_metrics
+          ? `GA4: ${output.ga4_page_metrics.engagement_rate_pct}% engagement rate, ${output.ga4_page_metrics.sessions} sessions (28d).`
+          : null,
+      ].filter(Boolean).join(' '),
     };
   },
 };
 
-function renderGscArtifact(keyword: string, exact: any, neighboring: any[]): string {
+function renderGscArtifact(keyword: string, exact: any, neighboring: any[], ga4?: any): string {
   const exactBlock = exact
     ? `**Currently ranking:** Position ${exact.position?.toFixed?.(1) || '?'}\nClicks (28d): ${exact.clicks || 0} · Impressions: ${exact.impressions || 0} · CTR: ${exact.ctr ? (exact.ctr * 100).toFixed(1) + '%' : '—'}`
     : `**Not currently ranking** for the exact phrase.`;
+  const ga4Block = ga4
+    ? `\n\n**GA4 engagement (${ga4.target_url}):** ${ga4.engagement_rate_pct}% engagement · ${ga4.avg_session_sec?.toFixed(0)}s avg session · ${ga4.bounce_rate_pct}% bounce · ${ga4.sessions} sessions · ${ga4.conversions} conversions _(28d, source: GA4 live)_`
+    : '';
   const neighborTable = neighboring.length > 0
     ? '\n\n**Neighboring queries (token overlap):**\n\n| Query | Pos | Clicks | Impr |\n|---|---|---|---|\n' +
       neighboring.map(q => `| ${q.query} | ${q.position?.toFixed?.(1) || '?'} | ${q.clicks || 0} | ${q.impressions || 0} |`).join('\n')
     : '';
-  return `# GSC Context: "${keyword}"\n\n${exactBlock}${neighborTable}`;
+  return `# GSC Context: "${keyword}"\n\n${exactBlock}${ga4Block}${neighborTable}`;
 }
 
 /* ─── STEP 3: Competitor snapshot ───────────────────────────── */
@@ -806,8 +896,14 @@ const stepStrategyPlan = {
     const gsc         = ctx.prior.gsc_context         || {};
     const competitors = ctx.prior.competitor_snapshot || {};
 
-    /* Phase 14.2 — note any missing upstream so we can flag the strategy as
-       lower-confidence rather than silently producing thin output. */
+    /* Phase 18.3 — GA4 site-wide engagement: informs whether "refresh existing"
+       is viable (low engagement = content quality issue to fix first) and
+       calibrates expectations on traffic conversion. Credible source. */
+    const ga4Site = await readGa4SiteWide(ctx.projectId);
+    const ga4Block = (ga4Site.engagement_rate !== null && ga4Site.engagement_rate > 0)
+      ? `\nGA4 SITE-WIDE ENGAGEMENT (live):\n- Engagement rate: ${ga4Site.engagement_rate.toFixed(1)}% (${ga4Site.engagement_rate >= 55 ? 'healthy' : ga4Site.engagement_rate >= 40 ? 'moderate — room to improve' : 'low — site-wide content quality concern'})\n- Monthly organic users: ${ga4Site.users?.toLocaleString() || 'unavailable'}\n- Note: if recommending "refresh_existing", low engagement (< 40%) means the existing page likely has content/intent issues beyond just ranking — the strategy should address both.`
+      : '';
+
     const missingUpstream: string[] = [];
     if (Object.keys(research).length === 0)    missingUpstream.push('keyword_research');
     if (Object.keys(gsc).length === 0)         missingUpstream.push('gsc_context');
@@ -842,7 +938,7 @@ CURRENT GSC POSITION:
 ${JSON.stringify(gsc, null, 2)}
 
 COMPETITOR SNAPSHOT:
-${JSON.stringify(competitors, null, 2)}`;
+${JSON.stringify(competitors, null, 2)}${ga4Block ? '\n' + ga4Block : ''}`;
 
     /* First attempt — generous token budget */
     let r = await callLlmJson({ systemPrompt: sys, userMessage: usr, maxTokens: 3500 });
@@ -1246,7 +1342,62 @@ Produce JSON for this one section only.`;
     }
     if (sectionsPartial > 0) stepNotes.push(`${sectionsPartial} of ${headings.length} sections only have heading-level info (expansion failed); ${sectionsFullyExpanded} are fully expanded.`);
 
-    /* ════════ STAGE 3 \u2014 FACTS RESEARCH (with web_search) ═══
+    /* ════════ STAGE 2.5 — KEY-POINT FACT CHECK (web_search) ════
+       Collect all numerical claims, product names, pricing, and
+       specific statistics from Stage 2 key_points and verify them
+       with web_search. Marks unverified claims so the writer knows
+       what needs checking. Prevents hallucinated facts reaching the
+       final brief. "Prefer credible source over LLM inference." */
+    const claimsToVerify: Array<{ section: number; point: number; claim: string }> = [];
+    const CLAIM_PATTERN = /\$[\d,]+|\d+[\s\%]|named\s+\w+|version\s+[\d\.]+|\d+\s+(million|billion|thousand)|[A-Z][a-z]+\s+(?:costs?|charges?|requires?|has\s+\d)/g;
+    for (let i = 0; i < expanded.length; i++) {
+      for (let j = 0; j < (expanded[i].key_points || []).length; j++) {
+        const pt: string = expanded[i].key_points[j];
+        if (CLAIM_PATTERN.test(pt) || /\d/.test(pt)) {
+          claimsToVerify.push({ section: i, point: j, claim: pt });
+        }
+      }
+    }
+
+    if (claimsToVerify.length > 0) {
+      const checkSys = `You verify specific factual claims. Use web_search to check each claim. Return ONLY valid JSON:
+{
+  "results": [
+    { "index": 0, "claim": "...", "verified": true|false, "correction": "corrected fact if wrong, null if correct", "source_url": "url you checked" }
+  ]
+}
+Rules:
+- If you cannot verify a claim, set verified=false and correction="NEEDS MANUAL VERIFICATION: [why uncertain]"
+- Never fabricate a source URL — only cite URLs you actually retrieved
+- verified=true ONLY when you found a live authoritative source confirming the claim`;
+      const checkUsr = `Article: "${skel.title}"\n\nVerify these factual claims from the content brief:\n${claimsToVerify.slice(0, 12).map((c, i) => `${i}. [Section "${expanded[c.section]?.h2}"] ${c.claim}`).join('\n')}`;
+
+      const checkR = await callLlmWeb({ systemPrompt: checkSys, userMessage: checkUsr, maxTokens: 2000, maxUses: 8, timeoutMs: 90_000 });
+      totalLlm++;
+      if (checkR.webUsed) totalWeb += checkR.citations?.length || 0;
+
+      if (checkR.ok && Array.isArray(checkR.parsed?.results)) {
+        let correctionCount = 0;
+        for (const result of checkR.parsed.results) {
+          const claim = claimsToVerify[result.index];
+          if (!claim) continue;
+          const section = expanded[claim.section];
+          if (!section) continue;
+          if (!result.verified && result.correction) {
+            /* Replace the unverified claim with the correction or a VERIFY marker */
+            const oldPoint = section.key_points[claim.point];
+            section.key_points[claim.point] = result.correction.startsWith('NEEDS MANUAL')
+              ? `⚠️ [VERIFY] ${oldPoint}`
+              : `${result.correction} _(corrected from: "${oldPoint.slice(0, 60)}…" — source: ${result.source_url || 'web search'})_`;
+            correctionCount++;
+          }
+        }
+        if (correctionCount > 0) stepNotes.push(`Fact-check pass corrected or flagged ${correctionCount} claim(s) in per-section key_points.`);
+        else stepNotes.push(`Fact-check pass: all ${claimsToVerify.slice(0, 12).length} checked claims verified.`);
+      }
+    }
+
+    /* ════════ STAGE 3 — FACTS RESEARCH (with web_search) ═══
        Verify 5-8 must-include facts with real sources.
        This is the one place we pay for web search in the brief generation. */
     const factsSys = `You output ONLY valid JSON. No prose, no fences.
