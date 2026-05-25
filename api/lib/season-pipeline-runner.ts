@@ -642,57 +642,18 @@ function buildClientFacingSummary(opts: {
 
 /* ─── Retry a specific step (resume support) ────────────────── */
 
-export async function retryStep(opts: {
-  runId:   string;
-  stepIndex: number;
-  definition: PipelineDefinition;
-}): Promise<PipelineStepResult> {
-  /* Load the run + project + scope + prior outputs */
-  const { data: run } = await db().from("season_pipeline_runs")
-    .select("*").eq("id", opts.runId).maybeSingle();
-  if (!run) return { ok: false, error: "run not found" };
-  const r = run as any;
-
-  const { data: priorSteps } = await db().from("season_pipeline_steps")
-    .select("step_id, output").eq("run_id", opts.runId)
-    .lt("step_index", opts.stepIndex)
-    .eq("status", "completed")
-    .order("step_index");
-  const priorOutputs: Record<string, any> = {};
-  for (const s of (priorSteps || []) as any[]) {
-    if (s.step_id) priorOutputs[s.step_id] = s.output;
-  }
-
-  const step = opts.definition.steps[opts.stepIndex];
-  if (!step) return { ok: false, error: "step not in definition" };
-
-  /* Phase 17.0 — load audit findings for retry too */
-  const auditFindings = await loadLatestAuditFindings(r.campaign_id);
-
-  const result = await runStepWithTimeout(step, {
-    projectId: r.project_id,
-    scope:     r.scope || {},
-    prior:     priorOutputs,
-    audit_findings: auditFindings,
-  });
-
-  /* Persist the retry */
-  await db().from("season_pipeline_steps").upsert({
-    run_id: opts.runId,
-    step_index: opts.stepIndex,
-    step_id: step.id,
-    step_label: step.label,
-    status: result.ok ? 'completed' : 'failed',
-    output: result.output || null,
-    honest_note: result.honest_note || null,
-    error_message: result.error || null,
-    llm_calls: result.llm_calls || 0,
-    web_searches: result.web_searches || 0,
-    finished_at: new Date().toISOString(),
-  }, { onConflict: 'run_id,step_index' });
-
-  return result;
-}
+/* ─── Removed Phase 17.5.2 (2026-05-25) ────────────────────────
+   A legacy retryStep that took { runId, stepIndex, definition } and
+   inline-executed the step lived here. It was replaced by the Phase
+   13a-v2 retryStep below (which just marks the step pending and lets
+   executeNextPendingStep pick it up), but the legacy version was never
+   deleted — only the second declaration was being called. Local TS
+   tolerated the duplicate via skipLibCheck quirks, but the Vercel
+   Node ESM nodenext runtime rejected the module load with:
+       SyntaxError: Identifier 'retryStep' has already been declared
+   This blocked Phase 17.5's refresh-from-audit route (which imports
+   season-pipeline-runner via routes.ts) from ever loading. Confirmed
+   zero callers of the 3-arg signature in api/ or src/ before removal. */
 
 /* ════════════════════════════════════════════════════════════════
    Phase 13a-v2 — Step-by-step execution.

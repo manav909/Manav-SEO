@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-24 (Phase 17.5.1 hotfix — refresh drives execution) · **Live commit:** `a578841` (Phase 17.5 manual refresh button). Phase 17.5.1 is a hotfix: 17.5's button reset steps but then asked the user to navigate to the pipeline dashboard to re-run. That's broken UX — user clicks, toast flashes, nothing visible happens. 17.5.1 owns the full lifecycle: reset → drive execution loop (mirrors SeasonPipelineDashboard's pattern) → inline progress display per step → final completed/failed state → reload campaign panel. The button now actually does what it says.
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase 17.5.2 production hotfix — remove dead duplicate retryStep) · **Live commit:** `ddfe623` (Phase 17.5.1 inline progress). Phase 17.5.2 removes a long-dormant duplicate `retryStep` declaration in season-pipeline-runner.ts (lines 645-695, the old 3-arg signature with zero callers) that local TS tolerated via skipLibCheck but Vercel's Node ESM nodenext runtime correctly rejected with `SyntaxError: Identifier 'retryStep' has already been declared`. The error surfaced on Phase 17.5's refresh-from-audit production run — that route was the first to import the runner module via a fresh code path. Discipline lesson: pre-existing TS warnings need root-cause investigation before being filed as "noise" — they're sometimes pointing at real production bugs.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1095,6 +1095,31 @@ The handler now owns the complete refresh lifecycle:
 - Pattern mirrors the proven SeasonPipelineDashboard execute loop — well-tested code path.
 
 **Diff:** 1 file changed, 217 insertions, 53 deletions.
+
+### Phase 17.5.2 — Production hotfix: duplicate retryStep removed (2026-05-25)
+
+**The bug Manav hit in production:** clicked "Refresh from audit" → received error `Refresh failed: Identifier 'retryStep' has already been declared`.
+
+**Root cause:** `api/lib/season-pipeline-runner.ts` had TWO `export async function retryStep(...)` declarations:
+- Line 645 (legacy): `{runId, stepIndex, definition}` → returns `PipelineStepResult` — inline-executes the step in the same call. Phase 12-era pattern.
+- Line 1350 (current): `{runId, stepIndex}` → returns `{success, new_retry_count}` — just marks the step pending, lets `executeNextPendingStep` pick it up. Phase 13a-v2 pattern.
+
+The legacy version had **zero callers** in `api/` or `src/` — confirmed with grep before removal. Replaced by the second declaration when the Phase 13a step-by-step execution model was introduced, but never deleted.
+
+**Why it didn't break sooner:** Local TS compilation under `skipLibCheck` tolerates the duplicate-function error as "noise." But Vercel's Node ESM runtime (`@vercel/node` with `nodenext` module resolution) correctly throws `SyntaxError: Identifier 'retryStep' has already been declared` when loading any module that has duplicate top-level identifiers. Production behavior had been silently broken for any code path that fresh-imports `season-pipeline-runner.js` — but no caller did until Phase 17.5's `bsSeasonPipelineRefreshFromAudit` route, which dynamically imports the module via `season-pipeline-routes.ts`. That triggered the first cold module load through this path, which threw, which surfaced as the user-visible refresh error.
+
+**The fix:** Replace the dead 3-arg `retryStep` (lines 645-695) with an explanatory comment block. Net effect: -39 lines.
+
+**Verification:**
+- `grep -c "^export async function retryStep"` returns exactly 1 (was 2)
+- Vercel runtime TS check: 0 duplicate-function errors (the previous `retryStep redeclare` errors are gone). Only the long-standing pre-existing `seo-campaign-engine.ts:1021` error remains.
+- Compiled output (`tsc --module nodenext`) contains exactly 1 `retryStep` definition.
+- `node --check` on the compiled `.js` file passes without SyntaxError — the exact test that Vercel's runtime was failing.
+- Frontend baseline 27 / API ceiling 12 / Vite green.
+
+**Discipline lesson logged:** Pre-existing TS compiler warnings need root-cause investigation, not pattern-matched dismissal. The Phase 17.0-17.4 verifications all noted "duplicate retryStep — pre-existing, runtime uses the second one" without testing that assumption. The Vercel runtime test is `node --check` on the compiled output, not "do other parts of the system work." Should have been verified once and fixed, not deferred across five phases. Pre-ship checklist update: any duplicate-identifier TS error gets investigated before the next ship, regardless of whether it "seems unrelated."
+
+**Diff:** 1 file changed, 12 insertions, 51 deletions.
 
 ### Session handoff for tech audit work
 
