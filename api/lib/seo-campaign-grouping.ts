@@ -910,15 +910,15 @@ export async function recommendCampaignStructure(opts: {
 
 async function readProject(projectId: string): Promise<{ project_name: string; client_url: string | null } | null> {
   try {
-    /* Projects table has two naming conventions:
-       - Older records:  project_name + client_url
-       - Wizard-created: name + url
-       Query all four columns and fall back so both work. */
-    const { data } = await db().from("projects")
-      .select("name, url, project_name, client_url").eq("id", projectId).maybeSingle();
-    if (!data) return null;
+    /* Use select('*') — safe regardless of which column naming convention the
+       projects table uses (project_name/client_url vs name/url). Querying
+       specific non-existent columns causes a PostgREST 400 and a silent null
+       return which triggers the "project not found" error. */
+    const { data, error } = await db().from("projects")
+      .select("*").eq("id", projectId).maybeSingle();
+    if (error || !data) return null;
     const d = data as any;
-    const project_name = d.project_name || d.name || '';
+    const project_name = d.project_name || d.name || d.title || '';
     const client_url   = d.client_url   || d.url   || null;
     if (!project_name) return null;
     return { project_name, client_url };

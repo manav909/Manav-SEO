@@ -53,7 +53,7 @@ export async function bsSeasonBriefing(body: any): Promise<any> {
     const [
       projectRes, integrationsRes, strategiesRes, goalsRes, blockersRes, intelRes, recentCardsRes,
     ] = await Promise.all([
-      db().from("projects").select("id,name,url,project_name,client_url,status").eq("id", projectId).maybeSingle(),
+      db().from("projects").select("*").eq("id", projectId).maybeSingle(),
       db().from("project_integrations").select("provider,last_pull_at,last_pull_status").eq("project_id", projectId),
       db().from("strategies").select("id,name,status,horizon,card_ids,on_track,actual_impact,target_end_date,finalized_at,paused_at,linked_goal_ids").eq("project_id", projectId).neq("status","concluded").limit(50),
       db().from("analytics_goals").select("id,name,metric,target_value,target_date,baseline_value,status").eq("project_id", projectId).eq("status","active").limit(20),
