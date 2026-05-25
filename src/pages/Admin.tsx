@@ -14,7 +14,7 @@ import {
   AlertCircle, Rocket, Shield, BarChart3,
   AlertTriangle, CheckCircle2, Info
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { UserPlus, Key, Mail, Copy, Eye, EyeOff, Trash2 } from 'lucide-react';
 
 const EMPTY_FORM = {
@@ -31,7 +31,9 @@ export default function Admin() {
   const navigate = useNavigate();
 
   /* ── tabs ── */
-  const [tab, setTab] = useState<'control'|'clients'|'metrics'|'upsells'|'launchpad'|'approve'|'staff'>('control');
+  const [searchParams] = useSearchParams();
+  const defaultTab = (searchParams.get('tab') as any) || 'control';
+  const [tab, setTab] = useState<'control'|'clients'|'metrics'|'upsells'|'launchpad'|'approve'|'staff'>(defaultTab);
 
   /* ── data ── */
   const [clients,       setClients]       = useState<any[]>([]);

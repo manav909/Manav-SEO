@@ -9,7 +9,7 @@ import {
   BarChart3, Crown, Sparkles, LogOut, Settings, Zap, Layers,
   Database, Activity, Brain, ChevronDown, Menu, X,
   BookOpenCheck, Rocket, MessageSquare, Users, Target,
-  FileText, Search, Heart, Eye, Kanban,
+  FileText, Search, Heart, Eye, Kanban, UserPlus,
   DollarSign, Bot, Palette, Map,
 } from 'lucide-react';
 
@@ -73,6 +73,7 @@ const EMPIRE_SECTIONS = [
     label: 'Team',
     items: [
       { href: '/staff-command',   label: 'Staff Command',   icon: Users,        desc: 'HOD panel',          perm: 'staff_command' },
+      { href: '/admin?tab=staff', label: 'Staff & PM',      icon: UserPlus,     desc: 'Create PM logins',   perm: 'staff_command' },
       { href: '/bde-panel',       label: 'BDE Panel',       icon: Target,       desc: 'Fiverr tools',       perm: 'bde_panel' },
       { href: '/revenue',         label: 'Revenue BI',      icon: DollarSign,   desc: 'MRR & pipeline',     perm: 'dashboard' },
       { href: '/desk',            label: 'Brain Desk',      icon: Brain,        desc: 'Save learnings',     perm: 'brain_learning' },
@@ -220,8 +221,8 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                 </div>
               )}
               <button onClick={() => navigate('/admin')} title="Admin"
-                className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
-                <Settings className="h-3.5 w-3.5" />
+                className="h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+                <Settings className="h-3.5 w-3.5" /><span className="hidden md:inline">Admin</span>
               </button>
               <button onClick={async () => { await signOut(); navigate('/'); }} title="Sign Out"
                 className="h-8 rounded-lg px-2.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">

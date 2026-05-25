@@ -121,6 +121,7 @@ const AppRoutes = () => {
         <Route path="/c/workspace"    element={<B name="client-workspace-session"><ClientWorkspace />                      </B>} />
         <Route path="/c/:token"       element={<B name="client-workspace"><ClientWorkspace />                            </B>} />
         <Route path="/admin"          element={<B name="admin">         <Admin />                                          </B>} />
+        <Route path="/staff"          element={<B name="staff">         <Navigate to="/admin?tab=staff" replace />          </B>} />
         <Route path="/build"          element={<B name="build">         <Build />                                          </B>} />
 
         {/* Protected routes */}

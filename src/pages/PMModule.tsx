@@ -128,23 +128,39 @@ export default function PMModule() {
 
         {/* No project — show onboarding CTA */}
         {!selectedProjectId && (
-          <div className="rounded-2xl border border-dashed border-border bg-card/40 p-12 text-center">
-            <div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <Plus className="h-8 w-8 text-primary" />
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-dashed border-border bg-card/40 p-12 text-center">
+              <div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <Plus className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">No project selected</h3>
+              <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto leading-relaxed">
+                {(projects || []).length === 0
+                  ? "No projects yet. The setup wizard walks you through creating a client, project, connecting GSC/GA4, and launching your first campaign."
+                  : "Select a project from the navigation bar, or create a new one."}
+              </p>
+              <button
+                onClick={() => setShowWizard(true)}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-[0_0_24px_hsl(var(--primary)/0.3)] hover:bg-primary/90 transition-all"
+              >
+                <Plus className="h-4 w-4" />
+                {(projects || []).length === 0 ? 'Set Up First Project' : 'Add New Project'}
+              </button>
             </div>
-            <h3 className="text-lg font-semibold mb-2">No project selected</h3>
-            <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto leading-relaxed">
-              {(projects || []).length === 0
-                ? "You don't have any projects yet. The setup wizard will walk you through creating a client, project, connecting data, and launching your first campaign."
-                : "Select a project from the navigation bar, or create a new one."}
-            </p>
-            <button
-              onClick={() => setShowWizard(true)}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-[0_0_24px_hsl(var(--primary)/0.3)] hover:bg-primary/90 transition-all"
-            >
-              <Plus className="h-4 w-4" />
-              {(projects || []).length === 0 ? 'Set Up First Project' : 'Add New Project'}
-            </button>
+
+            {/* Admin shortcut — clearly labelled */}
+            <div className="rounded-xl border border-border bg-card/40 p-4 flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">Need to add a team member or PM login?</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Create staff accounts, set permissions, and send magic-link invites from the Admin panel.</div>
+              </div>
+              <a
+                href="/admin?tab=staff"
+                className="flex-shrink-0 flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-border bg-background/60 text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors font-mono ml-4"
+              >
+                Staff &amp; PM →
+              </a>
+            </div>
           </div>
         )}
 
