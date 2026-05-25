@@ -28,6 +28,7 @@ import {
   seasonPipelineGet,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
 } from './api';
+import CampaignDocumentsSection from './CampaignDocumentsSection';
 
 interface Props {
   projectId: string;
@@ -1066,6 +1067,12 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                 </>
               )}
             </div>
+
+            {/* Phase D4 — Documents from artifacts table (parallel to legacy
+               reports above). Eventually the legacy block can be deprecated
+               once artifacts coverage is verified complete. Both render for
+               now so PMs see both views and we don't risk regression. */}
+            <CampaignDocumentsSection campaignId={campaignId} />
 
             {/* Opportunities tied to this campaign */}
             {(data.open_opportunities || []).length > 0 && (

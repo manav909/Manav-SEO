@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D3 — Documents page UI) · **Live commit:** `798c473` (Phase D2 artifacts backend routes). Phase D3 ships the senior-PM working surface: new `/documents` route with three-pane layout (filters sidebar | KPI strip + search + artifact list | detail pane). Default view "what needs me right now" — unreviewed current artifacts, oldest first. Four quick filters (Needs me / All current / Recently sent / Red audits 7d) auto-set their own filter combinations. Multi-select filters for projects, artifact kinds, status. Tri-state booleans for pm_reviewed and client_sent. Full-text search bar via `artifactsSearch` (Postgres tsquery). URL deep-linkable via `?artifact=<id>`. Detail pane renders markdown body, version history chain (highlights current row), workflow actions (mark reviewed, mark sent — both reversible with optimistic UI), copy-to-clipboard, optional metadata panel, optional PM notes panel. KPI strip shows 6 metrics: artifacts this week / this month / LLM spend MTD / awaiting review / oldest unreviewed days / red audits 7d — refetches on workflow change. 8 typed API client methods added to `src/components/pm/api.ts` matching the 8 D2 endpoints exactly. New page is 1016 lines, single file, 4 sub-components inline. Foundation complete for Phase D4 (embedded viewers on SeoCampaignsPanel + ClientLens) and D5 (bulk ops + comparison view).
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D4 — embedded document viewers) · **Live commit:** `b8b6f57` (Phase D3 Documents page UI). Phase D4 stitches the Documents data into three places where work actually starts: (1) `CampaignDocumentsSection` embedded in the SeoCampaignsPanel drawer below the legacy reports block — kind filter chips, status toggle, inline expand-to-view-body, inline mark-reviewed/sent workflow, per-row "Open in Documents" deep-link; (2) `RecentDocumentsWidget` in ClientLens as Section 5.5 — top 5 latest with framer-motion entry animations, unreviewed-count badge, hides entire section if zero artifacts; (3) "Open in Documents" link on SEASON pipeline dashboard for each completed step — resolves via source coordinates (`source_kind=pipeline_run&source_id=<runId>&source_step_id=<stepId>`) to the artifact_id via D2's extended list endpoint. Backend change: added `sourceKind`/`sourceId`/`sourceStepId` optional filters to `bs_artifacts_list` for O(1) source-coord lookup via D1's unique index. Documents page URL deep-link expanded to 4 patterns: `?artifact=<id>` / source-coordinate triple / `?projectIds=<csv>` / `?campaignIds=<csv>`, with active-filter banner showing when scoped by URL. Legacy "Documents & reports" section in the drawer preserved (parallel coverage; not replaced) — eventually deprecates once artifacts coverage is verified complete. Foundation complete for Phase D5 (bulk ops + comparison view).
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1466,6 +1466,75 @@ Walks every existing `season_pipeline_runs` with a non-empty `final_artifacts` a
 7. Deep-link an artifact → paste `https://yourapp/documents?artifact=<uuid>` and someone lands exactly there
 
 **Discipline lesson logged:** A 1016-line page in a single file is fine when the page is one cohesive workflow surface. Splitting into 5-6 separate files for "cleanliness" would have made the data flow harder to follow — useEffect dependencies + state lifting are easier to verify in one file. The DataRoom.tsx and SeoCampaignsPanel.tsx precedents (similar size, similar structure) confirm this is the house style. Code organization should match the work being done, not abstract ideals.
+
+### Phase D4 — Embedded document viewers (2026-05-25)
+
+**Why this exists:** D3 ships a central `/documents` page, but most of a senior PM's day starts somewhere else — they're looking at a campaign drawer, a client lens, a pipeline dashboard. Forcing a navigation away to see related documents fragments the workflow. D4 surfaces artifacts inline at three high-traffic entry points without re-implementing list/detail UI — every viewer uses the D2 typed API + shared formatting helpers, and the central `/documents` page remains the source of truth.
+
+**Three integration points:**
+
+| Viewer | Where | Scope | Visual style |
+|---|---|---|---|
+| `CampaignDocumentsSection` | Inline in `CampaignDetailDrawer` (SeoCampaignsPanel) | `campaignIds: [campaignId]` | Dense drawer-scale list, inline expand-to-view-body, inline workflow buttons, kind filter chips |
+| `RecentDocumentsWidget` | ClientLens Section 5.5 (between Pillars and Wins) | `projectIds: [projectId], limit: 5` | Narrative — framer-motion entry, mood='focus', glass cards with accent, hides if empty |
+| "Open in Documents" link | SEASON pipeline dashboard, next to "Open full artifact" on completed steps | One artifact per step | Compact button matching existing dashboard chrome |
+
+**The source-coordinate deep-link pattern (new):** SEASON dashboard knows the `run_id` and `step_id` of each completed step but not the `artifact_id`. New URL pattern `?source_kind=pipeline_run&source_id=<runId>&source_step_id=<stepId>` deep-links the Documents page, which then resolves to the right artifact via a single-row lookup against the unique index from D1. After resolution the URL gets cleaned to `?artifact=<id>` so it's shareable. Backend change for this is small — added optional `sourceKind`/`sourceId`/`sourceStepId` filter params to `bs_artifacts_list`. The (source_kind, source_id, source_step_id) unique index makes the query O(1).
+
+**Documents page URL deep-link patterns (now four):**
+
+| Pattern | Used by | Behavior |
+|---|---|---|
+| `?artifact=<uuid>` | D3 itself, D4 per-row links | Direct artifact selection |
+| `?source_kind=&source_id=&source_step_id=` | SEASON dashboard "Open in Documents" | Resolves via source-coord query, then rewrites URL to `?artifact=<id>` |
+| `?projectIds=<csv>` | ClientLens "View all" | Presets project filter, switches quickFilter to 'all' |
+| `?campaignIds=<csv>` | Campaign drawer "Open in Documents" | Presets campaign filter, shows active-filter banner |
+
+**Active campaign filter banner:** The sidebar doesn't surface campaignIds (would need per-project campaign list which would be UI work for D5). So when `campaignIds` is set via URL, the page shows a banner above the list — "Filtered to N campaigns" with a Clear button. URL-driven only for D4; sidebar chip can land later if needed.
+
+**Architectural decisions:**
+
+| Decision | Reason |
+|---|---|
+| Legacy "Documents & reports" section in drawer NOT replaced | Parallel coverage — different table (seo_campaign_reports vs artifacts) until artifacts coverage is verified complete. Risk-averse migration. |
+| `CampaignDocumentsSection` uses inline-expand not modal | Drawer already has multiple inline sections — opening a modal from inside a drawer breaks visual hierarchy |
+| `RecentDocumentsWidget` hides itself when empty | ClientLens is a narrative page — empty sections break the storytelling flow. Better to vanish than show "No documents yet" |
+| Widget uses framer-motion + mood='focus' + glass cards | Must match ClientLens aesthetic, not graft on a plain table. Code style review: anyone scrolling ClientLens shouldn't be able to tell this widget was added later. |
+| Source-coord lookup goes via list endpoint with new filter params (not new endpoint) | Stays under 12-function ceiling; reuses D2's unique-index O(1) lookup; same response shape PMs are already familiar with |
+| Each viewer has its own "Open in Documents" escape link | Drilling out is always cheap — never force a workflow to live in one viewer; if PM wants the full surface, one click away |
+| Optimistic updates on workflow ops | Same pattern as Documents.tsx detail pane — mark-reviewed flips instantly, no waiting on round-trip |
+
+**Files changed (5 modified, 2 new):**
+
+Modified:
+- `src/pages/Documents.tsx` — added `campaignIds` to FiltersState, 2 new URL patterns (campaignIds + sourceCoords), active-filter banner, source-coord resolver uses proper D4-extended list endpoint
+- `src/components/pm/SeoCampaignsPanel.tsx` — import + render `<CampaignDocumentsSection campaignId={campaignId} />` below legacy reports block
+- `src/pages/ClientLens.tsx` — import + render `<RecentDocumentsWidget projectId={projectId} setMood={setMood} />` as Section 5.5
+- `src/components/season/SeasonPipelineDashboard.tsx` — Link + ExternalLink imports, "Open in Documents" link next to "Open full artifact" on completed steps
+- `src/components/pm/api.ts` — `sourceKind`/`sourceId`/`sourceStepId` added to `ArtifactListFilters`
+- `api/lib/artifacts-routes.ts` — `bsArtifactsList` accepts source-coordinate filters (3 optional params, backward-compatible)
+
+New:
+- `src/components/pm/CampaignDocumentsSection.tsx` (390 lines) — drawer-embedded artifact viewer
+- `src/components/pm/RecentDocumentsWidget.tsx` (200 lines) — ClientLens-embedded widget
+
+**Verification:**
+- Frontend TS: 27 errors total = baseline preserved, 0 new
+- Backend TS clean on touched files
+- Compiled `.js` parses under Node ESM nodenext
+- Vite green
+- API ceiling: 12 (no new function — extended D2's existing endpoint)
+- 9 smoke categories, 41 sub-checks all pass — covering all 4 URL patterns, FiltersState extension, CampaignDocumentsSection (15 sub-checks), drawer wiring (legacy preserved), RecentDocumentsWidget (10 sub-checks), ClientLens wiring, dashboard wiring (6 sub-checks), API ceiling, sidebar unchanged
+
+**Diff:** 2 new files (~590 lines combined), 6 file edits (small touches except Documents.tsx which adds ~50 lines for URL patterns + banner).
+
+**What this gives you immediately on deploy:**
+
+1. **Inside any campaign drawer:** scroll past the legacy reports block to see all artifacts for that campaign as a compact list. Filter by kind, expand to view body, mark reviewed/sent inline, jump out to full Documents page with one click.
+2. **Open any client's lens (`/client/<projectId>`):** scroll to Section 5.5 to see the 5 most recent artifacts, get a count badge if any are unreviewed, deep-link to specific ones or "View all" to enter Documents pre-filtered.
+3. **Watch a pipeline complete in SEASON dashboard:** each completed step now has "Open in Documents" next to "Open full artifact" — jumps straight to that step's artifact in the full Documents detail view (with version history, workflow buttons, supersession chain).
+
+**Discipline lesson logged:** Embedded viewers must match the host page's design language, not impose their own. CampaignDocumentsSection uses inline styles to match the drawer's existing chrome. RecentDocumentsWidget uses framer-motion + mood + glass cards to match ClientLens. SEASON dashboard's "Open in Documents" is a small button matching the existing "Open full artifact" exactly. Three different visual treatments, one underlying data API, three integration points that feel native to each host. If they all looked like Documents.tsx (the central page) they'd feel grafted on. The whole point of embedded viewers is they belong where they're embedded.
 
 ### Session handoff for tech audit work
 

@@ -4122,6 +4122,9 @@ export interface ArtifactListFilters {
   clientSent?:        boolean;
   generatedAfter?:    string;
   generatedBefore?:   string;
+  sourceKind?:        string;   /* Phase D4 — for SEASON dashboard "Open in Documents" deep-link */
+  sourceId?:          string;
+  sourceStepId?:      string;
   sort?:              'newest' | 'oldest' | 'most_expensive';
   limit?:             number;
   offset?:            number;

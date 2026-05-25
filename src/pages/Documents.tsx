@@ -175,6 +175,7 @@ function KpiStrip({ kpis, loading }: { kpis: PortfolioKpis | null; loading: bool
 
 interface FiltersState {
   projectIds:     string[];
+  campaignIds:    string[];   /* Phase D4 — URL-driven only; not surfaced in sidebar yet */
   artifactKinds:  string[];
   status:         StatusMode;
   pmReviewed:     boolean | null;   // null = any
@@ -186,6 +187,7 @@ interface FiltersState {
 
 const DEFAULT_FILTERS: FiltersState = {
   projectIds:    [],
+  campaignIds:   [],
   artifactKinds: [],
   status:        'current',
   pmReviewed:    null,
@@ -716,6 +718,7 @@ export default function Documents() {
   const buildApiFilters = useCallback((): ArtifactListFilters => {
     const base: ArtifactListFilters = {
       projectIds:      filters.projectIds.length    ? filters.projectIds    : undefined,
+      campaignIds:     filters.campaignIds.length   ? filters.campaignIds   : undefined,
       artifactKinds:   filters.artifactKinds.length ? filters.artifactKinds : undefined,
       status:          filters.status,
       pmReviewed:      filters.pmReviewed === null ? undefined : filters.pmReviewed,
@@ -802,12 +805,96 @@ export default function Documents() {
   useEffect(() => { fetchList(); }, [fetchList]);
   useEffect(() => { fetchKpis(); }, [fetchKpis]);
 
-  /* URL sync — read ?artifact=<id> on mount, write on selection */
+  /* URL sync — read deep-link params on mount, write on selection.
+     Supports three deep-link patterns (Phase D4):
+       1. ?artifact=<uuid>                                        — direct artifact
+       2. ?source_kind=pipeline_run&source_id=<uuid>&source_step_id=<id>
+          → resolves to the artifact and selects it. Used by SEASON dashboard
+          "Open in Documents" link where source coordinates are known but
+          artifact_id is not.
+       3. ?projectIds=<csv>                                       — preset project filter
+          Used by ClientLens "View all documents" link to scope the page to
+          one project on entry. */
   useEffect(() => {
     const urlId = searchParams.get('artifact');
     if (urlId && urlId !== selectedId) {
       setSelectedId(urlId);
       fetchDetail(urlId);
+      return;
+    }
+
+    /* Pattern 2 — resolve by source coordinates (Phase D4).
+       Documents page accepts ?source_kind=pipeline_run&source_id=X&source_step_id=Y
+       and looks up the matching artifact via the source filter on bs_artifacts_list.
+       The unique index on (source_kind, source_id, source_step_id) makes this
+       a single-row lookup. Used by SEASON dashboard "Open in Documents" link
+       where the step's run_id + step_id are known but artifact_id is not. */
+    const sourceKind   = searchParams.get('source_kind');
+    const sourceId     = searchParams.get('source_id');
+    const sourceStepId = searchParams.get('source_step_id');
+    if (sourceKind && sourceId) {
+      (async () => {
+        const r = await artifactsList({
+          sourceKind,
+          sourceId,
+          sourceStepId: sourceStepId || undefined,
+          status: 'current',
+          limit: 1,
+        });
+        const found = (r.artifacts || [])[0];
+        if (found) {
+          setSelectedId(found.id);
+          fetchDetail(found.id);
+          /* Replace source_* params with the resolved artifact id for a clean URL */
+          setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.delete('source_kind');
+            next.delete('source_id');
+            next.delete('source_step_id');
+            next.set('artifact', found.id);
+            return next;
+          });
+        } else {
+          /* If no current artifact found, try a broader query without status filter
+             (in case the artifact is superseded but the link's still being followed) */
+          const r2 = await artifactsList({
+            sourceKind, sourceId,
+            sourceStepId: sourceStepId || undefined,
+            limit: 1,
+          } as any);
+          const fallback = (r2.artifacts || [])[0];
+          if (fallback) {
+            setSelectedId(fallback.id);
+            fetchDetail(fallback.id);
+            setSearchParams(prev => {
+              const next = new URLSearchParams(prev);
+              next.delete('source_kind');
+              next.delete('source_id');
+              next.delete('source_step_id');
+              next.set('artifact', fallback.id);
+              return next;
+            });
+          }
+        }
+      })();
+    }
+
+    /* Pattern 3 — preset projectIds filter */
+    const projIdsParam = searchParams.get('projectIds');
+    if (projIdsParam) {
+      const ids = projIdsParam.split(',').map(s => s.trim()).filter(Boolean);
+      if (ids.length > 0) {
+        setFilters(prev => ({ ...prev, projectIds: ids, quickFilter: 'all' }));
+      }
+    }
+
+    /* Pattern 4 — preset campaignIds filter (Phase D4 — CampaignDocumentsSection link) */
+    const campIdsParam = searchParams.get('campaignIds');
+    if (campIdsParam) {
+      const ids = campIdsParam.split(',').map(s => s.trim()).filter(Boolean);
+      if (ids.length > 0) {
+        setFilters(prev => ({ ...prev, campaignIds: ids, quickFilter: 'all' }));
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -901,6 +988,22 @@ export default function Documents() {
 
         {/* KPI strip */}
         <KpiStrip kpis={kpis} loading={kpisLoading} />
+
+        {/* Phase D4 — Active campaign filter banner. The sidebar doesn't surface
+           campaignIds (would need per-project campaign list); URL-driven only.
+           Show a clear chip when active so the operator knows what's filtered. */}
+        {filters.campaignIds.length > 0 && (
+          <div className="px-4 py-2 border-b border-border/40 bg-primary/5 flex items-center gap-2 text-xs">
+            <Filter className="h-3.5 w-3.5 text-primary" />
+            <span className="text-muted-foreground">Filtered to {filters.campaignIds.length} campaign{filters.campaignIds.length === 1 ? '' : 's'}.</span>
+            <button
+              onClick={() => setFilters(prev => ({ ...prev, campaignIds: [] }))}
+              className="text-primary underline hover:no-underline"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         {/* Main three-pane layout */}
         <div className="flex-1 flex overflow-hidden">

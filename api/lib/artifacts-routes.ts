@@ -81,6 +81,7 @@ export async function bsArtifactsList(body: any): Promise<any> {
       projectIds, campaignIds, panelIds, artifactKinds,
       status, keyword, pmReviewed, clientSent,
       generatedAfter, generatedBefore,
+      sourceKind, sourceId, sourceStepId,    /* Phase D4 — source-coordinate filters */
       sort, limit, offset,
     } = body || {};
 
@@ -106,6 +107,14 @@ export async function bsArtifactsList(body: any): Promise<any> {
     if (typeof clientSent  === 'boolean')                   q = q.eq("client_sent",  clientSent);
     if (typeof generatedAfter  === 'string' && generatedAfter)  q = q.gte("generated_at", generatedAfter);
     if (typeof generatedBefore === 'string' && generatedBefore) q = q.lte("generated_at", generatedBefore);
+
+    /* Phase D4 — source-coordinate filters (used by SEASON dashboard
+       "Open in Documents" link to resolve a step's artifact). The unique
+       index on (source_kind, source_id, source_step_id) makes this a
+       single-row lookup when all three are present. */
+    if (typeof sourceKind   === 'string' && sourceKind)   q = q.eq("source_kind",    sourceKind);
+    if (typeof sourceId     === 'string' && sourceId)     q = q.eq("source_id",      sourceId);
+    if (typeof sourceStepId === 'string' && sourceStepId) q = q.eq("source_step_id", sourceStepId);
 
     /* Sort */
     const sortMode = sort || 'newest';

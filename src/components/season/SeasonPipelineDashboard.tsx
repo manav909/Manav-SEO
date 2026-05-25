@@ -11,10 +11,11 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2, XCircle, Loader2, Circle, AlertCircle, X,
-  AlertTriangle, Copy, Check, FileText, RefreshCw, SkipForward, PlayCircle,
+  AlertTriangle, Copy, Check, FileText, RefreshCw, SkipForward, PlayCircle, ExternalLink,
 } from 'lucide-react';
 import { useSeason } from '@/contexts/SeasonContext';
 import { useToast } from '@/hooks/use-toast';
@@ -530,19 +531,41 @@ function StepCard({ step, index, isActive, onOpenViewer, onRetryStep, onRetryFro
           )}
 
           {hasViewable && (
-            <button onClick={onOpenViewer}
-              style={{
-                marginTop: 10,
-                padding: '6px 10px', borderRadius: 7,
-                border: `1px solid hsla(${sevHsl} / 0.3)`,
-                background: `hsla(${sevHsl} / 0.10)`,
-                color: `hsl(${sevHsl})`,
-                fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 5,
-              }}>
-              <FileText size={11} />
-              Open full artifact
-            </button>
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <button onClick={onOpenViewer}
+                style={{
+                  padding: '6px 10px', borderRadius: 7,
+                  border: `1px solid hsla(${sevHsl} / 0.3)`,
+                  background: `hsla(${sevHsl} / 0.10)`,
+                  color: `hsl(${sevHsl})`,
+                  fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}>
+                <FileText size={11} />
+                Open full artifact
+              </button>
+              {/* Phase D4 — Open in Documents (only for completed steps where
+                 an artifact row exists in the artifacts table). The link
+                 resolves via source coordinates — Documents page does the
+                 lookup and selects the right row. */}
+              {status === 'completed' && step.run_id && step.step_id && (
+                <Link
+                  to={`/documents?source_kind=pipeline_run&source_id=${step.run_id}&source_step_id=${step.step_id}`}
+                  style={{
+                    padding: '6px 10px', borderRadius: 7,
+                    border: '1px solid rgba(160,160,180,0.25)',
+                    background: 'transparent',
+                    color: 'inherit', textDecoration: 'none',
+                    fontSize: 10.5, fontWeight: 600,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}
+                  title="Open this artifact in the Documents page (with full workflow, version history, supersession chain)"
+                >
+                  <ExternalLink size={11} />
+                  Open in Documents
+                </Link>
+              )}
+            </div>
           )}
 
           {/* Phase 14.2 — resilience action buttons */}

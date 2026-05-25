@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 
 import { seoClientLensLoad, type ClientLensData } from '@/components/pm/api';
+import RecentDocumentsWidget from '@/components/pm/RecentDocumentsWidget';
 
 /* ════════════════════════════════════════════════════════════════════════════
    MOOD SYSTEM
@@ -258,6 +259,9 @@ export default function ClientLens() {
 
         {/* SECTION 5 — FIVE PILLARS */}
         <PillarsHealth data={data} setMood={setMood} />
+
+        {/* SECTION 5.5 — RECENT DOCUMENTS (Phase D4) */}
+        {projectId && <RecentDocumentsWidget projectId={projectId} setMood={setMood} />}
 
         {/* SECTION 6 — WINS REEL */}
         {data.wins.length > 0 && <WinsReel data={data} setMood={setMood} />}
