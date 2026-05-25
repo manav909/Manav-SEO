@@ -69,6 +69,12 @@ export interface ArtifactInput {
   generation_cost_usd?: number;
   llm_calls?:           number;
   serpapi_calls?:       number;
+
+  /* Timestamp — when the artifact was actually generated (pipeline run
+     finished_at, audit created_at, etc.). Defaults to now() if omitted.
+     Passing the real time ensures sort-by-newest reflects when work
+     happened, not when the row was inserted into this table. */
+  generated_at?:        string | null;
 }
 
 /* Persist one or many artifacts. Idempotent — re-running is a no-op for
@@ -102,6 +108,7 @@ export async function persistArtifacts(
     generation_cost_usd:  typeof a.generation_cost_usd === 'number' ? a.generation_cost_usd : null,
     llm_calls:            a.llm_calls   || 0,
     serpapi_calls:        a.serpapi_calls || 0,
+    ...(a.generated_at ? { generated_at: a.generated_at } : {}),
   }));
 
   try {
@@ -220,6 +227,7 @@ export async function persistPipelineRunArtifacts(opts: {
   artifacts:     Array<{ kind: string; title: string; body: string; step_id: string }>;
   totalLlmCalls?: number;
   totalCostUsd?:  number;
+  finishedAt?:    string | null;  // ISO timestamp of when the run actually finished
 }): Promise<{ inserted: number; superseded: number; skipped: number }> {
   if (!opts.artifacts || opts.artifacts.length === 0) {
     return { inserted: 0, superseded: 0, skipped: 0 };
@@ -256,6 +264,7 @@ export async function persistPipelineRunArtifacts(opts: {
     generation_cost_usd:  perArtifactCost,
     llm_calls:            perArtifactLlm,
     serpapi_calls:        0,
+    generated_at:         opts.finishedAt || null,
   }));
 
   return persistArtifactsWithSupersession(inputs);

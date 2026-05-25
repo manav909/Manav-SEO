@@ -118,9 +118,9 @@ export async function bsArtifactsList(body: any): Promise<any> {
 
     /* Sort */
     const sortMode = sort || 'newest';
-    if (sortMode === 'oldest')         q = q.order("generated_at", { ascending: true });
-    else if (sortMode === 'most_expensive') q = q.order("generation_cost_usd", { ascending: false, nullsFirst: false });
-    else                               q = q.order("generated_at", { ascending: false });
+    if (sortMode === 'oldest')              q = q.order("generated_at", { ascending: true  }).order("id", { ascending: true  });
+    else if (sortMode === 'most_expensive') q = q.order("generation_cost_usd", { ascending: false, nullsFirst: false }).order("generated_at", { ascending: false });
+    else                                    q = q.order("generated_at", { ascending: false }).order("id", { ascending: false });
 
     /* Pagination */
     q = q.range(effectiveOffset, effectiveOffset + effectiveLimit - 1);

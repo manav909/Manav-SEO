@@ -410,6 +410,7 @@ export async function runPipeline(opts: {
       artifacts,
       totalLlmCalls:  totalLlm,
       totalCostUsd:   Number((totalLlm * COST_PER_CALL).toFixed(4)),
+      finishedAt:     new Date().toISOString(),
     });
   } catch (e: any) {
     console.log(`[runPipeline] artifacts persist failed: ${e?.message || 'unknown'} — not blocking`);
@@ -606,6 +607,7 @@ export async function runPipelineWithExistingRow(opts: {
       artifacts,
       totalLlmCalls:  totalLlm,
       totalCostUsd:   Number((totalLlm * COST_PER_CALL).toFixed(4)),
+      finishedAt:     new Date().toISOString(),
     });
   } catch (e: any) {
     console.log(`[runPipelineWithExistingRow] artifacts persist failed: ${e?.message || 'unknown'} — not blocking`);
@@ -1092,6 +1094,7 @@ export async function finalizeRun(opts: {
         artifacts,
         totalLlmCalls:  (run as any).llm_calls_used || 0,
         totalCostUsd:   (run as any).estimated_cost_usd || 0,
+        finishedAt:     (run as any).finished_at || new Date().toISOString(),
       });
     } catch (e: any) {
       console.log(`[finalizeRun] artifacts persist failed: ${e?.message || 'unknown'} — not blocking`);
