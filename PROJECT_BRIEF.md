@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D4 — embedded document viewers) · **Live commit:** `b8b6f57` (Phase D3 Documents page UI). Phase D4 stitches the Documents data into three places where work actually starts: (1) `CampaignDocumentsSection` embedded in the SeoCampaignsPanel drawer below the legacy reports block — kind filter chips, status toggle, inline expand-to-view-body, inline mark-reviewed/sent workflow, per-row "Open in Documents" deep-link; (2) `RecentDocumentsWidget` in ClientLens as Section 5.5 — top 5 latest with framer-motion entry animations, unreviewed-count badge, hides entire section if zero artifacts; (3) "Open in Documents" link on SEASON pipeline dashboard for each completed step — resolves via source coordinates (`source_kind=pipeline_run&source_id=<runId>&source_step_id=<stepId>`) to the artifact_id via D2's extended list endpoint. Backend change: added `sourceKind`/`sourceId`/`sourceStepId` optional filters to `bs_artifacts_list` for O(1) source-coord lookup via D1's unique index. Documents page URL deep-link expanded to 4 patterns: `?artifact=<id>` / source-coordinate triple / `?projectIds=<csv>` / `?campaignIds=<csv>`, with active-filter banner showing when scoped by URL. Legacy "Documents & reports" section in the drawer preserved (parallel coverage; not replaced) — eventually deprecates once artifacts coverage is verified complete. Foundation complete for Phase D5 (bulk ops + comparison view).
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D4.1 — project names + markdown formatting bugfix) · **Live commit:** `a73fe3a` (Phase D4 embedded viewers). Phase D4.1 fixes two bugs Manav reported after deploying D4: (1) Projects filter showed "Project 4c4e49" style ID slices because the projectLabel fallback chain was looking at client-shaped fields (brand_name/client_name/company_name) when `useAuth().projects` actually returns rows from the `projects` table where the display field is `.name`. Fixed: prefer `p.name`, fall back to `new URL(p.url).hostname` as a useful secondary, then client-shaped fields, then ID slice as last resort. (2) Opened artifact body rendered as unstyled raw text because `@tailwindcss/typography` was in package.json but NOT enabled in tailwind.config.ts — so `prose prose-sm dark:prose-invert` classes did nothing. Fixed: enabled the plugin AND extracted a shared `ArtifactMarkdown` component (mirroring the existing DocumentViewer.tsx pattern) with explicit component overrides for h1/h2/h3/h4/p/ul/ol/li/blockquote/a/strong/em/table/code so rendering is deterministic regardless of plugin theme. Component accepts `accent` (kind color) and `size` (sm|md) props. Used in both Documents page detail pane and CampaignDocumentsSection inline expand. Foundation complete for Phase D5 (bulk ops + comparison view) or pivot to Q-arc.
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1535,6 +1535,37 @@ New:
 3. **Watch a pipeline complete in SEASON dashboard:** each completed step now has "Open in Documents" next to "Open full artifact" — jumps straight to that step's artifact in the full Documents detail view (with version history, workflow buttons, supersession chain).
 
 **Discipline lesson logged:** Embedded viewers must match the host page's design language, not impose their own. CampaignDocumentsSection uses inline styles to match the drawer's existing chrome. RecentDocumentsWidget uses framer-motion + mood + glass cards to match ClientLens. SEASON dashboard's "Open in Documents" is a small button matching the existing "Open full artifact" exactly. Three different visual treatments, one underlying data API, three integration points that feel native to each host. If they all looked like Documents.tsx (the central page) they'd feel grafted on. The whole point of embedded viewers is they belong where they're embedded.
+
+### Phase D4.1 — Project names + markdown formatting bugfix (2026-05-25)
+
+**Bugs reported by Manav after D4 deploy:**
+
+1. **Project filter sidebar showed "Project 4c4e49" id-slice labels** instead of real project names.
+2. **Opened document body rendered as unstyled raw text** — no headings, no lists, no spacing.
+
+**Root cause 1 — wrong fallback chain.** `useAuth().projects` returns rows from the `projects` table (schema: `.name`, `.url`, `.keywords[]`, `.competitors[]`, `.client_id`), NOT the `clients` table. The original `projectLabel` fallback chain looked at `brand_name || client_name || company_name` which are CLIENT-shaped fields. None of them matched on `projects` rows, so every label fell through to the last-resort `Project ${id.slice(0, 6)}` ID slice. PortalNav has been using `p.name` correctly the whole time — the bug was specific to Documents/D3+D4.
+
+**Fix 1:** Both projectLabel functions in Documents.tsx (sidebar version + main useCallback version) now use proper priority: `p.name` (the actual display field), then `new URL(p.url).hostname.replace(/^www\./, '')` as a smart secondary (most projects have a URL even if name is blank), then preserve the old client-shaped fallbacks (brand_name/client_name/company_name) in case projects ever gets joined with clients, then ID slice as final fallback.
+
+**Root cause 2 — typography plugin disabled.** The first D3/D4 implementations used Tailwind's `<article className="prose prose-sm dark:prose-invert max-w-none">` wrapper around `<ReactMarkdown>` to style markdown output. But `@tailwindcss/typography` was in `package.json` and NOT in `tailwind.config.ts` plugins array. Tailwind doesn't recognize the `prose-*` utility classes when the plugin isn't loaded, so they emitted no CSS — markdown rendered as completely unstyled raw text. The existing `DocumentViewer.tsx` (brand-studio phase) works because it uses a CUSTOM class `ds-prose` AND overrides every element via the `components={{...}}` prop on ReactMarkdown. That's the working house pattern.
+
+**Fix 2:** Two changes:
+- Enabled `@tailwindcss/typography` in `tailwind.config.ts` plugins array — `prose-*` classes now work everywhere
+- Extracted a shared `ArtifactMarkdown` component (`src/components/pm/ArtifactMarkdown.tsx`, ~130 lines) mirroring the DocumentViewer.tsx component-override pattern but tailored for artifact reading (regular reading, not branded report viewing). Accepts `accent` prop (uses kind color for h1 border + h2 + blockquote + link color) and `size` prop (`'sm' | 'md'`). 13 element overrides: h1/h2/h3/h4, p, ul/ol/li, blockquote, hr, a (opens in new tab), strong, em, table/thead/th/td, code (inline + block via `language-*` className detection).
+
+Documents.tsx and CampaignDocumentsSection.tsx both now use `<ArtifactMarkdown body={...} accent={...} size={...} />` — single source of truth for artifact body rendering. Removed `ReactMarkdown` + `remarkGfm` direct imports from both consumers.
+
+**Files changed:** 3 modified (`tailwind.config.ts`, `src/pages/Documents.tsx`, `src/components/pm/CampaignDocumentsSection.tsx`) + 1 new (`src/components/pm/ArtifactMarkdown.tsx`).
+
+**Verification:**
+- Frontend TS: 27 baseline preserved, 0 new errors
+- Vite build green
+- API ceiling: 12 unchanged
+- 32 smoke sub-checks all pass — 6 for project name fix (sidebar + main callback, p.name priority, URL hostname fallback, client-shaped fallback preserved, ID-slice last-resort), 15 for markdown formatting (plugin enabled, component exports, all 13 element overrides present, prop signatures), 6 for Documents.tsx wiring (uses ArtifactMarkdown, no raw ReactMarkdown imports, accent passed through), 4 for CampaignDocumentsSection wiring, 3 for no-regression (D4 files still exist, all 4 URL patterns still present)
+
+**Diff:** 1 new file (~130 lines), 3 file edits (tailwind config 1 line, Documents.tsx ~30 lines, CampaignDocumentsSection.tsx ~10 lines).
+
+**Discipline lesson logged:** Verify that the dependencies you import actually work, not just that they're installed. `@tailwindcss/typography` being in `package.json` only means it's available — it has to be loaded in `tailwind.config.ts` to do anything. The smoke tests in D3 didn't catch this because they checked "ReactMarkdown imported" (yes) and "remarkGfm imported" (yes) and "body rendered as markdown" (yes — but unstyled). The verification gap was visual — no smoke test for "headings actually have larger font size than paragraphs". Lesson: when wiring up CSS framework plugins, the smoke test should be "does the EMITTED CSS contain a `prose` class definition", not just "are the import strings in the source file".
 
 ### Session handoff for tech audit work
 

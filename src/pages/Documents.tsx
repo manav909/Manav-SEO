@@ -51,8 +51,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import ArtifactMarkdown from '@/components/pm/ArtifactMarkdown';
 import {
   FileText, Search, Filter, ChevronDown, ChevronRight, X,
   CheckCircle2, Send, Clock, RefreshCw, AlertTriangle, History,
@@ -221,8 +220,23 @@ function FiltersSidebar({
   const toggleArray = (arr: string[], value: string): string[] =>
     arr.includes(value) ? arr.filter(x => x !== value) : [...arr, value];
 
-  const projectLabel = (p: any) =>
-    p.brand_name || p.client_name || p.company_name || `Project ${String(p.id).slice(0, 6)}`;
+  /* projects from useAuth() are rows from the `projects` table, NOT `clients`.
+     The projects schema has `.name` (primary display field) and `.url`.
+     Earlier versions used client-shaped fallbacks (brand_name/client_name/
+     company_name) which never matched anything on project rows — producing
+     the ugly "Project 4c4e49" id-slice labels.  Fix: prefer p.name, then
+     extract URL host as a usable secondary, then id-slice as last resort. */
+  const projectLabel = (p: any) => {
+    if (p.name && String(p.name).trim()) return String(p.name).trim();
+    if (p.url && typeof p.url === 'string') {
+      try { return new URL(p.url).hostname.replace(/^www\./, ''); } catch { /* fall through */ }
+    }
+    /* Client-shaped fallbacks — kept in case projects ever gets joined with clients */
+    if (p.brand_name)   return p.brand_name;
+    if (p.client_name)  return p.client_name;
+    if (p.company_name) return p.company_name;
+    return `Project ${String(p.id).slice(0, 6)}`;
+  };
 
   return (
     <aside className="w-64 shrink-0 border-r border-border/40 bg-background/30 overflow-y-auto">
@@ -611,11 +625,7 @@ function DetailPane({
       {/* Body */}
       <ScrollArea className="flex-1">
         <div className="px-5 py-4">
-          <article className="prose prose-sm dark:prose-invert max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {artifact.body || '_No content_'}
-            </ReactMarkdown>
-          </article>
+          <ArtifactMarkdown body={artifact.body || '_No content_'} accent={meta.color} size="md" />
 
           {/* Supersession chain */}
           {chainHasOthers && (
@@ -711,7 +721,14 @@ export default function Documents() {
   const projectLabel = useCallback((id: string) => {
     const p: any = safeProjects.find((p: any) => p.id === id);
     if (!p) return `Project ${String(id).slice(0, 6)}`;
-    return p.brand_name || p.client_name || p.company_name || `Project ${String(id).slice(0, 6)}`;
+    if (p.name && String(p.name).trim()) return String(p.name).trim();
+    if (p.url && typeof p.url === 'string') {
+      try { return new URL(p.url).hostname.replace(/^www\./, ''); } catch { /* fall through */ }
+    }
+    if (p.brand_name)   return p.brand_name;
+    if (p.client_name)  return p.client_name;
+    if (p.company_name) return p.company_name;
+    return `Project ${String(id).slice(0, 6)}`;
   }, [safeProjects]);
 
   /* Convert filters → API filter shape, applying quick-filter presets */

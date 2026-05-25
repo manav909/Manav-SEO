@@ -21,8 +21,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import ArtifactMarkdown from './ArtifactMarkdown';
 import {
   FileText, ChevronDown, ChevronRight, CheckCircle2, Send,
   ExternalLink, Eye, Loader2, AlertTriangle, RefreshCw, Filter,
@@ -491,11 +490,7 @@ function ArtifactCard({
             </div>
           )}
           {!detailLoading && detail && (
-            <div className="prose prose-sm dark:prose-invert max-w-none" style={{ fontSize: 12 }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {detail.body || '_No content_'}
-              </ReactMarkdown>
-            </div>
+            <ArtifactMarkdown body={detail.body || '_No content_'} size="sm" />
           )}
         </div>
       )}
