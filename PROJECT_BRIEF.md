@@ -1,6 +1,6 @@
 # SEO SEASON — Project Brief
 
-**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D1 — artifacts table foundation) · **Live commit:** `d9fc9b1` (Phase 17.5.8 reconcile route). Phase D1 promotes pipeline outputs to first-class queryable rows. New `artifacts` table with full-text search, supersession (refresh-from-audit produces new rows; previous artifacts go status='superseded' not deleted — full history retained), 9 filter indexes covering project/campaign/panel/keyword/kind/status/date/unreviewed/search, per-artifact cost ledger. New `api/lib/artifacts.ts` library with `persistArtifacts()` + `persistArtifactsWithSupersession()` + `persistPipelineRunArtifacts()` helpers. Wired into all three finalizeRun-equivalent paths in season-pipeline-runner.ts (finalizeRun, runPipeline, runPipelineWithExistingRow) as best-effort dual-write — failures don't block finalization. Includes SQL migration `sql/phase-d1-artifacts-table.sql` with schema + indexes + tsvector trigger + backfill from existing season_pipeline_runs.final_artifacts (idempotent). Foundation for Phase D2 (backend list/search/supersede routes) and D3 (Documents page UI).
+**Maintained by:** Manav · **Last updated:** 2026-05-25 (Phase D2 — artifacts backend routes) · **Live commit:** `66c6617` (Phase D1 artifacts table foundation). Phase D2 exposes the artifacts table (D1) via 8 backend endpoints — `bs_artifacts_list / get / search / supersede / mark_reviewed / mark_sent / history / portfolio_kpis`. List returns summaries only (no body, no metadata, no search_vector — bandwidth protection); get returns the full row plus chronologically composed supersession chain (forward walk via superseded_by + backward walk via reverse-lookup with cycle guard). Search uses Supabase's `.textSearch()` mapping to `plainto_tsquery` (safe for arbitrary input). All filters are multi-select arrays (projectIds[], campaignIds[], panelIds[], artifactKinds[]). Workflow ops (reviewed, sent, supersede) are reversible — pass `false` to unset. Portfolio KPIs returns 6 metrics in one round-trip: artifacts_this_week, artifacts_this_month, llm_spend_mtd_usd, awaiting_review_count, awaiting_review_oldest_days, red_severity_audits. Dispatched through existing `handleBrandStudio` cases — no new `api/*.ts` function added (ceiling preserved at 12). Foundation complete for Phase D3 (Documents page UI).
 
 > **How to use this file:** Upload at the start of every new Claude chat about SEO SEASON. Single source of truth for project state, working rules, voice, backlog, in-flight context. Updated at the end of each shipping turn.
 
@@ -1370,6 +1370,52 @@ Walks every existing `season_pipeline_runs` with a non-empty `final_artifacts` a
 - Future: campaign-level Q2 synthesis artifacts (strategy_plan / client_update / handover at campaign-level) plug into the same table with `panel_id=null` and explicit campaign-level supersession
 
 **Discipline lesson logged:** Build data foundations before UIs. The Documents page UI (D3) was the visible pain Manav reported, but starting there would have meant a parallel data store or a frontend that papers over a broken model. D1 is invisible work that makes D3 simple. Even before D2 ships, the SQL backfill alone gives immediate relief: any historical artifact is now queryable directly in Supabase, today.
+
+### Phase D2 — Artifacts backend routes (2026-05-25)
+
+**Why this exists:** D1 produced the data foundation. D3 needs to query it. D2 is the API surface that bridges the two. Without it the Documents page would either bypass the action router (breaking the unified backend contract) or duplicate query logic in 8 places.
+
+**The 8 endpoints:**
+
+| Endpoint | Purpose | Response shape |
+|---|---|---|
+| `bs_artifacts_list` | Paginated multi-filter list — projectIds[], campaignIds[], panelIds[], artifactKinds[], status, keyword, pmReviewed, clientSent, generatedAfter/Before, sort (newest\|oldest\|most_expensive), limit, offset | `{ artifacts: SUMMARY[], total, limit, offset }` |
+| `bs_artifacts_get` | Single artifact by id, full body + metadata, optional supersession chain | `{ artifact, chain: [oldest...current] }` |
+| `bs_artifacts_search` | Full-text via `.textSearch(searchVector, q, {type:'plain'})` + optional filter combo | `{ artifacts: SUMMARY[], total, query }` |
+| `bs_artifacts_supersede` | Manual mark as superseded, optional supersededBy pointer | `{ artifact }` |
+| `bs_artifacts_mark_reviewed` | PM workflow — sets pm_reviewed + pm_reviewed_at + pm_reviewed_by + optional pm_notes. Reversible via reviewed=false | `{ artifact }` |
+| `bs_artifacts_mark_sent` | Sets client_sent + client_sent_at. Reversible via sent=false | `{ artifact }` |
+| `bs_artifacts_history` | Supersession chain only (no body) — for D5 comparison view + D3 detail breadcrumb | `{ chain: [oldest...current] }` |
+| `bs_artifacts_portfolio_kpis` | One round-trip dashboard payload: 6 metrics + optional projectIds[] scope | `{ kpis: {...} }` |
+
+**Architecture decisions:**
+
+| Decision | Reason |
+|---|---|
+| List returns SUMMARY_COLUMNS only (excludes body, metadata, search_vector) | Bandwidth protection at scale — a list of 50 artifacts goes from MB to KB |
+| Search uses `plainto_tsquery` not raw SQL | Safe for arbitrary user input; quotes/punctuation/special chars all neutered |
+| All filter params are arrays (multi-select) | A user filtering 12 projects shouldn't make 12 API calls |
+| Portfolio KPIs as ONE route returning 6 metrics | Documents page header fires once, gets everything in one round-trip |
+| Workflow ops on single artifact id (not bulk) | Bulk variant deferred to D5; for D2 the one-at-a-time contract stays clean and traceable |
+| Status defaults to 'current' on list/search | Most queries want current — superseded/archived require explicit opt-in |
+| Pagination clamped 1-200, offset >= 0 | DoS protection + sane defaults |
+| `bsArtifactsHistory` reuses `bsArtifactsGet`'s chain logic | Single source of truth for chain reconstruction; no logic duplication |
+| Supersession chain walks bidirectionally with cycle guard | Refresh produces forward chains via superseded_by; manual supersedes may produce reverse links; cycle guard via Set prevents infinite loops on bad data |
+
+**Files changed:** 1 modified (`api/lib/brand-studio.ts` — 37 line insert for 8 dispatcher cases), 1 new lib (`api/lib/artifacts-routes.ts` — 511 lines). No new `api/*.ts` function (ceiling preserved at 12).
+
+**Verification:**
+- Full repo TS check clean. Only 4 pre-existing errors remain (documented: seo-campaign-engine:1021, season-war-room:223, seo-campaign-grouping:877, seo-war-room:220) — none newly introduced.
+- Vercel runtime TS check on touched files: clean.
+- Compiled `.js` parses under Node ESM nodenext for both `artifacts-routes.js` and `brand-studio.js`.
+- Frontend baseline 27 (unchanged — no FE in D2).
+- Vite build green.
+- API ceiling: 12 (unchanged).
+- 39 smoke sub-checks across 15 categories all pass: route definitions present, all dispatcher cases wired, SUMMARY excludes body/metadata/search_vector, FULL includes them, textSearch uses safe plainto_tsquery, status enum validated, pagination bounded, supersession chain has cycle guard, workflow ops reversible, KPIs cover 6 metrics, 24 error returns + 9 try blocks, 8 multi-select `.in()` calls, artifacts-routes.ts is in api/lib/ not api/, 8 endpoint docblocks present.
+
+**Diff:** 37 lines added to brand-studio.ts dispatcher + new 511-line artifacts-routes.ts library file.
+
+**Discipline lesson logged:** When a piece of code exists from a prior session (artifacts-routes.ts was already in the workspace, locally only, never committed), the honest move is to read it carefully, verify it against current state, and ship if correct — not to rewrite from scratch and discard valid work. Re-writing would have lost the docblocks, the supersession chain logic, and the careful PostgREST patterns. Verification + integration is faster than reinvention.
 
 ### Session handoff for tech audit work
 

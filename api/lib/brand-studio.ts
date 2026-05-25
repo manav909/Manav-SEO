@@ -801,6 +801,43 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       return bsSeasonPipelineReconcile(body);
     }
 
+    /* ─── Phase D2 (2026-05-25) — artifacts management endpoints ─────────
+       Backend for the Documents page (D3). Exposes the artifacts table
+       (created in D1) via list/search/get/supersede/mark_reviewed/mark_sent/
+       history/portfolio_kpis. No new function slot — all dispatched here. */
+    case "bs_artifacts_list": {
+      const { bsArtifactsList } = await import("./artifacts-routes.js");
+      return bsArtifactsList(body);
+    }
+    case "bs_artifacts_get": {
+      const { bsArtifactsGet } = await import("./artifacts-routes.js");
+      return bsArtifactsGet(body);
+    }
+    case "bs_artifacts_search": {
+      const { bsArtifactsSearch } = await import("./artifacts-routes.js");
+      return bsArtifactsSearch(body);
+    }
+    case "bs_artifacts_supersede": {
+      const { bsArtifactsSupersede } = await import("./artifacts-routes.js");
+      return bsArtifactsSupersede(body);
+    }
+    case "bs_artifacts_mark_reviewed": {
+      const { bsArtifactsMarkReviewed } = await import("./artifacts-routes.js");
+      return bsArtifactsMarkReviewed(body);
+    }
+    case "bs_artifacts_mark_sent": {
+      const { bsArtifactsMarkSent } = await import("./artifacts-routes.js");
+      return bsArtifactsMarkSent(body);
+    }
+    case "bs_artifacts_history": {
+      const { bsArtifactsHistory } = await import("./artifacts-routes.js");
+      return bsArtifactsHistory(body);
+    }
+    case "bs_artifacts_portfolio_kpis": {
+      const { bsArtifactsPortfolioKpis } = await import("./artifacts-routes.js");
+      return bsArtifactsPortfolioKpis(body);
+    }
+
     /* Phase 14 — campaigns + opportunities */
     case "bs_seo_campaign_list": {
       const { bsSeoCampaignList } = await import("./seo-campaign-routes.js");
