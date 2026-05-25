@@ -137,14 +137,19 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
      ACTION HANDLERS
   ════════════════════════════════ */
 
-  const handleCreateClientAndProject = async () => {
+  /* Step 0 — just validate client selection and advance */
+  const handleClientNext = () => {
     setErr('');
-    const needsNewClient = clientMode === 'new';
-
-    if (needsNewClient && (!clientForm.name || !clientForm.email))
+    if (clientMode === 'new' && (!clientForm.name || !clientForm.email))
       return setErr('Client name and email are required.');
     if (clientMode === 'existing' && !selectedClientId)
-      return setErr('Please select an existing client.');
+      return setErr('Please select a client.');
+    setStep(1);
+  };
+
+  /* Step 1 — validate project fields, create client if new, create project */
+  const handleCreateProject = async () => {
+    setErr('');
     if (!projectForm.name || !projectForm.url)
       return setErr('Project name and URL are required.');
 
@@ -152,7 +157,7 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
     try {
       /* Create client if needed */
       let clientId = selectedClientId;
-      if (needsNewClient) {
+      if (clientMode === 'new') {
         const { data: c, error: cErr } = await supabase.from('clients').insert({
           name:             clientForm.name,
           company:          clientForm.company || clientForm.name,
@@ -552,8 +557,10 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
 
   const handleNext = () => {
     setErr('');
-    if (step === 0 || step === 1) {
-      handleCreateClientAndProject();
+    if (step === 0) {
+      handleClientNext();
+    } else if (step === 1) {
+      handleCreateProject();
     } else if (step === 2) {
       handleSaveBrain();
     } else if (step === 3) {
@@ -645,7 +652,12 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
         {/* Footer */}
         <div className="px-8 py-5 border-t border-border/50 bg-background/30 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            {step > 0 && step < 2 && (
+            {step === 1 && (
+              <Btn onClick={() => { setErr(''); setStep(0); }} variant="ghost">
+                <ChevronLeft className="h-4 w-4" />Back
+              </Btn>
+            )}
+            {step > 0 && step < 2 && step !== 1 && (
               <Btn onClick={() => { setErr(''); setStep(s => s - 1); }} variant="ghost">
                 <ChevronLeft className="h-4 w-4" />Back
               </Btn>
