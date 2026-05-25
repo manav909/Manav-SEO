@@ -12,6 +12,7 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Maximize2, ArrowLeft } from 'lucide-react';
 import PortalNav from '@/components/PortalNav';
 import { useProject } from '@/contexts/ProjectContext';
 import type { TaskCard } from '@/components/pm/types';
@@ -28,7 +29,8 @@ type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' 
 
 export default function PMModule() {
   const { selectedProject, selectedProjectId } = useProject();
-  const [tab, setTab]       = useState<Tab>('board');
+  const [tab, setTab]             = useState<Tab>('board');
+  const [docsFullscreen, setDocsFullscreen] = useState(false);
   const [cards, setCards]   = useState<TaskCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
@@ -163,9 +165,39 @@ export default function PMModule() {
               <SeoInboxPanel projectId={selectedProjectId} />
             )}
             {tab === 'documents' && (
-              <div className="h-[calc(100vh-200px)] rounded-xl overflow-hidden border border-border/40">
-                <Documents embedded />
-              </div>
+              <>
+                {/* Fullscreen overlay */}
+                {docsFullscreen && (
+                  <div className="fixed inset-0 z-50 flex flex-col bg-background">
+                    <div className="shrink-0 h-10 flex items-center gap-3 px-4 border-b border-border/40 bg-card/80 backdrop-blur-md">
+                      <button
+                        onClick={() => setDocsFullscreen(false)}
+                        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                        Back to Project Management
+                      </button>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      <Documents embedded />
+                    </div>
+                  </div>
+                )}
+                {/* Embedded view with fullscreen button */}
+                <div className="relative">
+                  <button
+                    onClick={() => setDocsFullscreen(true)}
+                    title="Full screen"
+                    className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 border border-border/40 transition-colors bg-background/80 backdrop-blur-sm"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                    Full screen
+                  </button>
+                  <div className="h-[calc(100vh-200px)] rounded-xl overflow-hidden border border-border/40">
+                    <Documents embedded />
+                  </div>
+                </div>
+              </>
             )}
           </>
         )}
