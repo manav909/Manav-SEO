@@ -194,11 +194,19 @@ async function handleDiagnose(projectId: string): Promise<CommandResponse> {
 
   /* Check 1: project + freshness */
   const [projectRes, integRes, intelRes] = await Promise.all([
-    db().from("projects").select("project_name,client_url,status").eq("id", projectId).maybeSingle(),
+    db().from("projects").select("name,url,project_name,client_url,status").eq("id", projectId).maybeSingle(),
     db().from("project_integrations").select("provider,last_pull_at,last_pull_status").eq("project_id", projectId),
     db().from("project_knowledge").select("updated_at").eq("project_id", projectId).eq("category","analytics").eq("field_key","analytics_intelligence").maybeSingle(),
   ]);
-  let project = projectRes.data as any;
+  let project = (() => {
+    const d = projectRes.data as any;
+    if (!d) return null;
+    return {
+      project_name: d.project_name || d.name || '',
+      client_url:   d.client_url   || d.url   || null,
+      status:       d.status || 'active',
+    };
+  })();
   let projectSource = "projects";
 
   /* If projects table doesn't have it, try clients table */

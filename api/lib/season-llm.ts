@@ -544,8 +544,8 @@ async function gatherContext(projectId: string): Promise<ContextBundle> {
   const ga4 = integrations.find(i => i.provider === "ga4")?.last_pull_at || null;
 
   return {
-    project_name: project?.project_name || null,
-    client_url:   project?.client_url || null,
+    project_name: project?.project_name || project?.name || null,
+    client_url:   project?.client_url   || project?.url  || null,
     project_status: project?.status || null,
     active_goals_summary,
     active_strategies_summary,

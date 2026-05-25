@@ -910,9 +910,18 @@ export async function recommendCampaignStructure(opts: {
 
 async function readProject(projectId: string): Promise<{ project_name: string; client_url: string | null } | null> {
   try {
+    /* Projects table has two naming conventions:
+       - Older records:  project_name + client_url
+       - Wizard-created: name + url
+       Query all four columns and fall back so both work. */
     const { data } = await db().from("projects")
-      .select("project_name, client_url").eq("id", projectId).maybeSingle();
-    return data as any;
+      .select("name, url, project_name, client_url").eq("id", projectId).maybeSingle();
+    if (!data) return null;
+    const d = data as any;
+    const project_name = d.project_name || d.name || '';
+    const client_url   = d.client_url   || d.url   || null;
+    if (!project_name) return null;
+    return { project_name, client_url };
   } catch { return null; }
 }
 
