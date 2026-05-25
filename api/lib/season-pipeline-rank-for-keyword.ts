@@ -460,25 +460,39 @@ When LIVE SERP DATA is provided, copy those PAA questions and SERP features dire
 };
 
 function renderKeywordArtifact(keyword: string, data: any): string {
+  const serpVerified = data._serp_verified ? ' _(SerpAPI verified)_' : ' _(LLM web-search estimate — not a measurement tool)_';
+  const volLabel = data._serp_verified
+    ? `${data.search_volume_estimate || 'unknown'} _(LLM estimate — SerpAPI does not provide volume; treat as directional only)_`
+    : `${data.search_volume_estimate || 'unknown'} _(LLM estimate — no keyword tool connected; treat as directional only)_`;
+  const diffLabel = `${data.competitive_difficulty || 'unknown'} _(LLM judgment based on SERP observation — no domain-authority or backlink data; treat as directional)_`;
+  const gscNote = data._gsc_position != null
+    ? `\n\n**GSC current position:** ${data._gsc_position?.toFixed(1)} · ${data._gsc_clicks} clicks · ${data._gsc_impressions} impressions _(verified, from your live GSC data)_`
+    : '';
+  const top10 = data._serp_verified && (data._serp_top10_domains || []).length > 0
+    ? `\n\n**Live top-10 domains** _(SerpAPI verified)_: ${data._serp_top10_domains.slice(0, 8).join(', ')}`
+    : '';
+
   return `# Keyword Research: "${keyword}"
 
 **Primary intent:** ${data.primary_intent || 'unknown'}
 ${data.intent_explanation ? `> ${data.intent_explanation}` : ''}
+${gscNote}
 
-**Search volume bucket:** ${data.search_volume_estimate || 'unknown'}
-**Competitive difficulty:** ${data.competitive_difficulty || 'unknown'}
+**Search volume bucket:** ${volLabel}
+**Competitive difficulty:** ${diffLabel}
 ${data.difficulty_reasoning ? `> ${data.difficulty_reasoning}` : ''}
+${top10}
 
 **Related queries:**
 ${(data.related_queries || []).map((q: string) => `- ${q}`).join('\n') || '(none surfaced)'}
 
-**People also ask:**
+**People also ask:** ${data._serp_verified ? '_(SerpAPI verified)_' : '_(LLM web-search estimate)_'}
 ${(data.people_also_ask || []).map((q: string) => `- ${q}`).join('\n') || '(none surfaced)'}
 
-**SERP features present:**
+**SERP features present:**${serpVerified}
 ${(data.serp_features || []).join(', ') || '(none)'}
 
-**Ranking strategy hint:**
+**Ranking strategy hint:** _(LLM assessment based on SERP pattern observation)_
 ${data.ranking_strategy_hint || '—'}
 `;
 }
@@ -705,18 +719,24 @@ Use web_search to actually look at the SERP. Don't fabricate URLs.`;
 };
 
 function renderCompetitorArtifact(keyword: string, data: any): string {
+  const sourceNote = data._llm_enriched
+    ? `> **Source:** URLs verified via SerpAPI (live SERP). Page format, structure, and ranking rationale are LLM inferences about those known URLs — not fetched page content. Treat qualitative fields as informed estimates.\n\n`
+    : data._source_note
+      ? `> **Source:** ${data._source_note}. URLs are SerpAPI-verified.\n\n`
+      : `> **Source:** LLM web-search estimate. URLs may not reflect the current live SERP — run a Technical Audit to get SerpAPI-verified top-10.\n\n`;
+
   const pages = (data.top_pages || []).map((p: any) => {
     const lines: string[] = [];
     lines.push(`### ${p.rank_position}. ${p.title || p.domain || 'untitled'}`);
-    if (p.url) lines.push(`**URL:** ${p.url}`);
+    if (p.url) lines.push(`**URL:** ${p.url} _(SerpAPI verified)_`);
     if (p.page_format || p.word_count_estimate) {
-      lines.push(`**Format:** ${p.page_format || '—'} · **Length:** ${p.word_count_estimate || '—'}`);
+      lines.push(`**Format:** ${p.page_format || '—'} · **Length:** ${p.word_count_estimate || '—'} _(LLM inference)_`);
     }
-    if (p.structure_pattern) lines.push(`**Structure:** ${p.structure_pattern}`);
-    if (p.why_it_ranks) lines.push(`**Why it ranks:** ${p.why_it_ranks}`);
+    if (p.structure_pattern) lines.push(`**Structure:** ${p.structure_pattern} _(LLM inference)_`);
+    if (p.why_it_ranks) lines.push(`**Why it ranks:** ${p.why_it_ranks} _(LLM inference)_`);
     return lines.join('\n') + '\n';
   }).join('\n---\n\n');
-  return `# Competitor Snapshot: "${keyword}"\n\n${pages}\n\n## Shared patterns across top results\n${(data.shared_patterns || []).map((p: string) => `- ${p}`).join('\n')}\n\n## Content gap opportunity\n${data.content_gap_opportunity || '—'}\n`;
+  return `# Competitor Snapshot: "${keyword}"\n\n${sourceNote}${pages}\n\n## Shared patterns across top results\n${(data.shared_patterns || []).map((p: string) => `- ${p}`).join('\n')}\n\n## Content gap opportunity\n${data.content_gap_opportunity || '—'}\n`;
 }
 
 /* ─── Phase 17.1 — Audit-sourced competitor snapshot ────────────
@@ -1007,9 +1027,13 @@ function renderStrategyArtifact(keyword: string, data: any): string {
 **Suggested URL:** ${data.target_url_suggestion || '—'}
 
 ## Phases
+> _(Phase durations are LLM template estimates, not scheduled dates. Adjust to actual team capacity before committing to a timeline.)_
+
 ${phases}
 
 ## Expected impact
+> ⚠️ **This is an LLM narrative projection, not a data-backed forecast.** It is based on the strategy's assessment of difficulty and approach — not on GSC baseline data or statistical models. For quantified projections (position targets, click ranges, confidence intervals) see the **Forecast** step which uses your live GSC baseline.
+
 ${data.expected_impact || '—'}
 
 ## KPIs to watch
@@ -1342,37 +1366,48 @@ Produce JSON for this one section only.`;
     }
     if (sectionsPartial > 0) stepNotes.push(`${sectionsPartial} of ${headings.length} sections only have heading-level info (expansion failed); ${sectionsFullyExpanded} are fully expanded.`);
 
-    /* ════════ STAGE 2.5 — KEY-POINT FACT CHECK (web_search) ════
-       Collect all numerical claims, product names, pricing, and
-       specific statistics from Stage 2 key_points and verify them
-       with web_search. Marks unverified claims so the writer knows
-       what needs checking. Prevents hallucinated facts reaching the
-       final brief. "Prefer credible source over LLM inference." */
-    const claimsToVerify: Array<{ section: number; point: number; claim: string }> = [];
+    /* ════════ STAGE 2.5 — KEY-POINT + EXAMPLE FACT CHECK ════════
+       Pass A: scan key_points for numerical/specific claims, verify with web.
+       Pass B: scan examples_to_cite for named entities, specific scenarios,
+               product/company names — verify these aren't fabricated.
+       Marks unverified claims so the writer knows what needs checking. */
+    const claimsToVerify: Array<{ section: number; field: 'key_points' | 'examples'; index: number; claim: string }> = [];
     const CLAIM_PATTERN = /\$[\d,]+|\d+[\s\%]|named\s+\w+|version\s+[\d\.]+|\d+\s+(million|billion|thousand)|[A-Z][a-z]+\s+(?:costs?|charges?|requires?|has\s+\d)/g;
+
     for (let i = 0; i < expanded.length; i++) {
+      /* key_points — numerical and specific claims */
       for (let j = 0; j < (expanded[i].key_points || []).length; j++) {
         const pt: string = expanded[i].key_points[j];
         if (CLAIM_PATTERN.test(pt) || /\d/.test(pt)) {
-          claimsToVerify.push({ section: i, point: j, claim: pt });
+          claimsToVerify.push({ section: i, field: 'key_points', index: j, claim: pt });
+        }
+      }
+      /* examples_to_cite — any named company/product scenarios */
+      for (let j = 0; j < (expanded[i].examples_to_cite || []).length; j++) {
+        const ex: string = expanded[i].examples_to_cite[j];
+        /* Flag examples that reference named entities — these can be hallucinated */
+        if (/[A-Z][a-zA-Z]{2,}/.test(ex) && ex.length > 20) {
+          claimsToVerify.push({ section: i, field: 'examples', index: j, claim: ex });
         }
       }
     }
 
     if (claimsToVerify.length > 0) {
-      const checkSys = `You verify specific factual claims. Use web_search to check each claim. Return ONLY valid JSON:
+      const checkSys = `You verify specific factual claims and named-entity scenarios from a content brief. Use web_search to check each item. Return ONLY valid JSON:
 {
   "results": [
-    { "index": 0, "claim": "...", "verified": true|false, "correction": "corrected fact if wrong, null if correct", "source_url": "url you checked" }
+    { "index": 0, "claim": "...", "verified": true|false, "correction": "corrected fact if wrong, null if correct or plausible", "source_url": "url you checked or null" }
   ]
 }
 Rules:
-- If you cannot verify a claim, set verified=false and correction="NEEDS MANUAL VERIFICATION: [why uncertain]"
+- For factual claims: verified=true ONLY when a live authoritative source confirms the specific number/fact
+- For example scenarios: verified=true if the named company/product exists and the scenario is plausible; verified=false if the company doesn't exist or the scenario contradicts known facts
+- If you cannot verify, set verified=false and correction="NEEDS MANUAL VERIFICATION: [why uncertain]"
 - Never fabricate a source URL — only cite URLs you actually retrieved
-- verified=true ONLY when you found a live authoritative source confirming the claim`;
-      const checkUsr = `Article: "${skel.title}"\n\nVerify these factual claims from the content brief:\n${claimsToVerify.slice(0, 12).map((c, i) => `${i}. [Section "${expanded[c.section]?.h2}"] ${c.claim}`).join('\n')}`;
+- A scenario that references a fictional or incorrectly-named company must be flagged`;
+      const checkUsr = `Article: "${skel.title}"\n\nVerify these claims and example scenarios:\n${claimsToVerify.slice(0, 14).map((c, i) => `${i}. [Section "${expanded[c.section]?.h2}" / ${c.field}] ${c.claim}`).join('\n')}`;
 
-      const checkR = await callLlmWeb({ systemPrompt: checkSys, userMessage: checkUsr, maxTokens: 2000, maxUses: 8, timeoutMs: 90_000 });
+      const checkR = await callLlmWeb({ systemPrompt: checkSys, userMessage: checkUsr, maxTokens: 2500, maxUses: 8, timeoutMs: 90_000 });
       totalLlm++;
       if (checkR.webUsed) totalWeb += checkR.citations?.length || 0;
 
@@ -1384,16 +1419,19 @@ Rules:
           const section = expanded[claim.section];
           if (!section) continue;
           if (!result.verified && result.correction) {
-            /* Replace the unverified claim with the correction or a VERIFY marker */
-            const oldPoint = section.key_points[claim.point];
-            section.key_points[claim.point] = result.correction.startsWith('NEEDS MANUAL')
-              ? `⚠️ [VERIFY] ${oldPoint}`
-              : `${result.correction} _(corrected from: "${oldPoint.slice(0, 60)}…" — source: ${result.source_url || 'web search'})_`;
+            const oldVal = claim.field === 'key_points'
+              ? section.key_points[claim.index]
+              : section.examples_to_cite[claim.index];
+            const newVal = result.correction.startsWith('NEEDS MANUAL')
+              ? `⚠️ [VERIFY against ${result.source_url || 'primary source'}] ${oldVal}`
+              : `${result.correction} _(corrected — source: ${result.source_url || 'web search'})_`;
+            if (claim.field === 'key_points') section.key_points[claim.index] = newVal;
+            else section.examples_to_cite[claim.index] = newVal;
             correctionCount++;
           }
         }
-        if (correctionCount > 0) stepNotes.push(`Fact-check pass corrected or flagged ${correctionCount} claim(s) in per-section key_points.`);
-        else stepNotes.push(`Fact-check pass: all ${claimsToVerify.slice(0, 12).length} checked claims verified.`);
+        if (correctionCount > 0) stepNotes.push(`Fact-check pass (key_points + examples): corrected or flagged ${correctionCount} item(s).`);
+        else stepNotes.push(`Fact-check pass: all ${claimsToVerify.slice(0, 14).length} claims and examples verified.`);
       }
     }
 
@@ -1657,9 +1695,10 @@ ${kp}${examples}${subs}`;
     ? (brief.quality_checklist || []).map((q: string) => `- [ ] ${q}`).join('\n')
     : '_(none specified)_';
 
-  /* Secondary keywords */
+  /* Secondary keywords — LLM-generated, not verified against GSC.
+     Writer and SEO must validate these against real search data before targeting. */
   const secondary = (brief.secondary_keywords || []).length > 0
-    ? (brief.secondary_keywords || []).join(', ')
+    ? (brief.secondary_keywords || []).join(', ') + '\n  > _(LLM-generated — verify each against GSC or a keyword tool before targeting; some may have near-zero search volume)_'
     : '_(none specified)_';
 
   /* Phase 17.2 — audit-sourced signals block. Surfaces the verified audit
@@ -1861,7 +1900,7 @@ function formatAuditContextForClientUpdate(ctx: DistAuditContext): string {
     lines.push(`- The biggest single issue blocking progress: ${ctx.foundational_signal}. This is the work that compounds — talk about it as the priority before tactical fixes.`);
   }
   if (ctx.business_impact) {
-    lines.push(`- Concrete opportunity available right now (without ranking improvements): roughly $${ctx.business_impact.dollar_low.toLocaleString()}–$${ctx.business_impact.dollar_high.toLocaleString()} per month from fixing how the existing position converts to clicks. ~${ctx.business_impact.missed_clicks} additional clicks/month at current rank.`);
+    lines.push(`- Concrete opportunity available right now (without ranking improvements): roughly $${ctx.business_impact.dollar_low.toLocaleString()}–$${ctx.business_impact.dollar_high.toLocaleString()} per month from fixing how the existing position converts to clicks. Based on ~${ctx.business_impact.missed_clicks} additional clicks/month at current rank, multiplied by industry benchmark click values ($10–$30/visitor for this category). Mention this is a directional estimate, not a guarantee.`);
   }
   if (ctx.content_depth_gate) {
     lines.push(`- Content needs ~${ctx.content_depth_gate.words_to_add.toLocaleString()} more words to match what's competing in the top-10 (currently at ${ctx.content_depth_gate.ratio_pct}% of the SERP median). Mention this is a content investment, not a quick fix.`);
