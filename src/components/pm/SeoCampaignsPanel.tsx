@@ -1121,7 +1121,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                now so PMs see both views and we don't risk regression. */}
             <CampaignDocumentsSection
               campaignId={campaignId}
-              projectId={data?.campaign?.project_id}
+              projectId={data?.panels?.[0]?.project_id}
               keyword={data?.campaign?.keyword}
             />
 

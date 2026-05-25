@@ -128,52 +128,10 @@ export async function bsArtifactsList(body: any): Promise<any> {
     const { data, count, error } = await q;
     if (error) return { success: false, error: error.message };
 
-    /* Phase D5 — also pull seo_campaign_reports as synthetic artifacts so
-       pillar reports (tech audit, cluster map, off-page, etc.) appear in Documents.
-       These write to seo_campaign_reports, not artifacts. Merge them in. */
-    let pillarArtifacts: any[] = [];
-    const campaignScope = Array.isArray(campaignIds) && campaignIds.length > 0 ? campaignIds
-      : Array.isArray(projectIds) && projectIds.length > 0 ? null : null;
-
-    if (campaignScope || (Array.isArray(projectIds) && projectIds.length > 0)) {
-      try {
-        let rq = db().from('seo_campaign_reports')
-          .select('id, campaign_id, panel_id, pillar, report_title, report_body, created_at, score_overall')
-          .order('created_at', { ascending: false })
-          .limit(100);
-        if (campaignScope) rq = rq.in('campaign_id', campaignScope);
-        const { data: reports } = await rq;
-        if (reports?.length) {
-          pillarArtifacts = reports.map((r: any) => ({
-            id:            `report_${r.id}`,
-            artifact_kind: r.pillar || 'pillar_report',
-            title:         r.report_title || `${r.pillar} report`,
-            summary:       r.report_body?.slice(0, 300) || '',
-            campaign_id:   r.campaign_id,
-            panel_id:      r.panel_id,
-            project_id:    null,
-            keyword:       null,
-            status:        'current',
-            generated_at:  r.created_at,
-            pm_reviewed:   false,
-            client_sent:   false,
-            score_overall: r.score_overall,
-            _source:       'seo_campaign_reports',
-            _report_body:  r.report_body,
-          }));
-        }
-      } catch { /* non-fatal */ }
-    }
-
-    /* Merge, de-duplicate by id, sort by generated_at desc */
-    const allArtifacts = [...(data || []), ...pillarArtifacts]
-      .sort((a, b) => new Date(b.generated_at || 0).getTime() - new Date(a.generated_at || 0).getTime())
-      .slice(effectiveOffset, effectiveOffset + effectiveLimit);
-
     return {
       success:   true,
-      artifacts: allArtifacts,
-      total:     (count || 0) + pillarArtifacts.length,
+      artifacts: data || [],
+      total:     count || 0,
       limit:     effectiveLimit,
       offset:    effectiveOffset,
     };
