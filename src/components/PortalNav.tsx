@@ -221,8 +221,8 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                 </div>
               )}
               <button onClick={() => navigate('/admin')} title="Admin"
-                className="h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
-                <Settings className="h-3.5 w-3.5" /><span className="hidden md:inline">Admin</span>
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+                <Settings className="h-3.5 w-3.5" />
               </button>
               <button onClick={async () => { await signOut(); navigate('/'); }} title="Sign Out"
                 className="h-8 rounded-lg px-2.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
