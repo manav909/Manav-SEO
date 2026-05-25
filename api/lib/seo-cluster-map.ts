@@ -90,6 +90,11 @@ interface Cluster {
   competitors_source?: 'serpapi' | 'llm' | null;  // provenance of competitor_owners
   own_url_in_top_10?: { url: string; position: number } | null;  // verified hub signal — if project's own URL appears in top-10 for this cluster's primary query
   primary_query_for_serp?: string;            // which query was used to fetch the SERP (for audit-trail)
+  /* Phase 18.0 — Hub candidate ranking (2026-05-25).
+     Top-3 URL candidates with match scores so the operator can override
+     when the heuristic picks the wrong hub. Previously only scored[0]
+     was surfaced; the rest were silently discarded. */
+  hub_candidates?: Array<{ url: string; token_matches: number; impressions: number; rank: number }>;
 }
 
 interface ClusterFinding {
@@ -1373,9 +1378,20 @@ function enrichWithPages(cluster: Cluster, pages: GscPageRow[]): Cluster {
 
   if (scored.length === 0) return cluster;
 
+  /* Top-3 candidates with their scoring signals — exposed so the
+     operator can override when the heuristic picks the wrong hub.
+     Rank 1 = selected hub; ranks 2-3 = alternatives. */
+  const hub_candidates = scored.slice(0, 3).map((s, i) => ({
+    url:           s.page.page,
+    token_matches: s.score,
+    impressions:   s.page.impressions || 0,
+    rank:          i + 1,
+  }));
+
   return {
     ...cluster,
     hub_page_url: scored[0].page.page,
+    hub_candidates,
     spoke_pages: scored.slice(1, 5).map(s => s.page.page),
   };
 }
@@ -2342,6 +2358,24 @@ function renderClusterMapReport(opts: {
       } else if (cl.hub_alignment === 'partial') {
         lines.push('');
         lines.push(`⚠️ This URL slug contains some but not all tokens of "${keyword}". May rank for adjacent terms rather than the campaign keyword itself. Verify against the live SERP.`);
+      }
+
+      /* Phase 18.0 — Hub candidate ranking. Show top-3 alternatives so
+         the operator can override when the heuristic picks the wrong URL.
+         Only surface when there are at least 2 candidates (otherwise there
+         was no choice to make and the table adds noise). */
+      if (cl.hub_candidates && cl.hub_candidates.length >= 2) {
+        lines.push('');
+        lines.push(`**Hub selection reasoning** _(URL-slug token match · tie-broken by GSC impressions)_`);
+        lines.push('');
+        lines.push('| Rank | URL | Token matches | Impressions |');
+        lines.push('|------|-----|--------------|-------------|');
+        for (const c of cl.hub_candidates) {
+          const isSel = c.rank === 1 ? ' ✓ selected' : '';
+          lines.push(`| ${c.rank}${isSel} | [${c.url}](${c.url}) | ${c.token_matches} | ${(c.impressions || 0).toLocaleString()} |`);
+        }
+        lines.push('');
+        lines.push(`_If the selected hub is wrong, update the campaign's target URL or build a dedicated page for "${keyword}"._`);
       }
     } else {
       lines.push(`**Inferred hub:** _none found — this cluster has no page on the site whose URL slug overlaps with its tokens. Likely a content gap._`);
