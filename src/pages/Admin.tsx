@@ -15,6 +15,7 @@ import {
   AlertTriangle, CheckCircle2, Info
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { UserPlus, Key, Mail, Copy, Eye, EyeOff, Trash2 } from 'lucide-react';
 
 const EMPTY_FORM = {
   llm_visibility_score: '', chatgpt_citations: '', perplexity_citations: '',
@@ -30,7 +31,7 @@ export default function Admin() {
   const navigate = useNavigate();
 
   /* ── tabs ── */
-  const [tab, setTab] = useState<'control'|'clients'|'metrics'|'upsells'|'launchpad'|'approve'>('control');
+  const [tab, setTab] = useState<'control'|'clients'|'metrics'|'upsells'|'launchpad'|'approve'|'staff'>('control');
 
   /* ── data ── */
   const [clients,       setClients]       = useState<any[]>([]);
@@ -64,6 +65,21 @@ export default function Admin() {
   const [projectStep,  setProjectStep]  = useState<'basics'|'intelligence'>('basics');
   const [intelAnswers, setIntelAnswers] = useState<Record<string,string>>({});
   const [newProjId,    setNewProjId]    = useState<string|null>(null);
+
+  /* ── staff / PM state ── */
+  const [staff,           setStaff]           = useState<any[]>([]);
+  const [pmForm,          setPmForm]          = useState({ name:'', email:'', role:'pm', timezone:'Europe/London' });
+  const [pmPerms,         setPmPerms]         = useState({
+    dashboard: true, playground: true, data_room: true,
+    audit_tools: true, algorithm_intel: false, brain_learning: false,
+    morning_brief: true, system_control: false,
+    bde_panel: false, staff_command: false, lead_intel: false,
+  });
+  const [creatingPm,      setCreatingPm]      = useState(false);
+  const [inviteLink,      setInviteLink]       = useState<string|null>(null);
+  const [inviteSent,      setInviteSent]       = useState(false);
+  const [editingStaffId,  setEditingStaffId]  = useState<string|null>(null);
+  const [editPerms,       setEditPerms]       = useState<Record<string,boolean>>({});
   const [upsellForm,   setUpsellForm]   = useState({ title:'', description:'', price:'', potential_impact:'' });
   const [launchpadPhase,   setLaunchpadPhase]   = useState(1);
   const [launchpadContext, setLaunchpadContext] = useState('');
@@ -80,6 +96,9 @@ export default function Admin() {
     setClients(c || []);
     setProjects(p || []);
     setPendingUsers(u || []);
+    /* load staff */
+    const r = await fetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'get_staff' }) }).then(x=>x.json()).catch(()=>({ staff:[] }));
+    setStaff(r.staff || []);
   };
 
   const loadAuditReports = async () => {
@@ -274,6 +293,64 @@ export default function Admin() {
       toast({ title: 'Sync failed', description: err.message, variant: 'destructive' });
     }
     setSyncingId(null);
+  };
+
+  /* ── PM creation ── */
+  const PM_PERM_LABELS: Record<string, string> = {
+    dashboard:       'Dashboard & Metrics',
+    playground:      'PM Module & Kanban',
+    data_room:       'Data Room & Documents',
+    audit_tools:     'Audit Tool',
+    morning_brief:   'Morning Brief',
+    algorithm_intel: 'Algorithm Intel',
+    brain_learning:  'Brain Learning',
+    system_control:  'System Control',
+    bde_panel:       'BDE Sales Panel',
+    staff_command:   'Staff Command',
+    lead_intel:      'Lead Intake',
+  };
+
+  const createPmAccount = async () => {
+    if (!pmForm.name || !pmForm.email) return toast({ title: 'Name and email required', variant: 'destructive' });
+    setCreatingPm(true);
+    setInviteLink(null);
+    setInviteSent(false);
+    try {
+      /* 1. Create staff_members row — this is what gives permissions on login */
+      const res = await fetch('/api/task-engine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create_staff', name: pmForm.name, email: pmForm.email, role: pmForm.role, timezone: pmForm.timezone, permissions: pmPerms }),
+      }).then(r => r.json());
+      if (!res.success) throw new Error(res.error || 'Failed to create staff record');
+
+      /* 2. Send magic link via Supabase so PM can sign in without a password */
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        email: pmForm.email,
+        options: { shouldCreateUser: true, emailRedirectTo: `${window.location.origin}/pm` },
+      });
+      if (otpErr) {
+        /* Non-fatal: staff record created, just couldn't send the magic link */
+        toast({ title: 'Staff created — invite link failed', description: `Account created but email failed: ${otpErr.message}. Share this login URL manually.`, variant: 'destructive' });
+        setInviteLink(`${window.location.origin}/`);
+      } else {
+        setInviteSent(true);
+        toast({ title: `✅ PM account created & invite sent!`, description: `${pmForm.email} will receive a magic link to sign in. They land on /pm automatically.` });
+      }
+      setPmForm({ name:'', email:'', role:'pm', timezone:'Europe/London' });
+      fetchAll();
+    } catch (e: any) {
+      toast({ title: 'Error creating PM account', description: e.message, variant: 'destructive' });
+    }
+    setCreatingPm(false);
+  };
+
+  const saveStaffPerms = async (staffId: string) => {
+    const res = await fetch('/api/task-engine', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'update_staff_permissions', staffId, permissions: editPerms }),
+    }).then(r=>r.json());
+    if (res.success) { toast({ title:'Permissions updated' }); setEditingStaffId(null); fetchAll(); }
+    else toast({ title:'Error', description: res.error, variant:'destructive' });
   };
 
   const createClient = async () => {
@@ -518,6 +595,7 @@ export default function Admin() {
     { id: 'upsells',   label: 'Upsells',         icon: Zap },
     { id: 'launchpad', label: 'Launchpad',        icon: Rocket },
     { id: 'approve',   label: `Approvals${pendingUsers.length > 0 ? ` (${pendingUsers.length})` : ''}`, icon: CheckCircle },
+    { id: 'staff',     label: `Staff & PM${staff.length > 0 ? ` (${staff.length})` : ''}`,                   icon: UserPlus },
   ];
 
   return (
@@ -1441,6 +1519,344 @@ export default function Admin() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════
+            STAFF & PM
+        ════════════════════════════════════════ */}
+        {tab === 'staff' && (
+          <div className="space-y-6">
+
+            {/* Stats row */}
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label:'Active Staff', value: staff.filter((s:any)=>s.is_active!==false).length, color:'text-primary' },
+                { label:'PMs',         value: staff.filter((s:any)=>s.role==='pm').length,         color:'text-cyan-400' },
+                { label:'Pending',     value: pendingUsers.length,                                 color:'text-yellow-400' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="rounded-2xl border border-border bg-card/60 p-4 text-center">
+                  <div className={`text-3xl font-black mb-1 ${color}`}>{value}</div>
+                  <div className="text-xs text-muted-foreground">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-6">
+
+              {/* ── CREATE PM ACCOUNT ── */}
+              <div className="rounded-2xl border border-border bg-card/60 p-6 space-y-4">
+                <h2 className="font-bold text-base flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-primary" />Create PM Login
+                </h2>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Creates a staff record with PM permissions and sends a magic-link sign-in email.
+                  PM lands on <span className="font-mono text-primary">/pm</span> automatically.
+                </p>
+
+                {/* Basic info */}
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key:'name',     label:'Full Name',   placeholder:'Sarah Johnson' },
+                    { key:'email',    label:'Work Email',  placeholder:'sarah@yourteam.com' },
+                    { key:'timezone', label:'Timezone',    placeholder:'Europe/London' },
+                  ].map(({ key, label, placeholder }) => (
+                    <div key={key} className={`space-y-1 ${key === 'email' ? 'col-span-2' : ''}`}>
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</label>
+                      <input
+                        className="w-full h-10 rounded-md border border-border bg-background/60 text-sm px-3 text-foreground"
+                        placeholder={placeholder}
+                        value={(pmForm as any)[key]}
+                        onChange={e => setPmForm(f => ({ ...f, [key]: e.target.value }))}
+                      />
+                    </div>
+                  ))}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Role</label>
+                    <select
+                      className="w-full h-10 rounded-md border border-border bg-background/60 text-sm px-3 text-foreground"
+                      value={pmForm.role}
+                      onChange={e => setPmForm(f => ({ ...f, role: e.target.value }))}
+                    >
+                      <option value="pm">Project Manager</option>
+                      <option value="seo">SEO Specialist</option>
+                      <option value="content">Content Writer</option>
+                      <option value="analyst">Analyst</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Permissions */}
+                <div className="rounded-xl border border-border bg-background/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                      <Key className="h-3.5 w-3.5" />Permissions
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setPmPerms(Object.fromEntries(Object.keys(pmPerms).map(k=>[k,true])) as any)}
+                        className="text-xs text-primary hover:underline font-mono">all on</button>
+                      <span className="text-muted-foreground text-xs">·</span>
+                      <button onClick={() => setPmPerms(Object.fromEntries(Object.keys(pmPerms).map(k=>[k,false])) as any)}
+                        className="text-xs text-muted-foreground hover:underline font-mono">all off</button>
+                      <span className="text-muted-foreground text-xs">·</span>
+                      <button onClick={() => setPmPerms({
+                        dashboard:true, playground:true, data_room:true, audit_tools:true,
+                        morning_brief:true, algorithm_intel:false, brain_learning:false,
+                        system_control:false, bde_panel:false, staff_command:false, lead_intel:false,
+                      })}
+                        className="text-xs text-cyan-400 hover:underline font-mono">PM preset</button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(PM_PERM_LABELS).map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2 cursor-pointer group">
+                        <div
+                          onClick={() => setPmPerms(p => ({ ...p, [key]: !p[key as keyof typeof p] }))}
+                          className={`h-4 w-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer ${
+                            (pmPerms as any)[key]
+                              ? 'bg-primary border-primary'
+                              : 'border-border bg-background/60 group-hover:border-primary/50'
+                          }`}
+                        >
+                          {(pmPerms as any)[key] && (
+                            <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className={`text-xs transition-colors ${(pmPerms as any)[key] ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {label}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* What PM can access summary */}
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <div className="text-xs font-mono text-primary mb-2">PM will see:</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(pmPerms).filter(([,v])=>v).map(([k]) => (
+                      <span key={k} className="text-xs bg-primary/10 border border-primary/20 text-primary rounded-full px-2 py-0.5 font-mono">
+                        {k}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={createPmAccount}
+                  disabled={creatingPm || !pmForm.name || !pmForm.email}
+                  className="w-full h-11 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all hover:shadow-[0_0_20px_hsl(var(--primary)/0.4)]"
+                >
+                  {creatingPm ? (
+                    <><RefreshCw className="h-4 w-4 animate-spin" />Creating account & sending invite...</>
+                  ) : (
+                    <><Mail className="h-4 w-4" />Create Account & Send Magic Link</>
+                  )}
+                </button>
+
+                {inviteSent && (
+                  <div className="rounded-xl border border-green-400/30 bg-green-400/5 p-4 flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-green-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-semibold text-green-400 mb-1">Account created & invite sent!</div>
+                      <p className="text-xs text-muted-foreground">
+                        PM will receive a magic link to sign in. On first click they land on <span className="font-mono text-primary">/pm</span> with full PM access.
+                        Link expires in 1 hour — resend from the staff list if needed.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {inviteLink && !inviteSent && (
+                  <div className="rounded-xl border border-yellow-400/30 bg-yellow-400/5 p-4">
+                    <div className="text-xs font-mono text-yellow-400 mb-2">Email failed — share this login URL manually:</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-xs bg-background/60 border border-border rounded px-2 py-1 flex-1 truncate">{inviteLink}</code>
+                      <button onClick={() => { navigator.clipboard.writeText(inviteLink); toast({ title:'Copied!' }); }}
+                        className="h-8 px-3 rounded-lg border border-border bg-background/60 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5">
+                        <Copy className="h-3 w-3" />Copy
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── STAFF LIST ── */}
+              <div className="rounded-2xl border border-border bg-card/60 p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-bold text-base flex items-center gap-2">
+                    <Users className="h-4 w-4 text-primary" />Staff Members ({staff.length})
+                  </h2>
+                  <button onClick={fetchAll} className="h-8 w-8 rounded-lg border border-border bg-background/60 flex items-center justify-center text-muted-foreground hover:text-foreground">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {staff.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border bg-background/40 p-8 text-center text-muted-foreground text-sm">
+                    No staff yet — create the first PM above.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {staff.map((s: any) => {
+                      const isEditing = editingStaffId === s.id;
+                      const permCount = Object.values(s.permissions || {}).filter(Boolean).length;
+                      const roleColors: Record<string, string> = {
+                        pm: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
+                        seo: 'text-green-400 bg-green-400/10 border-green-400/20',
+                        content: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
+                        analyst: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
+                        bde: 'text-primary bg-primary/10 border-primary/20',
+                      };
+                      const roleColor = roleColors[s.role] || 'text-muted-foreground bg-secondary/30 border-border';
+                      return (
+                        <div key={s.id} className="rounded-xl border border-border bg-background/40 overflow-hidden">
+                          <div className="p-3 flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm flex-shrink-0">
+                              {(s.avatar_initials || s.name?.[0] || '?').toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium truncate">{s.name}</span>
+                                <span className={`text-xs font-mono px-2 py-0.5 rounded-full border flex-shrink-0 ${roleColor}`}>
+                                  {s.role}
+                                </span>
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate">{s.email || 'No email'}</div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-xs text-muted-foreground font-mono">{permCount} perms</span>
+                              <button
+                                onClick={() => {
+                                  if (isEditing) { setEditingStaffId(null); }
+                                  else { setEditingStaffId(s.id); setEditPerms(s.permissions || {}); }
+                                }}
+                                className={`h-7 px-2 rounded-lg border text-xs flex items-center gap-1 transition-colors ${isEditing ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border bg-background/60 text-muted-foreground hover:text-foreground'}`}
+                              >
+                                <Key className="h-3 w-3" />{isEditing ? 'Cancel' : 'Edit'}
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`Resend magic link to ${s.email}?`)) return;
+                                  const { error } = await supabase.auth.signInWithOtp({ email: s.email, options: { shouldCreateUser: true, emailRedirectTo: `${window.location.origin}/pm` } });
+                                  if (error) toast({ title: 'Failed to send', description: error.message, variant: 'destructive' });
+                                  else toast({ title: `Magic link sent to ${s.email}` });
+                                }}
+                                disabled={!s.email}
+                                className="h-7 px-2 rounded-lg border border-border bg-background/60 text-xs flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                              >
+                                <Mail className="h-3 w-3" />Resend
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Permission editor */}
+                          {isEditing && (
+                            <div className="px-3 pb-3 border-t border-border pt-3 space-y-3">
+                              <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Edit permissions</div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {Object.entries(PM_PERM_LABELS).map(([key, label]) => (
+                                  <label key={key} className="flex items-center gap-2 cursor-pointer group">
+                                    <div
+                                      onClick={() => setEditPerms(p => ({ ...p, [key]: !p[key] }))}
+                                      className={`h-4 w-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer ${
+                                        editPerms[key] ? 'bg-primary border-primary' : 'border-border bg-background/60'
+                                      }`}
+                                    >
+                                      {editPerms[key] && (
+                                        <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                    <span className={`text-xs ${editPerms[key] ? 'text-foreground' : 'text-muted-foreground'}`}>{label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              <button
+                                onClick={() => saveStaffPerms(s.id)}
+                                className="w-full h-9 rounded-lg bg-primary text-primary-foreground text-xs font-semibold flex items-center justify-center gap-2"
+                              >
+                                <Save className="h-3.5 w-3.5" />Save Permissions
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Pending approvals reminder */}
+                {pendingUsers.length > 0 && (
+                  <div className="rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-3 flex items-center justify-between">
+                    <div className="text-xs text-yellow-400 flex items-center gap-2">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      {pendingUsers.length} pending user approval{pendingUsers.length > 1 ? 's' : ''}
+                    </div>
+                    <button onClick={() => setTab('approve')} className="text-xs text-yellow-400 hover:underline font-mono">
+                      Go to Approvals →
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── PM WORKFLOW GUIDE ── */}
+            <div className="rounded-2xl border border-border bg-card/60 p-6">
+              <h2 className="font-bold text-base mb-4 flex items-center gap-2">
+                <Rocket className="h-4 w-4 text-primary" />End-to-End PM Workflow
+              </h2>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  {
+                    step:'1', color:'text-primary border-primary/30 bg-primary/5',
+                    title:'Create Client & Project',
+                    desc:'Clients tab → Register client → Add project with URL, keywords, competitors → Brain intelligence questionnaire.',
+                    action:'Go to Clients', tab:'clients',
+                  },
+                  {
+                    step:'2', color:'text-cyan-400 border-cyan-400/30 bg-cyan-400/5',
+                    title:'Connect Data Sources',
+                    desc:'Project → Data Room → Connect GSC and GA4. This unlocks authentic ranking data across all pipelines.',
+                    action:'Go to Dashboard', tab:'control',
+                  },
+                  {
+                    step:'3', color:'text-purple-400 border-purple-400/30 bg-purple-400/5',
+                    title:'Run the Pipeline',
+                    desc:'PM Module → SEO Campaigns tab → New Campaign → keyword → Run Rank-for-Keyword pipeline. All 8 steps produce deliverables.',
+                    action:'Open PM Module', tab:null, href:'/pm',
+                  },
+                  {
+                    step:'4', color:'text-green-400 border-green-400/30 bg-green-400/5',
+                    title:'Monitor & Deliver',
+                    desc:'Monitoring pillar runs automatically. Board view tracks tasks. Documents tab holds all client-ready artifacts.',
+                    action:'Go to PM Module', tab:null, href:'/pm',
+                  },
+                ].map(({ step, color, title, desc, action, tab: t, href }) => (
+                  <div key={step} className={`rounded-xl border ${color} p-4 space-y-3`}>
+                    <div className="flex items-center gap-2">
+                      <div className={`h-7 w-7 rounded-full border ${color} flex items-center justify-center text-sm font-black`}>{step}</div>
+                      <div className="text-sm font-semibold leading-tight">{title}</div>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
+                    {href ? (
+                      <a href={href} target="_blank" rel="noopener noreferrer"
+                        className={`text-xs font-mono hover:underline ${color.split(' ')[0]}`}>
+                        {action} →
+                      </a>
+                    ) : (
+                      <button onClick={() => setTab(t as any)} className={`text-xs font-mono hover:underline ${color.split(' ')[0]}`}>
+                        {action} →
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
         )}
 
