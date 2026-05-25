@@ -73,12 +73,14 @@ function timeAgo(iso: string | null | undefined): string {
 
 interface Props {
   campaignId: string;
+  projectId?: string;   /* fallback — used when campaign_id is null on artifact rows */
+  keyword?:   string;   /* fallback — narrows project-scoped query to the right keyword */
 }
 
 type KindFilter = 'all' | string;     // 'all' or specific artifact_kind
 type StatusFilter = 'current' | 'all';
 
-export default function CampaignDocumentsSection({ campaignId }: Props) {
+export default function CampaignDocumentsSection({ campaignId, projectId, keyword }: Props) {
   const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -95,6 +97,7 @@ export default function CampaignDocumentsSection({ campaignId }: Props) {
     setLoading(true);
     setError(null);
     try {
+      /* Primary query: by campaign_id */
       const result = await artifactsList({
         campaignIds: [campaignId],
         status:      statusFilter === 'current' ? 'current' : undefined as any,
@@ -105,10 +108,30 @@ export default function CampaignDocumentsSection({ campaignId }: Props) {
         setError(result.error);
         setArtifacts([]);
         setTotal(0);
-      } else {
-        setArtifacts(result.artifacts || []);
-        setTotal(result.total || 0);
+        return;
       }
+
+      let arts = result.artifacts || [];
+
+      /* Fallback: if campaign_id query returned nothing but we have projectId,
+         also query by projectId (+ keyword if available). This handles runs
+         where campaign_id wasn't stamped on the artifact rows due to a
+         campaign-linkage failure during pipeline creation. Merge + deduplicate. */
+      if (arts.length === 0 && projectId) {
+        const fallback = await artifactsList({
+          projectIds:  [projectId],
+          ...(keyword ? { keyword } : {}),
+          status:      statusFilter === 'current' ? 'current' : undefined as any,
+          sort:        'newest',
+          limit:       100,
+        });
+        if (!fallback.error && (fallback.artifacts?.length || 0) > 0) {
+          arts = fallback.artifacts || [];
+        }
+      }
+
+      setArtifacts(arts);
+      setTotal(arts.length);
     } catch (e: any) {
       setError(e?.message || 'Failed to load');
     } finally {

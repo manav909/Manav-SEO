@@ -1119,7 +1119,11 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                reports above). Eventually the legacy block can be deprecated
                once artifacts coverage is verified complete. Both render for
                now so PMs see both views and we don't risk regression. */}
-            <CampaignDocumentsSection campaignId={campaignId} />
+            <CampaignDocumentsSection
+              campaignId={campaignId}
+              projectId={data?.campaign?.project_id}
+              keyword={data?.campaign?.keyword}
+            />
 
             {/* Opportunities tied to this campaign */}
             {(data.open_opportunities || []).length > 0 && (

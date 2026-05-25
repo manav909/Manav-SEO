@@ -335,7 +335,7 @@ export async function bsSeasonPipelineCreate(body: any): Promise<any> {
       }
     } catch (e: any) {
       /* Log but don't block */
-      console.log(`[bs_season_pipeline_create] campaign linkage failed: ${e?.message}`);
+      console.error(`[bs_season_pipeline_create] campaign linkage failed: ${e?.message}`);
     }
 
     return {
