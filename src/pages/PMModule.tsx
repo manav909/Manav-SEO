@@ -184,16 +184,18 @@ export default function PMModule() {
                   </div>
                 )}
                 {/* Embedded view with fullscreen button */}
-                <div className="relative">
-                  <button
-                    onClick={() => setDocsFullscreen(true)}
-                    title="Full screen"
-                    className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 border border-border/40 transition-colors bg-background/80 backdrop-blur-sm"
-                  >
-                    <Maximize2 className="h-3.5 w-3.5" />
-                    Full screen
-                  </button>
-                  <div className="h-[calc(100vh-200px)] rounded-xl overflow-hidden border border-border/40">
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setDocsFullscreen(true)}
+                      title="Full screen"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 border border-border/40 transition-colors"
+                    >
+                      <Maximize2 className="h-3.5 w-3.5" />
+                      Full screen
+                    </button>
+                  </div>
+                  <div className="h-[calc(100vh-220px)] rounded-xl overflow-hidden border border-border/40">
                     <Documents embedded />
                   </div>
                 </div>
