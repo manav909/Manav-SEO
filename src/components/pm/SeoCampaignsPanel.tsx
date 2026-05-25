@@ -28,6 +28,7 @@ import {
   seasonPipelineGet,
   type SeoCampaign, type SeoCampaignPanel, type SeoCampaignReport, type SeoOpportunity,
 } from './api';
+import SeasonPipelineDashboard from '@/components/season/SeasonPipelineDashboard';
 import CampaignDocumentsSection from './CampaignDocumentsSection';
 
 interface Props {
@@ -75,6 +76,8 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [promoteConfirm, setPromoteConfirm] = useState<SeoOpportunity | null>(null);
   const [tab, setTab] = useState<'campaigns' | 'opportunities'>('campaigns');
+  /* Active pipeline run being driven/watched in dashboard overlay */
+  const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!projectId) return;
@@ -137,6 +140,19 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
   const openOppCount = oppCounts?.open || 0;
 
   return (
+    <>
+      {/* Pipeline dashboard overlay — mounts when a run needs driving or watching */}
+      {activeDashRun && (
+        <SeasonPipelineDashboard
+          key={activeDashRun.runId}
+          runId={activeDashRun.runId}
+          expectedSteps={activeDashRun.stepCount}
+          pipelineLabel={activeDashRun.label}
+          pipelineType="rank_for_keyword"
+          onClose={() => { setActiveDashRun(null); refresh(); }}
+          onComplete={() => { refresh(); }}
+        />
+      )}
     <div style={{ padding: 20 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -230,6 +246,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
         />
       )}
     </div>
+    </>
   );
 }
 
@@ -517,6 +534,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [error, setError] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<SeoCampaignReport | null>(null);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
+  /* Active pipeline dashboard for this drawer */
+  const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number } | null>(null);
   /* Phase 15 — audit state */
   const [auditBusyPanel, setAuditBusyPanel] = useState<string | null>(null);
   const [urlPromptPanel, setUrlPromptPanel] = useState<SeoCampaignPanel | null>(null);
@@ -567,6 +586,22 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   }, [campaignId]);
 
   useEffect(() => { load(); }, [load]);
+
+  /* Auto-open dashboard if campaign has a running pipeline with 0 steps completed.
+     This handles runs created from PM Module (not SEASON chat) that need driving. */
+  useEffect(() => {
+    if (!data?.pipeline_runs?.length) return;
+    const stalled = data.pipeline_runs.find((r: any) =>
+      r.status === 'running' && (r.steps_completed || 0) === 0
+    );
+    if (stalled && !activeDashRun) {
+      setActiveDashRun({
+        runId:     stalled.id,
+        label:     `${data.campaign?.keyword || 'campaign'} · rank_for_keyword`,
+        stepCount: stalled.step_count || 8,
+      });
+    }
+  }, [data]);
 
   const handleRefreshOverview = async () => {
     setRefreshingOverview(true);
@@ -940,6 +975,18 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   };
 
   return (
+    <>
+      {activeDashRun && (
+        <SeasonPipelineDashboard
+          key={activeDashRun.runId}
+          runId={activeDashRun.runId}
+          expectedSteps={activeDashRun.stepCount}
+          pipelineLabel={activeDashRun.label}
+          pipelineType="rank_for_keyword"
+          onClose={() => { setActiveDashRun(null); load(); }}
+          onComplete={() => { load(); }}
+        />
+      )}
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 9100,
       background: 'rgba(0,0,0,0.55)',
@@ -1119,8 +1166,56 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                             <span style={{ color: 'rgba(150,150,170,0.7)' }}>
                               {r.steps_completed || 0}/{r.step_count} steps · {new Date(r.started_at).toLocaleDateString()}
                             </span>
-                            {/* Phase 17.5 — Refresh from audit button.
-                                Phase 17.5.5: shown on completed AND failed runs, hidden during mid-flight execution. */}
+                            {/* Run/resume button for runs that exist but haven't executed yet */}
+                            {canRefresh && !isRefreshing && r.steps_completed === 0 && r.status === 'running' && (
+                              <button
+                                onClick={() => setActiveDashRun({
+                                  runId: r.id,
+                                  label: `${data.campaign.keyword || 'campaign'} · rank_for_keyword`,
+                                  stepCount: r.step_count || 8,
+                                })}
+                                style={{
+                                  fontSize: 10,
+                                  padding: '3px 8px',
+                                  borderRadius: 4,
+                                  background: 'rgba(110,200,140,0.15)',
+                                  border: '1px solid rgba(110,200,140,0.4)',
+                                  color: 'rgba(150,230,170,0.95)',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <Play size={10} /> Run pipeline
+                              </button>
+                            )}
+                            {/* Watch button for in-flight runs */}
+                            {r.status === 'running' && r.steps_completed > 0 && (
+                              <button
+                                onClick={() => setActiveDashRun({
+                                  runId: r.id,
+                                  label: `${data.campaign.keyword || 'campaign'} · rank_for_keyword`,
+                                  stepCount: r.step_count || 8,
+                                })}
+                                style={{
+                                  fontSize: 10,
+                                  padding: '3px 8px',
+                                  borderRadius: 4,
+                                  background: 'rgba(120,160,255,0.12)',
+                                  border: '1px solid rgba(120,160,255,0.3)',
+                                  color: 'rgba(180,200,255,0.95)',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}
+                              >
+                                <Activity size={10} /> Watch
+                              </button>
+                            )}
+                            {/* Phase 17.5 — Refresh from audit button */}
                             {canRefresh && !isRefreshing && (
                               <button
                                 onClick={() => handleRefreshPipelineFromAudit(
@@ -1258,6 +1353,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
         ) : null}
       </div>
     </div>
+    </>
   );
 }
 
