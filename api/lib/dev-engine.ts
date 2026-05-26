@@ -287,327 +287,401 @@ export async function loadSnapshot(taskId: string): Promise<{ snapshot: string; 
 // The client polling loop reads whatever status is in the DB.
 // ─────────────────────────────────────────────────────────────
 
+/* ─────────────────────────────────────────────────────────────
+   TASK EXECUTION ROUTING
+
+   Tasks are classified into three execution paths based on what
+   data they actually need. This is critical for reliability across
+   all sites — including slow sites, bot-protected sites, and any
+   site where a server-side fetch may never return.
+
+   PATH A — Instant (no network calls):
+     These tasks have all data they need in the audit finding.
+     They generate the complete fix in < 1 second.
+     Tasks: gsc_indexing, faq_schema, h1_update, first_para,
+            h2_section, date_modified_schema, meta_desc
+
+   PATH B — Page-enhanced (try fetch, always succeed):
+     These benefit from the live page HTML but work without it.
+     Page fetch has a 10s timeout. If it fails, proceeds with
+     audit data and tells the user explicitly.
+     Tasks: lazy_loading, image_format
+
+   PATH C — Page-required (try fetch, degrade gracefully):
+     These need the actual script/element URLs for accurate fixes.
+     Page fetch has a 12s timeout. If it fails, generates a
+     diagnostic guide instead of a code patch, plus instructions
+     to apply the fix using the correct CMS tools.
+     Tasks: lcp_fix, script_defer
+───────────────────────────────────────────────────────────── */
+
+const INSTANT_TASKS    = new Set(['gsc_indexing', 'faq_schema', 'h1_update', 'first_para', 'h2_section', 'date_modified_schema', 'meta_desc']);
+const PAGE_ENHANCED    = new Set(['lazy_loading', 'image_format']);
+const PAGE_REQUIRED    = new Set(['lcp_fix', 'script_defer']);
+
 export async function executeDevTask(task: DevTask): Promise<void> {
   const taskId = task.id!;
 
   try {
-    // ── Step 1: Fetch live page ──────────────────────────────────
-    // Use Googlebot UA so we see the same page Google sees.
-    // 25s timeout — generous for slow sites.
-    const { html: pageHtml, fetchedOk, errorMsg: fetchError } = await fetchPageHtml(task.target_url || '', 25000);
+    // ── Determine what data we need ──────────────────────────────
+    const needsPageFetch  = PAGE_ENHANCED.has(task.task_type) || PAGE_REQUIRED.has(task.task_type);
+    const pageIsRequired  = PAGE_REQUIRED.has(task.task_type);
 
-    // ── Step 2: Detect CMS ──────────────────────────────────────
-    // Detection runs on the fetched HTML so we get the true CMS.
-    // If the page didn't load, fall back to stored project value.
+    // ── Fetch live page if needed ────────────────────────────────
+    let pageHtml   = '';
+    let fetchedOk  = false;
+    let fetchError = '';
+
+    if (needsPageFetch) {
+      // Short timeout — if the site blocks server fetches or is unreachable,
+      // fail fast and proceed with audit data. Don't hang for 25 seconds.
+      const timeout = pageIsRequired ? 12000 : 10000;
+      const r = await fetchPageHtml(task.target_url || '', timeout);
+      pageHtml   = r.html;
+      fetchedOk  = r.fetchedOk;
+      fetchError = r.errorMsg || '';
+    }
+
+    // ── CMS detection ────────────────────────────────────────────
+    // Detect from live HTML when available; fall back to stored value.
+    const platform = normaliseCmsPlatform(task.cms_platform || 'unknown');
     let cms: CmsContext;
     if (fetchedOk && pageHtml) {
       cms = await detectCmsFromHtml(pageHtml);
     } else {
-      const platform = normaliseCmsPlatform(task.cms_platform || 'unknown');
-      cms = { platform, seoPlugin: 'unknown', confidence: 30, signals: ['Page fetch failed — using stored value'], adminPath: cmsAdminPath(platform) };
+      cms = {
+        platform,
+        seoPlugin:  'unknown' as SeoPlugin,
+        confidence: 30,
+        signals:    ['Using stored CMS value (page not fetched)'],
+        adminPath:  cmsAdminPath(platform),
+      };
     }
 
-    // ── Step 3: Snapshot relevant elements ──────────────────────
-    // BEFORE generating any fix — this is the safety net for rollback.
-    const snapshotHtml = snapshotRelevantHtml(task.task_type, pageHtml);
-    const snapshotId = await saveSnapshot(taskId, task.project_id, task.task_type, task.target_url || '', snapshotHtml);
+    // ── Snapshot relevant HTML (safety net for rollback) ─────────
+    const snapshotHtml = pageHtml ? snapshotRelevantHtml(task.task_type, pageHtml) : '';
+    const snapshotId   = snapshotHtml ? await saveSnapshot(taskId, task.project_id, task.task_type, task.target_url || '', snapshotHtml) : null;
 
-    // ── Step 4: Build AI prompt ──────────────────────────────────
-    // We give Claude: the audit finding data + the relevant live HTML section.
-    // The audit provides the WHY (metrics, severity). The live HTML provides the WHAT
-    // (exact script tags, img tags, schema blocks). Together they produce accurate fixes.
-    const { sys, usr } = buildExecutionPrompt(task, snapshotHtml, cms, fetchedOk, fetchError);
+    // ── Route to correct execution path ─────────────────────────
+    let result: AiResult;
 
-    // ── Step 5: Call AI ──────────────────────────────────────────
-    let analysis = '', fixCode = '', fixLanguage = 'html', paaQuestions: string[] = [];
-    let llmCalls = 0;
-
-    try {
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 2000,
-          system: sys,
-          messages: [{ role: 'user', content: usr }],
-        }),
-        signal: AbortSignal.timeout(60000), // 60s — AI can take time on complex fixes
-      });
-      llmCalls++;
-      const data = await resp.json() as any;
-      const rawText = (data?.content?.[0]?.text || '').trim();
-
-      // Extract JSON from response — Claude sometimes wraps it in markdown
-      const jsonMatch = rawText.match(/\{[\s\S]+\}/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          analysis      = parsed.analysis      || '';
-          fixCode       = parsed.fix_code       || '';
-          fixLanguage   = parsed.fix_language   || 'html';
-          paaQuestions  = Array.isArray(parsed.paa_questions) ? parsed.paa_questions : [];
-        } catch {
-          analysis = rawText.slice(0, 800);
-        }
-      } else {
-        analysis = rawText.slice(0, 800);
-      }
-    } catch (aiErr: any) {
-      analysis = `AI call failed: ${aiErr?.message || 'unknown error'}. The fix code could not be generated. Retry the task.`;
+    if (INSTANT_TASKS.has(task.task_type)) {
+      // PATH A: generate from audit data only — no AI needed for most of these,
+      // but we use AI for content tasks (h1, first_para, h2, faq) where
+      // quality matters and the audit finding has enough context.
+      result = await executeWithAuditData(task, cms);
+    } else if (fetchedOk && pageHtml) {
+      // PATH B or C with live page: use the actual HTML
+      result = await executeWithPageHtml(task, pageHtml, snapshotHtml, cms);
+    } else if (PAGE_ENHANCED.has(task.task_type)) {
+      // PATH B fallback: page not available, proceed with patterns
+      result = await executeWithAuditData(task, cms);
+    } else {
+      // PATH C fallback: page required but not available
+      // Generate a diagnostic guide + manual instructions instead of a code patch
+      result = {
+        analysis: `Could not fetch the live page (${fetchError || 'server did not respond'}). This task requires reading the actual HTML to identify specific blocking scripts. The Fix Code section contains a step-by-step guide to find and fix the blocking scripts yourself using Chrome DevTools.`,
+        fixCode: buildManualDiagnosticGuide(task, cms),
+        fixLanguage: 'text',
+        paaQuestions: [],
+      };
     }
 
-    // ── Step 6: Build instructions ───────────────────────────────
-    const applyInstructions    = buildApplyInstructions(task, cms, { fixCode, paaQuestions });
+    // ── Build CMS-specific instructions ──────────────────────────
+    const applyInstructions    = buildApplyInstructions(task, cms, { fixCode: result.fixCode, paaQuestions: result.paaQuestions });
     const rollbackInstructions = buildRollbackInstructions(task, cms.platform, snapshotHtml);
     const verificationMethod   = buildVerificationMethod(task);
 
-    // ── Step 7: Write results ────────────────────────────────────
+    // ── Write results ─────────────────────────────────────────────
     await updateTask(taskId, {
       status:                'fix_ready',
-      analysis:              analysis || (fetchedOk ? 'Analysis complete.' : `Note: page could not be fetched (${fetchError}). Fix code generated from audit data.`),
-      fix_code:              fixCode,
-      fix_language:          fixLanguage,
+      analysis:              result.analysis,
+      fix_code:              result.fixCode,
+      fix_language:          result.fixLanguage,
       apply_instructions:    applyInstructions,
-      rollback_code:         snapshotHtml || '<!-- Page was not reachable — no snapshot available -->',
+      rollback_code:         snapshotHtml || '<!-- Page not fetched this run — no snapshot available -->',
       rollback_instructions: rollbackInstructions,
       verification_method:   verificationMethod,
       snapshot_id:           snapshotId || undefined,
       backup_confirmed:      false,
       cms_platform:          cms.platform,
-      llm_calls_used:        llmCalls,
+      llm_calls_used:        result.llmCalls,
       updated_at:            new Date().toISOString(),
     });
 
   } catch (unexpectedErr: any) {
-    // Last resort — always write a clean failure state so the UI can show Retry
     await updateTask(taskId, {
-      status:   'failed',
-      analysis: `Unexpected error: ${unexpectedErr?.message || 'unknown'}. Click Retry.`,
+      status:     'failed',
+      analysis:   `Error: ${unexpectedErr?.message || 'unknown'}. Click Retry.`,
       updated_at: new Date().toISOString(),
-    }).catch(() => {}); // if even this fails, nothing we can do
+    }).catch(() => {});
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// AI PROMPT BUILDER
-// Builds prompts from:
-//   - Task finding data (title, detail, evidence — from audit)
-//   - Live page HTML snapshot (actual elements to fix)
-//   - CMS context (which platform to write code for)
-// Prompts are generic — work for any site, any keyword, any page.
+// AI RESULT TYPE
 // ─────────────────────────────────────────────────────────────
 
-function buildExecutionPrompt(
-  task: DevTask,
-  snapshotHtml: string,
-  cms: CmsContext,
-  pageWasFetched: boolean,
-  fetchError?: string,
-): { sys: string; usr: string } {
-  const sys = [
-    'You are a senior web developer generating precise, copy-paste-ready code fixes for SEO and performance issues.',
-    'You are given:',
-    '  1. Audit finding data (the problem + metrics from a live audit)',
-    '  2. Live page HTML (the relevant elements from the actual page)',
-    '  3. CMS context (platform and SEO plugin)',
-    '',
-    'Your job: analyze the specific problem on THIS page and generate the exact fix.',
-    'Be precise — reference actual elements, script URLs, class names from the HTML.',
-    'If live HTML is available, use it. If not, generate the most common pattern for this CMS.',
-    '',
-    'CMS: ' + cms.platform + (cms.seoPlugin !== 'unknown' && cms.seoPlugin !== 'none' ? ' with ' + cms.seoPlugin + ' SEO plugin' : ''),
-    pageWasFetched ? 'Live page: fetched successfully' : 'Live page: could not be fetched (' + (fetchError || 'unknown') + ') — generate based on audit data and CMS patterns',
-    '',
-    'Reply with ONLY valid JSON (no markdown fences):',
-    '{',
-    '  "analysis": "2-4 sentences. Reference specific elements/scripts/metrics from the data. Explain what is causing the problem and why this fix resolves it.",',
-    '  "fix_code": "Complete, copy-paste-ready code. No placeholders like [YOUR_VALUE]. Must be ready to deploy.",',
-    '  "fix_language": "html | json | javascript | bash | text",',
-    '  "paa_questions": ["verbatim question strings if this is faq_schema or h2_section, else empty array"]',
-    '}',
+interface AiResult {
+  analysis:     string;
+  fixCode:      string;
+  fixLanguage:  string;
+  paaQuestions: string[];
+  llmCalls:     number;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PATH A: EXECUTE WITH AUDIT DATA ONLY
+// Used for: instant tasks + page-enhanced fallback.
+// Makes one AI call with a 30s timeout.
+// Prompt is built entirely from task.finding_title + finding_detail + evidence.
+// ─────────────────────────────────────────────────────────────
+
+async function executeWithAuditData(task: DevTask, cms: CmsContext): Promise<AiResult> {
+  const { sys, usr } = buildPromptFromAuditData(task, cms);
+  return callAI(task, sys, usr);
+}
+
+// ─────────────────────────────────────────────────────────────
+// PATH B/C: EXECUTE WITH LIVE PAGE HTML
+// Used when the page was successfully fetched.
+// The snapshot HTML (relevant elements only) is given to Claude.
+// ─────────────────────────────────────────────────────────────
+
+async function executeWithPageHtml(task: DevTask, _pageHtml: string, snapshotHtml: string, cms: CmsContext): Promise<AiResult> {
+  const { sys, usr } = buildPromptWithHtml(task, snapshotHtml, cms);
+  return callAI(task, sys, usr);
+}
+
+// ─────────────────────────────────────────────────────────────
+// SHARED AI CALLER
+// Single point of truth for Anthropic calls.
+// Always resolves — never throws. Returns structured AiResult.
+// ─────────────────────────────────────────────────────────────
+
+async function callAI(task: DevTask, sys: string, usr: string): Promise<AiResult> {
+  let llmCalls = 0;
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 2000,
+        system: sys,
+        messages: [{ role: 'user', content: usr }],
+      }),
+      signal: AbortSignal.timeout(30000), // 30s is more than enough for 2000 tokens
+    });
+    llmCalls++;
+    const data = await resp.json() as any;
+
+    // Handle API-level errors (rate limits, auth, etc.)
+    if (data?.error) {
+      return {
+        analysis:     `AI service error: ${data.error?.message || 'unknown'}. Retry in a moment.`,
+        fixCode:      '',
+        fixLanguage:  'text',
+        paaQuestions: [],
+        llmCalls,
+      };
+    }
+
+    const rawText   = (data?.content?.[0]?.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]+\}/);
+
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          analysis:     parsed.analysis     || 'Analysis complete.',
+          fixCode:      parsed.fix_code     || '',
+          fixLanguage:  parsed.fix_language || 'html',
+          paaQuestions: Array.isArray(parsed.paa_questions) ? parsed.paa_questions : [],
+          llmCalls,
+        };
+      } catch {
+        return { analysis: rawText.slice(0, 800), fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
+      }
+    }
+
+    return { analysis: rawText.slice(0, 800), fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
+
+  } catch (e: any) {
+    const msg = e?.name === 'TimeoutError' ? 'AI call timed out after 30s. Retry the task.' : `AI error: ${e?.message || 'unknown'}`;
+    return { analysis: msg, fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// MANUAL DIAGNOSTIC GUIDE
+// Used when PATH C page fetch fails.
+// Gives the developer a precise manual checklist without needing
+// the actual HTML.
+// ─────────────────────────────────────────────────────────────
+
+function buildManualDiagnosticGuide(task: DevTask, cms: CmsContext): string {
+  const p = cms.platform;
+  const lines: string[] = [];
+
+  lines.push('STEP 1: Profile the blocking scripts in Chrome DevTools');
+  lines.push('');
+  lines.push('1. Open the page in Chrome: ' + (task.target_url || 'your page URL'));
+  lines.push('2. Press F12 to open DevTools');
+  lines.push('3. Click the Performance tab');
+  lines.push('4. Click the record button (⏺) then reload the page, then stop recording');
+  lines.push('5. In the flame chart, look for red bars labeled "Long Task" near the top');
+  lines.push('6. Click on each Long Task to see which script caused it');
+  lines.push('7. The script URL is your target — it needs defer or async');
+  lines.push('');
+  lines.push('STEP 2: Identify deferrable scripts');
+  lines.push('');
+  lines.push('Scripts safe to defer (add defer attribute):');
+  lines.push('  - Google Analytics / Google Tag Manager');
+  lines.push('  - Facebook Pixel / Meta Pixel');
+  lines.push('  - HubSpot tracking (hs-scripts.com)');
+  lines.push('  - Intercom / Drift / Zendesk chat widgets');
+  lines.push('  - Any analytics or marketing pixel');
+  lines.push('');
+  lines.push('Scripts NOT safe to defer (leave as-is):');
+  lines.push('  - jQuery or core framework scripts (if other scripts depend on them)');
+  lines.push('  - Any script with document.write()');
+  lines.push('  - Critical rendering scripts referenced in HTML attributes');
+  lines.push('');
+  lines.push('STEP 3: Apply defer for ' + p);
+  lines.push('');
+
+  if (p === 'wordpress') {
+    lines.push('Option A (no code): WP Rocket → File Optimization → Defer JS execution');
+    lines.push('Option B (no code): Autoptimize → Settings → Defer scripts');
+    lines.push('Option C (code): add defer to the <script> tags identified in Step 1');
+  } else if (p === 'webflow') {
+    lines.push('Project Settings → Custom Code → move identified scripts from Head Code to Footer Code');
+    lines.push('For scripts that must stay in head: add defer attribute');
+  } else if (p === 'hubspot') {
+    lines.push('Settings → Website → Pages → Custom Code → Footer HTML');
+    lines.push('Move identified scripts to the footer instead of the head');
+  } else {
+    lines.push('Find the <script> tag for the blocking script identified in Step 1');
+    lines.push('Change: <script src="...script-url...">');
+    lines.push('    To: <script defer src="...script-url...">');
+  }
+
+  lines.push('');
+  lines.push('STEP 4: Verify the fix');
+  lines.push('After deploying: run https://pagespeed.web.dev for this page in Mobile mode.');
+  lines.push('Target: TBT < 300ms. LCP < 4s.');
+
+  return lines.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────
+// PROMPT BUILDERS
+// ─────────────────────────────────────────────────────────────
+
+const AI_SYSTEM = `You are a senior web developer generating precise, copy-paste-ready code fixes for SEO and performance issues.
+
+You are given audit finding data and (when available) live page HTML. Generate the exact fix for THIS specific page.
+
+Rules:
+- Reference actual values from the data (script URLs, H1 text, PAA questions, existing schema)
+- No placeholders like [YOUR_VALUE] or [INSERT HERE]
+- Code must be complete and ready to deploy
+- Be specific to the CMS and SEO plugin detected
+
+Reply with ONLY valid JSON (no markdown, no backticks):
+{
+  "analysis": "2-4 sentences explaining the specific problem and why this fix resolves it",
+  "fix_code": "Complete copy-paste-ready code",
+  "fix_language": "html|json|javascript|bash|text",
+  "paa_questions": ["question strings if faq_schema or h2_section task, else empty array"]
+}`;
+
+function buildPromptFromAuditData(task: DevTask, cms: CmsContext): { sys: string; usr: string } {
+  const ev  = task.finding_detail || '';
+  const url = task.target_url || 'the page URL';
+  const p   = cms.platform;
+  const pluginNote = (cms.seoPlugin !== 'unknown' && cms.seoPlugin !== 'none') ? ' with ' + cms.seoPlugin : '';
+
+  const context = [
+    'CMS: ' + p + pluginNote,
+    'URL: ' + url,
+    'Finding: ' + (task.finding_title || ''),
+    'Audit detail: ' + ev.slice(0, 600),
   ].join('\n');
 
-  const finding = [
-    '=== AUDIT FINDING ===',
-    'Task: ' + task.title,
-    'Type: ' + task.task_type,
-    'Severity: ' + task.severity,
-    'URL: ' + (task.target_url || 'unknown'),
-    'Finding: ' + (task.finding_title || ''),
-    task.finding_detail ? 'Detail: ' + task.finding_detail.slice(0, 500) : '',
-    '',
-    '=== LIVE PAGE HTML (relevant section) ===',
-    snapshotHtml ? snapshotHtml.slice(0, 8000) : '[Not available — page fetch failed]',
-  ].filter(Boolean).join('\n');
+  const nl = '\n';
 
-  const taskInstructions: Record<string, string> = {
-    lcp_fix: [
-      finding,
-      '',
-      '=== TASK ===',
-      'The LCP (Largest Contentful Paint) is critically slow due to render-blocking JavaScript.',
-      'Evidence: TTFB is fast but TBT (Total Blocking Time) is high — this confirms the bottleneck',
-      'is JavaScript executing on the main thread before the page renders.',
-      '',
-      'From the script tags above, identify which ones:',
-      '  - Are in <head> without defer or async',
-      '  - Are third-party (analytics, chat, tag managers, CRM widgets, ad scripts)',
-      '  - Are non-critical for initial render',
-      '',
-      'Generate the modified <script> tags with defer added. Show BEFORE and AFTER for each.',
-      'Also explain HOW to find the specific blocking tasks using Chrome DevTools → Performance → Long Tasks.',
-    ].join('\n'),
+  // Each prompt is built with explicit string concatenation — no multi-line literals.
+  const gsc = context + nl + nl + 'Generate: (1) 2-sentence analysis of what "not indexed" means for this page. (2) Step-by-step GSC URL Inspection checklist. (3) In fix_code as plain text: the full diagnosis and Request Indexing steps, including what to check for noindex meta tags, canonical tags pointing elsewhere, and X-Robots-Tag headers.';
 
-    script_defer: [
-      finding,
-      '',
-      '=== TASK ===',
-      'High TBT indicates render-blocking scripts. From the script tags above, identify blocking candidates.',
-      'Generate modified script tags with defer or async. Show BEFORE and AFTER.',
-      'Include Chrome DevTools Long Tasks profiling steps.',
-    ].join('\n'),
+  const faq = context + nl + nl + 'Extract PAA questions from the audit detail above. Generate a complete FAQPage JSON-LD <script type="application/ld+json"> block. Write 50-80 word direct answers for each question based on the page URL and industry context. The answers must match what the page content would plausibly say. Return question strings in paa_questions array.';
 
-    lazy_loading: [
-      finding,
-      '',
-      '=== TASK ===',
-      'The image tags above show 0% have loading="lazy". ',
-      'For each img tag, determine if it is above or below the fold:',
-      '  - First 1-2 content images: keep as eager (no change)',
-      '  - All others: add loading="lazy"',
-      '',
-      'If this is ' + cms.platform + ' and no code access, generate a complete JavaScript snippet',
-      'that adds loading="lazy" to all images except the first 2 — ready to paste into a footer.',
-      'The snippet: document.querySelectorAll("img:not(:nth-child(-n+2))").forEach(img => img.loading = "lazy")',
-      'wrapped in a <script> tag with a DOMContentLoaded listener.',
-    ].join('\n'),
+  const h1 = context + nl + nl + 'The current H1 and campaign keyword are in the audit detail. Generate 3 H1 options that: include the keyword naturally (not forced), maintain commercial intent, are 5-10 words, read well for humans. Rank them 1-3 with one-sentence rationale for the top choice. Return all 3 numbered in fix_code.';
 
-    image_format: [
-      finding,
-      '',
-      '=== TASK ===',
-      'The images above use legacy formats (jpg/png/gif).',
-      'For ' + cms.platform + ': generate the recommended approach (plugin or CDN setting).',
-      'Also generate a Node.js script using "sharp" that reads all images in a directory',
-      'and outputs webp versions at 85% quality.',
-    ].join('\n'),
+  const para = context + nl + nl + 'The current first paragraph and keyword overlap percentage are in the audit detail. Write a replacement first paragraph: 60-100 words, campaign keyword in sentence 1, opens with the specific problem the searcher is trying to solve, names who the product is for, previews the key differentiator. No generic filler phrases. Return ONLY the new paragraph text in fix_code.';
 
-    faq_schema: [
-      finding,
-      '',
-      '=== TASK ===',
-      'The page is missing FAQPage JSON-LD schema.',
-      'Look at the existing schema blocks in the HTML above. Build on them if present.',
-      '',
-      'Extract the actual page topic from: URL=' + (task.target_url || '') + ' and finding detail.',
-      'Generate a FAQPage JSON-LD block with 4 questions relevant to this page topic.',
-      'Each answer must be 50-80 words — direct, factual, citation-eligible.',
-      'Return question strings in paa_questions array.',
-      '',
-      'For ' + cms.platform + ': provide the exact location to paste this code.',
-    ].join('\n'),
+  const h2 = context + nl + nl + 'Extract the unanswered PAA questions from the audit detail. For each question: write the H2 tag using the verbatim question text (Google matches exact phrasing), then a 50-80 word direct answer paragraph (citation-eligible — starts with the answer, not preamble), then a 250-350 word body section covering evaluation criteria and practical guidance. Include honest mention of alternative options. Return complete HTML in fix_code and question strings in paa_questions.';
 
-    h1_update: [
-      finding,
-      '',
-      '=== TASK ===',
-      'Current H1 is shown in the HTML above.',
-      'The campaign keyword is NOT in the H1. Extract the keyword from the finding detail.',
-      '',
-      'Generate 3 H1 options that:',
-      '  - Include the campaign keyword naturally (not forced)',
-      '  - Preserve the page\'s commercial intent',
-      '  - Are 5-10 words',
-      '  - Read naturally for humans',
-      'Rank them 1-3 with one-sentence rationale. Return all 3 in fix_code.',
-    ].join('\n'),
+  const dateMod = context + nl + nl + 'Generate: (1) A complete Article or WebPage JSON-LD schema block with dateModified set to today\'s date. Include @context, @type, url, name, and dateModified fields. (2) An HTML snippet for a visible "Last updated: [date]" label to add near the page title. Return the complete <script type="application/ld+json"> block in fix_code.';
 
-    first_para: [
-      finding,
-      '',
-      '=== TASK ===',
-      'Current first paragraph is shown in the HTML above.',
-      'It has low keyword overlap — the campaign keyword is barely present.',
-      'Extract the keyword from the finding detail.',
-      '',
-      'Write a replacement first paragraph:',
-      '  - 60-100 words',
-      '  - Contains the campaign keyword in the first sentence',
-      '  - Opens with the specific problem the searcher is trying to solve',
-      '  - Names who this product/page is for',
-      '  - Previews the key differentiator',
-      '  - No generic filler phrases',
-      'Return ONLY the new paragraph text in fix_code.',
-    ].join('\n'),
+  const metaD = context + nl + nl + 'Generate 3 meta description options, each 150-160 characters. Each must: include the campaign keyword, state a clear benefit, and end with a soft CTA where natural. Return all 3 numbered in fix_code.';
 
-    h2_section: [
-      finding,
-      '',
-      '=== TASK ===',
-      'Existing H2 structure shown above. PAA questions from the finding detail are unanswered.',
-      'Extract the unanswered PAA questions from the finding detail.',
-      '',
-      'For each unanswered question, generate:',
-      '  - The exact H2 tag (verbatim question text — Google matches this)',
-      '  - A 50-80 word direct answer paragraph (citation-eligible)',
-      '  - A 250-350 word body section with practical guidance',
-      '  - Honest mention of alternative solutions where relevant',
-      '',
-      'Return complete HTML, list question strings in paa_questions.',
-    ].join('\n'),
+  const lazy = context + nl + nl + 'Generate: (1) 1-sentence analysis of the performance impact of 0% lazy-loaded images. (2) A complete, self-contained JavaScript snippet that adds loading="lazy" to all img elements on the page except the first 2 (which are above the fold). Wrap it in a <script> tag with a DOMContentLoaded event listener so it works on any CMS via footer code injection. The snippet must handle already-lazy images gracefully (check before setting).';
 
-    date_modified_schema: [
-      finding,
-      '',
-      '=== TASK ===',
-      'Existing schema blocks shown above.',
-      'Add "dateModified" set to today\'s date (' + "2026-05-26" + ') to the most relevant schema block.',
-      'Return the complete updated schema block.',
-      'Also generate a small visible HTML label: <p class="last-updated">Last updated: [date]</p>',
-    ].join('\n'),
+  const imgFmt = context + nl + nl + 'Generate: (1) 1-sentence analysis of the file size impact of legacy image formats. (2) The recommended approach for ' + p + ' (name specific plugins or CDN settings). (3) A Node.js script using the sharp library that reads all jpg/png/gif files in a "./images" directory and writes webp versions at 85% quality into an "./images/webp" output directory.';
 
-    gsc_indexing: [
-      finding,
-      '',
-      '=== TASK ===',
-      'Page is not in GSC — 0 organic impressions.',
-      'Check the HTML above for indexing blockers:',
-      '  - <meta name="robots" content="noindex"> or similar',
-      '  - X-Robots-Tag reference in HTML',
-      '  - Canonical pointing to a different URL',
-      '  - nofollow on important links',
-      '',
-      'List what you find. If none found, say so explicitly.',
-      'Generate a step-by-step GSC URL Inspection checklist in fix_code as plain text.',
-    ].join('\n'),
-
-    meta_desc: [
-      finding,
-      '',
-      '=== TASK ===',
-      'Current meta description shown above.',
-      'Generate 3 meta description options (150-160 chars each):',
-      '  - Include the campaign keyword',
-      '  - Include a clear benefit or differentiator',
-      '  - End with a soft CTA where natural',
-      'For ' + cms.platform + ': provide exact location to update it.',
-    ].join('\n'),
+  const prompts: Record<string, string> = {
+    gsc_indexing: gsc,
+    faq_schema: faq,
+    h1_update: h1,
+    first_para: para,
+    h2_section: h2,
+    date_modified_schema: dateMod,
+    meta_desc: metaD,
+    lazy_loading: lazy,
+    image_format: imgFmt,
   };
 
-  const usr = taskInstructions[task.task_type] || [
-    finding,
-    '',
-    '=== TASK ===',
-    'Generate the exact fix code for this task. Reference specific elements from the HTML above.',
-    'Provide clear application instructions for ' + cms.platform + '.',
+  return { sys: AI_SYSTEM, usr: prompts[task.task_type] || (context + nl + nl + 'Generate the exact fix code for this task based on the audit finding data.') };
+}
+
+function buildPromptWithHtml(task: DevTask, snapshotHtml: string, cms: CmsContext): { sys: string; usr: string } {
+  const ev  = task.finding_detail || '';
+  const url = task.target_url || 'the page URL';
+  const p   = cms.platform;
+  const pluginNote = (cms.seoPlugin !== 'unknown' && cms.seoPlugin !== 'none') ? ' with ' + cms.seoPlugin : '';
+  const nl = '\n';
+
+  const context = [
+    'CMS: ' + p + pluginNote,
+    'URL: ' + url,
+    'Finding: ' + (task.finding_title || ''),
+    'Audit detail: ' + ev.slice(0, 400),
+    nl + '=== LIVE PAGE HTML (relevant section) ===',
+    snapshotHtml ? snapshotHtml.slice(0, 8000) : '[Not captured]',
   ].join('\n');
 
-  return { sys, usr };
+  const lcp = context + nl + nl + 'From the script tags in the HTML above: identify which are in <head> without defer or async. For each blocking script found: show BEFORE (original tag) and AFTER (with defer added) clearly labelled. Focus on third-party scripts first (analytics, chat widgets, pixels, tag managers) as they are the safest to defer. Return all changes in fix_code as a diff showing each modification.';
+
+  const defer = context + nl + nl + 'From the script tags in the HTML above: identify blocking scripts without defer or async attributes. Generate the modified versions with defer or async. Show BEFORE and AFTER for each. Return in fix_code.';
+
+  const lazy = context + nl + nl + 'From the img tags in the HTML above: the first 1-2 images are above the fold (keep as eager). All others should have loading="lazy" added. Generate: (1) The modified img tags. (2) A JavaScript fallback snippet that does the same programmatically, for CMS platforms without direct HTML access.';
+
+  const imgFmt = context + nl + nl + 'From the img tags in the HTML above: list all legacy-format (jpg/png/gif) image URLs found. Generate: (1) A Node.js sharp conversion script for those specific files. (2) A <picture> element example showing webp + legacy fallback for the first 3 images.';
+
+  const prompts: Record<string, string> = {
+    lcp_fix: lcp,
+    script_defer: defer,
+    lazy_loading: lazy,
+    image_format: imgFmt,
+  };
+
+  return { sys: AI_SYSTEM, usr: prompts[task.task_type] || (context + nl + nl + 'Generate the exact fix from the HTML above.') };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1054,7 +1128,6 @@ export async function verifyDevTask(task: DevTask): Promise<Partial<DevTask>> {
         : 'No webp/avif images detected — check if conversion was applied.';
       break;
     }
-    case 'faq_schema':
     case 'date_modified_schema': {
       const hasDateMod = /dateModified/i.test(html);
       evidence.has_date_modified = hasDateMod;
