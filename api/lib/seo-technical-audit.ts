@@ -2879,8 +2879,13 @@ async function checkHeadingHierarchyVsPaa(
         severity:   'amber',
         finding_title: `FAQPage schema missing — ${serp.paa_questions.length} live PAA question(s) present, no FAQPage schema exists`,
         finding_detail: `The SERP for "${campaignKeyword}" shows ${serp.paa_questions.length} People Also Ask question(s), but the page has no FAQPage JSON-LD schema. This is a missed opportunity for:\n- PAA box capture (Google cites FAQPage schema Q&As as the direct answer source)\n- AI Overview inclusion (AI Overviews pull from FAQPage schema when present and content-matched)\n- Rich results in the SERP (expandable FAQ entries below the organic result)\n\n**IMPORTANT:** Do NOT add FAQPage schema until the visible H2 + answer sections are written. Google requires every Question in FAQPage schema to appear verbatim in the visible page content. Adding schema without matching visible content risks a manual action (loss of rich-result eligibility).\n\n**Add schema AFTER writing visible content for these PAA questions:**\n${serp.paa_questions.map((q: string) => '- ' + q).join('\n')}`,
-        recommendation: `Step 1: Write visible H2 sections + 40-80 word direct answers for each PAA question. Step 2: Add FAQPage JSON-LD schema matching those visible Q&As exactly. Step 3: Validate at https://validator.schema.org. Step 4: Submit URL in GSC for re-crawl.`,
-        evidence: { paa_questions: serp.paa_questions, has_faq_schema: false, paa_count: serp.paa_questions.length },
+        /* Conditional Step 1: if all PAA headings already exist (answered.length == total),
+           the writer should VERIFY and improve existing content, not write new sections.
+           If some/all are unanswered, Step 1 is to write new sections. */
+        recommendation: unanswered.length === 0
+          ? `Step 1: Verify and improve content quality beneath each existing heading that matches a PAA question (see companion finding) — each section must have a direct 40-80 word answer as its opening paragraph before schema is added. Step 2: Add FAQPage JSON-LD schema with one mainEntity entry per PAA question, using the verbatim question text as @type Question. Step 3: Validate at https://validator.schema.org. Step 4: Submit URL in GSC → URL Inspection → Request Indexing.`
+          : `Step 1: Write visible H2 sections with 40-80 word direct answers for each unanswered PAA question (see companion finding for per-question briefs). Step 2: Add FAQPage JSON-LD schema matching visible Q&As exactly — every question in schema must appear verbatim in visible page content (Google manual action risk if not). Step 3: Validate at https://validator.schema.org. Step 4: Submit URL in GSC → URL Inspection → Request Indexing.`,
+        evidence: { paa_questions: serp.paa_questions, has_faq_schema: false, paa_count: serp.paa_questions.length, all_headings_matched: unanswered.length === 0 },
         data_source: 'html_fetch',
         enrichment_sources: ['serpapi'],
       });
