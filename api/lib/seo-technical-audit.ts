@@ -398,6 +398,29 @@ export async function runTechnicalAudit(opts: {
       updated_at:        new Date().toISOString(),
     }).eq("id", panelId);
 
+    let serpApiMissingWarning = false;
+    /* Pre-warm the SerpAPI cache unconditionally.
+       fetchSerpFeatures writes to ai_content_cache (platform-wide, keyed
+       by keyword + country). Every check that needs SERP data calls
+       fetchSerpFeatures internally — they all hit the cache after this
+       first call. Doing it here means:
+         1. Even a page with 0 GSC impressions gets live SERP data
+            (previously gated behind CTR underperformance check)
+         2. All checks share ONE SerpAPI call per audit, not N calls
+         3. If the key is missing or the call fails, we surface ONE clear
+            finding here rather than silent nulls in 3 separate checks */
+    try {
+      const serpWarm = await fetchSerpFeatures(c.keyword, c.project_id);
+      if (!serpWarm) {
+        console.warn(`[runTechnicalAudit] SerpAPI returned null for keyword="${c.keyword}" projectId="${c.project_id}" — SERPAPI_KEY may not be set in Vercel env vars`);
+        /* Surface as a finding so it's visible in the report — not just a server log */
+        serpApiMissingWarning = true;
+      }
+    } catch (e: any) {
+      console.warn(`[runTechnicalAudit] SerpAPI pre-warm failed: ${e?.message}`);
+      serpApiMissingWarning = true;
+    }
+
     /* Run all checks in parallel */
     const auditRunId = crypto.randomUUID();
     const checkResults = await Promise.allSettled([
@@ -440,6 +463,21 @@ export async function runTechnicalAudit(opts: {
         const checkName = ['indexability','on_page','cwv','engagement','schema','keyword_presence','ctr_vs_expected','query_distribution','first_para_topicality','heading_hierarchy_vs_paa','diffuse_intent_serp','competitive_content_benchmark','content_freshness','image_optimization','hreflang'][i];
         failedChecks.push(checkName);
       }
+    }
+
+    /* If SerpAPI was unavailable, inject a top-level amber finding so the
+       reader knows why PAA, competitor, and diffuse-intent data is missing.
+       Only inject if none of the checks already produced a SerpAPI warning
+       (the PAA check adds one when serp is null). */
+    if (serpApiMissingWarning && !findings.some(f => f.data_source === 'serpapi' && f.severity === 'amber')) {
+      findings.unshift({
+        audit_kind: 'on_page_fundamentals',
+        severity: 'amber',
+        finding_title: 'SerpAPI not configured — live SERP data unavailable for this audit',
+        finding_detail: `SerpAPI could not be reached for the keyword "${c.keyword}". Three audit checks depend on live SERP data and returned empty:\\n\\n- **PAA questions** (heading coverage check) — skipped\\n- **Diffuse-intent SERP detection** — skipped\\n- **Competitive content benchmark** — skipped\\n\\n> ⚠️ **How to fix:** The \`SERPAPI_KEY\` environment variable must be set in Vercel. Go to Vercel Dashboard → your project → Settings → Environment Variables → add \`SERPAPI_KEY\` with your SerpAPI key. This covers ALL projects and ALL campaigns automatically. Get a key at https://serpapi.com (free tier: 100 searches/month).`,
+        recommendation: 'Set SERPAPI_KEY in Vercel environment variables. One key covers all projects.',
+        data_source: 'serpapi',
+      });
     }
 
     /* Phase 16.7 — Cross-finding relationship post-process.
@@ -1800,11 +1838,13 @@ async function checkCtrVsExpected(url: string, projectId: string, campaignKeywor
        top-10 / live-position data directly from evidence rather than
        parsing the detail string. */
     let serpEvidence: any = null;
-    /* Phase 16.3 — accumulate signals + enrichment sources during the
-       SerpAPI block so the outer finding-push can attach them. */
     const ctrSignals: NonNullable<Finding['signals']> = [];
     const ctrEnrichmentSources: NonNullable<Finding['enrichment_sources']> = [];
-    if (ctrUnderperforming && campaignKeyword && campaignKeyword.trim()) {
+    /* Always attempt to enrich with SerpAPI — the pre-warm at audit start
+       populated the cache so this is a cache hit, not a new API call.
+       Previously this was gated behind ctrUnderperforming, which meant
+       new pages (0 impressions) never got SERP enrichment. */
+    if (campaignKeyword && campaignKeyword.trim()) {
       const serpFeatures = await fetchSerpFeatures(campaignKeyword, projectId);
       if (serpFeatures) {
         const featuresSummary = summarizeSerpFeatures(serpFeatures);
@@ -2715,7 +2755,7 @@ async function checkHeadingHierarchyVsPaa(
     findings.push({
       audit_kind: 'on_page_fundamentals', severity: 'amber',
       finding_title: 'SerpAPI not configured — PAA questions, SERP features, and competitor data unavailable',
-      finding_detail: `Live SERP data (PAA questions, top-10 domains, AI Overview presence, featured snippet) could not be retrieved because SerpAPI is not configured for this project.\\n\\nThis affects **three audit checks** that depend on live SERP data:\\n- PAA question coverage (heading hierarchy vs live PAA questions)\\n- Diffuse-intent SERP detection (Google's intent spread across top-10)\\n- Competitive content benchmark (top-10 competitor word counts)\\n\\n> ⚠️ **Action required:** Set the \\`SERPAPI_KEY\\` environment variable in Vercel (one key covers all projects), OR add a per-project SerpAPI key via PM Module → project → Requirements → Integrations. Get a free SerpAPI key at https://serpapi.com.`,
+      finding_detail: `Live SERP data (PAA questions, top-10 domains, AI Overview presence, featured snippet) could not be retrieved because SerpAPI is not configured for this project.\\n\\nThis affects **three audit checks** that depend on live SERP data:\\n- PAA question coverage (heading hierarchy vs live PAA questions)\\n- Diffuse-intent SERP detection (Google's intent spread across top-10)\\n- Competitive content benchmark (top-10 competitor word counts)\\n\\n> ⚠️ **Action required:** Set the SERPAPI_KEY environment variable in Vercel (one key covers all projects), OR add a per-project SerpAPI key via PM Module → project → Requirements → Integrations. Get a free SerpAPI key at https://serpapi.com.`,
       recommendation: 'Set SERPAPI_KEY in Vercel environment variables. This single key enables live SERP data, PAA analysis, and competitor benchmarking across all projects.',
       data_source: 'serpapi',
     });
