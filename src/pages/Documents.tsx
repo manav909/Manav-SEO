@@ -575,7 +575,7 @@ function DetailPane({
                 <Badge variant="outline" className="text-[10px] capitalize">{artifact.status}</Badge>
               )}
             </div>
-            <h2 className="text-lg font-bold leading-tight mb-1">{artifact.title}</h2>
+            <h2 className="text-lg font-bold leading-tight mb-1" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{artifact.title}</h2>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span>{projectLabel(artifact.project_id)}</span>
               {artifact.keyword && (
@@ -647,9 +647,12 @@ function DetailPane({
         </div>
       </div>
 
-      {/* Body */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="px-5 py-4 min-w-0 overflow-hidden">
+      {/* Body — plain overflow-y-auto div, NOT Radix ScrollArea.
+          ScrollArea wraps content in display:table which expands to content
+          width, defeating word-break. A plain div with overflow-y:auto +
+          overflow-x:hidden gives us full control. */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" style={{ minWidth: 0 }}>
+        <div className="px-5 py-4" style={{ width: '100%', minWidth: 0, overflowWrap: 'break-word', wordBreak: 'break-word' }}>
           <ArtifactMarkdown body={artifact.body || '_No content_'} accent={meta.color} size="md" />
 
           {/* Supersession chain */}
@@ -710,7 +713,7 @@ function DetailPane({
             </>
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
@@ -1116,7 +1119,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </div>
 
             {/* List */}
-            <ScrollArea className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
               {listError && (
                 <div className="p-4 text-xs text-destructive">
                   <AlertTriangle className="h-4 w-4 inline mr-2" />
@@ -1146,7 +1149,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   projectLabel={projectLabel}
                 />
               ))}
-            </ScrollArea>
+            </div>
 
             {/* Pagination */}
             {total > PAGE_SIZE && (
