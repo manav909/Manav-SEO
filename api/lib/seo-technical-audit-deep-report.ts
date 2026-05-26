@@ -636,7 +636,15 @@ function renderSearchPerformanceBaseline(lines: string[], I: DeepReportInputs, m
     lines.push('');
     lines.push(`Interpretation finding: ${xref(ctr)}.`);
   } else {
-    lines.push(`No CTR-vs-expected finding produced — either GSC data unavailable for this URL or impressions below the 100-impression threshold required for a credible CTR comparison.`);
+    /* Check why — is the page in GSC at all? */
+    const inGscF = firstFindingBy(m, f => /Page is indexed and appearing|Page not in GSC/i.test(f.finding_title));
+    if (inGscF && /Page not in GSC/i.test(inGscF.finding.finding_title)) {
+      lines.push(`Page not in GSC top pages — either not indexed yet or getting 0 impressions for this keyword. CTR analysis requires ≥100 impressions at a measurable position.`);
+      lines.push('');
+      lines.push(`**Next step:** Open Google Search Console → URL Inspection → paste \`${I.url}\` → check indexing status. If not indexed, click **Request Indexing**. Come back in 24-48 hours.`);
+    } else {
+      lines.push(`GSC impressions for this URL are below the 100-impression threshold required for a credible CTR-vs-benchmark comparison. Insufficient data — monitor as organic visibility grows.`);
+    }
   }
   lines.push('');
 
@@ -663,7 +671,13 @@ function renderSearchPerformanceBaseline(lines: string[], I: DeepReportInputs, m
   } else if (ga4) {
     lines.push(`Per-page GA4 lookup failed; falling back to site-wide engagement signal — see ${xref(ga4)}.`);
   } else {
-    lines.push(`No GA4 engagement data — either GA4 not connected for this project, or per-page lookup returned no rows.`);
+    /* Check if there is a diagnostic finding explaining why */
+    const ga4Diag = firstFindingBy(m, f => /GA4 per-page data unavailable|GA4 not connected for this project/i.test(f.finding_title));
+    if (ga4Diag) {
+      lines.push(`${ga4Diag.finding.finding_detail || ga4Diag.finding.finding_title}`);
+    } else {
+      lines.push(`No GA4 per-page engagement data available. Either:\n- GA4 is not connected for this project (connect via PM Module → project → Requirements → Integrations)\n- The page has no sessions in the last 28 days (normal for new pages)\n- The GA4 OAuth token needs refresh (reconnect GA4 if issue persists)`);
+    }
   }
   lines.push('');
 
@@ -683,7 +697,20 @@ function renderSearchPerformanceBaseline(lines: string[], I: DeepReportInputs, m
       lines.push(`**Audited URL is NOT in the live top-100** for \`${I.keyword}\`. GSC's reported average position is therefore driven by *other* queries — see §2.6.`);
     }
   } else {
-    lines.push(`Live SERP composition not retrieved (SerpAPI not configured, or CTR was not underperforming enough to trigger the SERP enrichment path).`);
+    /* Fall back to diffuse-intent finding evidence which always runs SerpAPI */
+    const diffuse = diffuseIntentFinding(m);
+    const diffuseEv = diffuse?.finding.evidence || {};
+    const serpDomains: string[] = Object.values(diffuseEv.categories || {}).flat() as string[];
+    if (serpDomains.length > 0) {
+      lines.push(`Live top-10 domains for \`${I.keyword}\` (from SERP intent analysis):`);
+      lines.push('');
+      Object.entries(diffuseEv.categories || {}).forEach(([cat, doms]: [string, any]) => {
+        (doms as string[]).forEach(d => lines.push(`- \`${d}\` — ${cat}`));
+      });
+      lines.push('');
+    } else {
+      lines.push(`Live SERP composition not retrieved — SerpAPI key not configured or API call failed. Set \`SERPAPI_KEY\` in Vercel environment variables to enable live SERP data.`);
+    }
   }
   lines.push('');
 
@@ -709,7 +736,37 @@ function renderSearchPerformanceBaseline(lines: string[], I: DeepReportInputs, m
       if (paaGap) lines.push(`Content-gap interpretation: ${xref(paaGap)}.`);
     }
   } else {
-    lines.push(`No SerpAPI feature detection ran for this audit (CTR may not have been underperforming enough to trigger the enrichment path, or SerpAPI key not configured).`);
+    /* Fall back to PAA finding for PAA questions, diffuse finding for SERP features */
+    const paaF = paaGapFinding(m);
+    const diffuseF = diffuseIntentFinding(m);
+    const paaEv = paaF?.finding.evidence || {};
+    const diffuseEv2 = diffuseF?.finding.evidence || {};
+    if (paaEv.paa_total > 0 || diffuseF) {
+      lines.push(`| Feature | Status |`);
+      lines.push(`|---|---|`);
+      if (diffuseF) {
+        const cats = Object.keys(diffuseEv2.categories || {}).length;
+        lines.push(`| Intent diversity | ${cats} distinct intent categories (see ${xref(diffuseF)}) |`);
+      }
+      if (paaEv.paa_total > 0) {
+        lines.push(`| People Also Ask box | ✅ Yes (${paaEv.paa_total} questions) |`);
+      }
+      lines.push('');
+      if (paaEv.answered && Array.isArray(paaEv.answered) && paaEv.answered.length > 0) {
+        lines.push(`**Live PAA questions — covered by existing headings:**`);
+        lines.push('');
+        for (const a of paaEv.answered) lines.push(bullet(`"${a.paa}" → matched by heading "${a.heading}"`));
+        lines.push('');
+      }
+      if (paaEv.unanswered && Array.isArray(paaEv.unanswered) && paaEv.unanswered.length > 0) {
+        lines.push(`**Live PAA questions — NOT covered (content gaps):**`);
+        lines.push('');
+        for (const q of paaEv.unanswered) lines.push(bullet(`"${q}"`));
+        lines.push('');
+      }
+    } else {
+      lines.push(`No SerpAPI feature detection ran for this audit — SerpAPI key not configured or API call failed. Set \`SERPAPI_KEY\` in Vercel environment variables.`);
+    }
   }
   lines.push('');
 
