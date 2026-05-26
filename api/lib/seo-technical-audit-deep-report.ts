@@ -166,7 +166,12 @@ function competitiveContentFinding(m: FindingWithId[]) {
   });
 }
 function perPageGa4Finding(m: FindingWithId[]) {
-  return firstFindingBy(m, f => /Per-page engagement rate|Per-page avg session/i.test(f.finding_title));
+  /* Match all GA4 finding variants including low-sample */
+  return firstFindingBy(m, f =>
+    f.audit_kind === 'engagement_signals' &&
+    f.data_source === 'ga4' &&
+    f.evidence?.scope === 'per-page'
+  );
 }
 function zeroConversionFinding(m: FindingWithId[]) {
   return firstFindingBy(m, f => /Zero conversions recorded/i.test(f.finding_title));
@@ -373,8 +378,67 @@ function renderExecutiveSummary(lines: string[], I: DeepReportInputs, m: Finding
     lines.push(`CTR underperformance is the primary signal ${xref(ctr)}. The keyword-presence analysis did not produce a clear pivot recommendation — manually verify whether this is a CTR-tactics problem or a deeper targeting problem before committing to recovery work.`);
     lines.push('');
   } else {
-    lines.push(`The audit produced ${I.red_count} Critical, ${I.amber_count} Warning, ${I.green_count} Pass, and ${I.info_count} Info findings. See §3 for the full finding list; §6 for the sequenced recommendation set.`);
-    lines.push('');
+    /* Build a real diagnosis from available data points */
+    const foundF = foundationalFinding(m);
+    const diffuseF = diffuseIntentFinding(m);
+    const paaF = paaGapFinding(m);
+    const ga4F = perPageGa4Finding(m);
+    const compF = competitiveContentFinding(m);
+    const lcpF = firstFindingBy(m, f => /MOBILE LCP/i.test(f.finding_title) && f.severity === 'red');
+
+    const diagLines: string[] = [];
+
+    if (foundF) {
+      const lcpSec = foundF.finding.evidence?.lcp_ms ? (foundF.finding.evidence.lcp_ms / 1000).toFixed(2) + 's' : null;
+      const tbt = foundF.finding.evidence?.tbt_ms ? Math.round(foundF.finding.evidence.tbt_ms) + 'ms' : null;
+      if (lcpSec) {
+        diagLines.push(`**One problem overrides everything else: the page loads in ${lcpSec} on mobile.** Real CrUX field data (Chrome User Experience Report, 75th percentile) shows ${lcpSec} mobile LCP — Google's "poor" threshold is 4s. At this load time, the majority of mobile visitors abandon the page before seeing any content. ${tbt ? `The cause is render-blocking JavaScript (Total Blocking Time: ${tbt}) — not the server, which responds in ${foundF.finding.evidence?.ttfb_ms || '~14'}ms.` : ''} Until this is resolved, every content improvement, H1 rewrite, or schema addition will improve a page that real users never see.`);
+      } else {
+        diagLines.push(`**One foundational issue blocks all other work:** ${foundF.finding.finding_title}. See ${xref(foundF)}.`);
+      }
+    }
+
+    if (diffuseF) {
+      const cats = Object.keys(diffuseF.finding.evidence?.categories || {}).length || diffuseF.finding.evidence?.distinct_categories;
+      const topCat = Object.entries(diffuseF.finding.evidence?.categories || {}).sort((a: any, b: any) => b[1].length - a[1].length)[0];
+      diagLines.push(`**The target keyword has a structurally diffuse SERP.** Live top-10 results for \`${I.keyword}\` span ${cats} distinct intent categories (SerpAPI-verified). ${topCat ? `The dominant intent category is "${topCat[0]}" (${topCat[1].length} of 10 results: ${(topCat[1] as string[]).join(', ')}).` : ''} Google has not identified a dominant result type for this query — this means both lower click-through ceilings at any rank AND contestable territory for a page that clearly commits to one intent lane.`);
+    }
+
+    if (paaF) {
+      const paaTotal = paaF.finding.evidence?.paa_total || 0;
+      const answered = paaF.finding.evidence?.answered_count || 0;
+      const unanswered = paaF.finding.evidence?.unanswered?.length || 0;
+      if (unanswered > 0) {
+        diagLines.push(`**${unanswered} of ${paaTotal} live PAA questions are not addressed by the page's headings** (SerpAPI-verified PAA questions for \`${I.keyword}\`). Each unanswered question is a missed featured-snippet opportunity and reduces AI Overview citation probability.`);
+      } else if (paaTotal > 0) {
+        diagLines.push(`**${paaTotal} live PAA questions have matching headings but content quality is unverified.** Heading-level token matching is confirmed; whether the copy beneath each heading provides a direct 40-80 word answer suitable for PAA box capture requires manual review.`);
+      }
+    }
+
+    if (ga4F) {
+      const sessions = ga4F.finding.evidence?.sessions;
+      const avgSec = ga4F.finding.evidence?.avg_session_sec;
+      const bounce = ga4F.finding.evidence?.bounce_rate_pct;
+      if (sessions !== undefined && sessions > 0) {
+        diagLines.push(`**GA4 shows ${sessions} sessions in 28 days — statistically insufficient for engagement verdict** (GA4 live data through ${ga4F.finding.evidence?.data_freshness || 'yesterday'}). ${avgSec ? `Avg session duration: ${Math.round(avgSec)}s.` : ''} ${bounce ? `Bounce rate: ${bounce}%.` : ''} Engagement data will become reliable once the page reaches 50+ sessions.`);
+      }
+    }
+
+    if (compF) {
+      const wc = compF.finding.evidence?.audited_word_count;
+      const median = compF.finding.evidence?.competitor_median;
+      const fetched = compF.finding.evidence?.competitors_fetched;
+      if (wc && median) {
+        diagLines.push(`**Content depth is competitive:** ${wc} words vs competitor median ${median} (${fetched} competitor pages fetched and counted). ${Math.round((wc/median)*100)}% of the median. Note: this benchmark includes different-intent pages — see §2.5 for the intent-aware interpretation.`);
+      }
+    }
+
+    diagLines.push(`**Severity breakdown:** ${I.red_count} Critical · ${I.amber_count} Warning · ${I.green_count} Pass · ${I.info_count} Info. Full finding list in §3; sequenced recommendations in §6.`);
+
+    for (const line of diagLines) {
+      lines.push(line);
+      lines.push('');
+    }
   }
 
   lines.push(`### §0.2 Top three actions (in execution order)`);
@@ -395,11 +459,21 @@ function renderExecutiveSummary(lines: string[], I: DeepReportInputs, m: Finding
   }
   const paaGap = paaGapFinding(m);
   if (paaGap) {
-    const paaCount = paaGap.finding.evidence?.unanswered?.length || paaGap.finding.evidence?.paa_total || 0;
-    actionItems.push({
-      lead: `Add ${paaCount} new H2 sections answering live PAA questions`,
-      tail: ` ${xref(paaGap)}. Each section needs a 40-80 word direct answer as its first sentence. Detail and per-question briefs in §6.2.1.`,
-    });
+    const unanswered = paaGap.finding.evidence?.unanswered;
+    const hasUnanswered = Array.isArray(unanswered) && unanswered.length > 0;
+    const paaTotal = paaGap.finding.evidence?.paa_total || 0;
+    if (hasUnanswered) {
+      actionItems.push({
+        lead: `Add ${unanswered.length} new H2 sections answering live PAA questions`,
+        tail: ` ${xref(paaGap)}. Each section needs a 40-80 word direct answer as its first sentence. Detail and per-question briefs in §6.2.1.`,
+      });
+    } else if (paaTotal > 0) {
+      /* All PAA headings exist — action is verify + improve quality, then schema */
+      actionItems.push({
+        lead: `Verify and improve content beneath the ${paaTotal} existing PAA-matched headings, then add FAQPage schema`,
+        tail: ` ${xref(paaGap)}. Each heading needs a 40-80 word direct answer as its first paragraph — confirm or rewrite. Then add FAQPage JSON-LD schema. Detail in §6.2.1 and ${xrefShort(firstFindingBy(m, f => /FAQPage schema missing/i.test(f.finding_title)))}.`,
+      });
+    }
   }
   if (zeroConv) {
     actionItems.push({
@@ -828,7 +902,8 @@ function renderSearchPerformanceBaseline(lines: string[], I: DeepReportInputs, m
     lines.push('');
     const dev = diffuse.finding.evidence || {};
     if (dev.distinct_categories) {
-      lines.push(`**${dev.distinct_categories} distinct intent categories** detected in the live top-10.`);
+      const actualCatCount8 = Object.keys(dev.categories || {}).length || dev.distinct_categories;
+    lines.push(`**${actualCatCount8} distinct intent categories** detected in the live top-10.`);
       lines.push('');
     }
     /* Phase 16.10 — normalize categories shape. The audit's
@@ -1293,7 +1368,19 @@ function renderRecommendations(lines: string[], I: DeepReportInputs, m: FindingW
       for (const line of recLines) lines.push(line);
       lines.push('');
     }
-    lines.push(`**Why first:** every Phase 2 recommendation resets against the keyword decision. Doing Phase 2 before this lands means redoing it after the decision changes the target.`);
+    const isLcpFix = /LCP/i.test(foundational.finding.finding_title);
+    const isKwFix  = /keyword/i.test(foundational.finding.finding_title);
+    const isIndexFix = foundational.finding.audit_kind === 'indexability';
+    if (isLcpFix) {
+      const lcpSec = foundational.finding.evidence?.lcp_ms ? (foundational.finding.evidence.lcp_ms / 1000).toFixed(2) : '?';
+      lines.push(`**Why first:** the page loads in ${lcpSec}s on mobile for real users (CrUX 75th percentile). Every Phase 2 improvement — content quality, PAA answers, FAQPage schema — happens on a page that the majority of mobile visitors abandon before they can see it. Fixing load time first means Phase 2 work actually reaches real people.`);
+    } else if (isKwFix) {
+      lines.push(`**Why first:** every Phase 2 recommendation resets against the keyword decision. Doing Phase 2 before this lands means redoing it after the decision changes the target.`);
+    } else if (isIndexFix) {
+      lines.push(`**Why first:** Google cannot rank a page it cannot index. All content and technical work is irrelevant until the indexability blocker is resolved.`);
+    } else {
+      lines.push(`**Why first:** this finding's resolution changes the context for all other recommendations. Tactical improvements done before this is fixed may need to be redone.`);
+    }
     lines.push('');
     /* Phase 16.10 — cross-references built from non-null cited findings only.
        Previous version called xref(null) for missing findings producing
@@ -1325,27 +1412,52 @@ function renderRecommendations(lines: string[], I: DeepReportInputs, m: FindingW
 
   const paaGap = paaGapFinding(m);
   if (paaGap) {
-    lines.push(`#### §6.2.1 — Add new H2 sections for PAA coverage`);
+    const unansweredArr = paaGap.finding.evidence?.unanswered;
+    const answeredArr   = paaGap.finding.evidence?.answered;
+    const paaTotal9     = paaGap.finding.evidence?.paa_total || 0;
+    const hasUnanswered9 = Array.isArray(unansweredArr) && unansweredArr.length > 0;
+    const allMatched9    = !hasUnanswered9 && paaTotal9 > 0;
+
+    lines.push(`#### §6.2.1 — ${hasUnanswered9 ? 'Write new H2 sections for unanswered PAA questions' : 'Verify and strengthen content beneath PAA-matched headings'}`);
     lines.push('');
     lines.push(`**Addresses:** ${xref(paaGap)}`);
     lines.push('');
-    const unansweredArr = paaGap.finding.evidence?.unanswered;
-    if (Array.isArray(unansweredArr) && unansweredArr.length > 0) {
-      lines.push(`**Per-question briefs:**`);
+
+    if (hasUnanswered9) {
+      lines.push(`**Per-question briefs (sections to CREATE):**`);
       lines.push('');
       for (let i = 0; i < unansweredArr.length; i++) {
         const q = unansweredArr[i];
-        lines.push(`##### §6.2.1.${i + 1} — Section for: "${q}"`);
+        lines.push(`##### §6.2.1.${i + 1} — New section: "${q}"`);
         lines.push('');
         lines.push(`- **H2 wording:** use \`${q}\` verbatim (or a tight rephrase preserving key tokens — Google matches PAA boxes to literal phrasings).`);
-        lines.push(`- **First sentence (40-80 words):** direct answer to the question. This is the citation-candidate sentence — write it as if Google's AI Overview might quote it verbatim. No preamble.`);
+        lines.push(`- **First sentence (40-80 words):** direct answer to the question. Citation-candidate sentence — write it as if Google's AI Overview might quote it verbatim. No preamble, no hedging.`);
         lines.push(`- **Section body (300-500 words after the direct answer):** ${paaQuestionBodyGuidance(q)}`);
         lines.push(`- **Length target:** 350-580 words total (direct answer + body).`);
-        lines.push(`- **Schema update:** if FAQPage schema exists (§1.3), add this Q&A to the schema's \`mainEntity\` array. See §5.5.`);
+        lines.push(`- **Do NOT add FAQPage schema for this question** until the visible section is live and verified — see §5.5 (Google manual action risk).`);
         lines.push('');
       }
     }
-    lines.push(`**Why this matters:** the live SERP for \`${I.keyword}\` currently shows ${unansweredArr?.length || 'multiple'} PAA questions (§2.4). Each unanswered PAA question is a content gap AND a citation opportunity. Phase 2.1 is the highest-leverage tactic for AI-Overview-era recovery on this SERP.`);
+
+    if (allMatched9 && Array.isArray(answeredArr) && answeredArr.length > 0) {
+      lines.push(`**All ${paaTotal9} PAA questions have matching headings (heading-level match only — content quality not verified).**`);
+      lines.push('');
+      lines.push(`**Per-heading verification checklist (sections to REVIEW, not create):**`);
+      lines.push('');
+      for (let i = 0; i < answeredArr.length; i++) {
+        const a = answeredArr[i] as { paa: string; heading: string };
+        lines.push(`##### §6.2.1.${i + 1} — Verify: "${a.paa}"`);
+        lines.push('');
+        lines.push(`- **Matched heading:** "${a.heading}" — this H2 token-matches the PAA question but may not answer it.`);
+        lines.push(`- **Open the page** and read the first 3 sentences beneath this H2.`);
+        lines.push(`- **Pass criteria:** first sentence directly answers "${a.paa}" in plain language, 40-80 words, no jargon, no preamble. The answer must stand alone without requiring the visitor to read further.`);
+        lines.push(`- **If it fails:** rewrite the first paragraph beneath this H2 to open with a direct answer. Keep existing content; add or move the direct answer to the top of the section.`);
+        lines.push(`- **After verification/rewrite:** this question qualifies for FAQPage schema — see §5.5 and §6 companion recommendation.`);
+        lines.push('');
+      }
+    }
+
+    lines.push(`**Why this matters:** the live SERP for \`${I.keyword}\` shows ${paaTotal9} People Also Ask question(s) (SerpAPI-verified, §2.4). Pages that explicitly answer PAA questions with direct 40-80 word openers are the primary source Google uses for PAA box citations and AI Overview inclusion. FAQPage JSON-LD schema (§3.6) amplifies this — but schema without verified answer content risks a Google manual action (loss of rich-result eligibility).`);
     lines.push('');
   }
 
@@ -1595,7 +1707,16 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   lines.push('```');
   lines.push('');
   if (foundational) {
-    lines.push(`**Bottleneck:** T1.3 (client decision). Phase 2 cannot start until this lands. PM should escalate if T1.3 exceeds 5 business days.`);
+    const isLcpFoundational5 = /LCP/i.test(foundational.finding.finding_title);
+    const isKwFoundational5  = /keyword/i.test(foundational.finding.finding_title);
+    if (isLcpFoundational5) {
+      const tbt5 = foundational.finding.evidence?.tbt_ms ? Math.round(foundational.finding.evidence.tbt_ms) : null;
+      lines.push(`**Bottleneck:** T1.4 (mobile LCP verification). Phase 2 must not begin until PSI confirms mobile LCP < 4s. ${tbt5 ? `JS profiling (T1.2, TBT ${tbt5}ms) may require multiple dev-deploy cycles — book additional dev capacity upfront.` : ''}`);
+    } else if (isKwFoundational5) {
+      lines.push(`**Bottleneck:** T1.3 (client keyword decision). Phase 2 cannot start until this lands. PM should escalate if T1.3 exceeds 5 business days.`);
+    } else {
+      lines.push(`**Bottleneck:** T1.2 (foundational fix deployed). Phase 2 waits on T1.2 confirmation.`);
+    }
   } else {
     lines.push(`**No Phase 1 bottleneck:** the audit produced no foundational fix requiring client decision before tactical work begins. Phase 2 work starts at kickoff. PM should still book Phase 2 review and deploy windows up front (T2.6, T2.8, T2.9).`);
   }
@@ -1607,7 +1728,17 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   lines.push(`| Risk | Likelihood | Impact | Mitigation |`);
   lines.push(`|---|---|---|---|`);
   if (foundational) {
-    lines.push(`| Client doesn't decide T1.3 within 2 weeks | Medium | High — full project stalls | DMS preps decision-ready brief at T1.1; PM books decision meeting at kickoff |`);
+    const isLcpRisk = /LCP/i.test(foundational.finding.finding_title);
+    const isKwRisk  = /keyword/i.test(foundational.finding.finding_title);
+    if (isLcpRisk) {
+      const tbtRisk = foundational.finding.evidence?.tbt_ms ? Math.round(foundational.finding.evidence.tbt_ms) : null;
+      lines.push(`| JS profiling (T1.2) uncovers deeply embedded bundles requiring framework-level changes | Medium | High — Phase 1 extends 2-3 weeks | Start with quick wins: defer third-party analytics scripts first (often 40-60% of TBT${tbtRisk ? ` — currently ${tbtRisk}ms` : ''}); escalate to bundle splitting only if needed |`);
+      lines.push(`| PSI rate-limits delay T1.4 verification | Low | Low — 1-2 day delay | Run PSI at off-peak hours; use the Google Search Console Core Web Vitals report as a corroborating data source |`);
+    } else if (isKwRisk) {
+      lines.push(`| Client doesn't decide T1.3 within 2 weeks | Medium | High — full project stalls | DMS preps decision-ready brief at T1.1; PM books decision meeting at kickoff |`);
+    } else {
+      lines.push(`| Foundational fix takes longer than 1 week | Medium | Medium — Phase 2 delayed | Pre-brief Phase 2 content writer during Phase 1 for parallel research |`);
+    }
   }
   if (paaGap && Array.isArray(unansweredArr) && unansweredArr.length >= 4) {
     lines.push(`| Writer can't deliver ${unansweredArr.length} sections in 1 week | Medium | Medium — Phase 2 slips | Brief writer at Phase 1 kickoff for pre-research; consider parallel writers |`);
@@ -1627,7 +1758,17 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   lines.push('');
   lines.push(`The project is **done** when ALL of these are true:`);
   lines.push('');
-  if (foundational) lines.push(`- [ ] T1.4: keyword direction decision documented + campaign config updated`);
+  if (foundational) {
+    const isLcpDone = /LCP/i.test(foundational.finding.finding_title);
+    const isKwDone  = /keyword/i.test(foundational.finding.finding_title);
+    if (isLcpDone) {
+      lines.push(`- [ ] T1.4: mobile LCP verified < 4s in PageSpeed Insights (CrUX field data, mobile strategy)`);
+    } else if (isKwDone) {
+      lines.push(`- [ ] T1.4: keyword direction decision documented + campaign config updated`);
+    } else {
+      lines.push(`- [ ] T1.4: foundational issue resolved and verified`);
+    }
+  }
   if (firstPara && firstPara.finding.severity !== 'green') lines.push(`- [ ] T2.3: first paragraph rewritten + deployed`);
   if (paaGap && Array.isArray(unansweredArr) && unansweredArr.length > 0) lines.push(`- [ ] T2.1: ${unansweredArr.length} new H2 sections written, reviewed, deployed`);
   if (schema && paaGap) lines.push(`- [ ] T2.5: FAQPage schema updated to match new content`);
@@ -1646,7 +1787,14 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   lines.push(`Confirm at kickoff:`);
   lines.push('');
   const dmsTasks: string[] = [];
-  if (foundational) { dmsTasks.push('T1.1', 'T1.4'); }
+  if (foundational) {
+    const isLcpRes = /LCP/i.test(foundational.finding.finding_title);
+    if (isLcpRes) {
+      /* T1.1-T1.4 are all dev tasks for LCP — DMS only does T2.6, T3.6 */
+    } else {
+      dmsTasks.push('T1.1', 'T1.4');
+    }
+  }
   dmsTasks.push('T2.6', 'T3.6');
   lines.push(`- **Senior DMS** — ~${foundational ? '6-8' : '4-6'} hours total across project (${dmsTasks.join(', ')})`);
   const writerTasks: string[] = [];

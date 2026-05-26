@@ -2292,10 +2292,29 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
       const sev: 'green'|'amber'|'red' = m.cls < 0.1 ? 'green' : m.cls < 0.25 ? 'amber' : 'red';
       findings.push({
         audit_kind: 'core_web_vitals', severity: sev,
-        finding_title:  `${strat.toUpperCase()} CLS: ${m.cls.toFixed(3)} ${sev === 'red' ? '— elements shift significantly during load' : sev === 'amber' ? '— some layout shifts' : '— stable layout'}`,
+        finding_title:  `${strat.toUpperCase()} CLS: ${(m as any).cls.toFixed(3)} ${sev === 'red' ? '— elements shift significantly during load' : sev === 'amber' ? '— some layout shifts' : '— stable layout'}`,
         finding_detail: 'Cumulative Layout Shift measures visual stability. Thresholds: <0.1 good, 0.1-0.25 needs improvement, >0.25 poor.',
         recommendation: sev === 'green' ? undefined : 'Set explicit width+height on images and embeds. Avoid injecting content above existing content. Preload web fonts.',
         evidence: { strategy: strat, cls: m.cls },
+        data_source: 'psi',
+      });
+    }
+    /* TBT — Total Blocking Time is not a Core Web Vital ranking signal but
+       is the strongest predictor of interactivity problems and directly
+       indicates the same JS-blocking issue that causes mobile LCP failures.
+       Surface it as amber when > 300ms regardless of LCP pass/fail,
+       so desktop TBT problems are not silently buried in a green LCP finding. */
+    const tbtMs10 = (m as any).tbt_ms;
+    if (tbtMs10 !== undefined && tbtMs10 !== null && tbtMs10 > 300) {
+      const tbtSev: 'amber'|'red' = tbtMs10 > 600 ? 'red' : 'amber';
+      findings.push({
+        audit_kind: 'core_web_vitals', severity: tbtSev,
+        finding_title:  `${strat.toUpperCase()} TBT: ${Math.round(tbtMs10)}ms — ${tbtSev === 'red' ? 'severe JavaScript main-thread blocking' : 'significant JavaScript main-thread blocking'}`,
+        finding_detail: `Total Blocking Time measures how long the main thread is blocked by JavaScript during page load. TBT is not a Core Web Vital ranking signal, but it is the strongest lab-data proxy for INP and real-world interactivity — a high TBT means every user interaction in the first ~${Math.round(tbtMs10 / 1000 + 1)}s of page load will feel slow. Google's Lighthouse considers >300ms "needs improvement"; >600ms "poor".
+
+> **Connection to mobile LCP:** the same JavaScript bundles that produce TBT ${Math.round(tbtMs10)}ms on desktop are causing the render-blocking behaviour measured in the mobile LCP finding. Fixing the JS blocking (T1.1–T1.2 in §7) will improve both desktop TBT and mobile LCP simultaneously.`,
+        recommendation: `Profile the main thread: open Chrome DevTools → Performance tab → record a cold page load → look for Long Tasks (red bars) in the main thread. Identify the largest blocking scripts. Common sources: large monolithic JS bundles, synchronous third-party analytics or chat widgets, render-blocking CSS-in-JS. Defer non-critical scripts with \`defer\` / \`async\`; split large bundles; lazy-load below-fold components.`,
+        evidence: { strategy: strat, tbt_ms: tbtMs10, source: 'lab' },
         data_source: 'psi',
       });
     }
@@ -2967,10 +2986,12 @@ Classify each by intent category, count distinct categories, decide if SERP is d
     .join('\n');
 
   if (json.is_diffuse) {
+    /* Use actual category key count as authoritative — LLM count can drift from breakdown */
+    const actualDistinctCats = Object.keys(byCategory).length || json.distinct_categories;
     findings.push({
       audit_kind: 'on_page_fundamentals',
       severity:   'amber',
-      finding_title: `Diffuse-intent SERP for "${campaignKeyword}" — ${json.distinct_categories} distinct intent categories in top-10`,
+      finding_title: `Diffuse-intent SERP for "${campaignKeyword}" — ${actualDistinctCats} distinct intent categories in top-10`,
       finding_detail: `The live top-10 SERP for "${campaignKeyword}" spans **${json.distinct_categories} distinct intent categories** — Google hasn't settled on a dominant page type for this query. ${json.reasoning || ''}
 
 **Intent breakdown:**
@@ -2984,7 +3005,7 @@ ${categoryListing}
 
 **Strategic implication:** the risk is *not* that this SERP is impossible to rank on — it's that volume forecasts and CTR projections from keyword tools won't be accurate because they assume tight-intent economics. Set expectations accordingly and measure success by intent-specific click share, not blended CTR.`,
       recommendation: `Two strategic paths: (a) pursue a tighter keyword variant whose SERP is single-category — use GSC query data to find what this URL already gets impressions for, then identify which of those has a tight SERP; or (b) stay on "${campaignKeyword}" but focus the page clearly on ONE of the intent categories in the top-10 (likely "form builder" or "vendor product page" given the site's nature) and build content depth in that lane. Don't try to serve all 5 intent categories — that produces weak pages that don't rank well for any of them.`,
-      evidence: { campaign_keyword: campaignKeyword, distinct_categories: json.distinct_categories, categories: byCategory, reasoning: json.reasoning },
+      evidence: { campaign_keyword: campaignKeyword, distinct_categories: actualDistinctCats, categories: byCategory, reasoning: json.reasoning },
       data_source: 'html_fetch',
       enrichment_sources: ['serpapi'],
       signals: ['serp_topic_mismatch'],
@@ -3418,7 +3439,8 @@ async function checkImageOptimization(url: string): Promise<Finding[]> {
       finding_title: `Lazy-loading coverage is low — ${Math.round(lazyRatio * 100)}% of ${total} images use loading="lazy"`,
       finding_detail: `${summary}\n\nWith ${total} images on the page and only ${withLazy} marked \`loading="lazy"\`, browsers download all non-lazy images upfront — inflating LCP and bandwidth on mobile.`,
       recommendation: `Add \`loading="lazy"\` to all images below the fold (typically all but the first 1-3). Keep eager loading only on hero/above-fold images. This is a free CWV improvement requiring no asset re-encoding.`,
-      evidence: { ...sharedEvidence },
+      /* Lazy-loading specific evidence — only fields relevant to this finding */
+      evidence: { total_images: total, with_lazy: withLazy, lazy_ratio: Number(lazyRatio.toFixed(2)), with_alt: withAlt, alt_ratio: Number(altRatio.toFixed(2)) },
       data_source: 'html_fetch',
     });
   }
@@ -3438,7 +3460,8 @@ async function checkImageOptimization(url: string): Promise<Finding[]> {
       finding_title: `No modern image formats used — ${titleSuffix}`,
       finding_detail: `${summary}\n\nLegacy formats (jpg/png/gif) are typically 25-50% larger than equivalent webp, and 40-70% larger than avif at equivalent visual quality. On pages with multiple images this is a measurable LCP and bandwidth hit.`,
       recommendation: `Convert content images to webp (broadest compatibility, 95%+ browser support) or avif (best compression, 90%+ browser support). Most image CDNs (Cloudflare Images, Imgix, ImageKit) can serve format-on-demand based on Accept headers. Use \`<picture>\` with format fallbacks for graceful degradation.`,
-      evidence: { ...sharedEvidence },
+      /* Format-specific evidence — only fields relevant to this finding */
+      evidence: { total_images: total, modern_format: modernFormat, legacy_format: legacyFormat, other_format: otherFormat, legacy_share_pct: legacyShare },
       data_source: 'html_fetch',
     });
   }
