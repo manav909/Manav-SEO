@@ -137,7 +137,7 @@ export default function CampaignDocumentsSection({ campaignId, projectId, keywor
     } finally {
       setLoading(false);
     }
-  }, [campaignId, statusFilter]);
+  }, [campaignId, statusFilter, projectId, keyword]);
 
   useEffect(() => { fetchArtifacts(); }, [fetchArtifacts]);
 

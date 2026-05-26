@@ -3093,6 +3093,52 @@ HTML: ${html.slice(0,2000)}`}]})});
     } catch(e:any) { return ok(res, { success:false, error: e.message }); }
   }
 
+  /* ── Backfill artifacts from completed pipeline runs ─────────────────────
+     Reads all completed season_pipeline_runs for a project (or all projects),
+     and re-persists their final_artifacts to the artifacts table.
+     The insert is idempotent — rows already present are skipped.
+     Use this once after the upsert→insert fix to populate historical runs. */
+  if (action === 'backfill_artifacts') {
+    const { projectId: bfProjectId } = body;
+    try {
+      const { persistPipelineRunArtifacts } = await import('./lib/artifacts.js');
+
+      let q = db().from('season_pipeline_runs')
+        .select('id, project_id, campaign_id, panel_id, scope, pipeline_type, final_artifacts, llm_calls_used, estimated_cost_usd, finished_at')
+        .eq('status', 'completed')
+        .not('final_artifacts', 'is', null)
+        .order('finished_at', { ascending: false })
+        .limit(200);
+      if (bfProjectId) q = q.eq('project_id', bfProjectId);
+
+      const { data: runs, error } = await q;
+      if (error) return ok(res, { success: false, error: error.message });
+
+      let totalInserted = 0, totalSkipped = 0, processed = 0;
+      for (const run of (runs || []) as any[]) {
+        const arts = Array.isArray(run.final_artifacts) ? run.final_artifacts : [];
+        if (!arts.length || !run.project_id) continue;
+        const r = await persistPipelineRunArtifacts({
+          runId:         run.id,
+          projectId:     run.project_id,
+          campaignId:    run.campaign_id || null,
+          panelId:       run.panel_id    || null,
+          keyword:       run.scope?.keyword || null,
+          targetUrl:     run.scope?.target_url || null,
+          pipelineType:  run.pipeline_type || 'rank_for_keyword',
+          artifacts:     arts,
+          totalLlmCalls: run.llm_calls_used || 0,
+          totalCostUsd:  run.estimated_cost_usd || 0,
+          finishedAt:    run.finished_at || null,
+        });
+        totalInserted += r.inserted;
+        totalSkipped  += r.skipped;
+        processed++;
+      }
+      return ok(res, { success: true, runs_processed: processed, artifacts_inserted: totalInserted, artifacts_skipped: totalSkipped });
+    } catch(e:any) { return ok(res, { success:false, error: e.message }); }
+  }
+
   if (action === 'delete_staff') {
     const { staffId } = body;
     if (!staffId) return ok(res, { error: 'staffId required' });
