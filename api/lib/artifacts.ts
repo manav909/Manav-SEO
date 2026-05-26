@@ -112,22 +112,16 @@ export async function persistArtifacts(
   }));
 
   try {
-    /* Plain insert — ignoreDuplicates handles the COALESCE-based unique index
-       that PostgREST cannot resolve via onConflict column names alone.
-       The functional index (source_kind, source_id, COALESCE(source_step_id,''))
-       means onConflict:'source_kind,source_id,source_step_id' silently fails
-       to match — the upsert inserts nothing. Using insert+ignoreDuplicates
-       lets Postgres evaluate the actual index on insert and skip duplicates. */
+    /* upsert with no onConflict specified + ignoreDuplicates:true generates
+       INSERT ... ON CONFLICT DO NOTHING which:
+       - Works with ANY unique constraint including functional indexes (COALESCE)
+       - Allows partial batch success (conflicting rows skipped, others inserted)
+       - Returns only newly inserted rows in data */
     const { data, error } = await db().from("artifacts")
-      .insert(rows, { count: 'exact' })
+      .upsert(rows, { ignoreDuplicates: true })
       .select('id');
 
     if (error) {
-      /* If the error is a unique-constraint violation, that's actually fine —
-         it means the artifact already exists (idempotent). */
-      if (error.code === '23505') {
-        return { inserted: 0, skipped: rows.length };
-      }
       console.log(`[artifacts] persist failed: ${error.message} (code: ${error.code})`);
       return { inserted: 0, skipped: rows.length, error: error.message };
     }

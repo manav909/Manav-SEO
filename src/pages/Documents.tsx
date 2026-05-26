@@ -193,7 +193,7 @@ const DEFAULT_FILTERS: FiltersState = {
   clientSent:    null,
   generatedAfter: '',
   generatedBefore: '',
-  quickFilter:   'needs_me',
+  quickFilter:   'all',
 };
 
 const ALL_KINDS = [
