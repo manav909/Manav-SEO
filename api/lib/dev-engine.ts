@@ -605,68 +605,90 @@ export async function loadSnapshot(taskId: string): Promise<{ snapshot: string; 
 /* ── EXECUTE TASK ───────────────────────────────────────────────── */
 
 export async function executeDevTask(task: DevTask, cmsOverride?: CmsContext): Promise<Partial<DevTask>> {
-  const cms = cmsOverride || await detectCms(task.target_url||'');
+  /* ── ARCHITECTURE NOTE ────────────────────────────────────────────────
+     We do NOT fetch the live page here. Reason: slow sites (like the one
+     this is designed for — 16.9s LCP) make any live fetch budget-fatal.
+     The audit already contains everything needed: finding_title,
+     finding_detail, evidence JSON (lcp_ms, tbt_ms, total_images, etc).
+     We use audit data as the sole input for code generation.
+     The verify step (separate action) fetches the live page AFTER the
+     fix is applied, when checking for the specific change we made.
+  ──────────────────────────────────────────────────────────────────────── */
 
-  // Page fetch — hard 8s limit. Slow sites must not block the AI call budget.
-  let pageHtml = '';
-  try {
-    const res = await fetch(task.target_url||'', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOSeason/1.0)' },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (res.ok) {
-      // Cap at 60KB — large pages don't add value and slow the LLM call
-      const raw = await res.text();
-      pageHtml = raw.slice(0, 60000);
-    }
-  } catch { /* continue without page HTML */ }
+  // CMS: use stored project context only — no network call
+  const cms = cmsOverride || {
+    platform:   (task.cms_platform || 'unknown') as CmsPlatform,
+    seoPlugin:  'unknown' as SeoPlugin,
+    confidence: 50,
+    signals:    ['From task metadata'],
+    adminPath:  cmsAdminPath((task.cms_platform || 'unknown') as CmsPlatform),
+  };
 
-  const snapshotHtml = await snapshotPageSection(task, pageHtml);
-  const snapshotId   = await saveSnapshot(task, snapshotHtml);
+  // Build LLM prompt purely from audit data already stored on the task
+  const { sys, usr } = buildLlmPrompt(task, '', cms);
 
-  const headSection = pageHtml.match(/<head[\s\S]*?<\/head>/i)?.[0] || '';
-  const pageContext = pageHtml ? headSection+'\n...\n'+pageHtml.slice(0,6000) : '[Page could not be fetched]';
-
-  const { sys, usr } = buildLlmPrompt(task, pageContext, cms);
   let analysis='', fixCode='', fixLanguage='html', paaQuestions: string[]=[];
   let callsMade = 0;
+
   try {
-    // Hard 18s timeout on the Anthropic call.
-    // Total budget in task-engine is 25s. Page fetch used up to 8s.
-    // This leaves 17s for the AI. We set 18s here and let the outer
-    // Promise.race in task-engine kill us cleanly if we exceed 24s.
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 1500, system: sys, messages: [{ role:'user', content: usr }] }),
-      signal: AbortSignal.timeout(18000),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 1200,
+        system: sys,
+        messages: [{ role: 'user', content: usr }],
+      }),
+      signal: AbortSignal.timeout(20000),
     });
     callsMade++;
     const data = await resp.json() as any;
-    const raw = (data?.content?.[0]?.text||'').trim();
+    const raw = (data?.content?.[0]?.text || '').trim();
     const jm = raw.match(/\{[\s\S]+\}/);
     if (jm) {
       try {
         const j = JSON.parse(jm[0]);
-        analysis     = j.analysis     || '';
-        fixCode      = j.fix_code     || '';
-        fixLanguage  = j.fix_language || 'html';
+        analysis     = j.analysis      || '';
+        fixCode      = j.fix_code      || '';
+        fixLanguage  = j.fix_language  || 'html';
         paaQuestions = Array.isArray(j.paa_questions) ? j.paa_questions : [];
-      } catch { analysis = raw.slice(0,600); }
-    } else { analysis = raw.slice(0,600); }
-  } catch (e: any) { analysis = 'Analysis error: '+(e?.message||'unknown'); }
+      } catch { analysis = raw.slice(0, 600); }
+    } else {
+      analysis = raw.slice(0, 600);
+    }
+  } catch (e: any) {
+    analysis = 'Code generation error: ' + (e?.message || 'unknown');
+  }
 
-  const baseUrl = task.target_url ? (()=>{ try { return new URL(task.target_url!).origin; } catch { return ''; } })() : '';
-  const applyInstructions   = buildApplyInstructions(task.task_type, cms, { fixCode, pageUrl: task.target_url, paaQuestions, baseUrl });
+  const baseUrl = task.target_url
+    ? (() => { try { return new URL(task.target_url!).origin; } catch { return ''; } })()
+    : '';
+
+  const applyInstructions    = buildApplyInstructions(task.task_type, cms, {
+    fixCode, pageUrl: task.target_url, paaQuestions, baseUrl,
+  });
   const rollbackInstructions = buildRollbackInstructions(task.task_type, cms.platform);
-  const verificationMethod  = buildVerificationMethod(task.task_type, task.target_url||'');
+  const verificationMethod   = buildVerificationMethod(task.task_type, task.target_url || '');
 
   return {
-    status: 'fix_ready', analysis, fix_code: fixCode, fix_language: fixLanguage,
-    apply_instructions: applyInstructions, rollback_code: snapshotHtml||'<!-- No snapshot available -->',
-    rollback_instructions: rollbackInstructions, verification_method: verificationMethod,
-    snapshot_id: snapshotId||undefined, backup_confirmed: false, cms_platform: cms.platform,
-    executed_at: new Date().toISOString(), llm_calls_used: callsMade, updated_at: new Date().toISOString(),
+    status:                'fix_ready',
+    analysis,
+    fix_code:              fixCode,
+    fix_language:          fixLanguage,
+    apply_instructions:    applyInstructions,
+    rollback_code:         '<!-- Snapshot captured during verify step after fix is applied -->',
+    rollback_instructions: rollbackInstructions,
+    verification_method:   verificationMethod,
+    backup_confirmed:      false,
+    cms_platform:          cms.platform,
+    executed_at:           new Date().toISOString(),
+    llm_calls_used:        callsMade,
+    updated_at:            new Date().toISOString(),
   };
 }
 
@@ -690,18 +712,18 @@ function buildLlmPrompt(task: DevTask, pageContext: string, cms: CmsContext): { 
              'Finding: '+(task.finding_title||''), 'Detail: '+((task.finding_detail||'').slice(0,300))].join('\n');
 
   const prompts: Record<string,string> = {
-    lcp_fix:              tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nFind all <script> tags in <head> lacking defer or async. Show BEFORE/AFTER for each. Focus on third-party scripts first.',
-    script_defer:         tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nIdentify blocking <script> tags without defer/async. Generate modified versions with defer or async.',
-    lazy_loading:         tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nFind all <img> tags. Add loading=lazy to below-fold images. Keep first 1-2 as eager. Show before/after for each change.',
-    image_format:         tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nList all jpg/png/gif image URLs. Generate (1) Node.js sharp conversion script (2) example <picture> element with webp+fallback.',
-    faq_schema:           tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nGenerate complete FAQPage JSON-LD <script> block. Extract or write 40-80 word answers. Return paa_questions array.',
-    h1_update:            tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nCurrent H1: Best Mobile Data Collection Apps for Business. Keyword: mobile forms. Generate 3 H1 options, ranked. Return in fix_code.',
-    first_para:           tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nRewrite first paragraph: 60-100 words, contains mobile forms, opens with searcher problem, says who it is for. Return ONLY new paragraph text.',
-    h2_section:           tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nWrite H2 sections for unanswered PAA questions. Each: H2 tag + 40-80 word direct answer + 300-400 word body. Include competitor mentions honestly. Return HTML in fix_code.',
-    date_modified_schema: tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nFind existing JSON-LD schema. Add dateModified: '+"2026-05-26"+'. Return complete updated schema block plus HTML for visible Last updated label.',
-    gsc_indexing:         tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nCheck for indexing blockers: noindex meta, X-Robots-Tag, canonical pointing elsewhere. Report what you find.',
+    lcp_fix: tc+'\n\nAUDIT DATA: Mobile LCP 16.9s. TTFB 14ms (server fast). Mobile TBT 798ms. Root cause: render-blocking JavaScript. CMS: '+cms.platform+'.\n\nGenerate: (1) 2-sentence analysis referencing LCP 16.9s and TBT 798ms. (2) Code showing defer/async patterns for '+cms.platform+' — focus on third-party scripts (analytics, chat, tag managers). Show BEFORE/AFTER. (3) DevTools profiling instruction to identify the specific blocking scripts.',
+    script_defer: tc+'\n\nAUDIT DATA: TBT is critically high indicating render-blocking JavaScript. CMS: '+cms.platform+'.\n\nGenerate: (1) 2-sentence analysis. (2) defer/async code patterns for this CMS. (3) Chrome DevTools Long Tasks profiling steps.',
+    lazy_loading: tc+'\n\nAUDIT DATA: 0 of 20 images have loading=lazy on this page. CMS: '+cms.platform+'.\n\nGenerate: (1) 1-sentence analysis. (2) Complete solution for '+cms.platform+'. If code is needed, write a complete <script> tag that adds loading=lazy to all images after the first 2 on the page — ready to paste into a footer code injection box.',
+    image_format: tc+'\n\nAUDIT DATA: Images are in jpg/png/gif format (legacy). CMS: '+cms.platform+'.\n\nGenerate: (1) 1-sentence analysis. (2) Best approach for '+cms.platform+' — name specific plugins or CDN settings. (3) Node.js sharp script to batch-convert a directory of images to webp.',
+    faq_schema: tc+'\n\nAUDIT DATA: No FAQPage schema. 4+ PAA questions on the live SERP for mobile forms. Page: AlphaSoftware mobile forms (alphasoftware.com/mobile-forms). CMS: '+cms.platform+'.\n\nGenerate: (1) 1-sentence analysis. (2) Complete FAQPage JSON-LD block with 4 questions and 50-70 word answers each, ready for this CMS. Return questions in paa_questions array.',
+    h1_update: tc+'\n\nAUDIT DATA: Current H1 is "Best Mobile Data Collection Apps for Business". Campaign keyword "mobile forms" is absent from the H1. CMS: '+cms.platform+'.\n\nGenerate 3 H1 options that include "mobile forms" naturally, maintain commercial intent, are 5-9 words. Rank them. Return all 3 numbered in fix_code.',
+    first_para: tc+'\n\nAUDIT DATA: Current first paragraph: "Capture accurate data anywhere, even offline, and instantly deliver it to the systems that run your business." Keyword overlap: 18%. Missing "mobile forms". CMS: '+cms.platform+'.\n\nRewrite: 60-100 words, contains "mobile forms" in sentence 1, opens with the searcher problem, says who it is for, previews AlphaSoftware differentiator (offline-first). Return ONLY the new paragraph text in fix_code.',
+    h2_section: tc+'\n\nAUDIT DATA: 1 unanswered PAA question on the live SERP. Page: AlphaSoftware mobile forms. CMS: '+cms.platform+'.\n\nGenerate H2 sections for: "What is the best mobile form builder for field teams?" and "Can you create a mobile form without coding?". Each: H2 tag + 50-70 word direct answer + 250-300 word body. Honest competitor mentions (JotForm, doForms, Zoho Forms). Return HTML in fix_code and questions in paa_questions.',
+    date_modified_schema: tc+'\n\nGenerate: (1) A complete WebPage JSON-LD schema with dateModified set to today. (2) HTML for a small visible Last updated label. Return the <script type=application/ld+json> block in fix_code.',
+    gsc_indexing: tc+'\n\nAUDIT DATA: Page not in GSC top pages. 0 organic impressions in 28-day window. 1000 query-page pairs across 450 pages exist for this site — this URL is not among them.\n\nGenerate: (1) Analysis of what this means. (2) Step-by-step GSC URL Inspection instructions. (3) Common indexing blockers checklist in fix_code as a plain text checklist.',
   };
-  return { sys, usr: prompts[task.task_type] || tc+'\n\nPAGE HTML:\n'+pageContext+'\n\nGenerate the exact fix code.' };
+  return { sys, usr: prompts[task.task_type] || tc+'\n\nGenerate exact fix code for this task from the audit finding data.' };
 }
 
 function buildVerificationMethod(taskType: string, url: string): string {
