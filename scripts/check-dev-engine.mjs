@@ -326,36 +326,45 @@ if (engineSource.includes('jsonMatch') && engineSource.includes('JSON.parse')) {
 // ─────────────────────────────────────────────────────────────
 section('8. Timeout & Safety Checks');
 
-const timeouts = engineSource.match(/AbortSignal\.timeout\((\d+)\)/g) || [];
-const fetchCalls = (engineSource.match(/await fetch\(/g) || []).length;
-const timeoutCalls = timeouts.length;
+// Timeout patterns: accept both AbortSignal.timeout() and AbortController+setTimeout
+// AbortSignal.timeout() is unreliable on Vercel Lambda — AbortController is preferred.
+const hasAbortControllerPattern = engineSource.includes('new AbortController()') &&
+                                   engineSource.includes('setTimeout') &&
+                                   engineSource.includes('controller.abort()');
+const hasAbortSignalTimeout     = engineSource.includes('AbortSignal.timeout(');
+const hasAnyTimeoutPattern      = hasAbortControllerPattern || hasAbortSignalTimeout;
 
-// fetchPageHtml wraps ALL external page fetches with timeout internally
-// So direct fetch() calls in the exported functions go through fetchPageHtml(which has timeout)
-// OR directly to Anthropic (which must also have timeout)
 const anthropicFetches = (engineSource.match(/api\.anthropic\.com/g) || []).length;
-const anthropicWithTimeout = (engineSource.match(/api\.anthropic\.com[\s\S]{0,600}AbortSignal\.timeout/g) || []).length;
+// Check Anthropic call has either pattern nearby
+const anthropicHasController = (engineSource.match(/api\.anthropic\.com[\s\S]{0,800}aiController\.signal/g) || []).length;
+const anthropicHasAbortSignal = (engineSource.match(/api\.anthropic\.com[\s\S]{0,600}AbortSignal\.timeout/g) || []).length;
+const anthropicWithTimeout = anthropicHasController + anthropicHasAbortSignal;
 if (anthropicWithTimeout >= anthropicFetches) {
-  pass('timeouts', `All ${anthropicFetches} Anthropic API calls have AbortSignal.timeout()`);
+  const method = anthropicHasController > 0 ? 'AbortController+setTimeout' : 'AbortSignal.timeout';
+  pass('timeouts', `All ${anthropicFetches} Anthropic API calls have timeout (${method})`);
 } else {
-  fail('timeouts', `Only ${anthropicWithTimeout} of ${anthropicFetches} Anthropic calls have timeouts`, 'Add AbortSignal.timeout() to every Anthropic fetch');
+  fail('timeouts', `Only ${anthropicWithTimeout} of ${anthropicFetches} Anthropic calls have timeouts`, 'Add AbortController+setTimeout to every Anthropic fetch');
 }
-// fetchPageHtml internal timeout
-if (engineSource.includes('AbortSignal.timeout(timeoutMs)') || engineSource.includes('AbortSignal.timeout(timeout)')) {
-  pass('timeouts', 'fetchPageHtml has configurable timeout (AbortSignal.timeout)');
+// fetchPageHtml internal timeout — accept either pattern
+const fetchHasController   = engineSource.includes('new AbortController()') && engineSource.includes('controller.signal');
+const fetchHasAbortSignal  = engineSource.includes('AbortSignal.timeout(timeoutMs)') || engineSource.includes('AbortSignal.timeout(timeout)');
+if (fetchHasController || fetchHasAbortSignal) {
+  const method = fetchHasController ? 'AbortController+setTimeout' : 'AbortSignal.timeout';
+  pass('timeouts', `fetchPageHtml has configurable timeout (${method})`);
 } else {
   fail('timeouts', 'fetchPageHtml missing internal timeout', 'Page fetches must have timeouts');
 }
 
-// Check no fetch has a timeout > 60s (excessive)
-const excessiveTimeouts = timeouts.filter(t => {
-  const ms = parseInt(t.match(/\d+/)[0]);
+// Check no setTimeout timeout > 60s (excessive)
+const setTimeoutMatches = engineSource.match(/setTimeout\([^,]+,\s*(\d+)/g) || [];
+const excessiveTimeouts = setTimeoutMatches.filter(t => {
+  const ms = parseInt((t.match(/,\s*(\d+)/) || ['','0'])[1]);
   return ms > 60000;
 });
 if (excessiveTimeouts.length === 0) {
   pass('timeouts', 'No excessive timeouts (all ≤ 60s)');
 } else {
-  warn('timeouts', `${excessiveTimeouts.length} timeouts exceed 60s`, excessiveTimeouts.join(', '));
+  warn('timeouts', `${excessiveTimeouts.length} timeouts exceed 60s`, '');
 }
 
 // Check that executeDevTask has a try/catch at the top level
