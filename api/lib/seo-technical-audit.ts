@@ -2271,6 +2271,19 @@ async function checkEngagementSignals(url: string, projectId: string): Promise<F
 
   if (pagePath) {
     const perPage = await ga4PullPageMetrics({ projectId, pagePath, days: 28 });
+    /* If per-page GA4 returns null it means: integration not connected,
+       no resource_id on the integration row, token refresh failed, or
+       the page genuinely has 0 sessions in the last 28 days.
+       We add an explicit finding so the audit explains the gap. */
+    if (!perPage) {
+      findings.push({
+        audit_kind: 'engagement_signals', severity: 'amber',
+        finding_title: `GA4 per-page data unavailable for ${pagePath}`,
+        finding_detail: `The GA4 integration is connected but returned no data for \`${pagePath}\` in the last 28 days. Possible reasons:\n\n1. **Page has no GA4 traffic yet** — if the page was recently created or hasn't been indexed, there are no sessions to report. This is normal for new pages.\n2. **GA4 pagePath mismatch** — GA4 may track the URL differently (e.g., with a trailing slash, query params, or a redirected path). Check GA4 → Reports → Engagement → Pages and scroll to find this URL.\n3. **GA4 token expired** — if the OAuth token needs refresh, disconnect and reconnect GA4 in the Integrations panel.\n\nSite-wide engagement data (if available) is shown below.`,
+        recommendation: `Check GA4 → Reports → Engagement → Pages for \`${pagePath}\`. If the page appears with a different path format, note that for the next audit. If GA4 token issues persist, reconnect GA4 in PM Module → project → Requirements → Integrations.`,
+        data_source: 'ga4',
+      });
+    }
     if (perPage && perPage.sessions > 0) {
       /* Minimum sample size for a reliable engagement verdict.
          Below 50 sessions, rates are statistically noisy — a single
