@@ -179,32 +179,79 @@ export default function DevPanel({ projectId }: { projectId:string }) {
   const parseAudit = useCallback(async (md:string) => {
     setParsing(true); setError('');
     try {
+      /* ── ROOT CAUSE FIX: the old regex used a character class containing
+         ℹ️ (U+2139 + U+FE0F). Without the u-flag, ℹ️ is two chars in a
+         character class causing partial matches that produce corrupted
+         finding titles — specifically, the % from "(40.0%)" ended up in
+         the title which then broke downstream JSON stringify.
+         New approach: find the ### heading line, strip badges line-by-line. ── */
       const findings:any[] = [];
       const blocks = md.split(/\n<a id="finding-\d+-\d+"><\/a>\n/);
+
       for (const block of blocks) {
-        const titleMatch = block.match(/### §\d+\.\d+ — [🎯🔴🟡🟢ℹ️ ]+([^\n]+)/);
-        if (!titleMatch) continue;
-        const title = titleMatch[1].trim();
-        const sev = /🔴/.test(block) ? 'red' : /🟡/.test(block) ? 'amber' : 'green';
-        const kindMatch = block.match(/\*\*Audit kind:\*\* `([^`]+)`/);
-        const detailMatch = block.match(/\*\*Detail:\*\*\n\n([\s\S]+?)(?:\n\n\*\*Rec|$)/);
-        let evidence:any = {};
-        const evMatch = block.match(/```json\n([\s\S]+?)\n```/);
-        if (evMatch) { try { evidence = JSON.parse(evMatch[1]); } catch {} }
-        findings.push({ audit_kind:kindMatch?.[1]||'on_page', severity:sev, finding_title:title, finding_detail:detailMatch?.[1]?.trim().slice(0,600)||'', evidence });
+        const lines = block.split('\n');
+        const headingLine = lines.find(l => /^### §[\d.]+/.test(l));
+        if (!headingLine) continue;
+
+        // Strip ### §N.N — prefix and all severity badges (emoji-safe)
+        let title = headingLine
+          .replace(/^###\s+§[\d.]+\s*(?:—\s*)?/, '')
+          .replace(/[\u{1F3AF}\u{1F534}\u{1F7E1}\u{1F7E2}\u{2139}\u{FE0F}\u{1F4CB} ]+/gu, ' ')
+          .replace(/[🎯🔴🟡🟢🟢ℹ️]/gu, '')
+          .trim();
+        if (!title || title.length < 3) continue;
+
+        const sev = /🔴/.test(headingLine) ? 'red'
+                  : /🟡/.test(headingLine) ? 'amber'
+                  : /🟢/.test(headingLine) ? 'green'
+                  : 'info';
+
+        const kindMatch   = block.match(/\*\*Audit kind:\*\*\s*`([^`]+)`/);
+        const detailMatch = block.match(/\*\*Detail:\*\*\n\n([\s\S]+?)(?=\n\n\*\*Rec|\n\n<details|$)/);
+        const detail      = detailMatch?.[1]?.trim().slice(0, 600) || '';
+
+        let evidence: any = {};
+        const codeBlocks  = block.match(/```json\n([\s\S]+?)\n```/g) || [];
+        for (const cb of codeBlocks) {
+          const raw = cb.replace(/^```json\n/, '').replace(/\n```$/, '');
+          try { evidence = JSON.parse(raw); break; } catch { /* try next */ }
+        }
+
+        findings.push({
+          audit_kind:      kindMatch?.[1] || 'on_page_fundamentals',
+          severity:        sev,
+          finding_title:   title,
+          finding_detail:  detail,
+          evidence,
+        });
       }
-      const runIdMatch = md.match(/\*\*Audit run id:\*\* `([^`]+)`/);
-      const urlMatch   = md.match(/\*\*Audited URL:\*\* \[([^\]]+)\]/);
+
+      const runIdMatch = md.match(/\*\*Audit run id:\*\*\s*`([^`]+)`/);
+      const urlMatch   = md.match(/\*\*Audited URL:\*\*\s*\[([^\]]+)\]/);
       const runId = runIdMatch?.[1] || `manual-${Date.now()}`;
       const url   = urlMatch?.[1] || targetUrl;
-      if (!findings.length) { setError('No findings found. Upload the full audit .md file.'); return; }
-      const r = await te('dev_parse_audit_tasks', { projectId, auditRunId:runId, targetUrl:url||targetUrl, findings });
+
+      if (findings.length === 0) {
+        setError('No findings found. Make sure you uploaded the full technical audit .md file.');
+        return;
+      }
+
+      const r = await te('dev_parse_audit_tasks', {
+        projectId, auditRunId: runId, targetUrl: url || targetUrl,
+        findings: findings.filter(f => f.severity !== 'green'),
+      });
       if (r.error) { setError(r.error); return; }
-      const cmsR = await te('dev_detect_cms', { projectId, url:url||targetUrl });
-      if (cmsR.cms) setCms(cmsR.cms);
+
+      te('dev_detect_cms', { projectId, url: url || targetUrl })
+        .then(cmsR => { if (cmsR?.cms) setCms(cmsR.cms); })
+        .catch(() => {});
+
       setShowUpload(false);
       await loadTasks();
-    } catch (e:any) { setError(e?.message||'Parse failed'); }
+    } catch (e:any) {
+      const msg = e?.message || 'Parse failed';
+      setError(msg.includes('Unexpected token') ? 'File format issue — upload the .md audit file as plain text.' : msg);
+    }
     finally { setParsing(false); }
   }, [projectId, targetUrl, loadTasks]);
 
