@@ -413,7 +413,8 @@ export default function DevPanel({ projectId }: { projectId: string }) {
   const [elapsedSec,  setElapsedSec]  = useState(0);
   const [runStarted,  setRunStarted]  = useState<number | null>(null);
   const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileRef    = useRef<HTMLInputElement>(null);
 
   // Load tasks from DB — also auto-resets stale 'running' tasks on load
   const loadTasks = useCallback(async () => {
@@ -460,6 +461,14 @@ export default function DevPanel({ projectId }: { projectId: string }) {
   }, [projectId, cms]);
 
   useEffect(() => { loadTasks(); }, [loadTasks]);
+
+  // Cleanup intervals on unmount
+  useEffect(() => {
+    return () => {
+      if (elapsedRef.current) clearInterval(elapsedRef.current);
+      if (pollRef.current)    clearInterval(pollRef.current);
+    };
+  }, []);
 
   // Reload a single task and update the list + selected
   const reloadTask = useCallback(async (taskId: string) => {
@@ -539,66 +548,70 @@ export default function DevPanel({ projectId }: { projectId: string }) {
     setError('');
     setElapsedSec(0);
     setRunStarted(Date.now());
-    elapsedRef.current = setInterval(() => {
-      setElapsedSec(s => s + 1);
-    }, 1000);
+    // Start elapsed timer
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
+    elapsedRef.current = setInterval(() => setElapsedSec(s => s + 1), 1000);
 
-    // Fire the API call with a 28-second client-side timeout.
-    // The server has a 25s hard timeout internally. If the server doesn't
-    // respond in 28s, we treat it as a network timeout, reset the task to
-    // failed, and tell the user to retry.
-    const CLIENT_TIMEOUT_MS = 28_000;
-    let clientTimedOut = false;
+    // Fire the start request — server returns IMMEDIATELY (< 300ms)
+    // then continues working in the background.
+    const result = await callApi<{ task: DevTask; polling?: boolean }>('dev_execute_task', { taskId: task.id });
 
-    const clientTimeout = setTimeout(async () => {
-      clientTimedOut = true;
-      // Reset the task in the DB to 'failed' so it doesn't stay stuck
-      await callApi('dev_update_task', {
-        taskId: task.id,
-        updates: {
-          status: 'failed',
-          analysis: 'Request timed out on the network. Click "Retry Analysis" to try again.',
-        },
-      });
-      await reloadTask(task.id);
-    }, CLIENT_TIMEOUT_MS);
-
-    try {
-      const result = await callApi<{ task: DevTask }>('dev_execute_task', { taskId: task.id });
-      clearTimeout(clientTimeout);
-      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
-      if (clientTimedOut) return; // timeout already handled
-
-      if (!result.ok) {
-        setError(result.error ?? 'Execution failed.');
-        // Reset to failed so user can retry
-        await callApi('dev_update_task', { taskId: task.id, updates: { status: 'failed' } });
-        await reloadTask(task.id);
-        return;
-      }
-      if (result.data?.task?.cms_platform && !cms) {
-        setCms({ platform: result.data.task.cms_platform, seoPlugin: '', confidence: 0, adminPath: '' });
-      }
-      await reloadTask(task.id);
-    } catch (err) {
-      clearTimeout(clientTimeout);
-      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
-      if (!clientTimedOut) {
-        await callApi('dev_update_task', { taskId: task.id, updates: { status: 'failed', analysis: 'Network error. Click Retry.' } });
-        await reloadTask(task.id);
-      }
-    }
-  };
-
-  const verifyTask = async (task: DevTask) => {
-    setSelected({ ...task, status: 'verifying' });
-    const result = await callApi<{ task: DevTask }>('dev_verify_task', { taskId: task.id });
     if (!result.ok) {
-      setError(result.error ?? 'Verification failed.');
+      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+      setError(result.error ?? 'Could not start execution.');
       setSelected(task);
       return;
     }
-    await reloadTask(task.id);
+
+    // Server acknowledged — start polling for the result.
+    // Poll every 3 seconds until status is no longer 'running'.
+    startPolling(task.id);
+  };
+
+  const startPolling = useCallback((taskId: string) => {
+    // Clear any existing poll interval
+    if (pollRef.current) clearInterval(pollRef.current);
+
+    pollRef.current = setInterval(async () => {
+      const r = await callApi<{ tasks: DevTask[] }>('dev_get_tasks', { projectId });
+      if (!r.ok) return; // keep polling on transient errors
+
+      const updated = r.data?.tasks ?? [];
+      setTasks(updated);
+
+      const task = updated.find(t => t.id === taskId);
+      if (!task) return;
+
+      setSelected(task);
+
+      // Infer CMS if newly detected
+      if (task.cms_platform && !cms) {
+        setCms({ platform: task.cms_platform, seoPlugin: '', confidence: 0, adminPath: '' });
+      }
+
+      // Stop polling when execution is complete
+      if (task.status !== 'running' && task.status !== 'verifying') {
+        if (pollRef.current)   { clearInterval(pollRef.current);   pollRef.current = null; }
+        if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+      }
+    }, 3000);
+  }, [projectId, cms]);
+
+  const verifyTask = async (task: DevTask) => {
+    setSelected({ ...task, status: 'verifying' });
+    setElapsedSec(0);
+    if (elapsedRef.current) clearInterval(elapsedRef.current);
+    elapsedRef.current = setInterval(() => setElapsedSec(s => s + 1), 1000);
+
+    const result = await callApi('dev_verify_task', { taskId: task.id });
+    if (!result.ok) {
+      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+      setError(result.error ?? 'Could not start verification.');
+      setSelected(task);
+      return;
+    }
+    // Poll for verification result — same pattern as execution
+    startPolling(task.id);
   };
 
   const confirmApplied = async (task: DevTask) => {

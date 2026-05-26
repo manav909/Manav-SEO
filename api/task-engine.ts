@@ -4450,11 +4450,21 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   }
 
   if (action === 'dev_get_tasks') {
-    const { projectId, campaignId, status } = body;
+    const { projectId, campaignId } = body;
     if (!projectId) return ok(res, { error: 'projectId required' });
     try {
-      const { getTasksForProject } = await import('./lib/dev-engine.js');
-      const tasks = await getTasksForProject(projectId, { campaignId, status });
+      const { getTasksForProject, updateTask } = await import('./lib/dev-engine.js');
+      const tasks = await getTasksForProject(projectId, { campaignId });
+      // Server-side stale task recovery — anything 'running' for >120s timed out
+      for (const t of tasks) {
+        if ((t.status === 'running' || t.status === 'verifying') && t.executed_at) {
+          const ageMs = Date.now() - new Date(t.executed_at).getTime();
+          if (ageMs > 120_000) {
+            await updateTask(t.id!, { status: 'failed', analysis: 'Timed out after ' + Math.round(ageMs/1000) + 's. Click Retry.' });
+            t.status = 'failed';
+          }
+        }
+      }
       return ok(res, { success: true, tasks });
     } catch (e: any) {
       return ok(res, { error: e?.message });
@@ -4462,110 +4472,99 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   }
 
   if (action === 'dev_execute_task') {
+    /* ── FIRE-AND-FORGET ARCHITECTURE ────────────────────────────────
+       1. Mark task as 'running' in DB
+       2. Return HTTP response to client immediately (< 300ms)
+       3. Continue executing after res.json() — Node.js keeps the
+          Vercel function alive for maxDuration (300s) even after the
+          HTTP response is sent
+       4. Client polls dev_get_tasks every 3s — reads status from DB
+       5. When status changes to 'fix_ready' or 'failed', client stops polling
+       
+       This means: page fetch can take 25s on a slow site, AI call can
+       take 30s — the client never waits for either. ─────────────────── */
     const { taskId } = body;
     if (!taskId) return ok(res, { error: 'taskId required' });
     try {
-      const { getTask, executeDevTask, updateTask } = await import('./lib/dev-engine.js');
+      const { getTask, updateTask, executeDevTask } = await import('./lib/dev-engine.js');
       const task = await getTask(taskId);
       if (!task) return ok(res, { error: 'task not found' });
 
-      // Guard: if already running, check how long. If > 90s, reset to failed.
+      // Guard: if already running and recently started, let it continue
       if (task.status === 'running' && task.executed_at) {
-        const elapsed = Date.now() - new Date(task.executed_at).getTime();
-        if (elapsed > 90_000) {
-          await updateTask(taskId, {
-            status: 'failed',
-            analysis: 'Previous analysis timed out after ' + Math.round(elapsed/1000) + 's. Click Retry to try again.',
-          });
-        } else {
-          // Still within window — return current state, UI will poll
-          const current = await getTask(taskId);
-          return ok(res, { success: true, task: current, still_running: true });
+        const ageMs = Date.now() - new Date(task.executed_at).getTime();
+        if (ageMs < 90_000) {
+          // Still within expected execution window — tell client to keep polling
+          return ok(res, { success: true, polling: true, task });
         }
+        // Stale — reset and re-run
       }
 
-      // Mark running with timestamp so we can detect stale tasks
+      // Mark running immediately so client UI updates
       await updateTask(taskId, { status: 'running', executed_at: new Date().toISOString() });
 
-      // Hard 25-second total budget for the entire execution.
-      // This keeps us well under Vercel's response timeout and prevents
-      // the browser from waiting forever.
-      // If we hit the wall, we write 'failed' to the DB and return an error.
-      const HARD_TIMEOUT_MS = 25_000;
-      let timedOut = false;
-      const timeoutHandle = setTimeout(async () => {
-        timedOut = true;
-        await updateTask(taskId, {
-          status: 'failed',
-          analysis: 'Analysis timed out (25s limit). This usually means the target page is slow to respond or the AI service is under load. Click Retry — it will try again.',
-        });
-      }, HARD_TIMEOUT_MS);
+      // ── Return to client NOW ──────────────────────────────────────
+      // The client will start polling. We continue working below.
+      ok(res, { success: true, polling: true, task: { ...task, status: 'running' } });
 
-      try {
-        const updates = await Promise.race([
-          executeDevTask(task),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('TIMEOUT')), HARD_TIMEOUT_MS - 1000)
-          ),
-        ]);
-        clearTimeout(timeoutHandle);
-        if (!timedOut) {
-          await updateTask(taskId, updates);
-        }
-      } catch (execErr: any) {
-        clearTimeout(timeoutHandle);
-        if (!timedOut) {
-          await updateTask(taskId, {
-            status: 'failed',
-            analysis: execErr?.message === 'TIMEOUT'
-              ? 'Analysis timed out. The page fetch or AI call took too long. Click Retry to try again.'
-              : 'Execution error: ' + (execErr?.message || 'unknown'),
-          });
-        }
-      }
+      // ── Continue after response ───────────────────────────────────
+      // executeDevTask handles all errors internally and always writes
+      // a final status (fix_ready or failed) to the DB.
+      await executeDevTask(task);
 
-      const updated = await getTask(taskId);
-      return ok(res, { success: true, task: updated });
     } catch (e: any) {
-      return ok(res, { error: e?.message });
+      // If we haven't sent the response yet (e.g. getTask failed), send error
+      if (!res.headersSent) {
+        return ok(res, { error: e?.message || 'Execution error' });
+      }
+      // If we already sent the response, update the DB so client sees the failure
+      try {
+        const { updateTask } = await import('./lib/dev-engine.js');
+        await updateTask(taskId, {
+          status:   'failed',
+          analysis: 'Unexpected error: ' + (e?.message || 'unknown'),
+        });
+      } catch { /* can't do anything more */ }
     }
+    return; // never send another response
   }
 
+
   if (action === 'dev_verify_task') {
+    /* Same fire-and-forget pattern as execute.
+       Verify re-fetches the live page — can be slow on slow sites.
+       Client polls until status changes from 'verifying'. */
     const { taskId } = body;
     if (!taskId) return ok(res, { error: 'taskId required' });
     try {
-      const { getTask, verifyDevTask, updateTask } = await import('./lib/dev-engine.js');
+      const { getTask, updateTask, verifyDevTask } = await import('./lib/dev-engine.js');
       const task = await getTask(taskId);
       if (!task) return ok(res, { error: 'task not found' });
+
       await updateTask(taskId, { status: 'verifying' });
 
-      const VERIFY_TIMEOUT_MS = 20_000;
+      // Return to client immediately
+      ok(res, { success: true, polling: true, task: { ...task, status: 'verifying' } });
+
+      // Continue verifying after response
       try {
-        const updates = await Promise.race([
-          verifyDevTask(task),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('TIMEOUT')), VERIFY_TIMEOUT_MS)
-          ),
-        ]);
+        const updates = await verifyDevTask(task);
         await updateTask(taskId, updates);
-      } catch (verErr: any) {
+      } catch (ve: any) {
         await updateTask(taskId, {
-          status: 'applied',
-          verification_result: 'partial',
-          verification_evidence: { message: verErr?.message === 'TIMEOUT'
-            ? 'Verification timed out — check the live page manually using the Verify tab.'
-            : 'Verification error: ' + (verErr?.message || 'unknown') },
-          verified_at: new Date().toISOString(),
+          status:               'applied',
+          verification_result:  'partial',
+          verification_evidence: { message: 'Verification error: ' + (ve?.message || 'unknown') },
+          verified_at:          new Date().toISOString(),
         });
       }
 
-      const updated = await getTask(taskId);
-      return ok(res, { success: true, task: updated });
     } catch (e: any) {
-      return ok(res, { error: e?.message });
+      if (!res.headersSent) return ok(res, { error: e?.message });
     }
+    return;
   }
+
 
   if (action === 'dev_update_task') {
     const { taskId, updates } = body;

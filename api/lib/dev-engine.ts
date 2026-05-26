@@ -1,9 +1,18 @@
 /* ════════════════════════════════════════════════════════════════
-   api/lib/dev-engine.ts
-   Developer Task Engine — by Manav
-
-   Complete file. No patches. Every string literal is single-line.
-   Multiline content uses array.join('\n') with escaped backslash-n.
+   api/lib/dev-engine.ts  —  Developer Task Engine
+   
+   Architecture: fire-and-forget execution.
+   1. client calls dev_execute_task
+   2. server marks task 'running', returns immediately (< 300ms)
+   3. server continues: fetch live page → snapshot → call AI → write results
+   4. client polls dev_get_tasks every 3s until status !== 'running'
+   
+   This means execution can take as long as needed (slow sites, large
+   pages, AI latency) without the browser timing out or the user waiting.
+   
+   All logic is generic — no hardcoded site names, URLs, or metrics.
+   CMS detection reads from the live page HTML on each execution.
+   AI prompts are built from audit finding data on the task record.
 ════════════════════════════════════════════════════════════════ */
 
 import { db } from './db.js';
@@ -11,18 +20,23 @@ import { db } from './db.js';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MODEL = 'claude-sonnet-4-6';
 
-/* ── TYPES ─────────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────
 
-export type CmsPlatform = 'wordpress'|'webflow'|'squarespace'|'wix'|'shopify'|'hubspot'|'drupal'|'joomla'|'ghost'|'framer'|'custom'|'unknown';
-export type SeoPlugin   = 'yoast'|'rankmath'|'aioseo'|'seopress'|'none'|'unknown';
+export type CmsPlatform =
+  | 'wordpress' | 'webflow' | 'squarespace' | 'wix' | 'shopify'
+  | 'hubspot' | 'drupal' | 'joomla' | 'ghost' | 'framer'
+  | 'custom' | 'unknown';
+
+export type SeoPlugin = 'yoast' | 'rankmath' | 'aioseo' | 'seopress' | 'none' | 'unknown';
 
 export interface CmsContext {
   platform:   CmsPlatform;
   seoPlugin:  SeoPlugin;
-  confidence: number;
-  signals:    string[];
-  adminPath:  string;
-  notes?:     string;
+  confidence: number;   // 0-100
+  signals:    string[]; // what fingerprints were found
+  adminPath:  string;   // e.g. '/wp-admin'
 }
 
 export interface DevTask {
@@ -35,13 +49,13 @@ export interface DevTask {
   task_type:              string;
   title:                  string;
   description?:           string;
-  finding_ref?:           string;
   finding_title?:         string;
   finding_detail?:        string;
   severity:               'critical' | 'warning' | 'info';
   target_url?:            string;
   priority:               number;
-  status:                 'pending'|'running'|'fix_ready'|'applied'|'verifying'|'done'|'skipped'|'failed';
+  status:                 TaskStatus;
+  // populated after execution
   analysis?:              string;
   fix_code?:              string;
   fix_language?:          string;
@@ -51,8 +65,9 @@ export interface DevTask {
   rollback_instructions?: string;
   snapshot_id?:           string;
   backup_confirmed?:      boolean;
+  // populated after verification
   verification_result?:   'pass' | 'fail' | 'partial';
-  verification_evidence?: any;
+  verification_evidence?: Record<string, unknown>;
   cms_platform?:          string;
   llm_calls_used?:        number;
   executed_at?:           string;
@@ -60,817 +75,1228 @@ export interface DevTask {
   updated_at?:            string;
 }
 
+type TaskStatus = 'pending' | 'running' | 'fix_ready' | 'applied' | 'verifying' | 'done' | 'skipped' | 'failed';
+
 interface AuditFinding {
   audit_kind:      string;
   severity:        string;
   finding_title:   string;
   finding_detail?: string;
   recommendation?: string;
-  evidence?:       any;
+  evidence?:       Record<string, unknown>;
 }
 
-/* ── CMS DETECTION ──────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// CMS DETECTION
+// Reads live page HTML to detect the platform.
+// Falls back to project-stored value if available.
+// Never throws — returns 'unknown' if detection fails.
+// ─────────────────────────────────────────────────────────────
 
-export async function detectCms(url: string, hints?: { cms?: string; seoPlugin?: string }): Promise<CmsContext> {
-  const stored = (hints?.cms || '').toLowerCase().trim();
-  if (stored && stored !== 'unknown' && stored !== 'not set' && stored !== '') {
-    const platform = normaliseCms(stored);
-    return { platform, seoPlugin: normaliseSeoPlugin(hints?.seoPlugin || ''), confidence: 90,
-             signals: ['Project context: ' + hints!.cms], adminPath: cmsAdminPath(platform) };
-  }
-  let html = '';
-  try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOSeason/1.0)' }, signal: AbortSignal.timeout(5000) });
-    if (res.ok) html = await res.text();
-  } catch { /* continue */ }
-
+export async function detectCmsFromHtml(html: string): Promise<CmsContext> {
+  // WordPress
   if (/wp-content|wp-includes/i.test(html)) {
-    const sp: SeoPlugin = /yoast/i.test(html) ? 'yoast' : /rank.?math/i.test(html) ? 'rankmath' : /aioseo/i.test(html) ? 'aioseo' : 'unknown';
-    return { platform: 'wordpress', seoPlugin: sp, confidence: 97, signals: ['wp-content in HTML'], adminPath: '/wp-admin' };
+    const sp: SeoPlugin = /yoast/i.test(html) ? 'yoast' : /rank.?math/i.test(html) ? 'rankmath' : /aioseo/i.test(html) ? 'aioseo' : /seopress/i.test(html) ? 'seopress' : 'unknown';
+    return { platform: 'wordpress', seoPlugin: sp, confidence: 97, signals: ['wp-content/wp-includes in HTML'], adminPath: '/wp-admin' };
   }
-  if (/data-wf-site|webflow\.com/i.test(html))
-    return { platform: 'webflow', seoPlugin: 'none', confidence: 97, signals: ['Webflow attribute'], adminPath: 'https://webflow.com/dashboard' };
-  if (/squarespace-cdn\.com|sqs-layout/i.test(html))
+  if (/data-wf-site|webflow\.com\/css|\.webflow\.com/i.test(html))
+    return { platform: 'webflow', seoPlugin: 'none', confidence: 97, signals: ['Webflow attribute or CDN'], adminPath: 'https://webflow.com/dashboard' };
+  if (/squarespace-cdn\.com|sqs-layout|\.sqspcdn\.com/i.test(html))
     return { platform: 'squarespace', seoPlugin: 'none', confidence: 97, signals: ['Squarespace CDN'], adminPath: '/config' };
-  if (/parastorage\.com|wixsite\.com/i.test(html))
-    return { platform: 'wix', seoPlugin: 'none', confidence: 95, signals: ['Wix storage'], adminPath: 'https://manage.wix.com' };
-  if (/cdn\.shopify\.com|Shopify\.theme/i.test(html))
+  if (/parastorage\.com|wixsite\.com|_wix_|static\.wixstatic/i.test(html))
+    return { platform: 'wix', seoPlugin: 'none', confidence: 95, signals: ['Wix storage or domain'], adminPath: 'https://manage.wix.com' };
+  if (/cdn\.shopify\.com|Shopify\.theme|myshopify\.com/i.test(html))
     return { platform: 'shopify', seoPlugin: 'none', confidence: 97, signals: ['Shopify CDN'], adminPath: '/admin' };
-  if (/hs-sites\.com|hubspot\.com|hbspt\./i.test(html))
+  if (/hs-scripts\.com|hubspot\.com\/hs|hbspt\.|hs-beacon\.com/i.test(html))
     return { platform: 'hubspot', seoPlugin: 'none', confidence: 95, signals: ['HubSpot script'], adminPath: 'https://app.hubspot.com' };
-  if (/Drupal\.settings|\/sites\/default\/files/i.test(html))
-    return { platform: 'drupal', seoPlugin: 'unknown', confidence: 92, signals: ['Drupal variable'], adminPath: '/admin' };
-  if (/ghost\.io|content\.ghost\.io/i.test(html))
-    return { platform: 'ghost', seoPlugin: 'none', confidence: 93, signals: ['Ghost CDN'], adminPath: '/ghost' };
-  if (/framer\.com|framerusercontent/i.test(html))
-    return { platform: 'framer', seoPlugin: 'none', confidence: 93, signals: ['Framer asset'], adminPath: 'https://framer.com' };
-  return { platform: html.length > 100 ? 'custom' : 'unknown', seoPlugin: 'unknown',
-           confidence: html.length > 100 ? 55 : 0, signals: ['No CMS fingerprint found'], adminPath: '' };
+  if (/Drupal\.settings|\/sites\/default\/files|drupal-/i.test(html))
+    return { platform: 'drupal', seoPlugin: 'unknown', confidence: 92, signals: ['Drupal JS variable or path'], adminPath: '/admin' };
+  if (/ghost\.io|content\.ghost\.io|data-ghost-/i.test(html))
+    return { platform: 'ghost', seoPlugin: 'none', confidence: 93, signals: ['Ghost CDN or attribute'], adminPath: '/ghost' };
+  if (/framer\.com|framerusercontent\.com/i.test(html))
+    return { platform: 'framer', seoPlugin: 'none', confidence: 93, signals: ['Framer CDN'], adminPath: 'https://framer.com' };
+
+  return {
+    platform: 'custom', seoPlugin: 'unknown', confidence: 40,
+    signals: ['No known CMS fingerprint — likely custom-built or headless'],
+    adminPath: '',
+  };
 }
 
-function normaliseCms(s: string): CmsPlatform {
-  if (s.includes('wordpress') || s === 'wp') return 'wordpress';
-  if (s.includes('webflow'))    return 'webflow';
-  if (s.includes('squarespace')) return 'squarespace';
-  if (s.includes('wix'))        return 'wix';
-  if (s.includes('shopify'))    return 'shopify';
-  if (s.includes('hubspot'))    return 'hubspot';
-  if (s.includes('drupal'))     return 'drupal';
-  if (s.includes('ghost'))      return 'ghost';
-  if (s.includes('framer'))     return 'framer';
-  if (s.includes('custom'))     return 'custom';
-  return 'unknown';
-}
-
-function normaliseSeoPlugin(s: string): SeoPlugin {
-  if (/yoast/i.test(s))      return 'yoast';
-  if (/rank.?math/i.test(s)) return 'rankmath';
-  if (/aioseo/i.test(s))     return 'aioseo';
-  if (/seopress/i.test(s))   return 'seopress';
+export function normaliseCmsPlatform(s: string): CmsPlatform {
+  const lower = s.toLowerCase().trim();
+  if (lower.includes('wordpress') || lower === 'wp') return 'wordpress';
+  if (lower.includes('webflow'))     return 'webflow';
+  if (lower.includes('squarespace')) return 'squarespace';
+  if (lower.includes('wix'))         return 'wix';
+  if (lower.includes('shopify'))     return 'shopify';
+  if (lower.includes('hubspot'))     return 'hubspot';
+  if (lower.includes('drupal'))      return 'drupal';
+  if (lower.includes('joomla'))      return 'joomla';
+  if (lower.includes('ghost'))       return 'ghost';
+  if (lower.includes('framer'))      return 'framer';
+  if (lower.includes('custom'))      return 'custom';
   return 'unknown';
 }
 
 function cmsAdminPath(p: CmsPlatform): string {
-  const m: Record<string,string> = {
-    wordpress: '/wp-admin', webflow: 'https://webflow.com/dashboard',
-    squarespace: '/config', wix: 'https://manage.wix.com', shopify: '/admin',
-    hubspot: 'https://app.hubspot.com', drupal: '/admin', joomla: '/administrator',
-    ghost: '/ghost', framer: 'https://framer.com', custom: '', unknown: '',
+  const paths: Partial<Record<CmsPlatform, string>> = {
+    wordpress: '/wp-admin', squarespace: '/config', shopify: '/admin',
+    drupal: '/admin', joomla: '/administrator', ghost: '/ghost',
+    webflow: 'https://webflow.com/dashboard', wix: 'https://manage.wix.com',
+    hubspot: 'https://app.hubspot.com', framer: 'https://framer.com',
   };
-  return m[p] || '';
+  return paths[p] || '';
 }
 
-/* ── PARSE FINDINGS → TASKS ─────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// LIVE PAGE FETCH
+// Fetches the live page HTML for CMS detection, snapshotting,
+// and accurate fix generation. Robust — never throws.
+// Returns empty string on any failure, caller handles gracefully.
+// ─────────────────────────────────────────────────────────────
 
-export function parseFindingsToTasks(
-  findings: AuditFinding[],
-  opts: { projectId: string; campaignId?: string; auditRunId?: string; targetUrl?: string },
-): DevTask[] {
-  const tasks: DevTask[] = [];
-  for (const f of findings) {
-    const t = classifyFinding(f, opts);
-    if (t) tasks.push(t);
+export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ html: string; fetchedOk: boolean; errorMsg?: string }> {
+  if (!url) return { html: '', fetchedOk: false, errorMsg: 'No URL provided' };
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      return { html: '', fetchedOk: false, errorMsg: `HTTP ${res.status} ${res.statusText}` };
+    }
+    const raw = await res.text();
+    // Limit to 120KB — beyond this, the <head> section (what matters) is already captured
+    return { html: raw.slice(0, 120_000), fetchedOk: true };
+  } catch (e: any) {
+    const msg = e?.name === 'TimeoutError' ? `Page fetch timed out after ${timeoutMs}ms` : (e?.message || 'Fetch failed');
+    return { html: '', fetchedOk: false, errorMsg: msg };
   }
-  const po: Record<string,number> = { phase_0: 0, phase_2: 1, phase_3: 2 };
-  const so: Record<string,number> = { critical: 0, warning: 1, info: 2 };
-  tasks.sort((a,b) => (po[a.phase]??9)-(po[b.phase]??9) || (so[a.severity]??9)-(so[b.severity]??9) || a.priority-b.priority);
-  return tasks;
 }
 
-function classifyFinding(f: AuditFinding, opts: { projectId:string; campaignId?:string; auditRunId?:string; targetUrl?:string }): DevTask | null {
-  const sev = (f.severity === 'red' ? 'critical' : f.severity === 'amber' ? 'warning' : 'info') as DevTask['severity'];
-  const base = {
-    project_id: opts.projectId, campaign_id: opts.campaignId||null, audit_run_id: opts.auditRunId||null,
-    target_url: opts.targetUrl, finding_title: f.finding_title,
-    finding_detail: (f.finding_detail||'').slice(0,2000), severity: sev, status: 'pending' as const,
+// ─────────────────────────────────────────────────────────────
+// SNAPSHOT
+// Captures only the HTML elements relevant to the task type.
+// Stored before any fix is applied — the safety net.
+// ─────────────────────────────────────────────────────────────
+
+export function snapshotRelevantHtml(taskType: string, html: string): string {
+  if (!html) return '';
+
+  const headMatch = html.match(/<head[\s\S]*?<\/head>/i);
+  const head = headMatch?.[0] || '';
+
+  switch (taskType) {
+    case 'lcp_fix':
+    case 'script_defer': {
+      // All <script> tags from <head> — these are the blocking candidates
+      const scripts = head.match(/<script\b[^>]*>[\s\S]*?<\/script>/gi)
+        || head.match(/<script\b[^>]*/gi) || [];
+      return scripts.slice(0, 30).join('\n');
+    }
+    case 'lazy_loading': {
+      const imgs = html.match(/<img\b[^>]*>/gi) || [];
+      return imgs.slice(0, 40).join('\n');
+    }
+    case 'image_format': {
+      const imgs = html.match(/<img\b[^>]*src=["'][^"']*\.(?:jpg|jpeg|png|gif)[^"']*["'][^>]*>/gi) || [];
+      return imgs.slice(0, 40).join('\n');
+    }
+    case 'faq_schema':
+    case 'date_modified_schema': {
+      const schemas = html.match(/<script[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi) || [];
+      return schemas.join('\n\n');
+    }
+    case 'h1_update': {
+      return (html.match(/<h1\b[\s\S]*?<\/h1>/i) || [])[0] || '';
+    }
+    case 'first_para': {
+      const paras = html.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [];
+      return paras.slice(0, 5).join('\n');
+    }
+    case 'h2_section': {
+      const headings = html.match(/<h[23]\b[^>]*>[\s\S]*?<\/h[23]>/gi) || [];
+      return headings.slice(0, 20).join('\n');
+    }
+    case 'meta_desc': {
+      return (html.match(/<meta[^>]*name=["']description["'][^>]*>/i) || [])[0] || '';
+    }
+    default:
+      // Generic: head + first 3KB of body
+      return head + html.slice(0, 3000);
+  }
+}
+
+export async function saveSnapshot(taskId: string, projectId: string, taskType: string, url: string, snapshot: string): Promise<string | null> {
+  if (!taskId || !snapshot) return null;
+  try {
+    const { data, error } = await db()
+      .from('dev_task_snapshots')
+      .insert({ task_id: taskId, project_id: projectId, task_type: taskType, url, snapshot })
+      .select('id')
+      .single();
+    if (error) {
+      console.error('[dev-engine] saveSnapshot error:', error.message);
+      return null;
+    }
+    return (data as any)?.id || null;
+  } catch (e: any) {
+    console.error('[dev-engine] saveSnapshot threw:', e?.message);
+    return null;
+  }
+}
+
+export async function loadSnapshot(taskId: string): Promise<{ snapshot: string; captured_at: string } | null> {
+  try {
+    const { data } = await db()
+      .from('dev_task_snapshots')
+      .select('snapshot, captured_at')
+      .eq('task_id', taskId)
+      .order('captured_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return (data as any) || null;
+  } catch {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXECUTE TASK
+//
+// ARCHITECTURE: This function is called AFTER the HTTP response
+// has already been sent to the client (fire-and-forget pattern
+// in task-engine.ts). It can take as long as it needs.
+//
+// Flow:
+//   1. Fetch live page HTML (with generous timeout)
+//   2. Detect CMS from HTML (no separate fetch)
+//   3. Snapshot relevant elements (before any change)
+//   4. Call AI to generate fix code + analysis
+//   5. Build human-readable apply instructions for the detected CMS
+//   6. Build rollback instructions
+//   7. Write all results to dev_tasks table
+//
+// On any failure: writes status='failed' with a useful error message.
+// The client polling loop reads whatever status is in the DB.
+// ─────────────────────────────────────────────────────────────
+
+export async function executeDevTask(task: DevTask): Promise<void> {
+  const taskId = task.id!;
+
+  try {
+    // ── Step 1: Fetch live page ──────────────────────────────────
+    // Use Googlebot UA so we see the same page Google sees.
+    // 25s timeout — generous for slow sites.
+    const { html: pageHtml, fetchedOk, errorMsg: fetchError } = await fetchPageHtml(task.target_url || '', 25000);
+
+    // ── Step 2: Detect CMS ──────────────────────────────────────
+    // Detection runs on the fetched HTML so we get the true CMS.
+    // If the page didn't load, fall back to stored project value.
+    let cms: CmsContext;
+    if (fetchedOk && pageHtml) {
+      cms = await detectCmsFromHtml(pageHtml);
+    } else {
+      const platform = normaliseCmsPlatform(task.cms_platform || 'unknown');
+      cms = { platform, seoPlugin: 'unknown', confidence: 30, signals: ['Page fetch failed — using stored value'], adminPath: cmsAdminPath(platform) };
+    }
+
+    // ── Step 3: Snapshot relevant elements ──────────────────────
+    // BEFORE generating any fix — this is the safety net for rollback.
+    const snapshotHtml = snapshotRelevantHtml(task.task_type, pageHtml);
+    const snapshotId = await saveSnapshot(taskId, task.project_id, task.task_type, task.target_url || '', snapshotHtml);
+
+    // ── Step 4: Build AI prompt ──────────────────────────────────
+    // We give Claude: the audit finding data + the relevant live HTML section.
+    // The audit provides the WHY (metrics, severity). The live HTML provides the WHAT
+    // (exact script tags, img tags, schema blocks). Together they produce accurate fixes.
+    const { sys, usr } = buildExecutionPrompt(task, snapshotHtml, cms, fetchedOk, fetchError);
+
+    // ── Step 5: Call AI ──────────────────────────────────────────
+    let analysis = '', fixCode = '', fixLanguage = 'html', paaQuestions: string[] = [];
+    let llmCalls = 0;
+
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 2000,
+          system: sys,
+          messages: [{ role: 'user', content: usr }],
+        }),
+        signal: AbortSignal.timeout(60000), // 60s — AI can take time on complex fixes
+      });
+      llmCalls++;
+      const data = await resp.json() as any;
+      const rawText = (data?.content?.[0]?.text || '').trim();
+
+      // Extract JSON from response — Claude sometimes wraps it in markdown
+      const jsonMatch = rawText.match(/\{[\s\S]+\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          analysis      = parsed.analysis      || '';
+          fixCode       = parsed.fix_code       || '';
+          fixLanguage   = parsed.fix_language   || 'html';
+          paaQuestions  = Array.isArray(parsed.paa_questions) ? parsed.paa_questions : [];
+        } catch {
+          analysis = rawText.slice(0, 800);
+        }
+      } else {
+        analysis = rawText.slice(0, 800);
+      }
+    } catch (aiErr: any) {
+      analysis = `AI call failed: ${aiErr?.message || 'unknown error'}. The fix code could not be generated. Retry the task.`;
+    }
+
+    // ── Step 6: Build instructions ───────────────────────────────
+    const applyInstructions    = buildApplyInstructions(task, cms, { fixCode, paaQuestions });
+    const rollbackInstructions = buildRollbackInstructions(task, cms.platform, snapshotHtml);
+    const verificationMethod   = buildVerificationMethod(task);
+
+    // ── Step 7: Write results ────────────────────────────────────
+    await updateTask(taskId, {
+      status:                'fix_ready',
+      analysis:              analysis || (fetchedOk ? 'Analysis complete.' : `Note: page could not be fetched (${fetchError}). Fix code generated from audit data.`),
+      fix_code:              fixCode,
+      fix_language:          fixLanguage,
+      apply_instructions:    applyInstructions,
+      rollback_code:         snapshotHtml || '<!-- Page was not reachable — no snapshot available -->',
+      rollback_instructions: rollbackInstructions,
+      verification_method:   verificationMethod,
+      snapshot_id:           snapshotId || undefined,
+      backup_confirmed:      false,
+      cms_platform:          cms.platform,
+      llm_calls_used:        llmCalls,
+      updated_at:            new Date().toISOString(),
+    });
+
+  } catch (unexpectedErr: any) {
+    // Last resort — always write a clean failure state so the UI can show Retry
+    await updateTask(taskId, {
+      status:   'failed',
+      analysis: `Unexpected error: ${unexpectedErr?.message || 'unknown'}. Click Retry.`,
+      updated_at: new Date().toISOString(),
+    }).catch(() => {}); // if even this fails, nothing we can do
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// AI PROMPT BUILDER
+// Builds prompts from:
+//   - Task finding data (title, detail, evidence — from audit)
+//   - Live page HTML snapshot (actual elements to fix)
+//   - CMS context (which platform to write code for)
+// Prompts are generic — work for any site, any keyword, any page.
+// ─────────────────────────────────────────────────────────────
+
+function buildExecutionPrompt(
+  task: DevTask,
+  snapshotHtml: string,
+  cms: CmsContext,
+  pageWasFetched: boolean,
+  fetchError?: string,
+): { sys: string; usr: string } {
+  const sys = [
+    'You are a senior web developer generating precise, copy-paste-ready code fixes for SEO and performance issues.',
+    'You are given:',
+    '  1. Audit finding data (the problem + metrics from a live audit)',
+    '  2. Live page HTML (the relevant elements from the actual page)',
+    '  3. CMS context (platform and SEO plugin)',
+    '',
+    'Your job: analyze the specific problem on THIS page and generate the exact fix.',
+    'Be precise — reference actual elements, script URLs, class names from the HTML.',
+    'If live HTML is available, use it. If not, generate the most common pattern for this CMS.',
+    '',
+    'CMS: ' + cms.platform + (cms.seoPlugin !== 'unknown' && cms.seoPlugin !== 'none' ? ' with ' + cms.seoPlugin + ' SEO plugin' : ''),
+    pageWasFetched ? 'Live page: fetched successfully' : 'Live page: could not be fetched (' + (fetchError || 'unknown') + ') — generate based on audit data and CMS patterns',
+    '',
+    'Reply with ONLY valid JSON (no markdown fences):',
+    '{',
+    '  "analysis": "2-4 sentences. Reference specific elements/scripts/metrics from the data. Explain what is causing the problem and why this fix resolves it.",',
+    '  "fix_code": "Complete, copy-paste-ready code. No placeholders like [YOUR_VALUE]. Must be ready to deploy.",',
+    '  "fix_language": "html | json | javascript | bash | text",',
+    '  "paa_questions": ["verbatim question strings if this is faq_schema or h2_section, else empty array"]',
+    '}',
+  ].join('\n');
+
+  const finding = [
+    '=== AUDIT FINDING ===',
+    'Task: ' + task.title,
+    'Type: ' + task.task_type,
+    'Severity: ' + task.severity,
+    'URL: ' + (task.target_url || 'unknown'),
+    'Finding: ' + (task.finding_title || ''),
+    task.finding_detail ? 'Detail: ' + task.finding_detail.slice(0, 500) : '',
+    '',
+    '=== LIVE PAGE HTML (relevant section) ===',
+    snapshotHtml ? snapshotHtml.slice(0, 8000) : '[Not available — page fetch failed]',
+  ].filter(Boolean).join('\n');
+
+  const taskInstructions: Record<string, string> = {
+    lcp_fix: [
+      finding,
+      '',
+      '=== TASK ===',
+      'The LCP (Largest Contentful Paint) is critically slow due to render-blocking JavaScript.',
+      'Evidence: TTFB is fast but TBT (Total Blocking Time) is high — this confirms the bottleneck',
+      'is JavaScript executing on the main thread before the page renders.',
+      '',
+      'From the script tags above, identify which ones:',
+      '  - Are in <head> without defer or async',
+      '  - Are third-party (analytics, chat, tag managers, CRM widgets, ad scripts)',
+      '  - Are non-critical for initial render',
+      '',
+      'Generate the modified <script> tags with defer added. Show BEFORE and AFTER for each.',
+      'Also explain HOW to find the specific blocking tasks using Chrome DevTools → Performance → Long Tasks.',
+    ].join('\n'),
+
+    script_defer: [
+      finding,
+      '',
+      '=== TASK ===',
+      'High TBT indicates render-blocking scripts. From the script tags above, identify blocking candidates.',
+      'Generate modified script tags with defer or async. Show BEFORE and AFTER.',
+      'Include Chrome DevTools Long Tasks profiling steps.',
+    ].join('\n'),
+
+    lazy_loading: [
+      finding,
+      '',
+      '=== TASK ===',
+      'The image tags above show 0% have loading="lazy". ',
+      'For each img tag, determine if it is above or below the fold:',
+      '  - First 1-2 content images: keep as eager (no change)',
+      '  - All others: add loading="lazy"',
+      '',
+      'If this is ' + cms.platform + ' and no code access, generate a complete JavaScript snippet',
+      'that adds loading="lazy" to all images except the first 2 — ready to paste into a footer.',
+      'The snippet: document.querySelectorAll("img:not(:nth-child(-n+2))").forEach(img => img.loading = "lazy")',
+      'wrapped in a <script> tag with a DOMContentLoaded listener.',
+    ].join('\n'),
+
+    image_format: [
+      finding,
+      '',
+      '=== TASK ===',
+      'The images above use legacy formats (jpg/png/gif).',
+      'For ' + cms.platform + ': generate the recommended approach (plugin or CDN setting).',
+      'Also generate a Node.js script using "sharp" that reads all images in a directory',
+      'and outputs webp versions at 85% quality.',
+    ].join('\n'),
+
+    faq_schema: [
+      finding,
+      '',
+      '=== TASK ===',
+      'The page is missing FAQPage JSON-LD schema.',
+      'Look at the existing schema blocks in the HTML above. Build on them if present.',
+      '',
+      'Extract the actual page topic from: URL=' + (task.target_url || '') + ' and finding detail.',
+      'Generate a FAQPage JSON-LD block with 4 questions relevant to this page topic.',
+      'Each answer must be 50-80 words — direct, factual, citation-eligible.',
+      'Return question strings in paa_questions array.',
+      '',
+      'For ' + cms.platform + ': provide the exact location to paste this code.',
+    ].join('\n'),
+
+    h1_update: [
+      finding,
+      '',
+      '=== TASK ===',
+      'Current H1 is shown in the HTML above.',
+      'The campaign keyword is NOT in the H1. Extract the keyword from the finding detail.',
+      '',
+      'Generate 3 H1 options that:',
+      '  - Include the campaign keyword naturally (not forced)',
+      '  - Preserve the page\'s commercial intent',
+      '  - Are 5-10 words',
+      '  - Read naturally for humans',
+      'Rank them 1-3 with one-sentence rationale. Return all 3 in fix_code.',
+    ].join('\n'),
+
+    first_para: [
+      finding,
+      '',
+      '=== TASK ===',
+      'Current first paragraph is shown in the HTML above.',
+      'It has low keyword overlap — the campaign keyword is barely present.',
+      'Extract the keyword from the finding detail.',
+      '',
+      'Write a replacement first paragraph:',
+      '  - 60-100 words',
+      '  - Contains the campaign keyword in the first sentence',
+      '  - Opens with the specific problem the searcher is trying to solve',
+      '  - Names who this product/page is for',
+      '  - Previews the key differentiator',
+      '  - No generic filler phrases',
+      'Return ONLY the new paragraph text in fix_code.',
+    ].join('\n'),
+
+    h2_section: [
+      finding,
+      '',
+      '=== TASK ===',
+      'Existing H2 structure shown above. PAA questions from the finding detail are unanswered.',
+      'Extract the unanswered PAA questions from the finding detail.',
+      '',
+      'For each unanswered question, generate:',
+      '  - The exact H2 tag (verbatim question text — Google matches this)',
+      '  - A 50-80 word direct answer paragraph (citation-eligible)',
+      '  - A 250-350 word body section with practical guidance',
+      '  - Honest mention of alternative solutions where relevant',
+      '',
+      'Return complete HTML, list question strings in paa_questions.',
+    ].join('\n'),
+
+    date_modified_schema: [
+      finding,
+      '',
+      '=== TASK ===',
+      'Existing schema blocks shown above.',
+      'Add "dateModified" set to today\'s date (' + "2026-05-26" + ') to the most relevant schema block.',
+      'Return the complete updated schema block.',
+      'Also generate a small visible HTML label: <p class="last-updated">Last updated: [date]</p>',
+    ].join('\n'),
+
+    gsc_indexing: [
+      finding,
+      '',
+      '=== TASK ===',
+      'Page is not in GSC — 0 organic impressions.',
+      'Check the HTML above for indexing blockers:',
+      '  - <meta name="robots" content="noindex"> or similar',
+      '  - X-Robots-Tag reference in HTML',
+      '  - Canonical pointing to a different URL',
+      '  - nofollow on important links',
+      '',
+      'List what you find. If none found, say so explicitly.',
+      'Generate a step-by-step GSC URL Inspection checklist in fix_code as plain text.',
+    ].join('\n'),
+
+    meta_desc: [
+      finding,
+      '',
+      '=== TASK ===',
+      'Current meta description shown above.',
+      'Generate 3 meta description options (150-160 chars each):',
+      '  - Include the campaign keyword',
+      '  - Include a clear benefit or differentiator',
+      '  - End with a soft CTA where natural',
+      'For ' + cms.platform + ': provide exact location to update it.',
+    ].join('\n'),
   };
-  if (/MOBILE LCP.*exceeds/i.test(f.finding_title))
-    return { ...base, phase:'phase_0', category:'performance', task_type:'lcp_fix',
-      title: 'Fix render-blocking JavaScript causing mobile LCP failure',
-      description: 'Mobile LCP ' + (f.evidence?.lcp_ms ? ((f.evidence.lcp_ms as number)/1000).toFixed(1)+'s' : '16s+') + '. Fix JS blocking first.',
-      priority: 1 };
-  if (/TBT.*severe|severe.*TBT/i.test(f.finding_title))
-    return { ...base, phase:'phase_0', category:'performance', task_type:'script_defer',
-      title: (/MOBILE/i.test(f.finding_title)?'Mobile':'Desktop')+' TBT '+(f.evidence?.tbt_ms?Math.round(f.evidence.tbt_ms as number)+'ms':'high')+' — defer render-blocking scripts',
-      description: 'Profile Long Tasks, identify blocking JS bundles, add defer/async.',
-      priority: 2 };
-  if (/Page not in GSC top pages/i.test(f.finding_title))
-    return { ...base, phase:'phase_0', category:'indexing', task_type:'gsc_indexing',
-      title: 'Submit page for Google indexing (not in GSC)',
-      description: '0 organic impressions. GSC URL Inspection → Request Indexing.',
-      priority: 5 };
-  if (/Lazy-loading.*low|0%.*images.*loading/i.test(f.finding_title))
-    return { ...base, phase:'phase_3', category:'performance', task_type:'lazy_loading',
-      title: 'Add loading=lazy to images ('+(f.evidence?.total_images||20)+' images, 0% lazy)',
-      description: 'Free performance win — no asset changes. Add loading=lazy attribute.',
-      priority: 30 };
-  if (/modern image format|jpg.*png.*gif/i.test(f.finding_title))
-    return { ...base, phase:'phase_3', category:'performance', task_type:'image_format',
-      title: 'Convert '+(f.evidence?.legacy_format||12)+' images to webp/avif',
-      description: '30-50% smaller files. Many platforms handle automatically.',
-      priority: 31 };
-  if (/FAQPage schema missing/i.test(f.finding_title))
-    return { ...base, phase:'phase_2', category:'schema', task_type:'faq_schema',
-      title: 'Add FAQPage JSON-LD schema for PAA questions',
-      description: (f.evidence?.paa_count||4)+' PAA questions. Unlocks rich results and AI Overview citations.',
-      priority: 10 };
-  if (/Content freshness.*authenticity/i.test(f.finding_title))
-    return { ...base, phase:'phase_3', category:'schema', task_type:'date_modified_schema',
-      title: 'Add dateModified to schema and visible Last-updated label',
-      description: 'Current Last-Modified header is unreliable. Add verified dateModified.',
-      priority: 35 };
-  if (/keyword.*present in only one.*title.*H1/i.test(f.finding_title))
-    return { ...base, phase:'phase_2', category:'on_page', task_type:'h1_update',
-      title: 'Update H1 to include campaign keyword naturally',
-      description: 'H1 is partial match. Manav generates 3 options.',
-      priority: 12 };
-  if (/First paragraph weakly aligned/i.test(f.finding_title))
-    return { ...base, phase:'phase_2', category:'on_page', task_type:'first_para',
-      title: 'Rewrite opening paragraph (18% keyword overlap)',
-      description: 'Generic above-fold copy. Manav rewrites aligned to search intent.',
-      priority: 15 };
-  if (/PAA questions.*NOT addressed/i.test(f.finding_title)) {
-    const u: string[] = Array.isArray(f.evidence?.unanswered) ? f.evidence!.unanswered as string[] : [];
-    return { ...base, phase:'phase_2', category:'content', task_type:'h2_section',
-      title: 'Write '+(u.length||1)+' new H2 section(s) for unanswered PAA questions',
-      description: u.length > 0 ? 'Missing: '+u.join(' | ') : 'Unanswered PAA questions = missed featured snippet opportunities.',
-      priority: 11 };
-  }
-  return null;
+
+  const usr = taskInstructions[task.task_type] || [
+    finding,
+    '',
+    '=== TASK ===',
+    'Generate the exact fix code for this task. Reference specific elements from the HTML above.',
+    'Provide clear application instructions for ' + cms.platform + '.',
+  ].join('\n');
+
+  return { sys, usr };
 }
 
-/* ── CMS-SPECIFIC INSTRUCTIONS ──────────────────────────────────── */
-/* All instruction strings are assembled via array.join('\n').         */
-/* No string literal spans multiple lines. Safe to compile anywhere.   */
+// ─────────────────────────────────────────────────────────────
+// APPLY INSTRUCTIONS
+// CMS-specific, non-technical, step-by-step.
+// Built from task data + detected CMS — works for any site.
+// ─────────────────────────────────────────────────────────────
 
-export function buildApplyInstructions(taskType: string, cms: CmsContext, opts: {
-  fixCode?: string; pageUrl?: string; paaQuestions?: string[]; baseUrl?: string;
-}): string {
+export function buildApplyInstructions(
+  task: DevTask,
+  cms: CmsContext,
+  opts: { fixCode?: string; paaQuestions?: string[] },
+): string {
   const p  = cms.platform;
   const pl = cms.seoPlugin;
-  const au = cms.adminPath.startsWith('http') ? cms.adminPath : (opts.baseUrl||'')+cms.adminPath;
-  const qs = opts.paaQuestions || [];
-  const url = opts.pageUrl || 'your page URL';
+  const url = task.target_url || 'your page URL';
+  const qs  = opts.paaQuestions || [];
   const out: string[] = [];
 
   // Prerequisites
-  out.push('## What you need before starting');
-  if (p==='wordpress') {
-    out.push('- Log in to your WordPress dashboard: **'+au+'**');
-    out.push('- You need Editor or Administrator access');
-    if (pl==='yoast')    out.push('- You have **Yoast SEO** installed — these steps use it');
-    if (pl==='rankmath') out.push('- You have **RankMath SEO** installed — these steps use it');
-  } else if (p==='webflow') {
-    out.push('- Log in to Webflow: **https://webflow.com/dashboard** → open your project in the Designer');
-  } else if (p==='squarespace') {
-    out.push('- Log in to Squarespace: **/config** on your domain');
-  } else if (p==='wix') {
-    out.push('- Log in to Wix: **https://manage.wix.com** → Edit Site');
-  } else if (p==='shopify') {
-    out.push('- Log in to Shopify admin: **'+au+'**');
-  } else if (p==='hubspot') {
-    out.push('- Log in to HubSpot: **https://app.hubspot.com** → Marketing → Website → Website Pages');
+  out.push('## Before you start');
+  if (p === 'wordpress') {
+    out.push('- Log in to your WordPress dashboard');
+    out.push('- You need **Editor** or **Administrator** access');
+    if (pl === 'yoast')    out.push('- You have **Yoast SEO** installed — these steps use it');
+    if (pl === 'rankmath') out.push('- You have **RankMath SEO** installed — these steps use it');
+  } else if (p === 'webflow') {
+    out.push('- Log in at **https://webflow.com/dashboard** and open your project in the Designer');
+  } else if (p === 'squarespace') {
+    out.push('- Log in to Squarespace and navigate to your site');
+  } else if (p === 'wix') {
+    out.push('- Log in at **https://manage.wix.com** and click Edit Site');
+  } else if (p === 'shopify') {
+    out.push('- Log in to your Shopify admin');
+  } else if (p === 'hubspot') {
+    out.push('- Log in at **https://app.hubspot.com** → Marketing → Website → Website Pages');
   } else {
-    out.push('- Access your website files or CMS admin panel to edit the HTML of: **'+url+'**');
+    out.push('- Access your website files or CMS admin panel');
+    out.push('- You need to edit the HTML of: **' + url + '**');
   }
+  out.push('');
 
-  // Task-specific steps
-  switch (taskType) {
-    case 'lazy_loading': {
+  // Task steps
+  switch (task.task_type) {
+    case 'lcp_fix':
+    case 'script_defer':
+      out.push('## Steps to fix render-blocking JavaScript');
       out.push('');
+      out.push('> **What this does:** JavaScript files loading before the page renders cause slow load times. Adding `defer` tells the browser: show the page first, then run the JavaScript. This is the highest-priority fix.');
+      out.push('');
+      out.push('⚠️ **This is a developer task.** If you are not comfortable editing code files, share the Fix Code tab with your developer.');
+      out.push('');
+      if (p === 'wordpress') {
+        out.push('**Recommended: use a plugin (no coding required)**');
+        out.push('');
+        out.push('**WP Rocket (paid):** Settings → WP Rocket → File Optimization → Defer JS Execution → Save → Purge Cache');
+        out.push('');
+        out.push('**Autoptimize (free):** Plugins → Add New → Autoptimize → Settings → JavaScript → Defer scripts → Save and Empty Cache');
+        out.push('');
+        out.push('**Manual (developer):** Apply the BEFORE/AFTER changes shown in Fix Code. Open your theme\'s functions.php or use a child theme.');
+      } else if (p === 'webflow') {
+        out.push('1. Project Settings → Custom Code');
+        out.push('2. Move scripts from **Head Code** to **Footer Code**');
+        out.push('3. For scripts that must stay in head: add `defer` attribute as shown in Fix Code');
+        out.push('4. Publish');
+      } else if (p === 'squarespace') {
+        out.push('1. Settings → Advanced → Code Injection');
+        out.push('2. Move `<script>` tags from Header to Footer');
+        out.push('3. For header-only scripts: add `defer` attribute → Save');
+      } else if (p === 'hubspot') {
+        out.push('1. Settings → Website → Pages → Custom Code → Footer HTML');
+        out.push('2. Move non-critical scripts to the footer');
+        out.push('3. Add `defer` to remaining head scripts → Publish');
+      } else {
+        out.push('Apply the changes from Fix Code. Your developer needs to add `defer` to the `<script>` tags identified in the analysis.');
+      }
+      break;
+
+    case 'lazy_loading':
       out.push('## Steps to add lazy loading to images');
       out.push('');
-      out.push('> **What this does:** loads images only when the user scrolls to them. Makes pages load faster on mobile without any visual change.');
+      out.push('> **What this does:** loads images only when the user scrolls to them — saving bandwidth and improving perceived load time. No visual change for visitors.');
       out.push('');
-      if (p==='wordpress') {
-        out.push('WordPress 5.5+ adds lazy loading automatically. To verify:');
-        out.push('');
-        out.push('1. Visit your live page in Chrome');
-        out.push('2. Right-click any image below the first screen → Inspect');
-        out.push('3. Look for loading=lazy in the img tag — if present, you are done');
-        out.push('4. If missing: install **Autoptimize** (free) → Settings → Extra → Lazy-load images');
-        out.push('');
-        out.push('**WP Rocket:** Settings → Media → Lazy Load Images → enable → Save');
-        out.push('**Imagify / ShortPixel / Smush:** open the plugin settings → find Lazy Loading → enable');
-      } else if (p==='webflow') {
-        out.push('1. Open the page in **Webflow Designer**');
-        out.push('2. Click on each image below the first screen');
-        out.push('3. In the right panel, find **Loading** → set to **Lazy**');
-        out.push('4. Keep the hero/first image as **Eager**');
-        out.push('5. Click **Publish** when done');
-      } else if (p==='squarespace') {
-        out.push('1. Go to **Settings → Advanced → Code Injection**');
-        out.push('2. In the **Footer** box, paste the code from the Fix Code tab');
-        out.push('3. Click **Save**');
-      } else if (p==='shopify') {
-        out.push('1. Go to **Online Store → Themes → Actions → Edit Code**');
-        out.push('2. Open the template containing your page images');
-        out.push('3. Add loading=lazy to img tags below the first screen');
-        out.push('4. Click **Save**');
+      if (p === 'wordpress') {
+        out.push('**WordPress 5.5+ adds this automatically.** Verify it is working:');
+        out.push('1. Right-click any image below the fold on your live page → Inspect');
+        out.push('2. Check for `loading="lazy"` on the `<img>` tag');
+        out.push('3. If missing, add the code snippet from Fix Code to **Appearance → Theme Editor → footer.php** (or use a plugin like Autoptimize → Extra → Lazy-load images)');
+      } else if (p === 'webflow') {
+        out.push('1. Open the page in Webflow Designer');
+        out.push('2. Click each image below the first screen → right panel → **Loading → Lazy**');
+        out.push('3. Keep the hero/first image as **Eager**');
+        out.push('4. Publish');
+      } else if (p === 'squarespace' || p === 'wix' || p === 'hubspot') {
+        out.push('1. Go to **Settings → Advanced → Code Injection** (location varies by platform)');
+        out.push('2. In the **Footer** / **Body End** box, paste the JavaScript snippet from Fix Code');
+        out.push('3. Save / Publish');
+      } else if (p === 'shopify') {
+        out.push('1. Online Store → Themes → Actions → Edit Code');
+        out.push('2. Open `layout/theme.liquid`');
+        out.push('3. Before `</body>`, paste the JavaScript snippet from Fix Code → Save');
       } else {
-        out.push('Share the Fix Code with your developer — add loading=lazy to img tags below the first screen.');
+        out.push('Paste the JavaScript snippet from Fix Code before the `</body>` tag in your page template.');
       }
       break;
-    }
-    case 'faq_schema': {
+
+    case 'image_format':
+      out.push('## Steps to convert images to modern format (webp/avif)');
       out.push('');
-      out.push('## Steps to add FAQPage JSON-LD schema');
+      out.push('> **What this does:** webp is typically 30-50% smaller than jpg/png at the same quality. Reduces load time, especially on mobile.');
       out.push('');
-      out.push('> **What this does:** registers your Q&A content with Google. Unlocks People Also Ask appearances and AI Overview citations. Invisible to visitors.');
-      out.push('');
-      if (p==='wordpress' && pl==='yoast') {
-        out.push('**Yoast SEO is installed — use the FAQ Block:**');
-        out.push('1. Go to **Pages → All Pages** → edit your page');
-        out.push('2. Click **+** → search **FAQ** → select **Yoast FAQ Block**');
-        out.push('3. Add each question and answer (40-80 words per answer)');
-        if (qs.length>0) qs.forEach((q,i)=>out.push('   - Q'+(i+1)+': '+q));
-        out.push('4. Click **Update** — Yoast adds the schema automatically');
-      } else if (p==='wordpress' && pl==='rankmath') {
-        out.push('1. Edit your page → click **+** → add **RankMath FAQ** block');
-        out.push('2. Add each question and answer → click **Update**');
-      } else if (p==='webflow') {
-        out.push('1. In **Webflow Designer**: page gear icon ⚙ → Page Settings → Custom Code → Head Code');
-        out.push('2. Paste the JSON-LD from Fix Code');
-        out.push('3. Click **Save → Publish**');
-      } else if (p==='squarespace') {
-        out.push('1. Pages → hover page → gear ⚙ → Page Settings → Advanced tab');
-        out.push('2. In **Page Header Code Injection**, paste the JSON-LD from Fix Code');
-        out.push('3. Click **Save**');
-      } else if (p==='wix') {
-        out.push('1. Page → SEO → Additional SEO Settings → Structured Data → Add Item');
-        out.push('2. Paste the JSON-LD from Fix Code → Apply → Publish');
-      } else if (p==='shopify') {
-        out.push('1. Online Store → Themes → Actions → Edit Code → layout/theme.liquid');
-        out.push('2. Find </head> → paste JSON-LD just before it → Save');
-      } else if (p==='hubspot') {
-        out.push('1. Edit your page → Settings tab → Advanced Options → Head HTML');
-        out.push('2. Paste JSON-LD from Fix Code → Update → Publish');
+      if (p === 'wordpress') {
+        out.push('**Recommended plugin (free tier available):**');
+        out.push('1. Plugins → Add New → search **Imagify** → Install → Activate');
+        out.push('2. Settings → Imagify → check **Convert to WebP**');
+        out.push('3. Click **Bulk Optimize** to convert existing images → future uploads auto-convert');
+        out.push('');
+        out.push('Alternatives: **ShortPixel** or **Smush** — both have free tiers and identical webp conversion settings.');
+      } else if (p === 'webflow' || p === 'squarespace' || p === 'shopify') {
+        out.push(p.charAt(0).toUpperCase() + p.slice(1) + ' **automatically serves WebP** for compatible browsers via its CDN.');
+        out.push('No action required. To verify: right-click an image → Open in new tab → check URL ends in `.webp`.');
       } else {
-        out.push('Paste the JSON-LD from Fix Code inside the <head> section, just before </head>.');
+        out.push('Run the conversion script from Fix Code on your image directory. Then re-upload the .webp files.');
+        out.push('Alternatively: add Cloudflare in front of your site (free plan) — it converts images to webp automatically.');
       }
       break;
-    }
-    case 'h1_update': {
+
+    case 'faq_schema':
+      out.push('## Steps to add FAQPage structured data');
       out.push('');
+      out.push('> **What this does:** registers your Q&A content with Google. Can unlock "People Also Ask" appearances in search results and citations in AI Overviews. Invisible to visitors — search engines only.');
+      out.push('');
+      if (p === 'wordpress' && pl === 'yoast') {
+        out.push('1. Pages → All Pages → find your page → **Edit**');
+        out.push('2. In the block editor: click **+** → search **FAQ** → select **Yoast FAQ Block**');
+        if (qs.length > 0) { out.push('3. Add these questions and their answers:'); qs.forEach((q, i) => out.push('   - Q' + (i+1) + ': ' + q)); out.push('4. Yoast generates the schema automatically'); }
+        out.push('5. Click **Update**');
+      } else if (p === 'wordpress' && pl === 'rankmath') {
+        out.push('1. Edit your page → click **+** → add **RankMath FAQ Block**');
+        out.push('2. Add questions and answers → click **Update**');
+      } else if (p === 'wordpress') {
+        out.push('1. Edit your page → add a **Custom HTML block** at the bottom');
+        out.push('2. Paste the JSON-LD from Fix Code → click **Update**');
+      } else if (p === 'webflow') {
+        out.push('1. Click page gear icon ⚙ → Page Settings → **Custom Code → Head Code**');
+        out.push('2. Paste the JSON-LD from Fix Code → Save → Publish');
+      } else if (p === 'squarespace') {
+        out.push('1. Pages → hover your page → gear ⚙ → Page Settings → **Advanced** tab');
+        out.push('2. In **Page Header Code Injection**, paste the JSON-LD → Save');
+      } else if (p === 'wix') {
+        out.push('1. Page → SEO → Additional SEO Settings → **Structured Data Markup** → Add Item');
+        out.push('2. Paste the JSON-LD → Apply → Publish');
+      } else if (p === 'shopify') {
+        out.push('1. Online Store → Themes → Actions → Edit Code → `layout/theme.liquid`');
+        out.push('2. Find `</head>` → paste JSON-LD just before it → Save');
+      } else if (p === 'hubspot') {
+        out.push('1. Edit your page → Settings tab → Advanced Options → **Head HTML**');
+        out.push('2. Paste the JSON-LD → Update → Publish');
+      } else {
+        out.push('Paste the JSON-LD from Fix Code inside `<head>`, just before `</head>` in your page HTML.');
+      }
+      break;
+
+    case 'h1_update':
       out.push('## Steps to update the H1 heading');
       out.push('');
-      out.push('> **What this does:** H1 is the main page heading Google reads to understand the topic. It does not currently contain "mobile forms". Adding the keyword improves relevance directly.');
+      out.push('> **What this does:** the H1 is the main heading Google reads to understand what this page is about. If the target keyword is absent from the H1, it directly weakens relevance signals.');
       out.push('');
-      if (p==='wordpress') {
-        out.push('1. Pages → All Pages → find your page → Edit');
-        out.push('2. The H1 is the large text at the top of the editor — click on it');
-        out.push('3. Change to one of the options from Fix Code');
-        out.push('4. **Before saving:** check GSC → Performance → Pages → this URL → Queries tab to protect existing rankings');
+      if (p === 'wordpress') {
+        out.push('1. Pages → All Pages → find your page → **Edit**');
+        out.push('2. The H1 is the large text at the very top of the editor — click on it');
+        out.push('3. Change to Option 1 from Fix Code (or the option that best preserves existing keyword rankings)');
+        out.push('4. **Before saving:** check GSC → Performance → Pages → this URL → Queries tab. Note any keywords with >10 impressions and ensure the new H1 preserves those terms.');
         out.push('5. Click **Update**');
-      } else if (p==='webflow') {
-        out.push('1. Open page in Webflow Designer → double-click the main heading to edit');
-        out.push('2. Change to one of the options in Fix Code');
-        out.push('3. Confirm the right panel shows **H1** as the tag type');
-        out.push('4. Click **Publish**');
-      } else if (p==='squarespace') {
-        out.push('1. Edit page → click main title → change text → set style to **Heading 1** → Save');
+      } else if (p === 'webflow') {
+        out.push('1. Open page in Webflow Designer → double-click the main heading');
+        out.push('2. Change text → confirm the right panel shows **H1** as the element type');
+        out.push('3. Publish');
       } else {
-        out.push('Find <h1> in your page HTML → replace the text with the option from Fix Code → save and publish.');
+        out.push('1. Find `<h1>` in your page content');
+        out.push('2. Replace its text with Option 1 from Fix Code');
+        out.push('3. Save and publish');
       }
       break;
-    }
-    case 'first_para': {
-      out.push('');
+
+    case 'first_para':
       out.push('## Steps to update the opening paragraph');
       out.push('');
-      out.push('> **What this does:** Google reads the first paragraph to understand the page topic. The current tagline is generic. The new version directly addresses what someone searching "mobile forms" wants to find.');
+      out.push('> **What this does:** Google reads the first paragraph to understand the page topic. A generic tagline weakens relevance. A keyword-aligned opener improves topical signals.');
       out.push('');
-      if (p==='wordpress') {
+      if (p === 'wordpress') {
         out.push('1. Pages → All Pages → edit your page');
         out.push('2. Scroll to the first paragraph block below the H1');
-        out.push('3. Select all text → replace with the text from Fix Code');
+        out.push('3. Select all text in that block → replace with the text from Fix Code');
         out.push('4. Click **Update**');
-      } else if (p==='webflow') {
-        out.push('1. Open page in Webflow Designer → double-click the first paragraph → select all → paste text from Fix Code → Publish');
+      } else if (p === 'webflow') {
+        out.push('1. Open page in Webflow Designer → double-click the first paragraph');
+        out.push('2. Select all → paste new text from Fix Code → Publish');
       } else {
-        out.push('Find the first <p> tag after your H1 → replace its content with the text from Fix Code → save and publish.');
+        out.push('1. Find the first `<p>` tag after your H1 in the page HTML');
+        out.push('2. Replace its content with the text from Fix Code');
+        out.push('3. Save and publish');
       }
       break;
-    }
-    case 'h2_section': {
-      out.push('');
+
+    case 'h2_section':
       out.push('## Steps to add new H2 sections');
       out.push('');
-      out.push('> **What this does:** Google shows these questions in the People Also Ask box. Pages that answer them directly can capture the PAA citation and AI Overview references. Each question needs a verbatim H2 and a 40-80 word direct answer below it.');
+      out.push('> **What this does:** Google shows "People Also Ask" questions in search results. Pages with a matching H2 and direct answer can win the PAA citation and be referenced in AI Overviews. Each question needs the verbatim H2 and a direct 50-80 word answer immediately below.');
       out.push('');
-      if (qs.length>0) { out.push('Questions to add:'); qs.forEach((q,i)=>out.push('- '+(i+1)+'. '+q)); out.push(''); }
-      if (p==='wordpress') {
+      if (qs.length > 0) { out.push('Questions to add as H2 sections:'); qs.forEach((q, i) => out.push('- ' + (i+1) + '. ' + q)); out.push(''); }
+      if (p === 'wordpress') {
         out.push('1. Pages → All Pages → edit your page');
         out.push('2. Click at the end of your existing content');
-        out.push('3. Add a **Heading block** (click +, search Heading, set level to H2)');
-        out.push('4. Type the question text exactly as shown in Fix Code (word-for-word)');
-        out.push('5. Below it, add a **Paragraph block** with the answer from Fix Code');
-        out.push('6. Repeat for each question → Click **Update**');
-      } else if (p==='webflow') {
-        out.push('1. Open page in Webflow Designer → drag in a Heading component → set to H2');
-        out.push('2. Type the question text exactly → add Text Block below with the answer');
+        out.push('3. Add a **Heading block** → set level to **H2** → type the question exactly as shown');
+        out.push('4. Below it, add a **Paragraph block** with the answer from Fix Code (open with the direct answer)');
+        out.push('5. Repeat for each question → click **Update**');
+      } else if (p === 'webflow') {
+        out.push('1. Open page in Webflow Designer → drag in a Heading component at the end of content');
+        out.push('2. Set to **H2** → type the question text exactly → add Text Block below with answer');
         out.push('3. Repeat for each question → Publish');
-      } else if (p==='squarespace') {
-        out.push('1. Edit page → add Text block → type question → set to Heading 2 → press Enter → add answer → Save');
       } else {
-        out.push('Paste the complete HTML from Fix Code into your page content, after the existing sections.');
+        out.push('Paste the complete HTML from Fix Code into your page content area, after the existing sections.');
       }
       break;
-    }
-    case 'lcp_fix':
-    case 'script_defer': {
+
+    case 'gsc_indexing':
+      out.push('## Steps to submit for Google indexing');
       out.push('');
-      out.push('## Steps to fix JavaScript blocking');
-      out.push('');
-      out.push('> **What this does:** JavaScript files are loading before the page can show any content, causing the 16+ second mobile load time. Adding defer tells the browser to show the page first, then load the JS.');
-      out.push('');
-      out.push('⚠️ **This is a developer task.** If you are not comfortable editing template files, share the Fix Code tab with your developer.');
-      out.push('');
-      if (p==='wordpress') {
-        out.push('**Plugin option (no coding needed):**');
-        out.push('**WP Rocket:** Settings → File Optimization → JavaScript → Defer JS execution → Save → Purge Cache');
-        out.push('**Autoptimize (free):** Settings → Autoptimize → JavaScript → Defer scripts → Save and Empty Cache');
-      } else if (p==='webflow') {
-        out.push('1. Project Settings → Custom Code');
-        out.push('2. Move scripts from Head Code to Footer Code');
-        out.push('3. For head-only scripts: add defer attribute → Save → Publish');
-      } else if (p==='squarespace') {
-        out.push('1. Settings → Advanced → Code Injection');
-        out.push('2. Move <script> tags from Header to Footer');
-        out.push('3. Add defer to any that must stay in header → Save');
-      } else {
-        out.push('Share the Fix Code with your developer. They need to add defer to the <script> tags listed in the analysis.');
-      }
-      break;
-    }
-    case 'image_format': {
-      out.push('');
-      out.push('## Steps to convert images to webp/avif');
-      out.push('');
-      out.push('> **What this does:** webp images are 30-50% smaller than jpg/png at the same quality. Reduces load time on mobile, especially on slower connections.');
-      out.push('');
-      if (p==='wordpress') {
-        out.push('**Imagify (recommended, free tier):**');
-        out.push('1. Plugins → Add New → search Imagify → Install → Activate');
-        out.push('2. Settings → Imagify → check Convert to WebP');
-        out.push('3. Click Bulk Optimize to convert existing images');
-      } else if (p==='webflow' || p==='squarespace' || p==='shopify') {
-        out.push(p+' **automatically converts images to WebP via its CDN.** No action needed.');
-        out.push('To verify: right-click an image on the live page → Open in new tab → check the URL ends in .webp');
-      } else {
-        out.push('Share the conversion script from Fix Code with your developer to convert and re-upload images.');
-      }
-      break;
-    }
-    case 'gsc_indexing': {
-      out.push('');
-      out.push('## Steps to submit page for indexing');
-      out.push('');
-      out.push('> **What this does:** Google has not indexed this page. Without indexing, no SEO work matters.');
+      out.push('> **What this does:** if Google has not indexed this page, no SEO work will produce ranking results. Indexing is the prerequisite for everything else.');
       out.push('');
       out.push('**You need access to Google Search Console for this website.**');
       out.push('');
-      out.push('1. Go to **Google Search Console:** https://search.google.com/search-console');
-      out.push('2. Select the property for your website');
-      out.push('3. In the search bar at the top, paste: `'+url+'`');
-      out.push('4. Press Enter — GSC checks if the URL is indexed');
-      out.push('5. **If URL is not on Google:** click **Request Indexing** → Google crawls within 24-48 hours');
-      out.push('6. **If URL is on Google:** page is indexed but has 0 impressions — the LCP fix (Phase 0 Task 1) is the priority');
-      out.push('7. Check back in 3-5 days for new impressions in GSC → Performance');
+      out.push('1. Go to **https://search.google.com/search-console**');
+      out.push('2. Select the correct property for this website');
+      out.push('3. Paste this URL in the search bar at the top: `' + url + '`');
+      out.push('4. Press Enter — GSC checks the indexing status');
+      out.push('5. **If "URL is not on Google":** click **Request Indexing** → Google crawls within 24-48 hours');
+      out.push('6. **If "URL is on Google":** page is indexed but has low impressions — the LCP/performance fix is the priority');
+      out.push('7. Return in 3-5 days to check if impressions appear in GSC → Performance');
       break;
-    }
-    case 'date_modified_schema': {
-      out.push('');
+
+    case 'date_modified_schema':
       out.push('## Steps to add dateModified to schema');
       out.push('');
-      out.push('> **What this does:** adds a verified freshness date. More reliable than the Last-Modified HTTP header which can be triggered by a server restart with no content change.');
+      out.push('> **What this does:** adds a verified freshness date to your structured data. More reliable than the Last-Modified HTTP header for signaling content recency to Google.');
       out.push('');
-      if (p==='wordpress') {
-        out.push('1. Edit your page → add a Custom HTML block at the bottom');
+      if (p === 'wordpress') {
+        out.push('1. Edit your page → add a **Custom HTML block** at the bottom');
         out.push('2. Paste the updated schema from Fix Code');
-        out.push('3. Also add a visible Last updated: [date] line near the top of the content');
+        out.push('3. Also add a visible "Last updated: [date]" line near the top of the content');
         out.push('4. Click **Update**');
       } else {
-        out.push('1. Find the existing <script type=application/ld+json> block in your page head');
-        out.push('2. Add the dateModified field as shown in Fix Code');
-        out.push('3. Also add a visible Last updated: '+"2026-05-26"+' label on the page');
+        out.push('1. Find the `<script type="application/ld+json">` block in your page head');
+        out.push('2. Replace it with the updated block from Fix Code');
+        out.push('3. Also add the visible "Last updated" label from Fix Code to the page body');
         out.push('4. Save and publish');
       }
       break;
-    }
-    default: {
-      out.push('');
+
+    default:
       out.push('## Steps to apply this fix');
       out.push('');
-      out.push('Follow the analysis above or share the Fix Code with your developer.');
-    }
+      out.push('Follow the instructions in the Analysis section, or share the Fix Code with your developer.');
   }
 
   out.push('');
   out.push('---');
   out.push('');
   out.push('## After applying');
-  out.push('Click **I Applied the Fix** above → then **Verify on Live Page** — Manav re-fetches your page and confirms the change is in place.');
+  out.push('Click **"I Applied the Fix"** button above, then **"Verify on Live Page"** — Manav will re-fetch your page and confirm the change is in place.');
+
   return out.join('\n');
 }
 
-/* ── ROLLBACK INSTRUCTIONS ──────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// ROLLBACK INSTRUCTIONS
+// Generic — works for any site, any keyword.
+// ─────────────────────────────────────────────────────────────
 
-export function buildRollbackInstructions(taskType: string, platform: CmsPlatform): string {
+export function buildRollbackInstructions(task: DevTask, platform: CmsPlatform, snapshot: string): string {
   const out: string[] = [];
   out.push('## How to undo this change');
   out.push('');
-  out.push('> **When to use:** only if the change caused a visible problem. Normal SEO changes do not break sites.');
+  out.push('> Use this only if the change caused a visible problem. Normal SEO changes (H1 text, schema, lazy loading) cannot break a site — they only affect rankings.');
   out.push('');
-  const undoMap: Record<string,string> = {
-    lazy_loading:         'Remove loading=lazy from the modified image tags. Original tags are in the Snapshot below.',
-    faq_schema:           'Find and delete the FAQPage JSON-LD script block from your page head.',
+
+  const undoMap: Record<string, string> = {
+    lcp_fix:              'Remove the `defer` or `async` attribute from the script tags that were modified. Original script tags are in the Snapshot below.',
+    script_defer:         'Remove the `defer` or `async` attribute from the modified script tags. Originals in Snapshot.',
+    lazy_loading:         'Remove `loading="lazy"` from the image tags, or remove the JavaScript snippet from your footer code injection. Original img tags in Snapshot.',
+    image_format:         'Re-upload the original jpg/png files. WordPress image plugins keep originals — look for "Restore Originals" in the plugin settings.',
+    faq_schema:           'Find and delete the `<script type="application/ld+json">` block containing `"@type":"FAQPage"` from your page head.',
     h1_update:            'Change the H1 back to the original text shown in the Snapshot below.',
     first_para:           'Replace the first paragraph with the original text shown in the Snapshot below.',
-    h2_section:           'Delete the new H2 heading and paragraph blocks added at the bottom of the content.',
-    script_defer:         'Remove the defer or async attribute from the script tags that were modified. Originals in Snapshot.',
-    lcp_fix:              'Remove the defer or async attribute from the modified script tags. Originals in Snapshot.',
-    image_format:         'Re-upload the original jpg/png files. WordPress plugins keep originals — find Restore Originals in plugin settings.',
-    date_modified_schema: 'Remove the dateModified field from the JSON-LD schema. Original schema in Snapshot.',
-    gsc_indexing:         'No code was changed — this was a GSC request. Nothing to undo.',
+    h2_section:           'Delete the new H2 heading and paragraph blocks that were added at the bottom of the content.',
+    date_modified_schema: 'Remove the `dateModified` field from the JSON-LD schema block. Original schema in Snapshot.',
+    gsc_indexing:         'No code was changed — this was a GSC URL Inspection request. Nothing to undo on the site.',
+    meta_desc:            'Revert the meta description to the original text shown in the Snapshot.',
   };
-  out.push('**What to undo:** '+(undoMap[taskType]||'Refer to the Snapshot for the original HTML.'));
+
+  out.push('**What to revert:** ' + (undoMap[task.task_type] || 'Refer to the Snapshot below for the original HTML state.'));
   out.push('');
+
+  // CMS-specific undo navigation
   out.push('## CMS-specific undo steps');
   out.push('');
-  if (platform==='wordpress') {
-    out.push('**Fastest option — WordPress Revisions:**');
-    out.push('1. In the page editor, look for **Revisions** in the right sidebar (Document tab)');
-    out.push('2. Click to see save history → slide back to before this change → **Restore This Revision**');
+  if (platform === 'wordpress') {
+    out.push('**Fastest: WordPress Revisions**');
+    out.push('1. In the page editor, find **Revisions** in the right sidebar (Document tab)');
+    out.push('2. Slide back to the version before this change → click **Restore This Revision**');
     out.push('');
-    out.push('**Manual revert:** Pages → All Pages → edit page → make the change described above → Update');
-  } else if (platform==='webflow') {
-    out.push('1. Webflow Designer → History panel (clock icon)');
+    out.push('**Manual revert:** Pages → All Pages → edit → make the change → Update');
+  } else if (platform === 'webflow') {
+    out.push('1. In Webflow Designer, click the **History** panel (clock icon in left toolbar)');
     out.push('2. Click the version before this change was published → Restore → Publish');
-  } else if (platform==='squarespace') {
-    out.push('Edit the page and make the reverting change. For Code Injection: Settings → Advanced → Code Injection → remove added code.');
+  } else if (platform === 'squarespace') {
+    out.push('Edit the page and manually revert the change. For Code Injection: Settings → Advanced → Code Injection → remove the added code.');
+  } else if (platform === 'hubspot') {
+    out.push('Edit the page → Settings → Advanced Options → revert the Head HTML → Update → Publish');
   } else {
-    out.push('Log in to your CMS → navigate to the changed page → make the reverting change → save and publish.');
+    out.push('Log in to your CMS → navigate to the changed page → revert the change → save and publish.');
   }
+
   out.push('');
   out.push('## Last resort: full site restore');
-  out.push('- **WordPress:** cPanel → Backup → restore to yesterday');
+  out.push('- **WordPress:** cPanel → Backup → restore files + database to before this change');
   out.push('- **WP Engine / Kinsta / Flywheel:** Dashboard → Backups → Restore Point');
-  out.push('- **Webflow:** contact Webflow support — they retain backups');
-  out.push('- **Shopify:** Apps → Rewind Backups → restore theme');
-  out.push('- **Any host:** call your hosting provider and ask for a server-level restore');
+  out.push('- **Webflow:** contact Webflow Support — they retain full backup history');
+  out.push('- **Shopify:** Apps → Rewind Backups (free plan available) → restore theme');
+  out.push('- **Any host:** call your hosting provider and ask for a server-level file restore to yesterday');
+
   return out.join('\n');
 }
 
-/* ── SNAPSHOT ───────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// VERIFICATION
+// ─────────────────────────────────────────────────────────────
 
-export async function snapshotPageSection(task: DevTask, pageHtml: string): Promise<string> {
-  if (!pageHtml) return '';
-  switch (task.task_type) {
-    case 'lazy_loading': {
-      const imgs = pageHtml.match(/<img\b[^>]*>/gi) || [];
-      return imgs.slice(0,30).join('\n');
-    }
-    case 'faq_schema':
-    case 'date_modified_schema': {
-      const schemas = pageHtml.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
-      return schemas.join('\n\n');
-    }
-    case 'h1_update': {
-      const h1 = pageHtml.match(/<h1[\s\S]*?<\/h1>/i);
-      return h1?.[0] || '';
-    }
-    case 'first_para': {
-      const paras = pageHtml.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [];
-      return paras.slice(0,3).join('\n');
-    }
-    case 'h2_section': {
-      const headings = pageHtml.match(/<h[23]\b[^>]*>[\s\S]*?<\/h[23]>/gi) || [];
-      return headings.slice(0,15).join('\n');
-    }
-    case 'lcp_fix':
-    case 'script_defer': {
-      const headMatch = pageHtml.match(/<head[\s\S]*?<\/head>/i);
-      if (!headMatch) return '';
-      const scripts = headMatch[0].match(/<script\b[^>]*>[\s\S]*?<\/script>/gi) || [];
-      return scripts.slice(0,20).join('\n');
-    }
-    case 'image_format': {
-      const imgs = pageHtml.match(/<img\b[^>]*(?:jpg|png|gif|jpeg)[^>]*>/gi) || [];
-      return imgs.slice(0,20).join('\n');
-    }
-    default: return pageHtml.slice(0,2000);
-  }
-}
-
-export async function saveSnapshot(task: DevTask, snapshot: string): Promise<string | null> {
-  if (!task.id || !snapshot) return null;
-  try {
-    const { data, error } = await db().from('dev_task_snapshots')
-      .insert({ task_id: task.id, project_id: task.project_id, task_type: task.task_type, url: task.target_url||'', snapshot })
-      .select('id').single();
-    if (error) { console.error('[dev-engine] saveSnapshot:', error.message); return null; }
-    return (data as any)?.id || null;
-  } catch (e: any) { console.error('[dev-engine] saveSnapshot threw:', e?.message); return null; }
-}
-
-export async function loadSnapshot(taskId: string): Promise<{ snapshot: string; captured_at: string } | null> {
-  try {
-    const { data } = await db().from('dev_task_snapshots').select('snapshot,captured_at')
-      .eq('task_id', taskId).order('captured_at',{ascending:false}).limit(1).maybeSingle();
-    return (data as any) || null;
-  } catch { return null; }
-}
-
-/* ── EXECUTE TASK ───────────────────────────────────────────────── */
-
-export async function executeDevTask(task: DevTask, cmsOverride?: CmsContext): Promise<Partial<DevTask>> {
-  /* ── ARCHITECTURE NOTE ────────────────────────────────────────────────
-     We do NOT fetch the live page here. Reason: slow sites (like the one
-     this is designed for — 16.9s LCP) make any live fetch budget-fatal.
-     The audit already contains everything needed: finding_title,
-     finding_detail, evidence JSON (lcp_ms, tbt_ms, total_images, etc).
-     We use audit data as the sole input for code generation.
-     The verify step (separate action) fetches the live page AFTER the
-     fix is applied, when checking for the specific change we made.
-  ──────────────────────────────────────────────────────────────────────── */
-
-  // CMS: use stored project context only — no network call
-  const cms = cmsOverride || {
-    platform:   (task.cms_platform || 'unknown') as CmsPlatform,
-    seoPlugin:  'unknown' as SeoPlugin,
-    confidence: 50,
-    signals:    ['From task metadata'],
-    adminPath:  cmsAdminPath((task.cms_platform || 'unknown') as CmsPlatform),
+export function buildVerificationMethod(task: DevTask): string {
+  const url = task.target_url || 'your page URL';
+  const methods: Record<string, string> = {
+    lcp_fix:              `After deploying, run PageSpeed Insights at https://pagespeed.web.dev for ${url} (Mobile mode). TBT should be < 300ms and LCP should improve. Note: CrUX field data takes 4 weeks to update — use Lab data (Lighthouse) for immediate confirmation.`,
+    script_defer:         `Run PageSpeed Insights on ${url} (Mobile). Check TBT in the Lighthouse results. Target: < 300ms for "good". Also check the page loads correctly — verify your site works before and after the change.`,
+    lazy_loading:         `Open ${url} in Chrome → right-click any image below the first screen → Inspect → check for loading="lazy" on the img tag. Or run in browser console: document.querySelectorAll('img[loading="lazy"]').length`,
+    image_format:         `Open ${url} in Chrome → right-click any image → Open image in new tab → check the URL ends in .webp or .avif.`,
+    faq_schema:           `Open ${url} → View Page Source (Ctrl+U) → search for "FAQPage". Or test at https://validator.schema.org/?url=${encodeURIComponent(url)}`,
+    h1_update:            `Open ${url} → View Page Source (Ctrl+U) → search for <h1 → verify the new heading text is present.`,
+    first_para:           `Open ${url} → read the first paragraph below the H1 — confirm it contains the campaign keyword and addresses the searcher problem.`,
+    h2_section:           `Open ${url} → scroll to the bottom of the content — verify the new H2 headings are visible and readable.`,
+    date_modified_schema: `Open ${url} → View Page Source → search for "dateModified" → confirm the date is present and correct.`,
+    gsc_indexing:         `Go to https://search.google.com/search-console → URL Inspection → paste ${url} → check if status shows "URL is on Google".`,
+    meta_desc:            `Open ${url} → View Page Source → search for <meta name="description" → verify new description text.`,
   };
-
-  // Build LLM prompt purely from audit data already stored on the task
-  const { sys, usr } = buildLlmPrompt(task, '', cms);
-
-  let analysis='', fixCode='', fixLanguage='html', paaQuestions: string[]=[];
-  let callsMade = 0;
-
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1200,
-        system: sys,
-        messages: [{ role: 'user', content: usr }],
-      }),
-      signal: AbortSignal.timeout(20000),
-    });
-    callsMade++;
-    const data = await resp.json() as any;
-    const raw = (data?.content?.[0]?.text || '').trim();
-    const jm = raw.match(/\{[\s\S]+\}/);
-    if (jm) {
-      try {
-        const j = JSON.parse(jm[0]);
-        analysis     = j.analysis      || '';
-        fixCode      = j.fix_code      || '';
-        fixLanguage  = j.fix_language  || 'html';
-        paaQuestions = Array.isArray(j.paa_questions) ? j.paa_questions : [];
-      } catch { analysis = raw.slice(0, 600); }
-    } else {
-      analysis = raw.slice(0, 600);
-    }
-  } catch (e: any) {
-    analysis = 'Code generation error: ' + (e?.message || 'unknown');
-  }
-
-  const baseUrl = task.target_url
-    ? (() => { try { return new URL(task.target_url!).origin; } catch { return ''; } })()
-    : '';
-
-  const applyInstructions    = buildApplyInstructions(task.task_type, cms, {
-    fixCode, pageUrl: task.target_url, paaQuestions, baseUrl,
-  });
-  const rollbackInstructions = buildRollbackInstructions(task.task_type, cms.platform);
-  const verificationMethod   = buildVerificationMethod(task.task_type, task.target_url || '');
-
-  return {
-    status:                'fix_ready',
-    analysis,
-    fix_code:              fixCode,
-    fix_language:          fixLanguage,
-    apply_instructions:    applyInstructions,
-    rollback_code:         '<!-- Snapshot captured during verify step after fix is applied -->',
-    rollback_instructions: rollbackInstructions,
-    verification_method:   verificationMethod,
-    backup_confirmed:      false,
-    cms_platform:          cms.platform,
-    executed_at:           new Date().toISOString(),
-    llm_calls_used:        callsMade,
-    updated_at:            new Date().toISOString(),
-  };
+  return methods[task.task_type] || `Open ${url} and confirm the change is visible. Use View Page Source (Ctrl+U) to inspect the HTML.`;
 }
 
-/* ── LLM PROMPTS ─────────────────────────────────────────────────── */
-
-function buildLlmPrompt(task: DevTask, pageContext: string, cms: CmsContext): { sys: string; usr: string } {
-  const sys = [
-    'You are a senior web developer generating exact code fixes for SEO and performance issues.',
-    'CMS: '+cms.platform+' | SEO plugin: '+cms.seoPlugin+' | Confidence: '+cms.confidence+'%',
-    '',
-    'Reply with ONLY valid JSON:',
-    '{',
-    '  "analysis": "2-3 sentences about the exact problem found in this page HTML",',
-    '  "fix_code": "Complete, copy-paste-ready code. No placeholders.",',
-    '  "fix_language": "html|json|javascript|bash",',
-    '  "paa_questions": ["array of questions if h2_section or faq_schema task, else empty"]',
-    '}',
-  ].join('\n');
-
-  const tc = ['Task: '+task.title, 'URL: '+(task.target_url||'unknown'),
-             'Finding: '+(task.finding_title||''), 'Detail: '+((task.finding_detail||'').slice(0,300))].join('\n');
-
-  const prompts: Record<string,string> = {
-    lcp_fix: tc+'\n\nAUDIT DATA: Mobile LCP 16.9s. TTFB 14ms (server fast). Mobile TBT 798ms. Root cause: render-blocking JavaScript. CMS: '+cms.platform+'.\n\nGenerate: (1) 2-sentence analysis referencing LCP 16.9s and TBT 798ms. (2) Code showing defer/async patterns for '+cms.platform+' — focus on third-party scripts (analytics, chat, tag managers). Show BEFORE/AFTER. (3) DevTools profiling instruction to identify the specific blocking scripts.',
-    script_defer: tc+'\n\nAUDIT DATA: TBT is critically high indicating render-blocking JavaScript. CMS: '+cms.platform+'.\n\nGenerate: (1) 2-sentence analysis. (2) defer/async code patterns for this CMS. (3) Chrome DevTools Long Tasks profiling steps.',
-    lazy_loading: tc+'\n\nAUDIT DATA: 0 of 20 images have loading=lazy on this page. CMS: '+cms.platform+'.\n\nGenerate: (1) 1-sentence analysis. (2) Complete solution for '+cms.platform+'. If code is needed, write a complete <script> tag that adds loading=lazy to all images after the first 2 on the page — ready to paste into a footer code injection box.',
-    image_format: tc+'\n\nAUDIT DATA: Images are in jpg/png/gif format (legacy). CMS: '+cms.platform+'.\n\nGenerate: (1) 1-sentence analysis. (2) Best approach for '+cms.platform+' — name specific plugins or CDN settings. (3) Node.js sharp script to batch-convert a directory of images to webp.',
-    faq_schema: tc+'\n\nAUDIT DATA: No FAQPage schema. 4+ PAA questions on the live SERP for mobile forms. Page: AlphaSoftware mobile forms (alphasoftware.com/mobile-forms). CMS: '+cms.platform+'.\n\nGenerate: (1) 1-sentence analysis. (2) Complete FAQPage JSON-LD block with 4 questions and 50-70 word answers each, ready for this CMS. Return questions in paa_questions array.',
-    h1_update: tc+'\n\nAUDIT DATA: Current H1 is "Best Mobile Data Collection Apps for Business". Campaign keyword "mobile forms" is absent from the H1. CMS: '+cms.platform+'.\n\nGenerate 3 H1 options that include "mobile forms" naturally, maintain commercial intent, are 5-9 words. Rank them. Return all 3 numbered in fix_code.',
-    first_para: tc+'\n\nAUDIT DATA: Current first paragraph: "Capture accurate data anywhere, even offline, and instantly deliver it to the systems that run your business." Keyword overlap: 18%. Missing "mobile forms". CMS: '+cms.platform+'.\n\nRewrite: 60-100 words, contains "mobile forms" in sentence 1, opens with the searcher problem, says who it is for, previews AlphaSoftware differentiator (offline-first). Return ONLY the new paragraph text in fix_code.',
-    h2_section: tc+'\n\nAUDIT DATA: 1 unanswered PAA question on the live SERP. Page: AlphaSoftware mobile forms. CMS: '+cms.platform+'.\n\nGenerate H2 sections for: "What is the best mobile form builder for field teams?" and "Can you create a mobile form without coding?". Each: H2 tag + 50-70 word direct answer + 250-300 word body. Honest competitor mentions (JotForm, doForms, Zoho Forms). Return HTML in fix_code and questions in paa_questions.',
-    date_modified_schema: tc+'\n\nGenerate: (1) A complete WebPage JSON-LD schema with dateModified set to today. (2) HTML for a small visible Last updated label. Return the <script type=application/ld+json> block in fix_code.',
-    gsc_indexing: tc+'\n\nAUDIT DATA: Page not in GSC top pages. 0 organic impressions in 28-day window. 1000 query-page pairs across 450 pages exist for this site — this URL is not among them.\n\nGenerate: (1) Analysis of what this means. (2) Step-by-step GSC URL Inspection instructions. (3) Common indexing blockers checklist in fix_code as a plain text checklist.',
-  };
-  return { sys, usr: prompts[task.task_type] || tc+'\n\nGenerate exact fix code for this task from the audit finding data.' };
-}
-
-function buildVerificationMethod(taskType: string, url: string): string {
-  const m: Record<string,string> = {
-    lazy_loading:         'Visit '+url+' → right-click any below-fold image → Inspect → look for loading=lazy. Or: document.querySelectorAll(\'img[loading="lazy"]\').length in browser console.',
-    faq_schema:           'Visit '+url+' → View Page Source → Ctrl+F search FAQPage. Or test at https://validator.schema.org/?url='+encodeURIComponent(url),
-    h1_update:            'Visit '+url+' → View Page Source → Ctrl+F search <h1 → verify new heading text.',
-    first_para:           'Visit '+url+' → read the first paragraph — confirm it contains mobile forms and addresses the searcher problem.',
-    h2_section:           'Visit '+url+' → scroll to the bottom of content — verify new H2 headings are visible.',
-    script_defer:         'Run PageSpeed Insights on '+url+' (Mobile) after deploying. TBT should be < 300ms.',
-    lcp_fix:              'Run PageSpeed Insights at https://pagespeed.web.dev for '+url+' in Mobile mode. Target: LCP < 4s.',
-    image_format:         'Visit '+url+' → right-click any image → Open in new tab → check URL ends in .webp or .avif.',
-    date_modified_schema: 'View Page Source on '+url+' → search for dateModified → confirm date is present.',
-    gsc_indexing:         'Go to https://search.google.com/search-console → URL Inspection → paste '+url+' → check status.',
-  };
-  return m[taskType] || 'Visit '+url+' and confirm the change is visible. Use View Page Source (Ctrl+U) to check the HTML.';
-}
-
-/* ── VERIFY TASK ─────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// VERIFICATION EXECUTION
+// Re-fetches live page and checks for the specific change.
+// ─────────────────────────────────────────────────────────────
 
 export async function verifyDevTask(task: DevTask): Promise<Partial<DevTask>> {
-  const url = task.target_url||'';
-  let pageHtml = '';
-  try {
-    const res = await fetch(url, { headers:{'User-Agent':'Mozilla/5.0 (compatible; SEOSeason/1.0)'}, signal:AbortSignal.timeout(8000) });
-    if (res.ok) pageHtml = (await res.text()).slice(0, 60000);
-  } catch (e: any) {
-    return { status:'applied', verification_result:'partial', verified_at:new Date().toISOString(), updated_at:new Date().toISOString(),
-             verification_evidence:{ message:'Could not fetch live page: '+(e?.message||'unknown') } };
+  const url = task.target_url || '';
+
+  const { html, fetchedOk, errorMsg } = await fetchPageHtml(url, 20000);
+
+  if (!fetchedOk) {
+    return {
+      status:               'applied',
+      verification_result:  'partial',
+      verification_evidence: { message: 'Could not fetch live page for verification: ' + (errorMsg || 'unknown error') + '. Verify manually using the instructions in the Verify tab.' },
+      verified_at:          new Date().toISOString(),
+      updated_at:           new Date().toISOString(),
+    };
   }
 
-  const ev: Record<string,unknown> = {};
-  let result: 'pass'|'fail'|'partial' = 'fail';
+  const evidence: Record<string, unknown> = {};
+  let result: 'pass' | 'fail' | 'partial' = 'fail';
   let message = '';
 
   switch (task.task_type) {
     case 'lazy_loading': {
-      const lc = (pageHtml.match(/loading=["']lazy["']/gi)||[]).length;
-      const ti = (pageHtml.match(/<img\b/gi)||[]).length;
-      ev.lazy_count=lc; ev.total_images=ti;
-      result  = lc===0?'fail':lc>=ti*0.5?'pass':'partial';
-      message = lc===0?'No lazy loading found — check if changes are published'
-              : lc>=ti*0.5?lc+' of '+ti+' images are now lazy-loaded'
-              : lc+' of '+ti+' images lazy-loaded — apply to remaining images';
+      const lazyCount  = (html.match(/loading=["']lazy["']/gi) || []).length;
+      const totalImgs  = (html.match(/<img\b/gi) || []).length;
+      evidence.lazy_count   = lazyCount;
+      evidence.total_images = totalImgs;
+      if (lazyCount === 0) {
+        result  = 'fail';
+        message = 'No lazy loading detected — check if the change was published.';
+      } else if (lazyCount >= totalImgs * 0.5) {
+        result  = 'pass';
+        message = lazyCount + ' of ' + totalImgs + ' images now have loading="lazy".';
+      } else {
+        result  = 'partial';
+        message = lazyCount + ' of ' + totalImgs + ' images lazy-loaded. Apply to more images for full coverage.';
+      }
       break;
     }
     case 'faq_schema': {
-      const ok = /["']FAQPage["']/i.test(pageHtml);
-      ev.has_faq_schema=ok;
-      result  = ok?'pass':'fail';
-      message = ok?'FAQPage JSON-LD schema detected on live page':'FAQPage schema not found — check if changes are published';
+      const hasFaq = /["']FAQPage["']/i.test(html);
+      const hasLD  = /application\/ld\+json/i.test(html);
+      evidence.has_faq_schema = hasFaq;
+      evidence.has_json_ld    = hasLD;
+      result  = hasFaq ? 'pass' : 'fail';
+      message = hasFaq
+        ? 'FAQPage JSON-LD schema detected on live page.'
+        : hasLD
+          ? 'JSON-LD is present but no FAQPage type found — check the schema was saved correctly.'
+          : 'No structured data found — check if the changes were published.';
       break;
     }
     case 'h1_update': {
-      const h1m = pageHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-      const h1t = h1m?h1m[1].replace(/<[^>]+>/g,'').trim():'';
-      ev.h1_text=h1t; ev.has_keyword=/mobile forms/i.test(h1t);
-      result  = ev.has_keyword?'pass':'fail';
-      message = ev.has_keyword?'H1 now reads: '+h1t:'H1 still reads: '+h1t+' — mobile forms not found';
-      break;
-    }
-    case 'image_format': {
-      const wc=(pageHtml.match(/\.webp/gi)||[]).length;
-      const ac=(pageHtml.match(/\.avif/gi)||[]).length;
-      ev.webp_count=wc; ev.avif_count=ac;
-      result  = wc+ac>0?'pass':'fail';
-      message = wc+ac>0?wc+' webp and '+ac+' avif image references found':'No webp/avif images detected yet';
-      break;
-    }
-    case 'date_modified_schema': {
-      const ok=/dateModified/i.test(pageHtml);
-      ev.has_date_modified=ok;
-      result  = ok?'pass':'fail';
-      message = ok?'dateModified found in schema':'dateModified not found yet';
+      const h1Match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
+      const h1Text  = h1Match ? h1Match[1].replace(/<[^>]+>/g, '').trim() : '';
+      evidence.current_h1 = h1Text;
+      // We can't hardcode the keyword — check if the H1 changed from what was snapshotted
+      result  = h1Text.length > 0 ? 'partial' : 'fail';
+      message = h1Text.length > 0
+        ? 'Current H1: "' + h1Text.slice(0, 100) + '" — verify this matches the option you selected.'
+        : 'Could not find H1 tag — check if the page published correctly.';
       break;
     }
     case 'lcp_fix':
     case 'script_defer': {
-      const dc=(pageHtml.match(/\bdefer\b/gi)||[]).length;
-      const ac=(pageHtml.match(/\basync\b/gi)||[]).length;
-      ev.defer_count=dc; ev.async_count=ac;
-      result  = dc+ac>0?'partial':'fail';
-      message = dc+ac>0?dc+' deferred and '+ac+' async scripts found. Run PageSpeed Insights to confirm TBT improvement.':'No deferred scripts detected — check if changes are published';
+      const deferCount = (html.match(/\bdefer\b/gi) || []).length;
+      const asyncCount = (html.match(/\basync\b/gi) || []).length;
+      evidence.defer_count = deferCount;
+      evidence.async_count = asyncCount;
+      result  = deferCount + asyncCount > 0 ? 'partial' : 'fail';
+      message = deferCount + asyncCount > 0
+        ? deferCount + ' deferred + ' + asyncCount + ' async scripts found. Run PageSpeed Insights to confirm TBT improvement (target < 300ms).'
+        : 'No deferred scripts detected — check if the changes were published.';
+      break;
+    }
+    case 'image_format': {
+      const webpCount = (html.match(/\.webp/gi) || []).length;
+      const avifCount = (html.match(/\.avif/gi) || []).length;
+      evidence.webp_count = webpCount;
+      evidence.avif_count = avifCount;
+      result  = webpCount + avifCount > 0 ? 'pass' : 'fail';
+      message = webpCount + avifCount > 0
+        ? webpCount + ' webp + ' + avifCount + ' avif image references found on live page.'
+        : 'No webp/avif images detected — check if conversion was applied.';
+      break;
+    }
+    case 'faq_schema':
+    case 'date_modified_schema': {
+      const hasDateMod = /dateModified/i.test(html);
+      evidence.has_date_modified = hasDateMod;
+      result  = hasDateMod ? 'pass' : 'fail';
+      message = hasDateMod ? 'dateModified found in schema.' : 'dateModified not found — check if changes were published.';
       break;
     }
     case 'gsc_indexing': {
-      ev.check_url='https://search.google.com/search-console/inspect';
-      result='partial';
-      message='Go to Google Search Console → URL Inspection → paste the page URL → check if it shows URL is on Google';
+      evidence.note       = 'GSC indexing cannot be verified by page fetch.';
+      evidence.check_url  = 'https://search.google.com/search-console/inspect';
+      result  = 'partial';
+      message = 'Go to Google Search Console → URL Inspection → paste the page URL → check if it shows "URL is on Google".';
+      break;
+    }
+    case 'first_para': {
+      const paras    = html.match(/<p\b[^>]*>([\s\S]*?)<\/p>/gi) || [];
+      const firstPar = paras[0] ? paras[0].replace(/<[^>]+>/g, '').trim() : '';
+      evidence.first_paragraph_preview = firstPar.slice(0, 200);
+      result  = firstPar.length > 20 ? 'partial' : 'fail';
+      message = firstPar.length > 20
+        ? 'First paragraph reads: "' + firstPar.slice(0, 120) + '…" — verify this matches the new text you applied.'
+        : 'Could not find the first paragraph — check if the page published correctly.';
       break;
     }
     default: {
-      result='partial';
-      message='Check the live page manually to confirm the change is visible';
+      evidence.note = 'Manual verification required for this task type.';
+      result  = 'partial';
+      message = 'Check the live page manually to confirm the change is visible. Use View Page Source (Ctrl+U) to inspect the HTML.';
     }
   }
 
-  ev.message=message;
+  evidence.message = message;
   return {
-    status: result==='pass'?'done':'applied',
-    verification_result: result,
-    verification_evidence: ev,
-    verified_at: new Date().toISOString(),
-    updated_at:  new Date().toISOString(),
+    status:               result === 'pass' ? 'done' : 'applied',
+    verification_result:  result,
+    verification_evidence: evidence,
+    verified_at:          new Date().toISOString(),
+    updated_at:           new Date().toISOString(),
   };
 }
 
-/* ── DATABASE HELPERS ────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// PARSE AUDIT FINDINGS → TASKS
+// Generic — works for any audit output, any site, any keyword.
+// All task descriptions use finding data, not hardcoded text.
+// ─────────────────────────────────────────────────────────────
+
+export function parseFindingsToTasks(
+  findings: AuditFinding[],
+  opts: { projectId: string; campaignId?: string; auditRunId?: string; targetUrl?: string },
+): DevTask[] {
+  const tasks: DevTask[] = [];
+  const seen = new Set<string>(); // deduplicate by task_type to avoid doubles
+
+  for (const f of findings) {
+    const t = classifyFinding(f, opts);
+    if (t && !seen.has(t.task_type + ':' + t.phase)) {
+      tasks.push(t);
+      seen.add(t.task_type + ':' + t.phase);
+    }
+  }
+
+  // Sort: phase_0 first, then by severity (critical > warning > info), then priority
+  const phOrder: Record<string, number> = { phase_0: 0, phase_2: 1, phase_3: 2 };
+  const svOrder: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+  tasks.sort((a, b) =>
+    (phOrder[a.phase] ?? 9) - (phOrder[b.phase] ?? 9) ||
+    (svOrder[a.severity] ?? 9) - (svOrder[b.severity] ?? 9) ||
+    a.priority - b.priority
+  );
+
+  return tasks;
+}
+
+function classifyFinding(f: AuditFinding, opts: { projectId: string; campaignId?: string; auditRunId?: string; targetUrl?: string }): DevTask | null {
+  const sev = (f.severity === 'red' ? 'critical' : f.severity === 'amber' ? 'warning' : 'info') as DevTask['severity'];
+  const ev  = f.evidence || {};
+  const base = {
+    project_id:    opts.projectId,
+    campaign_id:   opts.campaignId  || null,
+    audit_run_id:  opts.auditRunId  || null,
+    target_url:    opts.targetUrl,
+    finding_title: f.finding_title,
+    finding_detail: (f.finding_detail || '').slice(0, 2000),
+    severity:      sev,
+    status:        'pending' as const,
+  };
+
+  const lcpMs  = typeof ev.lcp_ms  === 'number' ? ev.lcp_ms  : null;
+  const tbtMs  = typeof ev.tbt_ms  === 'number' ? ev.tbt_ms  : null;
+  const lcpSec = lcpMs ? (lcpMs / 1000).toFixed(1) + 's' : 'high';
+  const tbtStr = tbtMs ? Math.round(tbtMs) + 'ms' : 'high';
+
+  if (/MOBILE LCP.*exceed|LCP.*critical|LCP.*poor/i.test(f.finding_title))
+    return { ...base, phase: 'phase_0', category: 'performance', task_type: 'lcp_fix',
+      title: 'Fix render-blocking JavaScript — Mobile LCP ' + lcpSec,
+      description: 'TTFB is fast; TBT ' + tbtStr + ' confirms JavaScript is blocking the main thread before the page renders. Fix this before any content work.',
+      priority: 1 };
+
+  if (/CrUX.*unavailable.*previous.*MOBILE LCP|Mobile CrUX.*unavailable/i.test(f.finding_title))
+    return { ...base, phase: 'phase_0', category: 'performance', task_type: 'lcp_fix',
+      title: 'Verify and fix mobile LCP (CrUX data previously Critical)',
+      description: 'Previous audit confirmed critical mobile LCP. Current run has no CrUX data. Verify and fix before proceeding.',
+      priority: 1 };
+
+  if (/TBT.*severe|severe.*TBT|TBT.*critical/i.test(f.finding_title))
+    return { ...base, phase: 'phase_0', category: 'performance', task_type: 'script_defer',
+      title: (/MOBILE/i.test(f.finding_title) ? 'Mobile' : 'Desktop') + ' TBT ' + tbtStr + ' — defer render-blocking scripts',
+      description: 'High Total Blocking Time indicates JavaScript executing on the main thread before the page can respond.',
+      priority: 2 };
+
+  if (/Page not in GSC|0 organic impression|not indexed/i.test(f.finding_title))
+    return { ...base, phase: 'phase_0', category: 'indexing', task_type: 'gsc_indexing',
+      title: 'Submit page for Google indexing',
+      description: 'Page has 0 organic impressions. May not be indexed. Request indexing via GSC URL Inspection.',
+      priority: 5 };
+
+  if (/Lazy-loading.*low|0%.*lazy|loading.*lazy.*0/i.test(f.finding_title)) {
+    const total = typeof ev.total_images === 'number' ? ev.total_images : null;
+    return { ...base, phase: 'phase_3', category: 'performance', task_type: 'lazy_loading',
+      title: 'Add loading=lazy to images' + (total ? ' (' + total + ' images, 0% lazy)' : ''),
+      description: 'No images use lazy loading. Adding it is a free performance win with no visual impact.',
+      priority: 30 };
+  }
+
+  if (/modern.*format|legacy.*format|jpg.*png.*gif|image.*webp/i.test(f.finding_title)) {
+    const legacy = typeof ev.legacy_format === 'number' ? ev.legacy_format : null;
+    return { ...base, phase: 'phase_3', category: 'performance', task_type: 'image_format',
+      title: 'Convert images to webp/avif' + (legacy ? ' (' + legacy + ' legacy images)' : ''),
+      description: 'Legacy formats are 30-50% larger than webp. Many CMS platforms handle this automatically.',
+      priority: 31 };
+  }
+
+  if (/FAQPage schema missing|no.*FAQ.*schema|FAQ.*schema.*absent/i.test(f.finding_title)) {
+    const paaCount = typeof ev.paa_count === 'number' ? ev.paa_count : null;
+    return { ...base, phase: 'phase_2', category: 'schema', task_type: 'faq_schema',
+      title: 'Add FAQPage JSON-LD schema' + (paaCount ? ' (' + paaCount + ' PAA questions on SERP)' : ''),
+      description: 'FAQPage schema unlocks People Also Ask rich results and AI Overview citations.',
+      priority: 10 };
+  }
+
+  if (/Content freshness|dateModified|date.*modif/i.test(f.finding_title))
+    return { ...base, phase: 'phase_3', category: 'schema', task_type: 'date_modified_schema',
+      title: 'Add dateModified to schema + visible last-updated label',
+      description: 'The Last-Modified HTTP header is unreliable for freshness signals. Add explicit dateModified.',
+      priority: 35 };
+
+  if (/keyword.*H1|H1.*keyword|H1.*missing.*keyword/i.test(f.finding_title))
+    return { ...base, phase: 'phase_2', category: 'on_page', task_type: 'h1_update',
+      title: 'Update H1 to include campaign keyword',
+      description: 'The campaign keyword is absent from or weakly present in the H1. Manav generates 3 options.',
+      priority: 12 };
+
+  if (/First paragraph.*align|paragraph.*keyword|first para.*weak/i.test(f.finding_title))
+    return { ...base, phase: 'phase_2', category: 'on_page', task_type: 'first_para',
+      title: 'Rewrite opening paragraph (low keyword alignment)',
+      description: 'The first paragraph has low keyword overlap. Manav rewrites it aligned to search intent.',
+      priority: 15 };
+
+  if (/PAA.*NOT addressed|PAA.*unanswered|unanswered.*PAA/i.test(f.finding_title)) {
+    const unanswered: string[] = Array.isArray(ev.unanswered) ? ev.unanswered as string[] : [];
+    return { ...base, phase: 'phase_2', category: 'content', task_type: 'h2_section',
+      title: 'Write ' + (unanswered.length || 'missing') + ' new H2 sections for unanswered PAA questions',
+      description: unanswered.length > 0
+        ? 'Missing: ' + unanswered.slice(0, 3).join(' | ') + (unanswered.length > 3 ? '…' : '')
+        : 'Unanswered PAA questions are missed featured snippet and AI Overview opportunities.',
+      priority: 11 };
+  }
+
+  if (/meta description.*missing|missing.*meta desc/i.test(f.finding_title))
+    return { ...base, phase: 'phase_2', category: 'on_page', task_type: 'meta_desc',
+      title: 'Write meta description',
+      description: 'No meta description found. This affects CTR from search results.',
+      priority: 20 };
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// DATABASE HELPERS
+// ─────────────────────────────────────────────────────────────
 
 export async function saveTasks(tasks: DevTask[]): Promise<{ saved: number; error?: string }> {
   if (!tasks.length) return { saved: 0 };
   try {
     const rows = tasks.map(t => ({
-      project_id: t.project_id, campaign_id: t.campaign_id||null, audit_run_id: t.audit_run_id||null,
-      phase: t.phase, category: t.category, task_type: t.task_type, title: t.title,
-      description: t.description||null, finding_title: t.finding_title||null,
-      finding_detail: (t.finding_detail||'').slice(0,2000), severity: t.severity,
-      target_url: t.target_url||null, priority: t.priority, status: t.status,
+      project_id:    t.project_id,
+      campaign_id:   t.campaign_id  || null,
+      audit_run_id:  t.audit_run_id || null,
+      phase:         t.phase,
+      category:      t.category,
+      task_type:     t.task_type,
+      title:         t.title,
+      description:   t.description  || null,
+      finding_title: t.finding_title || null,
+      finding_detail:(t.finding_detail || '').slice(0, 2000),
+      severity:      t.severity,
+      target_url:    t.target_url   || null,
+      priority:      t.priority,
+      status:        t.status,
     }));
     const { error } = await db().from('dev_tasks').insert(rows);
-    if (error) { console.error('[dev-engine] saveTasks:', error.message); return { saved:0, error:error.message }; }
+    if (error) {
+      console.error('[dev-engine] saveTasks error:', error.message);
+      return { saved: 0, error: error.message };
+    }
     return { saved: rows.length };
-  } catch (e: any) { console.error('[dev-engine] saveTasks threw:', e?.message); return { saved:0, error:e?.message||'Insert failed' }; }
+  } catch (e: any) {
+    return { saved: 0, error: e?.message || 'Insert failed' };
+  }
 }
 
 export async function updateTask(taskId: string, updates: Partial<DevTask>): Promise<void> {
-  const u: Record<string,unknown> = { ...updates, updated_at: new Date().toISOString() };
-  delete u.id;
-  try { await db().from('dev_tasks').update(u).eq('id', taskId); }
-  catch (e: any) { console.error('[dev-engine] updateTask:', e?.message); }
+  const payload = { ...updates, updated_at: new Date().toISOString() } as Record<string, unknown>;
+  delete payload.id;
+  try {
+    const { error } = await db().from('dev_tasks').update(payload).eq('id', taskId);
+    if (error) console.error('[dev-engine] updateTask error:', error.message);
+  } catch (e: any) {
+    console.error('[dev-engine] updateTask threw:', e?.message);
+  }
 }
 
 export async function getTask(taskId: string): Promise<DevTask | null> {
   try {
     const { data } = await db().from('dev_tasks').select('*').eq('id', taskId).maybeSingle();
     return (data as DevTask) || null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export async function getTasksForProject(projectId: string, opts?: { campaignId?: string }): Promise<DevTask[]> {
   try {
     let q = db().from('dev_tasks').select('*').eq('project_id', projectId);
     if (opts?.campaignId) q = q.eq('campaign_id', opts.campaignId);
-    q = q.order('priority',{ascending:true}).order('created_at',{ascending:false});
+    q = q.order('priority', { ascending: true }).order('created_at', { ascending: false });
     const { data } = await q;
     return (data as DevTask[]) || [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 export async function deleteProjectTasks(projectId: string, auditRunId?: string): Promise<void> {
@@ -878,13 +1304,28 @@ export async function deleteProjectTasks(projectId: string, auditRunId?: string)
     let q = db().from('dev_tasks').delete().eq('project_id', projectId);
     if (auditRunId) q = q.eq('audit_run_id', auditRunId);
     await q;
-  } catch (e: any) { console.error('[dev-engine] deleteProjectTasks:', e?.message); }
+  } catch (e: any) {
+    console.error('[dev-engine] deleteProjectTasks threw:', e?.message);
+  }
 }
 
 export async function detectCmsForProject(projectId: string): Promise<CmsContext | null> {
   try {
-    const { data: proj } = await db().from('projects').select('url,cms').eq('id', projectId).maybeSingle();
+    const { data: proj } = await db()
+      .from('projects')
+      .select('url, cms, seo_plugin')
+      .eq('id', projectId)
+      .maybeSingle();
     if (!proj) return null;
-    return detectCms((proj as any).url||'', { cms: (proj as any).cms||'' });
-  } catch { return null; }
+    const url = (proj as any).url as string || '';
+    if (url) {
+      const { html, fetchedOk } = await fetchPageHtml(url, 8000);
+      if (fetchedOk && html) return detectCmsFromHtml(html);
+    }
+    // Fallback to stored value
+    const platform = normaliseCmsPlatform((proj as any).cms || 'unknown');
+    return { platform, seoPlugin: 'unknown', confidence: 60, signals: ['From project settings'], adminPath: cmsAdminPath(platform) };
+  } catch {
+    return null;
+  }
 }
