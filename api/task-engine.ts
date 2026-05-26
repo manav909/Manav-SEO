@@ -3114,16 +3114,43 @@ HTML: ${html.slice(0,2000)}`}]})});
       const { data: runs, error } = await q;
       if (error) return ok(res, { success: false, error: error.message });
 
-      let totalInserted = 0, totalSkipped = 0, processed = 0;
+      /* Cache campaign lookups to avoid N+1 queries */
+      const campaignCache: Record<string, string | null> = {};
+      const resolveCampaignId = async (projectId: string, keyword: string | null): Promise<string | null> => {
+        if (!keyword) return null;
+        const key = `${projectId}::${keyword.toLowerCase().trim()}`;
+        if (key in campaignCache) return campaignCache[key];
+        const { data: camp } = await db().from('seo_campaigns')
+          .select('id').eq('project_id', projectId)
+          .ilike('keyword', keyword.trim()).maybeSingle();
+        campaignCache[key] = (camp as any)?.id || null;
+        return campaignCache[key];
+      };
+
+      let totalInserted = 0, totalSkipped = 0, totalUpdated = 0, processed = 0;
       for (const run of (runs || []) as any[]) {
         const arts = Array.isArray(run.final_artifacts) ? run.final_artifacts : [];
         if (!arts.length || !run.project_id) continue;
+
+        /* Resolve campaign_id if missing on the run row */
+        let campaignId = run.campaign_id || null;
+        const keyword  = run.scope?.keyword || null;
+        if (!campaignId && keyword) {
+          campaignId = await resolveCampaignId(run.project_id, keyword);
+          /* Stamp it on the run row so future finalizeRun calls work */
+          if (campaignId) {
+            await db().from('season_pipeline_runs')
+              .update({ campaign_id: campaignId }).eq('id', run.id);
+          }
+        }
+
+        /* Insert artifacts (idempotent — skips existing rows) */
         const r = await persistPipelineRunArtifacts({
           runId:         run.id,
           projectId:     run.project_id,
-          campaignId:    run.campaign_id || null,
-          panelId:       run.panel_id    || null,
-          keyword:       run.scope?.keyword || null,
+          campaignId,
+          panelId:       run.panel_id || null,
+          keyword,
           targetUrl:     run.scope?.target_url || null,
           pipelineType:  run.pipeline_type || 'rank_for_keyword',
           artifacts:     arts,
@@ -3133,9 +3160,19 @@ HTML: ${html.slice(0,2000)}`}]})});
         });
         totalInserted += r.inserted;
         totalSkipped  += r.skipped;
+
+        /* UPDATE existing artifact rows that have null campaign_id for this run */
+        if (campaignId) {
+          await db().from('artifacts')
+            .update({ campaign_id: campaignId })
+            .eq('source_kind', 'pipeline_run')
+            .eq('source_id', run.id)
+            .is('campaign_id', null);
+          totalUpdated++;
+        }
         processed++;
       }
-      return ok(res, { success: true, runs_processed: processed, artifacts_inserted: totalInserted, artifacts_skipped: totalSkipped });
+      return ok(res, { success: true, runs_processed: processed, artifacts_inserted: totalInserted, artifacts_skipped: totalSkipped, campaign_id_stamped: totalUpdated });
     } catch(e:any) { return ok(res, { success:false, error: e.message }); }
   }
 
