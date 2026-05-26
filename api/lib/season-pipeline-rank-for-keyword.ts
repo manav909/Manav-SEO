@@ -910,6 +910,9 @@ const stepStrategyPlan = {
   label: 'Build the ranking strategy',
   description: 'The play we\'ll run, synthesized from research + GSC + competitor analysis',
   artifact_kind: 'plan',
+  consumes_audit: true,  /* Phase 17.6 — strategy must know about foundational blockers
+                            before proposing a timeline. An 18s LCP or an indexability
+                            blocker makes the entire strategy sequence wrong without Phase 0. */
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const keyword = ctx.scope.keyword as string;
     const research    = ctx.prior.keyword_research    || {};
@@ -929,7 +932,21 @@ const stepStrategyPlan = {
     if (Object.keys(gsc).length === 0)         missingUpstream.push('gsc_context');
     if (Object.keys(competitors).length === 0) missingUpstream.push('competitor_snapshot');
 
-    const sys = `You are S.E.A.S.O.N. building an SEO ranking strategy. You have keyword research, the project's GSC data, and a competitor snapshot. Synthesize a tight, actionable plan. Reply with ONLY valid JSON:
+    /* Phase 17.6 — Extract audit blockers for strategy sequencing.
+       The strategy LLM must know about Critical (red) findings BEFORE
+       proposing phases and timelines, because:
+       1. A foundational technical issue (LCP, indexability) means Phase 0
+          must precede all content work — content changes are wasted until
+          the blocker is resolved.
+       2. Without this injection the strategy produces a timeline that
+          assumes a working technical foundation, which can mislead the
+          team into doing content work in the wrong order.
+       The LLM is told: if a foundational blocker exists, prepend a Phase 0
+       to the phases array covering the fix, with an honest timeline estimate.
+       Non-foundational amber findings are surfaced as risks, not blockers. */
+    const auditStratBlock = buildAuditBlockForStrategy(ctx.audit_findings);
+
+    const sys = `You are S.E.A.S.O.N. building an SEO ranking strategy. You have keyword research, the project's GSC data, a competitor snapshot, and — critically — findings from a live technical SEO audit of the target page. Synthesize a tight, actionable plan. Reply with ONLY valid JSON:
 {
   "strategy_name": "short evocative name",
   "horizon_weeks": 12,
@@ -937,6 +954,7 @@ const stepStrategyPlan = {
   "target_url_suggestion": "/proposed-slug or 'identify existing page first'",
   "approach": "1-2 sentence summary of the play",
   "phases": [
+    { "phase": "phase_0_technical_fix", "duration_days": 7, "deliverables": ["ONLY include if FOUNDATIONAL BLOCKER exists — see audit data. Remove this phase entirely if no red foundational finding."] },
     { "phase": "research", "duration_days": 3, "deliverables": ["..."] },
     { "phase": "content", "duration_days": 7, "deliverables": ["..."] },
     { "phase": "publish", "duration_days": 1, "deliverables": ["..."] },
@@ -948,7 +966,15 @@ const stepStrategyPlan = {
     { "risk": "...", "mitigation": "..." }
   ]
 }
-Be honest about expected impact — not all keywords are winnable.`;
+
+CRITICAL SEQUENCING RULE: If the audit data below contains a FOUNDATIONAL BLOCKER (a red-severity technical finding tagged as foundational — e.g. mobile LCP > 8s, page not indexable), you MUST:
+1. Include a phase named "phase_0_technical_fix" as the FIRST phase, BEFORE research/content/publish
+2. State the specific blocker in its deliverables (e.g. "Fix render-blocking JS — TBT 829ms, mobile LCP 18.26s")
+3. Set horizon_weeks to account for the Phase 0 duration (typically +1-2 weeks)
+4. State in approach that content phases depend on Phase 0 completion
+5. If no foundational blocker exists, omit phase_0_technical_fix entirely
+
+Be honest about expected impact — not all keywords are winnable. If a foundational blocker exists, expected_impact must note that traffic recovery is contingent on the technical fix.`;
     const usr = `Synthesize a ranking strategy for "${keyword}".
 
 KEYWORD RESEARCH:
@@ -958,7 +984,7 @@ CURRENT GSC POSITION:
 ${JSON.stringify(gsc, null, 2)}
 
 COMPETITOR SNAPSHOT:
-${JSON.stringify(competitors, null, 2)}${ga4Block ? '\n' + ga4Block : ''}`;
+${JSON.stringify(competitors, null, 2)}${ga4Block ? '\n' + ga4Block : ''}${auditStratBlock ? '\n\n' + auditStratBlock : ''}`;
 
     /* First attempt — generous token budget */
     let r = await callLlmJson({ systemPrompt: sys, userMessage: usr, maxTokens: 3500 });
@@ -1013,9 +1039,13 @@ CRITICAL: Your previous response was not valid JSON. Reply with ONLY the JSON ob
 };
 
 function renderStrategyArtifact(keyword: string, data: any): string {
-  const phases = (data.phases || []).map((p: any) =>
-    `### ${p.phase} (${p.duration_days}d)\n${(p.deliverables || []).map((d: string) => `- ${d}`).join('\n')}`
-  ).join('\n\n');
+  const phases = (data.phases || []).map((p: any) => {
+    const isPhase0 = p.phase === 'phase_0_technical_fix';
+    const header = isPhase0
+      ? `### 🛑 Phase 0 — Technical fix (BLOCKING: complete before any content work) (${p.duration_days}d)`
+      : `### ${p.phase} (${p.duration_days}d)`;
+    return `${header}\n${(p.deliverables || []).map((d: string) => `- ${d}`).join('\n')}`;
+  }).join('\n\n');
   const risks = (data.risks_and_mitigations || []).map((r: any) =>
     `- **${r.risk}** → ${r.mitigation}`
   ).join('\n');
@@ -1044,6 +1074,116 @@ ${risks || '(none flagged)'}
 `;
 }
 
+/* ─── Phase 17.6 — Audit context for strategy plan ─────────────
+   Extracts the information the strategy LLM MUST know before proposing
+   phases and timelines. Primary concern: foundational blockers that make
+   the entire strategy sequence wrong without Phase 0. Secondary: signals
+   that shape strategic choices (diffuse SERP, keyword mismatch, CTR gap). */
+
+function buildAuditBlockForStrategy(
+  findings: Array<{ audit_kind: string; severity: string; finding_title: string; finding_detail?: string; recommendation?: string; evidence?: any; is_foundational?: boolean }> | null | undefined,
+): string | null {
+  if (!findings || findings.length === 0) return null;
+
+  const lines: string[] = [];
+  lines.push('════════════════════════════════════════════════════════════');
+  lines.push('TECHNICAL AUDIT FINDINGS — READ BEFORE PROPOSING PHASES');
+  lines.push('════════════════════════════════════════════════════════════');
+
+  /* ── 1. Foundational blocker (red + is_foundational) ── */
+  const foundational = findings.find(f => f.severity === 'red' && (f as any).is_foundational === true)
+    || findings.find(f => f.severity === 'red' && /LCP|indexab|noindex|blocked/i.test(f.finding_title));
+
+  if (foundational) {
+    const ev = foundational.evidence || {};
+    lines.push('');
+    lines.push('⛔ FOUNDATIONAL BLOCKER (Phase 0 required — all content phases depend on this):');
+    lines.push(`   Finding: ${foundational.finding_title}`);
+    if (ev.lcp_ms) {
+      const lcpSec = (ev.lcp_ms / 1000).toFixed(2);
+      const ttfb   = ev.ttfb_ms != null ? Math.round(ev.ttfb_ms) + 'ms' : 'unavailable';
+      const tbt    = ev.tbt_ms  != null ? Math.round(ev.tbt_ms)  + 'ms' : 'unavailable';
+      lines.push(`   Data: Mobile LCP = ${lcpSec}s (CrUX 75th percentile field data). TTFB = ${ttfb}. TBT = ${tbt}.`);
+      lines.push(`   Root cause: ${ttfb !== 'unavailable' && ev.ttfb_ms < 600 ? `render-blocking JavaScript (TTFB fast at ${ttfb}, TBT high at ${tbt} = JS blocking main thread)` : `server response time (TTFB ${ttfb})`}.`);
+      lines.push(`   Fix sequence: Profile Long Tasks in Chrome DevTools → defer non-critical JS → lazy-load below-fold images → fetchpriority="high" on LCP element.`);
+      lines.push(`   Estimated fix time: 3-7 days dev work. Phase 0 deliverables must include: deploy fix + verify mobile LCP < 4s in PSI.`);
+    } else if (foundational.recommendation) {
+      lines.push(`   Fix: ${foundational.recommendation.slice(0, 300)}`);
+    }
+    lines.push(`   ⚠️  MUST include phase_0_technical_fix BEFORE research/content/publish phases.`);
+    lines.push(`   ⚠️  horizon_weeks MUST account for Phase 0 duration (+1-2 weeks minimum).`);
+  }
+
+  /* ── 2. Other red findings (not foundational) ── */
+  const otherRed = findings.filter(f =>
+    f.severity === 'red' && f !== foundational
+  );
+  if (otherRed.length > 0) {
+    lines.push('');
+    lines.push('🔴 Other Critical findings (address in strategy risks):');
+    otherRed.forEach(f => lines.push(`   - ${f.finding_title}`));
+  }
+
+  /* ── 3. High-signal amber findings ── */
+  const diffuse = findings.find(f => /Diffuse-intent SERP/i.test(f.finding_title));
+  const paaGap  = findings.find(f => /PAA questions.+(NOT addressed|not addressed)|Content gap.+PAA/i.test(f.finding_title));
+  const paaAll  = findings.find(f => /All \d+ PAA questions/i.test(f.finding_title));
+  const kwMismatch = findings.find(f => /keyword.*present in only one|keyword.*partial|alignment gap/i.test(f.finding_title));
+  const notInGsc = findings.find(f => /Page not in GSC/i.test(f.finding_title));
+
+  const strategicSignals: string[] = [];
+
+  if (notInGsc) {
+    strategicSignals.push(`Page not in GSC top pages — 0 organic impressions. Page may not be indexed. Strategy must include GSC URL Inspection + Request Indexing as Phase 0 deliverable (or Phase 1 if no foundational blocker).`);
+  }
+
+  if (diffuse) {
+    const ev = diffuse.evidence || {};
+    const cats = Object.keys(ev.categories || {}).length || ev.distinct_categories;
+    const topCat = Object.entries(ev.categories || {}).sort((a: any, b: any) => b[1].length - a[1].length)[0];
+    strategicSignals.push(`SERP is intent-diffuse (${cats} distinct intent categories in live top-10). Strategy MUST commit to ONE intent lane — recommend "${topCat ? topCat[0] : 'form builder'}" as the tightest cluster. Do NOT recommend generic coverage across all intent categories.`);
+  }
+
+  if (paaGap) {
+    const ev = paaGap.evidence || {};
+    const n = Array.isArray(ev.unanswered) ? ev.unanswered.length : 0;
+    if (n > 0) {
+      strategicSignals.push(`${n} PAA question(s) unanswered by existing headings — each is a content gap AND citation opportunity. Content phase must include these ${n} new H2 sections.`);
+    }
+  } else if (paaAll) {
+    const ev = paaAll.evidence || {};
+    strategicSignals.push(`${ev.paa_total || 'All'} PAA questions have matching headings already — content phase should VERIFY + IMPROVE quality beneath those headings, not create new sections.`);
+  }
+
+  if (kwMismatch) {
+    strategicSignals.push(`Keyword "${kwMismatch.finding_title.match(/"([^"]+)"/)?.[1] || 'target'}" is only partially present in on-page signals. H1 does not contain exact keyword. Content phase must fix this.`);
+  }
+
+  if (strategicSignals.length > 0) {
+    lines.push('');
+    lines.push('🟡 Strategic signals (shape phases + risks):');
+    strategicSignals.forEach((s, i) => lines.push(`   ${i + 1}. ${s}`));
+  }
+
+  /* ── 4. What's passing (to avoid redundant strategy work) ── */
+  const greenHighlights: string[] = [];
+  const cws = findings.find(f => /Core Web Vital|CWV|CLS.*stable|INP.*responsive/i.test(f.finding_title) && f.severity === 'green');
+  const indexOk = findings.find(f => /No robots blocking/i.test(f.finding_title));
+  const schemaOk = findings.find(f => /Schema present/i.test(f.finding_title));
+  if (cws && !foundational) greenHighlights.push(`Core Web Vitals passing`);
+  if (indexOk) greenHighlights.push(`No robots/meta blocking`);
+  if (schemaOk) greenHighlights.push(`Schema markup present (${schemaOk.evidence?.types?.join(', ') || 'type detected'})`);
+
+  if (greenHighlights.length > 0) {
+    lines.push('');
+    lines.push('🟢 Already passing (do not recommend work in these areas):');
+    greenHighlights.forEach(g => lines.push(`   ✓ ${g}`));
+  }
+
+  lines.push('════════════════════════════════════════════════════════════');
+  return lines.join('\n');
+}
+
 /* ─── Phase 17.2 — Audit context for content brief ──────────────
    The skeleton stage of content_brief decides target word count, H2
    headings, schema, and intent — all things the audit has empirical
@@ -1057,11 +1197,17 @@ ${risks || '(none flagged)'}
 interface BriefAuditContext {
   target_word_count_hint: number | null;   /* from competitive_content_benchmark — competitor median */
   competitor_range:       { min: number; max: number } | null;
-  mandatory_h2_candidates: string[];        /* from PAA gap — verbatim citation-eligible H2 candidates */
+  mandatory_h2_candidates: string[];        /* from PAA gap — verbatim citation-eligible H2 candidates (unanswered only) */
+  existing_paa_headings:   Array<{ paa: string; heading: string }>;
+                                            /* PAA questions already matched by existing H2s — LLM must preserve these
+                                               headings in the brief structure and flag them for quality verification,
+                                               NOT generate new ones that would duplicate or displace them */
   paa_total:              number | null;    /* total PAA questions on live SERP */
+  paa_all_matched:        boolean;          /* true when all PAA questions have heading matches (no new H2s needed) */
   schema_guidance:        string | null;    /* derived from schema findings */
   first_paragraph_guidance: string | null;  /* derived from first-paragraph topicality findings */
   critical_signals:       string[];         /* red-severity findings the writer must know about */
+  dev_signals:            string[];         /* red findings that are dev tasks, not writer tasks — shown separately */
   serp_features_note:     string | null;    /* AI Overview / featured snippet context */
   intent_warning:         string | null;    /* diffuse-intent SERP signal */
   source_count:           number;           /* how many audit findings we drew from */
@@ -1083,13 +1229,25 @@ function extractAuditContextForBrief(
     : null;
   if (target_word_count_hint) sourceCount++;
 
-  /* PAA gap — the highest-leverage signal. These are verbatim citation-eligible
-     H2 candidates straight from the live SERP. */
-  const paaGap = findings.find(f => /PAA questions.+(NOT addressed|not addressed)|Content gap.+PAA/i.test(f.finding_title));
-  const paaEv = paaGap?.evidence || {};
+  /* PAA gap — two cases:
+     A) Some questions unanswered → mandatory_h2_candidates = unanswered questions (new H2s needed)
+     B) All questions matched → existing_paa_headings = verified heading-to-PAA mappings (no new H2s,
+        but LLM must preserve the existing heading structure and flag for quality verification)
+     The brief LLM MUST see both cases clearly to avoid generating a fresh H2 structure
+     that ignores or duplicates the existing 9 H2s. */
+  const paaGap  = findings.find(f => /PAA questions.+(NOT addressed|not addressed)|Content gap.+PAA/i.test(f.finding_title));
+  const paaAll  = findings.find(f => /All \d+ PAA questions/i.test(f.finding_title));
+  const paaSource = paaGap || paaAll;
+  const paaEv = paaSource?.evidence || {};
+
   const mandatory_h2_candidates: string[] = Array.isArray(paaEv.unanswered) ? paaEv.unanswered.slice(0, 6) : [];
+  const existing_paa_headings: Array<{ paa: string; heading: string }> =
+    Array.isArray(paaEv.answered) ? paaEv.answered.slice(0, 8) : [];
   const paa_total: number | null = paaEv.paa_total !== undefined ? Number(paaEv.paa_total) : null;
+  const paa_all_matched: boolean = mandatory_h2_candidates.length === 0 && existing_paa_headings.length > 0;
+
   if (mandatory_h2_candidates.length > 0) sourceCount++;
+  if (paa_all_matched && existing_paa_headings.length > 0) sourceCount++;
 
   /* Schema guidance — combine presence finding (what's there) + recommendation finding (what's missing/wrong) */
   let schema_guidance: string | null = null;
@@ -1135,12 +1293,18 @@ function extractAuditContextForBrief(
     sourceCount++;
   }
 
-  /* Critical signals — red-severity findings the writer absolutely needs to know */
-  const critical_signals: string[] = findings
-    .filter(f => f.severity === 'red')
-    .map(f => f.finding_title)
+  /* Critical signals — split into writer signals vs dev signals.
+     LCP, TBT, image optimization = dev tasks. Surfacing them in a
+     writer brief creates confusion. Writers need content signals only;
+     devs see these in the strategy plan (Phase 0) and task map. */
+  const allRed = findings.filter(f => f.severity === 'red').map(f => f.finding_title);
+  const critical_signals: string[] = allRed
+    .filter(t => !/LCP|TBT|image|lazy|format|webp|avif|CLS|INP|Core Web Vital/i.test(t))
     .slice(0, 5);
-  if (critical_signals.length > 0) sourceCount++;
+  const dev_signals: string[] = allRed
+    .filter(t => /LCP|TBT|image|lazy|format|webp|avif|CLS|INP|Core Web Vital/i.test(t))
+    .slice(0, 5);
+  if (critical_signals.length > 0 || dev_signals.length > 0) sourceCount++;
 
   if (sourceCount === 0) return null;
 
@@ -1148,10 +1312,13 @@ function extractAuditContextForBrief(
     target_word_count_hint,
     competitor_range,
     mandatory_h2_candidates,
+    existing_paa_headings,
     paa_total,
+    paa_all_matched,
     schema_guidance,
     first_paragraph_guidance,
     critical_signals,
+    dev_signals,
     serp_features_note,
     intent_warning,
     source_count: sourceCount,
@@ -1168,9 +1335,28 @@ function formatBriefAuditContextForLlm(ctx: BriefAuditContext, keyword: string):
   }
 
   if (ctx.mandatory_h2_candidates.length > 0) {
-    lines.push(`MANDATORY H2 CANDIDATES (live PAA questions from SERP — high citation-eligibility):`);
-    ctx.mandatory_h2_candidates.forEach((q, i) => lines.push(`  ${i + 1}. ${q}`));
-    lines.push(`These ${ctx.mandatory_h2_candidates.length} questions MUST appear in section_headings (verbatim where possible — they're what Google's AI Overview cites from). Add 2-4 additional H2s for full topical coverage.`);
+    /* Case A: some PAA questions are unanswered — new H2 sections needed */
+    lines.push(`NEW H2 SECTIONS REQUIRED (${ctx.mandatory_h2_candidates.length} live PAA questions have NO matching heading — these MUST be added):`);
+    ctx.mandatory_h2_candidates.forEach((q, i) => lines.push(`  ${i + 1}. "${q}" — use verbatim as H2, open with 40-80 word direct answer`));
+    lines.push(`These ${ctx.mandatory_h2_candidates.length} questions MUST appear in section_headings. They are verbatim from the live SERP — Google's AI Overview cites exact-phrasing matches. Add 2-4 additional H2s for full topical coverage.`);
+  }
+
+  if (ctx.existing_paa_headings && ctx.existing_paa_headings.length > 0) {
+    if (ctx.paa_all_matched) {
+      /* Case B: all PAA questions already matched — preserve existing H2s, verify quality */
+      lines.push(`EXISTING H2 STRUCTURE — DO NOT REPLACE (${ctx.existing_paa_headings.length} headings already map to live PAA questions):`);
+      ctx.existing_paa_headings.forEach((a, i) =>
+        lines.push(`  ${i + 1}. Existing H2: "${a.heading}" → covers PAA: "${a.paa}"`)
+      );
+      lines.push(`CRITICAL: The page already has ${ctx.existing_paa_headings.length} H2s that token-match live PAA questions. Your section_headings MUST include these exact headings (or very close paraphrases). Do NOT generate a completely new H2 structure that ignores these — that would destroy existing PAA coverage.`);
+      lines.push(`The content quality beneath each heading is UNVERIFIED — the brief should instruct the writer to open each of these sections with a direct 40-80 word answer. The heading exists; the verified answer copy may not.`);
+    } else {
+      /* Mix: some answered, some unanswered — show both */
+      lines.push(`EXISTING H2 HEADINGS COVERING PAA (preserve these in section_headings):`);
+      ctx.existing_paa_headings.forEach((a, i) =>
+        lines.push(`  ${i + 1}. "${a.heading}" (covers: "${a.paa}")`)
+      );
+    }
   }
 
   if (ctx.schema_guidance) {
@@ -1190,8 +1376,13 @@ function formatBriefAuditContextForLlm(ctx: BriefAuditContext, keyword: string):
   }
 
   if (ctx.critical_signals.length > 0) {
-    lines.push(`CRITICAL SIGNALS (red-severity audit findings — writer/strategist must address):`);
+    lines.push(`CRITICAL SIGNALS — CONTENT/SEO (writer must address):`);
     ctx.critical_signals.forEach((s, i) => lines.push(`  ${i + 1}. ${s}`));
+  }
+
+  if ((ctx as any).dev_signals && (ctx as any).dev_signals.length > 0) {
+    lines.push(`TECHNICAL BLOCKERS — DEV ONLY (do not include in writer brief or word count targets — these are dev tasks, not content tasks):`);
+    (ctx as any).dev_signals.forEach((s: string, i: number) => lines.push(`  ${i + 1}. ${s} ← dev fix required, not a content action`));
   }
 
   lines.push('═══ END AUDIT INTELLIGENCE ═══');
@@ -1226,12 +1417,14 @@ const stepContentBrief = {
     if (auditContext) {
       stepNotes.push(`Brief anchored to ${auditContext.source_count} audit signal(s): ${[
         auditContext.target_word_count_hint && 'target word count',
-        auditContext.mandatory_h2_candidates.length > 0 && `${auditContext.mandatory_h2_candidates.length} PAA H2 candidates`,
+        auditContext.mandatory_h2_candidates.length > 0 && `${auditContext.mandatory_h2_candidates.length} new PAA H2 candidates`,
+        auditContext.paa_all_matched && auditContext.existing_paa_headings.length > 0 && `${auditContext.existing_paa_headings.length} existing PAA-matched headings preserved`,
         auditContext.schema_guidance && 'schema',
         auditContext.first_paragraph_guidance && 'first paragraph',
         auditContext.serp_features_note && 'SERP features',
         auditContext.intent_warning && 'intent diversity',
-        auditContext.critical_signals.length > 0 && `${auditContext.critical_signals.length} red findings`,
+        auditContext.critical_signals.length > 0 && `${auditContext.critical_signals.length} red signals (content)`,
+        auditContext.dev_signals.length > 0 && `${auditContext.dev_signals.length} red signals (dev — separated)`,
       ].filter(Boolean).join(', ')}.`);
     }
 
@@ -1619,11 +1812,14 @@ Now write the writer's strategic brief.`;
       _audit_sourced_signals: auditContext ? {
         target_word_count_from_audit: auditContext.target_word_count_hint,
         paa_h2_candidates:            auditContext.mandatory_h2_candidates,
+        existing_paa_headings:        auditContext.existing_paa_headings,
+        paa_all_matched:              auditContext.paa_all_matched,
         schema_guidance_from_audit:   auditContext.schema_guidance,
         first_para_guidance:          auditContext.first_paragraph_guidance,
         serp_features:                auditContext.serp_features_note,
         intent_warning:               auditContext.intent_warning,
         critical_signals:             auditContext.critical_signals,
+        dev_signals:                  auditContext.dev_signals,
         source_count:                 auditContext.source_count,
       } : null,
     };
@@ -1714,7 +1910,7 @@ ${kp}${examples}${subs}`;
 This brief's structural choices were anchored to the technical audit's verified findings (${audit.source_count} signal${audit.source_count === 1 ? '' : 's'} consumed):
 
 ${audit.target_word_count_from_audit ? `- **Target word count** ${audit.target_word_count_from_audit.toLocaleString()} — pulled from competitive_content_benchmark (SERP median across fetched competitors)` : ''}
-${audit.paa_h2_candidates && audit.paa_h2_candidates.length > 0 ? `- **PAA H2 candidates** (live SERP — high citation-eligibility):\n${audit.paa_h2_candidates.map((q: string) => `  - "${q}"`).join('\n')}` : ''}
+${audit.paa_h2_candidates && audit.paa_h2_candidates.length > 0 ? `- **New H2 sections required** (unanswered PAA questions — create these):\n${audit.paa_h2_candidates.map((q: string) => `  - "${q}"`).join('\n')}` : ''}${audit.paa_all_matched && audit.existing_paa_headings && audit.existing_paa_headings.length > 0 ? `\n- **Existing PAA-matched headings (preserve — verify quality):**\n${audit.existing_paa_headings.map((a: any) => `  - Existing H2 "${a.heading}" covers PAA question "${a.paa}"`).join('\n')}` : ''}${audit.dev_signals && audit.dev_signals.length > 0 ? `\n- **Technical blockers (dev tasks — not writer actions):**\n${audit.dev_signals.map((s: string) => `  - ⚙️ ${s}`).join('\n')}` : ''}
 ${audit.schema_guidance ? `- **Schema guidance:** ${audit.schema_guidance}` : ''}
 ${audit.first_para_guidance ? `- **First paragraph requirement:** ${audit.first_para_guidance}` : ''}
 ${audit.serp_features ? `- **SERP features context:** ${audit.serp_features}` : ''}
