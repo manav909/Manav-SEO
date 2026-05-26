@@ -158,6 +158,10 @@ function cmsAdminPath(p: CmsPlatform): string {
 
 export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ html: string; fetchedOk: boolean; errorMsg?: string }> {
   if (!url) return { html: '', fetchedOk: false, errorMsg: 'No URL provided' };
+  // Use Promise.race + setTimeout — AbortSignal.timeout() is unreliable on Vercel Node.js.
+  // setTimeout is always available and always fires.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       headers: {
@@ -166,16 +170,19 @@ export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ h
         'Accept-Language': 'en-US,en;q=0.9',
       },
       redirect: 'follow',
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
     if (!res.ok) {
       return { html: '', fetchedOk: false, errorMsg: `HTTP ${res.status} ${res.statusText}` };
     }
     const raw = await res.text();
-    // Limit to 120KB — beyond this, the <head> section (what matters) is already captured
     return { html: raw.slice(0, 120_000), fetchedOk: true };
   } catch (e: any) {
-    const msg = e?.name === 'TimeoutError' ? `Page fetch timed out after ${timeoutMs}ms` : (e?.message || 'Fetch failed');
+    clearTimeout(timer);
+    const msg = (e?.name === 'AbortError' || e?.name === 'TimeoutError')
+      ? `Page fetch timed out after ${timeoutMs}ms`
+      : (e?.message || 'Fetch failed');
     return { html: '', fetchedOk: false, errorMsg: msg };
   }
 }
@@ -562,6 +569,11 @@ export function validateAiOutput(taskType: string, fixCode: string, fixLanguage:
 
 async function callAI(task: DevTask, sys: string, usr: string): Promise<AiResult> {
   let llmCalls = 0;
+  // Timeout via Promise.race — AbortSignal.timeout() is unreliable on Vercel.
+  const AI_TIMEOUT_MS = 30000;
+  const aiController = new AbortController();
+  const aiTimer = setTimeout(() => aiController.abort(), AI_TIMEOUT_MS);
+
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -576,8 +588,9 @@ async function callAI(task: DevTask, sys: string, usr: string): Promise<AiResult
         system: sys,
         messages: [{ role: 'user', content: usr }],
       }),
-      signal: AbortSignal.timeout(30000), // 30s is more than enough for 2000 tokens
+      signal: aiController.signal,
     });
+    clearTimeout(aiTimer);
     llmCalls++;
     const data = await resp.json() as any;
 
@@ -625,7 +638,11 @@ async function callAI(task: DevTask, sys: string, usr: string): Promise<AiResult
     return { analysis: rawText.slice(0, 800), fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
 
   } catch (e: any) {
-    const msg = e?.name === 'TimeoutError' ? 'AI call timed out after 30s. Retry the task.' : `AI error: ${e?.message || 'unknown'}`;
+    clearTimeout(aiTimer);
+    const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError';
+    const msg = isTimeout
+      ? 'AI call timed out after 30s — the AI service is slow right now. Click Retry.'
+      : `AI error: ${e?.message || 'unknown'}`;
     return { analysis: msg, fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
   }
 }
