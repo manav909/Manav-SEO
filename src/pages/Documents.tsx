@@ -204,15 +204,16 @@ const ALL_KINDS = [
 ];
 
 function FiltersSidebar({
-  filters, setFilters, projects, onReset,
+  filters, setFilters, projects, campaigns, onReset,
 }: {
   filters: FiltersState;
   setFilters: (f: FiltersState) => void;
   projects: Array<{ id: string; client_name?: string; brand_name?: string; company_name?: string }>;
+  campaigns: Array<{ id: string; keyword: string; project_id?: string }>;
   onReset: () => void;
 }) {
   const [openSections, setOpenSections] = useState({
-    quick: true, projects: true, kinds: true, status: true, workflow: true, date: false,
+    quick: true, projects: true, campaigns: true, kinds: true, status: true, workflow: true, date: false,
   });
   const toggle = (k: keyof typeof openSections) =>
     setOpenSections(s => ({ ...s, [k]: !s[k] }));
@@ -295,6 +296,30 @@ function FiltersSidebar({
                   className="h-3 w-3"
                 />
                 <span className="truncate flex-1">{projectLabel(p)}</span>
+              </label>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* Campaigns */}
+      <Section title={`Campaigns${filters.campaignIds.length ? ` (${filters.campaignIds.length})` : ''}`}
+               open={openSections.campaigns} onToggle={() => toggle('campaigns')}>
+        <div className="space-y-1 max-h-48 overflow-y-auto">
+          {campaigns.length === 0 && (
+            <div className="text-xs text-muted-foreground italic px-2">No campaigns</div>
+          )}
+          {campaigns.map(c => {
+            const checked = filters.campaignIds.includes(c.id);
+            return (
+              <label key={c.id} className="flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-muted/30 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => setFilters({ ...filters, campaignIds: toggleArray(filters.campaignIds, c.id), quickFilter: 'all' })}
+                  className="h-3 w-3"
+                />
+                <span className="truncate flex-1">{c.keyword}</span>
               </label>
             );
           })}
@@ -718,6 +743,25 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const [kpisLoading, setKpisLoading] = useState(true);
 
   const safeProjects = useMemo(() => (projects || []).filter((p: any) => p?.id), [projects]);
+
+  /* Load all active campaigns across all projects for the sidebar filter */
+  const [allCampaigns, setAllCampaigns] = useState<Array<{ id: string; keyword: string }>>([]);
+  useEffect(() => {
+    if (!safeProjects.length) return;
+    let cancelled = false;
+    (async () => {
+      const { seoCampaignList } = await import('@/components/pm/api');
+      const results = await Promise.all(
+        safeProjects.map((p: any) => seoCampaignList({ projectId: p.id, statusFilter: 'active' }))
+      );
+      if (cancelled) return;
+      const merged = results.flatMap((r: any) =>
+        (r.campaigns || []).map((c: any) => ({ id: c.id, keyword: c.keyword }))
+      );
+      setAllCampaigns(merged);
+    })();
+    return () => { cancelled = true; };
+  }, [safeProjects]);
   const projectLabel = useCallback((id: string) => {
     const p: any = safeProjects.find((p: any) => p.id === id);
     if (!p) return `Project ${String(id).slice(0, 6)}`;
@@ -1028,6 +1072,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             filters={filters}
             setFilters={setFilters}
             projects={safeProjects}
+            campaigns={allCampaigns}
             onReset={handleReset}
           />
 
