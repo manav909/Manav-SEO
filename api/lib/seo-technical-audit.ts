@@ -234,6 +234,38 @@ function pickFoundationalCritical(findings: Finding[]): void {
     extremeLcp.recommendation = `**STOP — fix mobile LCP before any other work begins.**\n\nAt ${lcpSecStr}s on mobile, most visitors abandon before the page loads. Content rewrites, H1 changes, and schema additions have zero ranking effect until this is resolved.\n\n${rootCauseBlock}`;
     return;
   }
+  /* Rule 0b: CrUX regression warning — if the CrUX-unavailable finding was
+     injected (severity red when previous audit was Critical), it has already
+     set is_foundational = true in the injection code. Check here as an
+     explicit rule so it takes priority over keyword/indexability rules. */
+  const cruxReg = reds.find(f => /Mobile CrUX data unavailable.*previous audit.*MOBILE LCP/i.test(f.finding_title));
+  if (cruxReg && !cruxReg.is_foundational) {
+    cruxReg.is_foundational = true;
+    return;
+  }
+  if (cruxReg?.is_foundational) return;  /* already set in injection block */
+
+  /* Rule 0c: high TBT with no mobile CrUX data — TBT >1000ms without mobile
+     field data means we can't confirm mobile LCP but the JS blocking is severe
+     enough that it almost certainly causes mobile LCP failure too. Mark TBT
+     as foundational so Phase 0 fires even when CrUX is unavailable. */
+  const hasMobileCruxFinding = findings.some(f =>
+    /^MOBILE (LCP|INP|CLS)/i.test(f.finding_title) && f.data_source === 'psi'
+  );
+  if (!hasMobileCruxFinding) {
+    const highTbt = reds.find(f =>
+      f.audit_kind === 'core_web_vitals' &&
+      /TBT.*severe|severe.*TBT/i.test(f.finding_title) &&
+      (f.evidence as any)?.tbt_ms > 1000
+    );
+    if (highTbt) {
+      highTbt.is_foundational = true;
+      const tbtMs = Math.round((highTbt.evidence as any)?.tbt_ms);
+      highTbt.recommendation = `**STOP: fix JS blocking before other work. TBT ${tbtMs}ms on desktop = same JS bundles causing mobile LCP failure. Fix sequence: (1) Profile Long Tasks in Chrome DevTools Performance tab, (2) defer non-critical scripts with defer/async, (3) split large bundles, (4) verify mobile LCP < 4s in PSI before Phase 2.`;
+      return;
+    }
+  }
+
   /* Rule 1: indexability blocker */
   const indexBlocked = reds.find(f =>
     f.audit_kind === 'indexability' &&
@@ -564,6 +596,95 @@ export async function runTechnicalAudit(opts: {
        is identified, the corroborating signal-tagged findings get a
        shared `keyword_pivot_cluster` signal so the renderer's signal-
        based cross-ref engine wires them together (§3.1 ↔ §3.2 ↔ §3.3 ↔ §3.9). */
+    /* ── CrUX regression guard ─────────────────────────────────────────
+       Problem: PSI falls back to lab data for low-traffic pages when the
+       CrUX dataset threshold isn't met. When this happens, mobile LCP
+       findings disappear silently — the page still loads in 18+ seconds
+       for real users but the audit shows no mobile CWV findings at all.
+       This makes §6.1 say "No Phase 1 foundational fix required" and the
+       pipeline skips Phase 0, sending the team into content work on a page
+       that mobile users never actually see.
+
+       Fix: if mobile CrUX data is absent from THIS run, query the previous
+       audit run for the same campaign and check whether it had a Critical
+       mobile LCP finding. If it did, inject a Warning finding that preserves
+       the known issue and prevents the Phase 0 machinery from silently
+       disabling itself. ─────────────────────────────────────────────────── */
+    const hasMobileCrux = findings.some(f =>
+      f.audit_kind === 'core_web_vitals' &&
+      /^MOBILE (LCP|INP|CLS)/i.test(f.finding_title) &&
+      f.data_source === 'psi'
+    );
+
+    if (!hasMobileCrux && opts.campaignId) {
+      /* Look up the last audit run's mobile LCP finding for this campaign */
+      try {
+        const { data: prevRows } = await db().from('technical_audit_findings')
+          .select('audit_run_id, finding_title, severity, evidence, created_at')
+          .eq('campaign_id', opts.campaignId)
+          .eq('audit_kind', 'core_web_vitals')
+          .ilike('finding_title', 'MOBILE LCP%')
+          .neq('audit_run_id', auditRunId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (prevRows && prevRows.length > 0) {
+          const prev = prevRows[0] as any;
+          const prevLcpMs  = prev.evidence?.lcp_ms;
+          const prevLcpSec = prevLcpMs ? (prevLcpMs / 1000).toFixed(2) : '?';
+          const prevSev    = prev.severity;
+          const prevTbt    = prev.evidence?.tbt_ms;
+          const prevTtfb   = prev.evidence?.ttfb_ms;
+          const wasCritical = prevSev === 'red';
+
+          const cruxRegFinding: Finding = {
+            audit_kind:    'core_web_vitals',
+            severity:      wasCritical ? 'red' : 'amber',
+            is_foundational: wasCritical,
+            finding_title: `⚠️ Mobile CrUX data unavailable — previous audit: MOBILE LCP ${prevLcpSec}s (${prevSev === 'red' ? 'Critical' : 'Warning'})`,
+            finding_detail: `PageSpeed Insights returned lab simulation data for mobile this run — Chrome User Experience (CrUX) field data was not available. CrUX requires a minimum traffic threshold (~1,000 Chrome user sessions per page); low-traffic pages fall below this threshold intermittently.
+
+**This does NOT mean the mobile performance problem is resolved.** The previous audit (${new Date(prev.created_at).toISOString().slice(0,16)} UTC) showed:
+- **Mobile LCP: ${prevLcpSec}s** (Google threshold: <2.5s good, >4s poor)
+${prevTbt ? `- **Total Blocking Time: ${Math.round(prevTbt)}ms** — render-blocking JavaScript identified as root cause
+` : ''}${prevTtfb ? `- **TTFB: ${Math.round(prevTtfb)}ms** — server response fast (JS blocking, not network)
+` : ''}
+> ⚠️ **Do not treat "no mobile CWV findings" as "mobile performance is fine."** The underlying JavaScript blocking issue is almost certainly still present. Verify current mobile LCP directly in PageSpeed Insights (https://pagespeed.web.dev) before proceeding with any Phase 2 work.
+
+**To get fresh CrUX data:** mobile CrUX data will reappear once the page accumulates enough Chrome user visits. Re-run the audit after the page receives more organic traffic, or use the PSI link above to verify manually.`,
+            recommendation: `**Verify mobile LCP now:** open https://pagespeed.web.dev → enter ${target.url} → select Mobile → check LCP. If LCP is still >4s, the Phase 0 technical fix (render-blocking JavaScript) from the previous audit is still required before any content work begins. Do not proceed to Phase 2 until PSI confirms mobile LCP < 4s.`,
+            evidence: {
+              crux_available: false,
+              previous_run_id: prev.audit_run_id,
+              previous_lcp_ms: prevLcpMs,
+              previous_lcp_sec: prevLcpSec,
+              previous_severity: prevSev,
+              previous_tbt_ms: prevTbt || null,
+              previous_ttfb_ms: prevTtfb || null,
+              previous_audit_at: prev.created_at,
+            },
+            data_source: 'psi',
+          };
+          findings.push(cruxRegFinding);
+        } else {
+          /* No previous audit or no mobile LCP in previous audit — still flag absence */
+          findings.push({
+            audit_kind:    'core_web_vitals',
+            severity:      'amber',
+            finding_title: `Mobile CrUX data unavailable this run — using lab simulation only`,
+            finding_detail: `PageSpeed Insights did not return Chrome User Experience field data for mobile (CrUX threshold not met — page needs more Chrome user visits). This audit run shows only desktop CWV and Lighthouse lab data. Mobile performance cannot be verified from this run alone.
+
+Verify current mobile LCP at https://pagespeed.web.dev before treating mobile performance as resolved.`,
+            recommendation: `Check https://pagespeed.web.dev → mobile → LCP. If >4s, a Phase 0 technical fix is required.`,
+            evidence: { crux_available: false, previous_run_id: null },
+            data_source: 'psi',
+          });
+        }
+      } catch (e: any) {
+        console.warn("[runTechnicalAudit] CrUX regression check failed: " + (e?.message || "unknown"));
+      }
+    }
+
     pickFoundationalCritical(findings);
     propagateKeywordPivotClusterSignal(findings);
     const convergingBanner = detectConvergingEvidence(findings);
@@ -3466,8 +3587,8 @@ async function checkImageOptimization(url: string): Promise<Finding[]> {
       finding_title: `Lazy-loading coverage is low — ${Math.round(lazyRatio * 100)}% of ${total} images use loading="lazy"`,
       finding_detail: `${summary}\n\nWith ${total} images on the page and only ${withLazy} marked \`loading="lazy"\`, browsers download all non-lazy images upfront — inflating LCP and bandwidth on mobile.`,
       recommendation: `Add \`loading="lazy"\` to all images below the fold (typically all but the first 1-3). Keep eager loading only on hero/above-fold images. This is a free CWV improvement requiring no asset re-encoding.`,
-      /* Lazy-loading specific evidence — only fields relevant to this finding */
-      evidence: { total_images: total, with_lazy: withLazy, lazy_ratio: Number(lazyRatio.toFixed(2)), with_alt: withAlt, alt_ratio: Number(altRatio.toFixed(2)) },
+      /* Lazy-loading evidence — core lazy fields + alt + srcset needed by §1.4 inventory */
+      evidence: { total_images: total, with_lazy: withLazy, lazy_ratio: Number(lazyRatio.toFixed(2)), with_alt: withAlt, alt_ratio: Number(altRatio.toFixed(2)), with_srcset: withSrcset, srcset_ratio: Number(srcsetRatio.toFixed(2)) },
       data_source: 'html_fetch',
     });
   }

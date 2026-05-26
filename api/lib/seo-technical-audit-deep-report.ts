@@ -433,6 +433,15 @@ function renderExecutiveSummary(lines: string[], I: DeepReportInputs, m: Finding
       }
     }
 
+    /* CrUX regression — surface prominently in diagnosis if present */
+    const cruxRegF = m.find(fi => /Mobile CrUX data unavailable.*previous audit.*MOBILE LCP/i.test(fi.finding.finding_title));
+    if (cruxRegF) {
+      const ev = cruxRegF.finding.evidence || {};
+      const prevSec = ev.previous_lcp_sec || '?';
+      const prevTbt = ev.previous_tbt_ms ? `TBT ${Math.round(ev.previous_tbt_ms)}ms` : null;
+      diagLines.push(`**⚠️ Mobile CrUX field data unavailable this run — previous audit showed MOBILE LCP ${prevSec}s (${ev.previous_severity === 'red' ? 'Critical' : 'Warning'})${prevTbt ? `, ${prevTbt}` : ''}.** PSI fell back to lab simulation because the page has insufficient Chrome user traffic for CrUX. This does NOT mean mobile performance improved. Verify at https://pagespeed.web.dev before approving any content work. See ${xref(cruxRegF)}.`);
+    }
+
     diagLines.push(`**Severity breakdown:** ${I.red_count} Critical · ${I.amber_count} Warning · ${I.green_count} Pass · ${I.info_count} Info. Full finding list in §3; sequenced recommendations in §6.`);
 
     for (const line of diagLines) {
@@ -607,24 +616,30 @@ function renderPageInventory(lines: string[], I: DeepReportInputs, m: FindingWit
   lines.push('');
   const imgs = imageOptFindings(m);
   if (imgs.length > 0) {
-    /* Find the most-data-rich image finding for the inventory line */
-    const richest = imgs.reduce<FindingWithId | null>((acc, x) => {
-      const xc = x.finding.evidence?.total_images ?? 0;
-      const ac = acc?.finding.evidence?.total_images ?? 0;
-      return xc >= ac ? x : acc;
-    }, null);
-    const ev = richest?.finding.evidence || {};
+    /* Merge evidence from all image findings — each carries a different field
+       subset (lazy fields vs format fields) since evidence was split by concern.
+       Use a merged object so §1.4 always shows the complete inventory. */
+    const merged: Record<string, any> = {};
+    for (const fi of imgs) {
+      Object.assign(merged, fi.finding.evidence || {});
+    }
+    const total = merged.total_images;
+    /* Helper: show count + percentage, handling 0 correctly (not falsy) */
+    const pct = (val: number | undefined) => {
+      if (val === undefined || val === null) return '—';
+      const pctStr = (total && total > 0) ? ` (${Math.round((val / total) * 100)}%)` : '';
+      return `${val}${pctStr}`;
+    };
     lines.push(`| Field | Value |`);
     lines.push(`|---|---|`);
-    lines.push(`| Total content images (tracking pixels filtered) | ${ev.total_images ?? '—'} |`);
-    lines.push(`| With alt text | ${ev.with_alt ?? '—'}${ev.with_alt && ev.total_images ? ` (${Math.round((ev.with_alt / ev.total_images) * 100)}%)` : ''} |`);
-    lines.push(`| Lazy-loaded | ${ev.with_lazy ?? '—'}${ev.with_lazy && ev.total_images ? ` (${Math.round((ev.with_lazy / ev.total_images) * 100)}%)` : ''} |`);
-    lines.push(`| Responsive (srcset) | ${ev.with_srcset ?? '—'}${ev.with_srcset && ev.total_images ? ` (${Math.round((ev.with_srcset / ev.total_images) * 100)}%)` : ''} |`);
-    lines.push(`| Modern format (webp/avif) | ${ev.modern_format ?? '—'} |`);
-    lines.push(`| Legacy format (jpg/png/gif) | ${ev.legacy_format ?? '—'} |`);
-    /* Phase 16.10 — show unclassified images so the breakdown sums to total */
-    if (ev.other_format !== undefined && ev.other_format > 0) {
-      lines.push(`| Other format (svg/data-uri/cdn-no-ext) | ${ev.other_format} |`);
+    lines.push(`| Total content images (tracking pixels filtered) | ${total ?? '—'} |`);
+    lines.push(`| With alt text | ${pct(merged.with_alt)} |`);
+    lines.push(`| Lazy-loaded | ${pct(merged.with_lazy)} |`);
+    lines.push(`| Responsive (srcset) | ${pct(merged.with_srcset)} |`);
+    lines.push(`| Modern format (webp/avif) | ${merged.modern_format ?? '—'} |`);
+    lines.push(`| Legacy format (jpg/png/gif) | ${merged.legacy_format ?? '—'} |`);
+    if (merged.other_format !== undefined && merged.other_format > 0) {
+      lines.push(`| Other format (svg/data-uri/cdn-no-ext) | ${merged.other_format} |`);
     }
     lines.push('');
     lines.push(`Related findings: ${imgs.map(f => xrefShort(f)).join(', ')}`);
