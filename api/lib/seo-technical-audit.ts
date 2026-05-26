@@ -201,15 +201,17 @@ function pickFoundationalCritical(findings: Finding[]): void {
      8s threshold chosen deliberately: above this the page fails CrUX
      "poor" at the 75th percentile AND Google's own field data would
      show it consistently failing Core Web Vitals assessment. */
-  const extremeLcp = reds.find(f =>
-    f.audit_kind === 'core_web_vitals' &&
-    /MOBILE LCP/i.test(f.finding_title) &&
-    (() => { const m = f.finding_title.match(/(\d+\.\d+)s/); return m ? parseFloat(m[1]) > 8 : false; })()
-  );
+  const extremeLcp = reds.find(f => {
+    if (f.audit_kind !== 'core_web_vitals') return false;
+    if (!/MOBILE LCP/i.test(f.finding_title)) return false;
+    const mSec = f.finding_title.match(/(\d+\.\d+)s/);
+    return mSec ? parseFloat(mSec[1]) > 8 : false;
+  });
   if (extremeLcp) {
     extremeLcp.is_foundational = true;
-    /* Override recommendation with the full diagnostic path */
-    extremeLcp.recommendation = `**STOP — fix mobile LCP before any other work begins.**\n\nAt ${(() => { const m = extremeLcp.finding_title.match(/(\d+\.\d+)s/); return m ? m[1] : '?'; })()} on mobile, most visitors leave before the page loads. Content rewrites, H1 changes, and schema additions will have zero ranking effect until mobile load time is resolved.\n\n**Diagnostic path (in order):**\n1. Open PSI in Chrome DevTools → identify the LCP element (usually the largest image or hero text block)\n2. Check TTFB (Time to First Byte) — if >2s, the issue is server/CDN, not the element itself\n3. Check image byte-weight on the LCP element — modern images should be <200KB above the fold\n4. Verify the LCP element is not loaded via lazy-loading or client-side JS render\n5. If using a CMS/page builder: check if the render-critical CSS is inlined or deferred\n\n**Expected fix for this LCP range:** likely a combination of server response time, unoptimised hero image, and render-blocking resources. CDN configuration alone often reduces this to <3s.`;
+    const lcpSecMatch = extremeLcp.finding_title.match(/(\d+\.\d+)s/);
+    const lcpSecStr = lcpSecMatch ? lcpSecMatch[1] : '?';
+    extremeLcp.recommendation = `**STOP — fix mobile LCP before any other work begins.**\n\nAt ${lcpSecStr}s on mobile, most visitors leave before the page loads. Content rewrites, H1 changes, and schema additions will have zero ranking effect until mobile load time is resolved.\n\n**Diagnostic path (in order):**\n1. Open PSI in Chrome DevTools → identify the LCP element (usually the largest image or hero text block)\n2. Check TTFB (Time to First Byte) — if >2s, the issue is server/CDN, not the element itself\n3. Check image byte-weight on the LCP element — modern images should be <200KB above the fold\n4. Verify the LCP element is not loaded via lazy-loading or client-side JS render\n5. If using a CMS/page builder: check if the render-critical CSS is inlined or deferred\n\n**Expected fix for this LCP range:** likely a combination of server response time, unoptimised hero image, and render-blocking resources. CDN configuration alone often reduces this to <3s.`;
     return;
   }
   /* Rule 1: indexability blocker */
@@ -2180,26 +2182,28 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
 
     if (m.lcp_ms !== undefined && m.lcp_ms !== null) {
       const sev: 'green'|'amber'|'red' = m.lcp_ms < 2500 ? 'green' : m.lcp_ms < 4000 ? 'amber' : 'red';
+      const lcpSec    = (m.lcp_ms / 1000).toFixed(2);
+      const ma        = m as any;
+      const lcpEl     = ma.lcp_element || null;
+      const ttfbMs    = ma.ttfb_ms    || null;
+      const fcpMs     = ma.fcp_ms     || null;
+      const tbtMs     = ma.tbt_ms     || null;
+      const ttfbNote  = ttfbMs ? `\n- **TTFB (Server Response Time):** ${Math.round(ttfbMs)}ms${ttfbMs > 600 ? ' ← slow server; fix this first before optimising elements' : ''}` : '';
+      const fcpNote   = fcpMs  ? `\n- **FCP (First Contentful Paint):** ${(fcpMs / 1000).toFixed(2)}s` : '';
+      const lcpElNote = lcpEl  ? `\n- **LCP element:** ${lcpEl} — optimise this specific element first` : '';
+      const tbtNote   = tbtMs  ? `\n- **TBT (Total Blocking Time):** ${Math.round(tbtMs)}ms${tbtMs > 300 ? ' ← significant JS blocking; main thread needs work' : ''}` : '';
+      const severeNote = m.lcp_ms > 8000 ? `\n\n⚠️ **At ${lcpSec}s, most mobile users abandon before the page loads.** This is a critical UX failure, not an optimisation task. No content change, H1 rewrite, or schema work will produce ranking results until this is resolved.` : '';
+      const lcpDetail = `Largest Contentful Paint measures how long the main content takes to render for real users. Google's thresholds: <2.5s good, 2.5-4s needs improvement, >4s poor. Data source: ${isFromCrux ? 'Chrome User Experience (real-user 75th percentile)' : 'Lighthouse lab test'}.${severeNote}\n\n**Diagnostic breakdown:**${lcpElNote}${ttfbNote}${fcpNote}${tbtNote}`;
+      const lcpRec = sev === 'green' ? undefined
+        : ttfbMs && ttfbMs > 600
+          ? `TTFB is ${Math.round(ttfbMs)}ms — the server is slow before any rendering begins. Fix TTFB first: check hosting and CDN configuration, enable full-page caching where possible, reduce server-side rendering time. After TTFB is below 600ms, re-audit to isolate the next bottleneck.`
+          : `Identify and optimise the LCP element${lcpEl ? ` ("${lcpEl}")` : ' (the largest visible element above the fold)'}. Priority actions: (1) compress to <200KB if an image, (2) add fetchpriority="high" to the element, (3) ensure it is NOT lazy-loaded, (4) inline critical CSS that controls its render, (5) check for render-blocking scripts above it in the DOM.`;
       findings.push({
         audit_kind: 'core_web_vitals', severity: sev,
-        finding_title:  `${strat.toUpperCase()} LCP: ${(m.lcp_ms / 1000).toFixed(2)}s ${sev === 'red' ? '— exceeds the 4s threshold' : sev === 'amber' ? '— above the 2.5s target' : '— within target'}`,
-        finding_detail: (() => {
-          const lcpSec = (m.lcp_ms / 1000).toFixed(2);
-          const ttfbNote = (m as any).ttfb_ms ? `\n- **TTFB (Server Response Time):** ${Math.round((m as any).ttfb_ms)}ms${(m as any).ttfb_ms > 600 ? ' ← slow server; fix this first before optimising elements' : ''}` : '';
-          const fcpNote  = (m as any).fcp_ms  ? `\n- **FCP (First Contentful Paint):** ${((m as any).fcp_ms / 1000).toFixed(2)}s` : '';
-          const lcpEl    = (m as any).lcp_element;
-          const lcpElNote = lcpEl ? `\n- **LCP element:** ${lcpEl} — optimise this specific element first` : '';
-          const tbtNote  = (m as any).tbt_ms  ? `\n- **TBT (Total Blocking Time):** ${Math.round((m as any).tbt_ms)}ms${(m as any).tbt_ms > 300 ? ' ← significant JS blocking; main thread needs work' : ''}` : '';
-          const severe = m.lcp_ms > 8000 ? `\n\n⚠️ **At ${lcpSec}s, most mobile users abandon before the page loads.** This is a critical UX failure, not an optimisation task. No content change, H1 rewrite, or schema work will produce ranking results until this is resolved.` : '';
-          return `Largest Contentful Paint measures how long the main content takes to render for real users. Google's thresholds: <2.5s good, 2.5-4s needs improvement, >4s poor. Data source: ${isFromCrux ? 'Chrome User Experience (real-user 75th percentile)' : 'Lighthouse lab test'}.${severe}\n\n**Diagnostic breakdown:**${lcpElNote}${ttfbNote}${fcpNote}${tbtNote}`;
-        })(),
-        recommendation: sev === 'green' ? undefined : (() => {
-          const ttfb = (m as any).ttfb_ms;
-          const lcpEl = (m as any).lcp_element;
-          if (ttfb && ttfb > 600) return `TTFB is ${Math.round(ttfb)}ms — the server is slow before any rendering begins. Fix TTFB first: check hosting and CDN configuration, enable full-page caching where possible, reduce server-side rendering time. After TTFB is below 600ms, re-audit to isolate the next bottleneck.`;
-          return `Identify and optimise the LCP element${lcpEl ? ` ("${lcpEl}")` : ' (the largest visible element above the fold)'}. Priority actions: (1) compress to <200KB if an image, (2) add \`fetchpriority="high"\` to the element, (3) ensure it is NOT lazy-loaded, (4) inline critical CSS that controls its render, (5) check for render-blocking scripts above it in the DOM.`;
-        })(),
-        evidence: { strategy: strat, lcp_ms: m.lcp_ms, ttfb_ms: (m as any).ttfb_ms || null, fcp_ms: (m as any).fcp_ms || null, tbt_ms: (m as any).tbt_ms || null, lcp_element: (m as any).lcp_element || null, source: isFromCrux ? 'crux' : 'lab' },
+        finding_title:  `${strat.toUpperCase()} LCP: ${lcpSec}s ${sev === 'red' ? '— exceeds the 4s threshold' : sev === 'amber' ? '— above the 2.5s target' : '— within target'}`,
+        finding_detail: lcpDetail,
+        recommendation: lcpRec,
+        evidence: { strategy: strat, lcp_ms: m.lcp_ms, ttfb_ms: ttfbMs, fcp_ms: fcpMs, tbt_ms: tbtMs, lcp_element: lcpEl, source: isFromCrux ? 'crux' : 'lab' },
         data_source: 'psi',
       });
     }
