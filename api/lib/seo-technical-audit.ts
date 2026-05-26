@@ -194,6 +194,24 @@ function computeBusinessImpact(opts: {
 function pickFoundationalCritical(findings: Finding[]): void {
   const reds = findings.filter(f => f.severity === 'red');
   if (reds.length === 0) return;
+  /* Rule 0: extreme mobile LCP (>8s) — page doesn't load for real users.
+     This outranks every other concern including keyword and indexability.
+     No content change, no H1 rewrite, no schema work will help a page
+     that most mobile visitors abandon before it finishes loading.
+     8s threshold chosen deliberately: above this the page fails CrUX
+     "poor" at the 75th percentile AND Google's own field data would
+     show it consistently failing Core Web Vitals assessment. */
+  const extremeLcp = reds.find(f =>
+    f.audit_kind === 'core_web_vitals' &&
+    /MOBILE LCP/i.test(f.finding_title) &&
+    (() => { const m = f.finding_title.match(/(\d+\.\d+)s/); return m ? parseFloat(m[1]) > 8 : false; })()
+  );
+  if (extremeLcp) {
+    extremeLcp.is_foundational = true;
+    /* Override recommendation with the full diagnostic path */
+    extremeLcp.recommendation = `**STOP — fix mobile LCP before any other work begins.**\n\nAt ${(() => { const m = extremeLcp.finding_title.match(/(\d+\.\d+)s/); return m ? m[1] : '?'; })()} on mobile, most visitors leave before the page loads. Content rewrites, H1 changes, and schema additions will have zero ranking effect until mobile load time is resolved.\n\n**Diagnostic path (in order):**\n1. Open PSI in Chrome DevTools → identify the LCP element (usually the largest image or hero text block)\n2. Check TTFB (Time to First Byte) — if >2s, the issue is server/CDN, not the element itself\n3. Check image byte-weight on the LCP element — modern images should be <200KB above the fold\n4. Verify the LCP element is not loaded via lazy-loading or client-side JS render\n5. If using a CMS/page builder: check if the render-critical CSS is inlined or deferred\n\n**Expected fix for this LCP range:** likely a combination of server response time, unoptimised hero image, and render-blocking resources. CDN configuration alone often reduces this to <3s.`;
+    return;
+  }
   /* Rule 1: indexability blocker */
   const indexBlocked = reds.find(f =>
     f.audit_kind === 'indexability' &&
@@ -1524,10 +1542,10 @@ async function checkFirstParagraphTopicality(url: string): Promise<Finding[]> {
     findings.push({
       audit_kind: 'on_page_fundamentals',
       severity: 'amber',
-      finding_title: `First paragraph weakly aligned with page topic (${Math.round(overlap * 100)}% overlap)`,
-      finding_detail: `Above-the-fold content shares only ${Math.round(overlap * 100)}% of its substantive tokens with the title/H1. The opening copy partially relates to the topic but reads more like a generic intro than a topic-anchored opener.\n\n**First paragraph:** "${firstPara.slice(0, 240)}${firstPara.length > 240 ? '…' : ''}"`,
-      recommendation: `Tighten the first paragraph so it explicitly addresses the title's promise. Aim for ≥40% token overlap with the title/H1 in the opening 100 words.`,
-      evidence: { overlap_fraction: Number(overlap.toFixed(2)), first_paragraph: firstPara.slice(0, 400) },
+      finding_title: `First paragraph weakly aligned with page topic (${Math.round(overlap * 100)}% token overlap — internal heuristic)`,
+      finding_detail: `Above-the-fold content shares only ${Math.round(overlap * 100)}% of its substantive tokens with the title/H1.\n\n> ⚠️ **Metric caveat:** this token-overlap score is an internal heuristic — not a Google metric, not a published SEO standard. It measures whether the same words appear in both the opener and the title, which is a proxy for topical alignment but not a direct measure of quality. A page can score low here and still be excellent if it uses synonyms or addresses a closely related concept.\n\n**First paragraph:** "${firstPara.slice(0, 240)}${firstPara.length > 240 ? '…' : ''}"\n\n**How to evaluate manually:** does the first paragraph immediately address what a searcher typing "${title.slice(0, 60)}" would expect to find? If yes, this flag can be dismissed. If the opener reads like a generic tagline that could apply to any software product, it's worth tightening.`,
+      recommendation: `Read the first paragraph as a first-time visitor arriving from the SERP. Does it immediately confirm they're in the right place and answer their core question? If not, rewrite it to lead with the searcher's problem, who this page is for, and what they'll find here — in that order.`,
+      evidence: { overlap_fraction: Number(overlap.toFixed(2)), first_paragraph: firstPara.slice(0, 400), metric_type: 'internal_heuristic_not_google_metric' },
       data_source: 'html_fetch',
     });
   } else if (overlap >= 0.4) {
@@ -1663,7 +1681,7 @@ async function checkKeywordPresence(url: string, keyword: string): Promise<Findi
       audit_kind: 'on_page_fundamentals', severity: 'amber',
       finding_title:  `Campaign keyword "${keyword}" present in only one of title/H1`,
       finding_detail: `Strong keyword match in ${titleStrong ? 'title' : 'H1'} but not in ${titleStrong ? 'H1' : 'title'}. Both should carry the keyword for maximum signal.\n\nCoverage breakdown:\n${tableRows}`,
-      recommendation: `Update ${titleStrong ? 'the H1' : 'the title'} to include "${keyword}".`,
+      recommendation: `Before changing the ${titleStrong ? 'H1' : 'title'}, run this check first: **open GSC → Performance → Pages → click this URL → look at the Queries tab**. This shows what other keywords this page already gets impressions for. If the current ${titleStrong ? 'H1' : 'title'} contains tokens that match those existing queries, changing it may eliminate those rankings.\n\nIf the existing rankings are negligible (< 50 impressions each), update ${titleStrong ? 'the H1' : 'the title'} to include "${keyword}" naturally. Keep it readable — forced exact-match placements read as spam to users AND Google's quality raters.`,
       evidence: { keyword, coverage },
       data_source: 'html_fetch',
     });
@@ -2126,6 +2144,10 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
         cls:       audits['cumulative-layout-shift']?.numericValue,
         inp_ms:    audits['interaction-to-next-paint']?.numericValue,
         tbt_ms:    audits['total-blocking-time']?.numericValue,
+        ttfb_ms:   audits['server-response-time']?.numericValue,
+        fcp_ms:    audits['first-contentful-paint']?.numericValue,
+        lcp_element: audits['largest-contentful-paint-element']?.details?.items?.[0]?.node?.nodeLabel || null,
+        lcp_element_type: audits['largest-contentful-paint-element']?.details?.items?.[0]?.node?.type || null,
         perf_score: data?.lighthouseResult?.categories?.performance?.score,
         crux_lcp:  cruxMetrics?.LARGEST_CONTENTFUL_PAINT_MS?.percentile,
         crux_inp:  cruxMetrics?.INTERACTION_TO_NEXT_PAINT?.percentile,
@@ -2161,21 +2183,40 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
       findings.push({
         audit_kind: 'core_web_vitals', severity: sev,
         finding_title:  `${strat.toUpperCase()} LCP: ${(m.lcp_ms / 1000).toFixed(2)}s ${sev === 'red' ? '— exceeds the 4s threshold' : sev === 'amber' ? '— above the 2.5s target' : '— within target'}`,
-        finding_detail: `Largest Contentful Paint measures how long the main content takes to render. Google\'s thresholds: <2.5s good, 2.5-4s needs improvement, >4s poor.${isFromCrux ? ' Data source: Chrome User Experience (real-user data).' : ' Data source: Lighthouse lab test.'}`,
-        recommendation: sev === 'green' ? undefined : 'Optimize the largest element above the fold — usually a hero image or text block. Check image sizes, server response time, and render-blocking resources.',
-        evidence: { strategy: strat, lcp_ms: m.lcp_ms, source: isFromCrux ? 'crux' : 'lab' },
+        finding_detail: (() => {
+          const lcpSec = (m.lcp_ms / 1000).toFixed(2);
+          const ttfbNote = (m as any).ttfb_ms ? `\n- **TTFB (Server Response Time):** ${Math.round((m as any).ttfb_ms)}ms${(m as any).ttfb_ms > 600 ? ' ← slow server; fix this first before optimising elements' : ''}` : '';
+          const fcpNote  = (m as any).fcp_ms  ? `\n- **FCP (First Contentful Paint):** ${((m as any).fcp_ms / 1000).toFixed(2)}s` : '';
+          const lcpEl    = (m as any).lcp_element;
+          const lcpElNote = lcpEl ? `\n- **LCP element:** ${lcpEl} — optimise this specific element first` : '';
+          const tbtNote  = (m as any).tbt_ms  ? `\n- **TBT (Total Blocking Time):** ${Math.round((m as any).tbt_ms)}ms${(m as any).tbt_ms > 300 ? ' ← significant JS blocking; main thread needs work' : ''}` : '';
+          const severe = m.lcp_ms > 8000 ? `\n\n⚠️ **At ${lcpSec}s, most mobile users abandon before the page loads.** This is a critical UX failure, not an optimisation task. No content change, H1 rewrite, or schema work will produce ranking results until this is resolved.` : '';
+          return `Largest Contentful Paint measures how long the main content takes to render for real users. Google's thresholds: <2.5s good, 2.5-4s needs improvement, >4s poor. Data source: ${isFromCrux ? 'Chrome User Experience (real-user 75th percentile)' : 'Lighthouse lab test'}.${severe}\n\n**Diagnostic breakdown:**${lcpElNote}${ttfbNote}${fcpNote}${tbtNote}`;
+        })(),
+        recommendation: sev === 'green' ? undefined : (() => {
+          const ttfb = (m as any).ttfb_ms;
+          const lcpEl = (m as any).lcp_element;
+          if (ttfb && ttfb > 600) return `TTFB is ${Math.round(ttfb)}ms — the server is slow before any rendering begins. Fix TTFB first: check hosting and CDN configuration, enable full-page caching where possible, reduce server-side rendering time. After TTFB is below 600ms, re-audit to isolate the next bottleneck.`;
+          return `Identify and optimise the LCP element${lcpEl ? ` ("${lcpEl}")` : ' (the largest visible element above the fold)'}. Priority actions: (1) compress to <200KB if an image, (2) add \`fetchpriority="high"\` to the element, (3) ensure it is NOT lazy-loaded, (4) inline critical CSS that controls its render, (5) check for render-blocking scripts above it in the DOM.`;
+        })(),
+        evidence: { strategy: strat, lcp_ms: m.lcp_ms, ttfb_ms: (m as any).ttfb_ms || null, fcp_ms: (m as any).fcp_ms || null, tbt_ms: (m as any).tbt_ms || null, lcp_element: (m as any).lcp_element || null, source: isFromCrux ? 'crux' : 'lab' },
         data_source: 'psi',
       });
     }
 
-    if (m.inp_ms !== undefined && m.inp_ms !== null) {
-      const sev: 'green'|'amber'|'red' = m.inp_ms < 200 ? 'green' : m.inp_ms < 500 ? 'amber' : 'red';
+    /* INP — use CrUX field data when available (real-user 75th-pct), fall back
+       to lab data. CrUX INP reflects actual device conditions; lab data is on
+       a controlled mid-tier device and may over or understate real-user pain. */
+    const inpMs = m.crux_inp ?? m.inp_ms;
+    const inpSource = m.crux_inp !== undefined ? 'crux' : 'lab';
+    if (inpMs !== undefined && inpMs !== null) {
+      const sev: 'green'|'amber'|'red' = inpMs < 200 ? 'green' : inpMs < 500 ? 'amber' : 'red';
       findings.push({
         audit_kind: 'core_web_vitals', severity: sev,
-        finding_title:  `${strat.toUpperCase()} INP: ${Math.round(m.inp_ms)}ms ${sev === 'red' ? '— interactions feel sluggish' : sev === 'amber' ? '— noticeable delay' : '— responsive'}`,
-        finding_detail: `Interaction to Next Paint measures responsiveness to user input. Thresholds: <200ms good, 200-500ms needs improvement, >500ms poor.`,
-        recommendation: sev === 'green' ? undefined : 'Reduce main-thread blocking JavaScript. Defer non-critical scripts; break up long tasks; use web workers for heavy computation.',
-        evidence: { strategy: strat, inp_ms: m.inp_ms },
+        finding_title:  `${strat.toUpperCase()} INP: ${Math.round(inpMs)}ms ${sev === 'red' ? '— interactions feel sluggish (users notice delays)' : sev === 'amber' ? '— noticeable delay on interaction' : '— responsive'}`,
+        finding_detail: `Interaction to Next Paint measures the delay between a user interaction (click, tap, key press) and the next visual response. Google replaced FID with INP as a Core Web Vital in March 2024. Thresholds: <200ms good, 200-500ms needs improvement, >500ms poor. Data source: ${inpSource === 'crux' ? 'Chrome User Experience (real-user data at 75th percentile).' : 'Lighthouse lab test (controlled device — may not reflect real-user conditions).'}`,
+        recommendation: sev === 'green' ? undefined : `Reduce main-thread blocking JavaScript. Audit with Chrome DevTools → Performance panel → look for Long Tasks (>50ms) blocking the main thread on interaction. Specific fixes: defer non-critical third-party scripts, break up long event handlers with scheduler.yield(), use web workers for heavy computation off the main thread.`,
+        evidence: { strategy: strat, inp_ms: inpMs, source: inpSource },
         data_source: 'psi',
       });
     }
@@ -2617,7 +2658,12 @@ const STOPWORDS_FOR_HEADING_MATCH = new Set([
 
 /** Compute whether a PAA question is "answered" by any existing heading.
  *  Threshold: at least 50% of the PAA question's content tokens appear
- *  in the heading. Returns the matched heading text or null. */
+ *  in the heading. Returns the matched heading text or null.
+ *
+ *  NOTE: this is heading-level matching only — it verifies the H2/H3 exists
+ *  but cannot verify the content *under* that heading answers the question.
+ *  When all PAA questions are matched by headings, the finding notes this
+ *  caveat explicitly so the reader doesn't assume content quality is verified. */
 function findMatchingHeading(paaQuestion: string, headings: string[]): string | null {
   const paaTokens = tokensFor(paaQuestion);
   if (paaTokens.size === 0) return null;
@@ -2680,10 +2726,11 @@ async function checkHeadingHierarchyVsPaa(
   if (answeredCount === total) {
     findings.push({
       audit_kind: 'on_page_fundamentals',
-      severity:   'green',
-      finding_title: `All ${total} PAA questions for "${campaignKeyword}" are addressed by existing headings`,
-      finding_detail: `The page's heading outline (${h2.length} H2 + ${h3.length} H3) covers every PAA question on the live SERP. This is the ideal state for AI Overview citation and PAA box capture.${headingsListing}`,
-      evidence: { paa_total: total, answered_count: answeredCount, h2_count: h2.length, h3_count: h3.length },
+      severity:   'amber',
+      finding_title: `All ${total} PAA questions for "${campaignKeyword}" have matching headings — verify content quality beneath each`,
+      finding_detail: `The page's heading outline (${h2.length} H2 + ${h3.length} H3) has a heading that token-matches every PAA question on the live SERP. **This is a structural check only** — it confirms the H2/H3 exists but cannot verify whether the content *beneath* each heading actually answers the question clearly.\n\n> ⚠️ **Action required before marking complete:** open each matched heading below and verify the first 1-3 sentences beneath it provide a direct, citation-friendly answer (40-80 words). A heading that token-matches a PAA question but has vague or marketing copy underneath will NOT capture the PAA box.${headingsListing}\n\n**Verification checklist per matched heading:**\n- First sentence beneath H2 directly answers the PAA question in plain language\n- Answer is 40-80 words (citation-friendly length)\n- No jargon that assumes prior knowledge\n- Answer stands alone without requiring the visitor to read the rest of the section`,
+      recommendation: `Verify content quality beneath each matched heading. If any heading has vague or marketing copy as its first paragraph rather than a direct answer, rewrite that paragraph. This is the highest-leverage tactic for PAA box capture and AI Overview citation.`,
+      evidence: { paa_total: total, answered_count: answeredCount, h2_count: h2.length, h3_count: h3.length, caveat: 'heading_match_only_content_not_verified' },
       data_source: 'html_fetch',
       enrichment_sources: ['serpapi'],
     });
@@ -2710,6 +2757,27 @@ async function checkHeadingHierarchyVsPaa(
       enrichment_sources: ['serpapi'],
     });
   }
+  /* Fix: when PAA questions exist but no FAQPage schema is present,
+     flag it as a high-priority opportunity. FAQPage is the strongest
+     schema type for PAA capture and AI Overview citation.
+     Only fires when SerpAPI returned PAA questions (serp check already done above). */
+  if (serp.paa_questions.length > 0) {
+    const pageHtml = r.html || '';
+    const hasFaqSchema = /application\/ld\+json[\s\S]*?FAQPage/i.test(pageHtml);
+    if (!hasFaqSchema) {
+      findings.push({
+        audit_kind: 'schema_markup',
+        severity:   'amber',
+        finding_title: `FAQPage schema missing — ${serp.paa_questions.length} live PAA question(s) present, no FAQPage schema exists`,
+        finding_detail: `The SERP for "${campaignKeyword}" shows ${serp.paa_questions.length} People Also Ask question(s), but the page has no FAQPage JSON-LD schema. This is a missed opportunity for:\n- PAA box capture (Google cites FAQPage schema Q&As as the direct answer source)\n- AI Overview inclusion (AI Overviews pull from FAQPage schema when present and content-matched)\n- Rich results in the SERP (expandable FAQ entries below the organic result)\n\n**IMPORTANT:** Do NOT add FAQPage schema until the visible H2 + answer sections are written. Google requires every Question in FAQPage schema to appear verbatim in the visible page content. Adding schema without matching visible content risks a manual action (loss of rich-result eligibility).\n\n**Add schema AFTER writing visible content for these PAA questions:**\n${serp.paa_questions.map((q: string) => \`- "\${q}"\`).join('\n')}`,
+        recommendation: `Step 1: Write visible H2 sections + 40-80 word direct answers for each PAA question. Step 2: Add FAQPage JSON-LD schema matching those visible Q&As exactly. Step 3: Validate at https://validator.schema.org. Step 4: Submit URL in GSC for re-crawl.`,
+        evidence: { paa_questions: serp.paa_questions, has_faq_schema: false, paa_count: serp.paa_questions.length },
+        data_source: 'html_fetch',
+        enrichment_sources: ['serpapi'],
+      });
+    }
+  }
+
   return findings;
 }
 
@@ -2813,13 +2881,19 @@ Classify each by intent category, count distinct categories, decide if SERP is d
       audit_kind: 'on_page_fundamentals',
       severity:   'amber',
       finding_title: `Diffuse-intent SERP for "${campaignKeyword}" — ${json.distinct_categories} distinct intent categories in top-10`,
-      finding_detail: `The live top-10 SERP for "${campaignKeyword}" spans **${json.distinct_categories} distinct intent categories** — Google's own ranking signals show it isn't sure what users want from this query. ${json.reasoning || ''}
+      finding_detail: `The live top-10 SERP for "${campaignKeyword}" spans **${json.distinct_categories} distinct intent categories** — Google hasn't settled on a dominant page type for this query. ${json.reasoning || ''}
 
 **Intent breakdown:**
 ${categoryListing}
 
-This matters for SEO economics: even ranking #1 still means competing for click-share against fundamentally different result types. A user searching "${campaignKeyword}" with one intent will skip top results that match a different intent. CTR ceilings are lower on diffuse SERPs than on tight-intent SERPs at the same position.`,
-      recommendation: `Either (a) pick a tighter-intent keyword variant whose SERP is single-category (use GSC query-distribution data to find which tight keywords this URL already gets impressions for), or (b) accept that this keyword's CTR ceiling is structurally limited and weight SEO investment accordingly. Don't expect normal CTR-vs-position economics on a diffuse SERP.`,
+**Two ways to read a diffuse SERP — both are true:**
+
+1. **CTR ceiling is lower.** A user searching with intent X will skip results matching intent Y. Even at #1, you're competing for click-share against fundamentally different result types. Don't expect the same CTR-vs-position economics as a tight-intent SERP.
+
+2. **No single winner yet = contestable territory.** A diffuse SERP often means Google hasn't found one authoritative page that satisfies the full query. This is an opportunity: a page that clearly signals its intent category and serves it comprehensively can establish dominance in that intent slice — and intent-dominant pages hold rankings more stably than weak pages that happen to rank on a crowded query.
+
+**Strategic implication:** the risk is *not* that this SERP is impossible to rank on — it's that volume forecasts and CTR projections from keyword tools won't be accurate because they assume tight-intent economics. Set expectations accordingly and measure success by intent-specific click share, not blended CTR.`,
+      recommendation: `Two strategic paths: (a) pursue a tighter keyword variant whose SERP is single-category — use GSC query data to find what this URL already gets impressions for, then identify which of those has a tight SERP; or (b) stay on "${campaignKeyword}" but focus the page clearly on ONE of the intent categories in the top-10 (likely "form builder" or "vendor product page" given the site's nature) and build content depth in that lane. Don't try to serve all 5 intent categories — that produces weak pages that don't rank well for any of them.`,
       evidence: { campaign_keyword: campaignKeyword, distinct_categories: json.distinct_categories, categories: byCategory, reasoning: json.reasoning },
       data_source: 'html_fetch',
       enrichment_sources: ['serpapi'],
@@ -3133,12 +3207,25 @@ async function checkContentFreshness(url: string): Promise<Finding[]> {
         data_source: 'html_fetch',
       });
     } else {
+      /* Determine signal reliability. Last-Modified-only is the least
+         trustworthy freshness signal — CDN cache purges and deployment
+         pipelines routinely update it without any content change.
+         Only mark green when a higher-trust signal (schema dateModified,
+         visible Updated label, year-in-title) corroborates the date. */
+      const lastModOnlySource = detected.length === 1 && mostRecent.source === 'Last-Modified header';
       findings.push({
         audit_kind: 'on_page_fundamentals',
-        severity: 'green',
-        finding_title: `Content is fresh — most-recent date signal is ${Math.round(ageMonths)} months old`,
-        finding_detail: `Most-recent freshness signal: **${dateForScoring.toISOString().slice(0, 10)}** (${Math.round(ageMonths)} months ago, source: ${mostRecent.source}). Within the typical "recent" window for SERP freshness signals.\n\n**All freshness signals detected:**\n${datesSummary}`,
-        evidence: { age_months: Math.round(ageMonths), most_recent_date: dateForScoring.toISOString(), most_recent_source: mostRecent.source },
+        severity: lastModOnlySource ? 'amber' : 'green',
+        finding_title: lastModOnlySource
+          ? `Content freshness signal present but authenticity uncertain — Last-Modified header only (${Math.round(ageMonths)} months old)`
+          : `Content is fresh — most-recent date signal is ${Math.round(ageMonths)} months old`,
+        finding_detail: lastModOnlySource
+          ? `Most-recent freshness signal: **${dateForScoring.toISOString().slice(0, 10)}** (${Math.round(ageMonths)} months ago, source: ${mostRecent.source}).\n\n> ⚠️ **Authenticity caveat:** the Last-Modified HTTP header is the least reliable freshness signal. CDN cache purges, server deployments, and build pipelines routinely update this header without any change to the actual page content. Google's own documentation notes it weights *material content changes* over date-stamp manipulation.\n\n**To make this a reliable freshness signal:** cross-verify by checking (a) whether the schema \`dateModified\` field agrees with this date, and (b) whether there's a visible \"Updated:\" or \"Last reviewed:\" label on the page. If neither exists, the freshness signal cannot be confirmed.\n\n**All freshness signals detected:**\n${datesSummary}`
+          : `Most-recent freshness signal: **${dateForScoring.toISOString().slice(0, 10)}** (${Math.round(ageMonths)} months ago, source: ${mostRecent.source}). Within the typical "recent" window for SERP freshness signals.\n\n**All freshness signals detected:**\n${datesSummary}`,
+        recommendation: lastModOnlySource
+          ? `Add a visible "Last updated: <date>" label on the page AND add \`dateModified\` to the Article/BreadcrumbList JSON-LD schema. Update both whenever you genuinely refresh the content. This turns an unverifiable header into a corroborated, trust-worthy freshness signal.`
+          : undefined,
+        evidence: { age_months: Math.round(ageMonths), most_recent_date: dateForScoring.toISOString(), most_recent_source: mostRecent.source, last_mod_only: lastModOnlySource },
         data_source: 'html_fetch',
       });
     }
