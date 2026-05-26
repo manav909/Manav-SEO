@@ -37,7 +37,7 @@ export default function ArtifactMarkdown({ body, accent = '#a78bfa', size = 'md'
     : { h1: 'text-2xl', h2: 'text-xl', h3: 'text-base', h4: 'text-sm' };
 
   return (
-    <div className={`${baseFontSize} leading-relaxed text-foreground/90`}>
+    <div className={`${baseFontSize} leading-relaxed text-foreground/90 overflow-hidden`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word', minWidth: 0 }}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -58,7 +58,7 @@ export default function ArtifactMarkdown({ body, accent = '#a78bfa', size = 'md'
             <h4 className={`${headingScale.h4} font-bold mt-3 mb-1 text-foreground`}>{children}</h4>
           ),
           p: ({ children }) => (
-            <p className="leading-relaxed mb-3 text-foreground/90">{children}</p>
+            <p className="leading-relaxed mb-3 text-foreground/90" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>{children}</p>
           ),
           ul: ({ children }) => (
             <ul className="my-3 ml-5 space-y-1 list-disc marker:text-muted-foreground text-foreground/90">{children}</ul>

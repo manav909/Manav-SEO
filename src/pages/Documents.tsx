@@ -649,7 +649,7 @@ function DetailPane({
 
       {/* Body */}
       <ScrollArea className="flex-1 min-h-0">
-        <div className="px-5 py-4">
+        <div className="px-5 py-4 min-w-0 overflow-hidden">
           <ArtifactMarkdown body={artifact.body || '_No content_'} accent={meta.color} size="md" />
 
           {/* Supersession chain */}

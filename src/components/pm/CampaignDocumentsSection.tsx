@@ -410,6 +410,7 @@ function ArtifactCard({
       background: 'rgba(255,255,255,0.02)',
       border: '1px solid rgba(160,160,180,0.1)',
       overflow: 'hidden',
+      minWidth: 0,
     }}>
       {/* Row header — always visible, click to expand */}
       <button
@@ -513,7 +514,9 @@ function ArtifactCard({
             </div>
           )}
           {!detailLoading && detail && (
-            <ArtifactMarkdown body={detail.body || '_No content_'} size="sm" />
+            <div style={{ minWidth: 0, overflow: 'hidden', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+              <ArtifactMarkdown body={detail.body || '_No content_'} size="sm" />
+            </div>
           )}
         </div>
       )}
