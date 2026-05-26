@@ -4472,17 +4472,11 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   }
 
   if (action === 'dev_execute_task') {
-    /* ── FIRE-AND-FORGET ARCHITECTURE ────────────────────────────────
-       1. Mark task as 'running' in DB
-       2. Return HTTP response to client immediately (< 300ms)
-       3. Continue executing after res.json() — Node.js keeps the
-          Vercel function alive for maxDuration (300s) even after the
-          HTTP response is sent
-       4. Client polls dev_get_tasks every 3s — reads status from DB
-       5. When status changes to 'fix_ready' or 'failed', client stops polling
-       
-       This means: page fetch can take 25s on a slow site, AI call can
-       take 30s — the client never waits for either. ─────────────────── */
+    /* Synchronous execution — do the work, then return the completed task.
+       Vercel terminates Lambda after res.json() so fire-and-forget does
+       not work. Instead: execute fully within the request, return result.
+       PATH A tasks (no page fetch): ~5-10s. Acceptable client wait.
+       PATH B/C tasks (with page fetch): up to 45s. Vercel maxDuration=300. */
     const { taskId } = body;
     if (!taskId) return ok(res, { error: 'taskId required' });
     try {
@@ -4490,50 +4484,24 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       const task = await getTask(taskId);
       if (!task) return ok(res, { error: 'task not found' });
 
-      // Guard: if already running and recently started, let it continue
-      if (task.status === 'running' && task.executed_at) {
-        const ageMs = Date.now() - new Date(task.executed_at).getTime();
-        if (ageMs < 90_000) {
-          // Still within expected execution window — tell client to keep polling
-          return ok(res, { success: true, polling: true, task });
-        }
-        // Stale — reset and re-run
-      }
-
-      // Mark running immediately so client UI updates
       await updateTask(taskId, { status: 'running', executed_at: new Date().toISOString() });
 
-      // ── Return to client NOW ──────────────────────────────────────
-      // The client will start polling. We continue working below.
-      ok(res, { success: true, polling: true, task: { ...task, status: 'running' } });
-
-      // ── Continue after response ───────────────────────────────────
-      // executeDevTask handles all errors internally and always writes
-      // a final status (fix_ready or failed) to the DB.
+      // Execute fully — then return the completed task
       await executeDevTask(task);
 
+      const updated = await getTask(taskId);
+      return ok(res, { success: true, task: updated });
     } catch (e: any) {
-      // If we haven't sent the response yet (e.g. getTask failed), send error
-      if (!res.headersSent) {
-        return ok(res, { error: e?.message || 'Execution error' });
-      }
-      // If we already sent the response, update the DB so client sees the failure
       try {
         const { updateTask } = await import('./lib/dev-engine.js');
-        await updateTask(taskId, {
-          status:   'failed',
-          analysis: 'Unexpected error: ' + (e?.message || 'unknown'),
-        });
-      } catch { /* can't do anything more */ }
+        await updateTask(taskId, { status: 'failed', analysis: 'Error: ' + (e?.message || 'unknown') });
+      } catch { /* best effort */ }
+      return ok(res, { error: e?.message || 'Execution error' });
     }
-    return; // never send another response
   }
 
 
   if (action === 'dev_verify_task') {
-    /* Same fire-and-forget pattern as execute.
-       Verify re-fetches the live page — can be slow on slow sites.
-       Client polls until status changes from 'verifying'. */
     const { taskId } = body;
     if (!taskId) return ok(res, { error: 'taskId required' });
     try {
@@ -4543,10 +4511,6 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
       await updateTask(taskId, { status: 'verifying' });
 
-      // Return to client immediately
-      ok(res, { success: true, polling: true, task: { ...task, status: 'verifying' } });
-
-      // Continue verifying after response
       try {
         const updates = await verifyDevTask(task);
         await updateTask(taskId, updates);

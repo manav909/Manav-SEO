@@ -547,55 +547,33 @@ export default function DevPanel({ projectId }: { projectId: string }) {
     setSelected({ ...task, status: 'running' });
     setError('');
     setElapsedSec(0);
-    setRunStarted(Date.now());
-    // Start elapsed timer
     if (elapsedRef.current) clearInterval(elapsedRef.current);
     elapsedRef.current = setInterval(() => setElapsedSec(s => s + 1), 1000);
 
-    // Fire the start request — server returns IMMEDIATELY (< 300ms)
-    // then continues working in the background.
-    const result = await callApi<{ task: DevTask; polling?: boolean }>('dev_execute_task', { taskId: task.id });
+    // Synchronous — server does the work and returns the completed task.
+    // PATH A tasks (faq, h1, gsc, etc.): ~5-10s.
+    // PATH B/C tasks (page fetch + AI): up to 45s.
+    const result = await callApi<{ task: DevTask }>('dev_execute_task', { taskId: task.id });
+
+    if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
 
     if (!result.ok) {
-      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
-      setError(result.error ?? 'Could not start execution.');
-      setSelected(task);
+      setError(result.error ?? 'Execution failed.');
+      await reloadTask(task.id);
       return;
     }
 
-    // Server acknowledged — start polling for the result.
-    // Poll every 3 seconds until status is no longer 'running'.
-    startPolling(task.id);
+    if (result.data?.task?.cms_platform && !cms) {
+      setCms({ platform: result.data.task.cms_platform, seoPlugin: '', confidence: 0, adminPath: '' });
+    }
+
+    await reloadTask(task.id);
   };
 
-  const startPolling = useCallback((taskId: string) => {
-    // Clear any existing poll interval
-    if (pollRef.current) clearInterval(pollRef.current);
-
-    pollRef.current = setInterval(async () => {
-      const r = await callApi<{ tasks: DevTask[] }>('dev_get_tasks', { projectId });
-      if (!r.ok) return; // keep polling on transient errors
-
-      const updated = r.data?.tasks ?? [];
-      setTasks(updated);
-
-      const task = updated.find(t => t.id === taskId);
-      if (!task) return;
-
-      setSelected(task);
-
-      // Infer CMS if newly detected
-      if (task.cms_platform && !cms) {
-        setCms({ platform: task.cms_platform, seoPlugin: '', confidence: 0, adminPath: '' });
-      }
-
-      // Stop polling when execution is complete
-      if (task.status !== 'running' && task.status !== 'verifying') {
-        if (pollRef.current)   { clearInterval(pollRef.current);   pollRef.current = null; }
-        if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
-      }
-    }, 3000);
-  }, [projectId, cms]);
+  const startPolling = useCallback((_taskId: string) => {
+    // Polling no longer used — execution is synchronous.
+    // Kept as stub so nothing breaks if called elsewhere.
+  }, []);
 
   const verifyTask = async (task: DevTask) => {
     setSelected({ ...task, status: 'verifying' });
@@ -603,15 +581,14 @@ export default function DevPanel({ projectId }: { projectId: string }) {
     if (elapsedRef.current) clearInterval(elapsedRef.current);
     elapsedRef.current = setInterval(() => setElapsedSec(s => s + 1), 1000);
 
-    const result = await callApi('dev_verify_task', { taskId: task.id });
+    const result = await callApi<{ task: DevTask }>('dev_verify_task', { taskId: task.id });
+
+    if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+
     if (!result.ok) {
-      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
-      setError(result.error ?? 'Could not start verification.');
-      setSelected(task);
-      return;
+      setError(result.error ?? 'Verification failed.');
     }
-    // Poll for verification result — same pattern as execution
-    startPolling(task.id);
+    await reloadTask(task.id);
   };
 
   const confirmApplied = async (task: DevTask) => {
