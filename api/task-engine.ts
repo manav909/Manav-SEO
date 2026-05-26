@@ -3114,15 +3114,42 @@ HTML: ${html.slice(0,2000)}`}]})});
       const { data: runs, error } = await q;
       if (error) return ok(res, { success: false, error: error.message });
 
-      /* Cache campaign lookups to avoid N+1 queries */
+      /* For each run, resolve campaign_id via multiple strategies:
+         1. Already on the run row (best)
+         2. In scope.campaignId (set by chat flow)
+         3. Look up seo_campaigns by project_id + normalised keyword
+            — use the FIRST word(s) of scope.keyword to avoid matching
+              full input strings like "mobile forms on https://..." */
       const campaignCache: Record<string, string | null> = {};
-      const resolveCampaignId = async (projectId: string, keyword: string | null): Promise<string | null> => {
-        if (!keyword) return null;
-        const key = `${projectId}::${keyword.toLowerCase().trim()}`;
+      const resolveCampaignId = async (projectId: string, rawKeyword: string | null, scopeCampaignId?: string | null): Promise<string | null> => {
+        if (scopeCampaignId) return scopeCampaignId;
+        if (!rawKeyword) return null;
+        const key = `${projectId}::${rawKeyword}`;
         if (key in campaignCache) return campaignCache[key];
-        const { data: camp } = await db().from('seo_campaigns')
-          .select('id').eq('project_id', projectId)
-          .ilike('keyword', keyword.trim()).maybeSingle();
+
+        /* Try exact match first */
+        const norm = rawKeyword.trim().toLowerCase().slice(0, 240);
+        let { data: camp } = await db().from('seo_campaigns')
+          .select('id').eq('project_id', projectId).eq('keyword', norm).eq('status', 'active').maybeSingle();
+
+        /* If no exact match, try matching by taking just the first 4 words
+           (handles "mobile forms on https://..." → "mobile forms") */
+        if (!camp) {
+          const shortKw = norm.split(/\s+/).slice(0, 4).join(' ');
+          if (shortKw !== norm) {
+            const res2 = await db().from('seo_campaigns')
+              .select('id').eq('project_id', projectId).ilike('keyword', shortKw + '%').eq('status', 'active').maybeSingle();
+            camp = (res2 as any).data;
+          }
+        }
+
+        /* Also try any campaign for this project if still no match */
+        if (!camp) {
+          const res3 = await db().from('seo_campaigns')
+            .select('id').eq('project_id', projectId).eq('status', 'active').order('created_at', { ascending: false }).limit(1).maybeSingle();
+          camp = (res3 as any).data;
+        }
+
         campaignCache[key] = (camp as any)?.id || null;
         return campaignCache[key];
       };
@@ -3132,31 +3159,29 @@ HTML: ${html.slice(0,2000)}`}]})});
         const arts = Array.isArray(run.final_artifacts) ? run.final_artifacts : [];
         if (!arts.length || !run.project_id) continue;
 
-        /* Resolve campaign_id if missing on the run row */
-        let campaignId = run.campaign_id || null;
-        const keyword  = run.scope?.keyword || null;
-        if (!campaignId && keyword) {
-          campaignId = await resolveCampaignId(run.project_id, keyword);
-          /* Stamp it on the run row so future finalizeRun calls work */
+        /* Resolve campaign_id */
+        let campaignId: string | null = run.campaign_id
+          || run.scope?.campaignId
+          || run.scope?.campaign_id
+          || null;
+        if (!campaignId) {
+          campaignId = await resolveCampaignId(run.project_id, run.scope?.keyword || null, null);
           if (campaignId) {
-            await db().from('season_pipeline_runs')
-              .update({ campaign_id: campaignId }).eq('id', run.id);
+            await db().from('season_pipeline_runs').update({ campaign_id: campaignId }).eq('id', run.id);
           }
         }
 
-        /* Insert artifacts (idempotent — skips existing rows) */
+        /* Insert artifacts (idempotent) */
+        const keyword = run.scope?.keyword
+          ? (run.scope.keyword as string).split(/\s+on\s+https?:\/\//i)[0].trim()
+          : null;
         const r = await persistPipelineRunArtifacts({
-          runId:         run.id,
-          projectId:     run.project_id,
-          campaignId,
-          panelId:       run.panel_id || null,
-          keyword,
-          targetUrl:     run.scope?.target_url || null,
-          pipelineType:  run.pipeline_type || 'rank_for_keyword',
-          artifacts:     arts,
-          totalLlmCalls: run.llm_calls_used || 0,
-          totalCostUsd:  run.estimated_cost_usd || 0,
-          finishedAt:    run.finished_at || null,
+          runId: run.id, projectId: run.project_id, campaignId,
+          panelId: run.panel_id || null, keyword,
+          targetUrl: run.scope?.target_url || null,
+          pipelineType: run.pipeline_type || 'rank_for_keyword',
+          artifacts: arts, totalLlmCalls: run.llm_calls_used || 0,
+          totalCostUsd: run.estimated_cost_usd || 0, finishedAt: run.finished_at || null,
         });
         totalInserted += r.inserted;
         totalSkipped  += r.skipped;
@@ -3165,9 +3190,7 @@ HTML: ${html.slice(0,2000)}`}]})});
         if (campaignId) {
           await db().from('artifacts')
             .update({ campaign_id: campaignId })
-            .eq('source_kind', 'pipeline_run')
-            .eq('source_id', run.id)
-            .is('campaign_id', null);
+            .eq('source_kind', 'pipeline_run').eq('source_id', run.id).is('campaign_id', null);
           totalUpdated++;
         }
         processed++;
