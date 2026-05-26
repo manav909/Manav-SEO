@@ -416,7 +416,7 @@ function PsiRow({ projectId }: { projectId: string }) {
                 <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
               ) : connected ? (
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">
-                  Connected {status?.keyHint ? `· key ${status.keyHint}` : ''}
+                  {status?.source === 'platform_env' ? 'Platform key active' : `Connected${status?.keyHint ? ` · key ${status.keyHint}` : ''}`}
                 </span>
               ) : (
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
@@ -439,7 +439,7 @@ function PsiRow({ projectId }: { projectId: string }) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {connected && (
+          {connected && status?.source !== 'platform_env' && (
             <button
               onClick={remove}
               disabled={removing}

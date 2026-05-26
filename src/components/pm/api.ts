@@ -720,6 +720,7 @@ export interface PsiStatus {
   lastTestedStatus?: 'ok' | 'error';
   lastTestedError?: string;
   keyHint?: string;
+  source?: 'project' | 'platform_env';
 }
 
 export async function psiStatus(projectId: string): Promise<{ status?: PsiStatus; error?: string }> {

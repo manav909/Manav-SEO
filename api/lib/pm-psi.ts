@@ -15,21 +15,39 @@ export async function psiStatus(projectId: string): Promise<{
   lastTestedAt?: string;
   lastTestedStatus?: "ok" | "error";
   lastTestedError?: string;
-  keyHint?: string;   // last 4 chars of the key, safe to show
+  keyHint?: string;
+  source?: "project" | "platform_env";
 }> {
+  /* Check project-level key first */
   const { data } = await db().from("project_integrations")
     .select("api_key, status, last_pull_at, last_pull_status, last_pull_error")
     .eq("project_id", projectId).eq("provider", PROVIDER).maybeSingle();
-  if (!data) return { connected: false };
-  const d = data as any;
-  const key: string = d.api_key || "";
-  return {
-    connected:         d.status === "connected" && key.length > 0,
-    lastTestedAt:      d.last_pull_at || undefined,
-    lastTestedStatus:  d.last_pull_status === "ok" ? "ok" : d.last_pull_status === "error" ? "error" : undefined,
-    lastTestedError:   d.last_pull_error || undefined,
-    keyHint:           key.length >= 4 ? `…${key.slice(-4)}` : undefined,
-  };
+
+  if (data) {
+    const d = data as any;
+    const key: string = d.api_key || "";
+    return {
+      connected:         d.status === "connected" && key.length > 0,
+      lastTestedAt:      d.last_pull_at || undefined,
+      lastTestedStatus:  d.last_pull_status === "ok" ? "ok" : d.last_pull_status === "error" ? "error" : undefined,
+      lastTestedError:   d.last_pull_error || undefined,
+      keyHint:           key.length >= 4 ? `…${key.slice(-4)}` : undefined,
+      source:            "project",
+    };
+  }
+
+  /* Fall back to platform-wide Vercel env var */
+  const envKey = (process.env.PAGESPEED_API_KEY || "").trim();
+  if (envKey.length > 0) {
+    return {
+      connected:         true,
+      keyHint:           envKey.length >= 4 ? `…${envKey.slice(-4)}` : "set",
+      source:            "platform_env",
+      lastTestedStatus:  "ok",
+    };
+  }
+
+  return { connected: false };
 }
 
 /* ── Save key + immediately validate ─────────────────────────── */
