@@ -26,8 +26,9 @@ import SeoCampaignsPanel from '@/components/pm/SeoCampaignsPanel';
 import SeoInboxPanel from '@/components/pm/SeoInboxPanel';
 import Documents from '@/pages/Documents';
 import PMOnboardingWizard from '@/components/pm/PMOnboardingWizard';
+import DevPanel from '@/components/pm/DevPanel';
 
-type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox' | 'documents';
+type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox' | 'documents' | 'developer';
 
 export default function PMModule() {
   const { selectedProject, selectedProjectId, setSelectedProjectId } = useProject();
@@ -68,6 +69,7 @@ export default function PMModule() {
     { id: 'seo_campaigns',  label: 'SEO Campaigns' },
     { id: 'seo_inbox',      label: 'SEO Inbox' },
     { id: 'documents',      label: 'Documents' },
+    { id: 'developer',      label: '🛠️ Developer' },
   ];
 
   return (
@@ -241,6 +243,9 @@ export default function PMModule() {
                   </div>
                 </div>
               </>
+            )}
+          {tab === 'developer' && (
+              <DevPanel projectId={selectedProjectId} />
             )}
           </>
         )}

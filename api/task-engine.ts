@@ -4407,6 +4407,89 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     });
   }
 
+  /* ════════════════════════════════════════════════════════════════
+     DEVELOPER TASK ENGINE
+     Parse audit findings → tasks. Execute tasks via Claude.
+     Verify fixes were applied. The "I am the developer" workflow.
+  ════════════════════════════════════════════════════════════════ */
+
+  if (action === 'dev_parse_audit_tasks') {
+    const { projectId, campaignId, auditRunId, targetUrl, findings } = body;
+    if (!projectId) return ok(res, { error: 'projectId required' });
+    if (!findings || !Array.isArray(findings)) return ok(res, { error: 'findings array required' });
+    try {
+      const { parseFindingsToTasks, saveTasks, deleteProjectTasks } = await import('./lib/dev-engine.js');
+      /* Clear old tasks for this audit run to avoid duplication */
+      if (auditRunId) await deleteProjectTasks(projectId, auditRunId);
+      const tasks = parseFindingsToTasks(findings, { projectId, campaignId, auditRunId, targetUrl });
+      const { saved, error } = await saveTasks(tasks);
+      if (error) return ok(res, { error });
+      return ok(res, { success: true, tasks_created: saved, tasks });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
+  if (action === 'dev_get_tasks') {
+    const { projectId, campaignId, status } = body;
+    if (!projectId) return ok(res, { error: 'projectId required' });
+    try {
+      const { getTasksForProject } = await import('./lib/dev-engine.js');
+      const tasks = await getTasksForProject(projectId, { campaignId, status });
+      return ok(res, { success: true, tasks });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
+  if (action === 'dev_execute_task') {
+    const { taskId } = body;
+    if (!taskId) return ok(res, { error: 'taskId required' });
+    try {
+      const { getTask, executeDevTask, updateTask } = await import('./lib/dev-engine.js');
+      const task = await getTask(taskId);
+      if (!task) return ok(res, { error: 'task not found' });
+      /* Mark running */
+      await updateTask(taskId, { status: 'running' });
+      /* Execute */
+      const updates = await executeDevTask(task);
+      await updateTask(taskId, updates);
+      const updated = await getTask(taskId);
+      return ok(res, { success: true, task: updated });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
+  if (action === 'dev_verify_task') {
+    const { taskId } = body;
+    if (!taskId) return ok(res, { error: 'taskId required' });
+    try {
+      const { getTask, verifyDevTask, updateTask } = await import('./lib/dev-engine.js');
+      const task = await getTask(taskId);
+      if (!task) return ok(res, { error: 'task not found' });
+      await updateTask(taskId, { status: 'verifying' });
+      const updates = await verifyDevTask(task);
+      await updateTask(taskId, updates);
+      const updated = await getTask(taskId);
+      return ok(res, { success: true, task: updated });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
+  if (action === 'dev_update_task') {
+    const { taskId, updates } = body;
+    if (!taskId) return ok(res, { error: 'taskId required' });
+    try {
+      const { updateTask, getTask } = await import('./lib/dev-engine.js');
+      await updateTask(taskId, updates || {});
+      const updated = await getTask(taskId);
+      return ok(res, { success: true, task: updated });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
 
     return ok(res, { error: `Unknown action: ${action}` });
 }
