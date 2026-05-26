@@ -376,11 +376,13 @@ export async function gscPull(opts: {
         { dimensions: ["query"], rowLimit: 100 },
         { startDate: prevQStart, endDate: prevQEnd },
       ),
-      /* Query×Page pairs — needed by detectCannibalization to find queries
-         where multiple pages compete for the same term. rowLimit 200 gives
-         enough resolution for typical project shapes without bloating the
-         cron payload. */
-      runQuery({ dimensions: ["query", "page"], rowLimit: 200 }),
+      /* Query×Page pairs — needed by detectCannibalization AND the
+         per-URL query distribution check in the technical audit.
+         Raised from 200 to 1000: at 200, low-traffic pages (brand-new pages
+         getting only a handful of impressions) fall off the list entirely
+         when a site has many higher-traffic pages. 1000 rows covers all but
+         the largest sites without meaningful payload cost (~80-120KB JSON). */
+      runQuery({ dimensions: ["query", "page"], rowLimit: 1000 }),
     ]);
 
     /* ── Shape helpers ───────────────────────────────────────────── */

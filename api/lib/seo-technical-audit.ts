@@ -2106,17 +2106,39 @@ async function checkQueryDistribution(url: string, projectId: string, keyword: s
     }
     const allPairs: Array<{ query: string; page: string; clicks: number; impressions: number; position: number }> =
       JSON.parse((pairsRow as any).field_value) || [];
-    const normUrl = url.replace(/\/$/, '').toLowerCase();
+    /* Normalise the audited URL for matching.
+       GSC page dimension returns the full canonical URL including scheme and
+       optionally www — but the property type (sc-domain vs URL-prefix) and
+       the canonical tag both affect what GSC reports. We normalise to
+       path-only after stripping scheme, www, and trailing slash so that
+       https://www.alphasoftware.com/mobile-forms matches
+       https://alphasoftware.com/mobile-forms and /mobile-forms/ equally. */
+    const normalisePath = (u: string) => {
+      try {
+        const parsed = new URL(u);
+        return (parsed.hostname.replace(/^www\./, '') + parsed.pathname)
+          .replace(/\/$/, '').toLowerCase();
+      } catch {
+        return u.replace(/^https?:\/\//, '').replace(/^www\./, '')
+          .replace(/\/$/, '').toLowerCase();
+      }
+    };
+    const normUrl = normalisePath(url);
     const forUrl = allPairs
-      .filter(p => (p.page || '').replace(/\/$/, '').toLowerCase() === normUrl)
+      .filter(p => normalisePath(p.page || '') === normUrl)
       .sort((a, b) => b.impressions - a.impressions);
 
     if (forUrl.length === 0) {
+      /* Distinguish between "page has data but URL didn't match" and
+         "page genuinely has no data." Count total pairs to help diagnose. */
+      const totalPairs = allPairs.length;
+      const pagesInData = new Set(allPairs.map(p => normalisePath(p.page || ''))).size;
       findings.push({
         audit_kind: 'on_page_fundamentals',
         severity:   'info',
         finding_title:  'No query×page data for this URL yet',
-        finding_detail: 'GSC has not returned query×page pairs for this URL in the audit window. The page may have very low impressions, or GSC may not yet have surfaced it in the paired dataset.',
+        finding_detail: `GSC has not returned query×page pairs for \`${url}\` in the stored dataset (${totalPairs} query×page pairs across ${pagesInData} distinct pages are stored).\n\n**Most likely reasons:**\n1. **Page has 0 or near-0 impressions in the last 28 days** — GSC only surfaces a URL in the query×page dimension once it has measurable impressions. Submit this URL via GSC → URL Inspection → Request Indexing and wait 1-2 weeks.\n2. **The 1,000-row dataset is full and this page ranks below the cutoff** — if the site has very high total query volume, this URL's low-impression rows may not appear. Check GSC directly: Performance → Pages → filter to this URL → Queries tab.\n3. **GSC 2-3 day API lag** — data from the last 2-3 days is not yet processed. Re-run the audit tomorrow to see if new queries appear.\n4. **URL format mismatch** — GSC may be attributing impressions to a slightly different URL (redirected, canonical, www vs non-www). Check GSC → Performance → Pages for this exact URL.`,
+        evidence: { url, total_pairs_in_dataset: totalPairs, distinct_pages_in_dataset: pagesInData },
         data_source: 'gsc',
       });
       return findings;
