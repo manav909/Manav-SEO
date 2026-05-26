@@ -4413,6 +4413,25 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
      Verify fixes were applied. The "I am the developer" workflow.
   ════════════════════════════════════════════════════════════════ */
 
+  if (action === 'dev_detect_cms') {
+    const { projectId, url } = body;
+    try {
+      const { detectCms, detectCmsForProject } = await import('./lib/dev-engine.js');
+      let cms;
+      if (projectId && !url) {
+        cms = await detectCmsForProject(projectId);
+      } else {
+        // Read stored project hints first
+        const { data: proj } = await db().from('projects').select('cms,seo_plugin,url').eq('id', projectId || 'x').maybeSingle();
+        const hints = { cms: (proj as any)?.cms, seoPlugin: (proj as any)?.seo_plugin };
+        cms = await detectCms(url || (proj as any)?.url || '', hints);
+      }
+      return ok(res, { success: true, cms });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
   if (action === 'dev_parse_audit_tasks') {
     const { projectId, campaignId, auditRunId, targetUrl, findings } = body;
     if (!projectId) return ok(res, { error: 'projectId required' });
