@@ -213,15 +213,17 @@ function foundationalFinding(m: FindingWithId[]) {
    HELPERS — markdown formatting + cross-reference helpers
 ════════════════════════════════════════════════════════════════════════ */
 
-/** Render a cross-reference as `(§3.4 — Title)` inline. */
+/** Render a cross-reference as `(see §3.4 — Title)` inline with anchor link. */
 function xref(fi: FindingWithId | null, opts?: { paren?: boolean }): string {
   if (!fi) return '';
-  const inner = `§${fi.id} — ${fi.finding.finding_title}`;
+  const anchor = `finding-${fi.id.replace('.', '-')}`;
+  const inner = `[§${fi.id}](#${anchor}) — ${fi.finding.finding_title}`;
   return opts?.paren === false ? inner : `(see ${inner})`;
 }
 function xrefShort(fi: FindingWithId | null): string {
   if (!fi) return '';
-  return `§${fi.id}`;
+  const anchor = `finding-${fi.id.replace('.', '-')}`;
+  return `[§${fi.id}](#${anchor})`;
 }
 /** Severity emoji */
 function sev(s: Finding['severity']): string {
@@ -293,7 +295,9 @@ function renderTableOfContents(lines: string[], I: DeepReportInputs, m: FindingW
   lines.push(`  - §2.6 GSC query distribution`);
   lines.push(`- **§3 — Findings (${m.length} total)**`);
   for (const fi of m) {
-    lines.push(`  - §${fi.id} ${sev(fi.finding.severity)} ${fi.finding.finding_title}${fi.finding.is_foundational ? ' 🎯' : ''}`);
+    /* Markdown anchor: lowercase the id, replace dot with empty (§3.7 -> finding-3-7) */
+    const anchor = `finding-${fi.id.replace('.', '-')}`;
+    lines.push(`  - [§${fi.id} ${sev(fi.finding.severity)} ${fi.finding.finding_title}${fi.finding.is_foundational ? ' 🎯' : ''}](#${anchor})`);
   }
   lines.push(`- **§4 — Convergence Analysis**`);
   lines.push(`- **§5 — SEO Economics Context**`);
@@ -883,6 +887,9 @@ function renderFindings(lines: string[], I: DeepReportInputs, m: FindingWithId[]
 function renderSingleFinding(lines: string[], fi: FindingWithId, I: DeepReportInputs, m: FindingWithId[]): void {
   const f = fi.finding;
   const foundationalBadge = f.is_foundational ? '🎯 ' : '';
+  const anchor = `finding-${fi.id.replace('.', '-')}`;
+  lines.push(`<a id="${anchor}"></a>`);
+  lines.push('');
   lines.push(`### §${fi.id} — ${foundationalBadge}${sev(f.severity)} ${f.finding_title}`);
   lines.push('');
   lines.push(`**Severity:** ${sevLabel(f.severity)} · **Audit kind:** \`${f.audit_kind}\``);
@@ -1003,7 +1010,7 @@ function renderConvergenceAnalysis(lines: string[], I: DeepReportInputs, m: Find
     lines.push(`| Signal | Findings tagged with this signal | Severity mix |`);
     lines.push(`|---|---|---|`);
     for (const [signal, fis] of Object.entries(signalMap)) {
-      const refs = fis.map(fi => `§${fi.id}`).join(', ');
+      const refs = fis.map(fi => `[§${fi.id}](#finding-${fi.id.replace('.', '-')})`).join(', ');
       const sevMix = fis.map(fi => sev(fi.finding.severity)).join('');
       lines.push(`| \`${signal}\` | ${refs} | ${sevMix} |`);
     }
