@@ -1,118 +1,354 @@
 /* ════════════════════════════════════════════════════════════════
-   src/components/pm/DevPanel.tsx — Developer Workspace by Manav
-   CMS-aware · backup-before-touch · rollback on every fix
+   src/components/pm/DevPanel.tsx
+   Developer Workspace — by Manav
+   
+   Upload audit → Manav detects CMS → snapshots live page → generates
+   exact fix code with CMS-specific step-by-step instructions →
+   user applies → Manav verifies on live page → done.
+
+   No patches. Complete file. Every function is self-contained.
+   Every API call handles non-JSON and network errors explicitly.
 ════════════════════════════════════════════════════════════════ */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-/* ── Types ────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────
+
 interface DevTask {
   id: string;
-  phase: string; category: string; task_type: string;
-  title: string; description?: string;
-  finding_ref?: string; finding_title?: string;
-  severity: 'critical'|'warning'|'info';
-  target_url?: string; priority: number;
-  status: 'pending'|'running'|'fix_ready'|'applied'|'verifying'|'done'|'skipped'|'failed';
-  analysis?: string; fix_code?: string; fix_language?: string;
-  apply_instructions?: string; verification_method?: string;
-  rollback_code?: string; rollback_instructions?: string;
-  snapshot_id?: string; backup_confirmed?: boolean;
-  verification_result?: 'pass'|'fail'|'partial';
-  verification_evidence?: any;
+  phase: 'phase_0' | 'phase_2' | 'phase_3';
+  category: 'performance' | 'schema' | 'on_page' | 'content' | 'indexing';
+  task_type: string;
+  title: string;
+  description?: string;
+  finding_title?: string;
+  severity: 'critical' | 'warning' | 'info';
+  target_url?: string;
+  priority: number;
+  status: TaskStatus;
+  // Set after execution
+  analysis?: string;
+  fix_code?: string;
+  fix_language?: string;
+  apply_instructions?: string;
+  verification_method?: string;
+  rollback_code?: string;
+  rollback_instructions?: string;
+  snapshot_id?: string;
+  backup_confirmed?: boolean;
+  // Set after verification
+  verification_result?: 'pass' | 'fail' | 'partial';
+  verification_evidence?: Record<string, unknown>;
   cms_platform?: string;
 }
-interface CmsInfo { platform:string; seoPlugin:string; confidence:number; signals:string[]; adminPath:string; notes?:string; }
-interface Snapshot { snapshot:string; captured_at:string; }
 
-/* ── API ──────────────────────────────────────────────────── */
-async function te(action: string, body: any) {
-  const r = await fetch('/api/task-engine', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action,...body}) });
-  return r.json();
+type TaskStatus =
+  | 'pending'
+  | 'running'
+  | 'fix_ready'
+  | 'applied'
+  | 'verifying'
+  | 'done'
+  | 'skipped'
+  | 'failed';
+
+interface CmsInfo {
+  platform: string;
+  seoPlugin: string;
+  confidence: number;
+  adminPath: string;
+  notes?: string;
 }
 
-/* ── Static maps ──────────────────────────────────────────── */
-const PHASE_META: Record<string,{label:string;accent:string;dot:string}> = {
-  phase_0:{ label:'Phase 0 — Fix First (Critical)',  accent:'border-red-500/40 bg-red-500/5', dot:'bg-red-500' },
-  phase_2:{ label:'Phase 2 — Content & On-page',     accent:'border-amber-500/40 bg-amber-500/5', dot:'bg-amber-500' },
-  phase_3:{ label:'Phase 3 — Parallel (Any Time)',   accent:'border-blue-500/40 bg-blue-500/5', dot:'bg-blue-400' },
-};
-const CAT_ICON: Record<string,string> = { performance:'⚡', schema:'📋', on_page:'📝', content:'✍️', indexing:'🔍', analytics:'📊' };
-const STATUS_PILL: Record<string,string> = {
-  pending:  'bg-muted/60 text-muted-foreground border-transparent',
-  running:  'bg-blue-500/15 text-blue-400 border-blue-500/30 animate-pulse',
-  fix_ready:'bg-amber-500/15 text-amber-300 border-amber-500/30',
-  applied:  'bg-purple-500/15 text-purple-300 border-purple-500/30',
-  verifying:'bg-indigo-500/15 text-indigo-300 border-indigo-500/30 animate-pulse',
-  done:     'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-  skipped:  'bg-muted/20 text-muted-foreground/40 border-transparent',
-  failed:   'bg-red-500/15 text-red-400 border-red-500/30',
-};
-const STATUS_LABEL: Record<string,string> = { pending:'Pending', running:'Analyzing…', fix_ready:'Fix Ready', applied:'Applied', verifying:'Verifying…', done:'Done ✓', skipped:'Skipped', failed:'Failed' };
-const CMS_LOGOS: Record<string,string> = { wordpress:'🔵', webflow:'💎', squarespace:'⬛', wix:'🟣', shopify:'🟢', hubspot:'🟠', drupal:'💧', ghost:'👻', framer:'⚡', custom:'🔧', unknown:'❓' };
+interface AuditFinding {
+  audit_kind: string;
+  severity: 'red' | 'amber' | 'green' | 'info';
+  finding_title: string;
+  finding_detail: string;
+  evidence: Record<string, unknown>;
+}
 
-/* ═══════════════════════════════════════════════════════════
-   SAFETY CHECKLIST MODAL
-   Shown before "I Applied the Fix" — user must acknowledge risks
-═══════════════════════════════════════════════════════════ */
-function SafetyModal({ task, cms, onConfirm, onCancel }: { task:DevTask; cms:CmsInfo|null; onConfirm:()=>void; onCancel:()=>void }) {
-  const [checks, setChecks] = useState({ backup:false, staging:false, understand:false });
-  const allChecked = Object.values(checks).every(Boolean);
-  const platform = cms?.platform || task.cms_platform || 'unknown';
+interface ApiResult<T = unknown> {
+  ok: boolean;
+  data?: T;
+  error?: string;
+  rawBody?: string; // included when JSON parsing fails — helps diagnosis
+}
+
+// ─────────────────────────────────────────────────────────────
+// API LAYER
+// Every call goes through callApi. It checks r.ok before r.json().
+// If the response is not JSON it captures the raw text and returns
+// a structured error — the UI never crashes on "Unexpected token".
+// ─────────────────────────────────────────────────────────────
+
+async function callApi<T = unknown>(action: string, payload: Record<string, unknown>): Promise<ApiResult<T>> {
+  let rawBody = '';
+  try {
+    const response = await fetch('/api/task-engine', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload }),
+    });
+
+    rawBody = await response.text();
+
+    if (!rawBody.trim()) {
+      return { ok: false, error: `Empty response from server (HTTP ${response.status})` };
+    }
+
+    // Only parse JSON if the response looks like JSON
+    const firstChar = rawBody.trimStart()[0];
+    if (firstChar !== '{' && firstChar !== '[') {
+      return {
+        ok: false,
+        error: `Server returned non-JSON response (HTTP ${response.status}). Check Supabase table permissions.`,
+        rawBody: rawBody.slice(0, 300),
+      };
+    }
+
+    const json = JSON.parse(rawBody) as Record<string, unknown>;
+
+    if (!response.ok) {
+      return { ok: false, error: String(json.error || json.message || `HTTP ${response.status}`), data: json as T };
+    }
+
+    if (json.error) {
+      return { ok: false, error: String(json.error), data: json as T };
+    }
+
+    return { ok: true, data: json as T };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      ok: false,
+      error: `Network or parse error: ${message}`,
+      rawBody: rawBody.slice(0, 300),
+    };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// AUDIT PARSER
+// Extracts findings from the audit markdown file.
+// Uses line-by-line heading detection — no emoji character classes.
+// ─────────────────────────────────────────────────────────────
+
+function parseAuditMarkdown(markdown: string): { findings: AuditFinding[]; runId: string; url: string } {
+  // Split into finding blocks by anchor tags
+  const blocks = markdown.split(/\n<a id="finding-\d+-\d+"><\/a>\n/);
+
+  const findings: AuditFinding[] = [];
+
+  for (const block of blocks) {
+    // Find the ### §N.N heading line — search line by line
+    const lines = block.split('\n');
+    const headingLine = lines.find(line => /^### §[\d.]+/.test(line));
+    if (!headingLine) continue;
+
+    // Determine severity from the emoji on the heading line
+    // Test each emoji individually — avoid character classes with multi-codepoint emoji
+    let severity: AuditFinding['severity'] = 'info';
+    if (headingLine.includes('🔴')) severity = 'red';
+    else if (headingLine.includes('🟡')) severity = 'amber';
+    else if (headingLine.includes('🟢')) severity = 'green';
+
+    // Extract title: remove ### §N.N — prefix, then remove all badge characters
+    // We do NOT use a regex character class containing emoji — we strip them one by one
+    const titleRaw = headingLine
+      .replace(/^###\s+§[\d.]+\s*(?:—\s*)?/, '')  // strip ### §3.1 —
+      .replace(/🎯/gu, '')
+      .replace(/🔴/gu, '')
+      .replace(/🟡/gu, '')
+      .replace(/🟢/gu, '')
+      .replace(/ℹ️/gu, '')
+      .replace(/^\s+/, '')  // leading whitespace
+      .trim();
+
+    if (!titleRaw || titleRaw.length < 4) continue;
+
+    // Audit kind
+    const kindMatch = block.match(/\*\*Audit kind:\*\*\s*`([^`]+)`/);
+    const audit_kind = kindMatch?.[1] ?? 'on_page_fundamentals';
+
+    // Finding detail (text between **Detail:** and **Recommendation:** or end)
+    const detailMatch = block.match(/\*\*Detail:\*\*\n\n([\s\S]+?)(?=\n\n\*\*Recommendation:|$)/);
+    const finding_detail = (detailMatch?.[1] ?? '').trim().slice(0, 600);
+
+    // Evidence JSON — extract from first ```json block in this finding
+    let evidence: Record<string, unknown> = {};
+    const jsonBlocks = block.match(/```json\n([\s\S]+?)\n```/g);
+    if (jsonBlocks) {
+      for (const jsonBlock of jsonBlocks) {
+        const jsonContent = jsonBlock.replace(/^```json\n/, '').replace(/\n```$/, '');
+        try {
+          const parsed = JSON.parse(jsonContent);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            evidence = parsed as Record<string, unknown>;
+            break;
+          }
+        } catch {
+          // Try next block
+        }
+      }
+    }
+
+    findings.push({ audit_kind, severity, finding_title: titleRaw, finding_detail, evidence });
+  }
+
+  // Extract run ID and URL from the header
+  const runIdMatch = markdown.match(/\*\*Audit run id:\*\*\s*`([^`]+)`/);
+  const urlMatch = markdown.match(/\*\*Audited URL:\*\*\s*\[([^\]]+)\]/);
+
+  return {
+    findings,
+    runId: runIdMatch?.[1] ?? `manual-${Date.now()}`,
+    url: urlMatch?.[1] ?? '',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// DISPLAY CONSTANTS
+// ─────────────────────────────────────────────────────────────
+
+const PHASE_CONFIG: Record<string, { label: string; borderClass: string; dotClass: string }> = {
+  phase_0: { label: 'Phase 0 — Fix First (Critical)', borderClass: 'border-red-500/40 bg-red-500/5', dotClass: 'bg-red-500' },
+  phase_2: { label: 'Phase 2 — Content & On-page',    borderClass: 'border-amber-500/40 bg-amber-500/5', dotClass: 'bg-amber-500' },
+  phase_3: { label: 'Phase 3 — Parallel (Any Time)',  borderClass: 'border-blue-500/40 bg-blue-500/5', dotClass: 'bg-blue-400' },
+};
+
+const CATEGORY_ICON: Record<string, string> = {
+  performance: '⚡', schema: '📋', on_page: '📝', content: '✍️', indexing: '🔍', analytics: '📊',
+};
+
+const STATUS_CLASS: Record<TaskStatus, string> = {
+  pending:   'bg-muted/60 text-muted-foreground border-transparent',
+  running:   'bg-blue-500/15 text-blue-400 border-blue-500/30 animate-pulse',
+  fix_ready: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  applied:   'bg-purple-500/15 text-purple-300 border-purple-500/30',
+  verifying: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30 animate-pulse',
+  done:      'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  skipped:   'bg-muted/20 text-muted-foreground/40 border-transparent',
+  failed:    'bg-red-500/15 text-red-400 border-red-500/30',
+};
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  pending:   'Pending',
+  running:   'Analyzing…',
+  fix_ready: 'Fix Ready',
+  applied:   'Applied',
+  verifying: 'Verifying…',
+  done:      'Done ✓',
+  skipped:   'Skipped',
+  failed:    'Failed',
+};
+
+const CMS_EMOJI: Record<string, string> = {
+  wordpress: '🔵', webflow: '💎', squarespace: '⬛', wix: '🟣',
+  shopify: '🟢', hubspot: '🟠', drupal: '💧', ghost: '👻', framer: '⚡',
+  custom: '🔧', unknown: '❓',
+};
+
+// ─────────────────────────────────────────────────────────────
+// SAFETY CHECKLIST MODAL
+// ─────────────────────────────────────────────────────────────
+
+function SafetyModal({
+  task,
+  cms,
+  onConfirm,
+  onCancel,
+}: {
+  task: DevTask;
+  cms: CmsInfo | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [backupChecked,   setBackupChecked]   = useState(false);
+  const [stagingChecked,  setStagingChecked]  = useState(false);
+  const [rollbackChecked, setRollbackChecked] = useState(false);
+  const allChecked = backupChecked && rollbackChecked;
+
+  const platform = cms?.platform ?? task.cms_platform ?? 'unknown';
+
+  const backupDetail =
+    platform === 'wordpress'    ? 'Go to Plugins → UpdraftPlus → Backup Now before making this change.' :
+    platform === 'shopify'      ? 'Go to Themes → Actions → Download theme backup first.' :
+    platform === 'webflow'      ? 'Webflow keeps automatic history — you can restore any publish. No action needed.' :
+    platform === 'squarespace'  ? 'Export your content: Settings → Advanced → Export first.' :
+                                  'Ask your hosting provider how to take a full backup before proceeding.';
+
+  const stagingDetail =
+    platform === 'wordpress'  ? 'WP Engine / Kinsta / Flywheel have one-click staging. If unavailable, skip this step.' :
+    platform === 'webflow'    ? 'Webflow lets you preview changes before publishing — use that as your staging.' :
+                                'If no staging environment is available, skip and verify immediately after applying.';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="bg-card border border-border rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-5">
 
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-2xl">🛡️</span>
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">🛡️</span>
+          <div>
             <h3 className="text-base font-bold">Pre-apply Safety Check</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Live client site — confirm before applying.</p>
           </div>
-          <p className="text-xs text-muted-foreground">Before you apply this fix to a live client site, confirm the following. This protects you and your client.</p>
         </div>
 
-        {/* Backup status from Manav */}
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 flex items-start gap-3">
+        {/* Manav's backup */}
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 flex gap-3 items-start">
           <span className="text-xl flex-shrink-0">✅</span>
           <div>
-            <div className="text-xs font-semibold text-emerald-400">Manav has saved a backup</div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">The exact HTML of this page was captured before generating this fix. If anything goes wrong, the "Rollback" tab shows exactly how to undo it — including CMS-specific undo steps.</div>
-            {task.snapshot_id && <div className="text-[10px] font-mono text-emerald-400/70 mt-1">Snapshot ID: {task.snapshot_id.slice(0,8)}…</div>}
+            <div className="text-xs font-semibold text-emerald-400">Manav has saved a page snapshot</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+              The relevant HTML was captured before generating this fix. The Rollback tab shows exactly how to undo every change.
+            </div>
+            {task.snapshot_id && (
+              <div className="text-[10px] font-mono text-emerald-400/60 mt-1">Snapshot: {task.snapshot_id.slice(0, 8)}…</div>
+            )}
           </div>
         </div>
 
-        {/* User-confirmed checklist */}
+        {/* Checklist */}
         <div className="space-y-3">
-          <CheckItem
-            checked={checks.backup}
-            onChange={v => setChecks(p=>({...p,backup:v}))}
-            label="I have a site backup before making this change"
-            detail={platform === 'wordpress' ? 'Recommended: UpdraftPlus or your host\'s built-in backup. WordPress → Plugins → UpdraftPlus → Backup Now.' : platform === 'shopify' ? 'Recommended: Rewind app (free tier). Or download theme: Themes → Actions → Download.' : 'Download your theme files or ask your host for a backup before proceeding.'}
+          <ChecklistItem
+            checked={backupChecked}
+            onToggle={() => setBackupChecked(v => !v)}
+            label="I have a full site backup ready"
+            detail={backupDetail}
           />
-          <CheckItem
-            checked={checks.staging}
-            onChange={v => setChecks(p=>({...p,staging:v}))}
-            label="I have tested this on a staging/preview environment first (if available)"
-            detail={platform === 'wordpress' ? 'Many hosts offer a staging site. WP Engine, Kinsta, and Flywheel all have one-click staging. If not available, skip this step.' : platform === 'webflow' ? 'Webflow lets you preview before publishing — use that.' : 'If no staging environment, proceed carefully and verify immediately after applying.'}
+          <ChecklistItem
+            checked={stagingChecked}
+            onToggle={() => setStagingChecked(v => !v)}
+            label="Tested on staging first (if available)"
+            detail={stagingDetail}
             optional
           />
-          <CheckItem
-            checked={checks.understand}
-            onChange={v => setChecks(p=>({...p,understand:v}))}
-            label="I understand how to undo this change using the Rollback tab"
-            detail="The Rollback tab shows the exact steps and original code to restore if anything looks wrong after applying."
+          <ChecklistItem
+            checked={rollbackChecked}
+            onToggle={() => setRollbackChecked(v => !v)}
+            label="I have read the Rollback tab and know how to undo this"
+            detail="The Rollback tab shows the original code and CMS-specific steps to revert."
           />
         </div>
 
         <div className="flex gap-2 pt-1">
-          <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Not yet — go back
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Not yet
           </button>
           <button
             onClick={onConfirm}
             disabled={!allChecked}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${allChecked ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_16px_hsl(var(--primary)/0.3)]' : 'bg-muted/50 text-muted-foreground cursor-not-allowed'}`}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              allChecked
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_16px_hsl(var(--primary)/0.25)]'
+                : 'bg-muted/50 text-muted-foreground cursor-not-allowed'
+            }`}
           >
             Confirm & Mark Applied
           </button>
@@ -122,225 +358,280 @@ function SafetyModal({ task, cms, onConfirm, onCancel }: { task:DevTask; cms:Cms
   );
 }
 
-function CheckItem({ checked, onChange, label, detail, optional }: { checked:boolean; onChange:(v:boolean)=>void; label:string; detail:string; optional?:boolean }) {
+function ChecklistItem({
+  checked,
+  onToggle,
+  label,
+  detail,
+  optional,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  detail: string;
+  optional?: boolean;
+}) {
   return (
-    <label className={`flex gap-3 items-start p-3 rounded-xl border cursor-pointer transition-all ${checked ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border bg-card/40 hover:border-border/80'}`}>
-      <div className={`flex-shrink-0 w-5 h-5 mt-0.5 rounded-md border-2 flex items-center justify-center transition-all ${checked ? 'bg-emerald-500 border-emerald-500' : 'border-border'}`}
-        onClick={() => onChange(!checked)}
+    <label
+      className={`flex gap-3 items-start p-3 rounded-xl border cursor-pointer transition-all select-none ${
+        checked ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border bg-card/40 hover:border-border/70'
+      }`}
+      onClick={onToggle}
+    >
+      <div
+        className={`flex-shrink-0 w-5 h-5 mt-0.5 rounded-md border-2 flex items-center justify-center transition-all ${
+          checked ? 'bg-emerald-500 border-emerald-500' : 'border-muted-foreground/40'
+        }`}
       >
-        {checked && <span className="text-white text-xs font-bold">✓</span>}
+        {checked && <span className="text-white text-[11px] font-bold leading-none">✓</span>}
       </div>
       <div>
-        <div className="text-xs font-medium">{label}{optional && <span className="ml-1 text-muted-foreground font-normal">(optional)</span>}</div>
+        <div className="text-xs font-medium">
+          {label}
+          {optional && <span className="ml-1 text-muted-foreground/60 font-normal">(optional)</span>}
+        </div>
         <div className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{detail}</div>
       </div>
     </label>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════
-   MAIN PANEL
-═══════════════════════════════════════════════════════════ */
-export default function DevPanel({ projectId }: { projectId:string }) {
-  const [tasks, setTasks]           = useState<DevTask[]>([]);
-  const [cms, setCms]               = useState<CmsInfo|null>(null);
-  const [selected, setSelected]     = useState<DevTask|null>(null);
-  const [loading, setLoading]       = useState(false);
-  const [parsing, setParsing]       = useState(false);
-  const [error, setError]           = useState('');
-  const [targetUrl, setTargetUrl]   = useState('');
-  const [showUpload, setShowUpload] = useState(false);
-  const [showSafety, setShowSafety] = useState(false);
+// ─────────────────────────────────────────────────────────────
+// MAIN PANEL
+// ─────────────────────────────────────────────────────────────
+
+export default function DevPanel({ projectId }: { projectId: string }) {
+  const [tasks,       setTasks]       = useState<DevTask[]>([]);
+  const [cms,         setCms]         = useState<CmsInfo | null>(null);
+  const [selected,    setSelected]    = useState<DevTask | null>(null);
+  const [loading,     setLoading]     = useState(false);
+  const [parsing,     setParsing]     = useState(false);
+  const [error,       setError]       = useState('');
+  const [targetUrl,   setTargetUrl]   = useState('');
+  const [showUpload,  setShowUpload]  = useState(false);
+  const [showSafety,  setShowSafety]  = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Load tasks from DB
   const loadTasks = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
     try {
-      const r = await te('dev_get_tasks', { projectId });
-      if (r.tasks) {
-        setTasks(r.tasks);
-        const withCms = r.tasks.find((t:DevTask) => t.cms_platform);
-        if (withCms && !cms) setCms({ platform:withCms.cms_platform, seoPlugin:'', confidence:0, signals:[], adminPath:'' });
+      const result = await callApi<{ tasks: DevTask[] }>('dev_get_tasks', { projectId });
+      if (result.ok && result.data?.tasks) {
+        const loadedTasks = result.data.tasks;
+        setTasks(loadedTasks);
+        // Infer CMS from task metadata if not yet set
+        if (!cms) {
+          const taskWithCms = loadedTasks.find(t => t.cms_platform);
+          if (taskWithCms?.cms_platform) {
+            setCms({ platform: taskWithCms.cms_platform, seoPlugin: '', confidence: 0, adminPath: '' });
+          }
+        }
+      } else if (!result.ok && result.error) {
+        setError(result.error);
       }
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }, [projectId, cms]);
 
   useEffect(() => { loadTasks(); }, [loadTasks]);
 
-  const refreshSelected = useCallback(async (id:string) => {
-    const r = await te('dev_get_tasks', { projectId });
-    if (r.tasks) {
-      setTasks(r.tasks);
-      setSelected(r.tasks.find((t:DevTask) => t.id === id) || null);
+  // Reload a single task and update the list + selected
+  const reloadTask = useCallback(async (taskId: string) => {
+    const result = await callApi<{ tasks: DevTask[] }>('dev_get_tasks', { projectId });
+    if (result.ok && result.data?.tasks) {
+      const updated = result.data.tasks;
+      setTasks(updated);
+      const refreshed = updated.find(t => t.id === taskId);
+      if (refreshed) setSelected(refreshed);
     }
   }, [projectId]);
 
-  const parseAudit = useCallback(async (md:string) => {
-    setParsing(true); setError('');
+  // Upload handler
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result;
+      if (typeof content === 'string') uploadAudit(content);
+    };
+    reader.onerror = () => setError('Could not read the file. Try again.');
+    reader.readAsText(file);
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+  };
+
+  const uploadAudit = async (markdown: string) => {
+    setParsing(true);
+    setError('');
     try {
-      /* ── ROOT CAUSE FIX: the old regex used a character class containing
-         ℹ️ (U+2139 + U+FE0F). Without the u-flag, ℹ️ is two chars in a
-         character class causing partial matches that produce corrupted
-         finding titles — specifically, the % from "(40.0%)" ended up in
-         the title which then broke downstream JSON stringify.
-         New approach: find the ### heading line, strip badges line-by-line. ── */
-      const findings:any[] = [];
-      const blocks = md.split(/\n<a id="finding-\d+-\d+"><\/a>\n/);
-
-      for (const block of blocks) {
-        const lines = block.split('\n');
-        const headingLine = lines.find(l => /^### §[\d.]+/.test(l));
-        if (!headingLine) continue;
-
-        // Strip ### §N.N — prefix and all severity badges (emoji-safe)
-        let title = headingLine
-          .replace(/^###\s+§[\d.]+\s*(?:—\s*)?/, '')
-          .replace(/[\u{1F3AF}\u{1F534}\u{1F7E1}\u{1F7E2}\u{2139}\u{FE0F}\u{1F4CB} ]+/gu, ' ')
-          .replace(/[🎯🔴🟡🟢🟢ℹ️]/gu, '')
-          .trim();
-        if (!title || title.length < 3) continue;
-
-        const sev = /🔴/.test(headingLine) ? 'red'
-                  : /🟡/.test(headingLine) ? 'amber'
-                  : /🟢/.test(headingLine) ? 'green'
-                  : 'info';
-
-        const kindMatch   = block.match(/\*\*Audit kind:\*\*\s*`([^`]+)`/);
-        const detailMatch = block.match(/\*\*Detail:\*\*\n\n([\s\S]+?)(?=\n\n\*\*Rec|\n\n<details|$)/);
-        const detail      = detailMatch?.[1]?.trim().slice(0, 600) || '';
-
-        let evidence: any = {};
-        const codeBlocks  = block.match(/```json\n([\s\S]+?)\n```/g) || [];
-        for (const cb of codeBlocks) {
-          const raw = cb.replace(/^```json\n/, '').replace(/\n```$/, '');
-          try { evidence = JSON.parse(raw); break; } catch { /* try next */ }
-        }
-
-        findings.push({
-          audit_kind:      kindMatch?.[1] || 'on_page_fundamentals',
-          severity:        sev,
-          finding_title:   title,
-          finding_detail:  detail,
-          evidence,
-        });
-      }
-
-      const runIdMatch = md.match(/\*\*Audit run id:\*\*\s*`([^`]+)`/);
-      const urlMatch   = md.match(/\*\*Audited URL:\*\*\s*\[([^\]]+)\]/);
-      const runId = runIdMatch?.[1] || `manual-${Date.now()}`;
-      const url   = urlMatch?.[1] || targetUrl;
+      // Parse the audit markdown
+      const { findings, runId, url: auditUrl } = parseAuditMarkdown(markdown);
 
       if (findings.length === 0) {
-        setError('No findings found. Make sure you uploaded the full technical audit .md file.');
+        setError('No findings found in this file. Make sure you uploaded the full technical audit .md file.');
         return;
       }
 
-      const r = await te('dev_parse_audit_tasks', {
-        projectId, auditRunId: runId, targetUrl: url || targetUrl,
-        findings: findings.filter(f => f.severity !== 'green'),
-      });
-      if (r.error) { setError(r.error); return; }
+      const resolvedUrl = auditUrl || targetUrl;
 
-      te('dev_detect_cms', { projectId, url: url || targetUrl })
-        .then(cmsR => { if (cmsR?.cms) setCms(cmsR.cms); })
-        .catch(() => {});
+      // Send to API — only send non-green findings (green = passing, no fix needed)
+      const actionableFindings = findings.filter(f => f.severity !== 'green');
+      const result = await callApi<{ tasks_created: number }>('dev_parse_audit_tasks', {
+        projectId,
+        auditRunId: runId,
+        targetUrl: resolvedUrl,
+        findings: actionableFindings,
+      });
+
+      if (!result.ok) {
+        setError(result.error ?? 'Could not create tasks.');
+        if (result.rawBody) {
+          console.error('[DevPanel] Raw server response:', result.rawBody);
+        }
+        return;
+      }
+
+      // Detect CMS in background — does not block the flow
+      callApi<{ cms: CmsInfo }>('dev_detect_cms', { projectId, url: resolvedUrl })
+        .then(cmsResult => {
+          if (cmsResult.ok && cmsResult.data?.cms) {
+            setCms(cmsResult.data.cms);
+          }
+        })
+        .catch(() => { /* CMS detection is optional */ });
 
       setShowUpload(false);
       await loadTasks();
-    } catch (e:any) {
-      const msg = e?.message || 'Parse failed';
-      setError(msg.includes('Unexpected token') ? 'File format issue — upload the .md audit file as plain text.' : msg);
+    } finally {
+      setParsing(false);
     }
-    finally { setParsing(false); }
-  }, [projectId, targetUrl, loadTasks]);
-
-  const handleFile = (e:React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = ev => parseAudit(ev.target?.result as string);
-    reader.readAsText(f);
   };
 
-  const execute = async (task:DevTask) => {
-    setSelected({ ...task, status:'running' });
-    const r = await te('dev_execute_task', { taskId:task.id });
-    if (r.error) { setError(r.error); return; }
-    if (r.cms) setCms(r.cms);
-    await refreshSelected(task.id);
+  const executeTask = async (task: DevTask) => {
+    setSelected({ ...task, status: 'running' });
+    const result = await callApi<{ task: DevTask }>('dev_execute_task', { taskId: task.id });
+    if (!result.ok) {
+      setError(result.error ?? 'Execution failed.');
+      setSelected(task);
+      return;
+    }
+    if (result.data?.task) {
+      if (result.data.task.cms_platform && !cms) {
+        setCms({ platform: result.data.task.cms_platform, seoPlugin: '', confidence: 0, adminPath: '' });
+      }
+    }
+    await reloadTask(task.id);
   };
 
-  const verify = async (task:DevTask) => {
-    setSelected({ ...task, status:'verifying' });
-    const r = await te('dev_verify_task', { taskId:task.id });
-    if (r.error) { setError(r.error); return; }
-    await refreshSelected(task.id);
+  const verifyTask = async (task: DevTask) => {
+    setSelected({ ...task, status: 'verifying' });
+    const result = await callApi<{ task: DevTask }>('dev_verify_task', { taskId: task.id });
+    if (!result.ok) {
+      setError(result.error ?? 'Verification failed.');
+      setSelected(task);
+      return;
+    }
+    await reloadTask(task.id);
   };
 
-  const confirmApplied = async (task:DevTask) => {
-    await te('dev_confirm_backup', { taskId:task.id });
-    await te('dev_update_task', { taskId:task.id, updates:{ status:'applied', backup_confirmed:true } });
+  const confirmApplied = async (task: DevTask) => {
     setShowSafety(false);
-    await refreshSelected(task.id);
+    await callApi('dev_confirm_backup', { taskId: task.id });
+    await callApi('dev_update_task', { taskId: task.id, updates: { status: 'applied', backup_confirmed: true } });
+    await reloadTask(task.id);
   };
 
-  const updateStatus = async (task:DevTask, status:DevTask['status']) => {
-    await te('dev_update_task', { taskId:task.id, updates:{ status } });
-    await refreshSelected(task.id);
+  const setTaskStatus = async (task: DevTask, status: TaskStatus) => {
+    await callApi('dev_update_task', { taskId: task.id, updates: { status } });
+    await reloadTask(task.id);
   };
 
-  /* Stats */
-  const total    = tasks.length;
-  const done     = tasks.filter(t => t.status === 'done').length;
-  const critical = tasks.filter(t => t.severity === 'critical' && !['done','skipped'].includes(t.status)).length;
-  const byPhase  = (ph:string) => tasks.filter(t => t.phase === ph);
+  // Derived stats
+  const totalTasks    = tasks.length;
+  const doneTasks     = tasks.filter(t => t.status === 'done').length;
+  const openCritical  = tasks.filter(t => t.severity === 'critical' && t.status !== 'done' && t.status !== 'skipped').length;
+  const byPhase       = (phase: string) => tasks.filter(t => t.phase === phase);
 
-  /* ── Upload screen ─────────────────────────────────────── */
-  if (showUpload || tasks.length === 0) {
+  // ─────────────────────────────────────────────────────────
+  // UPLOAD SCREEN
+  // ─────────────────────────────────────────────────────────
+
+  if (showUpload || totalTasks === 0) {
     return (
-      <div className="max-w-xl mx-auto py-8 space-y-5">
+      <div className="max-w-lg mx-auto py-10 space-y-6">
         <div className="text-center">
           <div className="text-5xl mb-3">🛠️</div>
-          <h2 className="text-xl font-bold mb-1">Developer Workspace</h2>
-          <p className="text-xs text-muted-foreground/60 font-mono mb-2">by Manav</p>
-          <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-            Upload your audit. Manav detects your CMS, snapshots the live page, generates exact code fixes, and prepares rollback steps — before touching anything.
+          <h2 className="text-xl font-bold">Developer Workspace</h2>
+          <p className="text-xs text-muted-foreground/50 font-mono mb-3">by Manav</p>
+          <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
+            Upload your technical audit. Manav detects your CMS, takes a snapshot of the live page,
+            and generates exact code fixes with step-by-step instructions — before touching anything.
           </p>
         </div>
 
-        <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Target page URL</label>
+        {/* URL input */}
+        <div className="rounded-xl border border-border bg-card/50 p-4 space-y-2">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Target page URL
+          </label>
           <input
+            type="url"
             value={targetUrl}
             onChange={e => setTargetUrl(e.target.value)}
-            placeholder="https://www.alphasoftware.com/mobile-forms"
+            placeholder="https://www.example.com/page"
             className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary/60 transition-colors"
           />
-          <p className="text-[11px] text-muted-foreground">Manav fetches this page to detect your CMS and take a before-snapshot before generating any fix.</p>
+          <p className="text-[11px] text-muted-foreground">
+            Manav fetches this URL to detect your CMS and snapshot the current state.
+          </p>
         </div>
 
-        <div
-          className="rounded-2xl border-2 border-dashed border-border hover:border-primary/40 bg-card/30 p-8 text-center cursor-pointer transition-colors"
+        {/* File drop zone */}
+        <button
+          type="button"
           onClick={() => fileRef.current?.click()}
+          disabled={parsing}
+          className="w-full rounded-2xl border-2 border-dashed border-border hover:border-primary/40 bg-card/30 p-10 text-center cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <div className="text-3xl mb-3">{parsing ? '⟳' : '📋'}</div>
-          <p className="text-sm font-medium mb-1">{parsing ? 'Parsing audit…' : 'Click to upload audit file'}</p>
-          <p className="text-xs text-muted-foreground">The audit .md file from the SEO Audit tab</p>
-          <input ref={fileRef} type="file" accept=".md,.txt" className="hidden" onChange={handleFile} />
-        </div>
+          <div className="text-4xl mb-3">{parsing ? '⟳' : '📋'}</div>
+          <p className="text-sm font-medium">{parsing ? 'Parsing audit file…' : 'Click to upload audit file'}</p>
+          <p className="text-xs text-muted-foreground mt-1">The .md file exported from the SEO Audit tab</p>
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".md,.txt,text/plain,text/markdown"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
 
-        {tasks.length > 0 && (
-          <button onClick={() => setShowUpload(false)} className="w-full py-2 text-xs text-muted-foreground hover:text-foreground underline">
-            ← Back to existing tasks ({tasks.length})
+        {totalTasks > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowUpload(false)}
+            className="w-full py-2 text-xs text-muted-foreground hover:text-foreground underline transition-colors"
+          >
+            ← Back to existing {totalTasks} tasks
           </button>
         )}
-        {error && <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-400">{error}</div>}
+
+        {error && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-400">
+            {error}
+          </div>
+        )}
       </div>
     );
   }
 
-  /* ── Main layout ─────────────────────────────────────────── */
+  // ─────────────────────────────────────────────────────────
+  // MAIN TWO-COLUMN LAYOUT
+  // ─────────────────────────────────────────────────────────
+
   return (
     <>
       {showSafety && selected && (
@@ -352,20 +643,27 @@ export default function DevPanel({ projectId }: { projectId:string }) {
         />
       )}
 
-      <div className="flex gap-5" style={{ minHeight:600 }}>
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-400 mb-4 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="ml-3 text-red-400/60 hover:text-red-400 transition-colors">✕</button>
+        </div>
+      )}
 
-        {/* LEFT: task list */}
-        <div className="w-80 flex-shrink-0 flex flex-col gap-3">
+      <div className="flex gap-5" style={{ minHeight: 560 }}>
 
-          {/* Manav badge */}
+        {/* ── LEFT: task list ── */}
+        <div className="w-72 flex-shrink-0 flex flex-col gap-3">
+
+          {/* Brand + CMS badge */}
           <div className="rounded-xl border border-border bg-card/50 px-3 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div>
               <span className="text-sm font-bold text-primary">Manav</span>
-              <span className="text-[10px] text-muted-foreground">Developer Workspace</span>
+              <span className="text-[10px] text-muted-foreground ml-1.5">Dev Workspace</span>
             </div>
             {cms && (
               <div className="flex items-center gap-1.5">
-                <span className="text-sm">{CMS_LOGOS[cms.platform]||'🔧'}</span>
+                <span>{CMS_EMOJI[cms.platform] ?? '🔧'}</span>
                 <span className="text-[10px] text-muted-foreground capitalize">{cms.platform}</span>
               </div>
             )}
@@ -374,48 +672,76 @@ export default function DevPanel({ projectId }: { projectId:string }) {
           {/* Stats */}
           <div className="flex items-center justify-between">
             <div className="text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">{done}</span>/{total} done
-              {critical > 0 && <span className="ml-2 text-red-400 font-medium">{critical} critical open</span>}
+              <span className="font-semibold text-foreground">{doneTasks}</span>/{totalTasks} done
+              {openCritical > 0 && (
+                <span className="ml-2 text-red-400 font-medium">{openCritical} critical open</span>
+              )}
             </div>
             <div className="flex gap-1.5">
-              <button onClick={loadTasks} className="text-xs px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors">↻</button>
-              <button onClick={() => setShowUpload(true)} className="text-xs px-2 py-1 rounded-lg border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors">+ New Audit</button>
+              <button
+                type="button"
+                onClick={loadTasks}
+                disabled={loading}
+                className="text-xs px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+              >
+                ↻
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUpload(true)}
+                className="text-xs px-2 py-1 rounded-lg border border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
+              >
+                + New
+              </button>
             </div>
           </div>
 
-          {total > 0 && (
+          {/* Progress bar */}
+          {totalTasks > 0 && (
             <div className="h-1 rounded-full bg-muted overflow-hidden">
-              <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width:`${(done/total)*100}%` }} />
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                style={{ width: `${Math.round((doneTasks / totalTasks) * 100)}%` }}
+              />
             </div>
           )}
 
+          {/* Task list by phase */}
           <div className="flex-1 overflow-y-auto space-y-3 pr-0.5">
-            {(['phase_0','phase_2','phase_3'] as const).map(ph => {
-              const pt = byPhase(ph);
-              if (!pt.length) return null;
-              const meta = PHASE_META[ph];
-              const phDone = pt.filter(t => ['done','skipped'].includes(t.status)).length;
+            {(['phase_0', 'phase_2', 'phase_3'] as const).map(phase => {
+              const phaseTasks = byPhase(phase);
+              if (phaseTasks.length === 0) return null;
+
+              const phaseConfig = PHASE_CONFIG[phase];
+              const phaseDone = phaseTasks.filter(t => t.status === 'done' || t.status === 'skipped').length;
+
               return (
-                <div key={ph}>
-                  <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold mb-1.5 ${meta.accent}`}>
+                <div key={phase}>
+                  <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold mb-1.5 ${phaseConfig.borderClass}`}>
                     <div className="flex items-center gap-1.5">
-                      <div className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-                      {meta.label}
+                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${phaseConfig.dotClass}`} />
+                      {phaseConfig.label}
                     </div>
-                    <span className="font-mono opacity-60">{phDone}/{pt.length}</span>
+                    <span className="font-mono opacity-60">{phaseDone}/{phaseTasks.length}</span>
                   </div>
-                  {pt.map(task => (
-                    <button key={task.id} onClick={() => setSelected(task)}
+
+                  {phaseTasks.map(task => (
+                    <button
+                      key={task.id}
+                      type="button"
+                      onClick={() => setSelected(task)}
                       className={`w-full text-left p-2.5 rounded-xl border mb-1 transition-all ${
-                        selected?.id === task.id ? 'border-primary/60 bg-primary/8' : 'border-border bg-card/40 hover:bg-card/70'
-                      } ${['done','skipped'].includes(task.status) ? 'opacity-40' : ''}`}
+                        selected?.id === task.id
+                          ? 'border-primary/60 bg-primary/8'
+                          : 'border-border bg-card/40 hover:bg-card/70'
+                      } ${task.status === 'done' || task.status === 'skipped' ? 'opacity-40' : ''}`}
                     >
                       <div className="flex items-start justify-between gap-1.5">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-sm flex-shrink-0">{CAT_ICON[task.category]||'🔧'}</span>
+                          <span className="text-sm flex-shrink-0">{CATEGORY_ICON[task.category] ?? '🔧'}</span>
                           <span className="text-[12px] font-medium leading-snug line-clamp-2">{task.title}</span>
                         </div>
-                        <span className={`flex-shrink-0 text-[9px] px-1.5 py-0.5 rounded border font-medium ${STATUS_PILL[task.status]}`}>
+                        <span className={`flex-shrink-0 text-[9px] px-1.5 py-0.5 rounded border font-medium ${STATUS_CLASS[task.status]}`}>
                           {STATUS_LABEL[task.status]}
                         </span>
                       </div>
@@ -435,220 +761,362 @@ export default function DevPanel({ projectId }: { projectId:string }) {
           </div>
         </div>
 
-        {/* RIGHT: detail */}
+        {/* ── RIGHT: task detail ── */}
         <div className="flex-1 min-w-0 overflow-y-auto">
-          {!selected ? (
+          {selected == null ? (
             <div className="h-full flex items-center justify-center text-center p-12">
               <div>
                 <div className="text-5xl mb-4">👈</div>
                 <p className="text-sm font-medium mb-1">Select a task to begin</p>
-                <p className="text-xs text-muted-foreground">Phase 0 tasks block everything else — start there.</p>
+                <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                  Phase 0 tasks must be completed before anything else will have a ranking effect.
+                </p>
               </div>
             </div>
           ) : (
             <TaskDetail
               task={selected}
               cms={cms}
-              onExecute={() => execute(selected)}
-              onVerify={() => verify(selected)}
+              onExecute={() => executeTask(selected)}
+              onVerify={() => verifyTask(selected)}
               onMarkApplied={() => setShowSafety(true)}
-              onSkip={() => updateStatus(selected, 'skipped')}
-              onReopen={() => updateStatus(selected, 'pending')}
+              onSkip={() => setTaskStatus(selected, 'skipped')}
+              onReopen={() => setTaskStatus(selected, 'pending')}
             />
           )}
         </div>
+
       </div>
     </>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════
-   TASK DETAIL
-═══════════════════════════════════════════════════════════ */
-function TaskDetail({ task, cms, onExecute, onVerify, onMarkApplied, onSkip, onReopen }: {
-  task:DevTask; cms:CmsInfo|null;
-  onExecute:()=>void; onVerify:()=>void; onMarkApplied:()=>void; onSkip:()=>void; onReopen:()=>void;
+// ─────────────────────────────────────────────────────────────
+// TASK DETAIL PANEL
+// ─────────────────────────────────────────────────────────────
+
+type DetailTab = 'instructions' | 'code' | 'rollback' | 'verify';
+
+function TaskDetail({
+  task,
+  cms,
+  onExecute,
+  onVerify,
+  onMarkApplied,
+  onSkip,
+  onReopen,
+}: {
+  task: DevTask;
+  cms: CmsInfo | null;
+  onExecute: () => void;
+  onVerify: () => void;
+  onMarkApplied: () => void;
+  onSkip: () => void;
+  onReopen: () => void;
 }) {
-  const [copiedFix,  setCopiedFix]  = useState(false);
-  const [copiedRoll, setCopiedRoll] = useState(false);
-  const [snapshot, setSnapshot]     = useState<Snapshot|null>(null);
-  const [activeTab, setActiveTab]   = useState<'instructions'|'code'|'rollback'|'verify'>('instructions');
+  const [activeTab,    setActiveTab]    = useState<DetailTab>('instructions');
+  const [snapshot,     setSnapshot]     = useState<{ snapshot: string; captured_at: string } | null>(null);
+  const [copiedCode,   setCopiedCode]   = useState(false);
+  const [copiedRoll,   setCopiedRoll]   = useState(false);
 
-  const copy = (text:string, set:(v:boolean)=>void) => { navigator.clipboard.writeText(text); set(true); setTimeout(()=>set(false),2000); };
-
-  // Load snapshot when task has one
+  // Reset to instructions tab when a different task is selected
   useEffect(() => {
-    if (task.snapshot_id && !snapshot) {
-      te('dev_get_snapshot', { taskId:task.id }).then(r => { if (r.snapshot) setSnapshot(r.snapshot); });
+    setActiveTab('instructions');
+    setSnapshot(null);
+  }, [task.id]);
+
+  // Load snapshot when rollback tab is opened
+  useEffect(() => {
+    if (activeTab === 'rollback' && task.snapshot_id && !snapshot) {
+      callApi<{ snapshot: { snapshot: string; captured_at: string } }>('dev_get_snapshot', { taskId: task.id })
+        .then(result => {
+          if (result.ok && result.data?.snapshot) {
+            setSnapshot(result.data.snapshot);
+          }
+        })
+        .catch(() => { /* snapshot loading is non-critical */ });
     }
-  }, [task.snapshot_id, task.id, snapshot]);
+  }, [activeTab, task.snapshot_id, task.id, snapshot]);
 
-  // Switch to instructions tab when a new task is selected
-  useEffect(() => { setActiveTab('instructions'); }, [task.id]);
+  const copyToClipboard = (text: string, setFlag: (v: boolean) => void) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setFlag(true);
+      setTimeout(() => setFlag(false), 2000);
+    });
+  };
 
-  const sevColor = task.severity === 'critical' ? 'text-red-400' : task.severity === 'warning' ? 'text-amber-400' : 'text-sky-400';
-  const hasTabs  = !!(task.analysis || task.fix_code || task.apply_instructions);
+  const severityColor =
+    task.severity === 'critical' ? 'text-red-400' :
+    task.severity === 'warning'  ? 'text-amber-400' :
+                                   'text-sky-400';
+
+  const hasContent = !!(task.analysis || task.fix_code || task.apply_instructions);
 
   return (
     <div className="space-y-4">
 
-      {/* Header */}
+      {/* Header card */}
       <div className="rounded-xl border border-border bg-card/60 p-4">
         <div className="flex items-start gap-3">
-          <div className="text-2xl mt-0.5 flex-shrink-0">{CAT_ICON[task.category]||'🔧'}</div>
+          <div className="text-2xl mt-0.5 flex-shrink-0">
+            {CATEGORY_ICON[task.category] ?? '🔧'}
+          </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-              <span className={`text-[11px] font-bold uppercase tracking-widest ${sevColor}`}>{task.severity}</span>
+              <span className={`text-[11px] font-bold uppercase tracking-widest ${severityColor}`}>
+                {task.severity}
+              </span>
               <span className="text-[11px] text-muted-foreground capitalize">· {task.category}</span>
-              {task.cms_platform && <span className="text-[11px] text-muted-foreground">· {CMS_LOGOS[task.cms_platform]||'🔧'} {task.cms_platform}</span>}
-              {task.snapshot_id && <span className="text-[11px] text-emerald-400">· 🛡️ snapshot saved</span>}
+              {task.cms_platform && (
+                <span className="text-[11px] text-muted-foreground">
+                  · {CMS_EMOJI[task.cms_platform] ?? '🔧'} {task.cms_platform}
+                </span>
+              )}
+              {task.snapshot_id && (
+                <span className="text-[11px] text-emerald-400">· 🛡️ snapshot saved</span>
+              )}
             </div>
             <h3 className="text-sm font-semibold leading-snug">{task.title}</h3>
-            {task.description && <p className="text-xs text-muted-foreground mt-1">{task.description}</p>}
+            {task.description && (
+              <p className="text-xs text-muted-foreground mt-1">{task.description}</p>
+            )}
           </div>
-          <span className={`flex-shrink-0 text-xs px-2.5 py-1 rounded-lg border font-medium ${STATUS_PILL[task.status]}`}>
+          <span className={`flex-shrink-0 text-xs px-2.5 py-1 rounded-lg border font-medium ${STATUS_CLASS[task.status]}`}>
             {STATUS_LABEL[task.status]}
           </span>
         </div>
       </div>
 
-      {/* Action strip */}
+      {/* Action buttons */}
       <div className="flex gap-2 flex-wrap">
-        {task.status === 'pending' && (
-          <button onClick={onExecute}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 shadow-[0_0_20px_hsl(var(--primary)/0.25)] transition-all"
+        {(task.status === 'pending' || task.status === 'failed') && (
+          <button
+            type="button"
+            onClick={onExecute}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 shadow-[0_0_20px_hsl(var(--primary)/0.2)] transition-all"
           >
             ▶ Analyze & Generate Fix
           </button>
         )}
+
         {task.status === 'running' && (
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 text-sm">
-            <span className="animate-spin inline-block">⟳</span> Manav is analyzing the live page…
+            <span className="animate-spin inline-block">⟳</span>
+            Manav is analyzing the live page…
           </div>
         )}
+
         {task.status === 'fix_ready' && (
           <>
-            <button onClick={onMarkApplied}
+            <button
+              type="button"
+              onClick={onMarkApplied}
               className="px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all"
             >
               ✓ I Applied the Fix
             </button>
-            <button onClick={onExecute} className="px-3 py-2.5 rounded-xl border border-border text-muted-foreground text-sm hover:text-foreground transition-all">↺ Re-generate</button>
+            <button
+              type="button"
+              onClick={onExecute}
+              className="px-3 py-2.5 rounded-xl border border-border text-muted-foreground text-sm hover:text-foreground transition-all"
+            >
+              ↺ Re-generate
+            </button>
           </>
         )}
+
         {task.status === 'applied' && (
-          <button onClick={onVerify}
+          <button
+            type="button"
+            onClick={onVerify}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-sm font-semibold hover:bg-indigo-500/20 transition-all"
           >
             🔍 Verify on Live Page
           </button>
         )}
+
         {task.status === 'verifying' && (
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-sm">
-            <span className="animate-spin inline-block">⟳</span> Checking live page…
+            <span className="animate-spin inline-block">⟳</span>
+            Checking live page…
           </div>
         )}
+
         {task.status === 'done' && (
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-medium">
             ✅ Done — verified on live page
           </div>
         )}
+
         {task.status === 'failed' && (
-          <button onClick={onExecute} className="px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-semibold hover:bg-red-500/20">↺ Retry</button>
+          <button
+            type="button"
+            onClick={onExecute}
+            className="px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-semibold hover:bg-red-500/20"
+          >
+            ↺ Retry Analysis
+          </button>
         )}
-        {!['done','skipped','running','verifying'].includes(task.status) && (
-          <button onClick={onSkip} className="px-3 py-2 rounded-xl border border-border text-muted-foreground text-xs hover:text-foreground transition-colors">Skip</button>
+
+        {task.status !== 'done' && task.status !== 'skipped' && task.status !== 'running' && task.status !== 'verifying' && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="px-3 py-2 rounded-xl border border-border text-muted-foreground text-xs hover:text-foreground transition-colors"
+          >
+            Skip
+          </button>
         )}
-        {['done','skipped'].includes(task.status) && (
-          <button onClick={onReopen} className="px-3 py-2 rounded-xl border border-border text-muted-foreground text-xs hover:text-foreground transition-colors">↺ Reopen</button>
+
+        {(task.status === 'done' || task.status === 'skipped') && (
+          <button
+            type="button"
+            onClick={onReopen}
+            className="px-3 py-2 rounded-xl border border-border text-muted-foreground text-xs hover:text-foreground transition-colors"
+          >
+            ↺ Reopen
+          </button>
         )}
       </div>
 
-      {/* Verification result banner */}
+      {/* Verification result */}
       {task.verification_result && (
-        <div className={`rounded-xl border p-3.5 ${task.verification_result==='pass'?'bg-emerald-500/5 border-emerald-500/30':task.verification_result==='partial'?'bg-amber-500/5 border-amber-500/30':'bg-red-500/5 border-red-500/30'}`}>
-          <div className={`font-semibold text-sm mb-1 ${task.verification_result==='pass'?'text-emerald-400':task.verification_result==='partial'?'text-amber-400':'text-red-400'}`}>
-            {task.verification_result==='pass'?'✅ Verification PASSED':task.verification_result==='partial'?'⚠️ Partially verified — see details':'❌ Not detected yet — check if changes are published'}
+        <div className={`rounded-xl border p-3.5 ${
+          task.verification_result === 'pass'    ? 'bg-emerald-500/5 border-emerald-500/30' :
+          task.verification_result === 'partial' ? 'bg-amber-500/5 border-amber-500/30' :
+                                                   'bg-red-500/5 border-red-500/30'
+        }`}>
+          <div className={`font-semibold text-sm mb-1 ${
+            task.verification_result === 'pass'    ? 'text-emerald-400' :
+            task.verification_result === 'partial' ? 'text-amber-400' :
+                                                     'text-red-400'
+          }`}>
+            {task.verification_result === 'pass'    ? '✅ Verification PASSED' :
+             task.verification_result === 'partial' ? '⚠️ Partially verified — check details below' :
+                                                      '❌ Fix not detected yet — confirm changes are published'}
           </div>
-          {task.verification_evidence?.message && <p className="text-xs text-muted-foreground">{task.verification_evidence.message}</p>}
+          {task.verification_evidence?.message && (
+            <p className="text-xs text-muted-foreground">{String(task.verification_evidence.message)}</p>
+          )}
         </div>
       )}
 
-      {/* Tabs */}
-      {hasTabs && (
+      {/* Content tabs */}
+      {hasContent && (
         <>
           <div className="flex gap-0.5 border-b border-border">
-            {(['instructions','code','rollback','verify'] as const).map(t => (
-              <button key={t} onClick={() => setActiveTab(t)}
-                className={`px-3.5 py-2 text-xs font-medium border-b-2 -mb-px transition-colors relative ${activeTab===t?'border-primary text-primary':'border-transparent text-muted-foreground hover:text-foreground'}`}
+            {(['instructions', 'code', 'rollback', 'verify'] as const).map(tab => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`px-3.5 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                  activeTab === tab
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
               >
-                {t==='instructions'?'📋 How to Apply':t==='code'?'⚡ Fix Code':t==='rollback'?'🔄 Rollback':'🔍 Verify'}
-                {t==='rollback' && task.snapshot_id && <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" title="Snapshot saved" />}
+                {tab === 'instructions' ? '📋 How to Apply' :
+                 tab === 'code'         ? '⚡ Fix Code' :
+                 tab === 'rollback'     ? `🔄 Rollback${task.snapshot_id ? ' 🛡️' : ''}` :
+                                         '🔍 Verify'}
               </button>
             ))}
           </div>
 
-          {/* INSTRUCTIONS TAB */}
-          {activeTab==='instructions' && (
+          {/* Instructions tab */}
+          {activeTab === 'instructions' && (
             <div className="space-y-4">
               {task.analysis && (
                 <div className="rounded-xl border border-border/60 bg-card/30 p-4">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">What Manav found on your live page</div>
-                  <p className="text-sm leading-relaxed">{task.analysis}</p>
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    What Manav found on your live page
+                  </p>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{task.analysis}</p>
                 </div>
               )}
-              {task.apply_instructions && <MarkdownBlocks content={task.apply_instructions} />}
+              {task.apply_instructions && (
+                <FormattedInstructions content={task.apply_instructions} />
+              )}
             </div>
           )}
 
-          {/* CODE TAB */}
-          {activeTab==='code' && (
+          {/* Code tab */}
+          {activeTab === 'code' && (
             task.fix_code ? (
-              <div className="rounded-xl border border-amber-500/20 bg-[#1a1500] overflow-hidden">
+              <div className="rounded-xl border border-amber-500/20 bg-[#110f00] overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-500/20">
                   <div className="flex items-center gap-2">
-                    <span className="text-amber-400 font-bold text-xs tracking-wider">EXACT FIX CODE</span>
-                    {task.fix_language && <span className="text-[10px] font-mono bg-amber-500/10 text-amber-400/60 border border-amber-500/20 px-1.5 py-0.5 rounded">{task.fix_language}</span>}
+                    <span className="text-amber-400 font-bold text-xs tracking-widest">EXACT FIX CODE</span>
+                    {task.fix_language && (
+                      <span className="text-[10px] font-mono bg-amber-500/10 text-amber-400/60 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                        {task.fix_language}
+                      </span>
+                    )}
                   </div>
-                  <button onClick={() => copy(task.fix_code!, setCopiedFix)}
-                    className={`text-xs px-3 py-1 rounded-lg border transition-all font-medium ${copiedFix?'bg-emerald-500/20 border-emerald-500/40 text-emerald-400':'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'}`}
-                  >{copiedFix?'✓ Copied!':'Copy All'}</button>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(task.fix_code!, setCopiedCode)}
+                    className={`text-xs px-3 py-1 rounded-lg border transition-all font-medium ${
+                      copiedCode
+                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                        : 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+                    }`}
+                  >
+                    {copiedCode ? '✓ Copied!' : 'Copy All'}
+                  </button>
                 </div>
-                <pre className="p-4 text-xs font-mono text-amber-100/80 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed" style={{maxHeight:420}}>
+                <pre className="p-4 text-xs font-mono text-amber-100/80 overflow-x-auto whitespace-pre-wrap break-words leading-relaxed max-h-96">
                   {task.fix_code}
                 </pre>
               </div>
             ) : (
-              <div className="p-6 text-center text-sm text-muted-foreground rounded-xl border border-dashed border-border">No code block — follow the How to Apply tab.</div>
+              <div className="p-6 text-center text-sm text-muted-foreground rounded-xl border border-dashed border-border">
+                No code block for this task — follow the How to Apply tab.
+              </div>
             )
           )}
 
-          {/* ROLLBACK TAB */}
-          {activeTab==='rollback' && (
+          {/* Rollback tab */}
+          {activeTab === 'rollback' && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex gap-3">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex gap-3 items-start">
                 <span className="text-2xl flex-shrink-0">🛡️</span>
                 <div>
-                  <div className="text-xs font-semibold text-emerald-400 mb-0.5">Manav backed up this page before generating the fix</div>
-                  <div className="text-[11px] text-muted-foreground leading-relaxed">
+                  <p className="text-xs font-semibold text-emerald-400 mb-0.5">
+                    Manav backed up this page before generating the fix
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
                     {task.snapshot_id
-                      ? `A snapshot of the relevant HTML was captured before any fix was generated. The rollback code and instructions below are based on that snapshot.${snapshot ? ' Captured: ' + new Date(snapshot.captured_at).toLocaleString() : ''}`
-                      : 'Run "Analyze & Generate Fix" first — Manav will snapshot the live page before generating anything.'}
-                  </div>
+                      ? `The relevant HTML was captured before any fix was generated.${snapshot ? ' Captured: ' + new Date(snapshot.captured_at).toLocaleString() : ''} If anything goes wrong, use the instructions below to restore the original state.`
+                      : 'Click "Analyze & Generate Fix" first — Manav will snapshot the live page before generating anything.'}
+                  </p>
                 </div>
               </div>
 
-              {task.rollback_instructions && <MarkdownBlocks content={task.rollback_instructions} />}
+              {task.rollback_instructions && (
+                <FormattedInstructions content={task.rollback_instructions} />
+              )}
 
               {task.rollback_code && (
                 <div className="rounded-xl border border-border bg-card/30 overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Original Code (before fix)</span>
-                    <button onClick={() => copy(task.rollback_code!, setCopiedRoll)}
-                      className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${copiedRoll?'bg-emerald-500/20 border-emerald-500/40 text-emerald-400':'border-border text-muted-foreground hover:text-foreground'}`}
-                    >{copiedRoll?'✓ Copied!':'Copy'}</button>
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Original Code (before fix)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(task.rollback_code!, setCopiedRoll)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                        copiedRoll
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                          : 'border-border text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {copiedRoll ? '✓ Copied!' : 'Copy'}
+                    </button>
                   </div>
-                  <pre className="p-4 text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all leading-relaxed" style={{maxHeight:320}}>
+                  <pre className="p-4 text-[11px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-words leading-relaxed max-h-64">
                     {task.rollback_code}
                   </pre>
                 </div>
@@ -657,27 +1125,36 @@ function TaskDetail({ task, cms, onExecute, onVerify, onMarkApplied, onSkip, onR
               {snapshot?.snapshot && (
                 <div className="rounded-xl border border-border bg-card/20 overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Live Snapshot — Taken Before Fix</span>
-                    <span className="text-[10px] text-muted-foreground">{new Date(snapshot.captured_at).toLocaleTimeString()}</span>
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Live Snapshot — Before Fix
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(snapshot.captured_at).toLocaleTimeString()}
+                    </span>
                   </div>
-                  <pre className="p-4 text-[11px] font-mono text-muted-foreground/70 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed" style={{maxHeight:280}}>
-                    {snapshot.snapshot.slice(0, 2000)}{snapshot.snapshot.length > 2000 ? '\n…(truncated)' : ''}
+                  <pre className="p-4 text-[11px] font-mono text-muted-foreground/70 overflow-x-auto whitespace-pre-wrap break-words leading-relaxed max-h-60">
+                    {snapshot.snapshot.slice(0, 2000)}
+                    {snapshot.snapshot.length > 2000 ? '\n…(truncated for display — full snapshot stored in database)' : ''}
                   </pre>
                 </div>
               )}
             </div>
           )}
 
-          {/* VERIFY TAB */}
-          {activeTab==='verify' && (
+          {/* Verify tab */}
+          {activeTab === 'verify' && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-border/60 bg-card/30 p-4">
-                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">How to verify manually</div>
-                <p className="text-sm leading-relaxed">{task.verification_method || 'Visit the live page and confirm the change is visible.'}</p>
-              </div>
-              {task.status==='fix_ready' && (
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-300">
-                  ⚠️ Click "I Applied the Fix" first, then use "Verify on Live Page" for auto-checking.
+              {task.verification_method && (
+                <div className="rounded-xl border border-border/60 bg-card/30 p-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    How to verify manually
+                  </p>
+                  <p className="text-sm leading-relaxed">{task.verification_method}</p>
+                </div>
+              )}
+              {task.status === 'fix_ready' && (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-300 leading-relaxed">
+                  ⚠️ Mark the fix as applied first (button above), then use "Verify on Live Page" for automatic checking.
                 </div>
               )}
             </div>
@@ -685,13 +1162,16 @@ function TaskDetail({ task, cms, onExecute, onVerify, onMarkApplied, onSkip, onR
         </>
       )}
 
-      {/* Empty state */}
-      {!hasTabs && task.status==='pending' && (
+      {/* Empty pending state */}
+      {!hasContent && task.status === 'pending' && (
         <div className="rounded-2xl border-2 border-dashed border-border p-12 text-center">
           <div className="text-5xl mb-4">🔬</div>
           <p className="text-sm font-semibold mb-2">Ready to execute</p>
-          <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-            Click "Analyze & Generate Fix". Manav fetches <strong>{task.target_url || 'the live page'}</strong>, snapshots the current state, identifies the exact issue, and generates step-by-step instructions specific to your CMS — before generating the fix code.
+          <p className="text-xs text-muted-foreground max-w-xs mx-auto leading-relaxed">
+            Click "Analyze & Generate Fix" above. Manav will fetch{' '}
+            <span className="font-medium text-foreground">{task.target_url ?? 'the live page'}</span>,
+            take a snapshot, identify the exact issue, and generate step-by-step instructions
+            for your specific CMS.
           </p>
         </div>
       )}
@@ -699,27 +1179,35 @@ function TaskDetail({ task, cms, onExecute, onVerify, onMarkApplied, onSkip, onR
   );
 }
 
-/* ═══════════════════════════════════════════════════════════
-   MARKDOWN RENDERER
-═══════════════════════════════════════════════════════════ */
-function MarkdownBlocks({ content }:{ content:string }) {
-  const sections = content.split(/\n(?=## )/);
+// ─────────────────────────────────────────────────────────────
+// FORMATTED INSTRUCTIONS RENDERER
+// Converts the CMS-specific markdown instructions into clean UI.
+// Each ## section becomes a card. Numbered steps get circle indicators.
+// ─────────────────────────────────────────────────────────────
+
+function FormattedInstructions({ content }: { content: string }) {
+  // Split on ## section headers
+  const rawSections = content.split(/\n(?=## )/);
+
   return (
     <div className="space-y-4">
-      {sections.map((section, si) => {
-        const headingMatch = section.match(/^##\s+(.+)/);
-        const heading = headingMatch?.[1]?.trim();
-        const body = section.replace(/^##[^\n]+\n/, '').trim();
+      {rawSections.map((section, index) => {
+        const lines = section.split('\n');
+        const headerLine = lines[0].startsWith('## ') ? lines[0] : null;
+        const heading = headerLine ? headerLine.replace(/^##\s+/, '') : null;
+        const body = (heading ? lines.slice(1) : lines).join('\n').trim();
+
         if (!body && !heading) return null;
+
         return (
-          <div key={si} className="rounded-xl border border-border bg-card/30 overflow-hidden">
+          <div key={index} className="rounded-xl border border-border bg-card/30 overflow-hidden">
             {heading && (
               <div className="px-4 py-2.5 bg-muted/30 border-b border-border">
                 <h4 className="text-xs font-bold uppercase tracking-wider">{heading}</h4>
               </div>
             )}
-            <div className="p-4 space-y-2.5">
-              <InstructionLines text={body} />
+            <div className="p-4">
+              <RenderLines lines={body.split('\n')} />
             </div>
           </div>
         );
@@ -728,41 +1216,106 @@ function MarkdownBlocks({ content }:{ content:string }) {
   );
 }
 
-function InstructionLines({ text }:{ text:string }) {
-  return (
-    <div className="space-y-2">
-      {text.split('\n').map((line, i) => {
-        const t = line.trim();
-        if (!t || t==='---') return null;
-        if (t.startsWith('>')) {
-          const inner = t.replace(/^>\s*/, '');
-          return <div key={i} className="rounded-lg bg-primary/5 border border-primary/15 px-3.5 py-2.5 text-xs text-muted-foreground leading-relaxed"><InlineText text={inner}/></div>;
-        }
-        if (/^⚠️/.test(t)) return <div key={i} className="rounded-lg bg-amber-500/8 border border-amber-500/20 px-3.5 py-2.5 text-xs text-amber-300">{t}</div>;
-        const stepM = t.match(/^(\d+)\.\s+(.+)/);
-        if (stepM) return (
-          <div key={i} className="flex gap-3 items-start">
-            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/20 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center mt-0.5">{stepM[1]}</div>
-            <p className="flex-1 text-sm leading-relaxed"><InlineText text={stepM[2]}/></p>
+function RenderLines({ lines }: { lines: string[] }) {
+  const elements: React.ReactNode[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line === '---') continue;
+
+    // Blockquote
+    if (line.startsWith('>')) {
+      const text = line.replace(/^>\s*/, '');
+      elements.push(
+        <div key={i} className="rounded-lg bg-primary/5 border border-primary/15 px-3.5 py-2.5 text-xs text-muted-foreground leading-relaxed my-1">
+          <InlineFormatted text={text} />
+        </div>
+      );
+      continue;
+    }
+
+    // Warning line
+    if (line.startsWith('⚠️')) {
+      elements.push(
+        <div key={i} className="rounded-lg bg-amber-500/8 border border-amber-500/20 px-3.5 py-2.5 text-xs text-amber-300 leading-relaxed my-1">
+          {line}
+        </div>
+      );
+      continue;
+    }
+
+    // Numbered step
+    const stepMatch = line.match(/^(\d+)\.\s+(.+)/);
+    if (stepMatch) {
+      elements.push(
+        <div key={i} className="flex gap-3 items-start my-1.5">
+          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/20 border border-primary/30 text-primary text-[11px] font-bold flex items-center justify-center mt-0.5">
+            {stepMatch[1]}
           </div>
-        );
-        if (/^[-*]\s/.test(t)) return (
-          <div key={i} className="flex gap-2 items-start pl-9">
-            <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-2"/>
-            <p className="text-xs text-muted-foreground"><InlineText text={t.replace(/^[-*]\s/,'')}/></p>
-          </div>
-        );
-        if (t.startsWith('**') && t.endsWith('**')) return <p key={i} className="text-xs font-bold mt-1">{t.replace(/\*\*/g,'')}</p>;
-        return <p key={i} className="text-sm text-muted-foreground leading-relaxed"><InlineText text={t}/></p>;
-      })}
-    </div>
-  );
+          <p className="flex-1 text-sm leading-relaxed pt-0.5">
+            <InlineFormatted text={stepMatch[2]} />
+          </p>
+        </div>
+      );
+      continue;
+    }
+
+    // Bullet point
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      const text = line.replace(/^[-*]\s+/, '');
+      elements.push(
+        <div key={i} className="flex gap-2 items-start pl-9 my-1">
+          <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-2" />
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            <InlineFormatted text={text} />
+          </p>
+        </div>
+      );
+      continue;
+    }
+
+    // Bold-only line (section sub-header)
+    if (/^\*\*[^*]+\*\*$/.test(line)) {
+      elements.push(
+        <p key={i} className="text-xs font-bold mt-3 mb-1">{line.replace(/\*\*/g, '')}</p>
+      );
+      continue;
+    }
+
+    // Regular paragraph
+    elements.push(
+      <p key={i} className="text-sm text-muted-foreground leading-relaxed my-1">
+        <InlineFormatted text={line} />
+      </p>
+    );
+  }
+
+  return <div className="space-y-0.5">{elements}</div>;
 }
 
-function InlineText({ text }:{ text:string }) {
-  return <>{text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((p,i) =>
-    p.startsWith('**') && p.endsWith('**') ? <strong key={i} className="font-semibold text-foreground">{p.slice(2,-2)}</strong> :
-    p.startsWith('`')  && p.endsWith('`')  ? <code key={i} className="text-[11px] font-mono bg-muted/60 px-1 py-0.5 rounded text-amber-300">{p.slice(1,-1)}</code> :
-    <span key={i}>{p}</span>
-  )}</>;
+function InlineFormatted({ text }: { text: string }) {
+  // Handle **bold** and `code` inline — split on these patterns
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return (
+            <strong key={i} className="font-semibold text-foreground">
+              {part.slice(2, -2)}
+            </strong>
+          );
+        }
+        if (part.startsWith('`') && part.endsWith('`')) {
+          return (
+            <code key={i} className="text-[11px] font-mono bg-muted/60 px-1 py-0.5 rounded text-amber-300/90">
+              {part.slice(1, -1)}
+            </code>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
 }
