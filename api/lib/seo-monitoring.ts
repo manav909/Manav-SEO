@@ -951,13 +951,15 @@ function pushPctFinding(findings: Finding[], opts: {
 ═══════════════════════════════════════════════════════════════ */
 
 async function synthesizeMonitoringNarrative(opts: {
+  const CURRENT_YEAR = new Date().getFullYear();
   keyword:      string;
   currentSnap:  Snapshot;
   baselineSnap: Snapshot;
   windowDays:   number;
   findings:     Finding[];
 }): Promise<string> {
-  const sys = `You are a digital marketing strategist summarizing what changed for an SEO campaign in the past ${opts.windowDays} days. You read a snapshot comparison (current vs baseline) and a list of detected findings. You produce a 3-paragraph narrative:
+  const CURRENT_YEAR = new Date().getFullYear();
+  const sys = `You are a digital marketing strategist summarizing what changed for an SEO campaign in the past ${opts.windowDays} days. You read a snapshot comparison (current vs baseline) and a list of detected findings. You produce a 3-paragraph narrative:\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 
 Paragraph 1: ONE sentence on the overall direction (gaining / stalling / losing / mixed). Then 1-2 sentences naming the specific changes that drove it.
 Paragraph 2: What this means strategically. Tie it to action — what should the user do this week given these changes?

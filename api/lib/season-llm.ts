@@ -195,7 +195,10 @@ function buildSystemPrompt(): string {
     platformDoc = PLATFORM_SELF_KNOWLEDGE;
   } catch { platformDoc = ""; }
 
+  const CURRENT_YEAR = new Date().getFullYear();
   return `${platformDoc}
+
+**CURRENT DATE CONTEXT:** The current year is ${CURRENT_YEAR}. Any content you generate, including plans, briefs, titles, reports, and recommendations, MUST use ${CURRENT_YEAR} for current-year content. Never reference 2025 as current.
 
 # YOUR OUTPUT FORMAT — STRICT JSON
 Reply ONLY with a single JSON object. No preamble, no markdown fences around the whole thing, no commentary outside the JSON. Shape:

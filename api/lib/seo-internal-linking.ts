@@ -1060,6 +1060,7 @@ async function buildRecommendations(
   nodes: PageNode[],
   campaignKeyword: string,
 ): Promise<Recommendation[]> {
+  const CURRENT_YEAR = new Date().getFullYear();
   if (targets.length === 0) return [];
   const fetched = nodes.filter(n => n.fetched);
   if (fetched.length === 0) return [];
@@ -1111,6 +1112,7 @@ async function enrichTargetWithLlm(
   tc: { target: LinkTarget; candidates: { node: PageNode; overlap: number; overlapScore: number }[] },
   campaignKeyword: string,
 ): Promise<Recommendation[]> {
+  const CURRENT_YEAR = new Date().getFullYear();
   const target = tc.target;
   const candidateRows = tc.candidates.map((c, i) => ({
     candidate_id:    i,
@@ -1121,7 +1123,7 @@ async function enrichTargetWithLlm(
     topic_overlap_score: Number(c.overlapScore.toFixed(2)),
   }));
 
-  const sys = `You are an SEO internal linking strategist. The user gives you a target URL (a page that should receive more internal links) and 5 candidate source pages from their site. For each candidate, you produce:
+  const sys = `You are an SEO internal linking strategist. The user gives you a target URL (a page that should receive more internal links) and 5 candidate source pages from their site. For each candidate, you produce:\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 - suggested_anchor: 4-9 words, descriptive and natural — what humans would actually click. Use keyword phrasing where it fits the candidate's content. Do NOT recommend generic anchors like "click here" or "read more".
 - placement_hint: WHERE on the source page to add this link. IMPORTANT CONSTRAINT: you only have the page URL, title, and H1 — you do NOT have the full body text, H2/H3 headings, or paragraph content. Base your suggestion on the page type and topic as inferred from these signals. Use phrasing that reflects what you can infer, not assert: "in the opening paragraph (intro context, inferred from page type)", "near the end as a related resource", "in a tools or comparison section if one exists (inferred from page topic)". Do NOT reference specific headings, sections, or content that you cannot see — they may not exist.
 - rationale: ONE sentence why this candidate→target link is high-value. Reference the topical match and the strategic role of the target.

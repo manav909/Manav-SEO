@@ -770,18 +770,20 @@ async function runAspirationalClusterMap(opts: {
 
 /* Build 4-6 aspirational clusters using LLM + optional competitor context. */
 async function buildAspirationalClusters(opts: {
+  const CURRENT_YEAR = new Date().getFullYear();
   keyword:     string;
   competitors: any[];
 }): Promise<Cluster[]> {
   const competitorContext = opts.competitors.length > 0
     ? `Top competing pages for this keyword (from a prior rank pipeline):\n${opts.competitors.slice(0, 5).map((cp: any, i: number) => {
+  const CURRENT_YEAR = new Date().getFullYear();
         const url = cp.url || cp.page || '(unknown url)';
         const title = cp.title || cp.angle || '';
         return `${i + 1}. ${url}${title ? ` — ${title}` : ''}`;
       }).join('\n')}`
     : `(No competitor data available for this campaign — base your clustering on topical reasoning alone.)`;
 
-  const sys = `You are a senior SEO content strategist mapping the topical universe around the keyword "${opts.keyword}". The project has NO GSC ranking history for this topic yet — they're starting from zero.
+  const sys = `You are a senior SEO content strategist mapping the topical universe around the keyword "${opts.keyword}". The project has NO GSC ranking history for this topic yet — they're starting from zero.\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 
 Your job: produce 4-6 topical clusters that represent the full topical universe a competitive site would need to cover. These are CONTENT CATEGORIES, not individual page recommendations. Think hub-and-spoke: each cluster should be coherent enough that a single pillar page + 5-15 supporting articles could cover it.
 
@@ -1266,13 +1268,15 @@ function lexicalClusters(queries: GscQueryRow[], keyword: string): {
 
 /* ════════════════════════════════════════════════════════════════
    LLM LABELING (one batched call)
-═══════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════ 
+*/
 
 async function labelAndLabelClusters(opts: {
   keyword: string;
   clusters: { shared_tokens: string[]; queries: GscQueryRow[] }[];
   competitorSummary: string;
 }): Promise<Cluster[]> {
+  const CURRENT_YEAR = new Date().getFullYear();
   /* Build a single prompt with all clusters; ask for naming + intent + recommendation. */
   if (opts.clusters.length === 0) return [];
 
@@ -1285,7 +1289,7 @@ async function labelAndLabelClusters(opts: {
     sample_queries: cl.queries.slice(0, 8).map(q => q.query),
   }));
 
-  const sys = `You are a senior SEO content strategist. You are given a list of pre-clustered Google Search Console queries for a campaign targeting "${opts.keyword}". For each cluster, produce:
+  const sys = `You are a senior SEO content strategist. You are given a list of pre-clustered Google Search Console queries for a campaign targeting "${opts.keyword}". For each cluster, produce:\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 - cluster_name: 3-6 word clear topical name (NOT just the shared tokens — name the actual user need)
 - primary_intent: one of "informational" | "navigational" | "commercial" | "transactional" | "mixed"
 - topic_summary: ONE sentence describing what users in this cluster are looking for
@@ -1500,7 +1504,8 @@ function extractDomainFromUrl(url: string): string {
   }
 }
 
-async function enrichClustersWithSerpApiCompetitors(
+async function enrichClustersWithSerpApiCompe
+titors(
   clusters: Cluster[],
   projectId: string,
   projectUrl: string,
@@ -1560,6 +1565,7 @@ async function enrichClustersWithSerpApiCompetitors(
   }));
 
   return enriched;
+
 }
 
 
@@ -1568,11 +1574,13 @@ async function enrichWithCompetitorOwnership(
   campaignKeyword: string,
   competitors: any[],
 ): Promise<Cluster[]> {
+  const CURRENT_YEAR = new Date().getFullYear();
   if (clusters.length === 0) return clusters;
 
   /* Build competitor context once (same for all clusters) */
   const competitorContext = competitors.length > 0
     ? competitors.slice(0, 5).map((cp: any, i: number) => {
+  const CURRENT_YEAR = new Date().getFullYear();
         const url   = cp.url || cp.page || '';
         const title = cp.title || cp.angle || '';
         return `${i + 1}. ${url}${title ? ` — ${title}` : ''}`;
@@ -1583,7 +1591,7 @@ async function enrichWithCompetitorOwnership(
   const enriched = await Promise.all(clusters.map(async (cluster) => {
     try {
       const topQueries = [...cluster.queries].sort((a, b) => b.impressions - a.impressions).slice(0, 8);
-      const sys = `You identify which domains own a topical cluster's search real estate. The user gives you a cluster (name + sample queries) for a campaign targeting "${campaignKeyword}". You return 3-5 domain names (NOT full URLs — just domains like "bubble.io", "adalo.com") that you believe currently rank well or dominate this specific cluster's queries.
+      const sys = `You identify which domains own a topical cluster's search real estate. The user gives you a cluster (name + sample queries) for a campaign targeting "${campaignKeyword}". You return 3-5 domain names (NOT full URLs — just domains like "bubble.io", "adalo.com") that you believe currently rank well or dominate this specific cluster's queries.\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 
 Base your answer on:
 - The competitor pages provided for the parent campaign
@@ -1737,6 +1745,7 @@ async function enrichQueriesWithIntent(
   campaignKeyword: string,
   projectUrl: string,
 ): Promise<{ enriched: GscQueryRow[]; llmCalls: number; }> {
+  const CURRENT_YEAR = new Date().getFullYear();
   if (queries.length === 0) return { enriched: queries, llmCalls: 0 };
 
   /* 1. Heuristic branded detection — pre-mark queries containing project's
@@ -1762,7 +1771,7 @@ async function enrichQueriesWithIntent(
   const sliced = toClassify.slice(0, SLICE);
   const queryList = sliced.map((q, i) => `${i + 1}. "${q.query}"`).join('\n');
 
-  const sys = `You classify SEO search queries by primary user intent. The user gives you a list of queries from a project's Google Search Console. You return a JSON object where each query is classified as ONE of:
+  const sys = `You classify SEO search queries by primary user intent. The user gives you a list of queries from a project's Google Search Console. You return a JSON object where each query is classified as ONE of:\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 
 - "informational" — user wants to learn (how, what, why, guide, tutorial, explainer, definition). Generic category exploration ("project management software", "app maker", "crm tool") is informational when the searcher is in awareness/discovery mode.
 - "commercial" — user comparing options to make a buying decision (best, vs, top, review, compare, alternative, "best X for Y", "X for small business")

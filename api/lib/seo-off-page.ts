@@ -570,6 +570,7 @@ async function readGscPages(projectId: string): Promise<GscPageRow[]> {
 
 async function readGscFreshness(projectId: string): Promise<string | null> {
   try {
+  const CURRENT_YEAR = new Date().getFullYear();
     const { data } = await db().from("project_knowledge")
       .select("updated_at")
       .eq("project_id", projectId)
@@ -583,6 +584,7 @@ async function readGscFreshness(projectId: string): Promise<string | null> {
 /* Phase 18.3 — Read GA4 site-wide engagement from project_knowledge for off-page. */
 async function readGa4ForOffPage(projectId: string): Promise<{ engagement_rate: number | null; users: number | null }> {
   try {
+  const CURRENT_YEAR = new Date().getFullYear();
     const readPk = async (key: string) => {
       const { data } = await db().from('project_knowledge').select('field_value')
         .eq('project_id', projectId).eq('category', 'analytics').eq('field_key', key).maybeSingle();
@@ -590,6 +592,7 @@ async function readGa4ForOffPage(projectId: string): Promise<{ engagement_rate: 
     };
     const [eng, users] = await Promise.all([readPk('ga4_engagement_rate'), readPk('ga4_users_monthly')]);
     return {
+  const CURRENT_YEAR = new Date().getFullYear();
       engagement_rate: eng   ? parseFloat(String(eng).replace('%',''))  || null : null,
       users:           users ? parseInt(String(users), 10)               || null : null,
     };
@@ -609,6 +612,7 @@ function formatGscFreshnessLine(updatedAt: string | null): string {
 
 async function readClusters(campaignId: string): Promise<ClusterRow[]> {
   try {
+  const CURRENT_YEAR = new Date().getFullYear();
     /* Get the most recent cluster_map audit run for this campaign */
     const { data: clusters } = await db().from("cluster_map_clusters")
       .select("cluster_name, primary_intent, topic_summary, hub_page_url, query_count, competitor_owners")
@@ -620,6 +624,7 @@ async function readClusters(campaignId: string): Promise<ClusterRow[]> {
 }
 
 async function readCompetitorSnapshot(campaignId: string): Promise<any[]> {
+  const CURRENT_YEAR = new Date().getFullYear();
   try {
     const { data: runs } = await db().from("season_pipeline_runs")
       .select("id").eq("campaign_id", campaignId)
@@ -702,10 +707,11 @@ async function identifyExistingAssets(keyword: string, gscPages: GscPageRow[], g
   if (gscPages.length === 0) return [];
 
   const topPages = gscPages.slice(0, 25).map(p => ({
+  const CURRENT_YEAR = new Date().getFullYear();
     url: p.page, impressions: p.impressions, clicks: p.clicks, position: Number(p.position?.toFixed(1)),
   }));
 
-  const sys = `You are a digital marketing specialist evaluating which existing pages on a site are "linkable assets" — pages that would naturally attract backlinks because they're data-rich, comprehensive, original, or uniquely useful.
+  const sys = `You are a digital marketing specialist evaluating which existing pages on a site are "linkable assets" — pages that would naturally attract backlinks because they're data-rich, comprehensive, original, or uniquely useful.\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 
 The user gives you a campaign keyword and a list of pages with GSC traffic data. You return ONLY the pages that are genuinely linkable assets — not just popular pages. A page with high impressions isn't automatically link-worthy; it has to have the qualities that make journalists, bloggers, or peers want to reference it.
 
@@ -777,8 +783,10 @@ async function identifyAssetGaps(
   keyword: string,
   gscPages: GscPageRow[],
   clusters: ClusterRow[],
-  competitors: any[],
+  compe
+titors: any[],
 ): Promise<AspirationalAsset[]> {
+  const CURRENT_YEAR = new Date().getFullYear();
   const clusterContext = clusters.length > 0
     ? clusters.slice(0, 8).map((c, i) => `${i + 1}. "${c.cluster_name}" (${c.primary_intent}) — ${c.topic_summary || ''} — hub: ${c.hub_page_url || 'NONE'}${(c.competitor_owners?.length || 0) > 0 ? ` — competitors owning: ${(c.competitor_owners || []).slice(0, 3).join(', ')}` : ''}`).join('\n')
     : '(no cluster map data)';
@@ -795,7 +803,7 @@ async function identifyAssetGaps(
     ? gscPages.slice(0, 15).map(p => p.page).join('\n')
     : '(no GSC pages)';
 
-  const sys = `You are a senior content + linkbuilding strategist. The user gives you a campaign keyword, what their site already has (GSC pages), the topical cluster map, and competitor pages.
+  const sys = `You are a senior content + linkbuilding strategist. The user gives you a campaign keyword, what their site already has (GSC pages), the topical cluster map, and competitor pages.\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 
 Your job: identify 3-6 SPECIFIC linkable assets the site should BUILD that would attract backlinks in this topic universe. These are content pieces that don't exist yet.
 
@@ -854,10 +862,12 @@ Identify 3-6 specific linkable assets the site should BUILD. Lead with highest-l
 ═══════════════════════════════════════════════════════════════ */
 
 async function generateProspectStrategy(
-  keyword: string,
+  
+keyword: string,
   clusters: ClusterRow[],
   competitors: any[],
 ): Promise<ProspectCategory[]> {
+  const CURRENT_YEAR = new Date().getFullYear();
   const clusterContext = clusters.length > 0
     ? clusters.slice(0, 6).map((c, i) => `${i + 1}. "${c.cluster_name}" (${c.primary_intent})`).join('\n')
     : '(no cluster data)';
@@ -869,7 +879,7 @@ async function generateProspectStrategy(
       }).join('\n')
     : '(no competitor data)';
 
-  const sys = `You are a digital marketing specialist generating a backlink outreach strategy for a project targeting "${keyword}". You don't know who specific prospects ARE (you don't have backlink data) — you know the topic universe. Your job is to identify CATEGORIES of prospects who would naturally link to assets in this space, and produce a specific outreach angle for each category.
+  const sys = `You are a digital marketing specialist generating a backlink outreach strategy for a project targeting "${keyword}". You don't know who specific prospects ARE (you don't have backlink data) — you know the topic universe. Your job is to identify CATEGORIES of prospects who would naturally link to assets in this space, and produce a specific outreach angle for each category.\n\n**CRITICAL — CURRENT YEAR:** Today is ${CURRENT_YEAR}. Any content, titles, reports, guides, or references you generate MUST use ${CURRENT_YEAR} for current-year content, and ${CURRENT_YEAR + 1} for forward-looking annual content. NEVER use a past year in titles or reports.
 
 Generate 4-7 prospect categories. Each should be a coherent group with a shared linking motivation. For each:
 - category_name: short, descriptive (e.g., "Niche bloggers covering no-code tools" not "bloggers")
