@@ -211,7 +211,27 @@ function pickFoundationalCritical(findings: Finding[]): void {
     extremeLcp.is_foundational = true;
     const lcpSecMatch = extremeLcp.finding_title.match(/(\d+\.\d+)s/);
     const lcpSecStr = lcpSecMatch ? lcpSecMatch[1] : '?';
-    extremeLcp.recommendation = `**STOP — fix mobile LCP before any other work begins.**\n\nAt ${lcpSecStr}s on mobile, most visitors leave before the page loads. Content rewrites, H1 changes, and schema additions will have zero ranking effect until mobile load time is resolved.\n\n**Diagnostic path (in order):**\n1. Open PSI in Chrome DevTools → identify the LCP element (usually the largest image or hero text block)\n2. Check TTFB (Time to First Byte) — if >2s, the issue is server/CDN, not the element itself\n3. Check image byte-weight on the LCP element — modern images should be <200KB above the fold\n4. Verify the LCP element is not loaded via lazy-loading or client-side JS render\n5. If using a CMS/page builder: check if the render-critical CSS is inlined or deferred\n\n**Expected fix for this LCP range:** likely a combination of server response time, unoptimised hero image, and render-blocking resources. CDN configuration alone often reduces this to <3s.`;
+    /* Build diagnosis from actual evidence in the finding */
+    const lcpEvTtfb: number | null = (extremeLcp.evidence as any)?.ttfb_ms ?? null;
+    const lcpEvTbt:  number | null = (extremeLcp.evidence as any)?.tbt_ms  ?? null;
+    const lcpEvFcp:  number | null = (extremeLcp.evidence as any)?.fcp_ms  ?? null;
+    const lcpEvEl:   string | null = (extremeLcp.evidence as any)?.lcp_element ?? null;
+
+    /* Infer root cause from the data triangle: TTFB vs FCP gap vs TBT */
+    let rootCauseBlock: string;
+    if (lcpEvTtfb !== null && lcpEvTtfb > 600) {
+      /* Slow server — fix TTFB first */
+      rootCauseBlock = `**Root cause: server response time.** TTFB is ${Math.round(lcpEvTtfb)}ms — the server is slow before any rendering begins. No front-end optimisation will help until server response is below 600ms.\n\n**Fix sequence:**\n1. Check hosting configuration and CDN setup\n2. Enable full-page caching if possible\n3. Reduce server-side rendering time\n4. After TTFB is <600ms, re-run PSI to isolate the next bottleneck`;
+    } else if (lcpEvTbt !== null && lcpEvTbt > 300) {
+      /* Fast server, high TBT → render-blocking JS is the cause */
+      const ttfbNote = lcpEvTtfb !== null ? `TTFB is ${Math.round(lcpEvTtfb)}ms (server is fast — not the problem). ` : '';
+      const fcpNote  = lcpEvFcp  !== null ? `FCP is ${(lcpEvFcp / 1000).toFixed(2)}s, meaning no content paints until ${(lcpEvFcp / 1000).toFixed(2)}s — this is a JavaScript blocking problem, not a network problem. ` : '';
+      rootCauseBlock = `**Root cause: render-blocking JavaScript.** ${ttfbNote}${fcpNote}TBT is ${Math.round(lcpEvTbt)}ms — the main thread is blocked by JavaScript for ${Math.round(lcpEvTbt)}ms during page load, delaying all rendering.\n\n**Fix sequence:**\n1. Open Chrome DevTools → Performance tab → record a page load → look for Long Tasks (red bars) in the main thread\n2. Identify which scripts are blocking render (typically large bundles, third-party scripts, analytics)\n3. Defer non-critical scripts with \`defer\` or \`async\`; move them below the fold\n4. Split large JS bundles; lazy-load non-critical components\n5. ${lcpEvEl ? `Optimise the LCP element ("${lcpEvEl}"): compress to <200KB, add fetchpriority="high", ensure not lazy-loaded` : 'Identify the LCP element in PSI and ensure it loads eagerly with fetchpriority="high"'}`;
+    } else {
+      /* Unknown cause — generic diagnostic */
+      rootCauseBlock = `**Diagnostic path (in order):**\n1. Open PageSpeed Insights → identify the LCP element${lcpEvEl ? ` (reported as: "${lcpEvEl}")` : ' (run PSI to identify it — no element data available)'}\n2. Check TTFB${lcpEvTtfb !== null ? ` (currently ${Math.round(lcpEvTtfb)}ms)` : ''} — if >600ms, fix server/CDN first\n3. Check TBT${lcpEvTbt !== null ? ` (currently ${Math.round(lcpEvTbt)}ms)` : ''} — if >300ms, reduce render-blocking JS\n4. Compress LCP element image to <200KB; add fetchpriority="high"; remove lazy-loading from above-fold\n5. Inline render-critical CSS; defer non-critical scripts`;
+    }
+    extremeLcp.recommendation = `**STOP — fix mobile LCP before any other work begins.**\n\nAt ${lcpSecStr}s on mobile, most visitors abandon before the page loads. Content rewrites, H1 changes, and schema additions have zero ranking effect until this is resolved.\n\n${rootCauseBlock}`;
     return;
   }
   /* Rule 1: indexability blocker */
@@ -2234,10 +2254,13 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
       const tbtNote   = tbtMs  ? `\n- **TBT (Total Blocking Time):** ${Math.round(tbtMs)}ms${tbtMs > 300 ? ' ← significant JS blocking; main thread needs work' : ''}` : '';
       const severeNote = m.lcp_ms > 8000 ? `\n\n⚠️ **At ${lcpSec}s, most mobile users abandon before the page loads.** This is a critical UX failure, not an optimisation task. No content change, H1 rewrite, or schema work will produce ranking results until this is resolved.` : '';
       const lcpDetail = `Largest Contentful Paint measures how long the main content takes to render for real users. Google's thresholds: <2.5s good, 2.5-4s needs improvement, >4s poor. Data source: ${isFromCrux ? 'Chrome User Experience (real-user 75th percentile)' : 'Lighthouse lab test'}.${severeNote}\n\n**Diagnostic breakdown:**${lcpElNote}${ttfbNote}${fcpNote}${tbtNote}`;
+      const lcpElNote10 = lcpEl
+        ? `the LCP element is "${lcpEl}"`
+        : `the LCP element could not be identified automatically — run Chrome DevTools → Performance tab → record a page load → look for the largest paint event, OR open PageSpeed Insights and inspect the "Largest Contentful Paint element" diagnostic`;
       const lcpRec = sev === 'green' ? undefined
         : ttfbMs && ttfbMs > 600
           ? `TTFB is ${Math.round(ttfbMs)}ms — the server is slow before any rendering begins. Fix TTFB first: check hosting and CDN configuration, enable full-page caching where possible, reduce server-side rendering time. After TTFB is below 600ms, re-audit to isolate the next bottleneck.`
-          : `Identify and optimise the LCP element${lcpEl ? ` ("${lcpEl}")` : ' (the largest visible element above the fold)'}. Priority actions: (1) compress to <200KB if an image, (2) add fetchpriority="high" to the element, (3) ensure it is NOT lazy-loaded, (4) inline critical CSS that controls its render, (5) check for render-blocking scripts above it in the DOM.`;
+          : `Identify and optimise the LCP element (${lcpElNote10}). Priority actions: (1) compress to <200KB if an image, (2) add \`fetchpriority="high"\` to the element, (3) ensure it is NOT lazy-loaded, (4) inline critical CSS that controls its render, (5) check for render-blocking scripts above it in the DOM.`;
       findings.push({
         audit_kind: 'core_web_vitals', severity: sev,
         finding_title:  `${strat.toUpperCase()} LCP: ${lcpSec}s ${sev === 'red' ? '— exceeds the 4s threshold' : sev === 'amber' ? '— above the 2.5s target' : '— within target'}`,
@@ -2795,7 +2818,7 @@ async function checkHeadingHierarchyVsPaa(
       audit_kind: 'on_page_fundamentals',
       severity:   'amber',
       finding_title: `All ${total} PAA questions for "${campaignKeyword}" have matching headings — verify content quality beneath each`,
-      finding_detail: `The page's heading outline (${h2.length} H2 + ${h3.length} H3) has a heading that token-matches every PAA question on the live SERP. **This is a structural check only** — it confirms the H2/H3 exists but cannot verify whether the content *beneath* each heading actually answers the question clearly.\n\n> ⚠️ **Action required before marking complete:** open each matched heading below and verify the first 1-3 sentences beneath it provide a direct, citation-friendly answer (40-80 words). A heading that token-matches a PAA question but has vague or marketing copy underneath will NOT capture the PAA box.${headingsListing}\n\n**Verification checklist per matched heading:**\n- First sentence beneath H2 directly answers the PAA question in plain language\n- Answer is 40-80 words (citation-friendly length)\n- No jargon that assumes prior knowledge\n- Answer stands alone without requiring the visitor to read the rest of the section`,
+      finding_detail: `The page's heading outline (${h2.length} H2 + ${h3.length} H3) has a heading that token-matches every PAA question on the live SERP. **This is a structural check only** — it confirms the H2/H3 exists but cannot verify whether the content *beneath* each heading actually answers the question clearly.\n\n> ⚠️ **Action required before marking complete:** open each matched heading below and verify the first 1-3 sentences beneath it provide a direct, citation-friendly answer (40-80 words). A heading that token-matches a PAA question but has vague or marketing copy underneath will NOT capture the PAA box.${headingsListing}\n\n**Verification checklist per matched heading:**\n- First sentence beneath H2 directly answers the PAA question in plain language\n- Answer is 40-80 words (citation-friendly length)\n- No jargon that assumes prior knowledge\n- Answer stands alone without requiring the visitor to read the rest of the section\n\n**Next step after verifying content quality:** add FAQPage JSON-LD schema — see the companion finding on schema gap. These two findings must be completed together: content quality first (this finding), then schema (companion finding).`,
       recommendation: `Verify content quality beneath each matched heading. If any heading has vague or marketing copy as its first paragraph rather than a direct answer, rewrite that paragraph. This is the highest-leverage tactic for PAA box capture and AI Overview citation.`,
       evidence: { paa_total: total, answered_count: answeredCount, h2_count: h2.length, h3_count: h3.length, caveat: 'heading_match_only_content_not_verified' },
       data_source: 'html_fetch',

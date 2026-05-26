@@ -139,7 +139,15 @@ function firstParagraphFinding(m: FindingWithId[]) {
   return firstFindingBy(m, f => /First paragraph (is off-topic|weakly aligned|well-aligned)/i.test(f.finding_title));
 }
 function paaGapFinding(m: FindingWithId[]) {
-  return firstFindingBy(m, f => /Content gap.+PAA|PAA questions.+addressed/i.test(f.finding_title));
+  /* Match all PAA finding title variants:
+     "Content gap — none of the N PAA questions..."
+     "N of N PAA questions...are NOT addressed..."
+     "All N PAA questions...are addressed by existing headings"  (old)
+     "All N PAA questions...have matching headings..."           (new) */
+  return firstFindingBy(m, f =>
+    /Content gap.+PAA|PAA questions.+(addressed|matching heading)/i.test(f.finding_title) ||
+    /All \d+ PAA questions/i.test(f.finding_title)
+  );
 }
 function diffuseIntentFinding(m: FindingWithId[]) {
   return firstFindingBy(m, f => /Diffuse-intent SERP|Tight-intent SERP/i.test(f.finding_title));
@@ -398,6 +406,21 @@ function renderExecutiveSummary(lines: string[], I: DeepReportInputs, m: Finding
       lead: `Verify GA4 conversion tracking`,
       tail: ` ${xref(zeroConv)}. Zero conversions on ${num(zeroConv.finding.evidence?.sessions)} sessions is either a measurement gap or a real funnel problem — needs analyst diagnosis before any traffic-recovery work pays off. Detail in §6.3.1.`,
     });
+  }
+  /* When foundational exists but we still have fewer than 3 items,
+     fill from next-highest-priority findings: first para, image opt,
+     keyword alignment — anything amber or higher. */
+  if (actionItems.length < 3) {
+    const candidates = m.filter(fi =>
+      (fi.finding.severity === 'red' || fi.finding.severity === 'amber') &&
+      fi.finding !== foundational?.finding &&
+      fi.finding !== paaGap?.finding &&
+      fi.finding !== zeroConv?.finding
+    );
+    for (const fi of candidates) {
+      if (actionItems.length >= 3) break;
+      actionItems.push({ lead: fi.finding.finding_title, tail: ` ${xref(fi)}.` });
+    }
   }
   /* Fallback when none of the standard action sources fired */
   if (actionItems.length === 0) {
@@ -750,7 +773,7 @@ function renderSearchPerformanceBaseline(lines: string[], I: DeepReportInputs, m
       lines.push(`|---|---|`);
       if (diffuseF) {
         const cats = Object.keys(diffuseEv2.categories || {}).length;
-        lines.push(`| Intent diversity | ${cats} distinct intent categories (see ${xref(diffuseF)}) |`);
+        lines.push(`| Intent diversity | ${cats} distinct intent categories ${xref(diffuseF)} |`);
       }
       if (paaEv.paa_total > 0) {
         lines.push(`| People Also Ask box | ✅ Yes (${paaEv.paa_total} questions) |`);
@@ -1017,11 +1040,15 @@ function renderConvergenceAnalysis(lines: string[], I: DeepReportInputs, m: Find
   }
   lines.push('');
 
-  /* §4.2 — Hardened diagnoses */
-  lines.push(`### §4.2 — Hardened diagnoses (where 2+ findings agree)`);
-  lines.push('');
+  /* §4.2 — Hardened diagnoses — only render when meaningful convergence exists */
   const kwSignals = ['keyword_mismatch', 'url_not_in_top_10', 'serp_topic_mismatch', 'first_paragraph_off_topic'];
   const kwSignalsPresent = kwSignals.filter(s => signalMap[s] && signalMap[s].length > 0);
+  const totalSignalCount = Object.keys(signalMap).length;
+  /* Only show §4.2 when there's real convergence — hide the "no convergence" placeholder */
+  if (totalSignalCount > 0) {
+    lines.push(`### §4.2 — Hardened diagnoses (where 2+ findings agree)`);
+    lines.push('');
+  }
   if (kwSignalsPresent.length >= 2) {
     const totalFis = new Set<string>();
     for (const s of kwSignalsPresent) signalMap[s].forEach(fi => totalFis.add(fi.id));
@@ -1040,8 +1067,9 @@ function renderConvergenceAnalysis(lines: string[], I: DeepReportInputs, m: Find
     }
     lines.push('');
     lines.push(`When findings using different methodologies converge on the same diagnosis, the recommendation is operational — not speculative. Recommendation sequencing in §6 reflects this convergence.`);
-  } else {
-    lines.push(`No 2-or-more-signal convergence detected in this audit. Individual findings stand on their own evidence.`);
+  } else if (totalSignalCount > 0) {
+    /* Has signals but not 2+ keyword signals — show what we have */
+    lines.push(`No 2+ signal convergence on a single diagnosis. The ${totalSignalCount} signal(s) above are each supported by a single finding — useful context but not a hardened diagnosis.`);
   }
   lines.push('');
 
@@ -1192,7 +1220,9 @@ function renderSeoEconomicsContext(lines: string[], I: DeepReportInputs, m: Find
     lines.push('');
     lines.push(`Same principle applies to HowTo schema (steps must appear visibly), Article schema (headline, author, datePublished must appear visibly), and Product schema (name, image, offers).`);
     lines.push('');
-    lines.push(`**Implication for THIS audit:** when implementing the PAA H2 recommendations from ${xrefShort(paaGapFinding(m))}, update the FAQPage schema in parallel — every new Q&A in visible content must be reflected in the schema, AND every existing schema Question must remain in visible content. Don't add schema questions for content not yet written. Don't remove visible questions without removing the corresponding schema entries.`);
+    const paaRef5 = paaGapFinding(m);
+  const paaRefText = paaRef5 ? xrefShort(paaRef5) : '§6.2 (PAA content work)';
+  lines.push(`**Implication for THIS audit:** when implementing the PAA H2 recommendations from ${paaRefText}, update the FAQPage schema in parallel — every new Q&A in visible content must be reflected in the schema, AND every existing schema Question must remain in visible content. Don't add schema questions for content not yet written. Don't remove visible questions without removing the corresponding schema entries.`);
   } else {
     lines.push(`**N/A** — no schema-validation finding requires action for this audit.`);
   }
@@ -1469,10 +1499,25 @@ function renderEffortDependencyMap(lines: string[], I: DeepReportInputs, m: Find
   lines.push(`|---|---|---|---|---|---|`);
 
   if (foundational) {
-    lines.push(`| T1.1 | Prepare keyword-direction options brief (pivot vs rewrite, with pros/cons) | Senior DMS | 2 hrs | None | §6.1.1 |`);
-    lines.push(`| T1.2 | Schedule 30-min client review call | PM | 30 min | T1.1 | §6.1.1 |`);
-    lines.push(`| T1.3 | Client decision: keyword pivot OR content overhaul | Client | Async (target ≤5 business days) | T1.2 | §6.1.1 |`);
-    lines.push(`| T1.4 | Document decision + update campaign config | DMS | 30 min | T1.3 | §6.1.1 |`);
+    const isLcpFoundational = /LCP/i.test(foundational.finding.finding_title);
+    const isKwFoundational  = /keyword/i.test(foundational.finding.finding_title);
+    if (isLcpFoundational) {
+      /* LCP foundational — dev tasks, not a client keyword decision */
+      lines.push(`| T1.1 | Run PageSpeed Insights on mobile — capture LCP element, TTFB, TBT, and performance score | Dev | 30 min | None | §6.1.1 |`);
+      lines.push(`| T1.2 | Profile main-thread blocking JS (TBT ${foundational.finding.evidence?.tbt_ms ? Math.round(foundational.finding.evidence.tbt_ms) + 'ms' : 'high'}) — identify largest bundles and defer non-critical scripts | Dev | 2 hrs | T1.1 | §6.1.1 |`);
+      lines.push(`| T1.3 | Convert LCP element to webp/avif, add fetchpriority="high", remove lazy-loading from above-fold images | Dev | 1 day | T1.1 | §6.1.1 |`);
+      lines.push(`| T1.4 | Deploy + verify mobile LCP < 4s in PSI before Phase 2 begins | Dev | 30 min | T1.2, T1.3 | §6.1.1 |`);
+    } else if (isKwFoundational) {
+      /* Keyword-pivot foundational — client decision gate */
+      lines.push(`| T1.1 | Prepare keyword-direction options brief (pivot vs rewrite, with pros/cons) | Senior DMS | 2 hrs | None | §6.1.1 |`);
+      lines.push(`| T1.2 | Schedule 30-min client review call | PM | 30 min | T1.1 | §6.1.1 |`);
+      lines.push(`| T1.3 | Client decision: keyword pivot OR content overhaul | Client | Async (target ≤5 business days) | T1.2 | §6.1.1 |`);
+      lines.push(`| T1.4 | Document decision + update campaign config | DMS | 30 min | T1.3 | §6.1.1 |`);
+    } else {
+      /* Generic foundational */
+      lines.push(`| T1.1 | Resolve foundational issue: ${foundational.finding.finding_title} | Dev/DMS | TBD | None | §6.1.1 |`);
+      lines.push(`| T1.2 | Verify fix deployed + confirm issue resolved | Dev | 30 min | T1.1 | §6.1.1 |`);
+    }
   }
 
   const paaGap = paaGapFinding(m);
@@ -1799,6 +1844,8 @@ function findingConfidence(f: Finding): number {
 function renderGlossary(lines: string[], I: DeepReportInputs, m: FindingWithId[]): void {
   lines.push(`## §10 — Glossary`);
   lines.push('');
+  lines.push(`> 📖 **Reference section** — definitions for practitioners unfamiliar with any term used above. Skip if you know SEO.`);
+  lines.push('');
   const terms: Array<[string, string]> = [
     ['AI Overview', 'Google\'s AI-generated summary appearing at the top of search results, above the traditional organic results. Broadly rolled out in 2024. Can suppress organic CTR by 30-50% for informational queries. See §5.1.'],
     ['Canonical URL', 'The HTML link tag (`rel="canonical"`) telling Google which URL is the authoritative version of duplicate or near-duplicate content. Self-referencing canonicals are the safe default.'],
@@ -1833,6 +1880,8 @@ function renderGlossary(lines: string[], I: DeepReportInputs, m: FindingWithId[]
 
 function renderMethodology(lines: string[], I: DeepReportInputs, m: FindingWithId[]): void {
   lines.push(`## §11 — Methodology`);
+  lines.push('');
+  lines.push(`> 🔧 **Platform documentation** — describes what this audit checks, what thresholds it uses, and what it doesn't cover. Relevant for: platform operators, Senior DMS calibrating findings, developers auditing the engine. Skip if you're here for the SEO findings.`);
   lines.push('');
   lines.push(`### §11.1 — What this audit checks`);
   lines.push('');
