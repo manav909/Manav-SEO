@@ -2365,10 +2365,10 @@ async function checkEngagementSignals(url: string, projectId: string): Promise<F
 
   if (isNaN(engagementRate) || engagementRate === 0) {
     findings.push({
-      audit_kind: 'engagement_signals', severity: 'info',
-      finding_title:  'No GA4 engagement data available',
-      finding_detail: 'GA4 is not connected for this project, or the connection has no data for this date range. Engagement is a soft ranking factor and a strong predictor of content quality.',
-      recommendation: 'Connect GA4 via the OAuth flow. Once connected, per-page engagement metrics will appear on subsequent audits.',
+      audit_kind: 'engagement_signals', severity: 'amber',
+      finding_title:  'GA4 not connected for this project — engagement data unavailable',
+      finding_detail: `GA4 is not connected to this project. Per-page engagement metrics (sessions, bounce rate, conversions, avg duration) will be blank on every audit until GA4 is linked.\\n\\n> ⚠️ **Action required:** Go to **PM Module → select this project → Requirements tab → Integrations section → Connect GA4**. The OAuth flow takes ~60 seconds. Once connected, re-run this audit to get real engagement data.`,
+      recommendation: 'Connect GA4 for this project: PM Module → project → Requirements → Integrations → Connect GA4.',
       data_source: 'ga4',
     });
     return findings;
@@ -2698,7 +2698,17 @@ async function checkHeadingHierarchyVsPaa(
   const findings: Finding[] = [];
   if (!campaignKeyword || !campaignKeyword.trim()) return findings;
   const serp = await fetchSerpFeatures(campaignKeyword, projectId);
-  if (!serp || !Array.isArray(serp.paa_questions) || serp.paa_questions.length === 0) {
+  if (!serp) {
+    findings.push({
+      audit_kind: 'on_page_fundamentals', severity: 'amber',
+      finding_title: 'SerpAPI not configured — PAA questions, SERP features, and competitor data unavailable',
+      finding_detail: `Live SERP data (PAA questions, top-10 domains, AI Overview presence, featured snippet) could not be retrieved because SerpAPI is not configured for this project.\\n\\nThis affects **three audit checks** that depend on live SERP data:\\n- PAA question coverage (heading hierarchy vs live PAA questions)\\n- Diffuse-intent SERP detection (Google's intent spread across top-10)\\n- Competitive content benchmark (top-10 competitor word counts)\\n\\n> ⚠️ **Action required:** Set the \\`SERPAPI_KEY\\` environment variable in Vercel (one key covers all projects), OR add a per-project SerpAPI key via PM Module → project → Requirements → Integrations. Get a free SerpAPI key at https://serpapi.com.`,
+      recommendation: 'Set SERPAPI_KEY in Vercel environment variables. This single key enables live SERP data, PAA analysis, and competitor benchmarking across all projects.',
+      data_source: 'serpapi',
+    });
+    return findings;
+  }
+  if (!Array.isArray(serp.paa_questions) || serp.paa_questions.length === 0) {
     return findings;
   }
   const r = await fetchWithTimeout(url, 12000);
