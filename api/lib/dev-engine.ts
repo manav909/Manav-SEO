@@ -350,19 +350,59 @@ export async function executeDevTask(task: DevTask): Promise<void> {
     }
 
     // ── CMS detection ────────────────────────────────────────────
-    // Detect from live HTML when available; fall back to stored value.
-    const platform = normaliseCmsPlatform(task.cms_platform || 'unknown');
+    // Priority order:
+    // 1. Already fetched the page → detect from HTML (most accurate)
+    // 2. Task has a stored cms_platform → use it (from previous execution)
+    // 3. Page not fetched yet (PATH A) → do a quick lightweight CMS fetch
+    // 4. Nothing works → 'unknown', instructions tell user to specify their CMS
+
     let cms: CmsContext;
+
     if (fetchedOk && pageHtml) {
+      // Best case: we have the live HTML
       cms = await detectCmsFromHtml(pageHtml);
     } else {
-      cms = {
-        platform,
-        seoPlugin:  'unknown' as SeoPlugin,
-        confidence: 30,
-        signals:    ['Using stored CMS value (page not fetched)'],
-        adminPath:  cmsAdminPath(platform),
-      };
+      const storedPlatform = normaliseCmsPlatform(task.cms_platform || 'unknown');
+
+      if (storedPlatform !== 'unknown') {
+        // Use stored value from a previous execution
+        cms = {
+          platform:   storedPlatform,
+          seoPlugin:  'unknown' as SeoPlugin,
+          confidence: 70,
+          signals:    ['Stored from previous execution'],
+          adminPath:  cmsAdminPath(storedPlatform),
+        };
+      } else if (task.target_url) {
+        // PATH A tasks skip the page fetch for content generation,
+        // but we still need CMS for instructions. Do a quick 6s fetch.
+        const cmsDetect = await fetchPageHtml(task.target_url, 6000);
+        if (cmsDetect.fetchedOk && cmsDetect.html) {
+          cms = await detectCmsFromHtml(cmsDetect.html);
+          // Also snapshot if we got the page
+          if (!pageHtml) {
+            pageHtml = cmsDetect.html;
+            fetchedOk = true;
+          }
+        } else {
+          // Site unreachable — use unknown with clear messaging
+          cms = {
+            platform:   'unknown' as CmsPlatform,
+            seoPlugin:  'unknown' as SeoPlugin,
+            confidence: 0,
+            signals:    ['Page unreachable for CMS detection: ' + (cmsDetect.errorMsg || 'unknown error')],
+            adminPath:  '',
+          };
+        }
+      } else {
+        cms = {
+          platform:   'unknown' as CmsPlatform,
+          seoPlugin:  'unknown' as SeoPlugin,
+          confidence: 0,
+          signals:    ['No URL provided'],
+          adminPath:  '',
+        };
+      }
     }
 
     // ── Snapshot relevant HTML (safety net for rollback) ─────────
@@ -833,7 +873,20 @@ export function buildApplyInstructions(
 
   // Prerequisites
   out.push('## Before you start');
-  if (p === 'wordpress') {
+  if (p === 'unknown') {
+    out.push('> ⚠️ **CMS could not be detected automatically.** The fix code and analysis above are correct regardless of your CMS. For the step-by-step instructions below, find your platform:');
+    out.push('');
+    out.push('**What CMS does this site use?**');
+    out.push('- **WordPress** → look for /wp-admin in the URL when logged in');
+    out.push('- **Webflow** → you design it at webflow.com/dashboard');
+    out.push('- **HubSpot** → you edit pages at app.hubspot.com');
+    out.push('- **Squarespace** → you log in at yoursite.com/config');
+    out.push('- **Shopify** → you manage it at yoursite.myshopify.com/admin');
+    out.push('- **Wix** → you edit at manage.wix.com');
+    out.push('- **Other/custom** → share the Fix Code tab with your developer');
+    out.push('');
+    out.push('The Fix Code and analysis above work for **any** CMS — paste it wherever your platform accepts custom HTML or code injection.');
+  } else if (p === 'wordpress') {
     out.push('- Log in to your WordPress dashboard');
     out.push('- You need **Editor** or **Administrator** access');
     if (pl === 'yoast')    out.push('- You have **Yoast SEO** installed — these steps use it');
