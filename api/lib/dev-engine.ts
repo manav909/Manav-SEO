@@ -969,17 +969,23 @@ export async function executeDevTask(
 
   // 2. Fetch live page HTML
   let pageHtml = '';
+  let fullHtml = '';
   try {
     const res = await fetch(task.target_url || '', {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOSeason/1.0)' },
       signal: AbortSignal.timeout(15000),
     });
     if (res.ok) {
-      const raw = await res.text();
-      const headMatch = raw.match(/<head[\s\S]*?<\/head>/i)?.[0] || '';
-      pageHtml = headMatch + '\n...\n' + raw.slice(0, 7000);
+      fullHtml = await res.text();
+      const headMatch = fullHtml.match(/<head[\s\S]*?<\/head>/i)?.[0] || '';
+      pageHtml = headMatch + '\n...\n' + fullHtml.slice(0, 7000);
     }
   } catch { /* continue without HTML */ }
+
+  // 2b. Snapshot the relevant HTML section BEFORE generating any fix
+  //     This is the safety net — stored in DB so the user can always roll back
+  const snapshotHtml = await snapshotPageSection(task, fullHtml);
+  const snapshotId   = task.id ? await saveSnapshot(task, snapshotHtml) : null;
 
   // 3. Build Claude prompt
   const prompt = buildExecutorPrompt(task, pageHtml, cms);
@@ -1029,6 +1035,11 @@ export async function executeDevTask(
 
   const verificationMethod = buildVerificationMethod(task.task_type, task.target_url || '');
 
+  // Generate rollback code alongside the fix — never let a fix go out without an undo
+  const { rollbackCode, rollbackInstructions } = generateRollbackCode(
+    task.task_type, snapshotHtml, fixCode, cms,
+  );
+
   return {
     status: 'fix_ready',
     analysis,
@@ -1036,6 +1047,10 @@ export async function executeDevTask(
     fix_language: fixLanguage,
     apply_instructions: applyInstructions,
     verification_method: verificationMethod,
+    rollback_code: rollbackCode,
+    rollback_instructions: rollbackInstructions,
+    snapshot_id: snapshotId || undefined,
+    backup_confirmed: false,
     cms_platform: cms.platform,
     executed_at: new Date().toISOString(),
     llm_calls_used: callsMade,
@@ -1249,6 +1264,278 @@ export async function deleteProjectTasks(projectId: string, auditRunId?: string)
   let q = db().from('dev_tasks').delete().eq('project_id', projectId);
   if (auditRunId) q = q.eq('audit_run_id', auditRunId);
   await q;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BACKUP & ROLLBACK SYSTEM
+   Before generating any fix, we snapshot the relevant HTML section
+   from the live page. This becomes the rollback source — if the fix
+   causes a problem, the user has the exact before-state and specific
+   undo instructions.
+═══════════════════════════════════════════════════════════════ */
+
+/** Capture the relevant HTML section for this task type.
+ *  We don't store full pages (too large) — only the exact elements
+ *  the fix will touch. This is enough to generate rollback code. */
+export async function snapshotPageSection(
+  task: DevTask,
+  pageHtml: string,
+): Promise<string> {
+  if (!pageHtml) return '';
+
+  switch (task.task_type) {
+    case 'lazy_loading': {
+      // All <img> tags
+      const imgs = pageHtml.match(/<img[^>]*>/gi) || [];
+      return imgs.slice(0, 30).join('
+');
+    }
+    case 'faq_schema':
+    case 'date_modified_schema': {
+      // All JSON-LD blocks
+      const schemas = pageHtml.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
+      return schemas.join('
+
+');
+    }
+    case 'h1_update': {
+      const h1 = pageHtml.match(/<h1[^>]*>[\s\S]*?<\/h1>/i);
+      return h1?.[0] || '';
+    }
+    case 'first_para': {
+      const paras = pageHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+      return paras.slice(0, 3).join('
+');
+    }
+    case 'h2_section': {
+      const h2s = pageHtml.match(/<h[23][^>]*>[\s\S]*?<\/h[23]>/gi) || [];
+      return h2s.slice(0, 15).join('
+');
+    }
+    case 'lcp_fix':
+    case 'script_defer': {
+      // All <script> tags in head
+      const scripts = pageHtml.match(/<script[^>]*>[\s\S]*?<\/script>/gi) || [];
+      return scripts.slice(0, 20).join('
+');
+    }
+    case 'image_format': {
+      const imgs = pageHtml.match(/<img[^>]*(?:jpg|png|gif|jpeg)[^>]*>/gi) || [];
+      return imgs.slice(0, 20).join('
+');
+    }
+    default:
+      return pageHtml.slice(0, 3000);
+  }
+}
+
+/** Save a snapshot to the database before executing a fix. */
+export async function saveSnapshot(task: DevTask, snapshot: string): Promise<string | null> {
+  try {
+    const { data, error } = await db().from('dev_task_snapshots').insert({
+      task_id:     task.id,
+      project_id:  task.project_id,
+      task_type:   task.task_type,
+      url:         task.target_url || '',
+      snapshot,
+    }).select('id').single();
+    if (error) return null;
+    return (data as any)?.id || null;
+  } catch { return null; }
+}
+
+/** Load a snapshot for rollback display. */
+export async function loadSnapshot(taskId: string): Promise<{ snapshot: string; captured_at: string } | null> {
+  try {
+    const { data } = await db().from('dev_task_snapshots')
+      .select('snapshot, captured_at')
+      .eq('task_id', taskId)
+      .order('captured_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data as any || null;
+  } catch { return null; }
+}
+
+/** Generate rollback code — the exact undo instructions for a fix.
+ *  Called after fix_code is generated so we can produce a proper diff. */
+function generateRollbackCode(
+  taskType: string,
+  snapshot: string,
+  fixCode: string,
+  cms: CmsContext,
+): { rollbackCode: string; rollbackInstructions: string } {
+  const platform = cms.platform;
+
+  switch (taskType) {
+
+    case 'lazy_loading':
+      return {
+        rollbackCode: snapshot || '<!-- Original img tags — see snapshot tab -->',
+        rollbackInstructions: buildRollbackInstructions('lazy_loading', platform, {
+          what: 'Remove loading="lazy" attribute from all images',
+          detail: 'Replace each modified <img> tag with the original version shown in the Snapshot tab.',
+        }),
+      };
+
+    case 'faq_schema':
+      return {
+        rollbackCode: '<!-- Remove this entire block from your page <head>:
+<script type="application/ld+json">
+{ "@type": "FAQPage", ... }
+</script> -->',
+        rollbackInstructions: buildRollbackInstructions('faq_schema', platform, {
+          what: 'Remove the FAQPage JSON-LD schema block',
+          detail: snapshot
+            ? 'Your original schema was:
+
+' + snapshot.slice(0, 800)
+            : 'Find and delete the <script type="application/ld+json"> block containing "@type":"FAQPage" from your page head.',
+        }),
+      };
+
+    case 'h1_update':
+      return {
+        rollbackCode: snapshot || '<!-- Original H1 captured in snapshot -->',
+        rollbackInstructions: buildRollbackInstructions('h1_update', platform, {
+          what: 'Restore the original H1 heading',
+          detail: snapshot
+            ? 'Change your H1 back to the original text:
+
+' + snapshot.replace(/<[^>]+>/g, '').trim()
+            : 'Refer to the snapshot to find the original H1 text.',
+        }),
+      };
+
+    case 'first_para':
+      return {
+        rollbackCode: snapshot || '<!-- Original first paragraph in snapshot -->',
+        rollbackInstructions: buildRollbackInstructions('first_para', platform, {
+          what: 'Restore the original opening paragraph',
+          detail: snapshot
+            ? 'Replace the first paragraph with the original:
+
+' + snapshot.replace(/<[^>]+>/g, '').trim().slice(0, 300)
+            : 'Refer to the snapshot tab to find the original paragraph text.',
+        }),
+      };
+
+    case 'h2_section':
+      return {
+        rollbackCode: '<!-- Delete the new H2 section(s) added — they start with the question headings generated in the Fix Code tab -->',
+        rollbackInstructions: buildRollbackInstructions('h2_section', platform, {
+          what: 'Remove the new H2 sections that were added',
+          detail: 'Delete the new heading and paragraph blocks that were added at the bottom of the page content. The original H2 headings (captured in snapshot) should remain untouched.',
+        }),
+      };
+
+    case 'lcp_fix':
+    case 'script_defer':
+      return {
+        rollbackCode: snapshot || '<!-- Original script tags in snapshot -->',
+        rollbackInstructions: buildRollbackInstructions('script_defer', platform, {
+          what: 'Remove defer/async attributes from scripts',
+          detail: 'If any scripts stopped working after adding defer/async, remove that attribute from the specific script tag. The original script tags are in the snapshot.
+
+⚠️ If your site is broken after this change, the fastest fix is to restore a full backup via your hosting panel (cPanel → Backup, WP Engine → Restore Point, etc.).',
+        }),
+      };
+
+    case 'image_format':
+      return {
+        rollbackCode: '<!-- Re-upload the original jpg/png/gif files. WebP conversion only adds new files — originals are not deleted by default. -->',
+        rollbackInstructions: buildRollbackInstructions('image_format', platform, {
+          what: 'Revert to original image formats',
+          detail: 'If you used a plugin (Imagify, ShortPixel, Smush) to convert images: go to the plugin settings and find the "Restore Originals" option. Original files are kept by all major WordPress image optimization plugins.
+
+If you converted manually: re-upload the original jpg/png files via your media library.',
+        }),
+      };
+
+    case 'date_modified_schema':
+      return {
+        rollbackCode: snapshot || '<!-- Original schema without dateModified — see snapshot -->',
+        rollbackInstructions: buildRollbackInstructions('date_modified_schema', platform, {
+          what: 'Remove dateModified field from schema',
+          detail: 'Find the JSON-LD schema block in your page head and remove the "dateModified" line. Original schema is shown in the snapshot tab.',
+        }),
+      };
+
+    default:
+      return {
+        rollbackCode: snapshot || '<!-- No specific rollback code — refer to snapshot -->',
+        rollbackInstructions: '## If something went wrong
+
+1. Do not panic — SEO changes do not break a site immediately
+2. Refer to the Snapshot tab to see the original HTML before the change
+3. Restore that original code in your CMS
+4. If the site is broken, contact your hosting provider to restore a server backup',
+      };
+  }
+}
+
+function buildRollbackInstructions(
+  taskType: string,
+  platform: CmsPlatform,
+  opts: { what: string; detail: string },
+): string {
+  const lines: string[] = [];
+  lines.push(`## How to undo: ${opts.what}`);
+  lines.push('');
+  lines.push(`> **When to use this:** only if the change caused a visible problem on your site, or if you want to revert an experiment. Normal SEO changes do not break sites — if something looks wrong, check here first before restoring a full backup.`);
+  lines.push('');
+  lines.push(opts.detail);
+  lines.push('');
+
+  // Platform-specific CMS navigation for undoing
+  lines.push('## How to access your CMS to undo');
+  switch (platform) {
+    case 'wordpress':
+      lines.push('1. Go to your WordPress dashboard → **Pages → All Pages**');
+      lines.push('2. Find the page → click **Edit**');
+      lines.push('3. Make the reverting change described above');
+      lines.push('4. Click **Update**');
+      lines.push('');
+      lines.push('**Faster option — WordPress Revisions:**');
+      lines.push('1. In the page editor, look for **"Revisions"** in the right sidebar (under Document tab)');
+      lines.push('2. Click it to see a history of all saves');
+      lines.push('3. Slide back to the version before this change was made');
+      lines.push('4. Click **Restore This Revision**');
+      break;
+    case 'webflow':
+      lines.push('1. Open your project in **Webflow Designer**');
+      lines.push('2. Make the reverting change described above');
+      lines.push('3. Click **Publish**');
+      lines.push('');
+      lines.push('**Faster option — Webflow History:**');
+      lines.push('1. In the Designer, look for the **History** panel (clock icon in the left toolbar)');
+      lines.push('2. Click on the version before this change was published');
+      lines.push('3. Preview it, then click **Restore**');
+      break;
+    case 'squarespace':
+      lines.push('1. Log in to Squarespace → go to **Pages**');
+      lines.push('2. Edit the page → make the reverting change → **Save**');
+      lines.push('');
+      lines.push('**Note:** Squarespace does not have per-page revision history. If you made a mistake in Code Injection, go to **Settings → Advanced → Code Injection** and remove the added code.');
+      break;
+    default:
+      lines.push('1. Log in to your CMS admin panel');
+      lines.push('2. Navigate to the page that was changed');
+      lines.push('3. Make the reverting change described above');
+      lines.push('4. Save and publish');
+  }
+
+  lines.push('');
+  lines.push('## Last resort: full site backup');
+  lines.push('If the above steps do not work:');
+  lines.push('- **WordPress hosting (cPanel):** File Manager or Backup → restore to yesterday');
+  lines.push('- **WP Engine / Kinsta / Flywheel:** Dashboard → Backups → Restore Point');
+  lines.push('- **Webflow:** contact Webflow support — they retain backups');
+  lines.push('- **Shopify:** Apps → Rewind Backups (free plan available)');
+  lines.push('- **Any host:** call your hosting provider and ask for a server-level restore');
+
+  return lines.join('
+');
 }
 
 export async function detectCmsForProject(projectId: string): Promise<CmsContext | null> {

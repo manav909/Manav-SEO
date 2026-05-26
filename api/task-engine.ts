@@ -4510,5 +4510,30 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  if (action === 'dev_get_snapshot') {
+    const { taskId } = body;
+    if (!taskId) return ok(res, { error: 'taskId required' });
+    try {
+      const { loadSnapshot } = await import('./lib/dev-engine.js');
+      const snapshot = await loadSnapshot(taskId);
+      return ok(res, { success: true, snapshot });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
+  if (action === 'dev_confirm_backup') {
+    /* User explicitly confirmed backup before applying — mark in DB */
+    const { taskId } = body;
+    if (!taskId) return ok(res, { error: 'taskId required' });
+    try {
+      const { updateTask } = await import('./lib/dev-engine.js');
+      await updateTask(taskId, { backup_confirmed: true } as any);
+      return ok(res, { success: true });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
     return ok(res, { error: `Unknown action: ${action}` });
 }
