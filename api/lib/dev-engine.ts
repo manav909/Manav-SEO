@@ -454,6 +454,107 @@ async function executeWithPageHtml(task: DevTask, _pageHtml: string, snapshotHtm
 }
 
 // ─────────────────────────────────────────────────────────────
+// RUNTIME AI OUTPUT VALIDATOR
+// Called on every AI response before it is saved to the DB.
+// Catches hallucinated placeholders, empty responses, invalid JSON,
+// and task-specific structural issues.
+// Returns { valid, issues[] } — caller decides whether to save or fail.
+// ─────────────────────────────────────────────────────────────
+
+export interface ValidationResult {
+  valid:  boolean;
+  issues: string[];
+  warnings: string[];
+}
+
+const PLACEHOLDER_PATTERNS: RegExp[] = [
+  /\[YOUR_[A-Z_]+\]/,
+  /\[INSERT[_ ]/i,
+  /<!--\s*INSERT/i,
+  /<!--\s*REPLACE/i,
+  /<!--\s*ADD\s/i,
+  /\[REPLACE[_ ]/i,
+  /\[PASTE[_ ]/i,
+  /TODO:/i,
+  /PLACEHOLDER/i,
+  /your-domain\.com/i,
+  /example\.com(?!\/bot)/i,
+  /\[URL\]/i,
+  /\[KEYWORD\]/i,
+];
+
+export function validateAiOutput(taskType: string, fixCode: string, fixLanguage: string): ValidationResult {
+  const issues: string[] = [];
+  const warnings: string[] = [];
+
+  // 1. Empty check
+  if (!fixCode || fixCode.trim().length < 10) {
+    issues.push('Fix code is empty or too short — AI did not generate a usable response.');
+    return { valid: false, issues, warnings };
+  }
+
+  // 2. Placeholder check
+  for (const pattern of PLACEHOLDER_PATTERNS) {
+    if (pattern.test(fixCode)) {
+      issues.push('AI response contains placeholder text: ' + (fixCode.match(pattern)?.[0] || pattern.toString()));
+    }
+  }
+
+  // 3. Language-specific validation
+  if (fixLanguage === 'json' || (fixLanguage === 'html' && fixCode.includes('ld+json'))) {
+    const jsonStr = fixCode.includes('<script') ? (fixCode.match(/\{[\s\S]+\}/) || [''])[0] : fixCode;
+    try { JSON.parse(jsonStr); } catch (e: any) { issues.push('JSON is invalid: ' + e.message); }
+  }
+
+  if (fixLanguage === 'javascript' || fixLanguage === 'html') {
+    const open  = (fixCode.match(/\{/g) || []).length;
+    const close = (fixCode.match(/\}/g) || []).length;
+    if (Math.abs(open - close) > 3) {
+      warnings.push('Brace count mismatch: ' + open + ' open, ' + close + ' close — may indicate truncated output');
+    }
+  }
+
+  // 4. Task-specific structural checks
+  switch (taskType) {
+    case 'faq_schema':
+      if (!fixCode.includes('FAQPage'))    issues.push('faq_schema: missing @type FAQPage');
+      if (!fixCode.includes('mainEntity')) issues.push('faq_schema: missing mainEntity array');
+      if (!fixCode.includes('Question'))   issues.push('faq_schema: missing @type Question');
+      if (!fixCode.includes('Answer'))     issues.push('faq_schema: missing @type Answer');
+      break;
+    case 'lazy_loading':
+      if (!fixCode.includes('loading') && !fixCode.includes('lazy')) {
+        issues.push('lazy_loading: code does not reference loading or lazy');
+      }
+      break;
+    case 'lcp_fix':
+    case 'script_defer':
+      if (!fixCode.includes('defer') && !fixCode.includes('async') && !fixCode.includes('STEP')) {
+        issues.push('lcp_fix/script_defer: code does not contain defer, async, or diagnostic steps');
+      }
+      break;
+    case 'date_modified_schema':
+      if (!fixCode.includes('dateModified')) issues.push('date_modified_schema: missing dateModified field');
+      break;
+    case 'h1_update': {
+      const hasHtml = fixCode.includes('<h1');
+      const hasNumbered = /^1\.\s+.{5,}/m.test(fixCode);
+      if (!hasHtml && !hasNumbered) {
+        issues.push('h1_update: should contain either <h1> HTML or numbered options (1. ...)');
+      }
+      break;
+    }
+    case 'gsc_indexing':
+      if (fixCode.length < 100) {
+        warnings.push('gsc_indexing: fix code is very short — expected a checklist');
+      }
+      break;
+  }
+
+  return { valid: issues.length === 0, issues, warnings };
+}
+
+// ─────────────────────────────────────────────────────────────
 // SHARED AI CALLER
 // Single point of truth for Anthropic calls.
 // Always resolves — never throws. Returns structured AiResult.
@@ -496,11 +597,23 @@ async function callAI(task: DevTask, sys: string, usr: string): Promise<AiResult
 
     if (jsonMatch) {
       try {
-        const parsed = JSON.parse(jsonMatch[0]);
+        const parsed     = JSON.parse(jsonMatch[0]);
+        const fixCode    = parsed.fix_code     || '';
+        const fixLanguage = parsed.fix_language || 'html';
+
+        // Runtime validation — catches placeholder hallucinations, invalid JSON-LD, etc.
+        const validation = validateAiOutput(task.task_type, fixCode, fixLanguage);
+        const analysisNote = validation.issues.length > 0
+          ? '\n\n⚠️ Code quality note: ' + validation.issues[0]
+          : '';
+        if (!validation.valid) {
+          console.warn('[callAI] validation failed for ' + task.task_type + ':', validation.issues.join('; '));
+        }
+
         return {
-          analysis:     parsed.analysis     || 'Analysis complete.',
-          fixCode:      parsed.fix_code     || '',
-          fixLanguage:  parsed.fix_language || 'html',
+          analysis:     (parsed.analysis || 'Analysis complete.') + analysisNote,
+          fixCode,
+          fixLanguage,
           paaQuestions: Array.isArray(parsed.paa_questions) ? parsed.paa_questions : [],
           llmCalls,
         };
