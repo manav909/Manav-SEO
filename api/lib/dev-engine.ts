@@ -80,7 +80,7 @@ export async function detectCms(url: string, hints?: { cms?: string; seoPlugin?:
   }
   let html = '';
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOSeason/1.0)' }, signal: AbortSignal.timeout(12000) });
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOSeason/1.0)' }, signal: AbortSignal.timeout(5000) });
     if (res.ok) html = await res.text();
   } catch { /* continue */ }
 
@@ -607,14 +607,19 @@ export async function loadSnapshot(taskId: string): Promise<{ snapshot: string; 
 export async function executeDevTask(task: DevTask, cmsOverride?: CmsContext): Promise<Partial<DevTask>> {
   const cms = cmsOverride || await detectCms(task.target_url||'');
 
+  // Page fetch — hard 8s limit. Slow sites must not block the AI call budget.
   let pageHtml = '';
   try {
     const res = await fetch(task.target_url||'', {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOSeason/1.0)' },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(8000),
     });
-    if (res.ok) pageHtml = await res.text();
-  } catch { /* continue */ }
+    if (res.ok) {
+      // Cap at 60KB — large pages don't add value and slow the LLM call
+      const raw = await res.text();
+      pageHtml = raw.slice(0, 60000);
+    }
+  } catch { /* continue without page HTML */ }
 
   const snapshotHtml = await snapshotPageSection(task, pageHtml);
   const snapshotId   = await saveSnapshot(task, snapshotHtml);
@@ -626,10 +631,15 @@ export async function executeDevTask(task: DevTask, cmsOverride?: CmsContext): P
   let analysis='', fixCode='', fixLanguage='html', paaQuestions: string[]=[];
   let callsMade = 0;
   try {
+    // Hard 18s timeout on the Anthropic call.
+    // Total budget in task-engine is 25s. Page fetch used up to 8s.
+    // This leaves 17s for the AI. We set 18s here and let the outer
+    // Promise.race in task-engine kill us cleanly if we exceed 24s.
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 3000, system: sys, messages: [{ role:'user', content: usr }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 1500, system: sys, messages: [{ role:'user', content: usr }] }),
+      signal: AbortSignal.timeout(18000),
     });
     callsMade++;
     const data = await resp.json() as any;
@@ -716,8 +726,8 @@ export async function verifyDevTask(task: DevTask): Promise<Partial<DevTask>> {
   const url = task.target_url||'';
   let pageHtml = '';
   try {
-    const res = await fetch(url, { headers:{'User-Agent':'Mozilla/5.0 (compatible; SEOSeason/1.0)'}, signal:AbortSignal.timeout(15000) });
-    if (res.ok) pageHtml = await res.text();
+    const res = await fetch(url, { headers:{'User-Agent':'Mozilla/5.0 (compatible; SEOSeason/1.0)'}, signal:AbortSignal.timeout(8000) });
+    if (res.ok) pageHtml = (await res.text()).slice(0, 60000);
   } catch (e: any) {
     return { status:'applied', verification_result:'partial', verified_at:new Date().toISOString(), updated_at:new Date().toISOString(),
              verification_evidence:{ message:'Could not fetch live page: '+(e?.message||'unknown') } };

@@ -410,9 +410,12 @@ export default function DevPanel({ projectId }: { projectId: string }) {
   const [targetUrl,   setTargetUrl]   = useState('');
   const [showUpload,  setShowUpload]  = useState(false);
   const [showSafety,  setShowSafety]  = useState(false);
+  const [elapsedSec,  setElapsedSec]  = useState(0);
+  const [runStarted,  setRunStarted]  = useState<number | null>(null);
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Load tasks from DB
+  // Load tasks from DB — also auto-resets stale 'running' tasks on load
   const loadTasks = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
@@ -420,6 +423,26 @@ export default function DevPanel({ projectId }: { projectId: string }) {
       const result = await callApi<{ tasks: DevTask[] }>('dev_get_tasks', { projectId });
       if (result.ok && result.data?.tasks) {
         const loadedTasks = result.data.tasks;
+
+        // Auto-reset stale 'running' tasks — anything stuck running for > 2 min
+        // was almost certainly a timeout. Reset to failed so the user can retry.
+        for (const task of loadedTasks) {
+          if (task.status === 'running' && task.executed_at) {
+            const ageMs = Date.now() - new Date(task.executed_at).getTime();
+            if (ageMs > 120_000) {
+              await callApi('dev_update_task', {
+                taskId: task.id,
+                updates: {
+                  status: 'failed',
+                  analysis: 'Analysis timed out. Click "Retry Analysis" to try again.',
+                },
+              });
+              task.status = 'failed';
+              task.analysis = 'Analysis timed out. Click "Retry Analysis" to try again.';
+            }
+          }
+        }
+
         setTasks(loadedTasks);
         // Infer CMS from task metadata if not yet set
         if (!cms) {
@@ -513,18 +536,58 @@ export default function DevPanel({ projectId }: { projectId: string }) {
 
   const executeTask = async (task: DevTask) => {
     setSelected({ ...task, status: 'running' });
-    const result = await callApi<{ task: DevTask }>('dev_execute_task', { taskId: task.id });
-    if (!result.ok) {
-      setError(result.error ?? 'Execution failed.');
-      setSelected(task);
-      return;
-    }
-    if (result.data?.task) {
-      if (result.data.task.cms_platform && !cms) {
+    setError('');
+    setElapsedSec(0);
+    setRunStarted(Date.now());
+    elapsedRef.current = setInterval(() => {
+      setElapsedSec(s => s + 1);
+    }, 1000);
+
+    // Fire the API call with a 28-second client-side timeout.
+    // The server has a 25s hard timeout internally. If the server doesn't
+    // respond in 28s, we treat it as a network timeout, reset the task to
+    // failed, and tell the user to retry.
+    const CLIENT_TIMEOUT_MS = 28_000;
+    let clientTimedOut = false;
+
+    const clientTimeout = setTimeout(async () => {
+      clientTimedOut = true;
+      // Reset the task in the DB to 'failed' so it doesn't stay stuck
+      await callApi('dev_update_task', {
+        taskId: task.id,
+        updates: {
+          status: 'failed',
+          analysis: 'Request timed out on the network. Click "Retry Analysis" to try again.',
+        },
+      });
+      await reloadTask(task.id);
+    }, CLIENT_TIMEOUT_MS);
+
+    try {
+      const result = await callApi<{ task: DevTask }>('dev_execute_task', { taskId: task.id });
+      clearTimeout(clientTimeout);
+      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+      if (clientTimedOut) return; // timeout already handled
+
+      if (!result.ok) {
+        setError(result.error ?? 'Execution failed.');
+        // Reset to failed so user can retry
+        await callApi('dev_update_task', { taskId: task.id, updates: { status: 'failed' } });
+        await reloadTask(task.id);
+        return;
+      }
+      if (result.data?.task?.cms_platform && !cms) {
         setCms({ platform: result.data.task.cms_platform, seoPlugin: '', confidence: 0, adminPath: '' });
       }
+      await reloadTask(task.id);
+    } catch (err) {
+      clearTimeout(clientTimeout);
+      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+      if (!clientTimedOut) {
+        await callApi('dev_update_task', { taskId: task.id, updates: { status: 'failed', analysis: 'Network error. Click Retry.' } });
+        await reloadTask(task.id);
+      }
     }
-    await reloadTask(task.id);
   };
 
   const verifyTask = async (task: DevTask) => {
@@ -777,11 +840,17 @@ export default function DevPanel({ projectId }: { projectId: string }) {
             <TaskDetail
               task={selected}
               cms={cms}
+              elapsedSec={elapsedSec}
               onExecute={() => executeTask(selected)}
               onVerify={() => verifyTask(selected)}
               onMarkApplied={() => setShowSafety(true)}
               onSkip={() => setTaskStatus(selected, 'skipped')}
               onReopen={() => setTaskStatus(selected, 'pending')}
+              onCancelRunning={async () => {
+                if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
+                await callApi('dev_update_task', { taskId: selected.id, updates: { status: 'pending' } });
+                await reloadTask(selected.id);
+              }}
             />
           )}
         </div>
@@ -800,19 +869,23 @@ type DetailTab = 'instructions' | 'code' | 'rollback' | 'verify';
 function TaskDetail({
   task,
   cms,
+  elapsedSec,
   onExecute,
   onVerify,
   onMarkApplied,
   onSkip,
   onReopen,
+  onCancelRunning,
 }: {
   task: DevTask;
   cms: CmsInfo | null;
+  elapsedSec?: number;
   onExecute: () => void;
   onVerify: () => void;
   onMarkApplied: () => void;
   onSkip: () => void;
   onReopen: () => void;
+  onCancelRunning?: () => void;
 }) {
   const [activeTab,    setActiveTab]    = useState<DetailTab>('instructions');
   const [snapshot,     setSnapshot]     = useState<{ snapshot: string; captured_at: string } | null>(null);
@@ -900,9 +973,39 @@ function TaskDetail({
         )}
 
         {task.status === 'running' && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 text-sm">
-            <span className="animate-spin inline-block">⟳</span>
-            Manav is analyzing the live page…
+          <div className="flex flex-col gap-2 w-full">
+            <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="animate-spin inline-block">⟳</span>
+                <span>Manav is analyzing the live page…</span>
+                {elapsedSec !== undefined && elapsedSec > 0 && (
+                  <span className="font-mono text-blue-300/70 text-xs">{elapsedSec}s / 28s</span>
+                )}
+              </div>
+              {onCancelRunning && (
+                <button
+                  type="button"
+                  onClick={onCancelRunning}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-blue-500/30 text-blue-400/70 hover:text-blue-300 hover:border-blue-400 transition-colors ml-3"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+            {/* Progress bar showing elapsed vs timeout */}
+            {elapsedSec !== undefined && (
+              <div className="h-1 rounded-full bg-blue-500/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-1000"
+                  style={{ width: Math.min((elapsedSec / 28) * 100, 100) + '%' }}
+                />
+              </div>
+            )}
+            {elapsedSec !== undefined && elapsedSec >= 20 && (
+              <p className="text-xs text-amber-400/80 px-1">
+                ⚠️ Taking longer than usual. If this doesn't complete in the next few seconds, click Cancel and Retry.
+              </p>
+            )}
           </div>
         )}
 

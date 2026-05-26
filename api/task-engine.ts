@@ -4468,11 +4468,62 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       const { getTask, executeDevTask, updateTask } = await import('./lib/dev-engine.js');
       const task = await getTask(taskId);
       if (!task) return ok(res, { error: 'task not found' });
-      /* Mark running */
-      await updateTask(taskId, { status: 'running' });
-      /* Execute */
-      const updates = await executeDevTask(task);
-      await updateTask(taskId, updates);
+
+      // Guard: if already running, check how long. If > 90s, reset to failed.
+      if (task.status === 'running' && task.executed_at) {
+        const elapsed = Date.now() - new Date(task.executed_at).getTime();
+        if (elapsed > 90_000) {
+          await updateTask(taskId, {
+            status: 'failed',
+            analysis: 'Previous analysis timed out after ' + Math.round(elapsed/1000) + 's. Click Retry to try again.',
+          });
+        } else {
+          // Still within window — return current state, UI will poll
+          const current = await getTask(taskId);
+          return ok(res, { success: true, task: current, still_running: true });
+        }
+      }
+
+      // Mark running with timestamp so we can detect stale tasks
+      await updateTask(taskId, { status: 'running', executed_at: new Date().toISOString() });
+
+      // Hard 25-second total budget for the entire execution.
+      // This keeps us well under Vercel's response timeout and prevents
+      // the browser from waiting forever.
+      // If we hit the wall, we write 'failed' to the DB and return an error.
+      const HARD_TIMEOUT_MS = 25_000;
+      let timedOut = false;
+      const timeoutHandle = setTimeout(async () => {
+        timedOut = true;
+        await updateTask(taskId, {
+          status: 'failed',
+          analysis: 'Analysis timed out (25s limit). This usually means the target page is slow to respond or the AI service is under load. Click Retry — it will try again.',
+        });
+      }, HARD_TIMEOUT_MS);
+
+      try {
+        const updates = await Promise.race([
+          executeDevTask(task),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('TIMEOUT')), HARD_TIMEOUT_MS - 1000)
+          ),
+        ]);
+        clearTimeout(timeoutHandle);
+        if (!timedOut) {
+          await updateTask(taskId, updates);
+        }
+      } catch (execErr: any) {
+        clearTimeout(timeoutHandle);
+        if (!timedOut) {
+          await updateTask(taskId, {
+            status: 'failed',
+            analysis: execErr?.message === 'TIMEOUT'
+              ? 'Analysis timed out. The page fetch or AI call took too long. Click Retry to try again.'
+              : 'Execution error: ' + (execErr?.message || 'unknown'),
+          });
+        }
+      }
+
       const updated = await getTask(taskId);
       return ok(res, { success: true, task: updated });
     } catch (e: any) {
@@ -4488,8 +4539,27 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       const task = await getTask(taskId);
       if (!task) return ok(res, { error: 'task not found' });
       await updateTask(taskId, { status: 'verifying' });
-      const updates = await verifyDevTask(task);
-      await updateTask(taskId, updates);
+
+      const VERIFY_TIMEOUT_MS = 20_000;
+      try {
+        const updates = await Promise.race([
+          verifyDevTask(task),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('TIMEOUT')), VERIFY_TIMEOUT_MS)
+          ),
+        ]);
+        await updateTask(taskId, updates);
+      } catch (verErr: any) {
+        await updateTask(taskId, {
+          status: 'applied',
+          verification_result: 'partial',
+          verification_evidence: { message: verErr?.message === 'TIMEOUT'
+            ? 'Verification timed out — check the live page manually using the Verify tab.'
+            : 'Verification error: ' + (verErr?.message || 'unknown') },
+          verified_at: new Date().toISOString(),
+        });
+      }
+
       const updated = await getTask(taskId);
       return ok(res, { success: true, task: updated });
     } catch (e: any) {
