@@ -212,6 +212,26 @@ export async function extractCampaignIntent(rawInput: string): Promise<CampaignI
     };
   }
 
+  /* Special case: "rank for X on https://url" — keyword comes before the URL */
+  const rankForOnMatch = text.match(/^(?:rank\s+(?:me\s+)?for\s+|ranking\s+for\s+)(.+?)\s+on\s+(https?:\/\/\S+|\S+\.\S+\/\S*)$/i);
+  if (rankForOnMatch) {
+    const keywordPart = rankForOnMatch[1].trim();
+    const urlPart     = rankForOnMatch[2].trim();
+    const url = normalizeUrl(urlPart.startsWith('http') ? urlPart : `https://${urlPart}`);
+    const keywordsExtracted = await extractKeywordsDelegate(keywordPart);
+    const mapping: Record<string, string> = {};
+    if (url) {
+      for (const kw of keywordsExtracted.keywords) mapping[kw] = url;
+    }
+    return {
+      keywords:            keywordsExtracted.keywords,
+      target_urls:         url ? [url] : [],
+      keyword_url_mapping: mapping,
+      intent_phrase:       'rank for',
+      used_llm_fallback:   keywordsExtracted.used_llm_fallback,
+    };
+  }
+
   /* Check for hub-and-spoke pattern: "/url — keyword" or "/url - keyword" or "/url : keyword" lines */
   const remainder = intentMatch ? text.slice(intentMatch[0].length).trim() : text;
   const hubSpokeLines = parseHubSpokeMapping(remainder);

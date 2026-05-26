@@ -932,7 +932,7 @@ const stepStrategyPlan = {
     const sys = `You are S.E.A.S.O.N. building an SEO ranking strategy. You have keyword research, the project's GSC data, and a competitor snapshot. Synthesize a tight, actionable plan. Reply with ONLY valid JSON:
 {
   "strategy_name": "short evocative name",
-  "horizon_weeks": 4,
+  "horizon_weeks": 12,
   "target_page_recommendation": "new_page | refresh_existing | create_cluster",
   "target_url_suggestion": "/proposed-slug or 'identify existing page first'",
   "approach": "1-2 sentence summary of the play",
@@ -1251,6 +1251,7 @@ const stepContentBrief = {
       ? `Intent: ${research.primary_intent}. ${research.intent_explanation || ''}`
       : '';
 
+    const CURRENT_YEAR = new Date().getFullYear();
     const skelSys = `You output ONLY valid JSON for an SEO content brief skeleton. No prose, no fences.
 
 Required shape:
@@ -1269,6 +1270,7 @@ Rules:
 - 6-10 H2 headings, ordered for reader flow
 - Headings are specific, not generic
 - Secondary keywords are real variations searchers use, not synonyms
+- Current year is ${CURRENT_YEAR}. If the title includes a year, use ${CURRENT_YEAR} — never a past year.
 - When the user provides an AUDIT INTELLIGENCE block, treat it as verified ground truth: use target_word_count from it, include mandatory H2 candidates verbatim in section_headings (you may add 2-4 of your own), honor schema guidance, and reflect the SERP features context in your unique_angle (e.g. if AI Overview is present, the angle should make the article AI-Overview-citation-ready)`;
 
     const skelUsr = `Keyword: "${keyword}"
@@ -2327,8 +2329,14 @@ const stepForecast = {
     const gsc = ctx.prior.gsc_context || {};
 
     const difficulty = (research.competitive_difficulty || 'medium') as 'low' | 'medium' | 'high' | 'very_high';
-    const horizonWeeks = Number(strategy.horizon_weeks || 8);
-    const horizonDays = horizonWeeks * 7;
+
+    /* Minimum realistic horizons by difficulty. SEO results for competitive
+       commercial keywords take months, not weeks. A 4-week forecast on a
+       high-difficulty keyword sets false expectations and erodes trust. */
+    const MIN_HORIZON: Record<string, number> = { low: 8, medium: 12, high: 16, very_high: 24 };
+    const rawHorizon   = Number(strategy.horizon_weeks || 12);
+    const horizonWeeks = Math.max(rawHorizon, MIN_HORIZON[difficulty] || 12);
+    const horizonDays  = horizonWeeks * 7;
 
     try {
       const { createForecast } = await import("./season-forecast-engine.js");

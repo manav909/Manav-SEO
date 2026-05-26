@@ -2223,27 +2223,42 @@ async function checkEngagementSignals(url: string, projectId: string): Promise<F
   if (pagePath) {
     const perPage = await ga4PullPageMetrics({ projectId, pagePath, days: 28 });
     if (perPage && perPage.sessions > 0) {
-      /* We have per-page data — emit page-level findings with real verdicts.
-         Severity bands:
-         • engagementRate: <40% red, 40-55% amber, ≥55% green
-         • avg_session_sec: <30s amber for content pages, otherwise info */
+      /* Minimum sample size for a reliable engagement verdict.
+         Below 50 sessions, rates are statistically noisy — a single
+         bot visit or a few accidental clicks can swing engagement rate
+         from 20% to 80%. We surface the data but cap severity at Info. */
+      const MIN_SESSIONS_FOR_VERDICT = 50;
+      const lowSample = perPage.sessions < MIN_SESSIONS_FOR_VERDICT;
+
       const eRate = perPage.engagement_rate_pct;
-      const sevEng: 'green' | 'amber' | 'red' = eRate < 40 ? 'red' : eRate < 55 ? 'amber' : 'green';
+      /* Apply severity only when sample is sufficient */
+      const sevEng: 'green' | 'amber' | 'red' | 'info' = lowSample
+        ? 'info'
+        : eRate < 40 ? 'red' : eRate < 55 ? 'amber' : 'green';
+
+      const sampleWarning = lowSample
+        ? `\n\n> ⚠️ **Low-sample caveat:** only ${perPage.sessions} sessions in the last ${perPage.date_range_days} days — statistically insufficient for a reliable engagement verdict (minimum 50 sessions required). Monitor as traffic grows before acting on this signal.`
+        : '';
+
       findings.push({
         audit_kind: 'engagement_signals',
-        severity:   sevEng,
-        finding_title: sevEng === 'red'
+        severity:   sevEng === 'info' ? 'info' : sevEng,
+        finding_title: lowSample
+          ? `Per-page engagement data available but low-volume (${perPage.sessions} sessions, ${eRate.toFixed(1)}%) — insufficient for a verdict`
+          : sevEng === 'red'
           ? `Per-page engagement rate is poor (${eRate.toFixed(1)}%) — significant content/intent mismatch signal`
           : sevEng === 'amber'
           ? `Per-page engagement rate is mediocre (${eRate.toFixed(1)}%) — room to improve`
           : `Per-page engagement rate is healthy (${eRate.toFixed(1)}%)`,
-        finding_detail: `Page-level GA4 metrics for the last ${perPage.date_range_days} days (data through ${perPage.data_freshness}):\n\n- **Sessions:** ${perPage.sessions.toLocaleString()}\n- **Engaged sessions:** ${perPage.engaged_sessions.toLocaleString()} (${eRate.toFixed(1)}%)\n- **Avg session duration:** ${perPage.avg_session_sec.toFixed(0)}s\n- **Bounce rate:** ${perPage.bounce_rate_pct.toFixed(1)}%\n- **Page views:** ${perPage.views.toLocaleString()}\n- **Conversions:** ${perPage.conversions.toLocaleString()}\n\n${sevEng === 'red' ? 'Engagement below 40% indicates visitors landing on this page aren\'t finding what they expected. The CTR-to-position gap may be compounded by a content-quality gap once visitors arrive.' : sevEng === 'amber' ? 'Engagement is on the low end of healthy. The page is keeping some visitors engaged but losing others — worth a content-quality and intent-match review.' : 'Engagement is strong — visitors who land here are finding what they expected. Preserve the structure; consider what makes this page work and replicate.'}`,
-        recommendation: sevEng === 'red'
+        finding_detail: `Page-level GA4 metrics for the last ${perPage.date_range_days} days (data through ${perPage.data_freshness}):\n\n- **Sessions:** ${perPage.sessions.toLocaleString()}\n- **Engaged sessions:** ${perPage.engaged_sessions.toLocaleString()} (${eRate.toFixed(1)}%)\n- **Avg session duration:** ${perPage.avg_session_sec.toFixed(0)}s\n- **Bounce rate:** ${perPage.bounce_rate_pct.toFixed(1)}%\n- **Page views:** ${perPage.views.toLocaleString()}\n- **Conversions:** ${perPage.conversions.toLocaleString()}\n\n${lowSample ? '' : sevEng === 'red' ? 'Engagement below 40% indicates visitors landing on this page aren\'t finding what they expected. The CTR-to-position gap may be compounded by a content-quality gap once visitors arrive.' : sevEng === 'amber' ? 'Engagement is on the low end of healthy. The page is keeping some visitors engaged but losing others — worth a content-quality and intent-match review.' : 'Engagement is strong — visitors who land here are finding what they expected. Preserve the structure; consider what makes this page work and replicate.'}${sampleWarning}`,
+        recommendation: lowSample
+          ? `Monitor this metric as organic traffic grows. Re-run the audit once the page reaches 50+ sessions in a 28-day window to get a statistically reliable engagement verdict.`
+          : sevEng === 'red'
           ? `Audit content for search-intent match: does the page answer the dominant query intent in the first paragraph? Check above-the-fold clarity, slow load times, intrusive popups, and the first-paragraph topicality finding from this audit. If intent mismatch is the cause, the keyword-pivot recommendation (if present) is the strategic fix.`
           : sevEng === 'amber'
           ? `Surface related content via internal links + table of contents. Improve above-the-fold clarity. Ensure the page answers the dominant query intent in the first 100 words.`
           : undefined,
-        evidence: { ...perPage, scope: 'per-page' },
+        evidence: { ...perPage, scope: 'per-page', low_sample: lowSample, min_sessions_required: MIN_SESSIONS_FOR_VERDICT },
         data_source: 'ga4',
       });
 

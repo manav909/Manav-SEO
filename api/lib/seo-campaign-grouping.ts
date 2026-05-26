@@ -359,6 +359,14 @@ function extractDeterministic(text: string): string[] {
 function cleanKeyword(raw: string): string {
   return (raw || '')
     .replace(/^["'`]+|["'`]+$/g, '')      // strip surrounding quotes
+    /* Strip trailing URL fragment — handles inputs like:
+       "mobile forms" on https://www.example.com/mobile-forms → mobile forms
+       Covers "on http(s)://...", "on /path", "on www." patterns */
+    .replace(/\s+on\s+https?:\/\/\S*/i, '')
+    .replace(/\s+on\s+\/\S*/i, '')
+    .replace(/\s+on\s+www\.\S*/i, '')
+    .replace(/https?:\/\/\S+/gi, '')     // strip any remaining bare URLs
+    .replace(/^["'`]+|["'`]+$/g, '')      // re-strip quotes after URL removal
     .replace(/\s+/g, ' ')                  // collapse whitespace
     .replace(/[?!.]+$/, '')                // strip trailing punctuation
     .trim()
