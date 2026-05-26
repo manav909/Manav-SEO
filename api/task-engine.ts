@@ -461,6 +461,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (ga4Result !== null) return ok(res, ga4Result);
   }
 
+  /* ═══ PSI INTEGRATION — psi_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("psi_")) {
+    const { handlePmPsi } = await import("./lib/pm-psi.js");
+    const psiResult = await handlePmPsi(action, body);
+    if (psiResult !== null) return ok(res, psiResult);
+  }
+
   /* ═══ MISSION CONTROL (Phase G) — mc_* actions ═══ */
   if (typeof action === "string" && action.startsWith("mc_")) {
     const { handleMissionControl } = await import("./lib/mission-control.js");

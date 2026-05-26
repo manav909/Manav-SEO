@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Plug, Check, AlertCircle, ExternalLink, Loader2, RefreshCw, Unplug,
+  Plug, Check, AlertCircle, ExternalLink, Loader2, RefreshCw, Unplug, Key, Eye, EyeOff,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import * as pmApi from './api';
@@ -108,6 +108,7 @@ export default function IntegrationsPanel({ projectId }: { projectId: string }) 
         {PROVIDERS.map((p) => (
           <ProviderRow key={p.key} projectId={projectId} provider={p} />
         ))}
+        <PsiRow projectId={projectId} />
       </div>
     </div>
   );
@@ -345,6 +346,161 @@ function ProviderRow({ projectId, provider }: { projectId: string; provider: Pro
             onClick={() => setShowPicker(false)}
             className="text-[10px] text-muted-foreground hover:text-foreground mt-2"
           >Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── PSI API key row ─────────────────────────────────────────── */
+function PsiRow({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const [status, setStatus] = useState<pmApi.PsiStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [showInput, setShowInput] = useState(false);
+  const [keyInput, setKeyInput] = useState('');
+  const [showKey, setShowKey] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { status: s } = await pmApi.psiStatus(projectId);
+    setStatus(s ?? null);
+    setLoading(false);
+  }, [projectId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    if (!keyInput.trim()) return;
+    setSaving(true);
+    const r = await pmApi.psiSaveKey(projectId, keyInput.trim());
+    setSaving(false);
+    if (!r.success) {
+      toast({ title: 'Failed to save', description: r.error, variant: 'destructive' });
+      return;
+    }
+    if (!r.valid) {
+      toast({ title: 'Key saved but validation failed', description: r.error || 'Check the key and try again.', variant: 'destructive' });
+    } else {
+      toast({ title: '✅ PSI key saved and validated', description: 'Core Web Vitals will now run on every audit.' });
+    }
+    setKeyInput('');
+    setShowInput(false);
+    load();
+  };
+
+  const remove = async () => {
+    if (!confirm('Remove PSI API key? Core Web Vitals will not run on future audits.')) return;
+    setRemoving(true);
+    await pmApi.psiRemove(projectId);
+    setRemoving(false);
+    toast({ title: 'PSI key removed' });
+    load();
+  };
+
+  const connected = status?.connected;
+
+  return (
+    <div className="rounded-xl border border-border bg-background/40 p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className={`mt-0.5 h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 ${connected ? 'bg-green-500/15 text-green-400' : 'bg-muted/50 text-muted-foreground'}`}>
+            <Key className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium">PageSpeed Insights</span>
+              {loading ? (
+                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+              ) : connected ? (
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">
+                  Connected {status?.keyHint ? `· key ${status.keyHint}` : ''}
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  Not configured
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              Core Web Vitals (LCP, CLS, INP) for every technical audit.{' '}
+              <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
+                Get free key <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            </p>
+            {status?.lastTestedStatus === 'error' && status.lastTestedError && (
+              <p className="text-[11px] text-red-400 mt-1 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                {status.lastTestedError}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {connected && (
+            <button
+              onClick={remove}
+              disabled={removing}
+              className="h-7 px-2 rounded-lg border border-border bg-background/60 text-xs text-muted-foreground hover:text-red-400 hover:border-red-400/30 transition-colors flex items-center gap-1"
+            >
+              {removing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
+              Remove
+            </button>
+          )}
+          <button
+            onClick={() => setShowInput(v => !v)}
+            className={`h-7 px-2 rounded-lg border text-xs flex items-center gap-1 transition-colors ${
+              showInput
+                ? 'border-primary/50 bg-primary/10 text-primary'
+                : 'border-border bg-background/60 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Key className="h-3 w-3" />
+            {connected ? 'Update key' : 'Add key'}
+          </button>
+        </div>
+      </div>
+
+      {showInput && (
+        <div className="mt-3 space-y-2">
+          <div className="relative">
+            <input
+              type={showKey ? 'text' : 'password'}
+              placeholder="Paste your PSI API key here"
+              value={keyInput}
+              onChange={e => setKeyInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && save()}
+              className="w-full h-9 rounded-lg border border-border bg-background text-sm px-3 pr-9 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/60"
+              autoFocus
+            />
+            <button
+              onClick={() => setShowKey(v => !v)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={save}
+              disabled={saving || !keyInput.trim()}
+              className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {saving ? <><Loader2 className="h-3 w-3 animate-spin" />Validating…</> : <><Check className="h-3 w-3" />Save & validate</>}
+            </button>
+            <button
+              onClick={() => { setShowInput(false); setKeyInput(''); }}
+              className="h-8 px-3 rounded-lg border border-border bg-background/60 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Key is stored per-project and validated immediately against PSI API.
+            To use one key for all projects, set <code className="font-mono text-primary">PAGESPEED_API_KEY</code> in Vercel environment variables instead.
+          </p>
         </div>
       )}
     </div>

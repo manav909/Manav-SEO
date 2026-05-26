@@ -712,6 +712,35 @@ export async function ga4Disconnect(projectId: string): Promise<{ success: boole
 }
 
 /* ═══════════════════════════════════════════════════════════
+   PSI (PageSpeed Insights) API key integration
+══════════════════════════════════════════════════════════ */
+export interface PsiStatus {
+  connected: boolean;
+  lastTestedAt?: string;
+  lastTestedStatus?: 'ok' | 'error';
+  lastTestedError?: string;
+  keyHint?: string;
+}
+
+export async function psiStatus(projectId: string): Promise<{ status?: PsiStatus; error?: string }> {
+  const r = await post(ENGINE, { action: 'psi_status', projectId });
+  if (r?.error) return { error: r.error };
+  return { status: r as PsiStatus };
+}
+
+export async function psiSaveKey(projectId: string, apiKey: string): Promise<{
+  success: boolean; valid?: boolean; error?: string;
+}> {
+  const r = await post(ENGINE, { action: 'psi_save_key', projectId, apiKey });
+  return { success: !!r?.success, valid: r?.valid, error: r?.error };
+}
+
+export async function psiRemove(projectId: string): Promise<{ success: boolean; error?: string }> {
+  const r = await post(ENGINE, { action: 'psi_remove', projectId });
+  return { success: !!r?.success, error: r?.error };
+}
+
+/* ═══════════════════════════════════════════════════════════
    Auto-pilot API (Phase F)
 ═══════════════════════════════════════════════════════════ */
 

@@ -2094,10 +2094,14 @@ async function checkQueryDistribution(url: string, projectId: string, keyword: s
 async function checkCoreWebVitals(url: string, projectId: string): Promise<Finding[]> {
   const findings: Finding[] = [];
 
-  /* Look up PSI API key from project_integrations (provider='pagespeed') */
+  /* Look up PSI API key — project-level first, then platform-wide env var.
+     Platform-wide: set PAGESPEED_API_KEY in Vercel env → one key for all projects. */
   const { data: psiInt } = await db().from("project_integrations")
     .select("api_key, status").eq("project_id", projectId).eq("provider", 'pagespeed').maybeSingle();
-  const apiKey = (psiInt as any)?.api_key as string | undefined;
+  const apiKey: string | undefined =
+    (psiInt as any)?.api_key ||
+    (process.env.PAGESPEED_API_KEY || '').trim() ||
+    undefined;
 
   /* Call PSI mobile + desktop in parallel */
   const psiUrl = (strategy: 'mobile' | 'desktop') => {
