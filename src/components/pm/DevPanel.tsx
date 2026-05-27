@@ -958,69 +958,161 @@ function TaskDetail({
     setBriefOpen(true);
     setBrief(null);
 
-    const taskTitle  = task.title || 'website change';
-    const siteUrl    = task.target_url || 'your website';
-    const clientName = 'there'; // fallback — personalised if client name is stored
-    const analysis  = task.analysis   || task.description || '';
-    const cms       = task.cms_platform && task.cms_platform !== 'unknown' ? task.cms_platform : 'your website platform';
+    const taskTitle = task.title || 'website change';
+    const siteUrl   = task.target_url || 'your website';
+    const analysis  = (task.analysis || task.description || '').slice(0, 500);
     const hasSave   = !!task.snapshot_id;
+    const fixCode   = task.fix_code || '';
 
-    // Subject
-    const subject = `Approval Required: ${taskTitle}`;
+    // Encode URL for PageSpeed verification link
+    const encodedUrl = encodeURIComponent(siteUrl);
+    const pagespeedLink = `https://pagespeed.web.dev/analysis?url=${encodedUrl}`;
 
-    // Severity context
-    const severityNote =
-      task.severity === 'critical' || task.severity === 'red'
-        ? 'This is a high-priority issue that is affecting your search rankings right now.'
-        : task.severity === 'warning' || task.severity === 'amber'
-        ? 'This is a recommended improvement that will strengthen your SEO performance.'
-        : 'This is an optimisation that will improve your SEO performance.';
-
-    // What changes per task type
-    const whatChanges: Record<string, string> = {
-      lcp_fix:              'We will update how JavaScript files load on this page so they no longer block the browser from showing your content. No visual changes — the page will look identical, but load significantly faster.',
-      script_defer:         'We will add a "defer" instruction to specific JavaScript files on this page so they load after your content is visible instead of before. Nothing visible will change.',
-      lazy_loading:         'We will update images below the fold so they load only when a visitor scrolls to them. The page will look exactly the same — this only affects load order.',
-      image_format:         'We will convert images to a modern format (WebP) that is smaller in file size but visually identical. Your images will look exactly the same.',
-      faq_schema:           'We will add invisible structured data to this page that helps Google understand your FAQ content. Nothing visible changes for your visitors — this is read only by search engines.',
-      h1_update:            'We will update the main heading on this page to include your target keyword. The heading text will change slightly — we will share the exact new wording for your review.',
-      first_para:           'We will rewrite the opening paragraph of this page to better align with what people are searching for. We will share the exact new text for your review.',
-      h2_section:           'We will add new sections to this page answering questions that people are searching for. These will appear as new content below your existing content.',
-      date_modified_schema: 'We will add a "last updated" date to the page\'s technical metadata. Nothing visible changes for your visitors.',
-      gsc_indexing:         'We will submit this page to Google for indexing. No changes to the page itself — this is an administrative action in Google Search Console.',
-      meta_desc:            'We will update the meta description — the short text that appears under your page title in Google search results. No visible change on the page itself.',
+    // Authoritative Google/web.dev sources per task type
+    const sources: Record<string, { title: string; url: string; why: string }[]> = {
+      lcp_fix: [
+        { title: 'Google: Eliminate render-blocking resources', url: 'https://developer.chrome.com/docs/lighthouse/performance/render-blocking-resources/', why: 'Official Google guidance on the exact issue affecting this page' },
+        { title: 'Google Core Web Vitals: LCP', url: 'https://web.dev/articles/lcp', why: 'Google uses LCP as a direct ranking signal — under 2.5s is the target' },
+      ],
+      script_defer: [
+        { title: 'Google: Defer non-critical JavaScript', url: 'https://developer.chrome.com/docs/lighthouse/performance/render-blocking-resources/', why: 'Official Google guidance on deferring scripts' },
+        { title: 'MDN: The script defer attribute', url: 'https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script#defer', why: 'Technical reference for the exact change being made' },
+      ],
+      lazy_loading: [
+        { title: 'Google: Browser-level lazy loading', url: 'https://web.dev/browser-level-image-lazy-loading/', why: 'Official guidance on image lazy loading best practices' },
+        { title: 'Google PageSpeed: Defer offscreen images', url: 'https://developer.chrome.com/docs/lighthouse/performance/offscreen-images/', why: 'This is a scored PageSpeed metric — fixing it improves your score' },
+      ],
+      image_format: [
+        { title: 'Google: Serve images in next-gen formats', url: 'https://developer.chrome.com/docs/lighthouse/performance/uses-webp-images/', why: 'Google PageSpeed flags legacy image formats as a performance issue' },
+        { title: 'WebP: Google\'s modern image format', url: 'https://developers.google.com/speed/webp', why: 'WebP is developed by Google and reduces file size by 25-35% at identical quality' },
+      ],
+      faq_schema: [
+        { title: 'Google: FAQPage structured data', url: 'https://developers.google.com/search/docs/appearance/structured-data/faqpage', why: 'Official Google documentation for the exact schema being added' },
+        { title: 'Google: Understand how structured data works', url: 'https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data', why: 'Explains how this invisible code communicates with Google' },
+      ],
+      h1_update: [
+        { title: 'Google SEO Starter Guide: Heading tags', url: 'https://developers.google.com/search/docs/fundamentals/seo-starter-guide#headings', why: 'Google\'s own guidance on why H1 headings matter for SEO' },
+        { title: 'Google: How Google Search works', url: 'https://developers.google.com/search/docs/fundamentals/how-search-works', why: 'Explains how Google reads page headings to understand content' },
+      ],
+      first_para: [
+        { title: 'Google: Create helpful content', url: 'https://developers.google.com/search/docs/fundamentals/creating-helpful-content', why: 'Google\'s guidance on content quality signals used for ranking' },
+      ],
+      h2_section: [
+        { title: 'Google: FAQ rich results', url: 'https://developers.google.com/search/docs/appearance/structured-data/faqpage', why: 'People Also Ask sections in Google are directly linked to page H2 content' },
+        { title: 'Google: How featured snippets work', url: 'https://support.google.com/websearch/answer/9351707', why: 'Explains how Google selects content for PAA and featured snippet boxes' },
+      ],
+      gsc_indexing: [
+        { title: 'Google: Request indexing via URL Inspection', url: 'https://support.google.com/webmasters/answer/9012289', why: 'Official Google guide for the exact action being taken' },
+        { title: 'Google: How Google crawls and indexes', url: 'https://developers.google.com/search/docs/crawling-indexing/overview-google-crawlers', why: 'Explains why pages not in Google\'s index do not appear in search results' },
+      ],
+      date_modified_schema: [
+        { title: 'Google: Article structured data', url: 'https://developers.google.com/search/docs/appearance/structured-data/article', why: 'Official documentation for the schema being added, including dateModified' },
+      ],
+      meta_desc: [
+        { title: 'Google: Control your title links and snippets', url: 'https://developers.google.com/search/docs/appearance/title-link', why: 'Google\'s own guidance on meta descriptions and how they affect click-through rates' },
+      ],
     };
-    const changeDesc = whatChanges[task.task_type] || 'We will make a targeted technical change to this page based on our audit findings.';
+    const taskSources = sources[task.task_type] || [];
 
-    const rollbackLine = hasSave
-      ? 'We have saved a snapshot of the current page state. If anything looks wrong after the change, we can restore the exact previous version immediately.'
-      : 'We will make this change carefully and monitor the result. The change is targeted and reversible.';
+    // Code preview — show first meaningful lines, not the whole thing
+    const codeLines = fixCode.split('\n').filter((l: string) => l.trim()).slice(0, 8);
+    const codePreview = codeLines.join('\n') + (fixCode.split('\n').filter((l: string) => l.trim()).length > 8 ? '\n... (full code ready to deploy)' : '');
 
-    const body = [
-      `Hi${clientName && clientName !== 'the client' ? ' ' + clientName.split(' ')[0] : ''},`,
-      ``,
-      `I wanted to reach out about a recommended change to your page at ${siteUrl}.`,
-      ``,
-      severityNote,
-      ``,
-      `What we found:`,
-      analysis.slice(0, 350) + (analysis.length > 350 ? '...' : ''),
-      ``,
-      `What we want to do:`,
-      changeDesc,
-      ``,
-      `What will NOT change:`,
-      `Your page design, branding, images, and all existing content stay exactly as they are. Your site will not go offline during this change.`,
-      ``,
-      `Our assurance:`,
-      rollbackLine,
-      ``,
-      `If you are happy to proceed, please reply YES and we will action this within 24 hours. Happy to answer any questions first.`,
-      ``,
-      `Best regards`,
-    ].join('\n');
+    // Subject line — specific and honest
+    const subject = `[Approval Required] ${taskTitle} — ${siteUrl.replace(/^https?:\/\//, '').split('/')[0]}`;
 
-    const summary = `Requesting approval to: ${taskTitle.toLowerCase()} — no visual changes, reversible.`;
+    const nl = '\n';
+    const lines: string[] = [];
+
+    lines.push('Hi,');
+    lines.push('');
+    lines.push('I am writing to request your approval before we make a change to your website. We do not make any changes to live sites without written client approval first.');
+    lines.push('');
+
+    // THE PROBLEM — with actual data
+    lines.push('━━ THE ISSUE WE FOUND ━━');
+    lines.push('');
+    if (analysis) {
+      lines.push(analysis);
+    } else {
+      lines.push(`Our technical audit identified: ${taskTitle}`);
+    }
+    lines.push('');
+    lines.push(`You can verify this yourself right now: ${pagespeedLink}`);
+    lines.push('(Run the free test on your URL — it will show the same issues our audit found)');
+    lines.push('');
+
+    // AUTHORITATIVE BACKING
+    if (taskSources.length > 0) {
+      lines.push('━━ WHY THIS MATTERS (Google\'s own documentation) ━━');
+      lines.push('');
+      taskSources.forEach(s => {
+        lines.push(`• ${s.title}`);
+        lines.push(`  ${s.url}`);
+        lines.push(`  ${s.why}`);
+        lines.push('');
+      });
+    }
+
+    // THE EXACT CHANGE
+    lines.push('━━ EXACTLY WHAT WE WILL CHANGE ━━');
+    lines.push('');
+    const changeDetail: Record<string, string> = {
+      lcp_fix:              'We will add the "defer" attribute to render-blocking JavaScript files in your page <head>. This tells the browser to load your visible content first, then run the scripts. No scripts are removed — only their load order changes.',
+      script_defer:         'We will add defer or async attributes to specific JavaScript tags identified in our analysis. The scripts remain — only when they execute changes.',
+      lazy_loading:         'We will add loading="lazy" to images that are below the visible screen. Images above the fold (what visitors see first) are unchanged.',
+      image_format:         'We will convert existing JPG/PNG images to WebP format. The images look visually identical — only the file format and size change.',
+      faq_schema:           'We will insert a <script type="application/ld+json"> block into the page <head>. This is invisible to visitors — it is machine-readable data for search engines only.',
+      h1_update:            'We will change the <h1> tag text on this page. The new heading is shown in the Fix Code section for your review before we apply it.',
+      first_para:           'We will update the first paragraph of text on this page. The new paragraph is shown in the Fix Code section for your review.',
+      h2_section:           'We will add new <h2> heading sections with supporting content below your existing page content. Nothing existing is removed or changed.',
+      date_modified_schema: 'We will add a dateModified field to the existing schema block, or insert a new Article schema <script> in the page <head>.',
+      gsc_indexing:         'We will use Google Search Console\'s URL Inspection tool to request that Google crawls this URL. No changes are made to your website itself.',
+      meta_desc:            'We will update the <meta name="description"> tag in the page <head>. This text appears in Google search results under your page title.',
+    };
+    lines.push(changeDetail[task.task_type] || 'A targeted technical change as described in the audit findings above.');
+    lines.push('');
+
+    if (codePreview) {
+      lines.push('The exact code change (for your developer to review):');
+      lines.push('---');
+      lines.push(codePreview);
+      lines.push('---');
+      lines.push('');
+    }
+
+    // WHAT STAYS THE SAME
+    lines.push('━━ WHAT WILL NOT CHANGE ━━');
+    lines.push('');
+    lines.push('• Your page design and visual layout — identical');
+    lines.push('• Your existing content, images, and branding — untouched');
+    lines.push('• Your site will not go offline or show any errors to visitors');
+    lines.push('• All existing functionality (forms, buttons, navigation) — unchanged');
+    lines.push('');
+
+    // SAFETY
+    lines.push('━━ OUR SAFETY COMMITMENT ━━');
+    lines.push('');
+    if (hasSave) {
+      lines.push('✓ We have saved a complete snapshot of your current page state before this change.');
+      lines.push('✓ If anything looks incorrect after the change, we can restore the exact previous version within minutes.');
+    } else {
+      lines.push('✓ This change is targeted and reversible — we will restore it immediately if anything looks wrong.');
+    }
+    lines.push('✓ We will confirm completion and share a before/after comparison after the change is live.');
+    lines.push('');
+
+    // APPROVAL ASK
+    lines.push('━━ TO APPROVE ━━');
+    lines.push('');
+    lines.push('Please reply to this email with a simple YES and we will action this within 24 hours.');
+    lines.push('');
+    lines.push('If you have any questions about the change, the code, or the external resources linked above, please ask — we are happy to explain anything in more detail.');
+    lines.push('');
+    lines.push('Best regards');
+
+    const body = lines.join(nl);
+    const summary = `${task.severity === 'critical' || task.severity === 'red' ? 'CRITICAL: ' : ''}${taskTitle} — includes code preview and Google source links.`;
 
     setBrief({ subject, body, summary });
   };
