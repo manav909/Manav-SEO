@@ -4567,6 +4567,206 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  if (action === 'pm_chat') {
+    /* PM-level strategic chat.
+       Pulls comprehensive project data: audits, campaigns, dev tasks,
+       board cards, data room docs. Acts as a senior SEO strategist
+       who knows the entire project. Uses Sonnet for quality analysis. */
+    const { message, history, projectId: pid, activeTab } = body;
+    if (!message || !pid) return ok(res, { error: 'message and projectId required' });
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+    // ── Pull all relevant project data ──────────────────────────
+    let ctx = '';
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const D = getDb();
+
+      // Project info
+      const { data: proj } = await D.from('projects')
+        .select('name, url, cms, industry, target_keyword, status')
+        .eq('id', pid).maybeSingle();
+      if (proj) {
+        const p = proj as any;
+        ctx += `PROJECT
+Name: ${p.name||'unknown'}
+URL: ${p.url||'unknown'}
+CMS: ${p.cms||'unknown'}
+Keyword: ${p.target_keyword||'unknown'}
+Industry: ${p.industry||'unknown'}
+
+`;
+      }
+
+      // Latest 2 audit reports for comparison
+      const { data: audits } = await D.from('audit_reports')
+        .select('run_id,created_at,mobile_lcp_ms,mobile_tbt_ms,desktop_lcp_ms,desktop_tbt_ms,mobile_cls,overall_score,findings_critical,findings_warning,findings_info')
+        .eq('project_id', pid).order('created_at',{ascending:false}).limit(2);
+      if (audits && (audits as any[]).length > 0) {
+        const a = audits as any[];
+        ctx += 'LATEST AUDIT (' + new Date(a[0].created_at).toLocaleDateString() + ')
+';
+        ctx += `Mobile LCP: ${a[0].mobile_lcp_ms?(a[0].mobile_lcp_ms/1000).toFixed(1)+'s':'n/a'} | TBT: ${a[0].mobile_tbt_ms?Math.round(a[0].mobile_tbt_ms)+'ms':'n/a'}
+`;
+        ctx += `Desktop LCP: ${a[0].desktop_lcp_ms?(a[0].desktop_lcp_ms/1000).toFixed(1)+'s':'n/a'}
+`;
+        ctx += `Findings: ${a[0].findings_critical||0} critical, ${a[0].findings_warning||0} warnings
+`;
+        if (a.length > 1) {
+          ctx += `PREVIOUS AUDIT (${new Date(a[1].created_at).toLocaleDateString()})
+`;
+          ctx += `Mobile LCP: ${a[1].mobile_lcp_ms?(a[1].mobile_lcp_ms/1000).toFixed(1)+'s':'n/a'} | TBT: ${a[1].mobile_tbt_ms?Math.round(a[1].mobile_tbt_ms)+'ms':'n/a'}
+`;
+          const lcpDelta = a[0].mobile_lcp_ms && a[1].mobile_lcp_ms ? ((a[1].mobile_lcp_ms - a[0].mobile_lcp_ms)/1000).toFixed(1) : null;
+          if (lcpDelta) ctx += `LCP change: ${parseFloat(lcpDelta) > 0 ? '+' : ''}${lcpDelta}s ${parseFloat(lcpDelta) > 0 ? '(improved)' : '(worsened)'}
+`;
+        }
+        ctx += '
+';
+
+        // Top critical findings from latest audit
+        const { data: findings } = await D.from('audit_findings')
+          .select('severity,title,audit_kind')
+          .eq('run_id', a[0].run_id)
+          .in('severity',['critical','red'])
+          .order('priority',{ascending:true}).limit(8);
+        if (findings && (findings as any[]).length > 0) {
+          ctx += 'CRITICAL FINDINGS
+';
+          (findings as any[]).forEach(f => { ctx += `- [${f.audit_kind||'perf'}] ${f.title}
+`; });
+          ctx += '
+';
+        }
+      }
+
+      // Active SEO campaigns + keyword rankings
+      const { data: campaigns } = await D.from('campaigns')
+        .select('id,name,target_keyword,status,current_rank,target_rank')
+        .eq('project_id', pid).eq('status','active').limit(10);
+      if (campaigns && (campaigns as any[]).length > 0) {
+        ctx += 'ACTIVE CAMPAIGNS
+';
+        (campaigns as any[]).forEach(c => {
+          ctx += `- "${c.target_keyword}" | rank: ${c.current_rank||'unranked'} → target: ${c.target_rank||'top 3'} | ${c.name}
+`;
+        });
+        ctx += '
+';
+      }
+
+      // Dev tasks summary
+      const { data: devTasks } = await D.from('dev_tasks')
+        .select('phase,title,status,severity').eq('project_id', pid)
+        .order('priority',{ascending:true}).limit(20);
+      if (devTasks && (devTasks as any[]).length > 0) {
+        const dt = devTasks as any[];
+        const done = dt.filter(t=>t.status==='done').length;
+        const p0 = dt.filter(t=>t.phase==='phase_0');
+        const p0done = p0.filter(t=>t.status==='done').length;
+        ctx += `DEV TASKS: ${done}/${dt.length} done | Phase 0: ${p0done}/${p0.length}
+`;
+        dt.filter(t=>t.status!=='done'&&t.status!=='skipped').slice(0,6).forEach(t => {
+          ctx += `  [${t.phase}] ${t.status==='fix_ready'?'→':t.status==='running'?'⟳':'○'} ${t.title}
+`;
+        });
+        ctx += '
+';
+      }
+
+      // Board cards summary
+      const { data: boardCards } = await D.from('task_cards')
+        .select('title,status,priority,week').eq('project_id', pid)
+        .order('priority',{ascending:true}).limit(15);
+      if (boardCards && (boardCards as any[]).length > 0) {
+        const bc = boardCards as any[];
+        ctx += `BOARD: ${bc.filter(c=>c.status==='done').length}/${bc.length} cards done
+`;
+        bc.filter(c=>c.status!=='done').slice(0,5).forEach(c => {
+          ctx += `  - ${c.title} (${c.status||'pending'})
+`;
+        });
+        ctx += '
+';
+      }
+
+      // Recent documents
+      const { data: docs } = await D.from('documents')
+        .select('title,type,created_at').eq('project_id', pid)
+        .order('created_at',{ascending:false}).limit(5);
+      if (docs && (docs as any[]).length > 0) {
+        ctx += 'DOCUMENTS: ' + (docs as any[]).map((d:any)=>d.title).join(', ') + '
+
+';
+      }
+
+    } catch (e: any) {
+      console.error('[pm_chat] context error:', e?.message);
+      // Continue — chat still works with partial context
+    }
+
+    const systemPrompt = [
+      'You are a senior SEO strategist and project analyst embedded in Manav\'s SEO Season platform.',
+      'You have full visibility into this project and act as the PM\'s most trusted advisor.',
+      '',
+      'Current tab the PM is on: ' + (activeTab || 'unknown'),
+      '',
+      '== PROJECT DATA ==',
+      ctx || 'Project data not available.',
+      '== END DATA ==',
+      '',
+      'Your capabilities:',
+      '- Analyse audit data and explain what the numbers mean for rankings',
+      '- Compare current vs previous audit — what improved, what got worse, why',
+      '- Prioritise fixes by SEO impact: what to do first and why',
+      '- Assess campaign progress: is the strategy working, what needs adjusting',
+      '- Connect the dots across tabs: how a dev fix impacts a campaign, how a board card relates to an audit finding',
+      '- Give honest strategic advice — not reassuring platitudes',
+      '- Make bold, specific recommendations when data supports them',
+      '',
+      'Rules:',
+      '- Be direct and specific — reference actual numbers and task names from the data',
+      '- When comparing audits, quantify the changes (not just "better" or "worse")',
+      '- Flag dependencies: if a Phase 0 fix is blocking everything else, say so clearly',
+      '- Keep responses focused — answer what was asked, add 1-2 insights the PM should know',
+      '- Max 5-6 sentences for simple questions, structured response for complex analysis',
+      '- Never fabricate data — if something is not in the project data, say so',
+    ].join('\n');
+
+    const messages = [
+      ...(Array.isArray(history) ? history.slice(-10) : []),
+      { role: 'user', content: message },
+    ];
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 45000);
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',   // Sonnet — complex multi-domain analysis
+          max_tokens: 1000,
+          system: systemPrompt,
+          messages,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const data = await resp.json() as any;
+      if (data?.error) return ok(res, { error: data.error.message });
+      const reply = (data?.content?.[0]?.text || '').trim();
+      return ok(res, { success: true, reply });
+    } catch (e: any) {
+      return ok(res, { error: 'Chat error: ' + (e?.message || 'unknown') });
+    }
+  }
+
   if (action === 'dev_chat') {
     /* Contextual chat for the Developer tab.
        Pulls full project context from DB — all tasks, project info, audit summary.

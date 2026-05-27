@@ -27,6 +27,7 @@ import SeoInboxPanel from '@/components/pm/SeoInboxPanel';
 import Documents from '@/pages/Documents';
 import PMOnboardingWizard from '@/components/pm/PMOnboardingWizard';
 import DevPanel from '@/components/pm/DevPanel';
+import PMChatPanel from '@/components/pm/PMChatPanel';
 
 type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox' | 'documents' | 'developer';
 
@@ -262,6 +263,11 @@ export default function PMModule() {
         }}
         onDismiss={() => setShowWizard(false)}
       />
+    )}
+
+    {/* PM Chat — always visible on every tab when a project is selected */}
+    {selectedProjectId && (
+      <PMChatPanel projectId={selectedProjectId} activeTab={tab} />
     )}
     </>
   );
