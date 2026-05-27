@@ -955,235 +955,496 @@ export function buildApplyInstructions(
   }
   out.push('');
 
-  // Task steps
+  // Task steps — written for non-coders. Plain English. Every step numbered.
+  // No jargon. If something requires a developer, say so clearly upfront.
   switch (task.task_type) {
+
     case 'lcp_fix':
-    case 'script_defer':
-      out.push('## Steps to fix render-blocking JavaScript');
+    case 'script_defer': {
+      out.push('## What is happening and why it matters');
       out.push('');
-      out.push('> **What this does:** JavaScript files loading before the page renders cause slow load times. Adding `defer` tells the browser: show the page first, then run the JavaScript. This is the highest-priority fix.');
+      out.push('Your page is loading **' + (task.title.match(/\d+\.\d+s/) || ['slowly'])[0] + '** on mobile. The reason is that JavaScript files are blocking the page from showing anything until they finish loading. This is like a store that makes every customer wait at the door while the staff counts stock in the back — before anyone is even let in.');
       out.push('');
-      out.push('⚠️ **This is a developer task.** If you are not comfortable editing code files, share the Fix Code tab with your developer.');
+      out.push('The fix is called **defer** — it tells the browser: show the page to visitors first, then load those scripts quietly in the background. Visitors see the page immediately. Nothing visual changes.');
       out.push('');
-      if (p === 'wordpress') {
-        out.push('**Recommended: use a plugin (no coding required)**');
-        out.push('');
-        out.push('**WP Rocket (paid):** Settings → WP Rocket → File Optimization → Defer JS Execution → Save → Purge Cache');
-        out.push('');
-        out.push('**Autoptimize (free):** Plugins → Add New → Autoptimize → Settings → JavaScript → Defer scripts → Save and Empty Cache');
-        out.push('');
-        out.push('**Manual (developer):** Apply the BEFORE/AFTER changes shown in Fix Code. Open your theme\'s functions.php or use a child theme.');
-      } else if (p === 'webflow') {
-        out.push('1. Project Settings → Custom Code');
-        out.push('2. Move scripts from **Head Code** to **Footer Code**');
-        out.push('3. For scripts that must stay in head: add `defer` attribute as shown in Fix Code');
-        out.push('4. Publish');
-      } else if (p === 'squarespace') {
-        out.push('1. Settings → Advanced → Code Injection');
-        out.push('2. Move `<script>` tags from Header to Footer');
-        out.push('3. For header-only scripts: add `defer` attribute → Save');
-      } else if (p === 'hubspot') {
-        out.push('1. Settings → Website → Pages → Custom Code → Footer HTML');
-        out.push('2. Move non-critical scripts to the footer');
-        out.push('3. Add `defer` to remaining head scripts → Publish');
-      } else {
-        out.push('Apply the changes from Fix Code. Your developer needs to add `defer` to the `<script>` tags identified in the analysis.');
-      }
-      break;
 
-    case 'lazy_loading':
-      out.push('## Steps to add lazy loading to images');
-      out.push('');
-      out.push('> **What this does:** loads images only when the user scrolls to them — saving bandwidth and improving perceived load time. No visual change for visitors.');
-      out.push('');
-      if (p === 'wordpress') {
-        out.push('**WordPress 5.5+ adds this automatically.** Verify it is working:');
-        out.push('1. Right-click any image below the fold on your live page → Inspect');
-        out.push('2. Check for `loading="lazy"` on the `<img>` tag');
-        out.push('3. If missing, add the code snippet from Fix Code to **Appearance → Theme Editor → footer.php** (or use a plugin like Autoptimize → Extra → Lazy-load images)');
-      } else if (p === 'webflow') {
-        out.push('1. Open the page in Webflow Designer');
-        out.push('2. Click each image below the first screen → right panel → **Loading → Lazy**');
-        out.push('3. Keep the hero/first image as **Eager**');
-        out.push('4. Publish');
-      } else if (p === 'squarespace' || p === 'wix' || p === 'hubspot') {
-        out.push('1. Go to **Settings → Advanced → Code Injection** (location varies by platform)');
-        out.push('2. In the **Footer** / **Body End** box, paste the JavaScript snippet from Fix Code');
-        out.push('3. Save / Publish');
-      } else if (p === 'shopify') {
-        out.push('1. Online Store → Themes → Actions → Edit Code');
-        out.push('2. Open `layout/theme.liquid`');
-        out.push('3. Before `</body>`, paste the JavaScript snippet from Fix Code → Save');
-      } else {
-        out.push('Paste the JavaScript snippet from Fix Code before the `</body>` tag in your page template.');
-      }
-      break;
-
-    case 'image_format':
-      out.push('## Steps to convert images to modern format (webp/avif)');
-      out.push('');
-      out.push('> **What this does:** webp is typically 30-50% smaller than jpg/png at the same quality. Reduces load time, especially on mobile.');
-      out.push('');
-      if (p === 'wordpress') {
-        out.push('**Recommended plugin (free tier available):**');
-        out.push('1. Plugins → Add New → search **Imagify** → Install → Activate');
-        out.push('2. Settings → Imagify → check **Convert to WebP**');
-        out.push('3. Click **Bulk Optimize** to convert existing images → future uploads auto-convert');
+      if (p === 'hubspot') {
+        out.push('## How to fix this in HubSpot (no developer needed)');
         out.push('');
-        out.push('Alternatives: **ShortPixel** or **Smush** — both have free tiers and identical webp conversion settings.');
-      } else if (p === 'webflow' || p === 'squarespace' || p === 'shopify') {
-        out.push(p.charAt(0).toUpperCase() + p.slice(1) + ' **automatically serves WebP** for compatible browsers via its CDN.');
-        out.push('No action required. To verify: right-click an image → Open in new tab → check URL ends in `.webp`.');
-      } else {
-        out.push('Run the conversion script from Fix Code on your image directory. Then re-upload the .webp files.');
-        out.push('Alternatively: add Cloudflare in front of your site (free plan) — it converts images to webp automatically.');
-      }
-      break;
-
-    case 'faq_schema':
-      out.push('## Steps to add FAQPage structured data');
-      out.push('');
-      out.push('> **What this does:** registers your Q&A content with Google. Can unlock "People Also Ask" appearances in search results and citations in AI Overviews. Invisible to visitors — search engines only.');
-      out.push('');
-      if (p === 'wordpress' && pl === 'yoast') {
-        out.push('1. Pages → All Pages → find your page → **Edit**');
-        out.push('2. In the block editor: click **+** → search **FAQ** → select **Yoast FAQ Block**');
-        if (qs.length > 0) { out.push('3. Add these questions and their answers:'); qs.forEach((q, i) => out.push('   - Q' + (i+1) + ': ' + q)); out.push('4. Yoast generates the schema automatically'); }
-        out.push('5. Click **Update**');
-      } else if (p === 'wordpress' && pl === 'rankmath') {
-        out.push('1. Edit your page → click **+** → add **RankMath FAQ Block**');
-        out.push('2. Add questions and answers → click **Update**');
+        out.push('HubSpot loads most tracking scripts automatically. The fastest fix is to move them to the footer:');
+        out.push('');
+        out.push('1. Log in to **app.hubspot.com**');
+        out.push('2. Click **Settings** (gear icon, top right)');
+        out.push('3. In the left menu: **Website → Pages**');
+        out.push('4. Scroll down to **Site footer HTML**');
+        out.push('5. Any `<script>` tags you see in **Site header HTML** that are for analytics or tracking — cut them from the header and paste them into the footer instead');
+        out.push('6. Click **Save**');
+        out.push('7. Also check: Settings → **Tracking & Analytics** → ensure Google Analytics is set to load **asynchronously**');
+        out.push('');
+        out.push('> If you are not sure which scripts to move, copy the Fix Code tab and send it to your developer with this note: "Please move these scripts to the footer or add defer/async to them."');
       } else if (p === 'wordpress') {
-        out.push('1. Edit your page → add a **Custom HTML block** at the bottom');
-        out.push('2. Paste the JSON-LD from Fix Code → click **Update**');
+        out.push('## How to fix this in WordPress (no developer needed)');
+        out.push('');
+        out.push('The easiest way is a free plugin:');
+        out.push('');
+        out.push('**Option A — Autoptimize (free):**');
+        out.push('1. In your WordPress dashboard, go to **Plugins → Add New**');
+        out.push('2. Search for **Autoptimize** → click **Install Now** → click **Activate**');
+        out.push('3. Go to **Settings → Autoptimize**');
+        out.push('4. Click the **JavaScript Options** tab');
+        out.push('5. Check the box: **Defer JavaScript**');
+        out.push('6. Click **Save Changes and Empty Cache**');
+        out.push('7. Visit your page and make sure it still looks correct');
+        out.push('');
+        out.push('**Option B — WP Rocket (paid, if you have it):**');
+        out.push('1. Settings → WP Rocket → **File Optimization** tab');
+        out.push('2. Under JavaScript: enable **Defer JavaScript execution**');
+        out.push('3. Click **Save Changes** → click **Clear Cache**');
       } else if (p === 'webflow') {
-        out.push('1. Click page gear icon ⚙ → Page Settings → **Custom Code → Head Code**');
-        out.push('2. Paste the JSON-LD from Fix Code → Save → Publish');
+        out.push('## How to fix this in Webflow');
+        out.push('');
+        out.push('1. Log in to **webflow.com/dashboard** and open your project');
+        out.push('2. Click the **gear icon ⚙** (Project Settings) in the top left');
+        out.push('3. Click the **Custom Code** tab');
+        out.push('4. You will see a **Head Code** box and a **Footer Code** box');
+        out.push('5. Look at the scripts in Head Code — copy any analytics or tracking scripts (Google Analytics, Facebook Pixel, etc.)');
+        out.push('6. Remove them from Head Code and paste them into **Footer Code** instead');
+        out.push('7. Click **Save** → click **Publish**');
+        out.push('');
+        out.push('> Moving scripts from head to footer has the same effect as "defer" — the page renders first, scripts load after.');
       } else if (p === 'squarespace') {
-        out.push('1. Pages → hover your page → gear ⚙ → Page Settings → **Advanced** tab');
-        out.push('2. In **Page Header Code Injection**, paste the JSON-LD → Save');
-      } else if (p === 'wix') {
-        out.push('1. Page → SEO → Additional SEO Settings → **Structured Data Markup** → Add Item');
-        out.push('2. Paste the JSON-LD → Apply → Publish');
-      } else if (p === 'shopify') {
-        out.push('1. Online Store → Themes → Actions → Edit Code → `layout/theme.liquid`');
-        out.push('2. Find `</head>` → paste JSON-LD just before it → Save');
-      } else if (p === 'hubspot') {
-        out.push('1. Edit your page → Settings tab → Advanced Options → **Head HTML**');
-        out.push('2. Paste the JSON-LD → Update → Publish');
+        out.push('## How to fix this in Squarespace');
+        out.push('');
+        out.push('1. Log in to Squarespace → click **Settings** in the left menu');
+        out.push('2. Click **Advanced** → click **Code Injection**');
+        out.push('3. You will see a **Header** box and a **Footer** box');
+        out.push('4. Cut any `<script>` tracking tags from **Header** and paste them into **Footer**');
+        out.push('5. Click **Save**');
       } else {
-        out.push('Paste the JSON-LD from Fix Code inside `<head>`, just before `</head>` in your page HTML.');
+        out.push('## How to fix this');
+        out.push('');
+        out.push('This fix requires editing your website\'s HTML template. We recommend sharing the Fix Code tab with your developer. Here is the message to send:');
+        out.push('');
+        out.push('> "Please add the `defer` attribute to the script tags listed in the Fix Code tab on my SEO task. This will improve our mobile page load time from ' + (task.title.match(/\d+\.\d+s/) || ['its current slow speed'])[0] + ' to under 4 seconds."');
+      }
+      out.push('');
+      out.push('## How do you know it worked?');
+      out.push('');
+      out.push('After making the change, come back here and click **"I Applied the Fix"** → then **"Verify on Live Page"**. Manav will check the page automatically.');
+      out.push('For the full result: go to **https://pagespeed.web.dev** and test your page in Mobile mode. The TBT score should drop significantly within 24 hours of deploying.');
+      break;
+    }
+
+    case 'lazy_loading': {
+      out.push('## What is happening and why it matters');
+      out.push('');
+      out.push('Your page has images that all load at the same time — even images the visitor hasn\'t scrolled to yet. This wastes bandwidth and slows the initial page load.');
+      out.push('');
+      out.push('Lazy loading means: images near the top load immediately. Images further down the page load only when the visitor scrolls to them. The page feels faster and uses less data on mobile.');
+      out.push('');
+
+      if (p === 'hubspot') {
+        out.push('## How to fix this in HubSpot');
+        out.push('');
+        out.push('1. Log in to **app.hubspot.com**');
+        out.push('2. Click **Settings → Website → Pages**');
+        out.push('3. Scroll to **Site footer HTML**');
+        out.push('4. Paste the JavaScript snippet from the **Fix Code tab** into the footer box');
+        out.push('5. Click **Save**');
+        out.push('');
+        out.push('That snippet automatically adds lazy loading to all images below the first two on every page.');
+      } else if (p === 'wordpress') {
+        out.push('## How to fix this in WordPress');
+        out.push('');
+        out.push('WordPress automatically adds lazy loading to images since version 5.5. Check if it is already working:');
+        out.push('');
+        out.push('1. Visit your live page in Chrome');
+        out.push('2. Right-click on an image that is lower on the page → click **Inspect**');
+        out.push('3. Look in the code that appears for the text `loading="lazy"` — if it is there, you are done!');
+        out.push('');
+        out.push('If you do NOT see `loading="lazy"`:');
+        out.push('1. Go to **Plugins → Add New** in your WordPress dashboard');
+        out.push('2. Search for **Autoptimize** → Install → Activate');
+        out.push('3. Go to **Settings → Autoptimize → Extra** tab');
+        out.push('4. Check **Lazy-load images**');
+        out.push('5. Save Changes and Empty Cache');
+      } else if (p === 'webflow') {
+        out.push('## How to fix this in Webflow');
+        out.push('');
+        out.push('1. Open your page in **Webflow Designer**');
+        out.push('2. Click on each image that is below the main banner/hero section');
+        out.push('3. In the right panel, find **Loading** and change it to **Lazy**');
+        out.push('4. Leave the first 1-2 images at the top set to **Eager** (they need to load immediately)');
+        out.push('5. Click **Publish** when done');
+      } else if (p === 'squarespace' || p === 'wix') {
+        out.push('## How to fix this in ' + (p === 'squarespace' ? 'Squarespace' : 'Wix'));
+        out.push('');
+        out.push('1. Log in to your ' + (p === 'squarespace' ? 'Squarespace dashboard → Settings → Advanced → Code Injection' : 'Wix dashboard → Settings → Custom Code'));
+        out.push('2. In the **Footer** section, paste the JavaScript snippet from the **Fix Code tab**');
+        out.push('3. Click **Save**');
+        out.push('');
+        out.push('This snippet adds lazy loading to all images below the first two automatically.');
+      } else if (p === 'shopify') {
+        out.push('## How to fix this in Shopify');
+        out.push('');
+        out.push('1. Go to **Online Store → Themes**');
+        out.push('2. Click **Actions → Edit Code**');
+        out.push('3. In the left panel, open **Layout → theme.liquid**');
+        out.push('4. Scroll to the very bottom and find the `</body>` tag');
+        out.push('5. Paste the JavaScript snippet from Fix Code just before `</body>`');
+        out.push('6. Click **Save**');
+      } else {
+        out.push('## How to fix this');
+        out.push('');
+        out.push('Paste the JavaScript snippet from Fix Code just before the `</body>` tag in your page template, or share it with your developer.');
       }
       break;
+    }
 
-    case 'h1_update':
-      out.push('## Steps to update the H1 heading');
+    case 'image_format': {
+      out.push('## What is happening and why it matters');
       out.push('');
-      out.push('> **What this does:** the H1 is the main heading Google reads to understand what this page is about. If the target keyword is absent from the H1, it directly weakens relevance signals.');
+      out.push('The images on this page are in older formats (JPG, PNG, or GIF). Modern browsers support WebP images, which are typically 30-50% smaller at the same visual quality. Smaller images = faster loading, especially on mobile connections.');
       out.push('');
+
       if (p === 'wordpress') {
-        out.push('1. Pages → All Pages → find your page → **Edit**');
-        out.push('2. The H1 is the large text at the very top of the editor — click on it');
-        out.push('3. Change to Option 1 from Fix Code (or the option that best preserves existing keyword rankings)');
-        out.push('4. **Before saving:** check GSC → Performance → Pages → this URL → Queries tab. Note any keywords with >10 impressions and ensure the new H1 preserves those terms.');
+        out.push('## How to fix this in WordPress (5 minutes, no developer needed)');
+        out.push('');
+        out.push('1. In your WordPress dashboard, go to **Plugins → Add New**');
+        out.push('2. Search for **Imagify** → click **Install Now** → click **Activate**');
+        out.push('3. You will be prompted to create a free Imagify account — do that (free tier covers most sites)');
+        out.push('4. Go to **Settings → Imagify**');
+        out.push('5. Check the box: **Convert to WebP**');
+        out.push('6. Click **Save & Go to Bulk Optimizer**');
+        out.push('7. Click **Imagine All** — it converts all your existing images automatically');
+        out.push('');
+        out.push('From now on, every new image you upload will also be converted automatically.');
+      } else if (p === 'webflow' || p === 'squarespace' || p === 'shopify') {
+        const pName = p.charAt(0).toUpperCase() + p.slice(1);
+        out.push('## Good news — ' + pName + ' handles this automatically');
+        out.push('');
+        out.push(pName + ' automatically converts and serves images in WebP format to browsers that support it (over 95% of users). You do not need to do anything manually.');
+        out.push('');
+        out.push('**To confirm it is working:**');
+        out.push('1. Open your live page in Chrome');
+        out.push('2. Right-click any image → click **Open image in new tab**');
+        out.push('3. Look at the URL in the address bar — it should end in `.webp`');
+        out.push('');
+        out.push('If it does not end in .webp, contact ' + pName + ' support — this should be happening automatically.');
+      } else {
+        out.push('## How to fix this');
+        out.push('');
+        out.push('If your site uses Cloudflare (free plan): enable **Polish** in Cloudflare → Speed → Optimization. Cloudflare converts images to WebP automatically at the CDN level — no changes to your site needed.');
+        out.push('');
+        out.push('Otherwise: share the conversion script in Fix Code with your developer. It converts all images in a folder to WebP format.');
+      }
+      break;
+    }
+
+    case 'faq_schema': {
+      out.push('## What is happening and why it matters');
+      out.push('');
+      out.push('There are questions being asked on Google related to this page, and Google is showing them in "People Also Ask" boxes in search results. If your page has a special invisible code tag (called FAQ schema) that tells Google your answers, Google may show your page as the answer in those boxes.');
+      out.push('');
+      out.push('This is invisible to your visitors — it only affects how Google reads your page.');
+      out.push('');
+
+      if (p === 'hubspot') {
+        out.push('## How to add FAQ schema in HubSpot');
+        out.push('');
+        out.push('1. Log in to **app.hubspot.com**');
+        out.push('2. Click **Marketing → Website → Website Pages**');
+        out.push('3. Find your page and click **Edit**');
+        out.push('4. In the page editor, click **Settings** (the gear tab at the top)');
+        out.push('5. Scroll down to **Advanced Options**');
+        out.push('6. Find the **Head HTML** box');
+        out.push('7. Copy the code from the **Fix Code tab** and paste it into that box');
+        out.push('8. Click **Update** → then click **Publish**');
+        out.push('');
+        out.push('That is it. The code is invisible to visitors but Google will read it.');
+      } else if (p === 'wordpress' && pl === 'yoast') {
+        out.push('## How to add FAQ schema in WordPress with Yoast');
+        out.push('');
+        out.push('Yoast handles this automatically through a special FAQ block:');
+        out.push('');
+        out.push('1. Go to **Pages → All Pages** → find your page → click **Edit**');
+        out.push('2. Click the **+** button to add a new block');
+        out.push('3. Search for **FAQ** and select **Yoast FAQ Block**');
+        out.push('4. Add each question and its answer in the fields provided');
+        if (qs.length > 0) { qs.forEach((q, i) => out.push('   - Question ' + (i+1) + ': ' + q)); }
+        out.push('5. Write a direct answer for each question (2-4 sentences)');
+        out.push('6. Click **Update**');
+        out.push('');
+        out.push('Yoast automatically adds the invisible schema code. No copy-pasting required.');
+      } else if (p === 'wordpress') {
+        out.push('## How to add FAQ schema in WordPress');
+        out.push('');
+        out.push('1. Go to **Pages → All Pages** → find your page → click **Edit**');
+        out.push('2. Scroll to the bottom of your page content');
+        out.push('3. Click **+** to add a new block → search for **Custom HTML** → select it');
+        out.push('4. Copy the code from the **Fix Code tab** and paste it into the Custom HTML block');
         out.push('5. Click **Update**');
       } else if (p === 'webflow') {
-        out.push('1. Open page in Webflow Designer → double-click the main heading');
-        out.push('2. Change text → confirm the right panel shows **H1** as the element type');
-        out.push('3. Publish');
+        out.push('## How to add FAQ schema in Webflow');
+        out.push('');
+        out.push('1. Open your project in Webflow');
+        out.push('2. Click the **gear icon ⚙** (Project Settings)');
+        out.push('3. Click the **Custom Code** tab');
+        out.push('4. In the **Head Code** box, paste the code from the **Fix Code tab**');
+        out.push('5. Click **Save** → click **Publish**');
+      } else if (p === 'squarespace') {
+        out.push('## How to add FAQ schema in Squarespace');
+        out.push('');
+        out.push('1. Go to **Pages** → hover over your page → click the **gear icon ⚙**');
+        out.push('2. Click **Page Settings**');
+        out.push('3. Click the **Advanced** tab');
+        out.push('4. In the **Page Header Code Injection** box, paste the code from Fix Code');
+        out.push('5. Click **Save**');
+      } else if (p === 'wix') {
+        out.push('## How to add FAQ schema in Wix');
+        out.push('');
+        out.push('1. Go to your page in the Wix Editor');
+        out.push('2. Click the **Page** menu (top of editor) → **SEO**');
+        out.push('3. Click **Additional SEO Settings**');
+        out.push('4. Click **Structured Data Markup**');
+        out.push('5. Click **Add Item** → paste the code from Fix Code → click **Apply**');
+        out.push('6. Publish your site');
       } else {
-        out.push('1. Find `<h1>` in your page content');
-        out.push('2. Replace its text with Option 1 from Fix Code');
-        out.push('3. Save and publish');
+        out.push('## How to add FAQ schema');
+        out.push('');
+        out.push('Paste the code from Fix Code into the `<head>` section of your page HTML, just before the closing `</head>` tag. Share with your developer if needed.');
       }
       break;
+    }
 
-    case 'first_para':
-      out.push('## Steps to update the opening paragraph');
+    case 'h1_update': {
+      out.push('## What is happening and why it matters');
       out.push('');
-      out.push('> **What this does:** Google reads the first paragraph to understand the page topic. A generic tagline weakens relevance. A keyword-aligned opener improves topical signals.');
+      out.push('The main title of this page (called the H1) does not contain your target keyword. Google reads the H1 first when deciding what a page is about. If the keyword is missing from the title, the page is less likely to rank for it.');
       out.push('');
-      if (p === 'wordpress') {
-        out.push('1. Pages → All Pages → edit your page');
-        out.push('2. Scroll to the first paragraph block below the H1');
-        out.push('3. Select all text in that block → replace with the text from Fix Code');
+      out.push('The Fix Code tab shows 3 alternative title options. Pick the one that sounds best for your audience — they all include the keyword naturally.');
+      out.push('');
+
+      if (p === 'hubspot') {
+        out.push('## How to update the title in HubSpot');
+        out.push('');
+        out.push('1. Log in to **app.hubspot.com**');
+        out.push('2. Click **Marketing → Website → Website Pages**');
+        out.push('3. Find your page → click **Edit**');
+        out.push('4. Click directly on the large title text at the top of the page');
+        out.push('5. Replace it with your chosen option from Fix Code');
+        out.push('6. Click **Update** → **Publish**');
+        out.push('');
+        out.push('> Before you publish: check that the new title still accurately represents what the page is about. It should read naturally, not feel stuffed with keywords.');
+      } else if (p === 'wordpress') {
+        out.push('## How to update the H1 in WordPress');
+        out.push('');
+        out.push('1. Go to **Pages → All Pages** → find your page → click **Edit**');
+        out.push('2. At the very top of the page editor, you will see a large text field — that is your H1');
+        out.push('3. Delete the current title and type in your chosen option from Fix Code');
         out.push('4. Click **Update**');
       } else if (p === 'webflow') {
-        out.push('1. Open page in Webflow Designer → double-click the first paragraph');
-        out.push('2. Select all → paste new text from Fix Code → Publish');
+        out.push('## How to update the H1 in Webflow');
+        out.push('');
+        out.push('1. Open your page in **Webflow Designer**');
+        out.push('2. Double-click on the main page title');
+        out.push('3. Replace the text with your chosen option from Fix Code');
+        out.push('4. Check the right panel — it should say **H1** as the tag type');
+        out.push('5. Click **Publish**');
+      } else if (p === 'squarespace') {
+        out.push('## How to update the H1 in Squarespace');
+        out.push('');
+        out.push('1. Edit your page in Squarespace');
+        out.push('2. Click on the main title text');
+        out.push('3. Replace it with your chosen option from Fix Code');
+        out.push('4. Make sure the text style is set to **Heading 1** in the toolbar');
+        out.push('5. Click **Save**');
       } else {
-        out.push('1. Find the first `<p>` tag after your H1 in the page HTML');
-        out.push('2. Replace its content with the text from Fix Code');
-        out.push('3. Save and publish');
+        out.push('## How to update the H1');
+        out.push('');
+        out.push('Find the main title of this page in your CMS editor and replace it with Option 1 from Fix Code. If you need help, share Fix Code with your developer.');
       }
       break;
+    }
 
-    case 'h2_section':
-      out.push('## Steps to add new H2 sections');
+    case 'first_para': {
+      out.push('## What is happening and why it matters');
       out.push('');
-      out.push('> **What this does:** Google shows "People Also Ask" questions in search results. Pages with a matching H2 and direct answer can win the PAA citation and be referenced in AI Overviews. Each question needs the verbatim H2 and a direct 50-80 word answer immediately below.');
+      out.push('The first paragraph of this page is too generic — it does not mention your target keyword or directly address what someone searching for it wants to know. Google reads the first paragraph to confirm a page matches a search query. A stronger opener improves how well this page ranks.');
       out.push('');
-      if (qs.length > 0) { out.push('Questions to add as H2 sections:'); qs.forEach((q, i) => out.push('- ' + (i+1) + '. ' + q)); out.push(''); }
-      if (p === 'wordpress') {
-        out.push('1. Pages → All Pages → edit your page');
-        out.push('2. Click at the end of your existing content');
-        out.push('3. Add a **Heading block** → set level to **H2** → type the question exactly as shown');
-        out.push('4. Below it, add a **Paragraph block** with the answer from Fix Code (open with the direct answer)');
-        out.push('5. Repeat for each question → click **Update**');
+      out.push('The Fix Code tab has a replacement paragraph already written. It includes the keyword and starts with the searcher\'s problem.');
+      out.push('');
+
+      if (p === 'hubspot') {
+        out.push('## How to update the opening paragraph in HubSpot');
+        out.push('');
+        out.push('1. Log in to **app.hubspot.com → Marketing → Website → Website Pages**');
+        out.push('2. Find your page → click **Edit**');
+        out.push('3. Click on the first paragraph of text on the page (just below the title)');
+        out.push('4. Select all the text and delete it');
+        out.push('5. Type or paste the new paragraph from Fix Code');
+        out.push('6. Click **Update** → **Publish**');
+      } else if (p === 'wordpress') {
+        out.push('## How to update the opening paragraph in WordPress');
+        out.push('');
+        out.push('1. Go to **Pages → All Pages** → edit your page');
+        out.push('2. Find the first paragraph block just below your H1');
+        out.push('3. Click on it → select all text → delete it');
+        out.push('4. Paste the new text from Fix Code');
+        out.push('5. Click **Update**');
       } else if (p === 'webflow') {
-        out.push('1. Open page in Webflow Designer → drag in a Heading component at the end of content');
-        out.push('2. Set to **H2** → type the question text exactly → add Text Block below with answer');
-        out.push('3. Repeat for each question → Publish');
+        out.push('## How to update the opening paragraph in Webflow');
+        out.push('');
+        out.push('1. Open your page in Webflow Designer');
+        out.push('2. Double-click on the first paragraph of body text');
+        out.push('3. Select all → paste the new text from Fix Code');
+        out.push('4. Click **Publish**');
       } else {
-        out.push('Paste the complete HTML from Fix Code into your page content area, after the existing sections.');
+        out.push('## How to update the opening paragraph');
+        out.push('');
+        out.push('Find the first paragraph of text on this page in your editor. Select all the text and replace it with the content from Fix Code.');
       }
       break;
+    }
 
-    case 'gsc_indexing':
-      out.push('## Steps to submit for Google indexing');
+    case 'h2_section': {
+      out.push('## What is happening and why it matters');
       out.push('');
-      out.push('> **What this does:** if Google has not indexed this page, no SEO work will produce ranking results. Indexing is the prerequisite for everything else.');
+      out.push('Google is showing "People Also Ask" questions related to this page in search results. These are questions real people are searching for. If your page has a section that directly answers each question, Google may feature your page in the PAA box — giving you extra visibility without any extra ranking effort.');
       out.push('');
-      out.push('**You need access to Google Search Console for this website.**');
+      if (qs.length > 0) {
+        out.push('Questions to add to this page:');
+        qs.forEach((q, i) => out.push('- ' + (i+1) + '. ' + q));
+        out.push('');
+      }
+      out.push('The Fix Code tab has the full text already written for each section — title and answer. You just need to add them to the page.');
       out.push('');
-      out.push('1. Go to **https://search.google.com/search-console**');
-      out.push('2. Select the correct property for this website');
-      out.push('3. Paste this URL in the search bar at the top: `' + url + '`');
-      out.push('4. Press Enter — GSC checks the indexing status');
-      out.push('5. **If "URL is not on Google":** click **Request Indexing** → Google crawls within 24-48 hours');
-      out.push('6. **If "URL is on Google":** page is indexed but has low impressions — the LCP/performance fix is the priority');
-      out.push('7. Return in 3-5 days to check if impressions appear in GSC → Performance');
-      break;
 
-    case 'date_modified_schema':
-      out.push('## Steps to add dateModified to schema');
-      out.push('');
-      out.push('> **What this does:** adds a verified freshness date to your structured data. More reliable than the Last-Modified HTTP header for signaling content recency to Google.');
-      out.push('');
-      if (p === 'wordpress') {
-        out.push('1. Edit your page → add a **Custom HTML block** at the bottom');
-        out.push('2. Paste the updated schema from Fix Code');
-        out.push('3. Also add a visible "Last updated: [date]" line near the top of the content');
-        out.push('4. Click **Update**');
+      if (p === 'hubspot') {
+        out.push('## How to add the new sections in HubSpot');
+        out.push('');
+        out.push('1. Log in to **app.hubspot.com → Marketing → Website → Website Pages**');
+        out.push('2. Find your page → click **Edit**');
+        out.push('3. Scroll to the bottom of your page content');
+        out.push('4. Click **+** to add a new module → choose **Rich Text**');
+        out.push('5. In the rich text editor, type each question as a **Heading 2**');
+        out.push('6. Below each heading, paste the answer paragraph from Fix Code');
+        out.push('7. Repeat for each question');
+        out.push('8. Click **Update** → **Publish**');
+        out.push('');
+        out.push('> The heading text must match the question exactly — word for word. Google matches these precisely.');
+      } else if (p === 'wordpress') {
+        out.push('## How to add the new sections in WordPress');
+        out.push('');
+        out.push('1. Go to **Pages → All Pages** → edit your page');
+        out.push('2. Click at the end of your last content section');
+        out.push('3. Press Enter to get a new line');
+        out.push('4. Click **+** → search for **Heading** → select it');
+        out.push('5. In the heading toolbar, change the heading level to **H2**');
+        out.push('6. Type the question exactly as shown in Fix Code');
+        out.push('7. Click **+** again → add a **Paragraph** block');
+        out.push('8. Paste the answer text from Fix Code');
+        out.push('9. Repeat steps 4-8 for each question');
+        out.push('10. Click **Update**');
+      } else if (p === 'webflow') {
+        out.push('## How to add the new sections in Webflow');
+        out.push('');
+        out.push('1. Open your page in **Webflow Designer**');
+        out.push('2. Drag a **Heading** element to the bottom of your page content');
+        out.push('3. Set it to **H2** in the right panel');
+        out.push('4. Type the question text exactly as written in Fix Code');
+        out.push('5. Drag a **Text Block** below it');
+        out.push('6. Paste the answer text from Fix Code');
+        out.push('7. Repeat for each question');
+        out.push('8. Click **Publish**');
+      } else if (p === 'squarespace') {
+        out.push('## How to add the new sections in Squarespace');
+        out.push('');
+        out.push('1. Edit your page in Squarespace');
+        out.push('2. Scroll to the bottom of your content and add a new **Text block**');
+        out.push('3. Type the question → select it → set to **Heading 2** in the text toolbar');
+        out.push('4. Press Enter → type the answer paragraph');
+        out.push('5. Repeat for each question');
+        out.push('6. Click **Save**');
       } else {
-        out.push('1. Find the `<script type="application/ld+json">` block in your page head');
-        out.push('2. Replace it with the updated block from Fix Code');
-        out.push('3. Also add the visible "Last updated" label from Fix Code to the page body');
-        out.push('4. Save and publish');
+        out.push('## How to add the new sections');
+        out.push('');
+        out.push('In your CMS, go to the bottom of your page content and add a new heading (H2) with the question text, followed by a paragraph with the answer. Repeat for each question. Or share Fix Code with your developer to paste the HTML directly.');
       }
       break;
+    }
 
-    default:
-      out.push('## Steps to apply this fix');
+    case 'gsc_indexing': {
+      out.push('## What is happening and why it matters');
       out.push('');
-      out.push('Follow the instructions in the Analysis section, or share the Fix Code with your developer.');
+      out.push('This page may not be in Google\'s index yet — meaning it does not appear in search results at all. No amount of SEO work will help if Google hasn\'t found and stored the page. This step requests Google to crawl and index it.');
+      out.push('');
+      out.push('## How to submit the page to Google (5 minutes)');
+      out.push('');
+      out.push('You need access to **Google Search Console** for this website. If you do not have it, ask your developer or account manager to invite you — or to do these steps for you.');
+      out.push('');
+      out.push('1. Go to **https://search.google.com/search-console** and sign in');
+      out.push('2. Make sure you have selected the correct website in the top-left dropdown');
+      out.push('3. In the search bar at the top of the page, paste this exact URL:');
+      out.push('   **' + url + '**');
+      out.push('4. Press Enter — Google will check if this page is in its index');
+      out.push('');
+      out.push('**If the result says "URL is not on Google":**');
+      out.push('5. Click the button: **Request Indexing**');
+      out.push('6. Google will crawl the page within 24-48 hours');
+      out.push('7. Come back in 3-5 days and check **Performance → Pages** to see if this URL starts appearing');
+      out.push('');
+      out.push('**If the result says "URL is on Google":**');
+      out.push('The page IS indexed. The issue is performance — prioritise the LCP fix (Phase 0, Task 1) first.');
+      break;
+    }
+
+    case 'date_modified_schema': {
+      out.push('## What is happening and why it matters');
+      out.push('');
+      out.push('Google checks how fresh a page\'s content is when deciding how prominently to show it. Adding a "last updated" date in a format Google can read (called schema markup) makes the freshness signal more reliable and trustworthy than the server\'s automatic timestamp.');
+      out.push('');
+
+      if (p === 'hubspot') {
+        out.push('## How to add this in HubSpot');
+        out.push('');
+        out.push('1. Log in to **app.hubspot.com → Marketing → Website → Website Pages**');
+        out.push('2. Find your page → click **Edit**');
+        out.push('3. Click the **Settings** tab (at the top of the editor)');
+        out.push('4. Scroll to **Advanced Options → Head HTML**');
+        out.push('5. Paste the code from Fix Code into that box');
+        out.push('6. Also add a small "Last updated: [today\'s date]" line near the top of your visible page content');
+        out.push('7. Click **Update** → **Publish**');
+      } else if (p === 'wordpress') {
+        out.push('## How to add this in WordPress');
+        out.push('');
+        out.push('1. Go to **Pages → All Pages** → edit your page');
+        out.push('2. Scroll to the bottom of your content');
+        out.push('3. Click **+** → search **Custom HTML** → add it');
+        out.push('4. Paste the code from Fix Code');
+        out.push('5. Also add a visible "Last updated: [today\'s date]" line near the top of your content');
+        out.push('6. Click **Update**');
+      } else {
+        out.push('## How to add this');
+        out.push('');
+        out.push('Paste the code from Fix Code into your page\'s head section (the same place as other meta tags). Also add a visible "Last updated: [today\'s date]" label near the top of the page content.');
+      }
+      break;
+    }
+
+    default: {
+      out.push('## How to apply this fix');
+      out.push('');
+      out.push('Review the Analysis section above for what was found, and use the Fix Code tab for the exact code to apply. Share with your developer if you are not comfortable making these changes directly.');
+      break;
+    }
   }
 
   out.push('');
   out.push('---');
   out.push('');
-  out.push('## After applying');
-  out.push('Click **"I Applied the Fix"** button above, then **"Verify on Live Page"** — Manav will re-fetch your page and confirm the change is in place.');
+  out.push('## Done? Tell Manav');
+  out.push('Click **"I Applied the Fix"** above once you have made the change. Then click **"Verify on Live Page"** — Manav will check the live page automatically and confirm whether it worked.');
 
   return out.join('\n');
 }
