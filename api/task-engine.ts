@@ -4450,8 +4450,18 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     if (!findings || !Array.isArray(findings)) return ok(res, { error: 'findings array required' });
     try {
       const { parseFindingsToTasks, saveTasks, deleteProjectTasks } = await import('./lib/dev-engine.js');
-      /* Clear old tasks for this audit run to avoid duplication */
-      if (auditRunId) await deleteProjectTasks(projectId, auditRunId);
+      /* Only delete PENDING tasks from this audit run — never delete tasks
+         that have fix_ready, applied, done or any executed state.
+         This preserves all generated fix code across logouts and re-uploads. */
+      if (auditRunId) {
+        const { db: getDb } = await import('./lib/db.js');
+        await getDb()
+          .from('dev_tasks')
+          .delete()
+          .eq('project_id', projectId)
+          .eq('audit_run_id', auditRunId)
+          .in('status', ['pending', 'failed', 'skipped']);
+      }
       const tasks = parseFindingsToTasks(findings, { projectId, campaignId, auditRunId, targetUrl });
       const { saved, error } = await saveTasks(tasks);
       if (error) return ok(res, { error });
@@ -4594,9 +4604,8 @@ Name: ${p.name||'unknown'}
 URL: ${p.url||'unknown'}
 CMS: ${p.cms||'unknown'}
 Keyword: ${p.target_keyword||'unknown'}
-Industry: ${p.industry||'unknown'}
+Industry: ${p.industry||'unknown'}`;
 
-`;
       }
 
       // Latest 2 audit reports for comparison
@@ -4605,25 +4614,17 @@ Industry: ${p.industry||'unknown'}
         .eq('project_id', pid).order('created_at',{ascending:false}).limit(2);
       if (audits && (audits as any[]).length > 0) {
         const a = audits as any[];
-        ctx += 'LATEST AUDIT (' + new Date(a[0].created_at).toLocaleDateString() + ')
-';
-        ctx += `Mobile LCP: ${a[0].mobile_lcp_ms?(a[0].mobile_lcp_ms/1000).toFixed(1)+'s':'n/a'} | TBT: ${a[0].mobile_tbt_ms?Math.round(a[0].mobile_tbt_ms)+'ms':'n/a'}
-`;
-        ctx += `Desktop LCP: ${a[0].desktop_lcp_ms?(a[0].desktop_lcp_ms/1000).toFixed(1)+'s':'n/a'}
-`;
-        ctx += `Findings: ${a[0].findings_critical||0} critical, ${a[0].findings_warning||0} warnings
-`;
+        ctx += 'LATEST AUDIT (' + new Date(a[0].created_at).toLocaleDateString() + ')';
+        ctx += `Mobile LCP: ${a[0].mobile_lcp_ms?(a[0].mobile_lcp_ms/1000).toFixed(1)+'s':'n/a'} | TBT: ${a[0].mobile_tbt_ms?Math.round(a[0].mobile_tbt_ms)+'ms':'n/a'}`;
+        ctx += `Desktop LCP: ${a[0].desktop_lcp_ms?(a[0].desktop_lcp_ms/1000).toFixed(1)+'s':'n/a'}`;
+        ctx += `Findings: ${a[0].findings_critical||0} critical, ${a[0].findings_warning||0} warnings`;
         if (a.length > 1) {
-          ctx += `PREVIOUS AUDIT (${new Date(a[1].created_at).toLocaleDateString()})
-`;
-          ctx += `Mobile LCP: ${a[1].mobile_lcp_ms?(a[1].mobile_lcp_ms/1000).toFixed(1)+'s':'n/a'} | TBT: ${a[1].mobile_tbt_ms?Math.round(a[1].mobile_tbt_ms)+'ms':'n/a'}
-`;
+          ctx += `PREVIOUS AUDIT (${new Date(a[1].created_at).toLocaleDateString()})`;
+          ctx += `Mobile LCP: ${a[1].mobile_lcp_ms?(a[1].mobile_lcp_ms/1000).toFixed(1)+'s':'n/a'} | TBT: ${a[1].mobile_tbt_ms?Math.round(a[1].mobile_tbt_ms)+'ms':'n/a'}`;
           const lcpDelta = a[0].mobile_lcp_ms && a[1].mobile_lcp_ms ? ((a[1].mobile_lcp_ms - a[0].mobile_lcp_ms)/1000).toFixed(1) : null;
-          if (lcpDelta) ctx += `LCP change: ${parseFloat(lcpDelta) > 0 ? '+' : ''}${lcpDelta}s ${parseFloat(lcpDelta) > 0 ? '(improved)' : '(worsened)'}
-`;
+          if (lcpDelta) ctx += `LCP change: ${parseFloat(lcpDelta) > 0 ? '+' : ''}${lcpDelta}s ${parseFloat(lcpDelta) > 0 ? '(improved)' : '(worsened)'}`;
         }
-        ctx += '
-';
+        ctx += '';
 
         // Top critical findings from latest audit
         const { data: findings } = await D.from('audit_findings')
@@ -4632,12 +4633,10 @@ Industry: ${p.industry||'unknown'}
           .in('severity',['critical','red'])
           .order('priority',{ascending:true}).limit(8);
         if (findings && (findings as any[]).length > 0) {
-          ctx += 'CRITICAL FINDINGS
-';
+          ctx += 'CRITICAL FINDINGS';
           (findings as any[]).forEach(f => { ctx += `- [${f.audit_kind||'perf'}] ${f.title}
 `; });
-          ctx += '
-';
+          ctx += '';
         }
       }
 
@@ -4646,14 +4645,11 @@ Industry: ${p.industry||'unknown'}
         .select('id,name,target_keyword,status,current_rank,target_rank')
         .eq('project_id', pid).eq('status','active').limit(10);
       if (campaigns && (campaigns as any[]).length > 0) {
-        ctx += 'ACTIVE CAMPAIGNS
-';
+        ctx += 'ACTIVE CAMPAIGNS';
         (campaigns as any[]).forEach(c => {
-          ctx += `- "${c.target_keyword}" | rank: ${c.current_rank||'unranked'} → target: ${c.target_rank||'top 3'} | ${c.name}
-`;
+          ctx += `- "${c.target_keyword}" | rank: ${c.current_rank||'unranked'} → target: ${c.target_rank||'top 3'} | ${c.name}`;
         });
-        ctx += '
-';
+        ctx += '';
       }
 
       // Dev tasks summary
@@ -4665,14 +4661,11 @@ Industry: ${p.industry||'unknown'}
         const done = dt.filter(t=>t.status==='done').length;
         const p0 = dt.filter(t=>t.phase==='phase_0');
         const p0done = p0.filter(t=>t.status==='done').length;
-        ctx += `DEV TASKS: ${done}/${dt.length} done | Phase 0: ${p0done}/${p0.length}
-`;
+        ctx += `DEV TASKS: ${done}/${dt.length} done | Phase 0: ${p0done}/${p0.length}`;
         dt.filter(t=>t.status!=='done'&&t.status!=='skipped').slice(0,6).forEach(t => {
-          ctx += `  [${t.phase}] ${t.status==='fix_ready'?'→':t.status==='running'?'⟳':'○'} ${t.title}
-`;
+          ctx += `  [${t.phase}] ${t.status==='fix_ready'?'→':t.status==='running'?'⟳':'○'} ${t.title}`;
         });
-        ctx += '
-';
+        ctx += '';
       }
 
       // Board cards summary
@@ -4681,14 +4674,11 @@ Industry: ${p.industry||'unknown'}
         .order('priority',{ascending:true}).limit(15);
       if (boardCards && (boardCards as any[]).length > 0) {
         const bc = boardCards as any[];
-        ctx += `BOARD: ${bc.filter(c=>c.status==='done').length}/${bc.length} cards done
-`;
+        ctx += `BOARD: ${bc.filter(c=>c.status==='done').length}/${bc.length} cards done`;
         bc.filter(c=>c.status!=='done').slice(0,5).forEach(c => {
-          ctx += `  - ${c.title} (${c.status||'pending'})
-`;
+          ctx += `  - ${c.title} (${c.status||'pending'})`;
         });
-        ctx += '
-';
+        ctx += '';
       }
 
       // Recent documents
@@ -4696,9 +4686,8 @@ Industry: ${p.industry||'unknown'}
         .select('title,type,created_at').eq('project_id', pid)
         .order('created_at',{ascending:false}).limit(5);
       if (docs && (docs as any[]).length > 0) {
-        ctx += 'DOCUMENTS: ' + (docs as any[]).map((d:any)=>d.title).join(', ') + '
+        ctx += 'DOCUMENTS: ' + (docs as any[]).map((d:any)=>d.title).join(', ') + '';
 
-';
       }
 
     } catch (e: any) {

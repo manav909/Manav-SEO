@@ -1805,7 +1805,22 @@ function classifyFinding(f: AuditFinding, opts: { projectId: string; campaignId?
 export async function saveTasks(tasks: DevTask[]): Promise<{ saved: number; error?: string }> {
   if (!tasks.length) return { saved: 0 };
   try {
-    const rows = tasks.map(t => ({
+    // Skip task_types that already have an executed version — preserve fix code
+    const executedStatuses = ['fix_ready', 'applied', 'verifying', 'done', 'running'];
+    const projectId  = tasks[0].project_id;
+    const auditRunId = tasks[0].audit_run_id;
+    let alreadyExecuted = new Set<string>();
+    if (auditRunId) {
+      const { data: existing } = await db()
+        .from('dev_tasks').select('task_type')
+        .eq('project_id', projectId).eq('audit_run_id', auditRunId)
+        .in('status', executedStatuses);
+      if (existing) alreadyExecuted = new Set((existing as any[]).map((r: any) => r.task_type));
+    }
+    const toInsert = tasks.filter(t => !alreadyExecuted.has(t.task_type));
+    if (!toInsert.length) return { saved: 0 };
+
+    const rows = toInsert.map(t => ({
       project_id:    t.project_id,
       campaign_id:   t.campaign_id  || null,
       audit_run_id:  t.audit_run_id || null,
@@ -1865,8 +1880,14 @@ export async function getTasksForProject(projectId: string, opts?: { campaignId?
 }
 
 export async function deleteProjectTasks(projectId: string, auditRunId?: string): Promise<void> {
+  // SAFETY: only delete tasks that have never been executed.
+  // Tasks with fix_ready/applied/done status contain generated fix code
+  // that the user needs — never wipe those regardless of re-uploads or audit refreshes.
   try {
-    let q = db().from('dev_tasks').delete().eq('project_id', projectId);
+    let q = db().from('dev_tasks')
+      .delete()
+      .eq('project_id', projectId)
+      .in('status', ['pending', 'failed', 'skipped']);
     if (auditRunId) q = q.eq('audit_run_id', auditRunId);
     await q;
   } catch (e: any) {
