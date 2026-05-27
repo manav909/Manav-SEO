@@ -2317,6 +2317,32 @@ async function checkQueryDistribution(url: string, projectId: string, keyword: s
 async function checkCoreWebVitals(url: string, projectId: string): Promise<Finding[]> {
   const findings: Finding[] = [];
 
+  /* Check if site_audit_page already captured fresh PSI data via baseline.
+     If the page was baselined within the last 7 days, reuse those scores
+     instead of making a second PSI call — saves API quota and time. */
+  let cachedPsi: { lcp_ms: number | null; tbt_ms: number | null; score: number | null } | null = null;
+  try {
+    const { data: pg } = await db().from('dev_pages')
+      .select('baseline_lcp_ms,baseline_tbt_ms,baseline_score,baseline_captured_at')
+      .eq('url', url)
+      .not('baseline_captured_at', 'is', null)
+      .order('baseline_captured_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (pg) {
+      const capturedAt = new Date((pg as any).baseline_captured_at);
+      const ageMs = Date.now() - capturedAt.getTime();
+      const sevenDays = 7 * 24 * 60 * 60 * 1000;
+      if (ageMs < sevenDays && (pg as any).baseline_lcp_ms !== null) {
+        cachedPsi = {
+          lcp_ms: (pg as any).baseline_lcp_ms,
+          tbt_ms: (pg as any).baseline_tbt_ms,
+          score:  (pg as any).baseline_score,
+        };
+      }
+    }
+  } catch { /* cache lookup non-blocking */ }
+
   /* Look up PSI API key — project-level first, then platform-wide env var.
      Platform-wide: set PAGESPEED_API_KEY in Vercel env → one key for all projects. */
   const { data: psiInt } = await db().from("project_integrations")
@@ -2325,6 +2351,35 @@ async function checkCoreWebVitals(url: string, projectId: string): Promise<Findi
     (psiInt as any)?.api_key ||
     (process.env.PAGESPEED_API_KEY || '').trim() ||
     undefined;
+
+  /* If we have fresh cached PSI from baseline capture, build a lightweight
+     finding set from those numbers without making a new PSI call. */
+  if (cachedPsi && cachedPsi.lcp_ms !== null) {
+    const lcp   = cachedPsi.lcp_ms;
+    const tbt   = cachedPsi.tbt_ms;
+    const score = cachedPsi.score;
+    const sev: 'green'|'amber'|'red' = lcp < 2500 ? 'green' : lcp < 4000 ? 'amber' : 'red';
+    const lcpSec = (lcp / 1000).toFixed(2);
+    if (sev !== 'green') {
+      findings.push({
+        audit_kind: 'core_web_vitals', severity: sev, data_source: 'psi',
+        finding_title: `MOBILE LCP: ${lcpSec}s ${sev === 'red' ? '— exceeds the 4s threshold' : '— above the 2.5s target'}`,
+        finding_detail: `LCP is ${lcpSec}s (baseline measurement — within 7 days).${tbt ? ` TBT: ${Math.round(tbt)}ms.` : ''} Performance score: ${score ?? 'N/A'}/100. Google's Good threshold is under 2.5s.`,
+        recommendation: `Identify and optimise the LCP element. Check for render-blocking scripts, unoptimised images above the fold, and slow TTFB.`,
+        evidence: { lcp_ms: lcp, tbt_ms: tbt, perf_score: score, source: 'baseline_cache' },
+      });
+    }
+    if (tbt && tbt > 600) {
+      findings.push({
+        audit_kind: 'core_web_vitals', severity: 'red', data_source: 'psi',
+        finding_title: `MOBILE TBT: ${Math.round(tbt)}ms — main thread heavily blocked`,
+        finding_detail: `Total Blocking Time is ${Math.round(tbt)}ms. Good threshold: under 200ms. JavaScript is blocking the main thread significantly.`,
+        recommendation: 'Defer or remove non-critical JavaScript. Use code splitting and lazy loading for third-party scripts.',
+        evidence: { tbt_ms: tbt, source: 'baseline_cache' },
+      });
+    }
+    return findings; // Skip live PSI call entirely
+  }
 
   /* Call PSI mobile + desktop in parallel */
   const psiUrl = (strategy: 'mobile' | 'desktop') => {

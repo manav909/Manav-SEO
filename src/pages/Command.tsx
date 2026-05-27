@@ -29,6 +29,7 @@ import CapabilitiesPanel from '@/components/season/CapabilitiesPanel';
 import WarRoomSection from '@/components/season/WarRoomSection';
 import WhatNeedsYou from '@/components/season/WhatNeedsYou';
 import CampaignPreviewInline from '@/components/season/CampaignPreviewInline';
+import ObjectivePreviewInline, { type ObjectivePreviewData } from '@/components/season/ObjectivePreviewInline';
 /* Phase 21 Block 2.11 Phase A — two-mode war room */
 import ModeToggle, { readSavedMode, saveMode, type CommandMode } from '@/components/season/ModeToggle';
 import ActionDeck from '@/components/season/ActionDeck';
@@ -296,6 +297,7 @@ function CommandInner() {
 
   /* Phase 21 Block 2.7 — inline commitment-intent preview state */
   const [pendingStructure, setPendingStructure]       = useState<CampaignStructureRecommendation | null>(null);
+  const [pendingObjective, setPendingObjective]       = useState<ObjectivePreviewData | null>(null);
   const [pendingPositioning, setPendingPositioning]   = useState<ProjectPositioning | null>(null);
   const [pendingOriginalInput, setPendingOriginalInput] = useState<string>('');
   const [loadingStructure, setLoadingStructure]       = useState(false);
@@ -438,6 +440,17 @@ function CommandInner() {
       if (/(?:^|\s)(rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keywords?|seo\s+for)\b/i.test(text)) {
         routedAsCommitment = true;
       }
+    }
+
+    if (classification.intent === 'objective') {
+      const { parseObjectiveCommand } = await import('@/components/pm/api');
+      const parsed = parseObjectiveCommand(text);
+      if (parsed) {
+        const title = text.length < 80 ? text : parsed.goalType.replace(/_/g,' ');
+        setPendingObjective({ ...parsed, title });
+      }
+      setIsLoading(false);
+      return;
     }
 
     if (routedAsCommitment) {
@@ -663,6 +676,7 @@ function CommandInner() {
     setPendingStructure(null);
     setPendingPositioning(null);
     setPendingOriginalInput('');
+    setPendingObjective(null);
     setCommandError(null);
     setChatSuggestions([]);
     setSuggestionsNote(null);
@@ -1222,6 +1236,20 @@ function CommandInner() {
                   }
                 }}
                 actionRunning={actionRunning}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Objective preview — shown when objective intent command typed */}
+          <AnimatePresence>
+            {pendingObjective && selectedProjectId && (
+              <ObjectivePreviewInline
+                key="objective-preview"
+                preview={pendingObjective}
+                projectId={selectedProjectId}
+                originalInput={text}
+                onClose={() => setPendingObjective(null)}
+                onLaunched={() => { setPendingObjective(null); loadBriefing(); }}
               />
             )}
           </AnimatePresence>

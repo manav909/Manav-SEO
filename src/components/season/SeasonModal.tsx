@@ -23,6 +23,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { useEffect, useRef, useState } from 'react';
+import ObjectivePreviewInline, { type ObjectivePreviewData } from '@/components/season/ObjectivePreviewInline';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, Send, Sparkles, X, ExternalLink, AlertCircle, CheckCircle2, Layers, Lightbulb, AlertTriangle, Edit3 } from 'lucide-react';
 import { useSeason, SeasonMood } from '@/contexts/SeasonContext';
@@ -411,78 +412,23 @@ export default function SeasonModal() {
       }
     }
 
-    /* Route objective-type commands to full automated setup */
+    /* Route objective-type commands to preview → confirm → launch */
     if (classification.intent === 'objective') {
-      try {
+      const parsed = parseObjectiveCommand(q);
+      if (parsed) {
+        const title = q.length < 80 ? q : (parsed.keywords[0]
+          ? parsed.goalType.replace(/_/g,' ') + ' for "' + parsed.keywords[0] + '"'
+          : parsed.goalType.replace(/_/g,' '));
+        setPendingObjective({ ...parsed, title });
+      } else {
+        setResponse('I understood you want to set an objective but could not parse the goal type. Try: grow traffic for /page1 — or fix technical issues — or improve DA');
         setMood('thinking');
-        const parsed = parseObjectiveCommand(q);
-        if (parsed) {
-          const title = q.length < 80 ? q : (parsed.keywords[0]
-            ? `${parsed.goalType.replace(/_/g,' ')} for "${parsed.keywords[0]}"`
-            : parsed.goalType.replace(/_/g,' '));
-
-          // Get current user for profiles.client_ids update
-          const { supabase: sb } = await import('@/lib/supabase');
-          const { data: { user: currentUser } } = await sb.auth.getUser();
-
-          // Single action: creates objective + workspace + imports pages + links everything
-          const r = await fetch('/api/task-engine', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action:          'objective_full_setup',
-              projectId:       selectedProjectId,
-              campaignType:    parsed.goalType,
-              title,
-              keyword:         parsed.keywords[0] || undefined,
-              targetUrls:      parsed.targetUrls.length > 0 ? parsed.targetUrls : undefined,
-              targetLocations: parsed.location ? [{ city: parsed.location }] : undefined,
-              userId:          currentUser?.id,
-            }),
-          }).then(r => r.json());
-
-          if (r.success) {
-            const log: string[] = r.log || [];
-            const pages = r.pages_imported || 0;
-            const nextSteps: string[] = r.next_steps || [];
-
-            let reply = `## ✓ ${title}
-
-`;
-            reply += log.map((l: string) => l).join('\n') + '\n\n';
-            if (pages === 0) {
-              reply += `⚠️ **No pages imported yet.** Go to **Site Manager → Import pages** to add your URLs (paste them, upload a sitemap, or upload a Screaming Frog export).
-
-`;
-            }
-            if (nextSteps.length > 0) {
-              reply += '**Next steps:**\n' + nextSteps.map((s: string) => '\u2192 ' + s).join('\n');
-            }
-            setResponse(reply);
-            setMood('happy');
-          } else {
-            setResponse(`Couldn't complete setup: ${r.error || 'unknown error'}.
-
-Try creating the objective manually from **SEO Campaigns → Objectives**.`);
-            setMood('alert');
-          }
-        } else {
-          setResponse(`I understood you want to set an objective but couldn't parse the goal type.
-
-Try:
-- **grow traffic for /page1, /page2**
-- **fix technical issues**
-- **improve DA**
-- **local visibility for London**`);
-          setMood('thinking');
-        }
-        setSubmitting(false);
-        return;
-      } catch (e: any) {
-        // Fall through to normal handling
       }
+      setSubmitting(false);
+      return;
     }
 
-    if (routedAsCommitment) {
+        if (routedAsCommitment) {
       try {
         setMood('thinking');
         const recResult = await seoRecommendCampaignStructure({
@@ -983,6 +929,19 @@ Try:
                     Renders after user types "rank me for X, Y, Z" — shows the
                     smart-grouped structure with personality, then user confirms.
                 ════════════════════════════════════════════════════════════ */}
+                {/* Objective preview */}
+                {pendingObjective && selectedProjectId && (
+                  <div style={{ padding: '0 0 12px 0' }}>
+                    <ObjectivePreviewInline
+                      preview={pendingObjective}
+                      projectId={selectedProjectId}
+                      originalInput={input}
+                      onClose={() => setPendingObjective(null)}
+                      onLaunched={() => { setPendingObjective(null); setMood('happy'); }}
+                    />
+                  </div>
+                )}
+
                 {pendingStructure && (
                   <motion.div
                     initial={{ opacity: 0, y: 8, scale: 0.97 }}
