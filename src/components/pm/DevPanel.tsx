@@ -934,16 +934,17 @@ function TaskDetail({
 
     const result = await callApi<{ reply: string }>('dev_chat', {
       message: msg,
+      projectId,
       taskContext: {
-        title:       task.title,
-        task_type:   task.task_type,
+        title:        task.title,
+        task_type:    task.task_type,
         cms_platform: task.cms_platform || '',
-        target_url:  task.target_url || '',
-        analysis:    task.analysis    || '',
-        fix_code:    task.fix_code    || '',
+        target_url:   task.target_url   || '',
+        analysis:     task.analysis     || '',
+        fix_code:     task.fix_code     || '',
       },
-      // Only send last 6 messages to keep context window small
-      history: newMessages.slice(-6).slice(0, -1).map(m => ({ role: m.role, content: m.content })),
+      // Last 8 messages for conversation continuity
+      history: newMessages.slice(-8).slice(0, -1).map(m => ({ role: m.role, content: m.content })),
     });
 
     const reply = result.ok && result.data?.reply

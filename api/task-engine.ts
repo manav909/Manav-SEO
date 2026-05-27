@@ -4569,35 +4569,104 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
   if (action === 'dev_chat') {
     /* Contextual chat for the Developer tab.
-       The message and full task context arrive together.
-       Claude acts as a non-technical guide for applying the specific fix. */
-    const { message, taskContext, history } = body;
+       Pulls full project context from DB — all tasks, project info, audit summary.
+       Claude knows the whole picture, not just the current task. */
+    const { message, taskContext, history, projectId } = body;
     if (!message) return ok(res, { error: 'message required' });
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
     const tc = taskContext || {};
 
+    // ── Pull project context from DB ──────────────────────────────
+    let projectInfo   = '';
+    let allTasksSummary = '';
+    let auditContext  = '';
+
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const dbClient = getDb();
+
+      // Project info
+      if (projectId) {
+        const { data: proj } = await dbClient
+          .from('projects')
+          .select('name, url, cms, industry, target_keyword')
+          .eq('id', projectId)
+          .maybeSingle();
+        if (proj) {
+          projectInfo = [
+            'Project: ' + ((proj as any).name || 'unknown'),
+            'Website: ' + ((proj as any).url || tc.target_url || 'unknown'),
+            'CMS: ' + (tc.cms_platform || (proj as any).cms || 'unknown'),
+            (proj as any).industry ? 'Industry: ' + (proj as any).industry : '',
+            (proj as any).target_keyword ? 'Target keyword: ' + (proj as any).target_keyword : '',
+          ].filter(Boolean).join('\n');
+        }
+
+        // All tasks — give the AI the full task list so it understands priorities
+        const { data: tasks } = await dbClient
+          .from('dev_tasks')
+          .select('phase, category, task_type, title, status, severity, priority')
+          .eq('project_id', projectId)
+          .order('priority', { ascending: true });
+
+        if (tasks && (tasks as any[]).length > 0) {
+          const taskLines = (tasks as any[]).map(t =>
+            `  [${t.phase}] ${t.status === 'done' ? '✓' : t.status === 'fix_ready' ? '→' : '○'} ${t.title} (${t.severity})`
+          );
+          allTasksSummary = 'All tasks for this project:\n' + taskLines.join('\n');
+        }
+
+        // Audit run summary — most recent audit findings for this project
+        const { data: auditRuns } = await dbClient
+          .from('audit_reports')
+          .select('run_id, created_at, mobile_lcp_ms, mobile_tbt_ms, desktop_lcp_ms')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (auditRuns && (auditRuns as any[]).length > 0) {
+          const run = (auditRuns as any[])[0];
+          auditContext = [
+            'Latest audit data:',
+            run.mobile_lcp_ms  ? '  Mobile LCP: ' + (run.mobile_lcp_ms / 1000).toFixed(1) + 's' : '',
+            run.mobile_tbt_ms  ? '  Mobile TBT: ' + Math.round(run.mobile_tbt_ms) + 'ms' : '',
+            run.desktop_lcp_ms ? '  Desktop LCP: ' + (run.desktop_lcp_ms / 1000).toFixed(1) + 's' : '',
+          ].filter(Boolean).join('\n');
+        }
+      }
+    } catch { /* context enrichment is best-effort — chat still works without it */ }
+
+    // ── Build system prompt ───────────────────────────────────────
     const systemPrompt = [
-      'You are Manav\'s developer assistant, helping a non-technical person apply an SEO fix to their live website.',
+      'You are Manav, an SEO and web development assistant helping a non-technical person fix their client\'s website.',
       '',
-      'Current task: ' + (tc.title || 'unknown'),
-      'CMS platform: ' + (tc.cms_platform || 'unknown'),
-      'Task type: ' + (tc.task_type || 'unknown'),
-      'Page URL: ' + (tc.target_url || 'unknown'),
-      tc.analysis ? 'What was found: ' + tc.analysis.slice(0, 400) : '',
-      tc.fix_code  ? 'Fix code (first 300 chars): ' + tc.fix_code.slice(0, 300) : '',
+      '== PROJECT CONTEXT ==',
+      projectInfo || 'Project info not available.',
       '',
-      'Rules:',
-      '- Answer in plain English — no jargon without explanation',
-      '- Keep responses short and actionable (2-4 sentences unless they need more)',
-      '- If they are confused, ask what they see on their screen right now',
-      '- Be calm and encouraging — this is a live client site',
-      '- Never say "just" or "simply" — nothing is simple if you don\'t know where to click',
-      '- If they ask something unrelated to this task, gently redirect back',
+      allTasksSummary ? '== ALL TASKS ==\n' + allTasksSummary : '',
+      auditContext    ? '== AUDIT DATA ==\n' + auditContext    : '',
+      '',
+      '== CURRENT TASK (the one they are working on right now) ==',
+      'Task: '        + (tc.title    || 'unknown'),
+      'Type: '        + (tc.task_type || 'unknown'),
+      'Page: '        + (tc.target_url || 'unknown'),
+      tc.analysis ? 'What was found: ' + tc.analysis.slice(0, 500)    : '',
+      tc.fix_code  ? 'Fix code preview: ' + tc.fix_code.slice(0, 400) : '',
+      '',
+      '== YOUR RULES ==',
+      '- You know the whole project — reference other tasks when relevant',
+      '- Answer in plain English — never use jargon without explaining it',
+      '- Be specific: name the exact menu, button, or tab they need to click',
+      '- Keep answers to 3-5 sentences unless they ask for more detail',
+      '- If they are confused, ask "what do you see on your screen right now?"',
+      '- Be calm — this is a live client site and mistakes feel scary',
+      '- If they ask about a different task, answer it — you know all the tasks',
+      '- If they ask about audit data, reference the actual numbers you have',
+      '- Never say "just" or "simply" — be specific instead',
     ].filter(Boolean).join('\n');
 
     const messages = [
-      ...(Array.isArray(history) ? history : []),
+      ...(Array.isArray(history) ? history.slice(-8) : []),
       { role: 'user', content: message },
     ];
 
