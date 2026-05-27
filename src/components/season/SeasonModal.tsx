@@ -402,19 +402,22 @@ export default function SeasonModal() {
          - Question → falls through to the existing LLM brain */
     let routedAsCommitment = false;
     let routedAsExploration = false;
+    let intentResult: string = 'question';
     try {
       const classification = await seoClassifyIntent({ text: q });
-      if (classification.intent === 'commitment') routedAsCommitment = true;
-      else if (classification.intent === 'exploration') routedAsExploration = true;
+      intentResult = classification.intent || 'question';
+      if (intentResult === 'commitment') routedAsCommitment = true;
+      else if (intentResult === 'exploration') routedAsExploration = true;
     } catch {
       /* Fallback to a fast regex if classification API fails */
       if (/(?:^|\s)(rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keywords?|seo\s+for)\b/i.test(q)) {
         routedAsCommitment = true;
+        intentResult = 'commitment';
       }
     }
 
     /* Route objective-type commands to preview → confirm → launch */
-    if (classification.intent === 'objective') {
+    if (intentResult === 'objective') {
       const parsed = parseObjectiveCommand(q);
       if (parsed) {
         const title = q.length < 80 ? q : (parsed.keywords[0]
