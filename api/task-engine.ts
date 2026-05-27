@@ -1,5 +1,5 @@
 /**
- * task-engine.ts — Manav Brain's core execution and learning engine
+ * task-engine.ts — Manav Brain\'s core execution and learning engine
  *
  * AUTO-APPROVAL RULES (saves directly as 'active'):
  *   technical / quick-win  → objective facts, auto-approve
@@ -60,7 +60,7 @@ async function sendLeadEmail(opts: {
           from: "Manav | SEO Season <manav@seoseason.com>",
           to: [opts.toLead],
           subject: `Your Free SEO Audit — ${opts.leadUrl || ""}`,
-          text: `Hi ${opts.leadName || "there"},\n\nThank you for requesting your free SEO audit.\n\n${scoreText}\n\nKey Issues Found:\n${issuesList || "No major issues detected."}\n\nI'll be in touch shortly with your full report and personalised recommendations.\n\nBest,\nManav\nSEO Season\nhttps://seoseason.com`,
+          text: `Hi ${opts.leadName || "there"},\n\nThank you for requesting your free SEO audit.\n\n${scoreText}\n\nKey Issues Found:\n${issuesList || "No major issues detected."}\n\nI\'ll be in touch shortly with your full report and personalised recommendations.\n\nBest,\nManav\nSEO Season\nhttps://seoseason.com`,
         }),
       });
     }
@@ -702,7 +702,7 @@ Return ONLY raw JSON:
       { id:"pitch_deck", label:"Pitch Deck", icon:"🎯", desc:"7-slide visual presentation covering findings, opportunity and next steps.", priority: "essential" },
       { id:"case_study", label:"Case Study", icon:"📊", desc:"Real-world example from a similar business showing measurable results.", priority: sevCounts.critical > 0 ? "essential" : "recommended" },
       { id:"action_plan", label:"90-Day Action Plan", icon:"🗓", desc:"Phased roadmap with specific tasks, deliverables and KPIs.", priority: "essential" },
-      { id:"competitive_brief", label:"Competitive Brief", icon:"⚔️", desc:"Where they're vulnerable and the opportunity to outrank competitors.", priority: score < 50 ? "essential" : "recommended" },
+      { id:"competitive_brief", label:"Competitive Brief", icon:"⚔️", desc:"Where they\'re vulnerable and the opportunity to outrank competitors.", priority: score < 50 ? "essential" : "recommended" },
     ];
     return ok(res, { success: true, suggestions: docs });
   }
@@ -868,7 +868,7 @@ Return ONLY raw JSON:
           score, executiveSummary:rawUrl+" shows "+(missing.length>0?missing.length+" foundational SEO gaps that need immediate attention.":"a solid technical foundation with opportunities for deeper optimisation."),
           categories:[
             {name:"Technical SEO",score:hasSchema&&hasVp?70:40,narrative:"Technical foundations "+(hasSchema?"partially in place":"largely missing")+".",
-              issues:[!hasSchema?{issue:"No structured data (JSON-LD) found",severity:"high",explanation:"Without schema markup, Google cannot identify your business type or services. Rich results require this.",fix:"Add Organization and WebPage schema to the homepage via Google's Structured Data Markup Helper.",algorithmNote:"Google rewards clearly-identified content types"}:{issue:"Basic technical setup present",severity:"low",explanation:"Core technical elements detected.",fix:"Run a deeper crawl for hidden issues.",algorithmNote:null}]},
+              issues:[!hasSchema?{issue:"No structured data (JSON-LD) found",severity:"high",explanation:"Without schema markup, Google cannot identify your business type or services. Rich results require this.",fix:"Add Organization and WebPage schema to the homepage via Google\'s Structured Data Markup Helper.",algorithmNote:"Google rewards clearly-identified content types"}:{issue:"Basic technical setup present",severity:"low",explanation:"Core technical elements detected.",fix:"Run a deeper crawl for hidden issues.",algorithmNote:null}]},
             {name:"On-Page SEO",score:hasTitle&&hasMeta&&hasH1?70:40,narrative:"On-page signals "+(hasTitle&&hasMeta&&hasH1?"present but can be refined":"incomplete")+".",
               issues:[
                 ...(!hasTitle?[{issue:"Title tag missing",severity:"critical",explanation:"Title tags are one of the strongest ranking signals. Missing = Google generates its own, usually less effective.",fix:"Add a 50-60 char title with primary keyword in the first 30 characters.",algorithmNote:null}]:
@@ -877,7 +877,7 @@ Return ONLY raw JSON:
                 ...(!hasH1?[{issue:"H1 heading not found",severity:"critical",explanation:"H1 is the primary on-page topic signal. Without it Google has reduced clarity about page content.",fix:"Add one H1 per page containing your primary target keyword.",algorithmNote:null}]:h1Text?[{issue:'H1: "'+h1Text.trim().slice(0,50)+'"',severity:"low",explanation:"H1 is present. Verify it contains the target keyword.",fix:"Ensure H1 exactly matches the keyword you want to rank for.",algorithmNote:null}]:[]),
               ]},
             {name:"Content Quality",score:50,narrative:"Content depth requires a full crawl to assess properly.",
-              issues:[{issue:"Content depth not fully assessable",severity:"medium",explanation:"Google's Helpful Content system rewards sites demonstrating genuine expertise. Thin content is actively penalised.",fix:"Audit all pages for content depth, authorship signals and E-E-A-T compliance.",algorithmNote:"Helpful Content Update — depth and expertise are direct ranking factors"}]},
+              issues:[{issue:"Content depth not fully assessable",severity:"medium",explanation:"Google\'s Helpful Content system rewards sites demonstrating genuine expertise. Thin content is actively penalised.",fix:"Audit all pages for content depth, authorship signals and E-E-A-T compliance.",algorithmNote:"Helpful Content Update — depth and expertise are direct ranking factors"}]},
             {name:"User Experience",score:hasVp?60:40,narrative:"Core Web Vitals are a confirmed ranking factor.",
               issues:[{issue:"Page speed not tested",severity:"medium",explanation:"Core Web Vitals (LCP, CLS, INP) directly affect rankings in competitive searches.",fix:"Run Google PageSpeed Insights on key pages. Target 90+ on mobile. Focus on LCP under 2.5s first.",algorithmNote:"Core Web Vitals — direct ranking signal since 2021"}]},
           ],
@@ -957,11 +957,11 @@ Return ONLY raw JSON:
       followup_email: "Write a FOLLOW-UP EMAIL after a discovery call. Reference specific things from the conversation analysis. Paragraph 1: thank them and reference one specific thing they said (use main_need or hidden_concern). Paragraph 2: summarise the 3 biggest opportunities you identified, being specific to their industry and audit findings. Paragraph 3: proposed next step with a timeline. Include a realistic pricing indication based on their business size. Sign off with genuine enthusiasm. 200-280 words. No placeholders.",
       audit_summary: "Write a CLIENT-READY SEO AUDIT SUMMARY. Use every audit issue found. For each issue: (1) issue name in plain English, (2) what it means for their customers finding them, (3) what we will do to fix it, (4) expected improvement timeline. Then: QUICK WINS section — 2-3 fixes achievable in the first week. THE BIG PICTURE section — if all issues are fixed, what does ranking on page 1 look like in 90 days for their main keywords. Reference algorithm knowledge to explain why these issues matter right now in terms of current Google/AI search behaviour. 400-500 words. No placeholders.",
       whatsapp_msg: "Write a SHORT WHATSAPP/FIVERR MESSAGE. One paragraph, maximum 100 words. Reference something SPECIFIC about their website or their message (use actual audit finding or conversation insight). Show you have done your homework. End with one clear, easy call to action. Must feel personal, not templated. No placeholders.",
-      case_study: "Write a MINI CASE STUDY about a business in the same industry as this prospect. Make it realistic and specific. SITUATION: describe a business with the exact same problems this prospect has (reference their audit issues and conversation). WHAT WE DID: 4 specific actions taken, referencing actual SEO techniques and algorithm knowledge. RESULTS: specific numbers — traffic increase percentage, keyword rankings achieved (specific keywords in their niche), leads per month before and after, timeframe. THE TURNING POINT: the one insight that changed everything. HOW THIS APPLIES TO YOU: direct connection to the prospect's situation. 350-400 words. Use specific, believable numbers. No placeholders.",
-      suggestion_doc: "You are a senior SEO consultant producing a client-facing strategic document. This document backs up a specific outreach message with substance, credibility, and a clear path forward. Structure: (1) THE MESSAGE — reproduce the exact script word-for-word in a formatted box under the heading 'Recommended Message'. Do not change a single word. (2) WHY NOW — 2 focused paragraphs: first, what you specifically found about this client's situation that makes this the right move; second, why timing matters and what they risk by waiting. Reference their actual website, industry, and any audit findings. (3) THE PLAN — a numbered 3-step process showing exactly what happens if they say yes. Each step: one sentence of what we do, one sentence of what they get, timeline in days. (4) EVIDENCE — one specific case example from a similar business: situation, what was done, result in numbers. Make it realistic and industry-relevant. (5) NEXT STEP — one short paragraph, one clear low-friction ask. No pressure, just logic. Total: 450-600 words. No placeholders. Write as a senior consultant who has done this many times — authoritative, specific, and human.",
+      case_study: "Write a MINI CASE STUDY about a business in the same industry as this prospect. Make it realistic and specific. SITUATION: describe a business with the exact same problems this prospect has (reference their audit issues and conversation). WHAT WE DID: 4 specific actions taken, referencing actual SEO techniques and algorithm knowledge. RESULTS: specific numbers — traffic increase percentage, keyword rankings achieved (specific keywords in their niche), leads per month before and after, timeframe. THE TURNING POINT: the one insight that changed everything. HOW THIS APPLIES TO YOU: direct connection to the prospect\'s situation. 350-400 words. Use specific, believable numbers. No placeholders.",
+      suggestion_doc: "You are a senior SEO consultant producing a client-facing strategic document. This document backs up a specific outreach message with substance, credibility, and a clear path forward. Structure: (1) THE MESSAGE — reproduce the exact script word-for-word in a formatted box under the heading 'Recommended Message'. Do not change a single word. (2) WHY NOW — 2 focused paragraphs: first, what you specifically found about this client\'s situation that makes this the right move; second, why timing matters and what they risk by waiting. Reference their actual website, industry, and any audit findings. (3) THE PLAN — a numbered 3-step process showing exactly what happens if they say yes. Each step: one sentence of what we do, one sentence of what they get, timeline in days. (4) EVIDENCE — one specific case example from a similar business: situation, what was done, result in numbers. Make it realistic and industry-relevant. (5) NEXT STEP — one short paragraph, one clear low-friction ask. No pressure, just logic. Total: 450-600 words. No placeholders. Write as a senior consultant who has done this many times — authoritative, specific, and human.",
       objection_response: "Write a PROFESSIONAL OBJECTION RESPONSE. Use the conversion_blocker and hidden_concern from the conversation analysis to understand exactly what the objection is. ACKNOWLEDGE: genuinely validate their concern in one sentence. REFRAME: show a different way to see it, using specific data or logic. EVIDENCE: cite a specific result (from brain learnings or a realistic industry example). RISK REMOVAL: offer something that makes the first step feel safe (free audit, 30-day review, month-by-month contract). CLOSE: one clear, easy ask. 130-160 words. Address their ACTUAL objection, not a generic one.",
     };
-    const sysPrompt = "You are " + bName + ", a senior SEO consultant who has been doing this for years. You write client documents that win business — proposals, emails, and strategic documents that feel personal, authoritative, and impossible to ignore. Write as a real human expert would: with conviction, specific knowledge, and genuine insight into the client's situation. Never use phrases like 'leverage', 'cutting-edge', 'state-of-the-art', 'innovative solutions', 'we believe', 'we think', 'it is important to'. Never mention AI, automation, or technology tools. Write entirely in your own voice — confident, warm, specific, and direct. Every sentence must earn its place. No padding, no corporate speak. Use active voice throughout. Do not leave anything for the reader to fill in.";
+    const sysPrompt = "You are " + bName + ", a senior SEO consultant who has been doing this for years. You write client documents that win business — proposals, emails, and strategic documents that feel personal, authoritative, and impossible to ignore. Write as a real human expert would: with conviction, specific knowledge, and genuine insight into the client\'s situation. Never use phrases like 'leverage', 'cutting-edge', 'state-of-the-art', 'innovative solutions', 'we believe', 'we think', 'it is important to'. Never mention AI, automation, or technology tools. Write entirely in your own voice — confident, warm, specific, and direct. Every sentence must earn its place. No padding, no corporate speak. Use active voice throughout. Do not leave anything for the reader to fill in.";
     const userPrompt = "CONTEXT:\n" + ctx.join("\n") + (body.suggestionContext ? "\n\nSUGGESTION CONTEXT:\n" + String(body.suggestionContext).slice(0,600) : "") + "\n\nTASK: " + (DOC_PROMPTS[docType] || DOC_PROMPTS.proposal) + "\n\nReturn a JSON object with this EXACT structure (raw JSON only, no markdown):\n{\"title\":\"document title\",\"subtitle\":\"compelling one-line subtitle\",\"recipientName\":\"client name\",\"preparedFor\":\"company name if known\",\"sections\":[{\"heading\":\"SECTION HEADING\",\"body\":\"full section text — use \\\\n for line breaks, use \\\\n\\\\n for paragraph breaks\",\"type\":\"intro|findings|plan|pricing|proof|cta|body\"}],\"footerNote\":\"personalised note\"}";
     try {
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -1695,11 +1695,11 @@ Return ONLY raw JSON:
       if (bdeNotes) lc.push("BDE is thinking: " + String(bdeNotes).slice(0, 300));
       if (attachmentCtx) lc.push("Client shared: " + String(attachmentCtx).slice(0, 400));
 
-      const sysPrompt = "You are an elite Fiverr BDE coach working live alongside a salesperson. Your job is to help them close deals. You know the full conversation history and the client context. When given the client's latest message, you provide the single best reply the BDE should send. Write in first person as the BDE. Be natural, warm, and persuasive — never robotic. Reference specifics from the conversation. Keep messages short enough to feel like real Fiverr messages (under 150 words unless the situation demands more). Never say things that would feel like a template.";
+      const sysPrompt = "You are an elite Fiverr BDE coach working live alongside a salesperson. Your job is to help them close deals. You know the full conversation history and the client context. When given the client\'s latest message, you provide the single best reply the BDE should send. Write in first person as the BDE. Be natural, warm, and persuasive — never robotic. Reference specifics from the conversation. Keep messages short enough to feel like real Fiverr messages (under 150 words unless the situation demands more). Never say things that would feel like a template.";
 
       const userPrompt = (lc.length ? "LEAD CONTEXT:\n" + lc.join("\n") + "\n\n" : "")
         + (history ? "CONVERSATION SO FAR:\n" + history + "\n\n" : "")
-        + "CLIENT'S LATEST MESSAGE:\n" + newClientMessage
+        + "CLIENT\'S LATEST MESSAGE:\n" + newClientMessage
         + "\n\nProvide a JSON response:\n"
         + '{"suggestedReply":"the exact message to send","messageAnalysis":{"emotion":"curious/excited/hesitant/frustrated/ready_to_buy","intent":"what they really want","signal":"what this message reveals about close probability","risk":"any red flag to be aware of"},"followUp":{"needed":true/false,"when":"e.g. if no reply in 24 hours","what":"what to say"},"coachNote":"one sentence of tactical advice for the BDE"}';
 
@@ -1775,11 +1775,11 @@ Return ONLY raw JSON:
       if (bdeNotes) lc.push("BDE is thinking: " + String(bdeNotes).slice(0, 300));
       if (attachmentCtx) lc.push("Client shared: " + String(attachmentCtx).slice(0, 400));
 
-      const sysPrompt = "You are an elite Fiverr BDE coach working live alongside a salesperson. Your job is to help them close deals. You know the full conversation history and the client context. When given the client's latest message, you provide the single best reply the BDE should send. Write in first person as the BDE. Be natural, warm, and persuasive — never robotic. Reference specifics from the conversation. Keep messages short enough to feel like real Fiverr messages (under 150 words unless the situation demands more). Never say things that would feel like a template.";
+      const sysPrompt = "You are an elite Fiverr BDE coach working live alongside a salesperson. Your job is to help them close deals. You know the full conversation history and the client context. When given the client\'s latest message, you provide the single best reply the BDE should send. Write in first person as the BDE. Be natural, warm, and persuasive — never robotic. Reference specifics from the conversation. Keep messages short enough to feel like real Fiverr messages (under 150 words unless the situation demands more). Never say things that would feel like a template.";
 
       const userPrompt = (lc.length ? "LEAD CONTEXT:\n" + lc.join("\n") + "\n\n" : "")
         + (history ? "CONVERSATION SO FAR:\n" + history + "\n\n" : "")
-        + "CLIENT'S LATEST MESSAGE:\n" + newClientMessage
+        + "CLIENT\'S LATEST MESSAGE:\n" + newClientMessage
         + "\n\nProvide a JSON response:\n"
         + '{"suggestedReply":"the exact message to send","messageAnalysis":{"emotion":"curious/excited/hesitant/frustrated/ready_to_buy","intent":"what they really want","signal":"what this message reveals about close probability","risk":"any red flag to be aware of"},"followUp":{"needed":true/false,"when":"e.g. if no reply in 24 hours","what":"what to say"},"coachNote":"one sentence of tactical advice for the BDE"}';
 
@@ -2498,7 +2498,7 @@ Return ONLY raw JSON:
   /* ── RUN SCHEDULED VERIFICATIONS — Module 02 The Closed Loop runner ── */
   if (action === "run_scheduled_verifications") {
     /* ── PM cron jobs (Phase C) — runs alongside the verification runner.
-       Best-effort; failures don't block verifications. */
+       Best-effort; failures don\'t block verifications. */
     let pmCronSummary: any = null;
     try {
       const { pmCronTick } = await import("./lib/pm-lifecycle.js");
@@ -3374,7 +3374,7 @@ HTML: ${html.slice(0,2000)}`}]})});
         .select('role,content').eq('session_id',sessionId)
         .order('created_at',{ascending:true}).limit(10);
 
-      const systemPrompt=`You are the SEO Season Empire AI — an intelligent assistant with full access to this SEO agency's data.
+      const systemPrompt=`You are the SEO Season Empire AI — an intelligent assistant with full access to this SEO agency\'s data.
 You know everything about the business: clients, projects, SEO performance, staff, learnings, health scores.
 Answer questions about any aspect of the empire. Be specific, cite real data, be actionable.
 
@@ -3747,7 +3747,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       learningsBlock ? "\n" + learningsBlock : "",
       "",
       "RULES: State only facts from data above. Flag every assumption.",
-      "End with Manav's Take — what excites you, what to watch, one honest concern.",
+      "End with Manav\'s Take — what excites you, what to watch, one honest concern.",
     ].filter(l => l !== "").join("\n");
 
     res.writeHead(200, {
@@ -4575,6 +4575,93 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     } catch (e: any) {
       return ok(res, { error: e?.message });
     }
+  }
+
+  if (action === 'dev_save_thread') {
+    /* Save client thread messages to the task.
+       client_thread is a JSONB array of { role, content, timestamp }. */
+    const { taskId, thread } = body;
+    if (!taskId || !Array.isArray(thread)) return ok(res, { error: 'taskId and thread array required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      await getDb().from('dev_tasks')
+        .update({ client_thread: thread, updated_at: new Date().toISOString() })
+        .eq('id', taskId);
+      return ok(res, { success: true });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'dev_approve_task') {
+    /* Mark a task as approved by the client. */
+    const { taskId, approved } = body;
+    if (!taskId) return ok(res, { error: 'taskId required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      await getDb().from('dev_tasks').update({
+        client_approved:    approved !== false,
+        client_approved_at: approved !== false ? new Date().toISOString() : null,
+        updated_at:         new Date().toISOString(),
+      }).eq('id', taskId);
+      return ok(res, { success: true });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'dev_thread_reply') {
+    /* Generate a PM reply to a client concern or question.
+       Uses the full task context + thread history. */
+    const { taskId, projectId: pid, thread } = body;
+    if (!taskId) return ok(res, { error: 'taskId required' });
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+    try {
+      const { getTask } = await import('./lib/dev-engine.js');
+      const task = await getTask(taskId);
+      if (!task) return ok(res, { error: 'task not found' });
+
+      let projectName = 'the project';
+      let agencyName  = 'our SEO team';
+      if (pid) {
+        try {
+          const { db: getDb } = await import('./lib/db.js');
+          const { data: proj } = await getDb().from('projects').select('name').eq('id', pid).maybeSingle();
+          if (proj) projectName = (proj as any).name || projectName;
+        } catch {}
+      }
+
+      const threadText = (Array.isArray(thread) ? thread : [])
+        .map((m: any) => `${m.role === 'client' ? 'CLIENT' : 'PM'}: ${m.content}`)
+        .join('');
+
+      const sys = [
+        'You are a senior SEO consultant writing a professional reply to a client.',
+        'The client has raised a concern or question about a proposed website change.',
+        'Your reply must: address their concern directly, reassure where appropriate,',
+        'be honest about trade-offs, and move toward a clear next step.',
+        'Tone: warm, confident, expert. Length: 120-180 words. No jargon.',
+      ].join(' ');
+
+      const usr = [
+        'Task: ' + task.title,
+        'What we found: ' + (task.analysis || task.finding_title || '').slice(0, 300),
+        '',
+        'Thread so far:',
+        threadText,
+        '',
+        'Write a professional reply from the PM to the client.',
+      ].join('');
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 500, system: sys, messages: [{ role: 'user', content: usr }] }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const data = await resp.json() as any;
+      const reply = (data?.content?.[0]?.text || '').trim();
+      return ok(res, { success: true, reply });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
   }
 
   if (action === 'dev_client_brief') {

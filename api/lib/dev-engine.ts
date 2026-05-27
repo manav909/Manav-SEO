@@ -72,8 +72,18 @@ export interface DevTask {
   cms_platform?:          string;
   llm_calls_used?:        number;
   executed_at?:           string;
+  // Client approval thread
+  client_thread?:         ClientMessage[];
+  client_approved?:       boolean;
+  client_approved_at?:    string;
   created_at?:            string;
   updated_at?:            string;
+}
+
+export interface ClientMessage {
+  role:      'pm' | 'client';
+  content:   string;
+  timestamp: string;
 }
 
 type TaskStatus = 'pending' | 'running' | 'fix_ready' | 'applied' | 'verifying' | 'done' | 'skipped' | 'failed';
@@ -562,10 +572,13 @@ interface AiResult {
 // ─────────────────────────────────────────────────────────────
 
 async function executeWithAuditData(task: DevTask, cms: CmsContext): Promise<AiResult> {
-  const { sys, usr } = buildPromptFromAuditData(task, cms);
-  // PATH A tasks (h1, h2, faq, meta, gsc) use Haiku — 3-5x faster response, adequate quality.
-  // PATH B/C tasks that analyse live HTML use Sonnet for accuracy.
-  return callAI(task, sys, usr, MODEL_FAST);
+  // Pass client thread if it exists — regeneration takes their feedback into account
+  const thread = Array.isArray(task.client_thread) && task.client_thread.length > 0
+    ? task.client_thread : undefined;
+  const { sys, usr } = buildPromptFromAuditData(task, cms, thread);
+  // Use Sonnet when there is a client thread — their concerns need quality reasoning
+  const model = thread ? MODEL : MODEL_FAST;
+  return callAI(task, sys, usr, model);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -881,7 +894,7 @@ Reply with ONLY valid JSON (no markdown, no backticks):
   "paa_questions": ["question strings if faq_schema or h2_section task, else empty array"]
 }`;
 
-function buildPromptFromAuditData(task: DevTask, cms: CmsContext): { sys: string; usr: string } {
+function buildPromptFromAuditData(task: DevTask, cms: CmsContext, clientThread?: ClientMessage[]): { sys: string; usr: string } {
   const ev  = task.finding_detail || '';
   const url = task.target_url || 'the page URL';
   const p   = cms.platform;
@@ -927,7 +940,23 @@ function buildPromptFromAuditData(task: DevTask, cms: CmsContext): { sys: string
     image_format: imgFmt,
   };
 
-  return { sys: AI_SYSTEM, usr: prompts[task.task_type] || (context + nl + nl + 'Generate the exact fix code for this task based on the audit finding data.') };
+  let basePrompt = prompts[task.task_type] || (context + nl + nl + 'Generate the exact fix code for this task based on the audit finding data.');
+
+  // If a client thread exists, append it — the regenerated fix must account for their concerns
+  if (clientThread && clientThread.length > 0) {
+    const threadText = clientThread
+      .map(m => (m.role === 'client' ? 'CLIENT: ' : 'PM: ') + m.content)
+      .join(nl);
+    basePrompt += nl + nl +
+      '=== CLIENT FEEDBACK ===' + nl +
+      'The client has reviewed this fix and provided the following feedback. ' +
+      'Adjust your analysis and fix code to address their concerns while still solving the underlying SEO issue.' + nl +
+      threadText + nl +
+      '=== END CLIENT FEEDBACK ===' + nl +
+      'Generate an updated fix that addresses the client\'s concerns.';
+  }
+
+  return { sys: AI_SYSTEM, usr: basePrompt };
 }
 
 function buildPromptWithHtml(task: DevTask, snapshotHtml: string, cms: CmsContext): { sys: string; usr: string } {

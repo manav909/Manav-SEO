@@ -881,7 +881,7 @@ export default function DevPanel({ projectId }: { projectId: string }) {
 // TASK DETAIL PANEL
 // ─────────────────────────────────────────────────────────────
 
-type DetailTab = 'instructions' | 'code' | 'rollback' | 'verify';
+type DetailTab = 'instructions' | 'code' | 'rollback' | 'verify' | 'client';
 
 function TaskDetail({
   task,
@@ -917,6 +917,13 @@ function TaskDetail({
   const [briefLoading, setBriefLoading] = useState(false);
   const [brief,        setBrief]        = useState<{ subject: string; body: string; summary: string } | null>(null);
   const [briefCopied,  setBriefCopied]  = useState(false);
+  // Client thread
+  const [thread,       setThread]       = useState<{ role: 'pm'|'client'; content: string; timestamp: string }[]>([]);
+  const [clientInput,  setClientInput]  = useState('');
+  const [threadSaving, setThreadSaving] = useState(false);
+  const [replyLoading, setReplyLoading] = useState(false);
+  const [draftReply,   setDraftReply]   = useState('');
+  const [replyCopied,  setReplyCopied]  = useState(false);
 
   // Reset to instructions tab when a different task is selected
   useEffect(() => {
@@ -924,6 +931,10 @@ function TaskDetail({
     setSnapshot(null);
     setChatOpen(false);
     setChatMessages([]);
+    setBriefOpen(false);
+    setBrief(null);
+    setThread(Array.isArray(task.client_thread) ? task.client_thread : []);
+    setDraftReply('');
   }, [task.id]);
 
   const generateBrief = async () => {
@@ -944,6 +955,33 @@ function TaskDetail({
     } else {
       setBrief({ subject: 'Error', body: result.error || 'Could not generate brief. Try again.', summary: '' });
     }
+  };
+
+  const addClientMessage = async (role: 'pm'|'client', content: string) => {
+    if (!content.trim()) return;
+    const newMsg = { role, content: content.trim(), timestamp: new Date().toISOString() };
+    const newThread = [...thread, newMsg];
+    setThread(newThread);
+    if (role === 'client') setClientInput('');
+    setThreadSaving(true);
+    await callApi('dev_save_thread', { taskId: task.id, thread: newThread });
+    setThreadSaving(false);
+  };
+
+  const generateReply = async () => {
+    setReplyLoading(true);
+    const result = await callApi<{ reply: string }>('dev_thread_reply', {
+      taskId: task.id, projectId, thread,
+    });
+    setReplyLoading(false);
+    if (result.ok && (result as any).data?.reply) setDraftReply((result as any).data.reply);
+  };
+
+  const markApproved = async (approved: boolean) => {
+    await callApi('dev_approve_task', { taskId: task.id, approved });
+    await reloadTask(task.id);
+    // Add a PM note to thread
+    await addClientMessage('pm', approved ? '✓ Client approval received and recorded.' : '✗ Client approval withdrawn.');
   };
 
   const sendChat = async () => {
@@ -1389,7 +1427,7 @@ function TaskDetail({
       {hasContent && (
         <>
           <div className="flex gap-0.5 border-b border-border">
-            {(['instructions', 'code', 'rollback', 'verify'] as const).map(tab => (
+            {(['instructions', 'code', 'rollback', 'verify', 'client'] as const).map(tab => (
               <button
                 key={tab}
                 type="button"
@@ -1541,6 +1579,146 @@ function TaskDetail({
                   ⚠️ Mark the fix as applied first (button above), then use "Verify on Live Page" for automatic checking.
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'client' && (
+            <div className="space-y-4 p-1">
+
+              {/* Approval status banner */}
+              {task.client_approved ? (
+                <div className="flex items-center gap-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3">
+                  <span className="text-emerald-400 text-lg">✓</span>
+                  <div>
+                    <div className="text-sm font-semibold text-emerald-400">Client approved</div>
+                    {task.client_approved_at && (
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {new Date(task.client_approved_at).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => markApproved(false)}
+                    className="ml-auto text-[10px] text-muted-foreground hover:text-foreground border border-border rounded px-2 py-1">
+                    Withdraw
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => markApproved(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/25 transition-all">
+                    ✓ Mark as Approved
+                  </button>
+                  <span className="text-xs text-muted-foreground">Did client reply YES? Mark it here.</span>
+                </div>
+              )}
+
+              {/* Thread timeline */}
+              {thread.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Thread</div>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {thread.map((msg, i) => (
+                      <div key={i} className={`flex gap-2.5 ${msg.role === 'pm' ? 'justify-end' : 'justify-start'}`}>
+                        {msg.role === 'client' && (
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-[9px] font-bold text-amber-400 mt-0.5">C</div>
+                        )}
+                        <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
+                          msg.role === 'pm'
+                            ? 'bg-primary/15 border border-primary/20 text-foreground rounded-tr-sm'
+                            : 'bg-amber-500/8 border border-amber-500/20 text-foreground rounded-tl-sm'
+                        }`}>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              {msg.role === 'pm' ? 'PM' : 'Client'}
+                            </span>
+                            <span className="text-[9px] text-muted-foreground/60">
+                              {new Date(msg.timestamp).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                            </span>
+                          </div>
+                          {msg.content}
+                        </div>
+                        {msg.role === 'pm' && (
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[9px] font-bold text-primary mt-0.5">M</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Paste client message */}
+              <div className="space-y-2">
+                <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Paste client reply
+                </div>
+                <textarea
+                  value={clientInput}
+                  onChange={e => setClientInput(e.target.value)}
+                  placeholder="Paste what the client said — approval, concern, question, or modification request…"
+                  rows={4}
+                  className="w-full px-3.5 py-3 rounded-xl border border-border bg-background text-sm resize-none focus:outline-none focus:border-amber-500/40 transition-colors placeholder:text-muted-foreground/40 leading-relaxed"
+                />
+                <div className="flex gap-2">
+                  <button type="button"
+                    onClick={() => addClientMessage('client', clientInput)}
+                    disabled={!clientInput.trim() || threadSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 text-sm font-semibold hover:bg-amber-500/25 transition-all disabled:opacity-40"
+                  >
+                    {threadSaving ? 'Saving…' : '+ Add to thread'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Actions when thread has client messages */}
+              {thread.some(m => m.role === 'client') && (
+                <div className="space-y-3 pt-1 border-t border-border">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Next steps
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button"
+                      onClick={onExecute}
+                      className="flex flex-col items-start gap-0.5 px-3.5 py-3 rounded-xl bg-primary/10 border border-primary/20 hover:bg-primary/15 transition-all text-left"
+                    >
+                      <span className="text-xs font-semibold text-primary">↺ Regenerate fix</span>
+                      <span className="text-[10px] text-muted-foreground">Using client feedback as context</span>
+                    </button>
+                    <button type="button"
+                      onClick={generateReply}
+                      disabled={replyLoading}
+                      className="flex flex-col items-start gap-0.5 px-3.5 py-3 rounded-xl bg-muted/40 border border-border hover:bg-muted/60 transition-all text-left disabled:opacity-40"
+                    >
+                      <span className="text-xs font-semibold">✉ Draft PM reply</span>
+                      <span className="text-[10px] text-muted-foreground">{replyLoading ? 'Writing…' : 'Respond to their concern'}</span>
+                    </button>
+                  </div>
+
+                  {/* Draft reply */}
+                  {draftReply && (
+                    <div className="rounded-xl border border-border bg-background/60 p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Draft reply</span>
+                        <button type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(draftReply);
+                            setReplyCopied(true);
+                            setTimeout(() => setReplyCopied(false), 2000);
+                          }}
+                          className={`text-[10px] px-2.5 py-1 rounded border font-medium transition-all ${
+                            replyCopied ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : 'border-border text-muted-foreground hover:text-foreground'
+                          }`}
+                        >{replyCopied ? '✓ Copied' : 'Copy'}</button>
+                      </div>
+                      <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">{draftReply}</p>
+                      <button type="button"
+                        onClick={() => addClientMessage('pm', draftReply)}
+                        className="text-[10px] text-primary hover:underline"
+                      >+ Add to thread as PM message</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
         </>
