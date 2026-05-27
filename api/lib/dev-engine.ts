@@ -643,7 +643,9 @@ async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): P
       },
       body: JSON.stringify({
         model,
-        max_tokens: 2000,
+        // PATH B/C (Sonnet, live HTML analysis): 4000 tokens for complete script diffs
+        // PATH A (Haiku, content generation): 2000 tokens is sufficient
+        max_tokens: model === MODEL_FAST ? 2000 : 4000,
         system: sys,
         messages: [{ role: 'user', content: usr }],
       }),
@@ -653,7 +655,6 @@ async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): P
     llmCalls++;
     const data = await resp.json() as any;
 
-    // Handle API-level errors (rate limits, auth, etc.)
     if (data?.error) {
       return {
         analysis:     `AI service error: ${data.error?.message || 'unknown'}. Retry in a moment.`,
@@ -664,43 +665,71 @@ async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): P
       };
     }
 
-    const rawText   = (data?.content?.[0]?.text || '').trim();
-    const jsonMatch = rawText.match(/\{[\s\S]+\}/);
+    const rawText = (data?.content?.[0]?.text || '').trim();
+
+    // Strip markdown code fences — the AI sometimes wraps JSON in ```json...```
+    // despite the system prompt saying not to. Handle defensively.
+    const stripped = rawText
+      .replace(/^```(?:json)?[\s]*/i, '')
+      .replace(/[\s]*```$/i, '')
+      .trim();
+
+    const jsonMatch = stripped.match(/\{[\s\S]+\}/);
 
     if (jsonMatch) {
       try {
-        const parsed     = JSON.parse(jsonMatch[0]);
-        const fixCode    = parsed.fix_code     || '';
+        const parsed      = JSON.parse(jsonMatch[0]);
+        const fixCode     = parsed.fix_code     || '';
         const fixLanguage = parsed.fix_language || 'html';
+        const analysis    = parsed.analysis     || 'Analysis complete.';
 
-        // Runtime validation — catches placeholder hallucinations, invalid JSON-LD, etc.
-        const validation = validateAiOutput(task.task_type, fixCode, fixLanguage);
+        const validation   = validateAiOutput(task.task_type, fixCode, fixLanguage);
         const analysisNote = validation.issues.length > 0
-          ? '\n\n⚠️ Code quality note: ' + validation.issues[0]
+          ? '\n\n⚠️ Code note: ' + validation.issues[0]
           : '';
-        if (!validation.valid) {
-          console.warn('[callAI] validation failed for ' + task.task_type + ':', validation.issues.join('; '));
-        }
 
         return {
-          analysis:     (parsed.analysis || 'Analysis complete.') + analysisNote,
+          analysis:     analysis + analysisNote,
           fixCode,
           fixLanguage,
           paaQuestions: Array.isArray(parsed.paa_questions) ? parsed.paa_questions : [],
           llmCalls,
         };
       } catch {
-        return { analysis: rawText.slice(0, 800), fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
+        // JSON.parse failed — response was likely truncated mid-JSON.
+        // Try to salvage analysis and fix_code using targeted regex.
+        const aMatch = stripped.match(/"analysis"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        const fMatch = stripped.match(/"fix_code"\s*:\s*"((?:[^"\\]|\\.)*)/);
+        const salvaged = {
+          analysis:     (aMatch?.[1] || '').replace(/\\n/g, '\n').replace(/\\"/g, '"') || '',
+          fixCode:      (fMatch?.[1] || '').replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+          fixLanguage:  'html' as string,
+          paaQuestions: [] as string[],
+          llmCalls,
+        };
+        if (salvaged.fixCode) {
+          salvaged.analysis = (salvaged.analysis || 'Fix generated.') +
+            ' (Response was very long and may be slightly truncated — the critical changes are shown in Fix Code.)';
+        } else {
+          salvaged.analysis = 'The fix was too long to fit in one response. Click Re-generate — it will retry.';
+        }
+        return salvaged;
       }
     }
 
-    return { analysis: rawText.slice(0, 800), fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
+    return {
+      analysis:     'Unexpected AI response format. Click Re-generate to retry.',
+      fixCode:      '',
+      fixLanguage:  'text',
+      paaQuestions: [],
+      llmCalls,
+    };
 
   } catch (e: any) {
     clearTimeout(aiTimer);
     const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError';
     const msg = isTimeout
-      ? 'AI call timed out after 30s — the AI service is slow right now. Click Retry.'
+      ? `AI call timed out after ${Math.round(AI_TIMEOUT_MS / 1000)}s. The AI service is under load — click Re-generate to retry.`
       : `AI error: ${e?.message || 'unknown'}`;
     return { analysis: msg, fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
   }
