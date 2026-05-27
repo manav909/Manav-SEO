@@ -139,7 +139,8 @@ export default function SeasonModal() {
   const navigate = useNavigate();
 
   const [input, setInput]               = useState('');
-  const [submitting, setSubmitting]     = useState(false);
+  const [submitting, setSubmitting]           = useState(false);
+  const [pendingObjective, setPendingObjective] = useState<ObjectivePreviewData | null>(null);
   const [response, setResponse]         = useState<CommandResponseClient | null>(null);
   const [error, setError]               = useState<string | null>(null);
   const inputRef                        = useRef<HTMLInputElement | null>(null);
