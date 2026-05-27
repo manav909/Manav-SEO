@@ -448,19 +448,14 @@ export default function SeasonModal() {
             let reply = `## ✓ ${title}
 
 `;
-            reply += log.map((l: string) => l).join('
-') + '
-
-';
+            reply += log.map((l: string) => l).join('\n') + '\n\n';
             if (pages === 0) {
               reply += `⚠️ **No pages imported yet.** Go to **Site Manager → Import pages** to add your URLs (paste them, upload a sitemap, or upload a Screaming Frog export).
 
 `;
             }
             if (nextSteps.length > 0) {
-              reply += `**Next steps:**
-` + nextSteps.map((s: string) => `→ ${s}`).join('
-');
+              reply += '**Next steps:**\n' + nextSteps.map((s: string) => '\u2192 ' + s).join('\n');
             }
             setResponse(reply);
             setMood('happy');
