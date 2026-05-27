@@ -484,8 +484,8 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (aiFillResult !== null) return ok(res, aiFillResult);
   }
 
-  /* ═══ GSC INTEGRATION (Phase D) — gsc_* actions ═══ */
-  if (typeof action === "string" && action.startsWith("gsc_")) {
+  /* ═══ GSC INTEGRATION (Phase D) — gsc_* and site_gsc_* actions ═══ */
+  if (typeof action === "string" && (action.startsWith("gsc_") || action.startsWith("site_gsc_"))) {
     const { handlePmGsc } = await import("./lib/pm-gsc.js");
     const gscResult = await handlePmGsc(action, body, req, res);
     if (gscResult !== null) return ok(res, gscResult);
