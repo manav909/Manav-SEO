@@ -124,6 +124,44 @@ export async function detectCmsFromHtml(html: string): Promise<CmsContext> {
   };
 }
 
+// Detect CMS from HTTP response headers alone — works even when HTML is blocked.
+// Many CDN/CMS platforms expose themselves through cookies, Server headers, or custom headers.
+export function detectCmsFromHeaders(headers: Record<string,string>): CmsContext | null {
+  const h = (k: string) => (headers[k.toLowerCase()] || '').toLowerCase();
+  const all = Object.entries(headers).map(([k,v]) => k.toLowerCase() + ': ' + v.toLowerCase()).join(' ');
+
+  // HubSpot — distinctive cookie names and CDN headers
+  if (/hubspot|hs-scripts|hs-analytics|hubspotutk/.test(all) || h('server').includes('hubspot')) {
+    return { platform: 'hubspot', seoPlugin: 'none', confidence: 85, signals: ['HubSpot header/cookie signal'], adminPath: 'https://app.hubspot.com' };
+  }
+  // WordPress — wp-login cookie, x-powered-by, x-pingback
+  if (/x-pingback|xmlrpc|wp-includes|wp-json/.test(all) || h('x-powered-by').includes('wordpress') || h('x-generator').includes('wordpress')) {
+    const sp: SeoPlugin = /yoast/.test(all) ? 'yoast' : /rankmath/.test(all) ? 'rankmath' : 'unknown';
+    return { platform: 'wordpress', seoPlugin: sp, confidence: 88, signals: ['WordPress header signal'], adminPath: '/wp-admin' };
+  }
+  // Shopify — distinctive server headers and cookies
+  if (h('x-shopify-stage') || h('x-sorting-hat-podid') || h('x-shardid') || /shopify/.test(all)) {
+    return { platform: 'shopify', seoPlugin: 'none', confidence: 90, signals: ['Shopify header signal'], adminPath: '/admin' };
+  }
+  // Squarespace — server name or cookie
+  if (h('server').includes('squarespace') || /squarespace/.test(all)) {
+    return { platform: 'squarespace', seoPlugin: 'none', confidence: 85, signals: ['Squarespace header signal'], adminPath: '/config' };
+  }
+  // Wix — wixsite or distinctive cookie
+  if (/wix/.test(all) || h('x-wix-request-id')) {
+    return { platform: 'wix', seoPlugin: 'none', confidence: 82, signals: ['Wix header signal'], adminPath: 'https://manage.wix.com' };
+  }
+  // Webflow — server or powered-by
+  if (h('x-powered-by').includes('webflow') || h('server').includes('webflow') || /webflow/.test(all)) {
+    return { platform: 'webflow', seoPlugin: 'none', confidence: 88, signals: ['Webflow header signal'], adminPath: 'https://webflow.com/dashboard' };
+  }
+  // Drupal — X-Generator header
+  if (h('x-generator').includes('drupal') || h('x-drupal-cache') || /drupal/.test(all)) {
+    return { platform: 'drupal', seoPlugin: 'unknown', confidence: 87, signals: ['Drupal header signal'], adminPath: '/admin' };
+  }
+  return null;
+}
+
 export function normaliseCmsPlatform(s: string): CmsPlatform {
   const lower = s.toLowerCase().trim();
   if (lower.includes('wordpress') || lower === 'wp') return 'wordpress';
@@ -157,28 +195,30 @@ function cmsAdminPath(p: CmsPlatform): string {
 // Returns empty string on any failure, caller handles gracefully.
 // ─────────────────────────────────────────────────────────────
 
-export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ html: string; fetchedOk: boolean; errorMsg?: string }> {
+export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ html: string; fetchedOk: boolean; errorMsg?: string; headers?: Record<string,string> }> {
   if (!url) return { html: '', fetchedOk: false, errorMsg: 'No URL provided' };
-  // Use Promise.race + setTimeout — AbortSignal.timeout() is unreliable on Vercel Node.js.
-  // setTimeout is always available and always fires.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-        'Accept': 'text/html,application/xhtml+xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
       },
       redirect: 'follow',
       signal: controller.signal,
     });
     clearTimeout(timer);
+    // Capture response headers — they often reveal CMS even when page is blocked
+    const headers: Record<string,string> = {};
+    res.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
     if (!res.ok) {
-      return { html: '', fetchedOk: false, errorMsg: `HTTP ${res.status} ${res.statusText}` };
+      // Even on 403 — return headers so CMS detection can use them
+      return { html: '', fetchedOk: false, errorMsg: `HTTP ${res.status}`, headers };
     }
     const raw = await res.text();
-    return { html: raw.slice(0, 120_000), fetchedOk: true };
+    return { html: raw.slice(0, 120_000), fetchedOk: true, headers };
   } catch (e: any) {
     clearTimeout(timer);
     const msg = (e?.name === 'AbortError' || e?.name === 'TimeoutError')
@@ -336,18 +376,20 @@ export async function executeDevTask(task: DevTask): Promise<void> {
     const pageIsRequired  = PAGE_REQUIRED.has(task.task_type);
 
     // ── Fetch live page if needed ────────────────────────────────
-    let pageHtml   = '';
-    let fetchedOk  = false;
-    let fetchError = '';
+    let pageHtml    = '';
+    let fetchedOk   = false;
+    let fetchError  = '';
+    let fetchResult: { html: string; fetchedOk: boolean; errorMsg?: string; headers?: Record<string,string> } | null = null;
 
     if (needsPageFetch) {
       // Short timeout — if the site blocks server fetches or is unreachable,
       // fail fast and proceed with audit data. Don't hang for 25 seconds.
       const timeout = pageIsRequired ? 12000 : 10000;
       const r = await fetchPageHtml(task.target_url || '', timeout);
-      pageHtml   = r.html;
-      fetchedOk  = r.fetchedOk;
-      fetchError = r.errorMsg || '';
+      pageHtml    = r.html;
+      fetchedOk   = r.fetchedOk;
+      fetchError  = r.errorMsg || '';
+      fetchResult = r;
     }
 
     // ── CMS detection ────────────────────────────────────────────
@@ -357,12 +399,21 @@ export async function executeDevTask(task: DevTask): Promise<void> {
     // 3. Page not fetched yet (PATH A) → do a quick lightweight CMS fetch
     // 4. Nothing works → 'unknown', instructions tell user to specify their CMS
 
-    let cms: CmsContext;
+    let cms: CmsContext | undefined = undefined;
 
     if (fetchedOk && pageHtml) {
-      // Best case: detected from live HTML this run
+      // Best case: detected from live HTML
       cms = await detectCmsFromHtml(pageHtml);
     } else {
+      // Try header-based detection first — works even on Cloudflare-blocked pages
+      if (fetchResult?.headers && Object.keys(fetchResult.headers).length > 3) {
+        const headerCms = detectCmsFromHeaders(fetchResult.headers);
+        if (headerCms && headerCms.platform !== 'unknown') {
+          cms = headerCms;
+        }
+      }
+
+      if (!cms) {
       // Resolution order:
       // 1. cms_platform stored on this task (set by a previous execution)
       // 2. cms column on the projects table (set by user or previous detection)
@@ -418,7 +469,20 @@ export async function executeDevTask(task: DevTask): Promise<void> {
           adminPath:  cmsAdminPath(resolvedPlatform),
         };
       }
+      // Final fallback if header check also found nothing
+      if (!cms) {
+        cms = {
+          platform:   'unknown',
+          seoPlugin:  'unknown',
+          confidence: 0,
+          signals:    ['All detection methods failed — page blocked all server requests'],
+          adminPath:  '',
+        };
+      }
     }
+      } // end if (!cms) — CMS resolution complete
+
+    // TypeScript: cms is always assigned by this point
 
     // ── Snapshot relevant HTML (safety net for rollback) ─────────
     const snapshotHtml = pageHtml ? snapshotRelevantHtml(task.task_type, pageHtml) : '';
@@ -426,11 +490,9 @@ export async function executeDevTask(task: DevTask): Promise<void> {
 
     // ── Route to correct execution path ─────────────────────────
     let result: AiResult;
+    // cms is resolved above
 
     if (INSTANT_TASKS.has(task.task_type)) {
-      // PATH A: generate from audit data only — no AI needed for most of these,
-      // but we use AI for content tasks (h1, first_para, h2, faq) where
-      // quality matters and the audit finding has enough context.
       result = await executeWithAuditData(task, cms);
     } else if (fetchedOk && pageHtml) {
       // PATH B or C with live page: use the actual HTML
