@@ -959,10 +959,23 @@ function TaskDetail({
     setBrief(null);
 
     const taskTitle = task.title || 'website change';
-    const siteUrl   = task.target_url || 'your website';
+    const siteUrl   = task.target_url || '';
     const analysis  = (task.analysis || task.description || '').slice(0, 500);
     const hasSave   = !!task.snapshot_id;
     const fixCode   = task.fix_code || '';
+
+    // Block brief generation if the task has not been executed yet
+    // (no analysis = no data to put in the brief — would be empty/generic)
+    if (!analysis || !siteUrl) {
+      setBrief({
+        subject: 'Run analysis first',
+        body: !analysis
+          ? 'This task has not been analysed yet. Click "Analyze & Generate Fix" first, then generate the client brief once the analysis is complete.'
+          : 'This task does not have a target URL. Assign a URL to the task before generating the client brief.',
+        summary: '',
+      });
+      return;
+    }
 
     // Encode URL for PageSpeed verification link
     const encodedUrl = encodeURIComponent(siteUrl);
@@ -1205,8 +1218,10 @@ function TaskDetail({
       lazy_loading:         'We will add loading="lazy" to images that are below the visible screen. Images above the fold (what visitors see first) are unchanged.',
       image_format:         'We will convert existing JPG/PNG images to WebP format. The images look visually identical — only the file format and size change.',
       faq_schema:           'We will insert a <script type="application/ld+json"> block into the page <head>. This is invisible to visitors — it is machine-readable data for search engines only.',
-      h1_update:            'We will change the <h1> tag text on this page. The new heading is shown in the Fix Code section for your review before we apply it.',
-      first_para:           'We will update the first paragraph of text on this page. The new paragraph is shown in the Fix Code section for your review.',
+      h1_update:            fixCode
+        ? `We will change the main heading on this page to: "${fixCode.replace(/<[^>]+>/g,'').split('\n').find((l:string)=>l.trim().startsWith('1.'))||fixCode.split('\n').find((l:string)=>l.trim())||fixCode}". The full proposed options are shown below.`
+        : 'We will update the main heading on this page to include the target keyword. The exact new heading will be shown below for your review.',
+      first_para:           'We will rewrite the opening paragraph of this page. The proposed new paragraph is shown below for your review and approval.',
       h2_section:           'We will add new <h2> heading sections with supporting content below your existing page content. Nothing existing is removed or changed.',
       date_modified_schema: 'We will add a dateModified field to the existing schema block, or insert a new Article schema <script> in the page <head>.',
       gsc_indexing:         'We will use Google Search Console\'s URL Inspection tool to request that Google crawls this URL. No changes are made to your website itself.',
@@ -1271,7 +1286,7 @@ function TaskDetail({
     } else {
       lines.push('✓ This change is targeted and reversible — we will restore it immediately if anything looks wrong.');
     }
-    lines.push('✓ We will confirm completion and share a before/after comparison after the change is live.');
+    lines.push('✓ We will confirm when the change is live and provide the verification result.');
     lines.push('');
 
     // APPROVAL ASK
