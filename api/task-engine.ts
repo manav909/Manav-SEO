@@ -4589,10 +4589,11 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
     // ── Pull all relevant project data ──────────────────────────
     let ctx = '';
-    try {
-      const { db: getDb } = await import('./lib/db.js');
-      const D = getDb();
+    // Each query in its own try/catch — one failure never blocks the rest
+    const { db: getDb } = await import('./lib/db.js');
+    const D = getDb();
 
+    try {
       // Project info
       const { data: proj } = await D.from('projects')
         .select('name, url, cms, industry, target_keyword, status')
@@ -4608,50 +4609,68 @@ Industry: ${p.industry||'unknown'}`;
 
       }
 
-      // Latest 2 audit reports for comparison
-      const { data: audits } = await D.from('audit_reports')
-        .select('run_id,created_at,mobile_lcp_ms,mobile_tbt_ms,desktop_lcp_ms,desktop_tbt_ms,mobile_cls,overall_score,findings_critical,findings_warning,findings_info')
-        .eq('project_id', pid).order('created_at',{ascending:false}).limit(2);
-      if (audits && (audits as any[]).length > 0) {
-        const a = audits as any[];
-        ctx += 'LATEST AUDIT (' + new Date(a[0].created_at).toLocaleDateString() + ')';
-        ctx += `Mobile LCP: ${a[0].mobile_lcp_ms?(a[0].mobile_lcp_ms/1000).toFixed(1)+'s':'n/a'} | TBT: ${a[0].mobile_tbt_ms?Math.round(a[0].mobile_tbt_ms)+'ms':'n/a'}`;
-        ctx += `Desktop LCP: ${a[0].desktop_lcp_ms?(a[0].desktop_lcp_ms/1000).toFixed(1)+'s':'n/a'}`;
-        ctx += `Findings: ${a[0].findings_critical||0} critical, ${a[0].findings_warning||0} warnings`;
-        if (a.length > 1) {
-          ctx += `PREVIOUS AUDIT (${new Date(a[1].created_at).toLocaleDateString()})`;
-          ctx += `Mobile LCP: ${a[1].mobile_lcp_ms?(a[1].mobile_lcp_ms/1000).toFixed(1)+'s':'n/a'} | TBT: ${a[1].mobile_tbt_ms?Math.round(a[1].mobile_tbt_ms)+'ms':'n/a'}`;
-          const lcpDelta = a[0].mobile_lcp_ms && a[1].mobile_lcp_ms ? ((a[1].mobile_lcp_ms - a[0].mobile_lcp_ms)/1000).toFixed(1) : null;
-          if (lcpDelta) ctx += `LCP change: ${parseFloat(lcpDelta) > 0 ? '+' : ''}${lcpDelta}s ${parseFloat(lcpDelta) > 0 ? '(improved)' : '(worsened)'}`;
-        }
-        ctx += '';
+      // Audit data — technical_audit_findings is the real table (not audit_reports)
+      // LCP/TBT live in the evidence JSON column, not top-level columns
+      const { data: rawFindings } = await D.from('technical_audit_findings')
+        .select('audit_run_id,finding_title,severity,audit_kind,evidence,created_at')
+        .eq('project_id', pid)
+        .order('created_at', { ascending: false })
+        .limit(80);
 
-        // Top critical findings from latest audit
-        const { data: findings } = await D.from('audit_findings')
-          .select('severity,title,audit_kind')
-          .eq('run_id', a[0].run_id)
-          .in('severity',['critical','red'])
-          .order('priority',{ascending:true}).limit(8);
-        if (findings && (findings as any[]).length > 0) {
-          ctx += 'CRITICAL FINDINGS';
-          (findings as any[]).forEach(f => { ctx += `- [${f.audit_kind||'perf'}] ${f.title}
-`; });
-          ctx += '';
+      if (rawFindings && (rawFindings as any[]).length > 0) {
+        const rf = rawFindings as any[];
+        const runMap = new Map<string, any[]>();
+        for (const f of rf) {
+          const rid = f.audit_run_id || 'unknown';
+          if (!runMap.has(rid)) runMap.set(rid, []);
+          runMap.get(rid)!.push(f);
         }
+        const runs = Array.from(runMap.entries()).slice(0, 2);
+
+        for (let i = 0; i < runs.length; i++) {
+          const [runId, runFindings] = runs[i];
+          const runDate = new Date(runFindings[0].created_at).toLocaleDateString();
+          const label = i === 0 ? 'LATEST AUDIT' : 'PREVIOUS AUDIT';
+          ctx += label + ' (' + runDate + ', id: ' + runId.slice(0,8) + ')\n';
+          const lcpF = runFindings.find((f:any) => /LCP|largest.?contentful/i.test(f.finding_title));
+          const tbtF = runFindings.find((f:any) => /TBT|total.?blocking/i.test(f.finding_title));
+          const lcpMs = lcpF?.evidence?.lcp_ms;
+          const tbtMs = tbtF?.evidence?.tbt_ms ?? lcpF?.evidence?.tbt_ms;
+          if (lcpMs) ctx += 'Mobile LCP: ' + (lcpMs/1000).toFixed(1) + 's' + (tbtMs ? ' | TBT: ' + Math.round(tbtMs) + 'ms' : '') + '\n';
+          const crit = runFindings.filter((f:any) => f.severity === 'red').length;
+          const warn = runFindings.filter((f:any) => f.severity === 'amber').length;
+          ctx += 'Findings: ' + crit + ' critical, ' + warn + ' warnings\n';
+          if (i === 0) {
+            const top = runFindings.filter((f:any) => f.severity === 'red').slice(0, 5);
+            if (top.length) ctx += 'Critical: ' + top.map((f:any) => f.finding_title.slice(0,50)).join(' | ') + '\n';
+          }
+          ctx += '\n';
+        }
+        if (runs.length === 2) {
+          const lc = (runs[0][1].find((f:any) => /LCP/i.test(f.finding_title))?.evidence?.lcp_ms) as number|undefined;
+          const lp = (runs[1][1].find((f:any) => /LCP/i.test(f.finding_title))?.evidence?.lcp_ms) as number|undefined;
+          if (lc && lp) {
+            const d = ((lp - lc)/1000).toFixed(1);
+            ctx += 'LCP DELTA: ' + (parseFloat(d) > 0 ? '+' + d + 's (improved)' : d + 's (worsened)') + '\n\n';
+          }
+        }
+      } else {
+        ctx += 'AUDITS: No audit findings found for this project yet. Run a technical audit first.\n\n';
       }
-
-      // Active SEO campaigns + keyword rankings
-      const { data: campaigns } = await D.from('campaigns')
-        .select('id,name,target_keyword,status,current_rank,target_rank')
-        .eq('project_id', pid).eq('status','active').limit(10);
+      // Active SEO campaigns — real table is seo_campaigns, columns: keyword, current_position
+      const { data: campaigns } = await D.from('seo_campaigns')
+        .select('id,keyword,keyword_group,status,current_position,target_position')
+        .eq('project_id', pid).in('status', ['active','paused']).limit(15);
       if (campaigns && (campaigns as any[]).length > 0) {
-        ctx += 'ACTIVE CAMPAIGNS';
-        (campaigns as any[]).forEach(c => {
-          ctx += `- "${c.target_keyword}" | rank: ${c.current_rank||'unranked'} → target: ${c.target_rank||'top 3'} | ${c.name}`;
+        ctx += 'SEO CAMPAIGNS\n';
+        (campaigns as any[]).forEach((c:any) => {
+          const kw  = c.keyword || (Array.isArray(c.keyword_group) ? c.keyword_group[0] : 'unknown');
+          const pos = c.current_position ? 'pos ' + Number(c.current_position).toFixed(0) : 'not ranked';
+          const tgt = c.target_position ? ' (target: ' + c.target_position + ')' : '';
+          ctx += '- "' + kw + '" | ' + pos + tgt + ' [' + c.status + ']\n';
         });
-        ctx += '';
+        ctx += '\n';
       }
-
       // Dev tasks summary
       const { data: devTasks } = await D.from('dev_tasks')
         .select('phase,title,status,severity').eq('project_id', pid)
@@ -4668,19 +4687,20 @@ Industry: ${p.industry||'unknown'}`;
         ctx += '';
       }
 
-      // Board cards summary
-      const { data: boardCards } = await D.from('task_cards')
-        .select('title,status,priority,week').eq('project_id', pid)
-        .order('priority',{ascending:true}).limit(15);
+      // Board cards — real table is kanban_tasks (not task_cards)
+      const { data: boardCards } = await D.from('kanban_tasks')
+        .select('title,status,priority,column_id,week_number')
+        .eq('project_id', pid)
+        .order('priority', { ascending: true }).limit(20);
       if (boardCards && (boardCards as any[]).length > 0) {
         const bc = boardCards as any[];
-        ctx += `BOARD: ${bc.filter(c=>c.status==='done').length}/${bc.length} cards done`;
-        bc.filter(c=>c.status!=='done').slice(0,5).forEach(c => {
-          ctx += `  - ${c.title} (${c.status||'pending'})`;
+        const done = bc.filter((c:any) => c.status === 'done' || c.column_id === 'done').length;
+        ctx += 'BOARD: ' + done + '/' + bc.length + ' cards done\n';
+        bc.filter((c:any) => c.status !== 'done' && c.column_id !== 'done').slice(0, 6).forEach((c:any) => {
+          ctx += '  - ' + c.title + ' (' + (c.status || c.column_id || 'pending') + ')\n';
         });
-        ctx += '';
+        ctx += '\n';
       }
-
       // Recent documents
       const { data: docs } = await D.from('documents')
         .select('title,type,created_at').eq('project_id', pid)
@@ -4691,8 +4711,7 @@ Industry: ${p.industry||'unknown'}`;
       }
 
     } catch (e: any) {
-      console.error('[pm_chat] context error:', e?.message);
-      // Continue — chat still works with partial context
+      ctx += '(Project info unavailable)\n\n';
     }
 
     const systemPrompt = [
