@@ -2729,6 +2729,7 @@ export async function seasonPipelineExecuteNext(opts: {
 export interface SeoCampaign {
   id:                 string;
   keyword:            string;
+  keyword_group:      string[] | null;
   goal:               string | null;
   campaign_kind:      string;
   campaign_type:      string | null;
@@ -2750,6 +2751,7 @@ export interface SeoCampaign {
   goal_deadline:      string | null;
   target_locations:   any[] | null;
   site_id:            string | null;
+  target_urls:        string[] | null;
 }
 
 export interface SeoCampaignPanel {

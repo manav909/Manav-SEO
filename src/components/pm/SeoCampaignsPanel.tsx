@@ -2339,6 +2339,9 @@ function ObjectivesView({
                 </div>
               )}
 
+              {/* Target URLs — the pages this objective is optimising */}
+              <ObjectiveTargetUrls campaignId={c.id} targetUrls={c.target_urls || []} onUpdated={onRefresh} />
+
               {/* Site workspace picker — shown when Link button is clicked */}
               {linkingId === c.id && (
                 <div style={{ marginTop: 12, padding: '12px', borderRadius: 10, background: 'hsl(var(--background)/0.8)', border: '1px solid hsl(var(--border))' }}>
@@ -2606,6 +2609,110 @@ function NewObjectiveModal({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// OBJECTIVE TARGET URLS — editable list on each objective card
+// ─────────────────────────────────────────────────────────────
+function ObjectiveTargetUrls({ campaignId, targetUrls, onUpdated }: {
+  campaignId: string;
+  targetUrls: string[];
+  onUpdated: () => void;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  const [editing,  setEditing]  = React.useState(false);
+  const [text,     setText]     = React.useState(targetUrls.join('\n'));
+  const [saving,   setSaving]   = React.useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const urls = text.split('\n').map(l => l.trim()).filter(l => /^https?:\/\//.test(l));
+    await apiCall('bs_campaign_objective_update', { campaignId, updates: { target_urls: urls } });
+    setSaving(false);
+    setEditing(false);
+    onUpdated();
+  };
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button type="button"
+        onClick={() => setExpanded(v => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, fontSize: 10,
+          color: targetUrls.length > 0 ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+        }}>
+        <span>{targetUrls.length > 0 ? `📄 ${targetUrls.length} target page${targetUrls.length !== 1 ? 's' : ''}` : '📄 No target pages set'}</span>
+        <span style={{ fontSize: 9 }}>{expanded ? '▲' : '▼'}</span>
+      </button>
+
+      {expanded && (
+        <div style={{ marginTop: 8, padding: 12, borderRadius: 10, background: 'hsl(var(--background)/0.6)', border: '1px solid hsl(var(--border))' }}>
+          {!editing ? (
+            <>
+              {targetUrls.length === 0 ? (
+                <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginBottom: 8 }}>
+                  No target pages set. Add the specific URLs this objective should optimise.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
+                  {targetUrls.map(url => (
+                    <div key={url} style={{ fontSize: 11, color: 'hsl(var(--foreground))', fontFamily: 'monospace' }}>
+                      {url.replace(/^https?:\/\/[^/]+/, '') || '/'}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button type="button" onClick={() => { setText(targetUrls.join('\n')); setEditing(true); }}
+                style={{
+                  fontSize: 10, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                  border: '1px solid hsl(var(--border))', background: 'transparent',
+                  color: 'hsl(var(--muted-foreground))',
+                }}>
+                {targetUrls.length === 0 ? '+ Add target pages' : 'Edit pages'}
+              </button>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))', marginBottom: 6 }}>
+                One URL per line. These are the pages this objective will optimise.
+              </div>
+              <textarea
+                value={text}
+                onChange={e => setText(e.target.value)}
+                rows={5}
+                placeholder={'https://example.com/page-1\nhttps://example.com/page-2'}
+                style={{
+                  width: '100%', padding: '8px 10px', borderRadius: 8, resize: 'vertical',
+                  border: '1px solid hsl(var(--border))', background: 'hsl(var(--background))',
+                  color: 'hsl(var(--foreground))', fontSize: 11, fontFamily: 'monospace',
+                  boxSizing: 'border-box', outline: 'none',
+                }}
+              />
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <button type="button" onClick={save} disabled={saving}
+                  style={{
+                    flex: 2, padding: '6px 0', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                    background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))',
+                    border: 'none', cursor: saving ? 'default' : 'pointer',
+                  }}>
+                  {saving ? 'Saving…' : 'Save pages'}
+                </button>
+                <button type="button" onClick={() => setEditing(false)}
+                  style={{
+                    flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 11,
+                    border: '1px solid hsl(var(--border))', background: 'transparent',
+                    color: 'hsl(var(--muted-foreground))', cursor: 'pointer',
+                  }}>
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -237,7 +237,7 @@ export async function listCampaigns(opts: {
 }): Promise<{ success: boolean; campaigns?: any[]; error?: string }> {
   try {
     let q = db().from("seo_campaigns")
-      .select("id, keyword, goal, campaign_kind, campaign_type, parent_campaign_id, status, health, current_position, target_position, started_at, target_due_at, last_assessed_at, paused_at, updated_at, goal_metric, goal_target, goal_baseline, goal_deadline, target_locations, site_id")
+      .select("id, keyword, keyword_group, goal, campaign_kind, campaign_type, parent_campaign_id, status, health, current_position, target_position, started_at, target_due_at, last_assessed_at, paused_at, updated_at, goal_metric, goal_target, goal_baseline, goal_deadline, target_locations, site_id, target_urls")
       .eq("project_id", opts.projectId)
       .order("updated_at", { ascending: false });
 

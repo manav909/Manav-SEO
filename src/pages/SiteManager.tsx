@@ -39,7 +39,7 @@ async function callApi<T = any>(action: string, payload: Record<string, unknown>
   }
 }
 
-const PAGE_TYPES = ['all','product','blog','landing','home','category','other'] as const;
+const PAGE_TYPES = ['all','objective_target','product','blog','landing','home','category','other'] as const;
 type PageType = typeof PAGE_TYPES[number];
 
 // ─────────────────────────────────────────────────────────────
@@ -992,16 +992,15 @@ function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: strin
   const [linkedObj, setLinkedObj] = useState<any | null>(null);
   const abortRef = useRef(false);
 
-  // Load linked objective to suggest scope
+  // Load linked objectives directly from siteId — no project dependency
   useEffect(() => {
-    if (!selectedSite?.project_id) return;
-    callApi('bs_seo_campaign_list', { projectId: selectedSite.project_id }).then(r => {
-      const campaigns = (r.data as any)?.campaigns || [];
-      const linked = campaigns.find((c: any) => c.site_id === siteId && c.campaign_type);
-      if (linked) {
-        setLinkedObj(linked);
-        // Auto-suggest scope from objective type
-        const mapping: Record<string, string> = {
+    callApi('site_get_linked_objective', { siteId }).then(r => {
+      const objs: any[] = (r.data as any)?.objectives || [];
+      if (objs.length > 0) {
+        const primary = objs[0];
+        setLinkedObj(primary);
+        // Auto-set scope from goal type — merges if multiple objectives
+        const typeToScope: Record<string, string> = {
           traffic_growth:     'traffic_growth',
           keyword_ranking:    'keyword_ranking',
           local_visibility:   'local_visibility',
@@ -1010,10 +1009,20 @@ function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: strin
           domain_authority:   'technical_recovery',
           content_authority:  'keyword_ranking',
         };
-        if (mapping[linked.campaign_type]) setScope(mapping[linked.campaign_type]);
+        // If multiple objectives, use most comprehensive scope
+        if (objs.length > 1) {
+          const hasRecovery = objs.some((o: any) => o.campaign_type === 'technical_recovery');
+          setScope(hasRecovery ? 'technical_recovery' : typeToScope[primary.campaign_type] || 'technical_recovery');
+        } else {
+          setScope(typeToScope[primary.campaign_type] || 'technical_recovery');
+        }
+        // Show keyword from objective for keyword-aware checks
+        if (primary.keyword && !linkedObj?.keyword) {
+          // keyword is already in linkedObj after state sets
+        }
       }
     });
-  }, [siteId, selectedSite?.project_id]);
+  }, [siteId]);
 
   useEffect(() => {
     setSelected(new Set(ready.map(p => p.id)));
@@ -1060,15 +1069,7 @@ function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: strin
     <div className="space-y-4">
       {/* Objective context */}
       {linkedObj && (
-        <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 flex items-center gap-3">
-          <span className="text-base">🎯</span>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold">{linkedObj.goal || linkedObj.keyword}</div>
-            <div className="text-[10px] text-muted-foreground mt-0.5 capitalize">
-              {linkedObj.campaign_type?.replace(/_/g,' ')} objective · audit scope auto-set to match
-            </div>
-          </div>
-        </div>
+        <ObjectiveContextCard siteId={siteId} objective={linkedObj} scope={scope} onSynced={onDone} />
       )}
 
       {/* Mode toggle: run per-page OR upload a crawl file */}
@@ -1307,6 +1308,129 @@ function AuditModeSelector({ siteId, projectId, scope, onUploaded }: {
                 className="text-xs text-muted-foreground hover:text-foreground">Upload another file</button>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// OBJECTIVE CONTEXT CARD — shown in Audit Queue
+// Shows linked objective(s), their target URLs, and sync button
+// ─────────────────────────────────────────────────────────────
+function ObjectiveContextCard({ siteId, objective, scope, onSynced }: {
+  siteId:    string;
+  objective: any;
+  scope:     string;
+  onSynced:  () => void;
+}) {
+  const [allObjectives, setAllObjectives] = useState<any[]>([objective]);
+  const [syncing,       setSyncing]       = useState(false);
+  const [syncResult,    setSyncResult]    = useState<{ imported: number; marked: number } | null>(null);
+  const [expanded,      setExpanded]      = useState(false);
+
+  useEffect(() => {
+    callApi('site_get_linked_objective', { siteId }).then(r => {
+      const objs = (r.data as any)?.objectives || [];
+      if (objs.length > 0) setAllObjectives(objs);
+    });
+  }, [siteId]);
+
+  const totalTargetUrls = allObjectives.reduce((sum: number, o: any) => sum + (Array.isArray(o.target_urls) ? o.target_urls.length : 0), 0);
+  const allKeywords = [...new Set(allObjectives.flatMap((o: any) => [
+    o.keyword,
+    ...(Array.isArray(o.keyword_group) ? o.keyword_group : []),
+  ].filter(Boolean)))] as string[];
+
+  const SCOPE_LABELS: Record<string, string> = {
+    technical_recovery: 'Full audit (all checks)',
+    traffic_growth:     'CWV + images + on-page',
+    keyword_ranking:    'On-page + schema + keyword',
+    local_visibility:   'On-page + schema + hreflang',
+    eeat:               'E-E-A-T signals',
+  };
+
+  const sync = async () => {
+    setSyncing(true); setSyncResult(null);
+    const r = await callApi('site_sync_objective_urls', { siteId }, 30000);
+    setSyncing(false);
+    if (r.ok) {
+      setSyncResult({ imported: (r.data as any).imported || 0, marked: (r.data as any).marked || 0 });
+      onSynced();
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <span className="text-lg mt-0.5">🎯</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold">
+              {allObjectives.length === 1
+                ? (objective.goal || objective.keyword)
+                : `${allObjectives.length} objectives linked`}
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/15 text-primary font-medium">
+              {SCOPE_LABELS[scope] || scope}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
+            {totalTargetUrls > 0 && (
+              <span>{totalTargetUrls} target URL{totalTargetUrls !== 1 ? 's' : ''}</span>
+            )}
+            {allKeywords.length > 0 && (
+              <span>{allKeywords.slice(0,3).map((k: string) => `"${k}"`).join(', ')}{allKeywords.length > 3 ? ` +${allKeywords.length-3} more` : ''}</span>
+            )}
+          </div>
+        </div>
+        {allObjectives.length > 1 && (
+          <button type="button" onClick={() => setExpanded(v => !v)}
+            className="text-[10px] text-muted-foreground hover:text-foreground transition-colors shrink-0">
+            {expanded ? 'Hide' : 'Show all'}
+          </button>
+        )}
+      </div>
+
+      {/* Expanded: all objectives */}
+      {expanded && allObjectives.map((o: any) => (
+        <div key={o.id} className="rounded-xl border border-border bg-background/40 px-3 py-2.5 space-y-1.5">
+          <div className="text-xs font-medium">{o.goal || o.keyword}</div>
+          {Array.isArray(o.target_urls) && o.target_urls.length > 0 && (
+            <div className="text-[10px] text-muted-foreground">
+              {o.target_urls.map((u: string) => u.replace(/^https?:\/\/[^/]+/, '') || '/').join(' · ')}
+            </div>
+          )}
+          {Array.isArray(o.keyword_group) && o.keyword_group.length > 0 && (
+            <div className="text-[10px] text-primary/80">
+              Keywords: {o.keyword_group.join(', ')}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* Target URL sync */}
+      {totalTargetUrls > 0 && (
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={sync} disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/25 text-primary text-[10px] font-semibold hover:bg-primary/25 disabled:opacity-40 transition-all">
+            {syncing
+              ? <><Loader2 className="w-3 h-3 animate-spin" />Syncing…</>
+              : <><RefreshCw className="w-3 h-3" />Sync {totalTargetUrls} target URL{totalTargetUrls !== 1 ? 's' : ''} to workspace</>}
+          </button>
+          {syncResult && (
+            <span className="text-[10px] text-emerald-400">
+              ✓ {syncResult.imported > 0 ? `${syncResult.imported} imported` : ''}{syncResult.marked > 0 ? ` · ${syncResult.marked} marked` : ''} as objective pages
+            </span>
+          )}
+        </div>
+      )}
+
+      {totalTargetUrls === 0 && (
+        <div className="text-[10px] text-amber-400">
+          No target URLs set on this objective. Add them in SEO Campaigns → Objectives → edit to specify which pages to optimise.
         </div>
       )}
     </div>

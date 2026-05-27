@@ -5110,6 +5110,108 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     } catch (e: any) { return ok(res, { error: e?.message }); }
   }
 
+  if (action === 'site_get_linked_objective') {
+    /* Returns the objective(s) linked to this workspace plus their
+       target_urls and keyword_group so the audit queue can auto-configure. */
+    const { siteId } = body;
+    if (!siteId) return ok(res, { error: 'siteId required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const { data } = await getDb()
+        .from('seo_campaigns')
+        .select('id,goal,keyword,keyword_group,campaign_type,target_urls,goal_metric,goal_target,goal_baseline,goal_deadline,status')
+        .eq('site_id', siteId)
+        .eq('status', 'active');
+      return ok(res, { success: true, objectives: data || [] });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'site_sync_objective_urls') {
+    /* Reads target_urls from all objectives linked to this workspace
+       and imports any missing URLs as pages. Marks them as objective pages
+       by setting page_type = 'objective_target'. Deduplicates by URL. */
+    const { siteId } = body;
+    if (!siteId) return ok(res, { error: 'siteId required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+
+      // Get all linked objectives
+      const { data: objectives } = await getDb()
+        .from('seo_campaigns')
+        .select('id,goal,keyword,keyword_group,campaign_type,target_urls')
+        .eq('site_id', siteId)
+        .eq('status', 'active');
+
+      if (!objectives || !(objectives as any[]).length) {
+        return ok(res, { success: true, imported: 0, message: 'No active objectives linked to this workspace' });
+      }
+
+      // Collect all target URLs across all objectives
+      const allUrls: { url: string; objectiveId: string; label: string }[] = [];
+      for (const obj of objectives as any[]) {
+        const urls: string[] = Array.isArray(obj.target_urls) ? obj.target_urls : [];
+        const label = obj.goal || obj.keyword || obj.campaign_type || 'Objective';
+        for (const url of urls) {
+          if (url && /^https?:\/\//.test(url)) {
+            allUrls.push({ url: url.trim(), objectiveId: obj.id, label });
+          }
+        }
+      }
+
+      if (!allUrls.length) {
+        return ok(res, { success: true, imported: 0, message: 'Objectives have no target URLs set. Add target URLs to your objectives first.' });
+      }
+
+      // Get existing page URLs in this workspace
+      const { data: existing } = await getDb().from('dev_pages').select('url').eq('site_id', siteId);
+      const existingSet = new Set((existing || []).map((p: any) => p.url));
+
+      // Also get site project_id for new pages
+      const { data: site } = await getDb().from('dev_sites').select('project_id').eq('id', siteId).maybeSingle();
+      const projectId = (site as any)?.project_id || null;
+
+      // Insert missing pages, tagged as objective_target
+      const toInsert = allUrls
+        .filter(({ url }) => !existingSet.has(url))
+        .map(({ url, label }) => ({
+          site_id:    siteId,
+          project_id: projectId,
+          url,
+          title:      label,
+          page_type:  'objective_target',
+          status:     'pending',
+          priority:   90, // objective pages are high priority
+        }));
+
+      // Deduplicate within toInsert
+      const seen = new Set<string>();
+      const deduped = toInsert.filter(p => { if (seen.has(p.url)) return false; seen.add(p.url); return true; });
+
+      let inserted = 0;
+      for (let i = 0; i < deduped.length; i += 100) {
+        const { error } = await getDb().from('dev_pages').insert(deduped.slice(i, i + 100));
+        if (!error) inserted += Math.min(100, deduped.length - i);
+      }
+
+      // Also mark any existing pages that are in the objective URLs as objective_target
+      const existingObjectiveUrls = allUrls.filter(({ url }) => existingSet.has(url)).map(u => u.url);
+      if (existingObjectiveUrls.length > 0) {
+        await getDb().from('dev_pages')
+          .update({ page_type: 'objective_target', priority: 90 })
+          .eq('site_id', siteId)
+          .in('url', existingObjectiveUrls);
+      }
+
+      return ok(res, {
+        success: true,
+        imported:  inserted,
+        marked:    existingObjectiveUrls.length,
+        total_objective_urls: allUrls.length,
+        objectives_scanned:   (objectives as any[]).length,
+      });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
   if (action === 'site_cluster_issues') {
     /* Analyse all dev_tasks for a site, group by issue type,
        classify each cluster as template-level or page-specific. */
@@ -5747,7 +5849,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     const { campaignId, updates } = body;
     if (!campaignId) return ok(res, { error: 'campaignId required' });
     const allowed = ['goal', 'goal_metric', 'goal_target', 'goal_baseline', 'goal_deadline',
-                     'target_locations', 'site_id', 'status', 'current_position'];
+                     'target_locations', 'site_id', 'status', 'current_position', 'target_urls', 'keyword', 'keyword_group'];
     const safe: any = Object.fromEntries(
       Object.entries(updates || {}).filter(([k]) => allowed.includes(k))
     );
