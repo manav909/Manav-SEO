@@ -4738,6 +4738,167 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     return ok(res, { success: true, results });
   }
 
+  if (action === 'site_audit_page') {
+    /* Run a standalone technical audit on one page.
+       Does NOT require a campaign. Stores tasks with page_id set.
+       Runs PageSpeed + HTML fetch + on-page checks. */
+    const { pageId, siteId } = body;
+    if (!pageId) return ok(res, { error: 'pageId required' });
+
+    const { db: getDb } = await import('./lib/db.js');
+    const {
+      fetchPageHtml, detectCmsFromHtml, detectCmsFromHeaders,
+      parseFindingsToTasks, saveTasks, fetchWithTimeout,
+    } = await import('./lib/dev-engine.js');
+
+    // Load page
+    const { data: page } = await getDb().from('dev_pages')
+      .select('id,url,site_id,project_id').eq('id', pageId).maybeSingle();
+    if (!page) return ok(res, { error: 'page not found' });
+    const p = page as any;
+
+    // Mark as auditing
+    await getDb().from('dev_pages').update({ status: 'auditing' }).eq('id', pageId);
+
+    const runId = 'site-' + pageId.slice(0, 8) + '-' + Date.now();
+    const findings: any[] = [];
+
+    try {
+      // ── 1. Fetch the page ──────────────────────────────────────
+      const { html, fetchedOk, headers } = await fetchPageHtml(p.url, 12000);
+
+      // ── 2. On-page checks from HTML ────────────────────────────
+      if (fetchedOk && html) {
+        // H1 check
+        const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+        const h1Text  = h1Match ? h1Match[1].trim() : null;
+        if (!h1Text || h1Text.length < 5) {
+          findings.push({ severity: 'amber', audit_kind: 'on_page_fundamentals',
+            finding_title: 'H1 tag missing or too short',
+            finding_detail: h1Text ? `H1 is only "${h1Text}" — too short to signal topic relevance.` : 'No H1 tag found on this page.', evidence: {} });
+        }
+
+        // Meta description
+        const metaMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)
+                       || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+        const metaDesc  = metaMatch ? metaMatch[1].trim() : null;
+        if (!metaDesc || metaDesc.length < 50) {
+          findings.push({ severity: 'amber', audit_kind: 'on_page_fundamentals',
+            finding_title: metaDesc ? 'Meta description too short' : 'Meta description missing',
+            finding_detail: metaDesc ? `Meta description is ${metaDesc.length} characters — under 50. Should be 120-160 characters.` : 'No meta description found.', evidence: {} });
+        }
+
+        // FAQPage schema
+        const hasFaqSchema = html.includes('"FAQPage"') || html.includes("'FAQPage'");
+        if (!hasFaqSchema) {
+          findings.push({ severity: 'amber', audit_kind: 'schema',
+            finding_title: 'No FAQPage schema — missing PAA box eligibility',
+            finding_detail: 'Adding FAQPage structured data makes Q&A content eligible for People Also Ask boxes in Google.', evidence: {} });
+        }
+
+        // Render-blocking scripts in <head>
+        const headMatch = html.match(/<head[\s\S]*?<\/head>/i);
+        const headHtml  = headMatch ? headMatch[0] : '';
+        const blockingScripts = (headHtml.match(/<script[^>]*src=[^>]*>/gi) || [])
+          .filter(s => !/defer|async/i.test(s));
+        if (blockingScripts.length >= 3) {
+          findings.push({ severity: 'red', audit_kind: 'performance',
+            finding_title: `${blockingScripts.length} render-blocking scripts in <head>`,
+            finding_detail: `${blockingScripts.length} synchronous scripts in <head> block HTML parsing and delay LCP. Add defer or async attributes.`,
+            evidence: { blocking_script_count: blockingScripts.length } });
+        }
+
+        // Images without lazy loading
+        const imgTags   = html.match(/<img[^>]+>/gi) || [];
+        const noLazy    = imgTags.filter(i => !/loading=/i.test(i) || /loading=["']eager["']/i.test(i));
+        if (noLazy.length >= 3) {
+          findings.push({ severity: 'amber', audit_kind: 'performance',
+            finding_title: `${noLazy.length} images missing lazy loading`,
+            finding_detail: `${noLazy.length} images lack loading="lazy". Below-fold images load immediately, increasing initial page weight.`,
+            evidence: { image_count: noLazy.length } });
+        }
+      }
+
+      // ── 3. PageSpeed metrics ───────────────────────────────────
+      const psiKey  = process.env.PAGESPEED_API_KEY || '';
+      let   apiKey  = psiKey;
+      if (!apiKey && p.project_id) {
+        const { data: psiInt } = await getDb().from('project_integrations')
+          .select('api_key').eq('project_id', p.project_id).eq('provider','pagespeed').maybeSingle();
+        apiKey = (psiInt as any)?.api_key || '';
+      }
+      if (apiKey) {
+        try {
+          const psiUrl = new URL('https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
+          psiUrl.searchParams.set('url', p.url);
+          psiUrl.searchParams.set('strategy','mobile');
+          psiUrl.searchParams.append('category','PERFORMANCE');
+          psiUrl.searchParams.set('key', apiKey);
+          const psiResp = await fetchWithTimeout(psiUrl.toString(), {}, 25000);
+          if (psiResp.ok) {
+            const psiData = await psiResp.json() as any;
+            const aud     = psiData?.lighthouseResult?.audits || {};
+            const lcpMs   = aud['largest-contentful-paint']?.numericValue;
+            const tbtMs   = aud['total-blocking-time']?.numericValue;
+            const score   = Math.round((psiData?.lighthouseResult?.categories?.performance?.score || 0) * 100);
+
+            // Update baseline if not yet captured
+            const { data: pg } = await getDb().from('dev_pages').select('baseline_captured_at').eq('id',pageId).maybeSingle();
+            if (!(pg as any)?.baseline_captured_at) {
+              await getDb().from('dev_pages').update({ baseline_lcp_ms: lcpMs||null, baseline_tbt_ms: tbtMs||null, baseline_score: score||null, baseline_captured_at: new Date().toISOString() }).eq('id',pageId);
+            }
+
+            if (lcpMs && lcpMs > 4000) {
+              findings.push({ severity: 'red', audit_kind: 'performance',
+                finding_title: `MOBILE LCP critical — ${(lcpMs/1000).toFixed(1)}s`,
+                finding_detail: `Mobile LCP is ${(lcpMs/1000).toFixed(1)}s. Google Good threshold is under 2.5s.${tbtMs ? ` TBT: ${Math.round(tbtMs)}ms.` : ''}`,
+                evidence: { lcp_ms: lcpMs, tbt_ms: tbtMs||null, perf_score: score } });
+            } else if (lcpMs && lcpMs > 2500) {
+              findings.push({ severity: 'amber', audit_kind: 'performance',
+                finding_title: `Mobile LCP needs improvement — ${(lcpMs/1000).toFixed(1)}s`,
+                finding_detail: `Mobile LCP is ${(lcpMs/1000).toFixed(1)}s. Google threshold for "Good" is under 2.5s.`,
+                evidence: { lcp_ms: lcpMs, tbt_ms: tbtMs||null, perf_score: score } });
+            }
+
+            if (tbtMs && tbtMs > 600) {
+              findings.push({ severity: 'red', audit_kind: 'performance',
+                finding_title: `Total Blocking Time critical — ${Math.round(tbtMs)}ms`,
+                finding_detail: `TBT is ${Math.round(tbtMs)}ms. Scripts are heavily blocking the main thread. Good threshold: under 200ms.`,
+                evidence: { tbt_ms: tbtMs, lcp_ms: lcpMs||null } });
+            }
+          }
+        } catch { /* PSI optional */ }
+      }
+
+      // ── 4. Save findings as tasks with page_id ─────────────────
+      const actionable = findings.filter(f => f.severity !== 'green');
+      const projectId  = p.project_id || siteId; // use site_id as fallback project scope
+
+      const tasks = parseFindingsToTasks(actionable, {
+        projectId, auditRunId: runId, targetUrl: p.url,
+      }).map(t => ({ ...t, page_id: pageId }));
+
+      const { saved } = await saveTasks(tasks);
+
+      // ── 5. Update page stats ───────────────────────────────────
+      const red   = actionable.filter(f => f.severity === 'red').length;
+      const amber = actionable.filter(f => f.severity === 'amber').length;
+      await getDb().from('dev_pages').update({
+        status:          'audited',
+        issues_red:      red,
+        issues_amber:    amber,
+        last_audited_at: new Date().toISOString(),
+        audit_run_id:    runId,
+      }).eq('id', pageId);
+
+      return ok(res, { success: true, findings_found: findings.length, tasks_created: saved, issues_red: red, issues_amber: amber });
+
+    } catch (e: any) {
+      await getDb().from('dev_pages').update({ status: 'pending' }).eq('id', pageId);
+      return ok(res, { error: e?.message || 'Audit failed' });
+    }
+  }
+
   if (action === 'site_cluster_issues') {
     /* Analyse all dev_tasks for a site, group by issue type,
        classify each cluster as template-level or page-specific. */

@@ -104,6 +104,9 @@ export interface DevTask {
   cms_platform?:          string;
   llm_calls_used?:        number;
   executed_at?:           string;
+  // Site Manager
+  page_id?:               string | null;
+  template_fix_id?:       string | null;
   // Client approval thread
   client_thread?:         ClientMessage[];
   client_approved?:       boolean;
@@ -1922,31 +1925,34 @@ export async function saveTasks(tasks: DevTask[]): Promise<{ saved: number; erro
     const projectId  = tasks[0].project_id;
     const auditRunId = tasks[0].audit_run_id;
     let alreadyExecuted = new Set<string>();
-    if (auditRunId) {
-      const { data: existing } = await db()
-        .from('dev_tasks').select('task_type')
-        .eq('project_id', projectId).eq('audit_run_id', auditRunId)
-        .in('status', executedStatuses);
+    const pageId = tasks[0]?.page_id;
+    if (auditRunId || pageId) {
+      let q = db().from('dev_tasks').select('task_type').eq('project_id', projectId).in('status', executedStatuses);
+      if (pageId)    q = q.eq('page_id', pageId);
+      else if (auditRunId) q = q.eq('audit_run_id', auditRunId);
+      const { data: existing } = await q;
       if (existing) alreadyExecuted = new Set((existing as any[]).map((r: any) => r.task_type));
     }
     const toInsert = tasks.filter(t => !alreadyExecuted.has(t.task_type));
     if (!toInsert.length) return { saved: 0 };
 
     const rows = toInsert.map(t => ({
-      project_id:    t.project_id,
-      campaign_id:   t.campaign_id  || null,
-      audit_run_id:  t.audit_run_id || null,
-      phase:         t.phase,
-      category:      t.category,
-      task_type:     t.task_type,
-      title:         t.title,
-      description:   t.description  || null,
-      finding_title: t.finding_title || null,
-      finding_detail:(t.finding_detail || '').slice(0, 2000),
-      severity:      t.severity,
-      target_url:    t.target_url   || null,
-      priority:      t.priority,
-      status:        t.status,
+      project_id:      t.project_id,
+      campaign_id:     t.campaign_id      || null,
+      audit_run_id:    t.audit_run_id     || null,
+      page_id:         t.page_id          || null,
+      template_fix_id: t.template_fix_id  || null,
+      phase:           t.phase,
+      category:        t.category,
+      task_type:       t.task_type,
+      title:           t.title,
+      description:     t.description      || null,
+      finding_title:   t.finding_title    || null,
+      finding_detail:  (t.finding_detail  || '').slice(0, 2000),
+      severity:        t.severity,
+      target_url:      t.target_url       || null,
+      priority:        t.priority,
+      status:          t.status,
     }));
     const { error } = await db().from('dev_tasks').insert(rows);
     if (error) {

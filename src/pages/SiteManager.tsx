@@ -598,6 +598,7 @@ function SiteManagerView() {
               {[
                 { id: 'pages',    label: '📋 Pages',         badge: pages.length },
                 { id: 'baseline', label: '📊 Baseline',      badge: pages.filter(p => !p.baseline_captured_at).length || undefined },
+                { id: 'audit',    label: '🔍 Audit Queue',   badge: pages.filter(p => p.status === 'pending' || p.status === 'baseline_done').length || undefined },
                 { id: 'issues',   label: '⚡ Issue Clusters', badge: undefined },
               ].map(tab => (
                 <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id as any)}
@@ -627,6 +628,10 @@ function SiteManagerView() {
               <BaselinePanel pages={pages} siteId={selectedSiteId!} projectId={selectedSite.project_id} onDone={refreshPages} />
             )}
 
+            {activeTab === 'audit' && (
+              <AuditQueue pages={pages} siteId={selectedSiteId!} onDone={refreshPages} />
+            )}
+
             {activeTab === 'issues' && (
               <IssueClusters siteId={selectedSiteId!} />
             )}
@@ -640,6 +645,177 @@ function SiteManagerView() {
 
       {selectedPage && (
         <PageDrawer page={selectedPage} onClose={() => setSelectedPage(null)} onUpdated={refreshPages} />
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// AUDIT QUEUE
+// ─────────────────────────────────────────────────────────────
+function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: string; onDone: () => void }) {
+  const ready   = pages.filter(p => p.status === 'pending' || p.status === 'baseline_done');
+  const audited = pages.filter(p => p.status === 'audited'  || p.status === 'done');
+
+  const [running,   setRunning]   = useState(false);
+  const [current,   setCurrent]   = useState('');
+  const [done,      setDone]      = useState(0);
+  const [total,     setTotal]     = useState(0);
+  const [log,       setLog]       = useState<{ url: string; red: number; amber: number; ok: boolean }[]>([]);
+  const [selected,  setSelected]  = useState<Set<string>>(new Set(ready.map(p => p.id)));
+  const abortRef = useRef(false);
+
+  // Reset selection when ready pages change
+  useEffect(() => {
+    setSelected(new Set(ready.map(p => p.id)));
+  }, [pages.length]);
+
+  const runAudit = async () => {
+    const toAudit = ready.filter(p => selected.has(p.id));
+    if (!toAudit.length) return;
+    setRunning(true);
+    abortRef.current = false;
+    setDone(0);
+    setTotal(toAudit.length);
+    setLog([]);
+
+    for (let i = 0; i < toAudit.length; i++) {
+      if (abortRef.current) break;
+      const page = toAudit[i];
+      setCurrent(page.url);
+      const r = await callApi('site_audit_page', { pageId: page.id, siteId }, 90000);
+      const entry = {
+        url:   page.url.replace(/^https?:\/\/[^/]+/, '') || '/',
+        red:   (r.data as any)?.issues_red   || 0,
+        amber: (r.data as any)?.issues_amber || 0,
+        ok:    r.ok,
+      };
+      setLog(prev => [entry, ...prev].slice(0, 50));
+      setDone(i + 1);
+    }
+
+    setRunning(false);
+    setCurrent('');
+    onDone();
+  };
+
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Ready to audit',  value: ready.length,   color: 'text-amber-400' },
+          { label: 'Audited',         value: audited.length, color: 'text-emerald-400' },
+          { label: 'Total pages',     value: pages.length,   color: 'text-foreground' },
+        ].map(s => (
+          <div key={s.label} className="rounded-2xl border border-border bg-card/40 px-4 py-3 text-center">
+            <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+            <div className="text-[10px] text-muted-foreground mt-0.5">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Page selection */}
+      {ready.length > 0 && !running && (
+        <div className="rounded-2xl border border-border bg-card/30 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/10">
+            <div className="flex items-center gap-2">
+              <input type="checkbox"
+                checked={selected.size === ready.length && ready.length > 0}
+                onChange={e => setSelected(e.target.checked ? new Set(ready.map(p => p.id)) : new Set())}
+                className="w-3.5 h-3.5 rounded" />
+              <span className="text-xs font-semibold">{selected.size} of {ready.length} selected</span>
+            </div>
+            <button type="button" onClick={runAudit} disabled={selected.size === 0}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-40 transition-all shadow-[0_0_14px_hsl(var(--primary)/0.2)]">
+              <Zap className="w-3 h-3" />
+              Run audit on {selected.size} page{selected.size !== 1 ? 's' : ''}
+            </button>
+          </div>
+          <div className="divide-y divide-border/50 max-h-64 overflow-y-auto">
+            {ready.map(page => (
+              <div key={page.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors">
+                <input type="checkbox" checked={selected.has(page.id)}
+                  onChange={() => setSelected(prev => { const n = new Set(prev); n.has(page.id) ? n.delete(page.id) : n.add(page.id); return n; })}
+                  className="w-3.5 h-3.5 rounded flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs truncate">{page.url.replace(/^https?:\/\/[^/]+/, '') || '/'}</div>
+                  <div className="text-[10px] text-muted-foreground">{page.page_type}</div>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_CONFIG[page.status]?.bg || 'bg-muted/40'} ${STATUS_CONFIG[page.status]?.color || 'text-muted-foreground'}`}>
+                  {STATUS_CONFIG[page.status]?.label || page.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Running state */}
+      {running && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 space-y-4">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-4 h-4 animate-spin text-primary flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold">{done} of {total} pages audited</div>
+              <div className="text-xs text-muted-foreground truncate mt-0.5">{current.replace(/^https?:\/\/[^/]+/, '') || 'Starting…'}</div>
+            </div>
+            <span className="text-sm font-bold text-primary tabular-nums">{pct}%</span>
+          </div>
+          <div className="w-full bg-muted/30 rounded-full h-1.5 overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: pct + '%' }} />
+          </div>
+          <button type="button" onClick={() => abortRef.current = true}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+            Stop after current page
+          </button>
+        </div>
+      )}
+
+      {/* Live audit log */}
+      {log.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card/30 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+            Audit results
+          </div>
+          <div className="divide-y divide-border/40 max-h-64 overflow-y-auto">
+            {log.map((entry, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-2.5">
+                {entry.ok
+                  ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                  : <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
+                <span className="text-xs flex-1 truncate font-mono text-muted-foreground">{entry.url}</span>
+                <div className="flex items-center gap-2 text-xs">
+                  {entry.red > 0 && <span className="text-red-400 font-bold">{entry.red}🔴</span>}
+                  {entry.amber > 0 && <span className="text-amber-400">{entry.amber}🟡</span>}
+                  {entry.red === 0 && entry.amber === 0 && entry.ok && <span className="text-emerald-400">✓ clean</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* All done */}
+      {ready.length === 0 && audited.length > 0 && (
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-5 py-4 flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+          <div>
+            <div className="text-sm font-semibold text-emerald-400">All {audited.length} pages audited</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Check Issue Clusters tab to see patterns across pages</div>
+          </div>
+        </div>
+      )}
+
+      {ready.length === 0 && audited.length === 0 && (
+        <div className="rounded-2xl border border-border bg-card/20 py-12 text-center space-y-2">
+          <div className="text-3xl">🔍</div>
+          <div className="text-sm font-medium">No pages to audit yet</div>
+          <div className="text-xs text-muted-foreground">Import pages first, then come back here to run audits</div>
+        </div>
       )}
     </div>
   );
