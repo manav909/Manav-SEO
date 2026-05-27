@@ -146,6 +146,14 @@ export async function classifyCampaignIntent(text: string): Promise<{
   if (!lc) return { intent: 'question', confidence: 'low', used_llm: false };
 
   /* Fast regex path — high-confidence patterns */
+  /* Objective patterns checked FIRST — they must win over commit patterns.
+     "grow traffic", "fix technical issues" etc. must never become keyword campaigns. */
+  for (const { re } of OBJECTIVE_PATTERNS) {
+    if (re.test(lc)) {
+      return { intent: 'objective', confidence: 'high', used_llm: false, matched_pattern: re.source };
+    }
+  }
+
   const COMMIT_PATTERNS = [
     /^rank\s+(?:me\s+)?for\b/,
     /^rank\s+(?:\/[^\s]+|https?:\/\/)/,                       // "rank /url/ for X"
@@ -159,13 +167,6 @@ export async function classifyCampaignIntent(text: string): Promise<{
   for (const re of COMMIT_PATTERNS) {
     if (re.test(lc)) {
       return { intent: 'commitment', confidence: 'high', used_llm: false, matched_pattern: re.source };
-    }
-  }
-
-  /* Objective-type commands — route to objective creation */
-  for (const { re } of OBJECTIVE_PATTERNS) {
-    if (re.test(lc)) {
-      return { intent: 'objective', confidence: 'high', used_llm: false, matched_pattern: re.source };
     }
   }
 
@@ -203,18 +204,24 @@ export async function classifyCampaignIntent(text: string): Promise<{
 }
 
 async function classifyViaLlm(text: string): Promise<CampaignIntent> {
-  const sys = `Classify the user's chat input into ONE of three intents:
+  const sys = `Classify the user's chat input into ONE of four intents:
 
-- "commitment": The user wants to commit to running a campaign. They have decided.
-  Examples: "rank me for X", "let's go after Y", "we're targeting Z", "set up SEO for X"
+- "objective": The user wants to set a strategic SEO objective (not a single keyword campaign).
+  Examples: "grow traffic", "increase organic traffic", "fix technical issues", "improve DA",
+  "boost domain authority", "local visibility for London", "improve E-E-A-T", "build content authority",
+  "grow traffic for all pages", "increase organic clicks", "fix technical SEO", "recover traffic"
+
+- "commitment": The user wants to start a keyword ranking campaign for a specific keyword.
+  Examples: "rank me for X", "let's go after Y", "we're targeting Z", "set up SEO for X",
+  "rank for ottoman beds", "get me ranking for best mattress"
 
 - "exploration": The user is curious and wants to evaluate before committing.
   Examples: "what about X?", "is Y worth pursuing?", "should we go after Z?"
 
-- "question": The user is asking a question or making a statement that's neither commitment nor exploration.
+- "question": The user is asking a question or making a general statement.
   Examples: "how does SEO work?", "explain this audit", "what's our current ranking?"
 
-Reply with ONLY one word: commitment | exploration | question`;
+Reply with ONLY one word: objective | commitment | exploration | question`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -230,6 +237,7 @@ Reply with ONLY one word: commitment | exploration | question`;
   if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
   const data = await res.json();
   const out = (data?.content?.[0]?.text || '').trim().toLowerCase();
+  if (out.startsWith('objective'))  return 'objective';
   if (out.startsWith('commitment')) return 'commitment';
   if (out.startsWith('exploration')) return 'exploration';
   return 'question';
