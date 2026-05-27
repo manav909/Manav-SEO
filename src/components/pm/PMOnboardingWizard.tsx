@@ -81,7 +81,7 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
   const [err, setErr]         = useState('');
 
   /* Step 1 — Client */
-  const [clientMode, setClientMode]   = useState<'existing' | 'new'>('existing');
+  const [clientMode, setClientMode]   = useState<'existing' | 'new'>(() => (clients && clients.length > 0) ? 'existing' : 'new');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [clientForm, setClientForm]   = useState({
     name: '', company: '', email: '', website: '', industry: '', retainer_amount: '',
@@ -112,6 +112,11 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
   const existingClients = clients || [];
   const progressPct     = ((step) / (STEPS.length - 1)) * 100;
 
+  // Auto-switch to 'new' mode if no clients exist
+  useEffect(() => {
+    if (existingClients.length === 0 && clientMode === 'existing') setClientMode('new');
+  }, [existingClients.length]);
+
   /* ── Check integrations when project is created ── */
   useEffect(() => {
     if (!createdProjectId) return;
@@ -140,10 +145,10 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
   /* Step 0 — just validate client selection and advance */
   const handleClientNext = () => {
     setErr('');
-    if (clientMode === 'new' && (!clientForm.name || !clientForm.email))
-      return setErr('Client name and email are required.');
+    if (clientMode === 'new' && !clientForm.name)
+      return setErr('Client name is required.');
     if (clientMode === 'existing' && !selectedClientId)
-      return setErr('Please select a client.');
+      return setErr('Please select a client, or switch to "New Client".');
     setStep(1);
   };
 
@@ -183,7 +188,24 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
         status:      'active',
       }).select('id').single();
       if (pErr) throw new Error(pErr.message);
-      setCreatedProjectId((p as any).id);
+      const newProjectId = (p as any).id;
+      const newClientId  = clientId;
+      setCreatedProjectId(newProjectId);
+
+      // CRITICAL: Update profiles.client_ids so refreshData() can find this project
+      // Without this the project is created but invisible to the user after reload
+      const { data: prof } = await supabase
+        .from('profiles').select('id, client_ids, client_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
+      if (prof) {
+        const existingIds: string[] = Array.isArray((prof as any).client_ids) ? (prof as any).client_ids : [];
+        if (!existingIds.includes(newClientId)) {
+          await supabase.from('profiles').update({
+            client_ids: [...existingIds, newClientId],
+            client_id:  (prof as any).client_id || newClientId,
+          }).eq('id', (prof as any).id);
+        }
+      }
+
       await refreshData();
       setStep(2);
     } catch (e: any) {
@@ -246,23 +268,36 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
     if (!keyword.trim() || !createdProjectId) { finishWizard(); return; }
     setLaunching(true);
     try {
-      const res = await pmApi.seasonPipelineCreate({
-        projectId:    createdProjectId,
-        pipelineType: 'rank_for_keyword',
-        inputText:    keyword,
-        scope:        { keyword },
-      });
-      if (res.error) throw new Error(res.error);
+      // Create campaign directly — lightweight, no pipeline needed at onboarding
+      const res = await fetch('/api/task-engine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action:       'bs_campaign_objective_create',
+          projectId:    createdProjectId,
+          campaignType: 'keyword_ranking',
+          keyword:      keyword.trim(),
+          title:        `Rank for "${keyword.trim()}"`,
+        }),
+      }).then(r => r.json());
+      if (!res.success) throw new Error(res.error || 'Campaign creation failed');
       setLaunched(true);
-      toast({ title: `Pipeline started for "${keyword}"`, description: 'The 8-step pipeline is running. Check SEO Campaigns in PM Module.' });
+      toast({
+        title: `Campaign created for "${keyword}"`,
+        description: 'Go to SEO Campaigns in the PM Module to run the ranking pipeline.',
+      });
     } catch (e: any) {
-      toast({ title: 'Pipeline failed to start', description: e.message, variant: 'destructive' });
+      toast({ title: 'Campaign failed', description: e.message, variant: 'destructive' });
     }
     setLaunching(false);
   };
 
   const finishWizard = async () => {
+    // Small delay ensures the loadingRef guard in AuthContext has reset
+    // after the refreshData() call inside handleCreateProject
+    await new Promise(r => setTimeout(r, 400));
     await refreshData();
+    // Extra wait for React state to propagate
+    await new Promise(r => setTimeout(r, 200));
     if (createdProjectId) onComplete(createdProjectId);
     else if (onDismiss) onDismiss();
   };
