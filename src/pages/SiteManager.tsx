@@ -219,21 +219,34 @@ function ImportPagesModal({ siteId, onClose, onImported }: { siteId: string; onC
 // BASELINE CAPTURE PANEL
 // ─────────────────────────────────────────────────────────────
 function BaselinePanel({ pages, siteId, projectId, onDone }: { pages: DevPage[]; siteId: string; projectId: string | null; onDone: () => void }) {
-  const pending  = pages.filter(p => !p.baseline_captured_at);
-  const done     = pages.filter(p =>  p.baseline_captured_at);
-  const [running,  setRunning]  = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [current,  setCurrent]  = useState('');
+  const pending     = pages.filter(p => !p.baseline_captured_at);
+  const withBase    = pages.filter(p =>  p.baseline_captured_at);
+  const missingGsc  = withBase.filter(p => p.baseline_gsc_clicks === null);
+  const [running,   setRunning]   = useState(false);
+  const [progress,  setProgress]  = useState(0);
+  const [current,   setCurrent]   = useState('');
+  const [mode,      setMode]      = useState<'pending'|'all'|'gsc_only'>('pending');
   const abortRef = useRef(false);
 
+  // Auto-select best mode
+  useEffect(() => {
+    if (pending.length > 0) setMode('pending');
+    else if (missingGsc.length > 0) setMode('gsc_only');
+    else setMode('all');
+  }, [pages.length]);
+
   const runBaseline = async () => {
+    const targets = mode === 'pending' ? pending
+                  : mode === 'gsc_only' ? missingGsc
+                  : pages;
+    if (!targets.length) return;
     setRunning(true); abortRef.current = false;
-    const batch = pending.slice(0, 50).map(p => p.id);
+    const batch = targets.slice(0, 50).map(p => p.id);
     let done2 = 0;
     for (let i = 0; i < batch.length; i += 3) {
       if (abortRef.current) break;
       const ids = batch.slice(i, i + 3);
-      setCurrent(pending[i]?.url || '');
+      setCurrent(targets[i]?.url || '');
       await callApi('site_take_baseline', { siteId, pageIds: ids, projectId }, 90000);
       done2 += ids.length;
       setProgress(Math.round((done2 / batch.length) * 100));
@@ -242,56 +255,90 @@ function BaselinePanel({ pages, siteId, projectId, onDone }: { pages: DevPage[];
     onDone();
   };
 
-  if (pending.length === 0) {
-    return (
-      <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-5 py-4 flex items-center gap-3">
-        <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-        <div>
-          <div className="text-sm font-semibold text-emerald-400">Baseline captured for all {done.length} pages</div>
-          <div className="text-xs text-muted-foreground">PageSpeed scores and GSC metrics locked in as starting point</div>
-        </div>
-      </div>
-    );
-  }
+  // Check GSC connection status for this site
+  const [gscConnected, setGscConnected] = useState(false);
+  useEffect(() => {
+    callApi('site_gsc_status', { siteId }).then(r => {
+      setGscConnected(!!(r.data as any)?.connected && !!(r.data as any)?.resourceId);
+    });
+  }, [siteId]);
+
+  const targets = mode === 'pending' ? pending : mode === 'gsc_only' ? missingGsc : pages;
 
   return (
-    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 space-y-4">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <div className="text-sm font-semibold">Capture baseline before any fixes</div>
-          <div className="text-xs text-muted-foreground mt-0.5">
-            Records the current state of {pending.length} pages before any changes are made.
-            {done.length > 0 && ` (${done.length} already captured)`}
+    <div className="space-y-4">
+      {/* Status cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-border bg-card/40 px-4 py-3">
+          <div className={`text-xl font-bold ${pending.length > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>{withBase.length}/{pages.length}</div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">Baseline captured</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card/40 px-4 py-3">
+          <div className={`text-xl font-bold ${missingGsc.length > 0 && gscConnected ? 'text-amber-400' : missingGsc.length === 0 ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+            {withBase.length - missingGsc.length}/{withBase.length}
           </div>
-          <div className="flex gap-3 mt-2">
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium">
-              ✓ PageSpeed scores — always available
-            </span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${projectId ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted/40 text-muted-foreground'}`}>
-              {projectId ? '✓ GSC traffic — project linked' : '○ GSC traffic — link a project first'}
-            </span>
+          <div className="text-[10px] text-muted-foreground mt-0.5">With GSC data</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card/40 px-4 py-3">
+          <div className={`text-xl font-bold ${gscConnected ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+            {gscConnected ? '✓' : '○'}
           </div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">GSC connected</div>
         </div>
       </div>
 
-      {running ? (
-        <div className="space-y-2">
+      {/* Mode selector */}
+      {!running && (
+        <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-3">
+          <div className="text-xs font-semibold">What to capture</div>
+          <div className="space-y-2">
+            {[
+              { id: 'pending' as const,  label: `New pages only`,              sub: `${pending.length} pages with no baseline yet`,          disabled: pending.length === 0 },
+              { id: 'gsc_only' as const, label: `Fill in missing GSC data`,     sub: `${missingGsc.length} pages have no clicks/impressions`,  disabled: missingGsc.length === 0 || !gscConnected },
+              { id: 'all' as const,      label: `Re-run all pages`,             sub: `Overwrites all ${pages.length} baselines with fresh data`, disabled: pages.length === 0 },
+            ].map(opt => (
+              <button key={opt.id} type="button" onClick={() => !opt.disabled && setMode(opt.id)}
+                disabled={opt.disabled}
+                className={`w-full text-left px-3.5 py-2.5 rounded-xl border transition-all ${
+                  mode === opt.id && !opt.disabled
+                    ? 'border-primary/50 bg-primary/10'
+                    : opt.disabled
+                    ? 'border-border/40 opacity-40 cursor-not-allowed'
+                    : 'border-border bg-background/40 hover:border-primary/30'
+                }`}>
+                <div className="text-xs font-medium">{opt.label}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{opt.sub}</div>
+              </button>
+            ))}
+          </div>
+
+          <button type="button" onClick={runBaseline} disabled={targets.length === 0}
+            className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-40 transition-all shadow-[0_0_14px_hsl(var(--primary)/0.2)]">
+            Run baseline for {Math.min(targets.length, 50)} pages
+          </button>
+        </div>
+      )}
+
+      {/* Running state */}
+      {running && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 space-y-3">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground truncate max-w-xs">{current}</span>
-            <span className="text-amber-400 font-medium tabular-nums">{progress}%</span>
+            <span className="text-muted-foreground truncate max-w-xs">{current.replace(/^https?:\/\/[^/]+/, '') || 'Starting…'}</span>
+            <span className="text-primary font-bold tabular-nums">{progress}%</span>
           </div>
           <div className="w-full bg-muted/30 rounded-full h-1.5">
-            <div className="h-full bg-amber-400 rounded-full transition-all duration-500" style={{ width: progress + '%' }} />
+            <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: progress + '%' }} />
           </div>
           <button type="button" onClick={() => abortRef.current = true}
-            className="text-xs text-muted-foreground hover:text-foreground">Stop</button>
+            className="text-xs text-muted-foreground hover:text-foreground">Stop after current page</button>
         </div>
-      ) : (
-        <button type="button" onClick={runBaseline}
-          className="w-full py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-semibold hover:bg-amber-500/30 transition-all">
-          Capture baseline for {Math.min(pending.length, 50)} pages
-        </button>
+      )}
+
+      {/* GSC hint */}
+      {!gscConnected && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-400">
+          GSC not connected — baselines will capture PageSpeed only. Go to <strong>Settings tab</strong> to connect GSC, then use "Fill in missing GSC data".
+        </div>
       )}
     </div>
   );
