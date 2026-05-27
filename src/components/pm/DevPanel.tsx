@@ -307,7 +307,7 @@ function SafetyModal({
           </div>
         </div>
 
-        {/* Manav's backup */}
+        {/* Manav\'s backup */}
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 flex gap-3 items-start">
           <span className="text-xl flex-shrink-0">✅</span>
           <div>
@@ -937,7 +937,7 @@ function TaskDetail({
   const [draftReply,   setDraftReply]   = useState('');
   const [replyCopied,  setReplyCopied]  = useState(false);
 
-  // Reset to instructions tab when a different task is selected
+  // Reset all state when a different task is selected
   useEffect(() => {
     setActiveTab('instructions');
     setSnapshot(null);
@@ -945,43 +945,84 @@ function TaskDetail({
     setChatMessages([]);
     setBriefOpen(false);
     setBrief(null);
+    setBriefLoading(false);
+    setBriefElapsed(0);
+    if (briefTimerRef.current) { clearInterval(briefTimerRef.current); briefTimerRef.current = null; }
     setThread(Array.isArray(task.client_thread) ? task.client_thread : []);
     setDraftReply('');
   }, [task.id]);
 
-  const generateBrief = async () => {
-    setBriefLoading(true);
+  // Generate client brief entirely from task data — instant, no network call.
+  // A 200-word approval email does not need an AI round-trip.
+  const generateBrief = () => {
     setBriefOpen(true);
     setBrief(null);
-    setBriefElapsed(0);
-    if (briefTimerRef.current) clearInterval(briefTimerRef.current);
-    briefTimerRef.current = setInterval(() => setBriefElapsed(s => s + 1), 1000);
 
-    const result = await callApi<{ subject: string; body: string; summary: string }>(
-      'dev_client_brief',
-      { taskId: task.id, projectId },
-      22000  // 22s client-side hard cutoff — if server hangs, client stops waiting
-    );
+    const taskTitle  = task.title || 'website change';
+    const siteUrl    = task.target_url || 'your website';
+    const clientName = 'there'; // fallback — personalised if client name is stored
+    const analysis  = task.analysis   || task.description || '';
+    const cms       = task.cms_platform && task.cms_platform !== 'unknown' ? task.cms_platform : 'your website platform';
+    const hasSave   = !!task.snapshot_id;
 
-    if (briefTimerRef.current) { clearInterval(briefTimerRef.current); briefTimerRef.current = null; }
-    setBriefLoading(false);
+    // Subject
+    const subject = `Approval Required: ${taskTitle}`;
 
-    if (result.ok && (result as any).data?.body) {
-      setBrief({
-        subject: (result as any).data.subject || 'Website Change Approval Required',
-        body:    (result as any).data.body    || '',
-        summary: (result as any).data.summary || '',
-      });
-    } else {
-      const isTimeout = result.error?.includes('abort') || result.error?.includes('AbortError') || result.error?.includes('timed out');
-      setBrief({
-        subject: 'Error',
-        body: isTimeout
-          ? 'The AI service is slow right now. Click ↺ Regenerate to try again — it usually works on retry.'
-          : (result.error || 'Could not generate brief. Try again.'),
-        summary: ''
-      });
-    }
+    // Severity context
+    const severityNote =
+      task.severity === 'critical' || task.severity === 'red'
+        ? 'This is a high-priority issue that is affecting your search rankings right now.'
+        : task.severity === 'warning' || task.severity === 'amber'
+        ? 'This is a recommended improvement that will strengthen your SEO performance.'
+        : 'This is an optimisation that will improve your SEO performance.';
+
+    // What changes per task type
+    const whatChanges: Record<string, string> = {
+      lcp_fix:              'We will update how JavaScript files load on this page so they no longer block the browser from showing your content. No visual changes — the page will look identical, but load significantly faster.',
+      script_defer:         'We will add a "defer" instruction to specific JavaScript files on this page so they load after your content is visible instead of before. Nothing visible will change.',
+      lazy_loading:         'We will update images below the fold so they load only when a visitor scrolls to them. The page will look exactly the same — this only affects load order.',
+      image_format:         'We will convert images to a modern format (WebP) that is smaller in file size but visually identical. Your images will look exactly the same.',
+      faq_schema:           'We will add invisible structured data to this page that helps Google understand your FAQ content. Nothing visible changes for your visitors — this is read only by search engines.',
+      h1_update:            'We will update the main heading on this page to include your target keyword. The heading text will change slightly — we will share the exact new wording for your review.',
+      first_para:           'We will rewrite the opening paragraph of this page to better align with what people are searching for. We will share the exact new text for your review.',
+      h2_section:           'We will add new sections to this page answering questions that people are searching for. These will appear as new content below your existing content.',
+      date_modified_schema: 'We will add a "last updated" date to the page\'s technical metadata. Nothing visible changes for your visitors.',
+      gsc_indexing:         'We will submit this page to Google for indexing. No changes to the page itself — this is an administrative action in Google Search Console.',
+      meta_desc:            'We will update the meta description — the short text that appears under your page title in Google search results. No visible change on the page itself.',
+    };
+    const changeDesc = whatChanges[task.task_type] || 'We will make a targeted technical change to this page based on our audit findings.';
+
+    const rollbackLine = hasSave
+      ? 'We have saved a snapshot of the current page state. If anything looks wrong after the change, we can restore the exact previous version immediately.'
+      : 'We will make this change carefully and monitor the result. The change is targeted and reversible.';
+
+    const body = [
+      `Hi${clientName && clientName !== 'the client' ? ' ' + clientName.split(' ')[0] : ''},`,
+      ``,
+      `I wanted to reach out about a recommended change to your page at ${siteUrl}.`,
+      ``,
+      severityNote,
+      ``,
+      `What we found:`,
+      analysis.slice(0, 350) + (analysis.length > 350 ? '...' : ''),
+      ``,
+      `What we want to do:`,
+      changeDesc,
+      ``,
+      `What will NOT change:`,
+      `Your page design, branding, images, and all existing content stay exactly as they are. Your site will not go offline during this change.`,
+      ``,
+      `Our assurance:`,
+      rollbackLine,
+      ``,
+      `If you are happy to proceed, please reply YES and we will action this within 24 hours. Happy to answer any questions first.`,
+      ``,
+      `Best regards`,
+    ].join('\n');
+
+    const summary = `Requesting approval to: ${taskTitle.toLowerCase()} — no visual changes, reversible.`;
+
+    setBrief({ subject, body, summary });
   };
 
   const addClientMessage = async (role: 'pm'|'client', content: string) => {
@@ -1150,7 +1191,7 @@ function TaskDetail({
             )}
             {elapsedSec !== undefined && elapsedSec >= 20 && (
               <p className="text-xs text-amber-400/80 px-1">
-                ⚠️ Taking longer than usual. If this doesn't complete in the next few seconds, click Cancel and Retry.
+                ⚠️ Taking longer than usual. If this doesn\'t complete in the next few seconds, click Cancel and Retry.
               </p>
             )}
           </div>
@@ -1232,11 +1273,10 @@ function TaskDetail({
           <button
             type="button"
             onClick={generateBrief}
-            disabled={briefLoading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all border border-border text-muted-foreground hover:border-amber-500/40 hover:text-amber-400 hover:bg-amber-500/5 disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all border border-border text-muted-foreground hover:border-amber-500/40 hover:text-amber-400 hover:bg-amber-500/5"
           >
             <span>📋</span>
-            <span>{briefLoading ? 'Generating…' : 'Client Brief'}</span>
+            <span>{briefOpen && brief ? 'Brief ✓' : 'Client Brief'}</span>
           </button>
           <button
             type="button"
@@ -1300,30 +1340,7 @@ function TaskDetail({
             >✕</button>
           </div>
 
-          {briefLoading ? (
-            <div className="p-6 flex flex-col items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-5 h-5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-                <div className="text-sm text-foreground font-medium">
-                  {briefElapsed < 3 ? 'Setting up…'
-                    : briefElapsed < 8 ? 'Writing email body…'
-                    : briefElapsed < 14 ? 'Refining tone and clarity…'
-                    : 'Almost done…'}
-                </div>
-                <div className="text-xs text-muted-foreground tabular-nums">{briefElapsed}s</div>
-              </div>
-              <div className="w-full bg-muted/30 rounded-full h-1 overflow-hidden">
-                <div
-                  className="h-full bg-primary/40 rounded-full transition-all duration-1000"
-                  style={{ width: Math.min(95, briefElapsed * 5) + '%' }}
-                />
-              </div>
-              <button type="button"
-                onClick={() => { if (briefTimerRef.current) clearInterval(briefTimerRef.current); setBriefLoading(false); setBriefOpen(false); }}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >Cancel</button>
-            </div>
-          ) : brief ? (
+          {brief ? (
             <div className="p-4 space-y-4">
               {/* Summary pill */}
               {brief.summary && (
@@ -1375,7 +1392,7 @@ function TaskDetail({
                     navigator.clipboard.writeText(fullEmail);
                     setBriefCopied(true);
                     setTimeout(() => setBriefCopied(false), 2500);
-                    // Auto-log to thread so it's always there as context
+                    // Auto-log to thread so it\'s always there as context
                     const alreadyLogged = thread.some(m => m.role === 'pm' && m.content.includes(brief!.subject));
                     if (!alreadyLogged) {
                       await addClientMessage('pm', `[Brief sent]\nSubject: ${brief!.subject}\n\n${brief!.body}`);
