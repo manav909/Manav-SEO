@@ -4481,6 +4481,336 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+
+  /* ═══════════════════════════════════════════════════════════════
+     SITE MANAGER ACTIONS (site_*)
+     Independent of project context — sites have optional project link.
+     All bulk page management, baseline capture, audit queue, clustering.
+  ═══════════════════════════════════════════════════════════════ */
+
+  if (action === 'site_create') {
+    const { label, domain, cms, projectId: pid } = body;
+    if (!label) return ok(res, { error: 'label required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const { data, error } = await getDb().from('dev_sites').insert({
+        label, domain: domain || null, cms: cms || null,
+        project_id: pid || null,
+        updated_at: new Date().toISOString(),
+      }).select().single();
+      if (error) return ok(res, { error: error.message });
+      return ok(res, { success: true, site: data });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'site_list') {
+    const { projectId: pid } = body;
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      let q = getDb().from('dev_sites').select('*').order('updated_at', { ascending: false });
+      if (pid) q = q.or(`project_id.eq.${pid},project_id.is.null`);
+      const { data, error } = await q;
+      if (error) return ok(res, { error: error.message });
+      return ok(res, { success: true, sites: data || [] });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'site_update') {
+    const { siteId, updates } = body;
+    if (!siteId) return ok(res, { error: 'siteId required' });
+    const allowed = ['label','domain','cms','project_id','notes'];
+    const safe = Object.fromEntries(Object.entries(updates || {}).filter(([k]) => allowed.includes(k)));
+    safe.updated_at = new Date().toISOString();
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      await getDb().from('dev_sites').update(safe).eq('id', siteId);
+      return ok(res, { success: true });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'site_get_pages') {
+    const { siteId, sortBy = 'priority', order = 'asc', status: statusFilter, pageType } = body;
+    if (!siteId) return ok(res, { error: 'siteId required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      let q = getDb().from('dev_pages').select('*').eq('site_id', siteId);
+      if (statusFilter) q = q.eq('status', statusFilter);
+      if (pageType) q = q.eq('page_type', pageType);
+      const validSort = ['priority','issues_red','issues_amber','baseline_gsc_clicks','baseline_score','url','created_at'];
+      const col = validSort.includes(sortBy) ? sortBy : 'priority';
+      q = q.order(col, { ascending: order !== 'desc' });
+      const { data, error } = await q;
+      if (error) return ok(res, { error: error.message });
+      return ok(res, { success: true, pages: data || [] });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'site_update_page') {
+    const { pageId, updates } = body;
+    if (!pageId) return ok(res, { error: 'pageId required' });
+    const allowed = ['title','page_type','priority','status','notes'];
+    const safe = Object.fromEntries(Object.entries(updates || {}).filter(([k]) => allowed.includes(k)));
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      await getDb().from('dev_pages').update(safe).eq('id', pageId);
+      return ok(res, { success: true });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'site_import_pages') {
+    /* Bulk create pages from: URL array, sitemap XML, or CSV/file content.
+       Deduplicates by URL within the site. */
+    const { siteId, projectId: pid, urls, fileContent, fileName } = body;
+    if (!siteId) return ok(res, { error: 'siteId required' });
+
+    const { db: getDb } = await import('./lib/db.js');
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+    let parsedUrls: { url: string; title?: string; page_type?: string }[] = [];
+
+    if (Array.isArray(urls) && urls.length > 0) {
+      // Direct URL array
+      parsedUrls = urls.map((u: any) => ({
+        url: typeof u === 'string' ? u.trim() : u.url,
+        title: typeof u === 'object' ? u.title : undefined,
+      })).filter(u => /^https?:\/\//.test(u.url));
+
+    } else if (fileContent && typeof fileContent === 'string') {
+      const sample = fileContent.slice(0, 60000);
+
+      if (/<urlset|<sitemapindex/.test(sample)) {
+        // Sitemap XML — extract <loc> tags directly, no AI needed
+        const locs = sample.match(/<loc>\s*([^<]+)\s*<\/loc>/g) || [];
+        parsedUrls = locs.map(l => ({ url: l.replace(/<\/?loc>/g,'').trim() }))
+          .filter(u => /^https?:\/\//.test(u.url));
+
+      } else {
+        // CSV or unknown format — use Claude to extract URLs
+        const aiRes = await fetchAnthropicWithTimeout({
+          model: 'claude-haiku-4-5-20251001', max_tokens: 3000,
+          system: [
+            'Extract all URLs from this file. Return ONLY a JSON array of objects.',
+            'Each object: { "url": "https://...", "title": "page title if available", "page_type": "product|blog|landing|home|category|other" }',
+            'Only include valid http/https URLs. No markdown, no explanation.',
+          ].join(' '),
+          messages: [{ role: 'user', content: (fileName ? 'File: ' + fileName + '\n\n' : '') + sample }],
+        }, ANTHROPIC_API_KEY, 30000);
+
+        if (aiRes.ok) {
+          try {
+            const cleaned = aiRes.text.replace(/^```json\s*/i,'').replace(/\s*```$/i,'').trim();
+            const parsed = JSON.parse(cleaned);
+            parsedUrls = Array.isArray(parsed) ? parsed : [];
+          } catch { /* fall through with empty */ }
+        }
+      }
+    }
+
+    if (parsedUrls.length === 0) return ok(res, { error: 'No valid URLs found' });
+
+    // Get existing URLs for dedup
+    const { data: existing } = await getDb().from('dev_pages')
+      .select('url').eq('site_id', siteId);
+    const existingSet = new Set((existing || []).map((r: any) => r.url));
+
+    const toInsert = parsedUrls
+      .filter(p => !existingSet.has(p.url))
+      .map(p => ({
+        site_id:    siteId,
+        project_id: pid || null,
+        url:        p.url,
+        title:      p.title || null,
+        page_type:  p.page_type || 'other',
+        status:     'pending',
+        priority:   50,
+      }));
+
+    if (toInsert.length === 0) return ok(res, { success: true, imported: 0, skipped: parsedUrls.length, message: 'All URLs already exist in this workspace' });
+
+    // Insert in batches of 100
+    let inserted = 0;
+    for (let i = 0; i < toInsert.length; i += 100) {
+      const batch = toInsert.slice(i, i + 100);
+      const { error } = await getDb().from('dev_pages').insert(batch);
+      if (!error) inserted += batch.length;
+    }
+    return ok(res, { success: true, imported: inserted, skipped: parsedUrls.length - inserted });
+  }
+
+  if (action === 'site_take_baseline') {
+    /* Capture PageSpeed + GSC metrics for a batch of pages (max 3 per call).
+       Client calls repeatedly until all pages are covered. */
+    const { siteId, pageIds, projectId: pid } = body;
+    if (!siteId || !Array.isArray(pageIds) || pageIds.length === 0) return ok(res, { error: 'siteId and pageIds required' });
+    const batch = (pageIds as string[]).slice(0, 3); // max 3 per call — PSI is slow
+
+    const { db: getDb } = await import('./lib/db.js');
+    const results: { pageId: string; ok: boolean; error?: string }[] = [];
+
+    for (const pageId of batch) {
+      try {
+        const { data: page } = await getDb().from('dev_pages').select('url,site_id').eq('id', pageId).maybeSingle();
+        if (!page) { results.push({ pageId, ok: false, error: 'Page not found' }); continue; }
+
+        const url = (page as any).url;
+
+        // PageSpeed baseline
+        let lcpMs: number | null = null, tbtMs: number | null = null, score: number | null = null;
+        try {
+          const psiKey = process.env.PAGESPEED_API_KEY || '';
+          if (psiKey || pid) {
+            // Try project-level key first
+            let apiKey = psiKey;
+            if (!apiKey && pid) {
+              const { data: psiInt } = await getDb().from('project_integrations')
+                .select('api_key,status').eq('project_id', pid).eq('provider','pagespeed').maybeSingle();
+              apiKey = (psiInt as any)?.api_key || '';
+            }
+            const psiUrl = new URL('https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
+            psiUrl.searchParams.set('url', url);
+            psiUrl.searchParams.set('strategy', 'mobile');
+            psiUrl.searchParams.append('category', 'PERFORMANCE');
+            if (apiKey) psiUrl.searchParams.set('key', apiKey);
+            const psiRes = await Promise.race([
+              fetch(psiUrl.toString()),
+              new Promise<never>((_,r) => setTimeout(() => r(new Error('PSI timeout')), 25000)),
+            ]) as Response;
+            if (psiRes.ok) {
+              const psiData = await psiRes.json() as any;
+              const aud = psiData?.lighthouseResult?.audits || {};
+              lcpMs = aud['largest-contentful-paint']?.numericValue || null;
+              tbtMs = aud['total-blocking-time']?.numericValue || null;
+              score = Math.round((psiData?.lighthouseResult?.categories?.performance?.score || 0) * 100) || null;
+            }
+          }
+        } catch { /* PSI optional */ }
+
+        // GSC per-URL baseline
+        let gscClicks: number | null = null, gscImpressions: number | null = null, gscPosition: number | null = null;
+        if (pid) {
+          try {
+            const { data: gscInt } = await getDb().from('project_integrations')
+              .select('resource_id,access_token,refresh_token,token_expiry,client_id,client_secret')
+              .eq('project_id', pid).eq('provider','gsc').maybeSingle();
+            if (gscInt && (gscInt as any).resource_id) {
+              const { getAccessToken } = await import('./lib/pm-gsc.js');
+              const { token } = await getAccessToken(pid);
+              if (token) {
+                const propPath = encodeURIComponent((gscInt as any).resource_id);
+                const gscApiUrl = `https://searchconsole.googleapis.com/webmasters/v3/sites/${propPath}/searchAnalytics/query`;
+                const startDate = new Date(Date.now() - 28*86400000).toISOString().slice(0,10);
+                const endDate   = new Date().toISOString().slice(0,10);
+                const gscBody = { startDate, endDate, dimensions: ['page'], rowLimit: 1,
+                  dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'equals', expression: url }] }] };
+                const gscRes = await Promise.race([
+                  fetch(gscApiUrl, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(gscBody) }),
+                  new Promise<never>((_,r) => setTimeout(() => r(new Error('GSC timeout')), 15000)),
+                ]) as Response;
+                if (gscRes.ok) {
+                  const gscData = await gscRes.json() as any;
+                  const row = gscData?.rows?.[0];
+                  if (row) {
+                    gscClicks      = Math.round(row.clicks || 0);
+                    gscImpressions = Math.round(row.impressions || 0);
+                    gscPosition    = row.position ? parseFloat(row.position.toFixed(1)) : null;
+                  }
+                }
+              }
+            }
+          } catch { /* GSC optional */ }
+        }
+
+        await getDb().from('dev_pages').update({
+          baseline_lcp_ms:          lcpMs,
+          baseline_tbt_ms:          tbtMs,
+          baseline_score:           score,
+          baseline_gsc_clicks:      gscClicks,
+          baseline_gsc_impressions: gscImpressions,
+          baseline_gsc_position:    gscPosition,
+          baseline_captured_at:     new Date().toISOString(),
+          status:                   'baseline_done',
+        }).eq('id', pageId);
+
+        results.push({ pageId, ok: true });
+      } catch (e: any) {
+        results.push({ pageId, ok: false, error: e?.message });
+      }
+    }
+    return ok(res, { success: true, results });
+  }
+
+  if (action === 'site_cluster_issues') {
+    /* Analyse all dev_tasks for a site, group by issue type,
+       classify each cluster as template-level or page-specific. */
+    const { siteId } = body;
+    if (!siteId) return ok(res, { error: 'siteId required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const { data: pages } = await getDb().from('dev_pages').select('id,url,page_type').eq('site_id', siteId);
+      if (!pages || !(pages as any[]).length) return ok(res, { success: true, clusters: [] });
+      const pageIds = (pages as any[]).map(p => p.id);
+      const { data: tasks } = await getDb().from('dev_tasks')
+        .select('id,page_id,task_type,title,severity,status,cms_platform,finding_title')
+        .in('page_id', pageIds).neq('status', 'done').neq('status', 'skipped');
+      if (!tasks || !(tasks as any[]).length) return ok(res, { success: true, clusters: [] });
+
+      // Group by task_type
+      const byType = new Map<string, any[]>();
+      for (const t of (tasks as any[])) {
+        if (!byType.has(t.task_type)) byType.set(t.task_type, []);
+        byType.get(t.task_type)!.push(t);
+      }
+
+      // Template-fixable task types — same code change fixes all pages
+      const templateFixable = new Set(['lcp_fix','script_defer','lazy_loading','image_format','date_modified_schema']);
+      // Page-specific — content or schema that differs per page
+      const pageSpecific    = new Set(['h1_update','first_para','h2_section','faq_schema','meta_desc','gsc_indexing']);
+
+      const clusters = Array.from(byType.entries()).map(([taskType, clusterTasks]) => {
+        const pageCount = new Set(clusterTasks.map(t => t.page_id)).size;
+        const redCount  = clusterTasks.filter(t => t.severity === 'red' || t.severity === 'critical').length;
+        const isTemplate = templateFixable.has(taskType) && pageCount > 1;
+        const pageUrls = clusterTasks.map(t => {
+          const page = (pages as any[]).find(p => p.id === t.page_id);
+          return page?.url || '';
+        }).filter(Boolean).slice(0, 10);
+        return {
+          task_type:    taskType,
+          count:        clusterTasks.length,
+          page_count:   pageCount,
+          red_count:    redCount,
+          is_template:  isTemplate,
+          is_page_specific: pageSpecific.has(taskType),
+          task_ids:     clusterTasks.map(t => t.id),
+          page_urls:    pageUrls,
+          label:        clusterTasks[0]?.title || taskType,
+        };
+      }).sort((a,b) => (b.red_count * 3 + b.count) - (a.red_count * 3 + a.count));
+
+      return ok(res, { success: true, clusters });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'site_get_stats') {
+    const { siteId } = body;
+    if (!siteId) return ok(res, { error: 'siteId required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const { data: pages } = await getDb().from('dev_pages').select('id,status,issues_red,issues_amber,baseline_score,current_score').eq('site_id', siteId);
+      const { data: site }  = await getDb().from('dev_sites').select('*').eq('id', siteId).maybeSingle();
+      const ps = (pages || []) as any[];
+      return ok(res, {
+        success: true,
+        site,
+        total_pages:    ps.length,
+        audited_pages:  ps.filter(p => p.status === 'audited' || p.status === 'done').length,
+        baseline_pages: ps.filter(p => p.baseline_captured_at).length,
+        total_red:      ps.reduce((s,p) => s + (p.issues_red || 0), 0),
+        total_amber:    ps.reduce((s,p) => s + (p.issues_amber || 0), 0),
+      });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+
   if (action === 'dev_parse_any_audit') {
     /* Universal audit parser — accepts any file format from any tool.
        Screaming Frog CSV, Ahrefs export, Lighthouse JSON, SEMrush,

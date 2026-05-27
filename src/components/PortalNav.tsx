@@ -10,7 +10,7 @@ import {
   Database, Activity, Brain, ChevronDown, Menu, X,
   BookOpenCheck, Rocket, MessageSquare, Users, Target,
   FileText, Search, Heart, Eye, Kanban, UserPlus,
-  DollarSign, Bot, Palette, Map,
+  DollarSign, Bot, Palette, Map, Map2,
 } from 'lucide-react';
 
 interface Props {
@@ -63,6 +63,7 @@ const EMPIRE_SECTIONS = [
     items: [
       { href: '/kanban',          label: 'Kanban Board',    icon: Kanban,       desc: 'Task delivery',      perm: 'playground' },
       { href: '/pm',              label: 'Project Manager', icon: Layers,       desc: 'Plan, run & verify', perm: 'playground' },
+      { href: '/site-manager',    label: 'Site Manager',    icon: Map2,         desc: 'Bulk page management', perm: 'playground' },
       { href: '/brand-studio',    label: 'Brand Studio',    icon: Palette,      desc: 'Brand intelligence', perm: 'playground' },
       { href: '/content-hub',     label: 'Content Hub',     icon: FileText,     desc: 'Content briefs',     perm: 'playground' },
       { href: '/content-writer',  label: 'Content Writer',  icon: FileText,     desc: 'Writer dashboard',   perm: 'playground' },
