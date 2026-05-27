@@ -1138,123 +1138,33 @@ function TaskDetail({
             ↺ Reopen
           </button>
         )}
-      </div>
-
-      {/* Ask Manav chat button */}
-      <div className="flex items-center gap-2">
+        {/* Ask Manav — lives at the right end of the action strip, no extra row */}
         <button
           type="button"
           onClick={() => {
             setChatOpen(v => !v);
             if (!chatOpen && chatMessages.length === 0) {
-              // Pre-load a welcome message
               setChatMessages([{
                 role: 'assistant',
                 content: 'Hi! I\'m here to help you apply this fix. What questions do you have — about what to click, what something means, or whether it\'s safe to do?'
               }]);
             }
           }}
-          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all border ${
+          className={`ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all border ${
             chatOpen
               ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
-              : 'border-border text-muted-foreground hover:text-foreground hover:border-violet-500/40 hover:bg-violet-500/5'
+              : 'border-border text-muted-foreground hover:border-violet-500/30 hover:text-violet-400 hover:bg-violet-500/5'
           }`}
         >
           <span>💬</span>
-          <span>{chatOpen ? 'Close chat' : 'Ask Manav'}</span>
-        </button>
-        {chatMessages.length > 1 && !chatOpen && (
-          <span className="text-[10px] text-muted-foreground">{chatMessages.filter(m => m.role === 'assistant').length} responses</span>
-        )}
-      </div>
-
-      {/* Chat panel */}
-      {chatOpen && (
-        <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 overflow-hidden flex flex-col" style={{ maxHeight: 420 }}>
-          {/* Header */}
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-violet-500/20 bg-violet-500/10">
-            <span className="text-sm">💬</span>
-            <span className="text-xs font-semibold text-violet-300">Manav — Live Help</span>
-            <span className="text-[10px] text-muted-foreground ml-1">Ask anything about this task</span>
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ minHeight: 180, maxHeight: 280 }}>
-            {chatMessages.map((msg, i) => (
-              <div key={i} className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {msg.role === 'assistant' && (
-                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-sm">
-                    M
-                  </div>
-                )}
-                <div className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-primary text-primary-foreground rounded-tr-sm'
-                    : 'bg-card border border-violet-500/20 text-foreground rounded-tl-sm'
-                }`}>
-                  {msg.content}
-                </div>
-                {msg.role === 'user' && (
-                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted/60 border border-border flex items-center justify-center text-xs text-muted-foreground">
-                    You
-                  </div>
-                )}
-              </div>
-            ))}
-            {chatLoading && (
-              <div className="flex gap-2.5 justify-start">
-                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-sm">M</div>
-                <div className="px-3.5 py-2.5 rounded-2xl bg-card border border-violet-500/20 text-muted-foreground text-sm">
-                  <span className="animate-pulse">Thinking…</span>
-                </div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Suggested questions — only when no user messages yet */}
-          {chatMessages.filter(m => m.role === 'user').length === 0 && (
-            <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-              {[
-                'Where exactly do I click?',
-                'Will this break my site?',
-                'How long will this take?',
-                task.cms_platform ? 'Is ' + task.cms_platform + ' different?' : 'What if I make a mistake?',
-              ].map(q => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => { setChatInput(q); }}
-                  className="text-[11px] px-2.5 py-1 rounded-full border border-violet-500/30 text-violet-400/80 hover:bg-violet-500/10 hover:text-violet-300 transition-colors"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
+          <span>{chatOpen ? 'Close' : 'Ask Manav'}</span>
+          {chatMessages.filter(m => m.role === 'assistant').length > 1 && !chatOpen && (
+            <span className="ml-0.5 w-4 h-4 rounded-full bg-violet-500/30 text-violet-300 text-[9px] flex items-center justify-center">
+              {chatMessages.filter(m => m.role === 'assistant').length}
+            </span>
           )}
-
-          {/* Input */}
-          <div className="flex gap-2 p-3 border-t border-violet-500/20 bg-card/40">
-            <input
-              type="text"
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-              placeholder="Ask anything about this fix…"
-              disabled={chatLoading}
-              className="flex-1 px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-violet-500/50 transition-colors disabled:opacity-50 placeholder:text-muted-foreground/50"
-            />
-            <button
-              type="button"
-              onClick={sendChat}
-              disabled={chatLoading || !chatInput.trim()}
-              className="px-3 py-2 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium"
-            >
-              Send
-            </button>
-          </div>
-        </div>
-      )}
+        </button>
+      </div>
 
       {/* Verification result */}
       {task.verification_result && (
@@ -1275,6 +1185,84 @@ function TaskDetail({
           {task.verification_evidence?.message && (
             <p className="text-xs text-muted-foreground">{String(task.verification_evidence.message)}</p>
           )}
+        </div>
+      )}
+
+      {/* Chat panel — shown instead of (or alongside) tab content when open */}
+      {chatOpen && (
+        <div className="rounded-2xl border border-violet-500/20 bg-card overflow-hidden flex flex-col">
+          {/* Chat messages */}
+          <div className="overflow-y-auto p-4 space-y-3" style={{ minHeight: 200, maxHeight: 300 }}>
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {msg.role === 'assistant' && (
+                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-xs font-bold text-violet-300">
+                    M
+                  </div>
+                )}
+                <div className={`max-w-[82%] px-3.5 py-2.5 text-sm leading-relaxed ${
+                  msg.role === 'user'
+                    ? 'bg-primary text-primary-foreground rounded-2xl rounded-tr-sm'
+                    : 'bg-muted/40 border border-border text-foreground rounded-2xl rounded-tl-sm'
+                }`}>
+                  {msg.content}
+                </div>
+                {msg.role === 'user' && (
+                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted/60 border border-border flex items-center justify-center text-[10px] text-muted-foreground font-medium">
+                    You
+                  </div>
+                )}
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="flex gap-2.5 justify-start">
+                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-xs font-bold text-violet-300">M</div>
+                <div className="px-3.5 py-2.5 rounded-2xl bg-muted/40 border border-border text-muted-foreground text-sm">
+                  <span className="animate-pulse">Thinking…</span>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Suggested questions */}
+          {chatMessages.filter(m => m.role === 'user').length === 0 && (
+            <div className="px-4 pb-3 flex flex-wrap gap-1.5 border-t border-border pt-2.5">
+              {[
+                'Where exactly do I click?',
+                'Will this break my site?',
+                task.cms_platform && task.cms_platform !== 'unknown' ? 'How do I do this in ' + task.cms_platform + '?' : 'What if I make a mistake?',
+                'How long will this take?',
+              ].map(q => (
+                <button key={q} type="button"
+                  onClick={() => { setChatInput(q); }}
+                  className="text-[11px] px-2.5 py-1 rounded-full border border-violet-500/25 text-violet-400/80 hover:bg-violet-500/10 hover:text-violet-300 transition-colors"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="flex gap-2 p-3 border-t border-border bg-muted/20">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+              placeholder="Ask anything about this fix…"
+              disabled={chatLoading}
+              autoFocus
+              className="flex-1 px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-violet-500/40 transition-colors disabled:opacity-50 placeholder:text-muted-foreground/50"
+            />
+            <button type="button" onClick={sendChat}
+              disabled={chatLoading || !chatInput.trim()}
+              className="px-3 py-2 rounded-xl bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ↑
+            </button>
+          </div>
         </div>
       )}
 
