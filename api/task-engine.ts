@@ -4551,6 +4551,15 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       }).select().single();
       if (error) return ok(res, { error: error.message });
 
+      // Seed Data Room immediately — fills identity, website, GSC/GA4 access as they exist
+      // Non-blocking: seed failure never blocks workspace creation
+      if (projectId) {
+        try {
+          const { seedV2DataRoom } = await import('./lib/pm-dataroom-seed.js');
+          await seedV2DataRoom({ projectId });
+        } catch { /* non-blocking */ }
+      }
+
       return ok(res, { success: true, site: data, project_id: projectId, client_id: clientId, auto_created: !pid });
     } catch (e: any) { return ok(res, { error: e?.message }); }
   }
@@ -4876,6 +4885,14 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
         last_audited_at: new Date().toISOString(),
         audit_run_id:    runId,
       }).eq('id', pageId);
+
+      // Seed Data Room with what we now know — keyword from audit, site URL, GSC access
+      if (projectId) {
+        try {
+          const { seedV2DataRoom } = await import('./lib/pm-dataroom-seed.js');
+          await seedV2DataRoom({ projectId });
+        } catch { /* non-blocking */ }
+      }
 
       return ok(res, { success: true, findings_found: findings.length, tasks_created: saved, issues_red: red, issues_amber: amber });
 
@@ -5654,6 +5671,21 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
       const { data, error } = await getDb().from('seo_campaigns').insert(row).select('id').single();
       if (error) return ok(res, { error: error.message });
+      // Seed goal into Data Room from objective title
+      try {
+        const { seedV2DataRoom } = await import('./lib/pm-dataroom-seed.js');
+        // Write goal to project_knowledge before seeding so it gets picked up
+        const goalNarrative = title || GOAL_LABELS[campaignType as string] || campaignType;
+        if (goalNarrative) {
+          await getDb().from('project_knowledge').upsert({
+            project_id: projectId, category: 'goal', field_key: 'primary_goal',
+            field_value: goalNarrative, source: 'site_manager_objective',
+            notes: `Set from ${campaignType} campaign objective.`,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'project_id,category,field_key', ignoreDuplicates: true });
+        }
+        await seedV2DataRoom({ projectId });
+      } catch { /* non-blocking */ }
       return ok(res, { success: true, campaign_id: (data as any).id });
     } catch (e: any) { return ok(res, { error: e?.message }); }
   }

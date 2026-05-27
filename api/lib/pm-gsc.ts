@@ -173,6 +173,15 @@ export async function gscOauthCallback(opts: {
           }, { onConflict: "project_id,provider" });
         }
       } catch { /* mirror is best-effort — site tokens already saved */ }
+
+      // Re-seed Data Room now that GSC is connected — fills access.gsc_access
+      try {
+        const pid = (await db().from("dev_sites").select("project_id").eq("id", parsed.siteId).maybeSingle())?.data;
+        if ((pid as any)?.project_id) {
+          const { seedV2DataRoom } = await import("./pm-dataroom-seed.js");
+          await seedV2DataRoom({ projectId: (pid as any).project_id });
+        }
+      } catch { /* non-blocking */ }
       const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>GSC connected</title>
 <style>body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#e5e5e5;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}.card{max-width:480px;padding:32px;border-radius:16px;border:1px solid #2a2a2a;background:#141414;text-align:center}h1{font-size:20px;margin:0 0 12px}p{font-size:14px;color:#a3a3a3;margin:0 0 16px;line-height:1.5}a{color:#818cf8;text-decoration:none;font-weight:600}</style>
@@ -810,7 +819,20 @@ export async function handlePmGsc(action: string, body: any, req?: any, res?: an
       const { siteId, siteUrl } = body;
       if (!siteId || !siteUrl) return { success: false, error: "siteId and siteUrl required" };
       const { error } = await db().from("dev_sites").update({ gsc_resource_id: siteUrl, updated_at: new Date().toISOString() }).eq("id", siteId);
-      return error ? { success: false, error: error.message } : { success: true };
+      if (error) return { success: false, error: error.message };
+      // Also update project_integrations.resource_id so checkIndexability and GSC pulls work
+      try {
+        const { data: site } = await db().from("dev_sites").select("project_id").eq("id", siteId).maybeSingle();
+        if ((site as any)?.project_id) {
+          await db().from("project_integrations")
+            .update({ resource_id: siteUrl, updated_at: new Date().toISOString() })
+            .eq("project_id", (site as any).project_id).eq("provider", "gsc");
+          // Re-seed: gsc_access now confirmed with property
+          const { seedV2DataRoom } = await import("./pm-dataroom-seed.js");
+          await seedV2DataRoom({ projectId: (site as any).project_id });
+        }
+      } catch { /* non-blocking */ }
+      return { success: true };
     }
     case "gsc_oauth_callback": {
       /* This action is hit by Google's redirect — req.query.code/state.
