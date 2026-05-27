@@ -36,6 +36,7 @@ import type { Finding } from "./seo-technical-audit.js";
 
 export type PipelineType =
   | 'rank_for_keyword'
+  | 'traffic_growth'
   | 'content_production'
   | 'audit_remediation'
   | 'monthly_client_pack'

@@ -34,8 +34,11 @@ export async function bsSeasonPipelineLaunch(body: any): Promise<any> {
     if (pipelineType === 'rank_for_keyword') {
       const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
       definition = buildRankForKeywordPipeline();
+    } else if (pipelineType === 'traffic_growth') {
+      const { buildTrafficGrowthPipeline } = await import("./season-pipeline-traffic-growth.js");
+      definition = buildTrafficGrowthPipeline();
     } else {
-      return { success: false, error: `Unknown pipeline type: ${pipelineType}. Currently supported: rank_for_keyword.` };
+      return { success: false, error: `Unknown pipeline type: ${pipelineType}. Currently supported: rank_for_keyword, traffic_growth.` };
     }
 
     /* Create the run row immediately so the frontend has a run_id to poll. */
