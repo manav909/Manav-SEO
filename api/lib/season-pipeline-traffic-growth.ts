@@ -49,26 +49,75 @@ async function llm(system: string, user: string, maxTokens = 2000): Promise<stri
   return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
 }
 
-/* ─── Helper: get target URLs from scope or fall back to GSC top pages ─ */
-async function resolveTargetPages(ctx: PipelineStepContext): Promise<string[]> {
-  const fromScope: string[] = Array.isArray(ctx.scope.targetUrls)
-    ? ctx.scope.targetUrls.filter(Boolean).slice(0, 30)
-    : [];
-  if (fromScope.length > 0) return fromScope;
+/* ─── Helper: get target URLs — checks 4 sources in priority order ──────
+   1. Scope (passed at pipeline launch from the SEASON command)
+   2. seo_campaigns.target_urls for any traffic_growth objective on this project
+   3. dev_pages for the site workspace linked to this project
+   4. GSC top pages cache (project_knowledge.gsc_top_pages)
+   Returns deduplicated list, max 50.
+──────────────────────────────────────────────────────────────────── */
+async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
+  urls: string[];
+  source: string;
+}> {
+  const seen = new Set<string>();
+  const add  = (u: string) => { if (u && u.startsWith('http')) seen.add(u); };
 
-  /* Fall back to GSC top pages cached in project_knowledge */
+  // 1. Scope — highest priority (explicit command like "grow traffic for /page1")
+  const fromScope: string[] = Array.isArray(ctx.scope.targetUrls)
+    ? ctx.scope.targetUrls.filter(Boolean)
+    : [];
+  if (fromScope.length > 0) {
+    fromScope.forEach(add);
+    return { urls: [...seen].slice(0, 50), source: 'command' };
+  }
+
+  // 2. seo_campaigns.target_urls — objective already has pages defined
   try {
-    const { data } = await db().from("project_knowledge")
+    const { data: campaigns } = await db()
+      .from("seo_campaigns")
+      .select("target_urls")
+      .eq("project_id", ctx.projectId)
+      .eq("campaign_type", "traffic_growth")
+      .eq("status", "active")
+      .not("target_urls", "is", null);
+    for (const c of (campaigns || []) as any[]) {
+      if (Array.isArray(c.target_urls)) c.target_urls.forEach(add);
+    }
+    if (seen.size > 0) {
+      return { urls: [...seen].slice(0, 50), source: 'objective target_urls' };
+    }
+  } catch { /* non-blocking */ }
+
+  // 3. dev_pages — workspace pages linked to this project
+  try {
+    const { data: pages } = await db()
+      .from("dev_pages")
+      .select("url")
+      .eq("project_id", ctx.projectId)
+      .order("priority", { ascending: false })
+      .limit(50);
+    for (const p of (pages || []) as any[]) add(p.url);
+    if (seen.size > 0) {
+      return { urls: [...seen].slice(0, 50), source: 'site workspace pages' };
+    }
+  } catch { /* non-blocking */ }
+
+  // 4. GSC top pages cache — last resort
+  try {
+    const { data } = await db()
+      .from("project_knowledge")
       .select("field_value")
       .eq("project_id", ctx.projectId)
       .eq("field_key", "gsc_top_pages")
       .maybeSingle();
     if (data) {
-      const pages = JSON.parse((data as any).field_value || "[]");
-      return pages.map((p: any) => p.page || p.url || p.dimension).filter(Boolean).slice(0, 20);
+      const gscPages = JSON.parse((data as any).field_value || "[]");
+      gscPages.forEach((p: any) => add(p.page || p.url || p.dimension || ""));
     }
   } catch { /* no cache */ }
-  return [];
+
+  return { urls: [...seen].slice(0, 50), source: seen.size > 0 ? 'GSC top pages' : 'none' };
 }
 
 /* ─── Helper: load GSC metrics for pages from project_knowledge ─ */
@@ -116,11 +165,11 @@ const stepTrafficAudit = {
   description: "GSC clicks, impressions, CTR — quick wins at positions 4–15",
   artifact_kind: "traffic_audit",
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const targetUrls = await resolveTargetPages(ctx);
+    const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
     const { topPages, quickWins } = await loadGscData(ctx.projectId);
 
     const targetNote = targetUrls.length > 0
-      ? `\n\nFocusing on these ${targetUrls.length} target pages:\n${targetUrls.slice(0,10).map(u => `- ${u}`).join("\n")}`
+      ? `\n\nFocusing on these ${targetUrls.length} target pages (from ${pageSource}):\n${targetUrls.slice(0,10).map(u => `- ${u}`).join("\n")}`
       : "\n\nNo specific target pages set — analysing project-wide top pages.";
 
     const topPagesSummary = topPages.length > 0
@@ -163,7 +212,7 @@ Format as markdown with clear sections.`
       artifact: { kind: "traffic_audit", title: "Traffic Audit", body: artifact },
       honest_note: topPages.length === 0
         ? "No GSC data found. Connect GSC to get real traffic analysis."
-        : `Analysed ${topPages.length} pages from GSC. ${quickWins.length} quick-win opportunities found.`,
+        : `Target pages from: ${pageSource}. Analysed ${topPages.length} GSC pages. ${quickWins.length} quick-win opportunities found.`,
     };
   },
 };
@@ -180,7 +229,7 @@ const stepPageHealth = {
   artifact_kind: "page_health",
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const targetUrls = await resolveTargetPages(ctx);
+    const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
     const pageData   = await loadPageHealthData(ctx.projectId, targetUrls);
 
     if (!pageData.length) {
@@ -307,7 +356,7 @@ const stepInternalLinkFlow = {
   artifact_kind: "internal_links",
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const targetUrls = await resolveTargetPages(ctx);
+    const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
     const trafficData = ctx.prior["traffic_audit"] || {};
     const topPages: any[] = trafficData.topPages || [];
 
