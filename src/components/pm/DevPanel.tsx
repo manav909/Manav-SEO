@@ -1325,14 +1325,20 @@ function TaskDetail({
               {/* Actions */}
               <div className="flex gap-2 pt-1">
                 <button type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(`Subject: ${brief.subject}\n\n${brief.body}`);
+                  onClick={async () => {
+                    const fullEmail = `Subject: ${brief!.subject}\n\n${brief!.body}`;
+                    navigator.clipboard.writeText(fullEmail);
                     setBriefCopied(true);
                     setTimeout(() => setBriefCopied(false), 2500);
+                    // Auto-log to thread so it's always there as context
+                    const alreadyLogged = thread.some(m => m.role === 'pm' && m.content.includes(brief!.subject));
+                    if (!alreadyLogged) {
+                      await addClientMessage('pm', `[Brief sent]\nSubject: ${brief!.subject}\n\n${brief!.body}`);
+                    }
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all shadow-[0_0_16px_hsl(var(--primary)/0.2)]"
                 >
-                  {briefCopied ? '✓ Copied to clipboard' : 'Copy full email (subject + body)'}
+                  {briefCopied ? '✓ Copied — logged to thread' : 'Copy full email (subject + body)'}
                 </button>
                 <button type="button"
                   onClick={generateBrief}
@@ -1441,7 +1447,15 @@ function TaskDetail({
                 {tab === 'instructions' ? '📋 How to Apply' :
                  tab === 'code'         ? '⚡ Fix Code' :
                  tab === 'rollback'     ? `🔄 Rollback${task.snapshot_id ? ' 🛡️' : ''}` :
-                                         '🔍 Verify'}
+                 tab === 'verify'       ? '🔍 Verify' :
+                 /* client */             <span className="flex items-center gap-1">
+                   {'🤝 Client'}
+                   {task.client_approved
+                     ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                     : thread.length > 0
+                       ? <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                       : null}
+                 </span>}
               </button>
             ))}
           </div>
