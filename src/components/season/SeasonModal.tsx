@@ -411,37 +411,69 @@ export default function SeasonModal() {
       }
     }
 
-    /* Route objective-type commands to instant objective creation */
+    /* Route objective-type commands to context-aware objective creation */
     if (classification.intent === 'objective') {
       try {
         setMood('thinking');
-        // Parse the command to extract goal type, keywords, URLs
         const parsed = parseObjectiveCommand(q);
         if (parsed) {
           const title = q.length < 80 ? q : (parsed.keywords[0] ? `${parsed.goalType.replace(/_/g,' ')} for "${parsed.keywords[0]}"` : parsed.goalType.replace(/_/g,' '));
+
+          // If no URLs specified in command, check if project has a workspace with pages
+          let targetUrls = parsed.targetUrls;
+          let workspaceContext = '';
+          if (targetUrls.length === 0) {
+            try {
+              const sitesRes = await fetch('/api/task-engine', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'site_list', projectId: selectedProjectId }),
+              }).then(r => r.json());
+              const sites = sitesRes.sites || [];
+              // Find sites linked to this project with pages
+              for (const site of sites) {
+                if (site.project_id === selectedProjectId) {
+                  const pagesRes = await fetch('/api/task-engine', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'site_get_pages', siteId: site.id }),
+                  }).then(r => r.json());
+                  const pages = pagesRes.pages || [];
+                  if (pages.length > 0) {
+                    // Use workspace pages as target URLs
+                    targetUrls = pages.map((p: any) => p.url);
+                    workspaceContext = `\n\nI found **${pages.length} pages** in your "${site.label}" workspace — targeting all of them.`;
+                    break;
+                  }
+                }
+              }
+            } catch { /* non-blocking */ }
+          }
+
           const r = await fetch('/api/task-engine', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              action:       'bs_campaign_objective_create',
-              projectId:    selectedProjectId,
-              campaignType: parsed.goalType,
-              title:        title,
-              keyword:      parsed.keywords[0] || undefined,
-              targetUrls:   parsed.targetUrls.length > 0 ? parsed.targetUrls : undefined,
+              action:          'bs_campaign_objective_create',
+              projectId:       selectedProjectId,
+              campaignType:    parsed.goalType,
+              title,
+              keyword:         parsed.keywords[0] || undefined,
+              targetUrls:      targetUrls.length > 0 ? targetUrls : undefined,
               targetLocations: parsed.location ? [{ city: parsed.location }] : undefined,
             }),
           }).then(r => r.json());
-          if (r.success) {
-            setResponse(`✓ **${title}** objective created.
 
-Go to **SEO Campaigns → Objectives** to set your baseline, target, and deadline — then link a Site Manager workspace to start working on ${parsed.targetUrls.length > 0 ? parsed.targetUrls.length + ' target page' + (parsed.targetUrls.length !== 1 ? 's' : '') : 'pages'}.`);
+          if (r.success) {
+            const pageCount = targetUrls.length;
+            const pageNote = pageCount > 0
+              ? ` targeting **${pageCount} page${pageCount !== 1 ? 's' : ''}**`
+              : '';
+            setResponse(`✓ **${title}** objective created${pageNote}.${workspaceContext}\n\nGo to **SEO Campaigns → Objectives** to set your baseline, target, and deadline — then go to Site Manager → Audit Queue to run the audit.`);
             setMood('happy');
           } else {
-            setResponse(`Couldn't create objective: ${r.error || 'unknown error'}. Try going to SEO Campaigns → Objectives → New objective.`);
+            setResponse(`Couldn't create objective: ${r.error || 'unknown error'}.`);
             setMood('alert');
           }
         } else {
-          setResponse(`I understood you want to set an objective but couldn't parse the details. Try: **grow traffic for /page-url** or **fix technical issues** or **improve DA**.`);
+          setResponse(`I understood you want to set an objective but couldn't parse the goal type.\n\nTry:\n- **grow traffic for /page1, /page2**\n- **fix technical issues**\n- **improve DA**\n- **local visibility for London**`);
           setMood('thinking');
         }
         setSubmitting(false);
