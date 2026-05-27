@@ -1664,6 +1664,137 @@ function BulkBrief({ pages, site, siteId }: { pages: DevPage[]; site: DevSite | 
 }
 
 
+
+// ─────────────────────────────────────────────────────────────
+// LINK OBJECTIVE SECTION — connects site workspace to a campaign objective
+// ─────────────────────────────────────────────────────────────
+function LinkObjectiveSection({ siteId, projectId, onUpdated }: { siteId: string; projectId: string; onUpdated: () => void }) {
+  const [objectives,  setObjectives]  = useState<any[]>([]);
+  const [linked,      setLinked]      = useState<any | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [saving,      setSaving]      = useState(false);
+  const [showPicker,  setShowPicker]  = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      // Load all objectives for this project
+      fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bs_seo_campaign_list', projectId }) }).then(r => r.json()),
+      // Check which objective is already linked to this site
+      fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bs_seo_campaign_list', projectId }) }).then(r => r.json()),
+    ]).then(([r]) => {
+      const all = r.campaigns || [];
+      // Objectives are campaigns with a campaign_type (non-null)
+      const objs = all.filter((c: any) => c.campaign_type && c.campaign_type !== 'keyword_ranking');
+      setObjectives(objs);
+      const alreadyLinked = objs.find((c: any) => c.site_id === siteId);
+      setLinked(alreadyLinked || null);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [siteId, projectId]);
+
+  const linkTo = async (campaignId: string) => {
+    setSaving(true);
+    // Unlink from previous objective if any
+    if (linked) {
+      await fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bs_campaign_objective_update', campaignId: linked.id, updates: { site_id: null } }) });
+    }
+    // Link to new objective
+    await fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bs_campaign_objective_update', campaignId, updates: { site_id: siteId } }) });
+    const newLinked = objectives.find(o => o.id === campaignId) || null;
+    setLinked(newLinked);
+    setSaving(false);
+    setShowPicker(false);
+    onUpdated();
+  };
+
+  const unlink = async () => {
+    if (!linked) return;
+    setSaving(true);
+    await fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bs_campaign_objective_update', campaignId: linked.id, updates: { site_id: null } }) });
+    setLinked(null);
+    setSaving(false);
+    onUpdated();
+  };
+
+  const TYPE_ICONS: Record<string, string> = {
+    traffic_growth: '📈', local_visibility: '📍', domain_authority: '🔗',
+    technical_recovery: '⚙️', content_authority: '✍️', eeat: '🎓', keyword_ranking: '🏆',
+  };
+
+  if (loading) return null;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card/40 p-5 space-y-3">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-muted/30 flex items-center justify-center text-lg flex-shrink-0">🎯</div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold">Campaign Objective</div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Link this site workspace to an objective so fixes here count toward your campaign goal.
+          </p>
+        </div>
+      </div>
+
+      {linked ? (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 flex items-center gap-3">
+          <span className="text-lg">{TYPE_ICONS[linked.campaign_type] || '🎯'}</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold truncate">{linked.goal || linked.keyword}</div>
+            <div className="text-[10px] text-muted-foreground mt-0.5 capitalize">{linked.campaign_type?.replace(/_/g,' ')}</div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button type="button" onClick={() => setShowPicker(true)}
+              className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors">
+              Change
+            </button>
+            <button type="button" onClick={unlink} disabled={saving}
+              className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-red-400 transition-colors">
+              Unlink
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setShowPicker(true)} disabled={objectives.length === 0}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-border text-xs text-muted-foreground hover:border-primary/40 hover:text-primary disabled:opacity-40 transition-all">
+          <Plus className="w-3.5 h-3.5" />
+          {objectives.length === 0 ? 'No objectives yet — create one in SEO Campaigns' : 'Link to an objective'}
+        </button>
+      )}
+
+      {showPicker && (
+        <div className="rounded-xl border border-border bg-background/80 overflow-hidden">
+          <div className="px-3 py-2 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+            Select objective
+          </div>
+          <div className="divide-y divide-border/50 max-h-48 overflow-y-auto">
+            {objectives.map(o => (
+              <button key={o.id} type="button" onClick={() => linkTo(o.id)} disabled={saving}
+                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left">
+                <span className="text-base">{TYPE_ICONS[o.campaign_type] || '🎯'}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium truncate">{o.goal || o.keyword}</div>
+                  <div className="text-[10px] text-muted-foreground capitalize">{o.campaign_type?.replace(/_/g,' ')}</div>
+                </div>
+                {o.site_id === siteId && <CheckCircle className="w-3.5 h-3.5 text-primary shrink-0" />}
+              </button>
+            ))}
+          </div>
+          <div className="px-3 py-2 border-t border-border">
+            <button type="button" onClick={() => setShowPicker(false)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────
 // SITE SETTINGS — GSC + PSI direct connection, no project needed
 // ─────────────────────────────────────────────────────────────
@@ -1782,6 +1913,16 @@ function SiteSettings({ site, siteId, onUpdated }: { site: DevSite; siteId: stri
       </div>
 
       {/* PageSpeed uses platform-wide key — no per-site config needed */}
+      {/* Link to Campaign Objective */}
+      {site.project_id && (
+        <LinkObjectiveSection siteId={siteId} projectId={site.project_id} onUpdated={onUpdated} />
+      )}
+      {!site.project_id && (
+        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+          Link this workspace to a project first to connect it to a Campaign Objective.
+        </div>
+      )}
+
       <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
         Once GSC is connected and a property selected, baseline capture will include real organic traffic data per URL.
         Run baseline again on any pages that show null GSC values.

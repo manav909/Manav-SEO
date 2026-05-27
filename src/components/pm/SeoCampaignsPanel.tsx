@@ -2183,6 +2183,16 @@ function ObjectivesView({
                         📍 {locs.map((l: any) => l.city || l.region || l.country).filter(Boolean).join(', ')}
                       </span>
                     )}
+                    {c.site_id ? (
+                      <span style={{ fontSize: 10, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 3 }}>
+                        🌐 Site Manager linked
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 10, color: 'hsl(var(--muted-foreground)/0.5)', cursor: 'pointer' }}
+                        title="Link a site workspace from Site Manager → Settings">
+                        ○ No site linked
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
