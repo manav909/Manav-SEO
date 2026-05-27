@@ -4518,7 +4518,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   if (action === 'site_update') {
     const { siteId, updates } = body;
     if (!siteId) return ok(res, { error: 'siteId required' });
-    const allowed = ['label','domain','cms','project_id','notes'];
+    const allowed = ['label','domain','cms','project_id','notes','psi_api_key'];
     const safe = Object.fromEntries(Object.entries(updates || {}).filter(([k]) => allowed.includes(k)));
     safe.updated_at = new Date().toISOString();
     try {
@@ -4684,16 +4684,35 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
           }
         } catch { /* PSI optional */ }
 
-        // GSC per-URL baseline
+        // GSC per-URL baseline — uses site-level GSC first, falls back to project
         let gscClicks: number | null = null, gscImpressions: number | null = null, gscPosition: number | null = null;
-        if (pid) {
+        const hasSiteGsc = await (async () => {
+          const { data: s } = await getDb().from('dev_sites').select('gsc_resource_id,gsc_connected_at').eq('id', siteId).maybeSingle();
+          return !!(s as any)?.gsc_resource_id && !!(s as any)?.gsc_connected_at;
+        })();
+        if (hasSiteGsc || pid) {
           try {
-            const { data: gscInt } = await getDb().from('project_integrations')
-              .select('resource_id,access_token,refresh_token,token_expiry,client_id,client_secret')
-              .eq('project_id', pid).eq('provider','gsc').maybeSingle();
-            if (gscInt && (gscInt as any).resource_id) {
-              const { getAccessToken } = await import('./lib/pm-gsc.js');
-              const { token } = await getAccessToken(pid);
+            let token: string | undefined;
+            let resourceId: string | undefined;
+            if (hasSiteGsc) {
+              const { getAccessTokenForSite } = await import('./lib/pm-gsc.js');
+              const r = await getAccessTokenForSite(siteId);
+              token = r.token;
+              const { data: sd } = await getDb().from('dev_sites').select('gsc_resource_id').eq('id', siteId).maybeSingle();
+              resourceId = (sd as any)?.gsc_resource_id;
+            } else if (pid) {
+              const { data: gscInt } = await getDb().from('project_integrations')
+                .select('resource_id,access_token').eq('project_id', pid).eq('provider','gsc').maybeSingle();
+              if (gscInt && (gscInt as any).resource_id) {
+                const { getAccessToken } = await import('./lib/pm-gsc.js');
+                const r = await getAccessToken(pid);
+                token = r.token;
+                resourceId = (gscInt as any).resource_id;
+              }
+            }
+            if (token && resourceId) {
+              // reuse existing variable name for the rest of the block
+              const gscInt = { resource_id: resourceId };
               if (token) {
                 const propPath = encodeURIComponent((gscInt as any).resource_id);
                 const gscApiUrl = `https://searchconsole.googleapis.com/webmasters/v3/sites/${propPath}/searchAnalytics/query`;
@@ -4715,7 +4734,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
                   }
                 }
               }
-            }
+            } // end if (token && resourceId)
           } catch { /* GSC optional */ }
         }
 

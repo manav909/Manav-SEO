@@ -31,19 +31,30 @@ function clientCreds() {
 }
 
 /* ── tiny state helper ────────────────────────────────────── */
-/* OAuth state must round-trip project_id without trusting client storage.
-   Format: <projectId>.<random> — random is a CSRF anti-replay nonce. */
+/* OAuth state round-trips either project_id or site_id.
+   Format: <type>:<id>.<nonce>
+   type = 'p' for project, 's' for site */
 
-function packState(projectId: string): string {
+function packState(id: string, type: 'p' | 's' = 'p'): string {
   const nonce = Math.random().toString(36).slice(2, 14);
-  return `${projectId}.${nonce}`;
+  return `${type}:${id}.${nonce}`;
 }
-function unpackState(state: string): { projectId: string } | null {
+function unpackState(state: string): { projectId?: string; siteId?: string } | null {
   if (!state) return null;
-  const idx = state.indexOf(".");
+  // New format: type:id.nonce
+  const colonIdx = state.indexOf(':');
+  const dotIdx   = state.lastIndexOf('.');
+  if (colonIdx > 0 && dotIdx > colonIdx) {
+    const type = state.slice(0, colonIdx);
+    const id   = state.slice(colonIdx + 1, dotIdx);
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+    if (type === 's') return { siteId: id };
+    return { projectId: id };
+  }
+  // Legacy format: projectId.nonce
+  const idx = state.indexOf('.');
   if (idx <= 0) return null;
   const projectId = state.slice(0, idx);
-  /* UUID shape check — lightweight; full validation is the DB FK */
   if (!/^[0-9a-f-]{36}$/i.test(projectId)) return null;
   return { projectId };
 }
@@ -66,6 +77,28 @@ export async function gscOauthStart(projectId: string): Promise<{
     url.searchParams.set("access_type",   "offline");
     url.searchParams.set("prompt",        "consent");
                           /* prompt=consent forces refresh-token issuance every time */
+    url.searchParams.set("state",         state);
+    return { success: true, url: url.toString() };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "oauth start failed" };
+  }
+}
+
+/** Build the Google OAuth URL for a site workspace (no project needed). */
+export async function gscOauthStartForSite(siteId: string): Promise<{
+  success: boolean; url?: string; error?: string;
+}> {
+  if (!siteId) return { success: false, error: "siteId required" };
+  try {
+    const { id, redir } = clientCreds();
+    const state = packState(siteId, 's');
+    const url = new URL(OAUTH_AUTH);
+    url.searchParams.set("client_id",     id);
+    url.searchParams.set("redirect_uri",  redir);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("scope",         SCOPE);
+    url.searchParams.set("access_type",   "offline");
+    url.searchParams.set("prompt",        "consent");
     url.searchParams.set("state",         state);
     return { success: true, url: url.toString() };
   } catch (e: any) {
@@ -112,6 +145,29 @@ export async function gscOauthCallback(opts: {
     }
     const expAt = expIn ? new Date(Date.now() + expIn * 1000).toISOString() : null;
 
+    if (parsed.siteId) {
+      /* Site workspace GSC — save directly to dev_sites */
+      const { error: siteErr } = await db().from("dev_sites").update({
+        gsc_access_token:  access || null,
+        gsc_refresh_token: refresh,
+        gsc_token_expiry:  expAt,
+        gsc_connected_at:  new Date().toISOString(),
+        updated_at:        new Date().toISOString(),
+      }).eq("id", parsed.siteId);
+      if (siteErr) return { success: false, error: siteErr.message };
+      const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>GSC connected</title>
+<style>body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#e5e5e5;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}.card{max-width:480px;padding:32px;border-radius:16px;border:1px solid #2a2a2a;background:#141414;text-align:center}h1{font-size:20px;margin:0 0 12px}p{font-size:14px;color:#a3a3a3;margin:0 0 16px;line-height:1.5}a{color:#818cf8;text-decoration:none;font-weight:600}</style>
+</head><body><div class="card">
+  <h1>✓ Google Search Console connected</h1>
+  <p>GSC is now linked to this site workspace. Return to Site Manager and select a GSC property to complete setup.</p>
+  <p><a href="/site-manager">Open Site Manager →</a></p>
+</div>
+<script>setTimeout(()=>{try{window.opener&&window.opener.postMessage({type:'gsc_connected',siteId:'${parsed.siteId}'},'*');window.close();}catch(e){}},800);</script>
+</body></html>`;
+      return { success: true, siteId: parsed.siteId, html };
+    }
+
     /* upsert encrypted token into project_integrations */
     const { error } = await db().from("project_integrations").upsert({
       project_id:        parsed.projectId,
@@ -124,8 +180,6 @@ export async function gscOauthCallback(opts: {
 
     if (error) return { success: false, error: error.message };
 
-    /* Return a small HTML page the browser can render after the redirect.
-       Tells the PM it worked and points them back to the Data Room. */
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>GSC connected</title>
 <style>
@@ -641,9 +695,105 @@ export async function gscCronPullAll(): Promise<{
 
 /* ── dispatch ─────────────────────────────────────────────── */
 
+/** Get GSC status for a site workspace */
+export async function gscStatusForSite(siteId: string): Promise<{
+  success: boolean; connected?: boolean; resourceId?: string; error?: string;
+}> {
+  try {
+    const { data } = await db().from("dev_sites")
+      .select("gsc_resource_id,gsc_connected_at,gsc_access_token")
+      .eq("id", siteId).maybeSingle();
+    if (!data) return { success: true, connected: false };
+    return {
+      success:    true,
+      connected:  !!(data as any).gsc_connected_at,
+      resourceId: (data as any).gsc_resource_id || null,
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message };
+  }
+}
+
+/** Get valid access token for a site workspace */
+export async function getAccessTokenForSite(siteId: string): Promise<{
+  token?: string; error?: string;
+}> {
+  try {
+    const { data: site } = await db().from("dev_sites")
+      .select("gsc_access_token,gsc_refresh_token,gsc_token_expiry")
+      .eq("id", siteId).maybeSingle();
+    if (!site || !(site as any).gsc_refresh_token) return { error: "GSC not connected" };
+
+    const expiry   = (site as any).gsc_token_expiry ? new Date((site as any).gsc_token_expiry) : null;
+    const isExpired = !expiry || expiry <= new Date(Date.now() + 60_000);
+
+    if (!isExpired && (site as any).gsc_access_token) {
+      return { token: (site as any).gsc_access_token };
+    }
+
+    // Refresh token
+    const { id: clientId, secret } = clientCreds();
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type:    "refresh_token",
+        refresh_token: (site as any).gsc_refresh_token,
+        client_id:     clientId,
+        client_secret: secret,
+      }).toString(),
+    });
+    if (!res.ok) return { error: "Token refresh failed" };
+    const tk = await res.json() as any;
+    const newToken = tk.access_token as string;
+    const expIn    = Number(tk.expires_in || 3600);
+    const newExpiry = new Date(Date.now() + expIn * 1000).toISOString();
+
+    await db().from("dev_sites").update({
+      gsc_access_token: newToken,
+      gsc_token_expiry: newExpiry,
+    }).eq("id", siteId);
+
+    return { token: newToken };
+  } catch (e: any) {
+    return { error: e?.message || "token failed" };
+  }
+}
+
+/** List GSC properties for a site workspace */
+export async function gscListPropertiesForSite(siteId: string): Promise<{
+  success: boolean; sites?: { url: string; perm: string }[]; error?: string;
+}> {
+  const { token, error } = await getAccessTokenForSite(siteId);
+  if (!token) return { success: false, error: error || "Not connected" };
+  try {
+    const res = await fetch("https://www.googleapis.com/webmasters/v3/sites", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return { success: false, error: `GSC API ${res.status}` };
+    const data = await res.json() as any;
+    const sites = (data.siteEntry || []).map((s: any) => ({
+      url:  s.siteUrl,
+      perm: s.permissionLevel,
+    }));
+    return { success: true, sites };
+  } catch (e: any) {
+    return { success: false, error: e?.message };
+  }
+}
+
 export async function handlePmGsc(action: string, body: any, req?: any, res?: any): Promise<any | null> {
   switch (action) {
-    case "gsc_oauth_start":     return gscOauthStart(body.projectId);
+    case "gsc_oauth_start":         return gscOauthStart(body.projectId);
+    case "site_gsc_oauth_start":    return gscOauthStartForSite(body.siteId);
+    case "site_gsc_status":         return gscStatusForSite(body.siteId);
+    case "site_gsc_list_properties": return gscListPropertiesForSite(body.siteId);
+    case "site_gsc_select_property": {
+      const { siteId, siteUrl } = body;
+      if (!siteId || !siteUrl) return { success: false, error: "siteId and siteUrl required" };
+      const { error } = await db().from("dev_sites").update({ gsc_resource_id: siteUrl, updated_at: new Date().toISOString() }).eq("id", siteId);
+      return error ? { success: false, error: error.message } : { success: true };
+    }
     case "gsc_oauth_callback": {
       /* This action is hit by Google's redirect — req.query.code/state.
          Returns HTML to render directly. task-engine handles the res. */

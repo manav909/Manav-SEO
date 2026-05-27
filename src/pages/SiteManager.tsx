@@ -551,7 +551,7 @@ function SiteManagerView() {
   const [showImport,    setShowImport]    = useState(false);
   const [showLinkProj,  setShowLinkProj]  = useState(false);
   const [showNewSite,   setShowNewSite]   = useState(false);
-  const [activeTab,     setActiveTab]     = useState<'pages'|'baseline'|'audit'|'issues'|'results'|'brief'>('pages');
+  const [activeTab,     setActiveTab]     = useState<'pages'|'baseline'|'audit'|'issues'|'results'|'brief'|'settings'>('pages');
   const [selectedPage,  setSelectedPage]  = useState<DevPage | null>(null);
 
   return (
@@ -622,8 +622,9 @@ function SiteManagerView() {
                 { id: 'baseline', label: '📊 Baseline',      badge: pages.filter(p => !p.baseline_captured_at).length || undefined },
                 { id: 'audit',    label: '🔍 Audit Queue',   badge: pages.filter(p => p.status === 'pending' || p.status === 'baseline_done').length || undefined },
                 { id: 'issues',  label: '⚡ Clusters',      badge: undefined },
-                { id: 'results', label: '📈 Results',         badge: undefined },
-                { id: 'brief',   label: '📋 Bulk Brief',      badge: undefined },
+                { id: 'results',   label: '📈 Results',    badge: undefined },
+                { id: 'brief',    label: '📋 Bulk Brief',   badge: undefined },
+                { id: 'settings', label: '⚙️ Settings',     badge: undefined },
               ].map(tab => (
                 <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id as any)}
                   className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
@@ -666,6 +667,10 @@ function SiteManagerView() {
 
             {activeTab === 'brief' && (
               <BulkBrief pages={pages} site={selectedSite} siteId={selectedSiteId!} />
+            )}
+
+            {activeTab === 'settings' && (
+              <SiteSettings site={selectedSite!} siteId={selectedSiteId!} onUpdated={refreshSites} />
             )}
           </>
         )}
@@ -1654,6 +1659,172 @@ function BulkBrief({ pages, site, siteId }: { pages: DevPage[]; site: DevSite | 
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// SITE SETTINGS — GSC + PSI direct connection, no project needed
+// ─────────────────────────────────────────────────────────────
+function SiteSettings({ site, siteId, onUpdated }: { site: DevSite; siteId: string; onUpdated: () => void }) {
+  const [gscStatus,     setGscStatus]     = useState<{ connected: boolean; resourceId?: string } | null>(null);
+  const [properties,    setProperties]    = useState<{ url: string; perm: string }[]>([]);
+  const [loadingProps,  setLoadingProps]  = useState(false);
+  const [connecting,    setConnecting]    = useState(false);
+  const [psiKey,        setPsiKey]        = useState(site.psi_api_key || '');
+  const [savingPsi,     setSavingPsi]     = useState(false);
+  const [psiSaved,      setPsiSaved]      = useState(false);
+  const [err,           setErr]           = useState('');
+
+  // Load GSC status on mount
+  useEffect(() => {
+    callApi('site_gsc_status', { siteId }).then(r => {
+      if (r.ok) setGscStatus({ connected: (r.data as any).connected, resourceId: (r.data as any).resourceId });
+    });
+
+    // Listen for OAuth popup completion
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'gsc_connected' && e.data?.siteId === siteId) {
+        setGscStatus(s => ({ ...s!, connected: true }));
+        loadProperties();
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [siteId]);
+
+  const connectGsc = async () => {
+    setConnecting(true); setErr('');
+    const r = await callApi('site_gsc_oauth_start', { siteId });
+    setConnecting(false);
+    if (!r.ok || !(r.data as any)?.url) { setErr((r.data as any)?.error || r.error || 'OAuth failed'); return; }
+    const popup = window.open((r.data as any).url, '_blank', 'width=500,height=620,left=300,top=100');
+    if (!popup) setErr('Pop-up blocked. Allow pop-ups for this site and try again.');
+  };
+
+  const loadProperties = async () => {
+    setLoadingProps(true);
+    const r = await callApi('site_gsc_list_properties', { siteId });
+    setLoadingProps(false);
+    if (r.ok) setProperties((r.data as any).sites || []);
+  };
+
+  const selectProperty = async (url: string) => {
+    await callApi('site_gsc_select_property', { siteId, siteUrl: url });
+    setGscStatus(s => ({ ...s!, resourceId: url }));
+    onUpdated();
+  };
+
+  const savePsiKey = async () => {
+    setSavingPsi(true);
+    await callApi('site_update', { siteId, updates: { psi_api_key: psiKey.trim() || null } });
+    setSavingPsi(false);
+    setPsiSaved(true);
+    setTimeout(() => setPsiSaved(false), 2000);
+    onUpdated();
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-sm font-semibold">Site Workspace Settings</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Connect data sources directly to this workspace — no project required.
+        </p>
+      </div>
+
+      {/* GSC */}
+      <div className={`rounded-2xl border p-5 space-y-4 ${gscStatus?.connected ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-border bg-card/40'}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg ${gscStatus?.connected ? 'bg-emerald-500/15' : 'bg-muted/30'}`}>
+              🔍
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold">Google Search Console</span>
+                {gscStatus?.connected && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium">Connected ✓</span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Clicks, impressions, and positions per URL. Used for baseline capture and impact scoring.
+              </p>
+              {gscStatus?.resourceId && (
+                <p className="text-[10px] text-emerald-400 mt-1">Property: {gscStatus.resourceId}</p>
+              )}
+            </div>
+          </div>
+          {!gscStatus?.connected ? (
+            <button type="button" onClick={connectGsc} disabled={connecting}
+              className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-40 transition-all">
+              {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+              Connect GSC
+            </button>
+          ) : !gscStatus?.resourceId && (
+            <button type="button" onClick={loadProperties} disabled={loadingProps}
+              className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium hover:bg-primary/15 disabled:opacity-40 transition-all">
+              {loadingProps ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              Select property
+            </button>
+          )}
+        </div>
+
+        {/* Property selector */}
+        {properties.length > 0 && !gscStatus?.resourceId && (
+          <div className="rounded-xl border border-border bg-background/60 overflow-hidden">
+            <div className="px-3 py-2 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Select Search Console property
+            </div>
+            <div className="divide-y divide-border/50 max-h-48 overflow-y-auto">
+              {properties.map(p => (
+                <button key={p.url} type="button" onClick={() => selectProperty(p.url)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left">
+                  <span className="text-xs flex-1 truncate">{p.url}</span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">{p.perm}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {err && <p className="text-xs text-red-400">{err}</p>}
+      </div>
+
+      {/* PageSpeed API Key */}
+      <div className="rounded-2xl border border-border bg-card/40 p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-muted/30 flex items-center justify-center text-lg flex-shrink-0">⚡</div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold">PageSpeed API Key</div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Optional. Without a key, PageSpeed tests run on the free public tier (slower, rate-limited).
+              Get a free key at{' '}
+              <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noreferrer"
+                className="text-primary hover:underline">
+                Google Cloud Console
+              </a>.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <input value={psiKey} onChange={e => setPsiKey(e.target.value)}
+            placeholder="AIza..."
+            className="flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60 transition-colors font-mono"
+          />
+          <button type="button" onClick={savePsiKey} disabled={savingPsi}
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${psiSaved ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400' : 'bg-primary text-primary-foreground hover:bg-primary/90'} disabled:opacity-40`}>
+            {psiSaved ? '✓ Saved' : savingPsi ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      {/* PSI key in psi_api_key column — need to update site_update to allow it */}
+      <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+        Once GSC is connected and a property selected, baseline capture will include real organic traffic data per URL.
+        Run baseline again on any pages that show null GSC values.
+      </div>
     </div>
   );
 }
