@@ -1475,8 +1475,7 @@ function BulkBrief({ pages, site, siteId }: { pages: DevPage[]; site: DevSite | 
   const generate = async () => {
     setLoading(true); setBrief(null); setErr('');
 
-    const nl = '
-';
+    const nl = '\n';
     const domain = site?.domain || site?.label || 'your website';
 
     if (scope === 'site') {
@@ -1538,8 +1537,7 @@ function BulkBrief({ pages, site, siteId }: { pages: DevPage[]; site: DevSite | 
       if (!page) { setErr('Page not found'); setLoading(false); return; }
 
       // Build brief from page data directly (instant — no AI call)
-      const nl2 = '
-';
+      const nl2 = '\n';
       const path = page.url.replace(/^https?:\/\/[^/]+/, '') || '/';
       const lines = [
         'We are requesting your approval to fix ' + page.issues_red + ' critical and ' + page.issues_amber + ' warning issues on:',
@@ -1628,9 +1626,7 @@ function BulkBrief({ pages, site, siteId }: { pages: DevPage[]; site: DevSite | 
           </div>
           <button type="button"
             onClick={() => {
-              navigator.clipboard.writeText('Subject: ' + brief.subject + '
-
-' + brief.body);
+              navigator.clipboard.writeText('Subject: ' + brief.subject + '\n\n' + brief.body);
               setCopied(true); setTimeout(() => setCopied(false), 2500);
             }}
             className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${copied ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400' : 'bg-primary text-primary-foreground hover:bg-primary/90'} shadow-[0_0_16px_hsl(var(--primary)/0.15)]`}>
