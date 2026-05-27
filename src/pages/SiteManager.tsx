@@ -542,6 +542,7 @@ function SiteManagerView() {
   const { selectedSite, selectedSiteId, pages, loadingPages, refreshPages, sites } = useSite();
   const [showImport,    setShowImport]    = useState(false);
   const [showLinkProj,  setShowLinkProj]  = useState(false);
+  const [showNewSite,   setShowNewSite]   = useState(false);
   const [activeTab,     setActiveTab]     = useState<'pages'|'baseline'|'audit'|'issues'|'results'|'brief'>('pages');
   const [selectedPage,  setSelectedPage]  = useState<DevPage | null>(null);
 
@@ -590,10 +591,14 @@ function SiteManagerView() {
               Site Manager works independently of the project selector above.
               Create a workspace for any site — link it to a project later if needed.
             </p>
-            <NewSiteModal
-              onClose={() => {}}
-              onCreated={() => {}}
-            />
+            <button
+              type="button"
+              onClick={() => setShowNewSite(true)}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all shadow-[0_0_20px_hsl(var(--primary)/0.25)]"
+            >
+              <Plus className="w-4 h-4" />
+              Create workspace
+            </button>
           </div>
         )}
 
@@ -668,6 +673,13 @@ function SiteManagerView() {
 
       {showLinkProj && selectedSiteId && (
         <LinkProjectModal siteId={selectedSiteId} onClose={() => setShowLinkProj(false)} onLinked={() => { setShowLinkProj(false); }} />
+      )}
+
+      {showNewSite && (
+        <NewSiteModal
+          onClose={() => setShowNewSite(false)}
+          onCreated={site => { refreshSites(); setSelectedSiteId(site.id); setShowNewSite(false); }}
+        />
       )}
     </div>
   );
