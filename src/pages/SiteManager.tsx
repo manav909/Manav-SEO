@@ -261,8 +261,16 @@ function BaselinePanel({ pages, siteId, projectId, onDone }: { pages: DevPage[];
         <div className="flex-1">
           <div className="text-sm font-semibold">Capture baseline before any fixes</div>
           <div className="text-xs text-muted-foreground mt-0.5">
-            Records current PageSpeed scores and GSC traffic for {pending.length} pages. Required for before/after comparison.
+            Records the current state of {pending.length} pages before any changes are made.
             {done.length > 0 && ` (${done.length} already captured)`}
+          </div>
+          <div className="flex gap-3 mt-2">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium">
+              ✓ PageSpeed scores — always available
+            </span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${projectId ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted/40 text-muted-foreground'}`}>
+              {projectId ? '✓ GSC traffic — project linked' : '○ GSC traffic — link a project first'}
+            </span>
           </div>
         </div>
       </div>
