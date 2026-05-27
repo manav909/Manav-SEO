@@ -4567,6 +4567,68 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  if (action === 'dev_chat') {
+    /* Contextual chat for the Developer tab.
+       The message and full task context arrive together.
+       Claude acts as a non-technical guide for applying the specific fix. */
+    const { message, taskContext, history } = body;
+    if (!message) return ok(res, { error: 'message required' });
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+    const tc = taskContext || {};
+
+    const systemPrompt = [
+      'You are Manav\'s developer assistant, helping a non-technical person apply an SEO fix to their live website.',
+      '',
+      'Current task: ' + (tc.title || 'unknown'),
+      'CMS platform: ' + (tc.cms_platform || 'unknown'),
+      'Task type: ' + (tc.task_type || 'unknown'),
+      'Page URL: ' + (tc.target_url || 'unknown'),
+      tc.analysis ? 'What was found: ' + tc.analysis.slice(0, 400) : '',
+      tc.fix_code  ? 'Fix code (first 300 chars): ' + tc.fix_code.slice(0, 300) : '',
+      '',
+      'Rules:',
+      '- Answer in plain English — no jargon without explanation',
+      '- Keep responses short and actionable (2-4 sentences unless they need more)',
+      '- If they are confused, ask what they see on their screen right now',
+      '- Be calm and encouraging — this is a live client site',
+      '- Never say "just" or "simply" — nothing is simple if you don\'t know where to click',
+      '- If they ask something unrelated to this task, gently redirect back',
+    ].filter(Boolean).join('\n');
+
+    const messages = [
+      ...(Array.isArray(history) ? history : []),
+      { role: 'user', content: message },
+    ];
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 600,
+          system: systemPrompt,
+          messages,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const data = await resp.json() as any;
+      if (data?.error) return ok(res, { error: data.error.message });
+      const reply = (data?.content?.[0]?.text || '').trim();
+      return ok(res, { success: true, reply });
+    } catch (e: any) {
+      return ok(res, { error: 'Chat error: ' + (e?.message || 'unknown') });
+    }
+  }
+
   if (action === 'dev_confirm_backup') {
     /* User explicitly confirmed backup before applying — mark in DB */
     const { taskId } = body;

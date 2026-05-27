@@ -908,12 +908,52 @@ function TaskDetail({
   const [snapshot,     setSnapshot]     = useState<{ snapshot: string; captured_at: string } | null>(null);
   const [copiedCode,   setCopiedCode]   = useState(false);
   const [copiedRoll,   setCopiedRoll]   = useState(false);
+  const [chatOpen,     setChatOpen]     = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ role: 'user'|'assistant'; content: string }[]>([]);
+  const [chatInput,    setChatInput]    = useState('');
+  const [chatLoading,  setChatLoading]  = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Reset to instructions tab when a different task is selected
   useEffect(() => {
     setActiveTab('instructions');
     setSnapshot(null);
+    setChatOpen(false);
+    setChatMessages([]);
   }, [task.id]);
+
+  const sendChat = async () => {
+    const msg = chatInput.trim();
+    if (!msg || chatLoading) return;
+    setChatInput('');
+    const newMessages: { role: 'user'|'assistant'; content: string }[] = [...chatMessages, { role: 'user', content: msg }];
+    setChatMessages(newMessages);
+    setChatLoading(true);
+    // Scroll to bottom
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+
+    const result = await callApi<{ reply: string }>('dev_chat', {
+      message: msg,
+      taskContext: {
+        title:       task.title,
+        task_type:   task.task_type,
+        cms_platform: task.cms_platform || '',
+        target_url:  task.target_url || '',
+        analysis:    task.analysis    || '',
+        fix_code:    task.fix_code    || '',
+      },
+      // Only send last 6 messages to keep context window small
+      history: newMessages.slice(-6).slice(0, -1).map(m => ({ role: m.role, content: m.content })),
+    });
+
+    const reply = result.ok && result.data?.reply
+      ? result.data.reply
+      : 'Sorry, I could not get a response. Try again.';
+
+    setChatMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+    setChatLoading(false);
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  };
 
   // Load snapshot when rollback tab is opened
   useEffect(() => {
@@ -1098,6 +1138,122 @@ function TaskDetail({
           </button>
         )}
       </div>
+
+      {/* Ask Manav chat button */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setChatOpen(v => !v);
+            if (!chatOpen && chatMessages.length === 0) {
+              // Pre-load a welcome message
+              setChatMessages([{
+                role: 'assistant',
+                content: 'Hi! I\'m here to help you apply this fix. What questions do you have — about what to click, what something means, or whether it\'s safe to do?'
+              }]);
+            }
+          }}
+          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all border ${
+            chatOpen
+              ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
+              : 'border-border text-muted-foreground hover:text-foreground hover:border-violet-500/40 hover:bg-violet-500/5'
+          }`}
+        >
+          <span>💬</span>
+          <span>{chatOpen ? 'Close chat' : 'Ask Manav'}</span>
+        </button>
+        {chatMessages.length > 1 && !chatOpen && (
+          <span className="text-[10px] text-muted-foreground">{chatMessages.filter(m => m.role === 'assistant').length} responses</span>
+        )}
+      </div>
+
+      {/* Chat panel */}
+      {chatOpen && (
+        <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 overflow-hidden flex flex-col" style={{ maxHeight: 420 }}>
+          {/* Header */}
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-violet-500/20 bg-violet-500/10">
+            <span className="text-sm">💬</span>
+            <span className="text-xs font-semibold text-violet-300">Manav — Live Help</span>
+            <span className="text-[10px] text-muted-foreground ml-1">Ask anything about this task</span>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ minHeight: 180, maxHeight: 280 }}>
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {msg.role === 'assistant' && (
+                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-sm">
+                    M
+                  </div>
+                )}
+                <div className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                  msg.role === 'user'
+                    ? 'bg-primary text-primary-foreground rounded-tr-sm'
+                    : 'bg-card border border-violet-500/20 text-foreground rounded-tl-sm'
+                }`}>
+                  {msg.content}
+                </div>
+                {msg.role === 'user' && (
+                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted/60 border border-border flex items-center justify-center text-xs text-muted-foreground">
+                    You
+                  </div>
+                )}
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="flex gap-2.5 justify-start">
+                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-sm">M</div>
+                <div className="px-3.5 py-2.5 rounded-2xl bg-card border border-violet-500/20 text-muted-foreground text-sm">
+                  <span className="animate-pulse">Thinking…</span>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Suggested questions — only when no user messages yet */}
+          {chatMessages.filter(m => m.role === 'user').length === 0 && (
+            <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+              {[
+                'Where exactly do I click?',
+                'Will this break my site?',
+                'How long will this take?',
+                task.cms_platform ? 'Is ' + task.cms_platform + ' different?' : 'What if I make a mistake?',
+              ].map(q => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => { setChatInput(q); }}
+                  className="text-[11px] px-2.5 py-1 rounded-full border border-violet-500/30 text-violet-400/80 hover:bg-violet-500/10 hover:text-violet-300 transition-colors"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="flex gap-2 p-3 border-t border-violet-500/20 bg-card/40">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+              placeholder="Ask anything about this fix…"
+              disabled={chatLoading}
+              className="flex-1 px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-violet-500/50 transition-colors disabled:opacity-50 placeholder:text-muted-foreground/50"
+            />
+            <button
+              type="button"
+              onClick={sendChat}
+              disabled={chatLoading || !chatInput.trim()}
+              className="px-3 py-2 rounded-xl bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Verification result */}
       {task.verification_result && (
