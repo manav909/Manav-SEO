@@ -18,7 +18,8 @@
 import { db } from './db.js';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const MODEL = 'claude-sonnet-4-6';
+const MODEL      = 'claude-sonnet-4-6';
+const MODEL_FAST = 'claude-haiku-4-5-20251001'; // PATH A simple tasks — 3-5x faster
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
@@ -500,7 +501,9 @@ interface AiResult {
 
 async function executeWithAuditData(task: DevTask, cms: CmsContext): Promise<AiResult> {
   const { sys, usr } = buildPromptFromAuditData(task, cms);
-  return callAI(task, sys, usr);
+  // PATH A tasks (h1, h2, faq, meta, gsc) use Haiku — 3-5x faster response, adequate quality.
+  // PATH B/C tasks that analyse live HTML use Sonnet for accuracy.
+  return callAI(task, sys, usr, MODEL_FAST);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -621,10 +624,12 @@ export function validateAiOutput(taskType: string, fixCode: string, fixLanguage:
 // Always resolves — never throws. Returns structured AiResult.
 // ─────────────────────────────────────────────────────────────
 
-async function callAI(task: DevTask, sys: string, usr: string): Promise<AiResult> {
+async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): Promise<AiResult> {
   let llmCalls = 0;
-  // Timeout via Promise.race — AbortSignal.timeout() is unreliable on Vercel.
-  const AI_TIMEOUT_MS = 30000;
+  // Timeout via AbortController — AbortSignal.timeout() is unreliable on Vercel.
+  // 90s: well within Vercel maxDuration:300s, handles any realistic Anthropic latency.
+  // The old 30s was too tight — Sonnet under load regularly takes 30-60s for 2000 tokens.
+  const AI_TIMEOUT_MS = 90000;
   const aiController = new AbortController();
   const aiTimer = setTimeout(() => aiController.abort(), AI_TIMEOUT_MS);
 
@@ -637,7 +642,7 @@ async function callAI(task: DevTask, sys: string, usr: string): Promise<AiResult
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         max_tokens: 2000,
         system: sys,
         messages: [{ role: 'user', content: usr }],
