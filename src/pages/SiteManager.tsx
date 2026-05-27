@@ -1672,9 +1672,7 @@ function SiteSettings({ site, siteId, onUpdated }: { site: DevSite; siteId: stri
   const [properties,    setProperties]    = useState<{ url: string; perm: string }[]>([]);
   const [loadingProps,  setLoadingProps]  = useState(false);
   const [connecting,    setConnecting]    = useState(false);
-  const [psiKey,        setPsiKey]        = useState(site.psi_api_key || '');
-  const [savingPsi,     setSavingPsi]     = useState(false);
-  const [psiSaved,      setPsiSaved]      = useState(false);
+
   const [err,           setErr]           = useState('');
 
   // Load GSC status on mount
@@ -1713,15 +1711,6 @@ function SiteSettings({ site, siteId, onUpdated }: { site: DevSite; siteId: stri
   const selectProperty = async (url: string) => {
     await callApi('site_gsc_select_property', { siteId, siteUrl: url });
     setGscStatus(s => ({ ...s!, resourceId: url }));
-    onUpdated();
-  };
-
-  const savePsiKey = async () => {
-    setSavingPsi(true);
-    await callApi('site_update', { siteId, updates: { psi_api_key: psiKey.trim() || null } });
-    setSavingPsi(false);
-    setPsiSaved(true);
-    setTimeout(() => setPsiSaved(false), 2000);
     onUpdated();
   };
 
@@ -1792,35 +1781,7 @@ function SiteSettings({ site, siteId, onUpdated }: { site: DevSite; siteId: stri
         {err && <p className="text-xs text-red-400">{err}</p>}
       </div>
 
-      {/* PageSpeed API Key */}
-      <div className="rounded-2xl border border-border bg-card/40 p-5 space-y-4">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-muted/30 flex items-center justify-center text-lg flex-shrink-0">⚡</div>
-          <div className="flex-1">
-            <div className="text-sm font-semibold">PageSpeed API Key</div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Optional. Without a key, PageSpeed tests run on the free public tier (slower, rate-limited).
-              Get a free key at{' '}
-              <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noreferrer"
-                className="text-primary hover:underline">
-                Google Cloud Console
-              </a>.
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <input value={psiKey} onChange={e => setPsiKey(e.target.value)}
-            placeholder="AIza..."
-            className="flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60 transition-colors font-mono"
-          />
-          <button type="button" onClick={savePsiKey} disabled={savingPsi}
-            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${psiSaved ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400' : 'bg-primary text-primary-foreground hover:bg-primary/90'} disabled:opacity-40`}>
-            {psiSaved ? '✓ Saved' : savingPsi ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-
-      {/* PSI key in psi_api_key column — need to update site_update to allow it */}
+      {/* PageSpeed uses platform-wide key — no per-site config needed */}
       <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
         Once GSC is connected and a property selected, baseline capture will include real organic traffic data per URL.
         Run baseline again on any pages that show null GSC values.
