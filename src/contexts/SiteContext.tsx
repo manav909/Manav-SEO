@@ -9,13 +9,16 @@ import { supabase } from '@/lib/supabase';
 const STORAGE_KEY = 'seo_season_site';
 
 export interface DevSite {
-  id:         string;
-  project_id: string | null;
-  label:      string;
-  domain:     string | null;
-  cms:        string | null;
-  created_at: string;
-  updated_at: string;
+  id:              string;
+  project_id:      string | null;
+  label:           string;
+  domain:          string | null;
+  cms:             string | null;
+  psi_api_key?:    string | null;
+  gsc_resource_id?: string | null;
+  gsc_connected_at?: string | null;
+  created_at:      string;
+  updated_at:      string;
 }
 
 export interface DevPage {

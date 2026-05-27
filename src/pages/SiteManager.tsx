@@ -547,7 +547,7 @@ function StatsBar() {
 // MAIN VIEW
 // ─────────────────────────────────────────────────────────────
 function SiteManagerView() {
-  const { selectedSite, selectedSiteId, pages, loadingPages, refreshPages, sites } = useSite();
+  const { selectedSite, selectedSiteId, pages, loadingPages, refreshPages, refreshSites, sites } = useSite();
   const [showImport,    setShowImport]    = useState(false);
   const [showLinkProj,  setShowLinkProj]  = useState(false);
   const [showNewSite,   setShowNewSite]   = useState(false);
