@@ -825,16 +825,35 @@ function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: strin
 // ISSUE CLUSTERS
 // ─────────────────────────────────────────────────────────────
 function IssueClusters({ siteId }: { siteId: string }) {
-  const [clusters, setClusters] = useState<any[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const { selectedSite } = useSite();
+  const [clusters,    setClusters]    = useState<any[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [generating,  setGenerating]  = useState<string | null>(null);
+  const [templateFix, setTemplateFix] = useState<any | null>(null);
+  const [copied,      setCopied]      = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true);
     callApi('site_cluster_issues', { siteId }).then(r => {
       if (r.ok) setClusters((r.data as any).clusters || []);
       setLoading(false);
     });
-  }, [siteId]);
+  };
+
+  useEffect(() => { load(); }, [siteId]);
+
+  const createTemplateFix = async (cluster: any) => {
+    setGenerating(cluster.task_type);
+    setTemplateFix(null);
+    const r = await callApi('site_execute_template_fix', {
+      siteId,
+      taskType:  cluster.task_type,
+      pageIds:   cluster.task_ids,
+      projectId: selectedSite?.project_id,
+    }, 60000);
+    setGenerating(null);
+    if (r.ok) setTemplateFix((r.data as any).template_fix);
+  };
 
   if (loading) return <div className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></div>;
 
@@ -849,22 +868,64 @@ function IssueClusters({ siteId }: { siteId: string }) {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="text-xs text-muted-foreground">
-        Issues grouped by type across all pages. Template-fixable issues can be resolved once and applied to all affected pages.
-      </div>
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Issues grouped across all pages. Template-fixable issues affect many pages but require only one code change.
+      </p>
+
+      {/* Template fix result */}
+      {templateFix && (
+        <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold">{templateFix.title}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{templateFix.affected_count} pages · {templateFix.cms_platform}</div>
+            </div>
+            <button type="button" onClick={() => setTemplateFix(null)} className="w-6 h-6 rounded-lg hover:bg-muted/60 flex items-center justify-center text-muted-foreground text-xs">✕</button>
+          </div>
+          {templateFix.analysis && <p className="text-xs text-muted-foreground leading-relaxed">{templateFix.analysis}</p>}
+          {templateFix.fix_code && (
+            <div className="rounded-xl border border-border bg-background/60 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-muted/20">
+                <span className="text-[10px] font-mono text-muted-foreground">{templateFix.fix_language || 'code'}</span>
+                <button type="button" onClick={() => { navigator.clipboard.writeText(templateFix.fix_code); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                  className={`text-[10px] transition-colors ${copied ? 'text-emerald-400' : 'text-muted-foreground hover:text-foreground'}`}>
+                  {copied ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+              <pre className="text-[10px] p-3 overflow-x-auto max-h-64 font-mono leading-relaxed text-foreground/80">{templateFix.fix_code}</pre>
+            </div>
+          )}
+          {templateFix.apply_instructions && (
+            <div className="rounded-xl bg-muted/20 p-3 text-[10px] leading-relaxed text-muted-foreground">
+              <div className="font-semibold text-foreground/70 mb-1">How to apply:</div>
+              {templateFix.apply_instructions}
+            </div>
+          )}
+        </div>
+      )}
+
       {clusters.map((c, i) => (
-        <div key={i} className="rounded-2xl border border-border bg-card/30 p-4">
+        <div key={i} className={`rounded-2xl border p-4 transition-all ${c.red_count > 0 ? 'border-red-500/20 bg-red-500/3' : 'border-border bg-card/30'}`}>
           <div className="flex items-start gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-semibold">{c.label}</span>
-                {c.is_template && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-blue-400 font-medium">Template fix available</span>}
-                {c.is_page_specific && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-400 font-medium">Page-specific</span>}
+                {c.is_template && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-blue-400 font-medium">
+                    Template fix — {c.page_count} pages at once
+                  </span>
+                )}
+                {c.is_page_specific && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-400 font-medium">
+                    Page-specific
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                 <span>{c.page_count} page{c.page_count !== 1 ? 's' : ''}</span>
-                {c.red_count > 0 && <span className="text-red-400">{c.red_count} critical</span>}
+                {c.red_count > 0 && <span className="text-red-400 font-medium">{c.red_count} critical</span>}
+                <span>{c.count} task{c.count !== 1 ? 's' : ''} total</span>
               </div>
               {c.page_urls.length > 0 && (
                 <div className="mt-2 text-[10px] text-muted-foreground/60 truncate">
@@ -873,13 +934,16 @@ function IssueClusters({ siteId }: { siteId: string }) {
                 </div>
               )}
             </div>
-            <div className="flex gap-2 shrink-0">
-              {c.is_template && (
-                <button type="button" className="text-xs px-3 py-1.5 rounded-lg bg-blue-500/15 border border-blue-500/25 text-blue-400 font-medium hover:bg-blue-500/25 transition-colors">
-                  Create template fix
-                </button>
-              )}
-            </div>
+            {c.is_template && (
+              <button type="button"
+                onClick={() => createTemplateFix(c)}
+                disabled={!!generating}
+                className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-500/15 border border-blue-500/25 text-blue-400 font-medium hover:bg-blue-500/25 disabled:opacity-40 transition-colors">
+                {generating === c.task_type
+                  ? <><Loader2 className="w-3 h-3 animate-spin" />Generating…</>
+                  : <><Zap className="w-3 h-3" />Create template fix</>}
+              </button>
+            )}
           </div>
         </div>
       ))}
@@ -891,25 +955,62 @@ function IssueClusters({ siteId }: { siteId: string }) {
 // PAGE DRAWER
 // ─────────────────────────────────────────────────────────────
 function PageDrawer({ page, onClose, onUpdated }: { page: DevPage; onClose: () => void; onUpdated: () => void }) {
-  const [tasks,   setTasks]   = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tab,     setTab]     = useState<'overview'|'tasks'>('overview');
+  const [tasks,      setTasks]      = useState<any[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [tab,        setTab]        = useState<'overview'|'tasks'>('overview');
+  const [executing,  setExecuting]  = useState<string | null>(null);
+  const [expanded,   setExpanded]   = useState<string | null>(null);
+  const [brief,      setBrief]      = useState<{ subject: string; body: string } | null>(null);
+  const [briefFor,   setBriefFor]   = useState<string | null>(null);
+  const [copied,     setCopied]     = useState(false);
 
-  useEffect(() => {
+  const loadTasks = () => {
     setLoading(true);
-    callApi('dev_get_tasks', { projectId: page.project_id || page.site_id, pageId: page.id }).then(r => {
+    callApi('dev_get_tasks', { pageId: page.id }).then(r => {
       if (r.ok) setTasks((r.data as any).tasks || []);
       setLoading(false);
     });
-  }, [page.id]);
+  };
+
+  useEffect(() => { loadTasks(); }, [page.id]);
+
+  const executeTask = async (taskId: string) => {
+    setExecuting(taskId);
+    await callApi('dev_execute_task', { taskId }, 90000);
+    setExecuting(null);
+    loadTasks();
+  };
+
+  const markApplied = async (taskId: string) => {
+    await callApi('dev_update_task', { taskId, updates: { status: 'applied', backup_confirmed: true } });
+    loadTasks();
+  };
+
+  const markDone = async (taskId: string) => {
+    await callApi('dev_update_task', { taskId, updates: { status: 'done' } });
+    loadTasks();
+  };
+
+  const getBrief = async (task: any) => {
+    setBriefFor(task.id);
+    setBrief(null);
+    const r = await callApi('dev_client_brief', { taskId: task.id, projectId: page.project_id }, 25000);
+    if (r.ok && (r.data as any)?.body) {
+      setBrief({ subject: (r.data as any).subject, body: (r.data as any).body });
+    }
+    setBriefFor(null);
+  };
 
   const domain = page.url.replace(/^https?:\/\//, '').split('/')[0];
   const path   = page.url.replace(/^https?:\/\/[^/]+/, '') || '/';
+  const pending = tasks.filter(t => t.status === 'pending' || t.status === 'failed').length;
+  const ready   = tasks.filter(t => t.status === 'fix_ready').length;
 
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="w-full max-w-xl bg-card border-l border-border h-full flex flex-col overflow-hidden shadow-2xl">
+      <div className="w-full max-w-2xl bg-card border-l border-border h-full flex flex-col overflow-hidden shadow-2xl">
+
         {/* Header */}
         <div className="flex items-start gap-3 px-5 py-4 border-b border-border">
           <div className="flex-1 min-w-0">
@@ -930,19 +1031,22 @@ function PageDrawer({ page, onClose, onUpdated }: { page: DevPage; onClose: () =
 
         {/* Tabs */}
         <div className="flex gap-1 px-5 pt-3 border-b border-border">
-          {[['overview','Overview'],['tasks','Tasks']].map(([id,label]) => (
-            <button key={id} type="button" onClick={() => setTab(id as any)}
-              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-              {label} {id === 'tasks' && tasks.length > 0 && `(${tasks.length})`}
+          {[
+            ['overview', 'Overview', null],
+            ['tasks',    'Tasks',    tasks.length > 0 ? tasks.length : null],
+          ].map(([id, label, badge]) => (
+            <button key={id as string} type="button" onClick={() => setTab(id as any)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+              {label}
+              {badge !== null && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${tab === id ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'}`}>{badge}</span>}
             </button>
           ))}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto">
           {tab === 'overview' && (
-            <>
-              {/* Baseline metrics */}
+            <div className="p-5 space-y-4">
               {page.baseline_captured_at ? (
                 <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-3">
                   <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -950,12 +1054,12 @@ function PageDrawer({ page, onClose, onUpdated }: { page: DevPage; onClose: () =
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     {[
-                      { label: 'PageSpeed',   value: page.baseline_score !== null ? `${page.baseline_score}` : '—', color: page.baseline_score !== null ? (page.baseline_score >= 70 ? 'text-emerald-400' : page.baseline_score >= 50 ? 'text-amber-400' : 'text-red-400') : 'text-muted-foreground' },
-                      { label: 'Mobile LCP',  value: page.baseline_lcp_ms ? `${(page.baseline_lcp_ms/1000).toFixed(1)}s` : '—', color: page.baseline_lcp_ms ? (page.baseline_lcp_ms <= 2500 ? 'text-emerald-400' : page.baseline_lcp_ms <= 4000 ? 'text-amber-400' : 'text-red-400') : 'text-muted-foreground' },
-                      { label: 'GSC Clicks',  value: page.baseline_gsc_clicks !== null ? page.baseline_gsc_clicks.toLocaleString() : '—', color: 'text-foreground' },
+                      { label: 'PageSpeed',  value: page.baseline_score !== null ? String(page.baseline_score) : '—', color: page.baseline_score !== null ? (page.baseline_score >= 70 ? 'text-emerald-400' : page.baseline_score >= 50 ? 'text-amber-400' : 'text-red-400') : 'text-muted-foreground' },
+                      { label: 'Mobile LCP', value: page.baseline_lcp_ms ? (page.baseline_lcp_ms/1000).toFixed(1)+'s' : '—', color: page.baseline_lcp_ms ? (page.baseline_lcp_ms <= 2500 ? 'text-emerald-400' : page.baseline_lcp_ms <= 4000 ? 'text-amber-400' : 'text-red-400') : 'text-muted-foreground' },
+                      { label: 'GSC Clicks', value: page.baseline_gsc_clicks !== null ? page.baseline_gsc_clicks.toLocaleString() : '—', color: 'text-foreground' },
                     ].map(m => (
                       <div key={m.label} className="rounded-xl border border-border bg-background/60 px-3 py-2.5 text-center">
-                        <div className={`text-lg font-bold ${m.color}`}>{m.value}</div>
+                        <div className={`text-xl font-bold ${m.color}`}>{m.value}</div>
                         <div className="text-[9px] text-muted-foreground mt-0.5">{m.label}</div>
                       </div>
                     ))}
@@ -963,56 +1067,158 @@ function PageDrawer({ page, onClose, onUpdated }: { page: DevPage; onClose: () =
                 </div>
               ) : (
                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-400">
-                  Baseline not captured yet. Go to the Baseline tab to capture PageSpeed and GSC metrics before making any changes.
+                  No baseline yet — capture PageSpeed and GSC metrics in the Baseline tab before making any changes.
                 </div>
               )}
-
-              {/* Page info */}
               <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-2.5">
                 <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Page info</div>
                 {[
-                  { label: 'Status',    value: STATUS_CONFIG[page.status]?.label || page.status },
-                  { label: 'Type',      value: page.page_type },
-                  { label: 'Priority',  value: String(page.priority) },
-                  { label: 'Imported',  value: new Date(page.created_at).toLocaleDateString() },
-                ].map(row => (
-                  <div key={row.label} className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">{row.label}</span>
-                    <span className="text-xs font-medium">{row.value}</span>
+                  ['Status',   STATUS_CONFIG[page.status]?.label || page.status],
+                  ['Type',     page.page_type],
+                  ['Priority', String(page.priority)],
+                  ['Imported', new Date(page.created_at).toLocaleDateString()],
+                ].map(([k,v]) => (
+                  <div key={k} className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">{k}</span>
+                    <span className="text-xs font-medium">{v}</span>
                   </div>
                 ))}
               </div>
-            </>
+            </div>
           )}
 
           {tab === 'tasks' && (
-            loading ? (
-              <div className="py-8 text-center"><Loader2 className="w-4 h-4 animate-spin mx-auto text-muted-foreground" /></div>
-            ) : tasks.length === 0 ? (
-              <div className="py-8 text-center space-y-2">
-                <div className="text-sm text-muted-foreground">No tasks for this page yet</div>
-                <div className="text-xs text-muted-foreground/60">Run an audit on this page to generate tasks</div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {tasks.map((t: any) => (
-                  <div key={t.id} className="rounded-xl border border-border bg-card/40 p-3.5">
-                    <div className="flex items-start gap-2">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold mt-0.5 shrink-0 ${t.severity === 'critical' || t.severity === 'red' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'}`}>
-                        {t.severity?.toUpperCase()}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold">{t.title}</div>
-                        {t.analysis && <div className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{t.analysis}</div>}
-                      </div>
-                      <span className={`ml-auto shrink-0 text-[9px] px-2 py-0.5 rounded-full ${STATUS_CONFIG[t.status]?.bg || 'bg-muted/40'} ${STATUS_CONFIG[t.status]?.color || 'text-muted-foreground'}`}>
-                        {STATUS_CONFIG[t.status]?.label || t.status}
-                      </span>
+            <div className="p-5 space-y-3">
+              {loading ? (
+                <div className="py-8 text-center"><Loader2 className="w-4 h-4 animate-spin mx-auto text-muted-foreground" /></div>
+              ) : tasks.length === 0 ? (
+                <div className="py-8 text-center space-y-2">
+                  <div className="text-sm text-muted-foreground">No tasks yet</div>
+                  <div className="text-xs text-muted-foreground/60">Run an audit on this page from the Audit Queue tab</div>
+                </div>
+              ) : (
+                <>
+                  {/* Summary action bar */}
+                  {(pending > 0 || ready > 0) && (
+                    <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-muted/30 border border-border text-xs text-muted-foreground">
+                      {pending > 0 && <span>{pending} pending</span>}
+                      {ready > 0 && <span className="text-violet-400">{ready} fix ready</span>}
+                      {executing && <span className="flex items-center gap-1.5 ml-auto text-primary"><Loader2 className="w-3 h-3 animate-spin" />Generating fix…</span>}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )
+                  )}
+
+                  {tasks.map((t: any) => {
+                    const isExpanded = expanded === t.id;
+                    const isRunning  = executing === t.id;
+                    const sev = t.severity === 'critical' || t.severity === 'red';
+                    return (
+                      <div key={t.id} className={`rounded-2xl border transition-all ${sev ? 'border-red-500/20 bg-red-500/3' : 'border-amber-500/15 bg-card/30'}`}>
+                        {/* Task header */}
+                        <button type="button" onClick={() => setExpanded(isExpanded ? null : t.id)}
+                          className="w-full flex items-start gap-3 p-4 text-left hover:bg-muted/10 transition-colors rounded-2xl">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 mt-0.5 ${sev ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                            {t.severity?.toUpperCase()}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-semibold">{t.title}</div>
+                            {!isExpanded && t.analysis && (
+                              <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{t.analysis}</div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-medium ${STATUS_CONFIG[t.status]?.bg || 'bg-muted/40'} ${STATUS_CONFIG[t.status]?.color || 'text-muted-foreground'}`}>
+                              {isRunning ? 'Generating…' : STATUS_CONFIG[t.status]?.label || t.status}
+                            </span>
+                            <ChevronRight className={`w-3 h-3 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                          </div>
+                        </button>
+
+                        {/* Expanded detail */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3">
+                            {t.analysis && (
+                              <p className="text-xs leading-relaxed text-foreground/80">{t.analysis}</p>
+                            )}
+
+                            {t.fix_code && (
+                              <div className="rounded-xl border border-border bg-background/60 overflow-hidden">
+                                <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-muted/20">
+                                  <span className="text-[10px] font-mono text-muted-foreground">{t.fix_language || 'code'}</span>
+                                  <button type="button" onClick={() => { navigator.clipboard.writeText(t.fix_code); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                                    {copied ? '✓ Copied' : 'Copy'}
+                                  </button>
+                                </div>
+                                <pre className="text-[10px] p-3 overflow-x-auto max-h-48 font-mono leading-relaxed text-foreground/80">{t.fix_code}</pre>
+                              </div>
+                            )}
+
+                            {t.apply_instructions && (
+                              <div className="text-[10px] leading-relaxed text-muted-foreground bg-muted/20 rounded-xl p-3">
+                                {t.apply_instructions.slice(0, 400)}{t.apply_instructions.length > 400 ? '…' : ''}
+                              </div>
+                            )}
+
+                            {/* Client brief */}
+                            {briefFor === t.id && (
+                              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+                                <div className="flex items-center gap-2 text-xs text-amber-400">
+                                  <Loader2 className="w-3 h-3 animate-spin" />Drafting brief…
+                                </div>
+                              </div>
+                            )}
+                            {brief && briefFor === null && expanded === t.id && (
+                              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+                                <div className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Client Brief</div>
+                                <div className="text-[10px] font-medium">{brief.subject}</div>
+                                <div className="text-[10px] text-muted-foreground leading-relaxed line-clamp-4">{brief.body}</div>
+                                <button type="button"
+                                  onClick={() => { navigator.clipboard.writeText('Subject: ' + brief.subject + '\n\n' + brief.body); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                                  className={`text-[10px] px-3 py-1.5 rounded-lg border font-medium transition-all ${copied ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'}`}>
+                                  {copied ? '✓ Copied' : 'Copy full email'}
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Action buttons */}
+                            <div className="flex flex-wrap gap-2">
+                              {(t.status === 'pending' || t.status === 'failed') && (
+                                <button type="button" onClick={() => executeTask(t.id)} disabled={!!executing}
+                                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-40 hover:bg-primary/90 transition-all">
+                                  {isRunning ? <><Loader2 className="w-3 h-3 animate-spin" />Generating…</> : <><Zap className="w-3 h-3" />Generate fix</>}
+                                </button>
+                              )}
+                              {t.status === 'fix_ready' && (
+                                <>
+                                  <button type="button" onClick={() => markApplied(t.id)}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/30 transition-all">
+                                    <CheckCircle className="w-3 h-3" />I applied this
+                                  </button>
+                                  <button type="button" onClick={() => executeTask(t.id)} disabled={!!executing}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 transition-all">
+                                    <RefreshCw className="w-3 h-3" />Regenerate
+                                  </button>
+                                  <button type="button" onClick={() => { setBrief(null); getBrief(t); }}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-500/30 text-amber-400 text-xs font-medium hover:bg-amber-500/10 transition-all">
+                                    📋 Client brief
+                                  </button>
+                                </>
+                              )}
+                              {t.status === 'applied' && (
+                                <button type="button" onClick={() => markDone(t.id)}
+                                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-semibold hover:bg-violet-500/25 transition-all">
+                                  <CheckCircle className="w-3 h-3" />Mark done
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>

@@ -4899,6 +4899,109 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  if (action === 'site_execute_template_fix') {
+    /* Generate one fix for a cluster of pages sharing the same issue.
+       Saves to dev_template_fixes — one fix, applied to N pages. */
+    const { siteId, taskType, pageIds, projectId: pid } = body;
+    if (!siteId || !taskType || !Array.isArray(pageIds) || !pageIds.length) {
+      return ok(res, { error: 'siteId, taskType, and pageIds required' });
+    }
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const { fetchPageHtml, detectCmsFromHtml, detectCmsFromHeaders } = await import('./lib/dev-engine.js');
+
+      // Get a representative page to fetch HTML from
+      const { data: pages } = await getDb().from('dev_pages')
+        .select('url,title').in('id', pageIds.slice(0, 5));
+      const firstPage = (pages as any[])?.[0];
+      if (!firstPage) return ok(res, { error: 'No pages found' });
+
+      // Get CMS from site record
+      const { data: site } = await getDb().from('dev_sites')
+        .select('cms,label').eq('id', siteId).maybeSingle();
+      const cms = (site as any)?.cms || 'unknown';
+
+      // Try to fetch one page for HTML context
+      let pageHtml = '';
+      let cmsDetected = cms;
+      try {
+        const { html, fetchedOk, headers } = await fetchPageHtml(firstPage.url, 8000);
+        if (fetchedOk && html) {
+          pageHtml = html.slice(0, 8000);
+          const cmsCtx = await detectCmsFromHtml(html);
+          if (cmsCtx.platform !== 'unknown') cmsDetected = cmsCtx.platform;
+        } else if (headers) {
+          const cmsCtx = detectCmsFromHeaders(headers);
+          if (cmsCtx?.platform && cmsCtx.platform !== 'unknown') cmsDetected = cmsCtx.platform;
+        }
+      } catch { /* best effort */ }
+
+      const TASK_LABELS: Record<string, string> = {
+        lcp_fix:              'Fix render-blocking JavaScript (defer scripts)',
+        script_defer:         'Defer render-blocking scripts',
+        lazy_loading:         'Add lazy loading to images',
+        image_format:         'Convert images to WebP format',
+        date_modified_schema: 'Add dateModified to page schema',
+        faq_schema:           'Add FAQPage structured data',
+        h1_update:            'Update H1 heading',
+        meta_desc:            'Update meta description',
+      };
+      const taskLabel = TASK_LABELS[taskType] || taskType;
+
+      const systemPrompt = [
+        'You are a senior web developer generating a template-level fix for a CMS site.',
+        'The same issue exists on ' + pageIds.length + ' pages — this fix must work at the TEMPLATE level so it applies to all of them at once.',
+        'CMS: ' + cmsDetected,
+        'Return JSON only: { "fix_code": "the exact code change", "fix_language": "html|js|php|liquid|python|text", "analysis": "what this does and why it fixes the issue", "apply_instructions": "step by step how to apply this in ' + cmsDetected + ' — specific to the CMS admin interface" }',
+      ].join(' ');
+
+      const userMsg = [
+        'Task: ' + taskLabel,
+        'Affected pages: ' + pageIds.length + ' pages',
+        'Site: ' + ((site as any)?.label || siteId),
+        'CMS: ' + cmsDetected,
+        pageHtml ? 'Sample page HTML:\n' + pageHtml.slice(0, 4000) : '',
+        '',
+        'Generate the template-level fix that resolves this issue across all ' + pageIds.length + ' pages.',
+      ].filter(Boolean).join('\n');
+
+      const aiRes = await fetchAnthropicWithTimeout(
+        { model: 'claude-sonnet-4-6', max_tokens: 2000, system: systemPrompt, messages: [{ role: 'user', content: userMsg }] },
+        ANTHROPIC_API_KEY, 45000
+      );
+      if (!aiRes.ok) return ok(res, { error: aiRes.error || 'AI generation failed' });
+
+      let parsed: any = {};
+      try {
+        const cleaned = aiRes.text.replace(/^```json\s*/i,'').replace(/\s*```$/i,'').trim();
+        parsed = JSON.parse(cleaned.match(/\{[\s\S]+\}/)![0]);
+      } catch {
+        parsed = { fix_code: aiRes.text, fix_language: 'text', analysis: 'Generated fix', apply_instructions: 'Apply as shown' };
+      }
+
+      // Save to dev_template_fixes
+      const { data: saved, error: saveErr } = await getDb().from('dev_template_fixes').insert({
+        site_id:             siteId,
+        project_id:          pid || null,
+        fix_type:            taskType,
+        title:               taskLabel + ' — ' + pageIds.length + ' pages',
+        cms_platform:        cmsDetected,
+        affected_page_ids:   pageIds,
+        affected_count:      pageIds.length,
+        fix_code:            parsed.fix_code || '',
+        analysis:            parsed.analysis || '',
+        apply_instructions:  parsed.apply_instructions || '',
+        status:              'fix_ready',
+        updated_at:          new Date().toISOString(),
+      }).select().single();
+
+      if (saveErr) return ok(res, { error: saveErr.message });
+      return ok(res, { success: true, template_fix: saved });
+
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
   if (action === 'site_cluster_issues') {
     /* Analyse all dev_tasks for a site, group by issue type,
        classify each cluster as template-level or page-specific. */
@@ -5102,11 +5205,22 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   }
 
   if (action === 'dev_get_tasks') {
-    const { projectId, campaignId } = body;
-    if (!projectId) return ok(res, { error: 'projectId required' });
+    const { projectId, campaignId, pageId } = body;
+    if (!projectId && !pageId) return ok(res, { error: 'projectId or pageId required' });
     try {
       const { getTasksForProject, updateTask } = await import('./lib/dev-engine.js');
-      const tasks = await getTasksForProject(projectId, { campaignId });
+      const { db: getDb } = await import('./lib/db.js');
+      let tasks: any[];
+      if (pageId) {
+        // Fetch directly by page_id — for Site Manager drawer
+        const { data } = await getDb().from('dev_tasks').select('*')
+          .eq('page_id', pageId)
+          .order('priority', { ascending: true })
+          .order('created_at', { ascending: false });
+        tasks = (data || []) as any[];
+      } else {
+        tasks = await getTasksForProject(projectId, { campaignId });
+      }
       // Server-side stale task recovery — anything 'running' for >120s timed out
       for (const t of tasks) {
         if ((t.status === 'running' || t.status === 'verifying') && t.executed_at) {
