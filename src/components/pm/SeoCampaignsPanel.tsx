@@ -75,7 +75,8 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
   const [statusFilter, setStatusFilter] = useState<'active' | 'paused' | 'all'>('active');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [promoteConfirm, setPromoteConfirm] = useState<SeoOpportunity | null>(null);
-  const [tab, setTab] = useState<'campaigns' | 'opportunities'>('campaigns');
+  const [tab, setTab] = useState<'campaigns' | 'opportunities' | 'objectives'>('campaigns');
+  const [showNewObjective, setShowNewObjective] = useState(false);
   /* Active pipeline run being driven/watched in dashboard overlay */
   const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number } | null>(null);
 
@@ -193,6 +194,23 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
             )}
           </span>
         </TabButton>
+        <TabButton active={tab === 'objectives'} onClick={() => setTab('objectives')}>
+          🎯 Objectives
+        </TabButton>
+        {tab === 'objectives' && (
+          <button
+            type="button"
+            onClick={() => setShowNewObjective(true)}
+            style={{
+              marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+              padding: '5px 12px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+              background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))',
+              border: 'none', cursor: 'pointer',
+            }}
+          >
+            + New objective
+          </button>
+        )}
       </div>
 
       {error && (
@@ -224,6 +242,15 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
           opportunities={opportunities}
           onPromote={(opp) => setPromoteConfirm(opp)}
           onDismiss={handleDismissOpportunity}
+        />
+      )}
+
+
+      {tab === 'objectives' && (
+        <ObjectivesView
+          projectId={projectId}
+          campaigns={campaigns}
+          onRefresh={refresh}
         />
       )}
 
@@ -1991,4 +2018,437 @@ function renderInlineMd(text: string): React.ReactNode {
   }
   if (lastIdx < text.length) parts.push(text.slice(lastIdx));
   return parts;
+}
+
+// ─────────────────────────────────────────────────────────────
+// CAMPAIGN OBJECTIVES
+// ─────────────────────────────────────────────────────────────
+
+const OBJECTIVE_TYPES = [
+  { type: 'keyword_ranking',    label: 'Keyword Ranking',    icon: '🏆', desc: 'Rank on page 1 for a target keyword',              metric: 'position',    unit: 'position' },
+  { type: 'traffic_growth',     label: 'Traffic Growth',     icon: '📈', desc: 'Increase organic clicks to target pages',          metric: 'clicks',      unit: 'clicks/mo' },
+  { type: 'local_visibility',   label: 'Local Visibility',   icon: '📍', desc: 'Rank in a specific city or region',                metric: 'position',    unit: 'position' },
+  { type: 'domain_authority',   label: 'Domain Authority',   icon: '🔗', desc: 'Build site authority through link acquisition',    metric: 'da_score',    unit: 'DA score' },
+  { type: 'technical_recovery', label: 'Technical Recovery', icon: '⚙️', desc: 'Resolve critical technical SEO issues site-wide', metric: 'cwv_score',   unit: 'issues' },
+  { type: 'content_authority',  label: 'Content Authority',  icon: '✍️', desc: 'Build topical authority in a subject area',       metric: 'coverage',    unit: 'ranking pages' },
+  { type: 'eeat',               label: 'E-E-A-T',            icon: '🎓', desc: 'Improve expertise, authority and trust signals',   metric: 'eeat_score',  unit: 'score' },
+] as const;
+
+type ObjectiveType = typeof OBJECTIVE_TYPES[number]['type'];
+
+async function createObjective(params: {
+  projectId: string;
+  campaignType: ObjectiveType;
+  title: string;
+  keyword?: string;
+  goalMetric?: string;
+  goalTarget?: number;
+  goalBaseline?: number;
+  goalDeadline?: string;
+  targetLocations?: any[];
+  siteId?: string;
+}) {
+  try {
+    const res = await fetch('/api/task-engine', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bs_campaign_objective_create', ...params }),
+    });
+    return await res.json();
+  } catch (e: any) { return { error: e?.message }; }
+}
+
+async function updateObjective(campaignId: string, updates: Record<string, unknown>) {
+  try {
+    const res = await fetch('/api/task-engine', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bs_campaign_objective_update', campaignId, updates }),
+    });
+    return await res.json();
+  } catch (e: any) { return { error: e?.message }; }
+}
+
+function ObjectivesView({
+  projectId, campaigns, onRefresh,
+}: {
+  projectId: string;
+  campaigns: SeoCampaign[];
+  onRefresh: () => void;
+}) {
+  const [showNew, setShowNew] = React.useState(false);
+
+  // Group campaigns by type — objectives first, keyword sub-campaigns nested
+  const objectives = campaigns.filter(c => c.campaign_type && c.campaign_type !== 'keyword_ranking');
+  const keywordCampaigns = campaigns.filter(c => !c.campaign_type || c.campaign_type === 'keyword_ranking');
+
+  const getProgress = (c: SeoCampaign) => {
+    if (c.goal_target === null || c.goal_baseline === null) return null;
+    const current = c.current_position ?? c.goal_baseline;
+    const baseline = c.goal_baseline;
+    const target   = c.goal_target;
+
+    // For position-based: lower is better
+    const isPositionMetric = c.goal_metric === 'position';
+    if (isPositionMetric) {
+      const range = baseline - target;
+      if (range <= 0) return null;
+      const moved = baseline - current;
+      return Math.max(0, Math.min(100, Math.round((moved / range) * 100)));
+    }
+    // For everything else: higher is better
+    const range = target - baseline;
+    if (range <= 0) return null;
+    const moved = current - baseline;
+    return Math.max(0, Math.min(100, Math.round((moved / range) * 100)));
+  };
+
+  const typeInfo = (type: string) => OBJECTIVE_TYPES.find(t => t.type === type);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
+          Campaign objectives track strategic goals — traffic growth, rankings, authority, technical health.
+        </p>
+        <button type="button" onClick={() => setShowNew(true)} style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+          padding: '6px 14px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+          background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))',
+          border: 'none', cursor: 'pointer',
+        }}>
+          + New objective
+        </button>
+      </div>
+
+      {/* Objective cards */}
+      {objectives.length === 0 && keywordCampaigns.length === 0 && (
+        <div style={{
+          padding: 40, textAlign: 'center', borderRadius: 16,
+          border: '1px solid hsl(var(--border))',
+          background: 'hsl(var(--card)/0.3)',
+        }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🎯</div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>No objectives yet</div>
+          <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
+            Create your first objective — traffic growth, local ranking, domain authority, or a technical recovery.
+          </p>
+        </div>
+      )}
+
+      {/* Non-keyword objectives */}
+      {objectives.map(c => {
+        const info  = typeInfo(c.campaign_type || '');
+        const pct   = getProgress(c);
+        const locs  = Array.isArray(c.target_locations) ? c.target_locations : [];
+        const statusColor = c.status === 'active' ? '#34d399' : c.status === 'paused' ? '#f59e0b' : '#94a3b8';
+        return (
+          <div key={c.id} style={{
+            borderRadius: 16, border: '1px solid hsl(var(--border))',
+            background: 'hsl(var(--card)/0.4)', overflow: 'hidden',
+          }}>
+            {/* Card header */}
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid hsl(var(--border)/0.5)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <span style={{ fontSize: 22, flexShrink: 0, marginTop: 1 }}>{info?.icon || '🎯'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{c.goal || c.keyword}</span>
+                    <span style={{
+                      fontSize: 9, padding: '2px 8px', borderRadius: 8, fontWeight: 700,
+                      background: statusColor + '22', color: statusColor, textTransform: 'uppercase', letterSpacing: '0.05em',
+                    }}>{c.status}</span>
+                    <span style={{
+                      fontSize: 9, padding: '2px 8px', borderRadius: 8,
+                      background: 'hsl(var(--muted)/0.5)', color: 'hsl(var(--muted-foreground))',
+                    }}>{info?.label || c.campaign_type}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 6, flexWrap: 'wrap' }}>
+                    {c.goal_metric && (
+                      <span style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))' }}>
+                        Metric: {c.goal_metric}
+                      </span>
+                    )}
+                    {c.goal_baseline !== null && c.goal_target !== null && (
+                      <span style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))' }}>
+                        {c.goal_baseline} → {c.goal_target} {info?.unit}
+                      </span>
+                    )}
+                    {c.goal_deadline && (
+                      <span style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))' }}>
+                        Due: {new Date(c.goal_deadline).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                    {locs.length > 0 && (
+                      <span style={{ fontSize: 10, color: '#60a5fa' }}>
+                        📍 {locs.map((l: any) => l.city || l.region || l.country).filter(Boolean).join(', ')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              {pct !== null && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))' }}>Progress to goal</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: pct >= 80 ? '#34d399' : pct >= 40 ? '#f59e0b' : '#94a3b8' }}>
+                      {pct}%
+                    </span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 4, background: 'hsl(var(--muted)/0.4)', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 4, transition: 'width 0.5s',
+                      width: pct + '%',
+                      background: pct >= 80 ? '#34d399' : pct >= 40 ? '#f59e0b' : 'hsl(var(--primary))',
+                    }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Keyword campaigns section */}
+      {keywordCampaigns.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+            Keyword Ranking Campaigns ({keywordCampaigns.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {keywordCampaigns.map(c => {
+              const pct = c.current_position !== null && c.target_position !== null
+                ? Math.max(0, Math.min(100, Math.round(((100 - c.current_position) / (100 - c.target_position)) * 50)))
+                : null;
+              return (
+                <div key={c.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                  borderRadius: 12, border: '1px solid hsl(var(--border))',
+                  background: 'hsl(var(--card)/0.3)',
+                }}>
+                  <span style={{ fontSize: 18, flexShrink: 0 }}>🏆</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      "{c.keyword}"
+                    </div>
+                    {c.current_position !== null && (
+                      <div style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))' }}>
+                        Position {Math.round(c.current_position)}
+                        {c.target_position !== null && ` → target: ${c.target_position}`}
+                      </div>
+                    )}
+                  </div>
+                  {pct !== null && (
+                    <div style={{ width: 60, height: 3, borderRadius: 3, background: 'hsl(var(--muted)/0.4)', flexShrink: 0 }}>
+                      <div style={{ height: '100%', borderRadius: 3, width: pct + '%', background: 'hsl(var(--primary))' }} />
+                    </div>
+                  )}
+                  <span style={{
+                    fontSize: 9, padding: '2px 8px', borderRadius: 8, fontWeight: 700, flexShrink: 0,
+                    background: c.status === 'active' ? 'rgba(52,211,153,0.12)' : 'rgba(148,163,184,0.1)',
+                    color:      c.status === 'active' ? '#34d399' : '#94a3b8',
+                  }}>{c.status}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {showNew && (
+        <NewObjectiveModal
+          projectId={projectId}
+          onClose={() => setShowNew(false)}
+          onCreated={() => { setShowNew(false); onRefresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function NewObjectiveModal({
+  projectId, onClose, onCreated,
+}: {
+  projectId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [step,       setStep]       = React.useState<'type' | 'details'>('type');
+  const [selType,    setSelType]    = React.useState<ObjectiveType | null>(null);
+  const [title,      setTitle]      = React.useState('');
+  const [keyword,    setKeyword]    = React.useState('');
+  const [goalTarget, setGoalTarget] = React.useState('');
+  const [baseline,   setBaseline]   = React.useState('');
+  const [deadline,   setDeadline]   = React.useState('');
+  const [city,       setCity]       = React.useState('');
+  const [country,    setCountry]    = React.useState('');
+  const [saving,     setSaving]     = React.useState(false);
+  const [err,        setErr]        = React.useState('');
+
+  const typeInfo = selType ? OBJECTIVE_TYPES.find(t => t.type === selType) : null;
+
+  const save = async () => {
+    if (!selType) return;
+    if (!title.trim() && selType !== 'keyword_ranking') { setErr('Title is required'); return; }
+    if (selType === 'keyword_ranking' && !keyword.trim()) { setErr('Keyword is required'); return; }
+    setSaving(true); setErr('');
+    const locs = city.trim() ? [{ city: city.trim(), country: country.trim() || undefined }] : undefined;
+    const r = await createObjective({
+      projectId,
+      campaignType: selType,
+      title:        title.trim() || keyword.trim(),
+      keyword:      keyword.trim() || undefined,
+      goalTarget:   goalTarget ? Number(goalTarget) : undefined,
+      goalBaseline: baseline  ? Number(baseline)   : undefined,
+      goalDeadline: deadline  || undefined,
+      goalMetric:   typeInfo?.metric,
+      targetLocations: locs,
+    });
+    setSaving(false);
+    if (r.error) { setErr(r.error); return; }
+    onCreated();
+  };
+
+  const overlayStyle: React.CSSProperties = {
+    position: 'fixed', inset: 0, zIndex: 50,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+  };
+  const panelStyle: React.CSSProperties = {
+    width: '100%', maxWidth: 520,
+    background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))',
+    borderRadius: 20, boxShadow: '0 25px 80px rgba(0,0,0,0.4)',
+    padding: 24, display: 'flex', flexDirection: 'column', gap: 20,
+    maxHeight: '90vh', overflowY: 'auto',
+  };
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 14px', borderRadius: 12,
+    border: '1px solid hsl(var(--border))', background: 'hsl(var(--background))',
+    color: 'hsl(var(--foreground))', fontSize: 13, outline: 'none', boxSizing: 'border-box',
+  };
+  const labelStyle: React.CSSProperties = {
+    display: 'block', fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+    letterSpacing: '0.06em', color: 'hsl(var(--muted-foreground))', marginBottom: 6,
+  };
+
+  return (
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={panelStyle} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>
+              {step === 'type' ? 'New Campaign Objective' : `New ${typeInfo?.label} Objective`}
+            </div>
+            <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>
+              {step === 'type' ? 'Choose the type of objective' : typeInfo?.desc}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={{
+            width: 28, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
+            background: 'transparent', color: 'hsl(var(--muted-foreground))', fontSize: 16,
+          }}>✕</button>
+        </div>
+
+        {step === 'type' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {OBJECTIVE_TYPES.map(t => (
+              <button key={t.type} type="button"
+                onClick={() => { setSelType(t.type); setStep('details'); }}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                  gap: 6, padding: '14px 14px', borderRadius: 14, cursor: 'pointer',
+                  border: '1px solid hsl(var(--border))', background: 'hsl(var(--card)/0.5)',
+                  textAlign: 'left', transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { (e.currentTarget as any).style.borderColor = 'hsl(var(--primary)/0.5)'; (e.currentTarget as any).style.background = 'hsl(var(--primary)/0.05)'; }}
+                onMouseLeave={e => { (e.currentTarget as any).style.borderColor = 'hsl(var(--border))'; (e.currentTarget as any).style.background = 'hsl(var(--card)/0.5)'; }}
+              >
+                <span style={{ fontSize: 22 }}>{t.icon}</span>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{t.label}</div>
+                  <div style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))', marginTop: 2, lineHeight: 1.4 }}>{t.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {step === 'details' && selType && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <button type="button" onClick={() => setStep('type')} style={{
+              alignSelf: 'flex-start', fontSize: 11, color: 'hsl(var(--muted-foreground))',
+              background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+            }}>← Back</button>
+
+            {selType === 'keyword_ranking' ? (
+              <div>
+                <label style={labelStyle}>Target keyword *</label>
+                <input value={keyword} onChange={e => setKeyword(e.target.value)}
+                  placeholder="e.g. mobile forms software" autoFocus style={inputStyle} />
+              </div>
+            ) : (
+              <div>
+                <label style={labelStyle}>Objective title *</label>
+                <input value={title} onChange={e => setTitle(e.target.value)}
+                  placeholder={`e.g. Grow organic traffic by Q3 2026`} autoFocus style={inputStyle} />
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Baseline ({typeInfo?.unit})</label>
+                <input value={baseline} onChange={e => setBaseline(e.target.value)}
+                  type="number" placeholder={selType === 'keyword_ranking' ? 'e.g. 45' : '0'} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Target ({typeInfo?.unit})</label>
+                <input value={goalTarget} onChange={e => setGoalTarget(e.target.value)}
+                  type="number" placeholder={selType === 'keyword_ranking' ? 'e.g. 3' : '500'} style={inputStyle} />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Deadline</label>
+              <input value={deadline} onChange={e => setDeadline(e.target.value)}
+                type="date" style={inputStyle} />
+            </div>
+
+            {(selType === 'local_visibility' || selType === 'traffic_growth') && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Target city</label>
+                  <input value={city} onChange={e => setCity(e.target.value)}
+                    placeholder="e.g. London" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Country code</label>
+                  <input value={country} onChange={e => setCountry(e.target.value)}
+                    placeholder="e.g. GB" maxLength={2} style={inputStyle} />
+                </div>
+              </div>
+            )}
+
+            {err && <div style={{ fontSize: 11, color: '#f87171', background: 'rgba(239,68,68,0.08)', padding: '8px 12px', borderRadius: 8 }}>{err}</div>}
+
+            <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+              <button type="button" onClick={onClose} style={{
+                flex: 1, padding: '10px 0', borderRadius: 12, fontSize: 12,
+                border: '1px solid hsl(var(--border))', background: 'transparent',
+                color: 'hsl(var(--muted-foreground))', cursor: 'pointer',
+              }}>Cancel</button>
+              <button type="button" onClick={save} disabled={saving} style={{
+                flex: 2, padding: '10px 0', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                background: saving ? 'hsl(var(--muted))' : 'hsl(var(--primary))',
+                color: 'hsl(var(--primary-foreground))', border: 'none', cursor: saving ? 'default' : 'pointer',
+              }}>
+                {saving ? 'Creating…' : 'Create objective'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

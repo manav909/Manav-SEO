@@ -2731,6 +2731,8 @@ export interface SeoCampaign {
   keyword:            string;
   goal:               string | null;
   campaign_kind:      string;
+  campaign_type:      string | null;
+  parent_campaign_id: string | null;
   status:             string;
   health:             string | null;
   current_position:   number | null;
@@ -2741,6 +2743,13 @@ export interface SeoCampaign {
   paused_at:          string | null;
   updated_at:         string;
   living_overview_md?: string | null;
+  // Objective fields
+  goal_metric:        string | null;
+  goal_target:        number | null;
+  goal_baseline:      number | null;
+  goal_deadline:      string | null;
+  target_locations:   any[] | null;
+  site_id:            string | null;
 }
 
 export interface SeoCampaignPanel {

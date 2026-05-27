@@ -5547,6 +5547,93 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  /* ═══════════════════════════════════════════════════════════════
+     CAMPAIGN OBJECTIVE ACTIONS (bs_campaign_objective_*)
+     Extend seo_campaigns with multi-type objectives.
+     campaign_type, goal_metric, goal_target, goal_baseline,
+     goal_deadline, target_locations, site_id already in DB.
+  ═══════════════════════════════════════════════════════════════ */
+
+  if (action === 'bs_campaign_objective_create') {
+    const {
+      projectId, campaignType, title, keyword,
+      goalMetric, goalTarget, goalBaseline, goalDeadline,
+      targetLocations, siteId, parentCampaignId,
+    } = body;
+    if (!projectId || !campaignType) return ok(res, { error: 'projectId and campaignType required' });
+
+    const TYPES_NEEDING_KEYWORD = ['keyword_ranking'];
+    if (TYPES_NEEDING_KEYWORD.includes(campaignType) && !keyword) {
+      return ok(res, { error: 'keyword required for keyword_ranking campaigns' });
+    }
+
+    const GOAL_LABELS: Record<string, string> = {
+      keyword_ranking:    'Rank on page 1 for target keyword',
+      traffic_growth:     'Increase organic traffic to target pages',
+      local_visibility:   'Increase visibility in target location',
+      domain_authority:   'Increase domain authority score',
+      technical_recovery: 'Resolve critical technical SEO issues',
+      content_authority:  'Build topical authority in subject area',
+      eeat:               'Improve E-E-A-T signals site-wide',
+    };
+
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+
+      // For keyword_ranking — use the existing campaign engine (it creates panels)
+      if (campaignType === 'keyword_ranking') {
+        const { createCampaign } = await import('./lib/seo-campaign-engine.js');
+        const result = await createCampaign({
+          projectId, keyword, campaignType: 'keyword_ranking',
+          goal: title || GOAL_LABELS.keyword_ranking,
+          goalMetric: goalMetric || 'position',
+          goalTarget: goalTarget,
+          goalBaseline: goalBaseline,
+          goalDeadline: goalDeadline,
+        });
+        return ok(res, result);
+      }
+
+      // For all other types — create directly, no pipeline panels needed yet
+      const row: any = {
+        project_id:         projectId,
+        keyword:            keyword || title || GOAL_LABELS[campaignType] || campaignType,
+        campaign_kind:      campaignType,
+        campaign_type:      campaignType,
+        goal:               title || GOAL_LABELS[campaignType] || campaignType,
+        status:             'active',
+        goal_metric:        goalMetric    || null,
+        goal_target:        goalTarget    ? Number(goalTarget)  : null,
+        goal_baseline:      goalBaseline  ? Number(goalBaseline): null,
+        goal_deadline:      goalDeadline  || null,
+        target_locations:   targetLocations || null,
+        site_id:            siteId        || null,
+        parent_campaign_id: parentCampaignId || null,
+        updated_at:         new Date().toISOString(),
+      };
+
+      const { data, error } = await getDb().from('seo_campaigns').insert(row).select('id').single();
+      if (error) return ok(res, { error: error.message });
+      return ok(res, { success: true, campaign_id: (data as any).id });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'bs_campaign_objective_update') {
+    const { campaignId, updates } = body;
+    if (!campaignId) return ok(res, { error: 'campaignId required' });
+    const allowed = ['goal', 'goal_metric', 'goal_target', 'goal_baseline', 'goal_deadline',
+                     'target_locations', 'site_id', 'status', 'current_position'];
+    const safe: any = Object.fromEntries(
+      Object.entries(updates || {}).filter(([k]) => allowed.includes(k))
+    );
+    safe.updated_at = new Date().toISOString();
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      await getDb().from('seo_campaigns').update(safe).eq('id', campaignId);
+      return ok(res, { success: true });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
   if (action === 'pm_chat') {
     /* PM-level strategic chat.
        Pulls comprehensive project data: audits, campaigns, dev tasks,
