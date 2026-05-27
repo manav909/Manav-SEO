@@ -4505,6 +4505,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
         const { data: client, error: clientErr } = await getDb().from('clients').insert({
           name:    label,
           company: label,
+          email:   '',
           website: domain || null,
         }).select('id').single();
         if (clientErr) return ok(res, { error: 'Client create failed: ' + clientErr.message });
@@ -4578,7 +4579,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
       // Create client + project
       const { data: client, error: cErr } = await getDb().from('clients').insert({
-        name: label, company: label, website: domain || null,
+        name: label, company: label, email: '', website: domain || null,
       }).select('id').single();
       if (cErr) return ok(res, { error: cErr.message });
       const clientId = (client as any).id;

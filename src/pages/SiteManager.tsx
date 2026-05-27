@@ -604,14 +604,37 @@ function ManageWorkspaceModal({ site, onClose, onUpdated, onDeleted }: {
   onUpdated: () => void;
   onDeleted: () => void;
 }) {
-  const [label,    setLabel]    = useState(site.label);
-  const [domain,   setDomain]   = useState(site.domain || '');
-  const [cms,      setCms]      = useState(site.cms    || '');
-  const [saving,   setSaving]   = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [err,      setErr]      = useState('');
-  const [confirm,  setConfirm]  = useState(false);
+  const [label,      setLabel]      = useState(site.label);
+  const [domain,     setDomain]     = useState(site.domain || '');
+  const [cms,        setCms]        = useState(site.cms    || '');
+  const [saving,     setSaving]     = useState(false);
+  const [deleting,   setDeleting]   = useState(false);
+  const [creating,   setCreating]   = useState(false);
+  const [err,        setErr]        = useState('');
+  const [confirm,    setConfirm]    = useState(false);
+  const [objectives, setObjectives] = useState<any[]>([]);
+  const [unlinking,  setUnlinking]  = useState<string | null>(null);
+
+  // Load objectives linked to this workspace
+  useEffect(() => {
+    if (!site.project_id) return;
+    callApi('bs_seo_campaign_list', { projectId: site.project_id }).then(r => {
+      const all = (r.data as any)?.campaigns || [];
+      setObjectives(all.filter((c: any) => c.site_id === site.id));
+    });
+  }, [site.id, site.project_id]);
+
+  const unlinkObjective = async (campaignId: string) => {
+    setUnlinking(campaignId);
+    await callApi('bs_campaign_objective_update', { campaignId, updates: { site_id: null } });
+    setObjectives(prev => prev.filter(o => o.id !== campaignId));
+    setUnlinking(null);
+  };
+
+  const TYPE_ICONS: Record<string, string> = {
+    traffic_growth: '📈', local_visibility: '📍', domain_authority: '🔗',
+    technical_recovery: '⚙️', content_authority: '✍️', eeat: '🎓', keyword_ranking: '🏆',
+  };
 
   const save = async () => {
     if (!label.trim()) { setErr('Name required'); return; }
@@ -683,6 +706,36 @@ function ManageWorkspaceModal({ site, onClose, onUpdated, onDeleted }: {
             </select>
           </div>
         </div>
+
+        {/* Linked objectives */}
+        {site.project_id && (
+          <div className="space-y-2">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Linked objectives {objectives.length > 0 && `(${objectives.length})`}
+            </div>
+            {objectives.length === 0 ? (
+              <div className="text-xs text-muted-foreground/60 px-1">
+                No objectives linked — go to SEO Campaigns → Objectives tab to link this workspace to a goal.
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {objectives.map(o => (
+                  <div key={o.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-border bg-card/40">
+                    <span className="text-sm">{TYPE_ICONS[o.campaign_type] || '🎯'}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate">{o.goal || o.keyword}</div>
+                      <div className="text-[10px] text-muted-foreground capitalize">{o.campaign_type?.replace(/_/g,' ')}</div>
+                    </div>
+                    <button type="button" onClick={() => unlinkObjective(o.id)} disabled={!!unlinking}
+                      className="text-[10px] text-muted-foreground hover:text-red-400 transition-colors px-2 py-1 rounded shrink-0">
+                      {unlinking === o.id ? '…' : 'Unlink'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Project status */}
         <div className={`rounded-xl border px-4 py-3 ${site.project_id ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
