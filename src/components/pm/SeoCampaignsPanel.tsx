@@ -2067,6 +2067,16 @@ async function updateObjective(campaignId: string, updates: Record<string, unkno
   } catch (e: any) { return { error: e?.message }; }
 }
 
+async function apiCall(action: string, payload: Record<string, unknown>) {
+  try {
+    const r = await fetch('/api/task-engine', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    return await r.json();
+  } catch { return {}; }
+}
+
 function ObjectivesView({
   projectId, campaigns, onRefresh,
 }: {
@@ -2074,9 +2084,25 @@ function ObjectivesView({
   campaigns: SeoCampaign[];
   onRefresh: () => void;
 }) {
-  const [showNew, setShowNew] = React.useState(false);
+  const [showNew,      setShowNew]      = React.useState(false);
+  const [sites,        setSites]        = React.useState<any[]>([]);
+  const [linkingId,    setLinkingId]    = React.useState<string | null>(null); // objective being linked
+  const [saving,       setSaving]       = React.useState(false);
 
-  // Group campaigns by type — objectives first, keyword sub-campaigns nested
+  // Load site workspaces for the link picker
+  React.useEffect(() => {
+    apiCall('site_list', { projectId }).then(r => setSites(r.sites || []));
+  }, [projectId]);
+
+  const linkSite = async (campaignId: string, siteId: string | null) => {
+    setSaving(true);
+    await apiCall('bs_campaign_objective_update', { campaignId, updates: { site_id: siteId } });
+    setSaving(false);
+    setLinkingId(null);
+    onRefresh();
+  };
+
+  // Group campaigns by type
   const objectives = campaigns.filter(c => c.campaign_type && c.campaign_type !== 'keyword_ranking');
   const keywordCampaigns = campaigns.filter(c => !c.campaign_type || c.campaign_type === 'keyword_ranking');
 
@@ -2184,14 +2210,29 @@ function ObjectivesView({
                       </span>
                     )}
                     {c.site_id ? (
-                      <span style={{ fontSize: 10, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 3 }}>
-                        🌐 Site Manager linked
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10, color: '#a78bfa' }}>🌐 {sites.find(s => s.id === c.site_id)?.label || 'Site linked'}</span>
+                        <button type="button"
+                          onClick={() => setLinkingId(linkingId === c.id ? null : c.id)}
+                          style={{ fontSize: 9, color: 'hsl(var(--muted-foreground))', background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', borderRadius: 4 }}>
+                          change
+                        </button>
+                        <button type="button"
+                          onClick={() => linkSite(c.id, null)}
+                          style={{ fontSize: 9, color: 'hsl(var(--muted-foreground))', background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px', borderRadius: 4 }}>
+                          unlink
+                        </button>
                       </span>
                     ) : (
-                      <span style={{ fontSize: 10, color: 'hsl(var(--muted-foreground)/0.5)', cursor: 'pointer' }}
-                        title="Link a site workspace from Site Manager → Settings">
-                        ○ No site linked
-                      </span>
+                      <button type="button"
+                        onClick={() => setLinkingId(linkingId === c.id ? null : c.id)}
+                        style={{
+                          fontSize: 10, color: 'hsl(var(--primary))', background: 'hsl(var(--primary)/0.08)',
+                          border: '1px solid hsl(var(--primary)/0.25)', borderRadius: 6,
+                          padding: '2px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                        }}>
+                        🌐 Link site workspace
+                      </button>
                     )}
                   </div>
                 </div>
@@ -2213,6 +2254,46 @@ function ObjectivesView({
                       background: pct >= 80 ? '#34d399' : pct >= 40 ? '#f59e0b' : 'hsl(var(--primary))',
                     }} />
                   </div>
+                </div>
+              )}
+
+              {/* Site workspace picker — shown when Link button is clicked */}
+              {linkingId === c.id && (
+                <div style={{ marginTop: 12, padding: '12px', borderRadius: 10, background: 'hsl(var(--background)/0.8)', border: '1px solid hsl(var(--border))' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'hsl(var(--muted-foreground))', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Select site workspace
+                  </div>
+                  {sites.length === 0 ? (
+                    <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>
+                      No site workspaces yet — create one in Site Manager first.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {sites.map((s: any) => (
+                        <button key={s.id} type="button"
+                          onClick={() => linkSite(c.id, s.id)}
+                          disabled={saving}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                            border: c.site_id === s.id ? '1px solid hsl(var(--primary)/0.5)' : '1px solid hsl(var(--border))',
+                            background: c.site_id === s.id ? 'hsl(var(--primary)/0.08)' : 'transparent',
+                            textAlign: 'left',
+                          }}>
+                          <span style={{ fontSize: 14 }}>🌐</span>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600 }}>{s.label}</div>
+                            {s.domain && <div style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))' }}>{s.domain}</div>}
+                          </div>
+                          {c.site_id === s.id && <span style={{ marginLeft: 'auto', fontSize: 10, color: 'hsl(var(--primary))' }}>✓ linked</span>}
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => setLinkingId(null)}
+                        style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', textAlign: 'left' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
