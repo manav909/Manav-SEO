@@ -4564,6 +4564,58 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     } catch (e: any) { return ok(res, { error: e?.message }); }
   }
 
+  if (action === 'site_create_project') {
+    /* Creates a project + client for an existing workspace that has none.
+       Same logic as the auto-create in site_create. */
+    const { siteId, label, domain, userId } = body;
+    if (!siteId || !label) return ok(res, { error: 'siteId and label required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+
+      // Check workspace doesn't already have a project
+      const { data: site } = await getDb().from('dev_sites').select('project_id').eq('id', siteId).maybeSingle();
+      if ((site as any)?.project_id) return ok(res, { error: 'Workspace already has a project' });
+
+      // Create client + project
+      const { data: client, error: cErr } = await getDb().from('clients').insert({
+        name: label, company: label, website: domain || null,
+      }).select('id').single();
+      if (cErr) return ok(res, { error: cErr.message });
+      const clientId = (client as any).id;
+
+      const { data: project, error: pErr } = await getDb().from('projects').insert({
+        client_id: clientId, name: label,
+        url:       domain || null, status: 'active', keywords: [],
+      }).select('id').single();
+      if (pErr) return ok(res, { error: pErr.message });
+      const projectId = (project as any).id;
+
+      // Link to workspace
+      await getDb().from('dev_sites').update({ project_id: projectId, updated_at: new Date().toISOString() }).eq('id', siteId);
+
+      // Update profiles.client_ids
+      if (userId) {
+        try {
+          const { data: prof } = await getDb().from('profiles').select('id,client_id,client_ids').eq('id', userId).single();
+          if (prof) {
+            const existing: string[] = Array.isArray((prof as any).client_ids) ? (prof as any).client_ids : (prof as any).client_id ? [(prof as any).client_id] : [];
+            if (!existing.includes(clientId)) {
+              await getDb().from('profiles').update({ client_ids: [...existing, clientId], client_id: existing[0] || clientId }).eq('id', userId);
+            }
+          }
+        } catch { /* non-blocking */ }
+      }
+
+      // Seed Data Room
+      try {
+        const { seedV2DataRoom } = await import('./lib/pm-dataroom-seed.js');
+        await seedV2DataRoom({ projectId });
+      } catch { /* non-blocking */ }
+
+      return ok(res, { success: true, project_id: projectId, client_id: clientId });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
   if (action === 'site_list') {
     const { projectId: pid } = body;
     try {

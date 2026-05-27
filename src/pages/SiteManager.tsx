@@ -512,8 +512,9 @@ function PagesTable({ pages, onPageClick, onRefresh }: { pages: DevPage[]; onPag
 // ─────────────────────────────────────────────────────────────
 function SiteSelector() {
   const { sites, selectedSite, setSelectedSiteId, loadingSites, refreshSites } = useSite();
-  const [open, setOpen]     = useState(false);
+  const [open,    setOpen]    = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [managing, setManaging] = useState<DevSite | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -535,20 +536,33 @@ function SiteSelector() {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-2 w-72 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden">
-          <div className="p-2 space-y-0.5 max-h-64 overflow-y-auto">
+        <div className="absolute top-full left-0 mt-2 w-80 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden">
+          <div className="p-2 space-y-0.5 max-h-72 overflow-y-auto">
             {loadingSites ? (
               <div className="py-4 text-center text-xs text-muted-foreground">Loading…</div>
             ) : sites.length === 0 ? (
               <div className="py-4 text-center text-xs text-muted-foreground">No workspaces yet</div>
             ) : (
               sites.map(s => (
-                <button key={s.id} type="button"
-                  onClick={() => { setSelectedSiteId(s.id); setOpen(false); }}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl transition-all ${selectedSite?.id === s.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted/60'}`}>
-                  <div className="text-sm font-medium">{s.label}</div>
-                  {s.domain && <div className="text-[10px] text-muted-foreground mt-0.5">{s.domain}</div>}
-                </button>
+                <div key={s.id} className={`flex items-center gap-1 rounded-xl transition-all ${selectedSite?.id === s.id ? 'bg-primary/10' : 'hover:bg-muted/40'}`}>
+                  <button type="button"
+                    onClick={() => { setSelectedSiteId(s.id); setOpen(false); }}
+                    className="flex-1 text-left px-3 py-2.5">
+                    <div className={`text-sm font-medium ${selectedSite?.id === s.id ? 'text-primary' : ''}`}>{s.label}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {s.domain && <span className="text-[10px] text-muted-foreground">{s.domain.replace(/^https?:\/\//,'')}</span>}
+                      {!s.project_id && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">No project</span>
+                      )}
+                    </div>
+                  </button>
+                  <button type="button"
+                    onClick={e => { e.stopPropagation(); setManaging(s); setOpen(false); }}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors mr-1 shrink-0"
+                    title="Edit workspace">
+                    <MoreHorizontal className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -567,6 +581,152 @@ function SiteSelector() {
           onCreated={site => { refreshSites(); setSelectedSiteId(site.id); setShowNew(false); }}
         />
       )}
+
+      {managing && (
+        <ManageWorkspaceModal
+          site={managing}
+          onClose={() => setManaging(null)}
+          onUpdated={() => { refreshSites(); setManaging(null); }}
+          onDeleted={() => { setManaging(null); setSelectedSiteId(sites.find(s => s.id !== managing.id)?.id || null); refreshSites(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// MANAGE WORKSPACE MODAL — edit, delete, create project
+// ─────────────────────────────────────────────────────────────
+function ManageWorkspaceModal({ site, onClose, onUpdated, onDeleted }: {
+  site:      DevSite;
+  onClose:   () => void;
+  onUpdated: () => void;
+  onDeleted: () => void;
+}) {
+  const [label,    setLabel]    = useState(site.label);
+  const [domain,   setDomain]   = useState(site.domain || '');
+  const [cms,      setCms]      = useState(site.cms    || '');
+  const [saving,   setSaving]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [err,      setErr]      = useState('');
+  const [confirm,  setConfirm]  = useState(false);
+
+  const save = async () => {
+    if (!label.trim()) { setErr('Name required'); return; }
+    setSaving(true);
+    const r = await callApi('site_update', {
+      siteId: site.id,
+      updates: { label: label.trim(), domain: domain.trim() || null, cms: cms.trim() || null },
+    });
+    setSaving(false);
+    if (!r.ok) { setErr(r.error || 'Save failed'); return; }
+    onUpdated();
+  };
+
+  const del = async () => {
+    setDeleting(true);
+    // Delete pages first, then site
+    const { supabase } = await import('@/lib/supabase');
+    await supabase.from('dev_pages').delete().eq('site_id', site.id);
+    await supabase.from('dev_sites').delete().eq('id', site.id);
+    setDeleting(false);
+    onDeleted();
+  };
+
+  const createProject = async () => {
+    setCreating(true); setErr('');
+    const { supabase } = await import('@/lib/supabase');
+    const { data: { user } } = await supabase.auth.getUser();
+    const r = await callApi('site_create_project', {
+      siteId: site.id,
+      label:  site.label,
+      domain: site.domain || undefined,
+      userId: user?.id   || undefined,
+    });
+    setCreating(false);
+    if (!r.ok) { setErr(r.error || 'Failed to create project'); return; }
+    onUpdated();
+  };
+
+  const CMS_OPTIONS = ['', 'wordpress', 'shopify', 'webflow', 'squarespace', 'wix', 'hubspot', 'custom'];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 space-y-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-base font-semibold">Manage workspace</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{site.label}</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-muted/60 flex items-center justify-center text-muted-foreground">✕</button>
+        </div>
+
+        {/* Edit fields */}
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Workspace name</label>
+            <input value={label} onChange={e => setLabel(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60 transition-colors" />
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Domain</label>
+            <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="https://www.example.com"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60 transition-colors" />
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">CMS</label>
+            <select value={cms} onChange={e => setCms(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60">
+              {CMS_OPTIONS.map(o => <option key={o} value={o}>{o || 'Not set'}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Project status */}
+        <div className={`rounded-xl border px-4 py-3 ${site.project_id ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
+          {site.project_id ? (
+            <div className="flex items-center gap-2 text-xs text-emerald-400">
+              <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+              Project linked — GSC, GA4, and all audit checks active
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <div className="text-xs text-amber-400 flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                No project linked — GSC, GA4, and SerpAPI checks inactive
+              </div>
+              <button type="button" onClick={createProject} disabled={creating}
+                className="w-full py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-semibold hover:bg-amber-500/30 disabled:opacity-40 transition-all">
+                {creating ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-3 h-3 animate-spin" />Creating project…</span> : 'Create project for this workspace'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {err && <div className="text-xs text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{err}</div>}
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <button type="button" onClick={save} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-40 transition-all">
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+          {!confirm ? (
+            <button type="button" onClick={() => setConfirm(true)}
+              className="px-4 py-2.5 rounded-xl border border-red-500/30 text-red-400 text-sm hover:bg-red-500/10 transition-all">
+              Delete
+            </button>
+          ) : (
+            <button type="button" onClick={del} disabled={deleting}
+              className="px-4 py-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 text-sm font-semibold hover:bg-red-500/30 disabled:opacity-40 transition-all">
+              {deleting ? 'Deleting…' : 'Confirm delete'}
+            </button>
+          )}
+        </div>
+        {confirm && <div className="text-[10px] text-red-400/70 text-center">This will delete the workspace and all {site.label} pages. Cannot be undone.</div>}
+      </div>
     </div>
   );
 }
