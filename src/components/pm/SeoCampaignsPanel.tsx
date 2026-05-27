@@ -2382,53 +2382,37 @@ function NewObjectiveModal({
               background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
             }}>← Back</button>
 
+            {/* Only ask for what's essential — everything else can be added later */}
             {selType === 'keyword_ranking' ? (
               <div>
                 <label style={labelStyle}>Target keyword *</label>
                 <input value={keyword} onChange={e => setKeyword(e.target.value)}
-                  placeholder="e.g. mobile forms software" autoFocus style={inputStyle} />
+                  placeholder="e.g. ottoman bed UK" autoFocus style={inputStyle} />
               </div>
             ) : (
               <div>
-                <label style={labelStyle}>Objective title *</label>
+                <label style={labelStyle}>Objective name *</label>
                 <input value={title} onChange={e => setTitle(e.target.value)}
-                  placeholder={`e.g. Grow organic traffic by Q3 2026`} autoFocus style={inputStyle} />
+                  placeholder={typeInfo?.desc} autoFocus style={inputStyle} />
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <label style={labelStyle}>Baseline ({typeInfo?.unit})</label>
-                <input value={baseline} onChange={e => setBaseline(e.target.value)}
-                  type="number" placeholder={selType === 'keyword_ranking' ? 'e.g. 45' : '0'} style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Target ({typeInfo?.unit})</label>
-                <input value={goalTarget} onChange={e => setGoalTarget(e.target.value)}
-                  type="number" placeholder={selType === 'keyword_ranking' ? 'e.g. 3' : '500'} style={inputStyle} />
-              </div>
-            </div>
-
-            <div>
-              <label style={labelStyle}>Deadline</label>
-              <input value={deadline} onChange={e => setDeadline(e.target.value)}
-                type="date" style={inputStyle} />
-            </div>
-
-            {(selType === 'local_visibility' || selType === 'traffic_growth') && (
+            {(selType === 'local_visibility') && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelStyle}>Target city</label>
-                  <input value={city} onChange={e => setCity(e.target.value)}
-                    placeholder="e.g. London" style={inputStyle} />
+                  <input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. London" style={inputStyle} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Country code</label>
-                  <input value={country} onChange={e => setCountry(e.target.value)}
-                    placeholder="e.g. GB" maxLength={2} style={inputStyle} />
+                  <label style={labelStyle}>Country</label>
+                  <input value={country} onChange={e => setCountry(e.target.value)} placeholder="GB" maxLength={2} style={inputStyle} />
                 </div>
               </div>
             )}
+
+            <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', background: 'hsl(var(--muted)/0.3)', padding: '10px 12px', borderRadius: 10 }}>
+              Baseline, target, and deadline can be set after creation once you have the data.
+            </div>
 
             {err && <div style={{ fontSize: 11, color: '#f87171', background: 'rgba(239,68,68,0.08)', padding: '8px 12px', borderRadius: 8 }}>{err}</div>}
 

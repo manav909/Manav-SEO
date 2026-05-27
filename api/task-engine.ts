@@ -5616,8 +5616,8 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       // For all other types — create directly, no pipeline panels needed yet
       const row: any = {
         project_id:         projectId,
-        keyword:            keyword || title || GOAL_LABELS[campaignType] || campaignType,
-        campaign_kind:      campaignType,
+        keyword:            keyword || title || GOAL_LABELS[campaignType as string] || campaignType,
+        campaign_kind:      'rank_for_keyword', // required by DB constraint — type is in campaign_type
         campaign_type:      campaignType,
         goal:               title || GOAL_LABELS[campaignType] || campaignType,
         status:             'active',
