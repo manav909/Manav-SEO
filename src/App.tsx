@@ -69,6 +69,7 @@ import AskEmpire from "@/pages/AskEmpire";
 import RevenueBI from "@/pages/RevenueBI";
 import KanbanBoard from "@/pages/KanbanBoard";
 import NotFound       from "./pages/NotFound";
+import SiteManager    from "@/pages/SiteManager";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
