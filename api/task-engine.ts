@@ -5110,6 +5110,199 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     } catch (e: any) { return ok(res, { error: e?.message }); }
   }
 
+  if (action === 'objective_full_setup') {
+    /* One command wires everything:
+       1. Create objective (campaign)
+       2. Create site workspace if none exists for this project
+       3. Import pages — from target_urls, or GSC top pages, or nothing yet
+       4. Link workspace to objective
+       5. Seed Data Room
+       Returns a full status of what was created/found */
+    const { projectId, campaignType, title, keyword, targetUrls, targetLocations, userId } = body;
+    if (!projectId || !campaignType) return ok(res, { error: 'projectId and campaignType required' });
+
+    const { db: getDb } = await import('./lib/db.js');
+    const log: string[] = [];
+
+    try {
+      // ── 1. Create the objective ──────────────────────────────────
+      const GOAL_LABELS: Record<string, string> = {
+        keyword_ranking:    'Rank on page 1 for target keyword',
+        traffic_growth:     'Increase organic traffic',
+        local_visibility:   'Increase visibility in target location',
+        domain_authority:   'Increase domain authority',
+        technical_recovery: 'Resolve critical technical SEO issues',
+        content_authority:  'Build topical authority',
+        eeat:               'Improve E-E-A-T signals',
+      };
+      const objectiveTitle = title || GOAL_LABELS[campaignType] || campaignType;
+      const { data: campaign, error: campErr } = await getDb().from('seo_campaigns').insert({
+        project_id:    projectId,
+        keyword:       keyword || objectiveTitle,
+        campaign_kind: 'rank_for_keyword',
+        campaign_type: campaignType,
+        goal:          objectiveTitle,
+        status:        'active',
+        target_urls:   Array.isArray(targetUrls) && targetUrls.length > 0 ? targetUrls : null,
+        target_locations: Array.isArray(targetLocations) && targetLocations.length > 0 ? targetLocations : null,
+        updated_at:    new Date().toISOString(),
+      }).select('id').single();
+      if (campErr) return ok(res, { error: 'Objective create failed: ' + campErr.message });
+      const campaignId = (campaign as any).id;
+      log.push(`✓ Objective created: "${objectiveTitle}"`);
+
+      // ── 2. Find or create site workspace ────────────────────────
+      let siteId: string | null = null;
+      let siteName = '';
+      let siteWasCreated = false;
+
+      // Look for existing workspace linked to this project
+      const { data: existingSites } = await getDb().from('dev_sites')
+        .select('id,label,domain').eq('project_id', projectId).limit(1).maybeSingle();
+      if (existingSites) {
+        siteId  = (existingSites as any).id;
+        siteName = (existingSites as any).label;
+        log.push(`✓ Using existing workspace: "${siteName}"`);
+      } else {
+        // Get project URL to use as domain
+        const { data: proj } = await getDb().from('projects').select('name,url').eq('id', projectId).maybeSingle();
+        const projName = (proj as any)?.name || objectiveTitle;
+        const projUrl  = (proj as any)?.url  || null;
+
+        const { data: newSite, error: siteErr } = await getDb().from('dev_sites').insert({
+          label:      projName,
+          domain:     projUrl,
+          project_id: projectId,
+          updated_at: new Date().toISOString(),
+        }).select('id').single();
+        if (siteErr) {
+          log.push(`⚠ Workspace creation failed: ${siteErr.message} — continuing without workspace`);
+        } else {
+          siteId  = (newSite as any).id;
+          siteName = projName;
+          siteWasCreated = true;
+          log.push(`✓ Workspace created: "${siteName}"`);
+
+          // Update profiles.client_ids if userId provided
+          if (userId) {
+            try {
+              const { data: client } = await getDb().from('projects').select('client_id').eq('id', projectId).maybeSingle();
+              const clientId = (client as any)?.client_id;
+              if (clientId) {
+                const { data: prof } = await getDb().from('profiles').select('id,client_ids,client_id').eq('id', userId).single();
+                if (prof) {
+                  const existing: string[] = Array.isArray((prof as any).client_ids) ? (prof as any).client_ids : (prof as any).client_id ? [(prof as any).client_id] : [];
+                  if (!existing.includes(clientId)) {
+                    await getDb().from('profiles').update({ client_ids: [...existing, clientId], client_id: existing[0] || clientId }).eq('id', userId);
+                  }
+                }
+              }
+            } catch { /* non-blocking */ }
+          }
+        }
+      }
+
+      // ── 3. Link workspace to objective ──────────────────────────
+      if (siteId) {
+        await getDb().from('seo_campaigns').update({ site_id: siteId, updated_at: new Date().toISOString() }).eq('id', campaignId);
+        log.push(`✓ Workspace linked to objective`);
+      }
+
+      // ── 4. Import pages ──────────────────────────────────────────
+      let pagesImported = 0;
+      let pageSource = '';
+
+      if (siteId) {
+        const { data: existingPages } = await getDb().from('dev_pages').select('id').eq('site_id', siteId).limit(1);
+        const hasPages = (existingPages || []).length > 0;
+
+        if (!hasPages) {
+          let urlsToImport: string[] = [];
+
+          // Option A: target_urls from the objective command
+          if (Array.isArray(targetUrls) && targetUrls.length > 0) {
+            urlsToImport = targetUrls;
+            pageSource = `${urlsToImport.length} URLs from your command`;
+          }
+
+          // Option B: GSC top pages from project_knowledge cache
+          if (urlsToImport.length === 0) {
+            try {
+              const { data: gscCache } = await getDb().from('project_knowledge')
+                .select('field_value').eq('project_id', projectId).eq('field_key', 'gsc_top_pages').maybeSingle();
+              if (gscCache) {
+                const topPages = JSON.parse((gscCache as any).field_value || '[]');
+                urlsToImport = topPages.map((p: any) => p.page || p.url || p.dimension).filter(Boolean).slice(0, 50);
+                pageSource = `${urlsToImport.length} top pages from GSC`;
+              }
+            } catch { /* non-blocking */ }
+          }
+
+          // Import pages
+          if (urlsToImport.length > 0) {
+            const { data: proj } = await getDb().from('projects').select('id').eq('id', projectId).maybeSingle();
+            const toInsert = urlsToImport.map(url => ({
+              site_id:    siteId!,
+              project_id: projectId,
+              url,
+              page_type:  'objective_target',
+              status:     'pending',
+              priority:   90,
+            }));
+            const { error: insErr } = await getDb().from('dev_pages').insert(toInsert);
+            if (!insErr) {
+              pagesImported = urlsToImport.length;
+              log.push(`✓ ${pagesImported} pages imported from ${pageSource}`);
+              // Update objective target_urls if not already set
+              if (!(Array.isArray(targetUrls) && targetUrls.length > 0)) {
+                await getDb().from('seo_campaigns').update({ target_urls: urlsToImport, updated_at: new Date().toISOString() }).eq('id', campaignId);
+              }
+            }
+          }
+        } else {
+          // Workspace already has pages — mark them as objective targets
+          const { data: allPages } = await getDb().from('dev_pages').select('id,url').eq('site_id', siteId);
+          const pageUrls = (allPages || []).map((p: any) => p.url);
+          if (pageUrls.length > 0) {
+            pagesImported = pageUrls.length;
+            pageSource = 'existing workspace pages';
+            // Update objective target_urls
+            await getDb().from('seo_campaigns').update({ target_urls: pageUrls, updated_at: new Date().toISOString() }).eq('id', campaignId);
+            log.push(`✓ ${pagesImported} existing workspace pages linked to objective`);
+          }
+        }
+      }
+
+      // ── 5. Seed Data Room ────────────────────────────────────────
+      try {
+        const { seedV2DataRoom } = await import('./lib/pm-dataroom-seed.js');
+        await seedV2DataRoom({ projectId });
+        log.push(`✓ Data Room seeded`);
+      } catch { /* non-blocking */ }
+
+      // ── Build next steps ─────────────────────────────────────────
+      const nextSteps: string[] = [];
+      if (pagesImported === 0 && siteId) {
+        nextSteps.push('Import pages: go to Site Manager → Import pages (upload sitemap or paste URLs)');
+      }
+      nextSteps.push('Run baseline capture in Site Manager → Baseline tab');
+      nextSteps.push(`Run audit in Site Manager → Audit Queue (scope auto-set to ${campaignType.replace(/_/g,' ')})`);
+
+      return ok(res, {
+        success:        true,
+        campaign_id:    campaignId,
+        site_id:        siteId,
+        pages_imported: pagesImported,
+        page_source:    pageSource,
+        log,
+        next_steps:     nextSteps,
+      });
+
+    } catch (e: any) {
+      return ok(res, { error: e?.message || 'Setup failed', log });
+    }
+  }
+
   if (action === 'site_get_linked_objective') {
     /* Returns the objective(s) linked to this workspace plus their
        target_urls and keyword_group so the audit queue can auto-configure. */

@@ -411,69 +411,73 @@ export default function SeasonModal() {
       }
     }
 
-    /* Route objective-type commands to context-aware objective creation */
+    /* Route objective-type commands to full automated setup */
     if (classification.intent === 'objective') {
       try {
         setMood('thinking');
         const parsed = parseObjectiveCommand(q);
         if (parsed) {
-          const title = q.length < 80 ? q : (parsed.keywords[0] ? `${parsed.goalType.replace(/_/g,' ')} for "${parsed.keywords[0]}"` : parsed.goalType.replace(/_/g,' '));
+          const title = q.length < 80 ? q : (parsed.keywords[0]
+            ? `${parsed.goalType.replace(/_/g,' ')} for "${parsed.keywords[0]}"`
+            : parsed.goalType.replace(/_/g,' '));
 
-          // If no URLs specified in command, check if project has a workspace with pages
-          let targetUrls = parsed.targetUrls;
-          let workspaceContext = '';
-          if (targetUrls.length === 0) {
-            try {
-              const sitesRes = await fetch('/api/task-engine', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'site_list', projectId: selectedProjectId }),
-              }).then(r => r.json());
-              const sites = sitesRes.sites || [];
-              // Find sites linked to this project with pages
-              for (const site of sites) {
-                if (site.project_id === selectedProjectId) {
-                  const pagesRes = await fetch('/api/task-engine', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'site_get_pages', siteId: site.id }),
-                  }).then(r => r.json());
-                  const pages = pagesRes.pages || [];
-                  if (pages.length > 0) {
-                    // Use workspace pages as target URLs
-                    targetUrls = pages.map((p: any) => p.url);
-                    workspaceContext = `\n\nI found **${pages.length} pages** in your "${site.label}" workspace — targeting all of them.`;
-                    break;
-                  }
-                }
-              }
-            } catch { /* non-blocking */ }
-          }
+          // Get current user for profiles.client_ids update
+          const { supabase: sb } = await import('@/lib/supabase');
+          const { data: { user: currentUser } } = await sb.auth.getUser();
 
+          // Single action: creates objective + workspace + imports pages + links everything
           const r = await fetch('/api/task-engine', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              action:          'bs_campaign_objective_create',
+              action:          'objective_full_setup',
               projectId:       selectedProjectId,
               campaignType:    parsed.goalType,
               title,
               keyword:         parsed.keywords[0] || undefined,
-              targetUrls:      targetUrls.length > 0 ? targetUrls : undefined,
+              targetUrls:      parsed.targetUrls.length > 0 ? parsed.targetUrls : undefined,
               targetLocations: parsed.location ? [{ city: parsed.location }] : undefined,
+              userId:          currentUser?.id,
             }),
           }).then(r => r.json());
 
           if (r.success) {
-            const pageCount = targetUrls.length;
-            const pageNote = pageCount > 0
-              ? ` targeting **${pageCount} page${pageCount !== 1 ? 's' : ''}**`
-              : '';
-            setResponse(`✓ **${title}** objective created${pageNote}.${workspaceContext}\n\nGo to **SEO Campaigns → Objectives** to set your baseline, target, and deadline — then go to Site Manager → Audit Queue to run the audit.`);
+            const log: string[] = r.log || [];
+            const pages = r.pages_imported || 0;
+            const nextSteps: string[] = r.next_steps || [];
+
+            let reply = `## ✓ ${title}
+
+`;
+            reply += log.map((l: string) => l).join('
+') + '
+
+';
+            if (pages === 0) {
+              reply += `⚠️ **No pages imported yet.** Go to **Site Manager → Import pages** to add your URLs (paste them, upload a sitemap, or upload a Screaming Frog export).
+
+`;
+            }
+            if (nextSteps.length > 0) {
+              reply += `**Next steps:**
+` + nextSteps.map((s: string) => `→ ${s}`).join('
+');
+            }
+            setResponse(reply);
             setMood('happy');
           } else {
-            setResponse(`Couldn't create objective: ${r.error || 'unknown error'}.`);
+            setResponse(`Couldn't complete setup: ${r.error || 'unknown error'}.
+
+Try creating the objective manually from **SEO Campaigns → Objectives**.`);
             setMood('alert');
           }
         } else {
-          setResponse(`I understood you want to set an objective but couldn't parse the goal type.\n\nTry:\n- **grow traffic for /page1, /page2**\n- **fix technical issues**\n- **improve DA**\n- **local visibility for London**`);
+          setResponse(`I understood you want to set an objective but couldn't parse the goal type.
+
+Try:
+- **grow traffic for /page1, /page2**
+- **fix technical issues**
+- **improve DA**
+- **local visibility for London**`);
           setMood('thinking');
         }
         setSubmitting(false);
