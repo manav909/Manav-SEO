@@ -749,7 +749,16 @@ function SiteManagerView() {
 // ─────────────────────────────────────────────────────────────
 // AUDIT QUEUE
 // ─────────────────────────────────────────────────────────────
+const SCOPE_OPTIONS = [
+  { value: 'technical_recovery', label: '🔧 Full technical audit',     desc: 'All 11 checks — indexability, CWV, on-page, schema, images, freshness, hreflang' },
+  { value: 'traffic_growth',     label: '📈 Traffic growth focus',     desc: 'Core Web Vitals, image optimisation, on-page fundamentals, content freshness' },
+  { value: 'keyword_ranking',    label: '🏆 Keyword ranking focus',    desc: 'On-page fundamentals, schema, keyword presence, heading hierarchy' },
+  { value: 'local_visibility',   label: '📍 Local visibility focus',   desc: 'On-page, schema (LocalBusiness), hreflang' },
+  { value: 'eeat',               label: '🎓 E-E-A-T focus',            desc: 'Schema signals, content freshness, on-page trust markers' },
+];
+
 function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: string; onDone: () => void }) {
+  const { selectedSite } = useSite();
   const ready   = pages.filter(p => p.status === 'pending' || p.status === 'baseline_done');
   const audited = pages.filter(p => p.status === 'audited'  || p.status === 'done');
 
@@ -759,9 +768,33 @@ function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: strin
   const [total,     setTotal]     = useState(0);
   const [log,       setLog]       = useState<{ url: string; red: number; amber: number; ok: boolean }[]>([]);
   const [selected,  setSelected]  = useState<Set<string>>(new Set(ready.map(p => p.id)));
+  const [scope,     setScope]     = useState('technical_recovery');
+  const [linkedObj, setLinkedObj] = useState<any | null>(null);
   const abortRef = useRef(false);
 
-  // Reset selection when ready pages change
+  // Load linked objective to suggest scope
+  useEffect(() => {
+    if (!selectedSite?.project_id) return;
+    callApi('bs_seo_campaign_list', { projectId: selectedSite.project_id }).then(r => {
+      const campaigns = (r.data as any)?.campaigns || [];
+      const linked = campaigns.find((c: any) => c.site_id === siteId && c.campaign_type);
+      if (linked) {
+        setLinkedObj(linked);
+        // Auto-suggest scope from objective type
+        const mapping: Record<string, string> = {
+          traffic_growth:     'traffic_growth',
+          keyword_ranking:    'keyword_ranking',
+          local_visibility:   'local_visibility',
+          technical_recovery: 'technical_recovery',
+          eeat:               'eeat',
+          domain_authority:   'technical_recovery',
+          content_authority:  'keyword_ranking',
+        };
+        if (mapping[linked.campaign_type]) setScope(mapping[linked.campaign_type]);
+      }
+    });
+  }, [siteId, selectedSite?.project_id]);
+
   useEffect(() => {
     setSelected(new Set(ready.map(p => p.id)));
   }, [pages.length]);
@@ -779,7 +812,13 @@ function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: strin
       if (abortRef.current) break;
       const page = toAudit[i];
       setCurrent(page.url);
-      const r = await callApi('site_audit_page', { pageId: page.id, siteId }, 90000);
+      const r = await callApi('site_audit_page', {
+        pageId:    page.id,
+        siteId,
+        scope,
+        keyword:   linkedObj?.keyword || '',
+        projectId: selectedSite?.project_id || '',
+      }, 120000);
       const entry = {
         url:   page.url.replace(/^https?:\/\/[^/]+/, '') || '/',
         red:   (r.data as any)?.issues_red   || 0,
@@ -799,6 +838,42 @@ function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: strin
 
   return (
     <div className="space-y-4">
+      {/* Objective context */}
+      {linkedObj && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 flex items-center gap-3">
+          <span className="text-base">🎯</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold">{linkedObj.goal || linkedObj.keyword}</div>
+            <div className="text-[10px] text-muted-foreground mt-0.5 capitalize">
+              {linkedObj.campaign_type?.replace(/_/g,' ')} objective · audit scope auto-set to match
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mode toggle: run per-page OR upload a crawl file */}
+      {!running && (
+        <AuditModeSelector siteId={siteId} projectId={selectedSite?.project_id || null} scope={scope} onUploaded={onDone} />
+      )}
+
+      {/* Audit scope — only shown for per-page mode */}
+      {!running && (
+        <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-3">
+          <div className="text-xs font-semibold">Audit scope — what to check per page</div>
+          <div className="space-y-2">
+            {SCOPE_OPTIONS.map(opt => (
+              <button key={opt.value} type="button" onClick={() => setScope(opt.value)}
+                className={`w-full text-left px-3.5 py-2.5 rounded-xl border transition-all ${
+                  scope === opt.value ? 'border-primary/50 bg-primary/10' : 'border-border bg-background/40 hover:border-primary/30'
+                }`}>
+                <div className="text-xs font-semibold">{opt.label}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
         {[
@@ -910,6 +985,108 @@ function AuditQueue({ pages, siteId, onDone }: { pages: DevPage[]; siteId: strin
           <div className="text-3xl">🔍</div>
           <div className="text-sm font-medium">No pages to audit yet</div>
           <div className="text-xs text-muted-foreground">Import pages first, then come back here to run audits</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// AUDIT MODE SELECTOR — upload crawl file OR run per-page
+// ─────────────────────────────────────────────────────────────
+function AuditModeSelector({ siteId, projectId, scope, onUploaded }: {
+  siteId: string; projectId: string | null; scope: string; onUploaded: () => void;
+}) {
+  const [mode,        setMode]        = useState<'page'|'upload'>('page');
+  const [file,        setFile]        = useState<File | null>(null);
+  const [uploading,   setUploading]   = useState(false);
+  const [result,      setResult]      = useState<{ tasks: number; pages: number } | null>(null);
+  const [err,         setErr]         = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFile(e.target.files?.[0] || null);
+    e.target.value = '';
+  };
+
+  const upload = async () => {
+    if (!file) return;
+    setUploading(true); setErr(''); setResult(null);
+    const text = await file.text();
+    const r = await callApi('dev_parse_any_audit', {
+      fileContent: text,
+      fileName:    file.name,
+      siteId,
+      projectId:   projectId || undefined,
+    }, 120000);
+    setUploading(false);
+    if (!r.ok) { setErr(r.error || 'Upload failed'); return; }
+    setResult({ tasks: (r.data as any).tasks_created || 0, pages: (r.data as any).pages_linked || 0 });
+    onUploaded();
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold">Audit method</div>
+        <div className="flex gap-1 p-0.5 bg-muted/30 rounded-lg">
+          {([['page','Per-page scan'],['upload','Upload crawl file']] as const).map(([m,l]) => (
+            <button key={m} type="button" onClick={() => setMode(m)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${mode === m ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {mode === 'page' && (
+        <p className="text-[10px] text-muted-foreground">
+          Runs the full technical audit directly on each page URL. Uses the same engine as keyword campaigns — all 11 check types including Core Web Vitals, schema, keyword presence, and content freshness. Select scope below.
+        </p>
+      )}
+
+      {mode === 'upload' && (
+        <div className="space-y-3">
+          <p className="text-[10px] text-muted-foreground">
+            Upload a Screaming Frog CSV, Ahrefs export, Sitebulb JSON, or any crawl file. Claude parses it and maps every finding to the matching page in this workspace.
+          </p>
+
+          {!result ? (
+            <>
+              <button type="button" onClick={() => fileRef.current?.click()}
+                className="w-full rounded-xl border-2 border-dashed border-border hover:border-primary/40 py-6 text-center transition-colors">
+                {file ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium text-emerald-400">✓ {file.name}</div>
+                    <div className="text-[10px] text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="text-2xl">📂</div>
+                    <div className="text-xs font-medium">Upload crawl export</div>
+                    <div className="text-[10px] text-muted-foreground">Screaming Frog CSV · Ahrefs · Sitebulb · any format</div>
+                  </div>
+                )}
+              </button>
+              <input ref={fileRef} type="file" accept=".csv,.json,.txt,.md,.xml" className="hidden" onChange={handleFile} />
+
+              {err && <div className="text-xs text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{err}</div>}
+
+              <button type="button" onClick={upload} disabled={!file || uploading}
+                className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-40 transition-all">
+                {uploading ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" />Parsing and matching to pages…</span> : 'Parse and import findings'}
+              </button>
+            </>
+          ) : (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-center space-y-2">
+              <div className="text-2xl">✓</div>
+              <div className="text-sm font-semibold text-emerald-400">{result.tasks} tasks created · {result.pages} pages linked</div>
+              <div className="text-[10px] text-muted-foreground">Open the Pages tab, click any page, go to Tasks to see and execute the findings</div>
+              <button type="button" onClick={() => { setResult(null); setFile(null); }}
+                className="text-xs text-muted-foreground hover:text-foreground">Upload another file</button>
+            </div>
+          )}
         </div>
       )}
     </div>

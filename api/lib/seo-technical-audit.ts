@@ -3955,3 +3955,69 @@ function renderAuditReport(opts: {
 
   return lines.join('\n');
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   runChecksForUrl — exported for Site Manager multi-page audit.
+   Runs the same real checks as the pillar audit, scoped by objective type.
+   No campaign/panel required — just a URL and a scope.
+═══════════════════════════════════════════════════════════════════ */
+
+export type AuditScope =
+  | 'technical_recovery'  // ALL 15 checks
+  | 'traffic_growth'      // CWV + image + on_page + content_freshness
+  | 'keyword_ranking'     // on_page + schema + keyword + heading
+  | 'local_visibility'    // on_page + schema + hreflang
+  | 'eeat'                // schema + content_freshness + on_page
+  | 'custom';             // caller passes checkList
+
+export const SCOPE_LABELS: Record<AuditScope, string> = {
+  technical_recovery: 'Full technical audit (all checks)',
+  traffic_growth:     'Performance & on-page (Core Web Vitals, images, freshness)',
+  keyword_ranking:    'On-page + schema + keyword presence',
+  local_visibility:   'On-page + schema + hreflang',
+  eeat:               'E-E-A-T signals (schema, freshness, on-page)',
+  custom:             'Custom selection',
+};
+
+export const SCOPE_CHECKS: Record<Exclude<AuditScope,'custom'>, string[]> = {
+  technical_recovery: ['indexability','on_page','cwv','schema','keyword','heading','content_freshness','image_optimization','hreflang','first_para','engagement'],
+  traffic_growth:     ['on_page','cwv','image_optimization','content_freshness'],
+  keyword_ranking:    ['on_page','schema','keyword','heading','first_para'],
+  local_visibility:   ['on_page','schema','hreflang'],
+  eeat:               ['on_page','schema','content_freshness'],
+};
+
+export async function runChecksForUrl(opts: {
+  url:          string;
+  projectId?:   string;
+  keyword?:     string;
+  scope:        AuditScope;
+  checkList?:   string[];  // when scope === 'custom'
+}): Promise<Finding[]> {
+  const { url, projectId = '', keyword = '', scope, checkList } = opts;
+
+  const toRun: string[] = scope === 'custom'
+    ? (checkList || [])
+    : SCOPE_CHECKS[scope as Exclude<AuditScope,'custom'>] || SCOPE_CHECKS.technical_recovery;
+
+  const settled = await Promise.allSettled([
+    toRun.includes('on_page')            ? checkOnPageFundamentals(url)                              : Promise.resolve([]),
+    toRun.includes('cwv')                ? checkCoreWebVitals(url, projectId)                        : Promise.resolve([]),
+    toRun.includes('schema')             ? checkSchemaMarkup(url)                                    : Promise.resolve([]),
+    toRun.includes('image_optimization') ? checkImageOptimization(url)                               : Promise.resolve([]),
+    toRun.includes('content_freshness')  ? checkContentFreshness(url)                                : Promise.resolve([]),
+    toRun.includes('hreflang')           ? checkHreflang(url)                                        : Promise.resolve([]),
+    toRun.includes('first_para')         ? checkFirstParagraphTopicality(url)                        : Promise.resolve([]),
+    toRun.includes('keyword')  && keyword ? checkKeywordPresence(url, keyword)                       : Promise.resolve([]),
+    toRun.includes('heading')  && keyword ? checkHeadingHierarchyVsPaa(url, projectId, keyword)      : Promise.resolve([]),
+    toRun.includes('indexability')        ? checkIndexability(url, projectId, keyword)                : Promise.resolve([]),
+    toRun.includes('engagement')          ? checkEngagementSignals(url, projectId)                   : Promise.resolve([]),
+  ]);
+
+  const findings: Finding[] = [];
+  for (const r of settled) {
+    if (r.status === 'fulfilled') findings.push(...r.value);
+  }
+  return findings;
+}
+
