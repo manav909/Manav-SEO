@@ -418,7 +418,10 @@ export default function DevPanel({ projectId }: { projectId: string }) {
   const [parsing,     setParsing]     = useState(false);
   const [error,       setError]       = useState('');
   const [targetUrl,   setTargetUrl]   = useState('');
-  const [showUpload,  setShowUpload]  = useState(false);
+  const [showUpload,    setShowUpload]    = useState(false);
+  const [uploadMode,    setUploadMode]    = useState<'detecting'|'seoseasoon'|'universal'>('detecting');
+  const [uploadUrl,     setUploadUrl]     = useState('');
+  const [uploadPreview, setUploadPreview] = useState<{total:number;red:number;amber:number}|null>(null);
   const [showSafety,  setShowSafety]  = useState(false);
   const [elapsedSec,  setElapsedSec]  = useState(0);
   const [runStarted,  setRunStarted]  = useState<number | null>(null);
@@ -491,66 +494,80 @@ export default function DevPanel({ projectId }: { projectId: string }) {
     }
   }, [projectId]);
 
-  // Upload handler
+  // Upload handler — auto-detects format, routes to correct parser
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result;
-      if (typeof content === 'string') uploadAudit(content);
+      const fileContent = event.target?.result;
+      if (typeof fileContent === 'string') {
+        // Detect format: SEO Season audit has a very specific signature
+        const isSeasonFormat = fileContent.includes('**Audit run id:**') &&
+                               fileContent.includes('<a id="finding-') &&
+                               fileContent.includes('### §');
+        if (isSeasonFormat) {
+          uploadSeasonAudit(fileContent);
+        } else {
+          uploadUniversalAudit(fileContent, file.name);
+        }
+      }
     };
     reader.onerror = () => setError('Could not read the file. Try again.');
     reader.readAsText(file);
-    // Reset input so same file can be re-selected
     e.target.value = '';
   };
 
-  const uploadAudit = async (markdown: string) => {
+  // Original parser — SEO Season .md format only
+  const uploadSeasonAudit = async (markdown: string) => {
     setParsing(true);
     setError('');
     try {
-      // Parse the audit markdown
       const { findings, runId, url: auditUrl } = parseAuditMarkdown(markdown);
-
       if (findings.length === 0) {
-        setError('No findings found in this file. Make sure you uploaded the full technical audit .md file.');
+        setError('No findings found. Make sure this is a complete SEO Season audit file.');
         return;
       }
-
-      const resolvedUrl = auditUrl || targetUrl;
-
-      // Send to API — only send non-green findings (green = passing, no fix needed)
+      const resolvedUrl = auditUrl || targetUrl || uploadUrl;
       const actionableFindings = findings.filter(f => f.severity !== 'green');
       const result = await callApi<{ tasks_created: number }>('dev_parse_audit_tasks', {
-        projectId,
-        auditRunId: runId,
-        targetUrl: resolvedUrl,
-        findings: actionableFindings,
+        projectId, auditRunId: runId, targetUrl: resolvedUrl, findings: actionableFindings,
       });
-
-      if (!result.ok) {
-        setError(result.error ?? 'Could not create tasks.');
-        if (result.rawBody) {
-          console.error('[DevPanel] Raw server response:', result.rawBody);
-        }
-        return;
-      }
-
-      // Detect CMS in background — does not block the flow
+      if (!result.ok) { setError(result.error ?? 'Could not create tasks.'); return; }
       callApi<{ cms: CmsInfo }>('dev_detect_cms', { projectId, url: resolvedUrl })
-        .then(cmsResult => {
-          if (cmsResult.ok && cmsResult.data?.cms) {
-            setCms(cmsResult.data.cms);
-          }
-        })
-        .catch(() => { /* CMS detection is optional */ });
-
+        .then(r => { if (r.ok && r.data?.cms) setCms(r.data.cms); }).catch(() => {});
       setShowUpload(false);
       await loadTasks();
-    } finally {
-      setParsing(false);
-    }
+    } finally { setParsing(false); }
+  };
+
+  // Universal parser — any file format via Claude AI
+  const uploadUniversalAudit = async (fileContent: string, fileName: string) => {
+    setParsing(true);
+    setError('');
+    try {
+      const resolvedUrl = uploadUrl || targetUrl || '';
+      const result = await callApi<{ findings_extracted: number; tasks_created: number; findings: any[] }>(
+        'dev_parse_any_audit',
+        { fileContent, fileName, targetUrl: resolvedUrl, projectId },
+        50000  // 50s — AI parsing a large file can take time
+      );
+      if (!result.ok) {
+        setError(result.error ?? 'Could not parse this file. Try a different format.');
+        return;
+      }
+      const data = (result as any).data;
+      if (data?.findings_extracted) {
+        const red   = (data.findings || []).filter((f: any) => f.severity === 'red').length;
+        const amber = (data.findings || []).filter((f: any) => f.severity === 'amber').length;
+        setUploadPreview({ total: data.findings_extracted, red, amber });
+      }
+      callApi<{ cms: CmsInfo }>('dev_detect_cms', { projectId, url: resolvedUrl })
+        .then(r => { if (r.ok && r.data?.cms) setCms(r.data.cms); }).catch(() => {});
+      setShowUpload(false);
+      setUploadPreview(null);
+      await loadTasks();
+    } finally { setParsing(false); }
   };
 
   const executeTask = async (task: DevTask) => {
@@ -653,21 +670,51 @@ export default function DevPanel({ projectId }: { projectId: string }) {
           </p>
         </div>
 
+        {/* URL field for universal uploads */}
+        <div className="rounded-xl border border-border bg-card/50 p-4 space-y-2">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Target URL <span className="text-muted-foreground/50 font-normal normal-case">(optional — helps if your file doesn't include URLs)</span>
+          </label>
+          <input
+            type="url"
+            value={uploadUrl}
+            onChange={e => setUploadUrl(e.target.value)}
+            placeholder="https://www.example.com/page"
+            className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary/60 transition-colors"
+          />
+        </div>
+
         {/* File drop zone */}
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
           disabled={parsing}
-          className="w-full rounded-2xl border-2 border-dashed border-border hover:border-primary/40 bg-card/30 p-10 text-center cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full rounded-2xl border-2 border-dashed border-border hover:border-primary/40 bg-card/30 p-8 text-center cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <div className="text-4xl mb-3">{parsing ? '⟳' : '📋'}</div>
-          <p className="text-sm font-medium">{parsing ? 'Parsing audit file…' : 'Click to upload audit file'}</p>
-          <p className="text-xs text-muted-foreground mt-1">The .md file exported from the SEO Audit tab</p>
+          <div className="text-4xl mb-3">{parsing ? '⟳' : '📂'}</div>
+          {parsing ? (
+            <>
+              <p className="text-sm font-medium">Analysing file with AI…</p>
+              <p className="text-xs text-muted-foreground mt-1">Claude is reading the structure and extracting all findings</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium">Upload any audit file</p>
+              <div className="flex flex-wrap justify-center gap-1.5 mt-2">
+                {['SEO Season .md','Screaming Frog CSV','Ahrefs export','Semrush CSV','Sitebulb JSON','Lighthouse JSON','Manual notes','Any format'].map(fmt => (
+                  <span key={fmt} className="text-[10px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">{fmt}</span>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-3">
+                SEO Season audits are parsed directly. All other formats are interpreted by AI.
+              </p>
+            </>
+          )}
         </button>
         <input
           ref={fileRef}
           type="file"
-          accept=".md,.txt,text/plain,text/markdown"
+          accept=".md,.txt,.csv,.json,.xml,.html,text/plain,text/markdown,text/csv,application/json"
           className="hidden"
           onChange={handleFileSelect}
         />

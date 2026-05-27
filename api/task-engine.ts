@@ -4481,6 +4481,108 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  if (action === 'dev_parse_any_audit') {
+    /* Universal audit parser — accepts any file format from any tool.
+       Screaming Frog CSV, Ahrefs export, Lighthouse JSON, SEMrush,
+       Sitebulb, manual notes, or any custom structure.
+       Uses Claude to extract findings into the standard format. */
+    const { fileContent, fileName, targetUrl: auditUrl, projectId: pid } = body;
+    if (!fileContent) return ok(res, { error: 'fileContent required' });
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+    const nl = '\n';
+
+    // Truncate very large files — send first 40KB which covers all findings
+    const sample = (typeof fileContent === 'string' ? fileContent : JSON.stringify(fileContent)).slice(0, 40000);
+
+    const system = [
+      'You are an expert SEO analyst. You receive audit data in ANY format — CSV, JSON, markdown,',
+      'plain text, or a custom structure from any SEO tool (Screaming Frog, Ahrefs, SEMrush,',
+      'Sitebulb, Google Lighthouse, manual notes, custom exports, etc.).',
+      '',
+      'Extract every issue, finding, or recommendation into this exact JSON structure.',
+      'Return ONLY a JSON array — no markdown, no explanation, no wrapper object.',
+      '',
+      'Each finding must have:',
+      '  finding_title: string  — short, specific title (max 80 chars)',
+      '  finding_detail: string — what was found, why it matters, any metrics (max 400 chars)',
+      '  severity: "red" | "amber" | "green"',
+      '    red    = critical issues directly harming rankings or blocking indexation',
+      '    amber  = warnings that reduce SEO performance',
+      '    green  = passing checks (include these so client sees what is working)',
+      '  audit_kind: one of: performance | indexability | on_page_fundamentals | schema |',
+      '              content_quality | backlinks | technical | mobile | security | other',
+      '  target_url: string | null — the specific URL this finding applies to (null if site-wide)',
+      '',
+      'Rules:',
+      '- Every finding in the file must appear in your output — do not skip any',
+      '- Do not invent findings that are not in the source data',
+      '- Preserve actual metric values (e.g. "LCP: 16.9s", "404 errors: 23")',
+      '- If the source has a URL column, extract it into target_url',
+      '- Normalise severity: any "error/critical/high" → red; "warning/medium" → amber; "pass/info/low" → green',
+    ].join(nl);
+
+    const userMsg = [
+      fileName ? 'File: ' + fileName : '',
+      auditUrl ? 'Site/URL context: ' + auditUrl : '',
+      '',
+      'Audit data:',
+      sample,
+    ].filter(Boolean).join(nl);
+
+    const aiRes = await fetchAnthropicWithTimeout(
+      { model: 'claude-sonnet-4-6', max_tokens: 4000, system, messages: [{ role: 'user', content: userMsg }] },
+      ANTHROPIC_API_KEY, 45000
+    );
+
+    if (!aiRes.ok) return ok(res, { error: aiRes.error || 'AI parsing failed' });
+
+    // Parse the findings array from AI response
+    let findings: any[] = [];
+    try {
+      const cleaned = aiRes.text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(cleaned);
+      findings = Array.isArray(parsed) ? parsed : (parsed.findings || []);
+    } catch {
+      return ok(res, { error: 'Could not parse AI response. Try a simpler file format.' });
+    }
+
+    if (!findings.length) return ok(res, { error: 'No findings extracted from this file.' });
+
+    // Validate and normalise each finding
+    const validSeverities = new Set(['red','amber','green']);
+    const validKinds = new Set(['performance','indexability','on_page_fundamentals','schema','content_quality','backlinks','technical','mobile','security','other']);
+
+    const normalised = findings
+      .filter((f: any) => f.finding_title && f.finding_title.length >= 3)
+      .map((f: any) => ({
+        finding_title:  String(f.finding_title  || '').slice(0, 80),
+        finding_detail: String(f.finding_detail || '').slice(0, 400),
+        severity:       validSeverities.has(f.severity) ? f.severity : 'amber',
+        audit_kind:     validKinds.has(f.audit_kind) ? f.audit_kind : 'technical',
+        target_url:     f.target_url || auditUrl || null,
+        evidence:       {},
+      }));
+
+    // Save tasks using the standard pipeline
+    if (pid) {
+      try {
+        const { parseFindingsToTasks, saveTasks, deleteProjectTasks } = await import('./lib/dev-engine.js');
+        const runId = 'import-' + Date.now();
+        await deleteProjectTasks(pid, runId);
+        const tasks = parseFindingsToTasks(normalised, { projectId: pid, auditRunId: runId, targetUrl: auditUrl || '' });
+        const { saved, error: saveErr } = await saveTasks(tasks);
+        if (saveErr) return ok(res, { error: saveErr });
+        return ok(res, { success: true, findings_extracted: normalised.length, tasks_created: saved, findings: normalised });
+      } catch (e: any) {
+        return ok(res, { error: e?.message });
+      }
+    }
+
+    // No projectId — return findings for preview only
+    return ok(res, { success: true, findings_extracted: normalised.length, findings: normalised });
+  }
+
   if (action === 'dev_parse_audit_tasks') {
     const { projectId, campaignId, auditRunId, targetUrl, findings } = body;
     if (!projectId) return ok(res, { error: 'projectId required' });
