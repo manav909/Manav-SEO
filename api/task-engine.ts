@@ -4489,17 +4489,69 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   ═══════════════════════════════════════════════════════════════ */
 
   if (action === 'site_create') {
-    const { label, domain, cms, projectId: pid } = body;
+    const { label, domain, cms, projectId: pid, userId } = body;
     if (!label) return ok(res, { error: 'label required' });
     try {
       const { db: getDb } = await import('./lib/db.js');
+
+      /* Auto-create a project if none provided — workspace always has a project,
+         so GSC, GA4, SerpAPI, and all audit checks work immediately.
+         Uses label as both client name and project name. Domain as project URL. */
+      let projectId = pid || null;
+      let clientId: string | null = null;
+
+      if (!projectId) {
+        // 1. Create client
+        const { data: client, error: clientErr } = await getDb().from('clients').insert({
+          name:    label,
+          company: label,
+          website: domain || null,
+        }).select('id').single();
+        if (clientErr) return ok(res, { error: 'Client create failed: ' + clientErr.message });
+        clientId = (client as any).id;
+
+        // 2. Create project
+        const { data: project, error: projErr } = await getDb().from('projects').insert({
+          client_id: clientId,
+          name:      label,
+          url:       domain || null,
+          status:    'active',
+          keywords:  [],
+        }).select('id').single();
+        if (projErr) return ok(res, { error: 'Project create failed: ' + projErr.message });
+        projectId = (project as any).id;
+
+        // 3. Update profiles.client_ids so the user can see this project in PM Module
+        if (userId) {
+          try {
+            const { data: prof } = await getDb().from('profiles')
+              .select('id,client_id,client_ids').eq('id', userId).single();
+            if (prof) {
+              const existing: string[] = Array.isArray((prof as any).client_ids)
+                ? (prof as any).client_ids
+                : (prof as any).client_id ? [(prof as any).client_id] : [];
+              if (!existing.includes(clientId!)) {
+                await getDb().from('profiles').update({
+                  client_ids: [...existing, clientId],
+                  client_id:  existing[0] || clientId,
+                }).eq('id', userId);
+              }
+            }
+          } catch { /* profile update non-blocking */ }
+        }
+      }
+
+      // 4. Create the site workspace linked to the project
       const { data, error } = await getDb().from('dev_sites').insert({
-        label, domain: domain || null, cms: cms || null,
-        project_id: pid || null,
+        label,
+        domain:     domain || null,
+        cms:        cms    || null,
+        project_id: projectId,
         updated_at: new Date().toISOString(),
       }).select().single();
       if (error) return ok(res, { error: error.message });
-      return ok(res, { success: true, site: data });
+
+      return ok(res, { success: true, site: data, project_id: projectId, client_id: clientId, auto_created: !pid });
     } catch (e: any) { return ok(res, { error: e?.message }); }
   }
 

@@ -146,7 +146,9 @@ export async function gscOauthCallback(opts: {
     const expAt = expIn ? new Date(Date.now() + expIn * 1000).toISOString() : null;
 
     if (parsed.siteId) {
-      /* Site workspace GSC — save directly to dev_sites */
+      /* Site workspace GSC — save to dev_sites AND to project_integrations
+         so all audit check functions (checkCoreWebVitals, checkIndexability etc)
+         work immediately without any extra setup. */
       const { error: siteErr } = await db().from("dev_sites").update({
         gsc_access_token:  access || null,
         gsc_refresh_token: refresh,
@@ -155,6 +157,22 @@ export async function gscOauthCallback(opts: {
         updated_at:        new Date().toISOString(),
       }).eq("id", parsed.siteId);
       if (siteErr) return { success: false, error: siteErr.message };
+
+      // Also mirror to project_integrations if site has a linked project
+      try {
+        const { data: site } = await db().from("dev_sites")
+          .select("project_id").eq("id", parsed.siteId).maybeSingle();
+        if ((site as any)?.project_id) {
+          await db().from("project_integrations").upsert({
+            project_id:        (site as any).project_id,
+            provider:          "gsc",
+            refresh_token_enc: encryptString(refresh),
+            access_token:      access || null,
+            access_token_exp:  expAt,
+            connected_at:      new Date().toISOString(),
+          }, { onConflict: "project_id,provider" });
+        }
+      } catch { /* mirror is best-effort — site tokens already saved */ }
       const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>GSC connected</title>
 <style>body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#e5e5e5;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}.card{max-width:480px;padding:32px;border-radius:16px;border:1px solid #2a2a2a;background:#141414;text-align:center}h1{font-size:20px;margin:0 0 12px}p{font-size:14px;color:#a3a3a3;margin:0 0 16px;line-height:1.5}a{color:#818cf8;text-decoration:none;font-weight:600}</style>

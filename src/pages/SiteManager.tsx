@@ -65,7 +65,14 @@ function NewSiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const create = async () => {
     if (!label.trim()) { setErr('Name is required'); return; }
     setSaving(true);
-    const r = await callApi('site_create', { label: label.trim(), domain: domain.trim() || undefined });
+    // Get current user ID so profiles.client_ids gets updated
+    const { supabase } = await import('@/lib/supabase');
+    const { data: { user } } = await supabase.auth.getUser();
+    const r = await callApi('site_create', {
+      label:  label.trim(),
+      domain: domain.trim() || undefined,
+      userId: user?.id || undefined,
+    });
     setSaving(false);
     if (!r.ok) { setErr(r.error || 'Failed'); return; }
     onCreated((r.data as any).site);
@@ -77,19 +84,19 @@ function NewSiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <div className="flex items-center justify-between">
           <div>
             <div className="text-base font-semibold">New Site Workspace</div>
-            <div className="text-xs text-muted-foreground mt-0.5">Independent of any project — link to one later if needed</div>
+            <div className="text-xs text-muted-foreground mt-0.5">A project is created automatically — connect GSC and GA4 in Settings to activate all audit checks</div>
           </div>
           <button type="button" onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-muted/60 flex items-center justify-center text-muted-foreground">✕</button>
         </div>
         <div className="space-y-3">
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Workspace name *</label>
-            <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. AlphaSoftware.com" autoFocus
+            <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Sleepland Beds" autoFocus
               className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60 transition-colors" />
           </div>
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Domain</label>
-            <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="https://www.alphasoftware.com"
+            <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="https://www.sleeplandbeds.co.uk"
               className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60 transition-colors" />
           </div>
         </div>
@@ -98,7 +105,7 @@ function NewSiteModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground">Cancel</button>
           <button type="button" onClick={create} disabled={saving || !label.trim()}
             className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-40 transition-all">
-            {saving ? 'Creating…' : 'Create workspace'}
+            {saving ? 'Creating workspace + project…' : 'Create workspace'}
           </button>
         </div>
       </div>
