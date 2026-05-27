@@ -220,6 +220,43 @@ async function saveToDesk(opts: { projectId: string | null; title: string; conte
 const SYSTEM = "You are Manav Brain — senior SEO strategist. Be direct, specific, honest. Never invent data.";
 
 /* ── Safe ok response ── */
+/* ═════════════════════════════════════════════════════════════
+   RELIABLE ANTHROPIC CALL UTILITY
+   Promise.race is the only reliable timeout for Vercel Lambda.
+   AbortController fires but the TCP socket never closes — the
+   promise hangs. Promise.race returns control to the caller
+   while the hung socket sits quietly in the Lambda background.
+   ═════════════════════════════════════════════════════════════ */
+
+async function fetchAnthropicWithTimeout(
+  payload: { model: string; max_tokens: number; system?: string; messages: any[] },
+  apiKey: string,
+  timeoutMs: number,
+): Promise<{ ok: boolean; text: string; error?: string }> {
+  try {
+    const resp: Response = await Promise.race([
+      fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify(payload),
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('AI timed out after ' + Math.round(timeoutMs/1000) + 's. Click Retry.')), timeoutMs)
+      ),
+    ]);
+    const data = await resp.json().catch(() => ({})) as any;
+    if (!resp.ok || data?.error) return { ok: false, text: '', error: data?.error?.message || 'HTTP ' + resp.status };
+    return { ok: true, text: (data?.content?.[0]?.text || '').trim() };
+  } catch (e: any) {
+    return { ok: false, text: '', error: e?.message || 'Request failed' };
+  }
+}
+
+
 function ok(res: VercelResponse, data: object) {
   return res.status(200).json(data);
 }
@@ -4654,16 +4691,11 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
         '',
         'Write a professional reply from the PM to the client.',
       ].join('');
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30000);
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      const resp = await Promise.race([fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 500, system: sys, messages: [{ role: 'user', content: usr }] }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+      }), new Promise<Response>((_, rej) => setTimeout(() => rej(new Error('AI timed out')), 25000))]);;
       const data = await resp.json() as any;
       const reply = (data?.content?.[0]?.text || '').trim();
       return ok(res, { success: true, reply });
@@ -4739,29 +4771,13 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
         'Backup taken: ' + (task.snapshot_id ? 'Yes — current state is backed up' : 'No'),
       ].join(nl);
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 20000); // 20s — Haiku should respond in <8s
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',  // Haiku — email writing is fast, Sonnet unnecessary
-          max_tokens: 800,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: taskContext }],
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      const data = await resp.json() as any;
-      if (data?.error) return ok(res, { error: data.error.message });
+      const aiRes = await fetchAnthropicWithTimeout(
+        { model: 'claude-haiku-4-5-20251001', max_tokens: 800, system: systemPrompt, messages: [{ role: 'user', content: taskContext }] },
+        ANTHROPIC_API_KEY, 18000
+      );
+      if (!aiRes.ok) return ok(res, { error: aiRes.error || 'AI call failed' });
 
-      const raw = (data?.content?.[0]?.text || '').trim()
-        .replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+      const raw = aiRes.text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
       try {
         const parsed = JSON.parse(raw.match(/\{[\s\S]+\}/)![0]);
         return ok(res, { success: true, subject: parsed.subject, body: parsed.body, summary: parsed.summary });
@@ -4944,9 +4960,7 @@ Industry: ${p.industry||'unknown'}`;
     ];
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 45000);
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      const resp = await Promise.race([fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -4959,9 +4973,7 @@ Industry: ${p.industry||'unknown'}`;
           system: systemPrompt,
           messages,
         }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+      }), new Promise<Response>((_, rej) => setTimeout(() => rej(new Error('AI timed out')), 25000))]);;
       const data = await resp.json() as any;
       if (data?.error) return ok(res, { error: data.error.message });
       const reply = (data?.content?.[0]?.text || '').trim();
@@ -5075,9 +5087,7 @@ Industry: ${p.industry||'unknown'}`;
     ];
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30000);
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      const resp = await Promise.race([fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -5090,9 +5100,7 @@ Industry: ${p.industry||'unknown'}`;
           system: systemPrompt,
           messages,
         }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+      }), new Promise<Response>((_, rej) => setTimeout(() => rej(new Error('AI timed out')), 25000))]);;
       const data = await resp.json() as any;
       if (data?.error) return ok(res, { error: data.error.message });
       const reply = (data?.content?.[0]?.text || '').trim();

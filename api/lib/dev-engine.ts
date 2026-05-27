@@ -19,7 +19,39 @@ import { db } from './db.js';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MODEL      = 'claude-sonnet-4-6';
-const MODEL_FAST = 'claude-haiku-4-5-20251001'; // PATH A simple tasks — 3-5x faster
+const MODEL_FAST = 'claude-haiku-4-5-20251001';
+
+/* ─────────────────────────────────────────────────────────────
+   RELIABLE TIMEOUT UTILITY
+
+   Node.js fetch + AbortController does NOT reliably kill a
+   hanging TCP connection on Vercel Lambda. The abort signal fires
+   but the underlying socket stays open and the promise never rejects.
+
+   Promise.race is different: it does NOT kill the underlying fetch,
+   but it DOES let this function return a value to the caller while
+   the hung fetch sits quietly in the Lambda background. The caller
+   gets a timeout error immediately. The Lambda may stay warm for
+   a while longer, but the client is never blocked.
+
+   Use this for ALL external HTTP calls in this codebase.
+───────────────────────────────────────────────────────────── */
+
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const timeoutErr = new Error('Request timed out after ' + timeoutMs + 'ms');
+  (timeoutErr as any).isTimeout = true;
+
+  return Promise.race([
+    fetch(url, options),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(timeoutErr), timeoutMs)
+    ),
+  ]);
+}
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
@@ -207,31 +239,26 @@ function cmsAdminPath(p: CmsPlatform): string {
 
 export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ html: string; fetchedOk: boolean; errorMsg?: string; headers?: Record<string,string> }> {
   if (!url) return { html: '', fetchedOk: false, errorMsg: 'No URL provided' };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
       },
       redirect: 'follow',
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
+    }, timeoutMs);
     // Capture response headers — they often reveal CMS even when page is blocked
     const headers: Record<string,string> = {};
     res.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
     if (!res.ok) {
-      // Even on 403 — return headers so CMS detection can use them
       return { html: '', fetchedOk: false, errorMsg: `HTTP ${res.status}`, headers };
     }
     const raw = await res.text();
     return { html: raw.slice(0, 120_000), fetchedOk: true, headers };
   } catch (e: any) {
-    clearTimeout(timer);
-    const msg = (e?.name === 'AbortError' || e?.name === 'TimeoutError')
+    const isTimeout = (e as any)?.isTimeout;
+    const msg = isTimeout
       ? `Page fetch timed out after ${timeoutMs}ms`
       : (e?.message || 'Fetch failed');
     return { html: '', fetchedOk: false, errorMsg: msg };
@@ -704,12 +731,11 @@ async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): P
   // Timeout via AbortController — AbortSignal.timeout() is unreliable on Vercel.
   // 90s: well within Vercel maxDuration:300s, handles any realistic Anthropic latency.
   // The old 30s was too tight — Sonnet under load regularly takes 30-60s for 2000 tokens.
-  const AI_TIMEOUT_MS = 90000;
-  const aiController = new AbortController();
-  const aiTimer = setTimeout(() => aiController.abort(), AI_TIMEOUT_MS);
+  const AI_TIMEOUT_MS = 45000; // 45s — Promise.race makes this reliable
+  const maxTokens = model === MODEL_FAST ? 2000 : 4000;
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -718,15 +744,11 @@ async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): P
       },
       body: JSON.stringify({
         model,
-        // PATH B/C (Sonnet, live HTML analysis): 4000 tokens for complete script diffs
-        // PATH A (Haiku, content generation): 2000 tokens is sufficient
-        max_tokens: model === MODEL_FAST ? 2000 : 4000,
+        max_tokens: maxTokens,
         system: sys,
         messages: [{ role: 'user', content: usr }],
       }),
-      signal: aiController.signal,
-    });
-    clearTimeout(aiTimer);
+    }, AI_TIMEOUT_MS);
     llmCalls++;
     const data = await resp.json() as any;
 
@@ -801,10 +823,9 @@ async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): P
     };
 
   } catch (e: any) {
-    clearTimeout(aiTimer);
-    const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError';
+    const isTimeout = (e as any)?.isTimeout || e?.name === 'AbortError' || e?.name === 'TimeoutError';
     const msg = isTimeout
-      ? `AI call timed out after ${Math.round(AI_TIMEOUT_MS / 1000)}s. The AI service is under load — click Re-generate to retry.`
+      ? `AI call timed out after ${Math.round(AI_TIMEOUT_MS / 1000)}s. Click Re-generate to retry.`
       : `AI error: ${e?.message || 'unknown'}`;
     return { analysis: msg, fixCode: '', fixLanguage: 'text', paaQuestions: [], llmCalls };
   }

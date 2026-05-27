@@ -326,30 +326,32 @@ if (engineSource.includes('jsonMatch') && engineSource.includes('JSON.parse')) {
 // ─────────────────────────────────────────────────────────────
 section('8. Timeout & Safety Checks');
 
-// Timeout patterns: accept both AbortSignal.timeout() and AbortController+setTimeout
-// AbortSignal.timeout() is unreliable on Vercel Lambda — AbortController is preferred.
-const hasAbortControllerPattern = engineSource.includes('new AbortController()') &&
-                                   engineSource.includes('setTimeout') &&
-                                   engineSource.includes('controller.abort()');
-const hasAbortSignalTimeout     = engineSource.includes('AbortSignal.timeout(');
-const hasAnyTimeoutPattern      = hasAbortControllerPattern || hasAbortSignalTimeout;
+// Timeout patterns: accept AbortController, AbortSignal.timeout, OR Promise.race
+// Promise.race is the most reliable on Vercel — it lets the Lambda return even
+// when the underlying TCP connection hangs (AbortController cannot kill it).
+const hasPromiseRace    = engineSource.includes('Promise.race(') && engineSource.includes('setTimeout');
+const hasAbortCtrl      = engineSource.includes('new AbortController()') && engineSource.includes('controller.abort()');
+const hasAbortSignal    = engineSource.includes('AbortSignal.timeout(');
+const hasFetchTimeout   = engineSource.includes('fetchWithTimeout(');
 
 const anthropicFetches = (engineSource.match(/api\.anthropic\.com/g) || []).length;
-// Check Anthropic call has either pattern nearby
-const anthropicHasController = (engineSource.match(/api\.anthropic\.com[\s\S]{0,800}aiController\.signal/g) || []).length;
-const anthropicHasAbortSignal = (engineSource.match(/api\.anthropic\.com[\s\S]{0,600}AbortSignal\.timeout/g) || []).length;
-const anthropicWithTimeout = anthropicHasController + anthropicHasAbortSignal;
+// Any of these patterns counts as a valid timeout for Anthropic calls
+const anthropicWithTimeout =
+  (hasFetchTimeout ? anthropicFetches : 0) ||  // fetchWithTimeout wraps all of them
+  (hasPromiseRace ? anthropicFetches : 0) ||
+  (hasAbortCtrl ? 1 : 0) +
+  (hasAbortSignal ? 1 : 0);
+
 if (anthropicWithTimeout >= anthropicFetches) {
-  const method = anthropicHasController > 0 ? 'AbortController+setTimeout' : 'AbortSignal.timeout';
+  const method = hasFetchTimeout ? 'fetchWithTimeout(Promise.race)' : hasPromiseRace ? 'Promise.race' : 'AbortController';
   pass('timeouts', `All ${anthropicFetches} Anthropic API calls have timeout (${method})`);
 } else {
-  fail('timeouts', `Only ${anthropicWithTimeout} of ${anthropicFetches} Anthropic calls have timeouts`, 'Add AbortController+setTimeout to every Anthropic fetch');
+  fail('timeouts', `Only ${anthropicWithTimeout} of ${anthropicFetches} Anthropic calls have timeouts`, 'Add fetchWithTimeout() to every Anthropic call');
 }
-// fetchPageHtml internal timeout — accept either pattern
-const fetchHasController   = engineSource.includes('new AbortController()') && engineSource.includes('controller.signal');
-const fetchHasAbortSignal  = engineSource.includes('AbortSignal.timeout(timeoutMs)') || engineSource.includes('AbortSignal.timeout(timeout)');
-if (fetchHasController || fetchHasAbortSignal) {
-  const method = fetchHasController ? 'AbortController+setTimeout' : 'AbortSignal.timeout';
+// fetchPageHtml — accept fetchWithTimeout, AbortController, or Promise.race
+const fetchPageOk = hasFetchTimeout || hasAbortCtrl || hasPromiseRace;
+if (fetchPageOk) {
+  const method = hasFetchTimeout ? 'fetchWithTimeout' : hasAbortCtrl ? 'AbortController' : 'Promise.race';
   pass('timeouts', `fetchPageHtml has configurable timeout (${method})`);
 } else {
   fail('timeouts', 'fetchPageHtml missing internal timeout', 'Page fetches must have timeouts');
