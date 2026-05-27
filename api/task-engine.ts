@@ -4413,6 +4413,18 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
      Verify fixes were applied. The "I am the developer" workflow.
   ════════════════════════════════════════════════════════════════ */
 
+  if (action === 'update_project_cms') {
+    const { projectId: pid, cms: cmsValue } = body;
+    if (!pid || !cmsValue) return ok(res, { error: 'projectId and cms required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      await getDb().from('projects').update({ cms: cmsValue }).eq('id', pid);
+      return ok(res, { success: true });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
   if (action === 'dev_detect_cms') {
     const { projectId, url } = body;
     try {

@@ -359,48 +359,62 @@ export async function executeDevTask(task: DevTask): Promise<void> {
     let cms: CmsContext;
 
     if (fetchedOk && pageHtml) {
-      // Best case: we have the live HTML
+      // Best case: detected from live HTML this run
       cms = await detectCmsFromHtml(pageHtml);
     } else {
-      const storedPlatform = normaliseCmsPlatform(task.cms_platform || 'unknown');
+      // Resolution order:
+      // 1. cms_platform stored on this task (set by a previous execution)
+      // 2. cms column on the projects table (set by user or previous detection)
+      // 3. Page fetch for CMS detection (only if site allows server fetches)
+      // 4. unknown — instructions explain how to proceed manually
 
-      if (storedPlatform !== 'unknown') {
-        // Use stored value from a previous execution
-        cms = {
-          platform:   storedPlatform,
-          seoPlugin:  'unknown' as SeoPlugin,
-          confidence: 70,
-          signals:    ['Stored from previous execution'],
-          adminPath:  cmsAdminPath(storedPlatform),
-        };
-      } else if (task.target_url) {
-        // PATH A tasks skip the page fetch for content generation,
-        // but we still need CMS for instructions. Do a quick 6s fetch.
+      const taskPlatform    = normaliseCmsPlatform(task.cms_platform || '');
+      let   resolvedPlatform: CmsPlatform = 'unknown';
+      let   resolvedPlugin:   SeoPlugin   = 'unknown';
+      let   resolvedSource                = 'unknown';
+
+      if (taskPlatform !== 'unknown') {
+        resolvedPlatform = taskPlatform;
+        resolvedSource   = 'Stored on task from previous run';
+      } else {
+        // Try the project record
+        try {
+          const { data: proj } = await db()
+            .from('projects')
+            .select('cms, seo_plugin')
+            .eq('id', task.project_id)
+            .maybeSingle();
+          const projPlatform = normaliseCmsPlatform((proj as any)?.cms || '');
+          if (projPlatform !== 'unknown') {
+            resolvedPlatform = projPlatform;
+            resolvedPlugin   = ((proj as any)?.seo_plugin || 'unknown') as SeoPlugin;
+            resolvedSource   = 'From project settings';
+          }
+        } catch { /* continue */ }
+      }
+
+      // If still unknown, try a quick page fetch for CMS detection only
+      if (resolvedPlatform === 'unknown' && task.target_url) {
         const cmsDetect = await fetchPageHtml(task.target_url, 6000);
         if (cmsDetect.fetchedOk && cmsDetect.html) {
           cms = await detectCmsFromHtml(cmsDetect.html);
-          // Also snapshot if we got the page
-          if (!pageHtml) {
-            pageHtml = cmsDetect.html;
-            fetchedOk = true;
-          }
+          if (!pageHtml) { pageHtml = cmsDetect.html; fetchedOk = true; }
         } else {
-          // Site unreachable — use unknown with clear messaging
           cms = {
-            platform:   'unknown' as CmsPlatform,
-            seoPlugin:  'unknown' as SeoPlugin,
+            platform:  'unknown',
+            seoPlugin: 'unknown',
             confidence: 0,
-            signals:    ['Page unreachable for CMS detection: ' + (cmsDetect.errorMsg || 'unknown error')],
-            adminPath:  '',
+            signals:   ['Page blocked server fetch — CMS unknown. User should specify CMS in project settings.'],
+            adminPath: '',
           };
         }
       } else {
         cms = {
-          platform:   'unknown' as CmsPlatform,
-          seoPlugin:  'unknown' as SeoPlugin,
-          confidence: 0,
-          signals:    ['No URL provided'],
-          adminPath:  '',
+          platform:   resolvedPlatform,
+          seoPlugin:  resolvedPlugin,
+          confidence: resolvedPlatform !== 'unknown' ? 75 : 0,
+          signals:    [resolvedSource],
+          adminPath:  cmsAdminPath(resolvedPlatform),
         };
       }
     }

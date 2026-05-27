@@ -714,12 +714,39 @@ export default function DevPanel({ projectId }: { projectId: string }) {
               <span className="text-sm font-bold text-primary">Manav</span>
               <span className="text-[10px] text-muted-foreground ml-1.5">Dev Workspace</span>
             </div>
-            {cms && (
-              <div className="flex items-center gap-1.5">
+            {cms && (cms.platform === 'unknown' || cms.platform === 'custom') ? (
+              <select
+                className="text-[10px] bg-transparent border border-amber-500/40 rounded px-1.5 py-0.5 text-amber-400 cursor-pointer"
+                defaultValue=""
+                onChange={async e => {
+                  const platform = e.target.value;
+                  if (!platform) return;
+                  setCms({ platform, seoPlugin: '', confidence: 80, adminPath: '' });
+                  // Save to project so future tasks use it
+                  await callApi('update_project_cms', { projectId, cms: platform });
+                  // Also update all pending tasks in this project
+                  for (const t of tasks.filter(t2 => t2.status === 'pending')) {
+                    await callApi('dev_update_task', { taskId: t.id, updates: { cms_platform: platform } });
+                  }
+                  await loadTasks();
+                }}
+              >
+                <option value="">⚠️ Set CMS</option>
+                <option value="hubspot">🟠 HubSpot</option>
+                <option value="wordpress">🔵 WordPress</option>
+                <option value="webflow">💎 Webflow</option>
+                <option value="squarespace">⬛ Squarespace</option>
+                <option value="wix">🟣 Wix</option>
+                <option value="shopify">🟢 Shopify</option>
+                <option value="drupal">💧 Drupal</option>
+                <option value="custom">🔧 Custom/Other</option>
+              </select>
+            ) : cms ? (
+              <div className="flex items-center gap-1.5 cursor-pointer" onClick={() => setCms({ ...cms, platform: 'unknown' })} title="Click to change CMS">
                 <span>{CMS_EMOJI[cms.platform] ?? '🔧'}</span>
                 <span className="text-[10px] text-muted-foreground capitalize">{cms.platform}</span>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Stats */}
