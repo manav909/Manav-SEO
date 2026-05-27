@@ -5002,6 +5002,57 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     } catch (e: any) { return ok(res, { error: e?.message }); }
   }
 
+  if (action === 'site_update_page_metrics') {
+    /* Called after fixes are applied — re-runs PageSpeed to capture current scores.
+       Stores in current_lcp_ms, current_tbt_ms, current_score for before/after comparison. */
+    const { pageId, projectId: pid } = body;
+    if (!pageId) return ok(res, { error: 'pageId required' });
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const { data: page } = await getDb().from('dev_pages').select('url').eq('id', pageId).maybeSingle();
+      if (!page) return ok(res, { error: 'page not found' });
+      const url = (page as any).url;
+      let apiKey = process.env.PAGESPEED_API_KEY || '';
+      if (!apiKey && pid) {
+        const { data: psiInt } = await getDb().from('project_integrations')
+          .select('api_key').eq('project_id', pid).eq('provider','pagespeed').maybeSingle();
+        apiKey = (psiInt as any)?.api_key || '';
+      }
+      if (!apiKey) return ok(res, { error: 'No PageSpeed API key configured' });
+      const psiUrl = new URL('https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
+      psiUrl.searchParams.set('url', url);
+      psiUrl.searchParams.set('strategy', 'mobile');
+      psiUrl.searchParams.append('category', 'PERFORMANCE');
+      psiUrl.searchParams.set('key', apiKey);
+      const psiResp = await Promise.race([
+        fetch(psiUrl.toString()),
+        new Promise<never>((_,r) => setTimeout(() => r(new Error('PSI timeout')), 25000)),
+      ]) as Response;
+      if (!psiResp.ok) return ok(res, { error: 'PageSpeed API error' });
+      const psiData = await psiResp.json() as any;
+      const aud   = psiData?.lighthouseResult?.audits || {};
+      const lcpMs = aud['largest-contentful-paint']?.numericValue || null;
+      const tbtMs = aud['total-blocking-time']?.numericValue || null;
+      const score = Math.round((psiData?.lighthouseResult?.categories?.performance?.score || 0) * 100) || null;
+      await getDb().from('dev_pages').update({
+        current_lcp_ms:  lcpMs,
+        current_tbt_ms:  tbtMs,
+        current_score:   score,
+        status:          'done',
+      }).eq('id', pageId);
+      return ok(res, { success: true, current_score: score, current_lcp_ms: lcpMs, current_tbt_ms: tbtMs });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
+  if (action === 'list_projects') {
+    // Used by LinkProjectModal to show available projects
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const { data } = await getDb().from('projects').select('id, name').order('name', { ascending: true });
+      return ok(res, { success: true, projects: data || [] });
+    } catch (e: any) { return ok(res, { error: e?.message }); }
+  }
+
   if (action === 'site_cluster_issues') {
     /* Analyse all dev_tasks for a site, group by issue type,
        classify each cluster as template-level or page-specific. */

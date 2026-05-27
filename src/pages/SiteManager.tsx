@@ -541,7 +541,8 @@ function StatsBar() {
 function SiteManagerView() {
   const { selectedSite, selectedSiteId, pages, loadingPages, refreshPages, sites } = useSite();
   const [showImport,    setShowImport]    = useState(false);
-  const [activeTab,     setActiveTab]     = useState<'pages'|'baseline'|'issues'>('pages');
+  const [showLinkProj,  setShowLinkProj]  = useState(false);
+  const [activeTab,     setActiveTab]     = useState<'pages'|'baseline'|'audit'|'issues'|'results'|'brief'>('pages');
   const [selectedPage,  setSelectedPage]  = useState<DevPage | null>(null);
 
   return (
@@ -564,10 +565,18 @@ function SiteManagerView() {
           <div className="flex items-center gap-2">
             <SiteSelector />
             {selectedSiteId && (
-              <button type="button" onClick={() => setShowImport(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all shadow-[0_0_16px_hsl(var(--primary)/0.25)]">
-                <Plus className="w-3.5 h-3.5" />Import pages
-              </button>
+              <>
+                {!selectedSite?.project_id && (
+                  <button type="button" onClick={() => setShowLinkProj(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all">
+                    <Link2 className="w-3.5 h-3.5" />Link project
+                  </button>
+                )}
+                <button type="button" onClick={() => setShowImport(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all shadow-[0_0_16px_hsl(var(--primary)/0.25)]">
+                  <Plus className="w-3.5 h-3.5" />Import pages
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -599,7 +608,9 @@ function SiteManagerView() {
                 { id: 'pages',    label: '📋 Pages',         badge: pages.length },
                 { id: 'baseline', label: '📊 Baseline',      badge: pages.filter(p => !p.baseline_captured_at).length || undefined },
                 { id: 'audit',    label: '🔍 Audit Queue',   badge: pages.filter(p => p.status === 'pending' || p.status === 'baseline_done').length || undefined },
-                { id: 'issues',   label: '⚡ Issue Clusters', badge: undefined },
+                { id: 'issues',  label: '⚡ Clusters',      badge: undefined },
+                { id: 'results', label: '📈 Results',         badge: undefined },
+                { id: 'brief',   label: '📋 Bulk Brief',      badge: undefined },
               ].map(tab => (
                 <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id as any)}
                   className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
@@ -635,6 +646,14 @@ function SiteManagerView() {
             {activeTab === 'issues' && (
               <IssueClusters siteId={selectedSiteId!} />
             )}
+
+            {activeTab === 'results' && (
+              <ResultsDashboard pages={pages} siteId={selectedSiteId!} />
+            )}
+
+            {activeTab === 'brief' && (
+              <BulkBrief pages={pages} site={selectedSite} siteId={selectedSiteId!} />
+            )}
           </>
         )}
       </div>
@@ -645,6 +664,10 @@ function SiteManagerView() {
 
       {selectedPage && (
         <PageDrawer page={selectedPage} onClose={() => setSelectedPage(null)} onUpdated={refreshPages} />
+      )}
+
+      {showLinkProj && selectedSiteId && (
+        <LinkProjectModal siteId={selectedSiteId} onClose={() => setShowLinkProj(false)} onLinked={() => { setShowLinkProj(false); }} />
       )}
     </div>
   );
@@ -1222,6 +1245,399 @@ function PageDrawer({ page, onClose, onUpdated }: { page: DevPage; onClose: () =
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// LINK PROJECT MODAL
+// ─────────────────────────────────────────────────────────────
+function LinkProjectModal({ siteId, onClose, onLinked }: { siteId: string; onClose: () => void; onLinked: () => void }) {
+  const [projects, setProjects] = useState<any[]>([]);
+  const [selected, setSelected] = useState('');
+  const [saving,   setSaving]   = useState(false);
+  const [err,      setErr]      = useState('');
+
+  useEffect(() => {
+    fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list_projects' }) })
+      .then(r => r.json()).then(d => setProjects(d.projects || [])).catch(() => {});
+  }, []);
+
+  const link = async () => {
+    if (!selected) { setErr('Select a project'); return; }
+    setSaving(true);
+    const r = await callApi('site_update', { siteId, updates: { project_id: selected } });
+    setSaving(false);
+    if (!r.ok) { setErr(r.error || 'Failed'); return; }
+    onLinked();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold">Link to project</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Unlocks GSC data and client name on briefs</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-6 h-6 rounded-lg hover:bg-muted/60 flex items-center justify-center text-muted-foreground text-xs">✕</button>
+        </div>
+        <select value={selected} onChange={e => setSelected(e.target.value)}
+          className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60">
+          <option value="">Select project…</option>
+          {projects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        {err && <div className="text-xs text-red-400">{err}</div>}
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-sm text-muted-foreground">Cancel</button>
+          <button type="button" onClick={link} disabled={saving || !selected}
+            className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40">
+            {saving ? 'Linking…' : 'Link project'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// RESULTS DASHBOARD
+// ─────────────────────────────────────────────────────────────
+function ResultsDashboard({ pages, siteId }: { pages: DevPage[]; siteId: string }) {
+  const withBaseline = pages.filter(p => p.baseline_captured_at);
+  const withScore    = pages.filter(p => p.baseline_score !== null && p.current_score !== null);
+  const withLcp      = pages.filter(p => p.baseline_lcp_ms  !== null && p.current_lcp_ms  !== null);
+
+  const avgBaseline  = (arr: DevPage[], key: keyof DevPage) => {
+    const vals = arr.map(p => p[key] as number).filter(v => v !== null && v !== undefined);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+
+  const baselineScore = avgBaseline(pages.filter(p => p.baseline_score !== null), 'baseline_score');
+  const currentScore  = avgBaseline(pages.filter(p => p.current_score  !== null), 'current_score');
+  const baselineLcp   = avgBaseline(pages.filter(p => p.baseline_lcp_ms !== null), 'baseline_lcp_ms');
+  const currentLcp    = avgBaseline(pages.filter(p => p.current_lcp_ms  !== null), 'current_lcp_ms');
+
+  const totalRedBefore  = pages.reduce((s, p) => s + (p.issues_red   || 0), 0);
+  const totalGscBefore  = pages.reduce((s, p) => s + (p.baseline_gsc_clicks || 0), 0);
+
+  const donePages = pages.filter(p => p.status === 'done');
+  const tasksDone = donePages.length;
+
+  if (withBaseline.length === 0) {
+    return (
+      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-8 text-center space-y-3">
+        <div className="text-4xl">📊</div>
+        <div className="text-sm font-semibold">No baseline data yet</div>
+        <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+          Capture baseline metrics before any fixes are applied. This records the starting point so you can prove improvement to your client.
+        </p>
+      </div>
+    );
+  }
+
+  const metrics = [
+    {
+      label:    'Avg PageSpeed Score',
+      before:   baselineScore !== null ? Math.round(baselineScore) + '/100' : '—',
+      after:    currentScore  !== null ? Math.round(currentScore)  + '/100' : 'Not updated',
+      delta:    baselineScore !== null && currentScore !== null ? Math.round(currentScore - baselineScore) : null,
+      unit:     'pts',
+      positive: true,
+    },
+    {
+      label:    'Avg Mobile LCP',
+      before:   baselineLcp !== null ? (baselineLcp/1000).toFixed(1) + 's' : '—',
+      after:    currentLcp  !== null ? (currentLcp/1000).toFixed(1)  + 's' : 'Not updated',
+      delta:    baselineLcp !== null && currentLcp !== null ? parseFloat(((baselineLcp - currentLcp)/1000).toFixed(1)) : null,
+      unit:     's faster',
+      positive: true,
+    },
+    {
+      label:    'Total critical issues',
+      before:   String(totalRedBefore),
+      after:    String(pages.reduce((s, p) => s + (p.issues_red || 0), 0)),
+      delta:    null,
+      unit:     '',
+      positive: true,
+    },
+    {
+      label:    'GSC Clicks (baseline)',
+      before:   totalGscBefore > 0 ? totalGscBefore.toLocaleString() + '/mo' : '—',
+      after:    'Live in GSC',
+      delta:    null,
+      unit:     '',
+      positive: true,
+    },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold">Results Summary</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Baseline captured for {withBaseline.length} of {pages.length} pages
+            {donePages.length > 0 && ` · ${donePages.length} pages with completed fixes`}
+          </p>
+        </div>
+      </div>
+
+      {/* Metric cards */}
+      <div className="grid grid-cols-2 gap-3">
+        {metrics.map(m => (
+          <div key={m.label} className="rounded-2xl border border-border bg-card/40 p-4 space-y-3">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{m.label}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-muted/30 px-3 py-2 text-center">
+                <div className="text-xs text-muted-foreground mb-1">Before</div>
+                <div className="text-base font-bold text-red-400/80">{m.before}</div>
+              </div>
+              <div className="rounded-xl bg-muted/30 px-3 py-2 text-center">
+                <div className="text-xs text-muted-foreground mb-1">After</div>
+                <div className={`text-base font-bold ${m.after.includes('Not') || m.after === 'Live in GSC' ? 'text-muted-foreground' : 'text-emerald-400'}`}>{m.after}</div>
+              </div>
+            </div>
+            {m.delta !== null && m.delta !== 0 && (
+              <div className={`text-center text-xs font-semibold ${m.delta > 0 === m.positive ? 'text-emerald-400' : 'text-red-400'}`}>
+                {m.delta > 0 ? '+' : ''}{m.delta} {m.unit}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Per-page breakdown */}
+      <div className="rounded-2xl border border-border bg-card/30 overflow-hidden">
+        <div className="px-4 py-3 border-b border-border">
+          <div className="text-xs font-semibold">Per-page breakdown</div>
+        </div>
+        <div className="divide-y divide-border/50">
+          {pages.filter(p => p.baseline_captured_at).map(p => {
+            const scoreDelta = p.baseline_score !== null && p.current_score !== null
+              ? p.current_score - p.baseline_score : null;
+            const lcpDelta = p.baseline_lcp_ms !== null && p.current_lcp_ms !== null
+              ? (p.baseline_lcp_ms - p.current_lcp_ms) / 1000 : null;
+            return (
+              <div key={p.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium truncate">{p.url.replace(/^https?:\/\/[^/]+/, '') || '/'}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{STATUS_CONFIG[p.status]?.label || p.status}</div>
+                </div>
+                <div className="flex items-center gap-4 text-xs tabular-nums shrink-0">
+                  {p.baseline_score !== null && (
+                    <div className="text-center">
+                      <div className="text-[9px] text-muted-foreground">Score</div>
+                      <div className={p.current_score !== null ? (scoreDelta! > 0 ? 'text-emerald-400 font-bold' : 'text-muted-foreground') : ''}>
+                        {p.baseline_score}{p.current_score !== null ? ` → ${p.current_score}` : ''}
+                      </div>
+                    </div>
+                  )}
+                  {p.baseline_lcp_ms !== null && (
+                    <div className="text-center">
+                      <div className="text-[9px] text-muted-foreground">LCP</div>
+                      <div className={p.current_lcp_ms !== null ? (lcpDelta! > 0 ? 'text-emerald-400 font-bold' : 'text-muted-foreground') : ''}>
+                        {(p.baseline_lcp_ms/1000).toFixed(1)}s{p.current_lcp_ms !== null ? ` → ${(p.current_lcp_ms/1000).toFixed(1)}s` : ''}
+                      </div>
+                    </div>
+                  )}
+                  {p.baseline_gsc_clicks !== null && (
+                    <div className="text-center">
+                      <div className="text-[9px] text-muted-foreground">Clicks</div>
+                      <div>{p.baseline_gsc_clicks.toLocaleString()}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// BULK BRIEF
+// ─────────────────────────────────────────────────────────────
+function BulkBrief({ pages, site, siteId }: { pages: DevPage[]; site: DevSite | null; siteId: string }) {
+  const [scope,   setScope]   = useState<'page'|'site'>('site');
+  const [pageId,  setPageId]  = useState('');
+  const [brief,   setBrief]   = useState<{ subject: string; body: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [copied,  setCopied]  = useState(false);
+  const [err,     setErr]     = useState('');
+
+  const audited = pages.filter(p => p.issues_red > 0 || p.issues_amber > 0);
+
+  const generate = async () => {
+    setLoading(true); setBrief(null); setErr('');
+
+    const nl = '
+';
+    const domain = site?.domain || site?.label || 'your website';
+
+    if (scope === 'site') {
+      // Site-wide brief — executive summary of all issues across all pages
+      const totalRed   = pages.reduce((s,p) => s + p.issues_red,   0);
+      const totalAmber = pages.reduce((s,p) => s + p.issues_amber, 0);
+      const topPages   = [...pages].sort((a,b) => b.issues_red - a.issues_red).slice(0,5);
+
+      const lines = [
+        '[APPROVAL REQUIRED] SEO Technical Audit — ' + domain,
+        '',
+        '━━ AUDIT SUMMARY ━━',
+        '',
+        'We have completed a technical SEO audit across ' + pages.length + ' pages of ' + domain + '.',
+        '',
+        'Findings:',
+        '  Critical issues: ' + totalRed   + ' (across ' + pages.filter(p => p.issues_red   > 0).length + ' pages)',
+        '  Warnings:        ' + totalAmber + ' (across ' + pages.filter(p => p.issues_amber > 0).length + ' pages)',
+        '',
+        'Top priority pages:',
+        ...topPages.map(p => '  · ' + (p.url.replace(/^https?:\/\/[^/]+/,'') || '/') + ' — ' + p.issues_red + ' critical, ' + p.issues_amber + ' warnings'),
+        '',
+        '━━ WHAT WE ARE REQUESTING APPROVAL TO FIX ━━',
+        '',
+        'We will address these issues in priority order, starting with the highest-traffic pages.',
+        'Each fix will be reviewed and confirmed with you before going live.',
+        '',
+        'Types of changes:',
+        '  • Performance fixes (script defer, lazy loading) — invisible to visitors, improves load speed',
+        '  • Structured data (schema markup) — invisible to visitors, improves Google eligibility',
+        '  • On-page content (H1, meta descriptions) — we will share exact proposed text for your approval',
+        '',
+        '━━ WHAT WILL NOT CHANGE ━━',
+        '',
+        '  • Your page design and visual layout',
+        '  • Your existing content and branding',
+        '  • Your site will not go offline at any point',
+        '',
+        '━━ OUR COMMITMENT ━━',
+        '',
+        '  • We will not make any change without your explicit approval',
+        '  • Baseline metrics have been captured — you will see before/after comparison for every fix',
+        '  • All changes are reversible',
+        '',
+        '━━ TO APPROVE ━━',
+        '',
+        'Please reply YES to authorise us to begin. We will provide a detailed brief for each individual change before we apply it.',
+        '',
+        'Best regards',
+      ];
+      setBrief({
+        subject: '[Approval Required] SEO Technical Audit — ' + domain + ' · ' + pages.length + ' pages · ' + totalRed + ' critical issues',
+        body:    lines.join(nl),
+      });
+    } else {
+      // Per-page brief — use existing dev_client_brief for one page's tasks
+      if (!pageId) { setErr('Select a page'); setLoading(false); return; }
+      const page = pages.find(p => p.id === pageId);
+      if (!page) { setErr('Page not found'); setLoading(false); return; }
+
+      // Build brief from page data directly (instant — no AI call)
+      const nl2 = '
+';
+      const path = page.url.replace(/^https?:\/\/[^/]+/, '') || '/';
+      const lines = [
+        'We are requesting your approval to fix ' + page.issues_red + ' critical and ' + page.issues_amber + ' warning issues on:',
+        page.url,
+        '',
+        '━━ CURRENT PAGE HEALTH ━━',
+        '',
+        page.baseline_score    !== null ? 'PageSpeed score:    ' + page.baseline_score + '/100' : '',
+        page.baseline_lcp_ms   !== null ? 'Mobile LCP:         ' + (page.baseline_lcp_ms/1000).toFixed(1) + 's (target: under 2.5s)' : '',
+        page.baseline_gsc_clicks !== null ? 'Monthly GSC clicks: ' + page.baseline_gsc_clicks.toLocaleString() : '',
+        '',
+        '━━ ISSUES TO FIX ━━',
+        '',
+        page.issues_red   > 0 ? page.issues_red   + ' critical issues are directly harming performance and rankings' : '',
+        page.issues_amber > 0 ? page.issues_amber + ' warnings are reducing SEO performance' : '',
+        '',
+        '━━ APPROVAL ━━',
+        '',
+        'Please reply YES to approve. We will share the exact code change for each fix before applying.',
+        '',
+        'Best regards',
+      ].filter(s => s !== '');
+      setBrief({
+        subject: '[Approval Required] ' + page.issues_red + ' critical issues — ' + page.url.replace(/^https?:\/\/[^/]+/, '') + ' · ' + domain,
+        body:    lines.join(nl2),
+      });
+    }
+
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-sm font-semibold">Bulk Client Brief</div>
+        <div className="text-xs text-muted-foreground mt-0.5">Generate a professional approval request covering multiple fixes at once</div>
+      </div>
+
+      {/* Scope selector */}
+      <div className="flex gap-2 p-1 bg-muted/30 rounded-xl">
+        {([['site','🌐 Whole site'],['page','📄 One page']] as const).map(([s,l]) => (
+          <button key={s} type="button" onClick={() => setScope(s)}
+            className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${scope === s ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {scope === 'page' && (
+        <select value={pageId} onChange={e => setPageId(e.target.value)}
+          className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-primary/60">
+          <option value="">Select page…</option>
+          {audited.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.url.replace(/^https?:\/\/[^/]+/, '') || '/'} — {p.issues_red}🔴 {p.issues_amber}🟡
+            </option>
+          ))}
+        </select>
+      )}
+
+      {scope === 'site' && (
+        <div className="rounded-xl bg-muted/20 border border-border px-4 py-3 text-xs text-muted-foreground">
+          Site-wide brief covers all {pages.length} pages · {pages.reduce((s,p) => s+p.issues_red,0)} total critical issues.
+          Structured as an executive summary — client approves the engagement, then individual fixes get their own brief.
+        </div>
+      )}
+
+      {err && <div className="text-xs text-red-400">{err}</div>}
+
+      <button type="button" onClick={generate} disabled={loading}
+        className="w-full py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40 hover:bg-primary/90 transition-all shadow-[0_0_16px_hsl(var(--primary)/0.2)]">
+        {loading ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" />Generating…</span> : 'Generate brief'}
+      </button>
+
+      {brief && (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-border bg-background/60 px-4 py-3 flex items-center gap-3">
+            <span className="text-xs flex-1 font-medium">{brief.subject}</span>
+            <button type="button" onClick={() => navigator.clipboard.writeText(brief.subject)}
+              className="text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-border transition-colors shrink-0">
+              Copy
+            </button>
+          </div>
+          <div className="rounded-xl border border-border bg-background/60 p-4 text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 max-h-80 overflow-y-auto">
+            {brief.body}
+          </div>
+          <button type="button"
+            onClick={() => {
+              navigator.clipboard.writeText('Subject: ' + brief.subject + '
+
+' + brief.body);
+              setCopied(true); setTimeout(() => setCopied(false), 2500);
+            }}
+            className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${copied ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400' : 'bg-primary text-primary-foreground hover:bg-primary/90'} shadow-[0_0_16px_hsl(var(--primary)/0.15)]`}>
+            {copied ? '✓ Copied to clipboard' : 'Copy full email (subject + body)'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
