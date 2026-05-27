@@ -4613,9 +4613,15 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     if (!taskId) return ok(res, { error: 'taskId required' });
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
     try {
-      const { getTask } = await import('./lib/dev-engine.js');
-      const task = await getTask(taskId);
-      if (!task) return ok(res, { error: 'task not found' });
+      // Query task directly — no dynamic import needed for a simple DB read
+      const { db: getDb } = await import('./lib/db.js');
+      const { data: taskRow, error: taskErr } = await getDb()
+        .from('dev_tasks')
+        .select('id,title,severity,analysis,finding_title,cms_platform,target_url,snapshot_id,client_thread')
+        .eq('id', taskId)
+        .maybeSingle();
+      if (taskErr || !taskRow) return ok(res, { error: 'task not found' });
+      const task = taskRow as any;
 
       let projectName = 'the project';
       let agencyName  = 'our SEO team';

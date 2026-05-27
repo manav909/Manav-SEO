@@ -84,14 +84,24 @@ interface ApiResult<T = unknown> {
 // a structured error — the UI never crashes on "Unexpected token".
 // ─────────────────────────────────────────────────────────────
 
-async function callApi<T = unknown>(action: string, payload: Record<string, unknown>): Promise<ApiResult<T>> {
+async function callApi<T = unknown>(action: string, payload: Record<string, unknown>, timeoutMs?: number): Promise<ApiResult<T>> {
   let rawBody = '';
   try {
-    const response = await fetch('/api/task-engine', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...payload }),
-    });
+    // Client-side abort — never wait more than timeoutMs regardless of server behaviour
+    const ctrl = timeoutMs ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+
+    let response: Response;
+    try {
+      response = await fetch('/api/task-engine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...payload }),
+        signal: ctrl?.signal,
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
 
     rawBody = await response.text();
 
@@ -947,13 +957,15 @@ function TaskDetail({
     if (briefTimerRef.current) clearInterval(briefTimerRef.current);
     briefTimerRef.current = setInterval(() => setBriefElapsed(s => s + 1), 1000);
 
-    const result = await callApi<{ subject: string; body: string; summary: string }>('dev_client_brief', {
-      taskId: task.id,
-      projectId,
-    });
+    const result = await callApi<{ subject: string; body: string; summary: string }>(
+      'dev_client_brief',
+      { taskId: task.id, projectId },
+      22000  // 22s client-side hard cutoff — if server hangs, client stops waiting
+    );
 
     if (briefTimerRef.current) { clearInterval(briefTimerRef.current); briefTimerRef.current = null; }
     setBriefLoading(false);
+
     if (result.ok && (result as any).data?.body) {
       setBrief({
         subject: (result as any).data.subject || 'Website Change Approval Required',
@@ -961,7 +973,14 @@ function TaskDetail({
         summary: (result as any).data.summary || '',
       });
     } else {
-      setBrief({ subject: 'Error', body: result.error || 'Could not generate brief. Try again.', summary: '' });
+      const isTimeout = result.error?.includes('abort') || result.error?.includes('AbortError') || result.error?.includes('timed out');
+      setBrief({
+        subject: 'Error',
+        body: isTimeout
+          ? 'The AI service is slow right now. Click ↺ Regenerate to try again — it usually works on retry.'
+          : (result.error || 'Could not generate brief. Try again.'),
+        summary: ''
+      });
     }
   };
 
