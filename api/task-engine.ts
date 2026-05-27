@@ -4577,6 +4577,109 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  if (action === 'dev_client_brief') {
+    /* Generate a professional client-facing approval request for a dev task.
+       Plain English. Explains what, why, what changes, what is assured.
+       Uses Sonnet for quality — this goes to a real client. */
+    const { taskId, projectId: pid } = body;
+    if (!taskId) return ok(res, { error: 'taskId required' });
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+    try {
+      const { getTask } = await import('./lib/dev-engine.js');
+      const task = await getTask(taskId);
+      if (!task) return ok(res, { error: 'task not found' });
+
+      // Pull project + client info
+      let projectName = 'your website';
+      let clientName  = 'Hi';
+      let agencyName  = 'our team';
+      let siteUrl     = task.target_url || 'your website';
+
+      if (pid) {
+        try {
+          const { db: getDb } = await import('./lib/db.js');
+          const D = getDb();
+          const { data: proj } = await D.from('projects')
+            .select('name, url').eq('id', pid).maybeSingle();
+          if (proj) {
+            projectName = (proj as any).name || projectName;
+            siteUrl     = (proj as any).url   || siteUrl;
+          }
+          const { data: client } = await D.from('clients')
+            .select('name, contact_name').eq('project_id', pid).maybeSingle();
+          if (client) {
+            clientName = (client as any).contact_name || (client as any).name || clientName;
+          }
+        } catch { /* best effort */ }
+      }
+
+      const systemPrompt = [
+        'You are writing a professional approval request email from an SEO agency to their client.',
+        'The client is non-technical. They need to approve a change to their live website.',
+        '',
+        'Your email must:',
+        '- Open with a warm, professional greeting',
+        '- Explain what we want to do in plain English (no technical jargon)',
+        '- Explain WHY — what problem it solves, what business benefit it creates',
+        '- List exactly what will change (be specific and honest)',
+        '- List what will NOT change (visual design, content, functionality — reassure them)',
+        '- Give assurance: we have backed up the current state, change is reversible',
+        '- End with a clear, easy approval ask — ideally just "Reply YES to approve"',
+        '',
+        'Tone: professional but human. Not salesy. Honest about what this does.',
+        'Length: 200-280 words. Scannable. Short paragraphs.',
+        '',
+        'Return JSON only:',
+        '{ "subject": "string", "body": "string", "summary": "one sentence TL;DR" }',
+      ].join('');
+
+      const taskContext = [
+        'Project: ' + projectName,
+        'Site: ' + siteUrl,
+        'Client contact: ' + clientName,
+        'Task: ' + task.title,
+        'Severity: ' + task.severity,
+        'What was found: ' + (task.analysis || task.finding_title || ''),
+        'CMS: ' + (task.cms_platform || 'website platform'),
+        'Snapshot saved: ' + (task.snapshot_id ? 'yes — we have a before-state backup' : 'no'),
+      ].join('');
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 45000);
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: taskContext }],
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const data = await resp.json() as any;
+      if (data?.error) return ok(res, { error: data.error.message });
+
+      const raw = (data?.content?.[0]?.text || '').trim()
+        .replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+      try {
+        const parsed = JSON.parse(raw.match(/\{[\s\S]+\}/)![0]);
+        return ok(res, { success: true, subject: parsed.subject, body: parsed.body, summary: parsed.summary });
+      } catch {
+        return ok(res, { success: true, subject: 'Website Change Approval Required', body: raw, summary: task.title });
+      }
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
   if (action === 'pm_chat') {
     /* PM-level strategic chat.
        Pulls comprehensive project data: audits, campaigns, dev tasks,

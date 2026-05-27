@@ -913,6 +913,10 @@ function TaskDetail({
   const [chatInput,    setChatInput]    = useState('');
   const [chatLoading,  setChatLoading]  = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [briefOpen,    setBriefOpen]    = useState(false);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [brief,        setBrief]        = useState<{ subject: string; body: string; summary: string } | null>(null);
+  const [briefCopied,  setBriefCopied]  = useState(false);
 
   // Reset to instructions tab when a different task is selected
   useEffect(() => {
@@ -921,6 +925,26 @@ function TaskDetail({
     setChatOpen(false);
     setChatMessages([]);
   }, [task.id]);
+
+  const generateBrief = async () => {
+    setBriefLoading(true);
+    setBriefOpen(true);
+    setBrief(null);
+    const result = await callApi<{ subject: string; body: string; summary: string }>('dev_client_brief', {
+      taskId: task.id,
+      projectId,
+    });
+    setBriefLoading(false);
+    if (result.ok && (result as any).data?.body) {
+      setBrief({
+        subject: (result as any).data.subject || 'Website Change Approval Required',
+        body:    (result as any).data.body    || '',
+        summary: (result as any).data.summary || '',
+      });
+    } else {
+      setBrief({ subject: 'Error', body: result.error || 'Could not generate brief. Try again.', summary: '' });
+    }
+  };
 
   const sendChat = async () => {
     const msg = chatInput.trim();
@@ -1138,32 +1162,38 @@ function TaskDetail({
             ↺ Reopen
           </button>
         )}
-        {/* Ask Manav — lives at the right end of the action strip, no extra row */}
-        <button
-          type="button"
-          onClick={() => {
-            setChatOpen(v => !v);
-            if (!chatOpen && chatMessages.length === 0) {
-              setChatMessages([{
-                role: 'assistant',
-                content: 'Hi! I\'m here to help you apply this fix. What questions do you have — about what to click, what something means, or whether it\'s safe to do?'
-              }]);
-            }
-          }}
-          className={`ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all border ${
-            chatOpen
-              ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
-              : 'border-border text-muted-foreground hover:border-violet-500/30 hover:text-violet-400 hover:bg-violet-500/5'
-          }`}
-        >
-          <span>💬</span>
-          <span>{chatOpen ? 'Close' : 'Ask Manav'}</span>
-          {chatMessages.filter(m => m.role === 'assistant').length > 1 && !chatOpen && (
-            <span className="ml-0.5 w-4 h-4 rounded-full bg-violet-500/30 text-violet-300 text-[9px] flex items-center justify-center">
-              {chatMessages.filter(m => m.role === 'assistant').length}
-            </span>
-          )}
-        </button>
+        {/* Ask Manav + Client Brief — right end of action strip */}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={generateBrief}
+            disabled={briefLoading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all border border-border text-muted-foreground hover:border-amber-500/40 hover:text-amber-400 hover:bg-amber-500/5 disabled:opacity-40"
+          >
+            <span>📋</span>
+            <span>{briefLoading ? 'Generating…' : 'Client Brief'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setChatOpen(v => !v);
+              if (!chatOpen && chatMessages.length === 0) {
+                setChatMessages([{
+                  role: 'assistant',
+                  content: 'Hi! I\'m here to help you apply this fix. What questions do you have — about what to click, what something means, or whether it\'s safe to do?'
+                }]);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all border ${
+              chatOpen
+                ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
+                : 'border-border text-muted-foreground hover:border-violet-500/30 hover:text-violet-400 hover:bg-violet-500/5'
+            }`}
+          >
+            <span>💬</span>
+            <span>{chatOpen ? 'Close' : 'Ask Manav'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Verification result */}
@@ -1185,6 +1215,95 @@ function TaskDetail({
           {task.verification_evidence?.message && (
             <p className="text-xs text-muted-foreground">{String(task.verification_evidence.message)}</p>
           )}
+        </div>
+      )}
+
+      {/* Client Brief Modal */}
+      {briefOpen && (
+        <div className="rounded-2xl border border-amber-500/20 bg-card overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-amber-500/15 bg-amber-500/5">
+            <div className="flex items-center gap-2.5">
+              <span className="text-base">📋</span>
+              <div>
+                <div className="text-sm font-semibold">Client Approval Request</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Ready to send — copy and paste into email</div>
+              </div>
+            </div>
+            <button type="button" onClick={() => setBriefOpen(false)}
+              className="w-7 h-7 rounded-lg hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground text-sm"
+            >✕</button>
+          </div>
+
+          {briefLoading ? (
+            <div className="p-8 text-center">
+              <div className="animate-pulse text-sm text-muted-foreground">Drafting client brief…</div>
+              <div className="text-xs text-muted-foreground/60 mt-1">Writing a professional explanation for your client</div>
+            </div>
+          ) : brief ? (
+            <div className="p-4 space-y-4">
+              {/* Summary pill */}
+              {brief.summary && (
+                <div className="rounded-xl bg-amber-500/8 border border-amber-500/20 px-3.5 py-2.5">
+                  <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">TL;DR — </span>
+                  <span className="text-xs text-muted-foreground">{brief.summary}</span>
+                </div>
+              )}
+
+              {/* Subject line */}
+              <div>
+                <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Email Subject</div>
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3.5 py-2.5">
+                  <span className="text-sm flex-1 font-medium">{brief.subject}</span>
+                  <button type="button"
+                    onClick={() => navigator.clipboard.writeText(brief.subject)}
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:border-border/80"
+                  >Copy</button>
+                </div>
+              </div>
+
+              {/* Email body */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Email Body</div>
+                  <button type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(brief.body);
+                      setBriefCopied(true);
+                      setTimeout(() => setBriefCopied(false), 2500);
+                    }}
+                    className={`text-xs px-3 py-1 rounded-lg border font-medium transition-all ${
+                      briefCopied
+                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                        : 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+                    }`}
+                  >{briefCopied ? '✓ Copied!' : 'Copy Email'}</button>
+                </div>
+                <div className="rounded-xl border border-border bg-background/60 p-4 text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 max-h-72 overflow-y-auto">
+                  {brief.body}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
+                <button type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`Subject: ${brief.subject}\n\n${brief.body}`);
+                    setBriefCopied(true);
+                    setTimeout(() => setBriefCopied(false), 2500);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all shadow-[0_0_16px_hsl(var(--primary)/0.2)]"
+                >
+                  {briefCopied ? '✓ Copied to clipboard' : 'Copy full email (subject + body)'}
+                </button>
+                <button type="button"
+                  onClick={generateBrief}
+                  className="px-4 py-2.5 rounded-xl border border-border text-muted-foreground text-sm hover:text-foreground transition-all"
+                  title="Generate a new version"
+                >↺ Regenerate</button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
