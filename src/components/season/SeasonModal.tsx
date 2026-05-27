@@ -36,7 +36,7 @@ import {
   seoRecommendCampaignStructure, seoCommitCampaignStructure,
   type CampaignStructureRecommendation, type ProjectPositioning,
   /* Phase 21 Block 2.5 — URL targeting + grounded chat */
-  seoClassifyIntent, seoChatSuggestions, seoExploreKeyword,
+  seoClassifyIntent, seoChatSuggestions, seoExploreKeyword, parseObjectiveCommand,
   type ChatSuggestion, type ToolsStatus, type ExplorationResponseClient,
   type UrlFitAnalysis,
 } from '@/components/pm/api';
@@ -408,6 +408,46 @@ export default function SeasonModal() {
       /* Fallback to a fast regex if classification API fails */
       if (/(?:^|\s)(rank(?:ing)?\s+(?:me\s+)?for|get\s+(?:me\s+)?ranking\s+for|target\s+keywords?|seo\s+for)\b/i.test(q)) {
         routedAsCommitment = true;
+      }
+    }
+
+    /* Route objective-type commands to instant objective creation */
+    if (classification.intent === 'objective') {
+      try {
+        setMood('thinking');
+        // Parse the command to extract goal type, keywords, URLs
+        const parsed = parseObjectiveCommand(q);
+        if (parsed) {
+          const title = q.length < 80 ? q : (parsed.keywords[0] ? `${parsed.goalType.replace(/_/g,' ')} for "${parsed.keywords[0]}"` : parsed.goalType.replace(/_/g,' '));
+          const r = await fetch('/api/task-engine', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action:       'bs_campaign_objective_create',
+              projectId:    selectedProjectId,
+              campaignType: parsed.goalType,
+              title:        title,
+              keyword:      parsed.keywords[0] || undefined,
+              targetUrls:   parsed.targetUrls.length > 0 ? parsed.targetUrls : undefined,
+              targetLocations: parsed.location ? [{ city: parsed.location }] : undefined,
+            }),
+          }).then(r => r.json());
+          if (r.success) {
+            setResponse(`✓ **${title}** objective created.
+
+Go to **SEO Campaigns → Objectives** to set your baseline, target, and deadline — then link a Site Manager workspace to start working on ${parsed.targetUrls.length > 0 ? parsed.targetUrls.length + ' target page' + (parsed.targetUrls.length !== 1 ? 's' : '') : 'pages'}.`);
+            setMood('happy');
+          } else {
+            setResponse(`Couldn't create objective: ${r.error || 'unknown error'}. Try going to SEO Campaigns → Objectives → New objective.`);
+            setMood('alert');
+          }
+        } else {
+          setResponse(`I understood you want to set an objective but couldn't parse the details. Try: **grow traffic for /page-url** or **fix technical issues** or **improve DA**.`);
+          setMood('thinking');
+        }
+        setSubmitting(false);
+        return;
+      } catch (e: any) {
+        // Fall through to normal handling
       }
     }
 

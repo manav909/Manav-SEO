@@ -40,7 +40,65 @@ const USER_AGENT = 'SEOSeason-Bot/1.0 (+https://seoseason.com; URL targeting fit
    TYPES
 ══════════════════════════════════════════════════════════════════════ */
 
-export type CampaignIntent = 'commitment' | 'exploration' | 'question';
+export type CampaignIntent = 'commitment' | 'exploration' | 'question' | 'objective';
+
+/* ── Goal type patterns for objective commands ─────────────────
+   User types things like:
+   "grow traffic for /page1, /page2"
+   "increase organic traffic to /beds"
+   "fix technical issues on sleeplandbeds.co.uk"
+   "improve DA"
+   "rank for ottoman beds AND memory foam on /beds, /mattresses"
+   "local visibility for London beds"
+── */
+export const OBJECTIVE_PATTERNS: Array<{
+  re: RegExp;
+  goalType: string;
+}> = [
+  { re: /^(?:grow|increase|boost|improve)\s+(?:organic\s+)?traffic/i,         goalType: 'traffic_growth' },
+  { re: /^(?:get\s+)?more\s+(?:organic\s+)?(?:traffic|clicks|visitors)/i,     goalType: 'traffic_growth' },
+  { re: /^(?:fix|resolve|recover|improve)\s+(?:technical|tech|core\s+web)/i,  goalType: 'technical_recovery' },
+  { re: /^(?:technical\s+recovery|fix\s+(?:all\s+)?(?:technical|site))/i,     goalType: 'technical_recovery' },
+  { re: /^(?:improve|build|grow|increase)\s+(?:domain\s+authority|da|dr|authority)/i, goalType: 'domain_authority' },
+  { re: /^(?:local\s+(?:seo|visibility|rankings?)|rank(?:ing)?\s+(?:in|for)\s+(?:a\s+)?(?:city|location|area))/i, goalType: 'local_visibility' },
+  { re: /^(?:rank\s+(?:in|for)\s+[a-z]+(?:,\s*[a-z]+)*|target\s+(?:local|city|location))/i, goalType: 'local_visibility' },
+  { re: /^(?:improve|build|boost)\s+e[\-–]?e[\-–]?a[\-–]?t/i,               goalType: 'eeat' },
+  { re: /^(?:improve|build)\s+(?:expertise|authority|trust|credibility)/i,    goalType: 'eeat' },
+  { re: /^(?:build|grow|establish)\s+(?:topical\s+)?(?:content\s+)?authority/i, goalType: 'content_authority' },
+  { re: /^rank\s+for\s+.+\s+(?:and|,)\s+.+\s+(?:on|for)\s+\//i,               goalType: 'keyword_ranking' }, // multi-keyword
+];
+
+export function parseObjectiveCommand(text: string): {
+  goalType: string;
+  keywords: string[];
+  targetUrls: string[];
+  location?: string;
+} | null {
+  const lc = text.trim();
+
+  let goalType: string | null = null;
+  for (const { re, goalType: gt } of OBJECTIVE_PATTERNS) {
+    if (re.test(lc)) { goalType = gt; break; }
+  }
+  if (!goalType) return null;
+
+  // Extract URLs — /path or https://...
+  const urlMatches = lc.match(/(?:https?:\/\/[^\s,]+|\/[a-zA-Z0-9\-_/]+)/g) || [];
+  const targetUrls = urlMatches.filter(u => u.length > 1);
+
+  // Extract keywords — text in quotes
+  const kwMatches = lc.match(/["']([^"']+)["']/g) || [];
+  const keywords = kwMatches.map(k => k.replace(/["']/g, '').trim()).filter(Boolean);
+
+  // Extract location for local_visibility
+  let location: string | undefined;
+  if (goalType === 'local_visibility') {
+    const locMatch = lc.match(/(?:in|for)\s+([a-zA-Z\s]+?)(?:\s+(?:for|with|on|$))/i);
+    if (locMatch) location = locMatch[1].trim();
+  }
+
+  return { goalType, keywords, targetUrls, location };
+}
 
 export interface CampaignIntentExtraction {
   keywords:             string[];
@@ -101,6 +159,13 @@ export async function classifyCampaignIntent(text: string): Promise<{
   for (const re of COMMIT_PATTERNS) {
     if (re.test(lc)) {
       return { intent: 'commitment', confidence: 'high', used_llm: false, matched_pattern: re.source };
+    }
+  }
+
+  /* Objective-type commands — route to objective creation */
+  for (const { re } of OBJECTIVE_PATTERNS) {
+    if (re.test(lc)) {
+      return { intent: 'objective', confidence: 'high', used_llm: false, matched_pattern: re.source };
     }
   }
 

@@ -326,7 +326,15 @@ function CampaignsList({ campaigns, loading, statusFilter, setStatusFilter, onSe
           padding: 30, textAlign: 'center', color: 'rgba(120,120,140,0.7)',
           border: '1px dashed rgba(160,160,180,0.2)', borderRadius: 10, fontSize: 13,
         }}>
-          No {statusFilter !== 'all' && statusFilter} campaigns yet. Try typing <code style={{ background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 3 }}>rank me for "your keyword"</code> in S.E.A.S.O.N. to create one.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div>No {statusFilter !== 'all' && statusFilter} keyword campaigns yet.</div>
+            <div style={{ fontSize: 11, color: 'rgba(120,120,140,0.7)' }}>Type in S.E.A.S.O.N. to create one:</div>
+            {[
+              'rank me for "ottoman beds UK"',
+            ].map(cmd => (
+              <code key={cmd} style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 3, fontSize: 11 }}>{cmd}</code>
+            ))}
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2237,9 +2245,24 @@ function ObjectivesView({
         }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>🎯</div>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>No objectives yet</div>
-          <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
-            Create your first objective — traffic growth, local ranking, domain authority, or a technical recovery.
+          <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 12 }}>
+            Type in S.E.A.S.O.N. or click "+ New objective" above:
           </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, textAlign: 'left', maxWidth: 380, margin: '0 auto' }}>
+            {[
+              ['📈', 'grow traffic for /beds, /mattresses'],
+              ['⚙️', 'fix technical issues'],
+              ['🔗', 'improve DA'],
+              ['📍', 'local visibility for London'],
+              ['🎓', 'improve E-E-A-T'],
+              ['✍️', 'build content authority'],
+            ].map(([icon, cmd]) => (
+              <div key={cmd as string} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14 }}>{icon}</span>
+                <code style={{ background: 'rgba(255,255,255,0.05)', padding: '3px 8px', borderRadius: 5, fontSize: 11, flex: 1 }}>{cmd}</code>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

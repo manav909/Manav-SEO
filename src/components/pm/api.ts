@@ -3450,6 +3450,53 @@ export interface ExplorationResponseClient {
   honest_note?:          string;
 }
 
+
+/* ── parseObjectiveCommand — frontend mirror of seo-url-targeting.ts ──
+   Parses natural language objective commands typed in SEASON chat.
+   Examples:
+     "grow traffic for /page1, /page2"
+     "fix technical issues"
+     "improve DA"
+     "local visibility for London"
+     "rank for 'ottoman beds UK' on /beds"
+*/
+const OBJECTIVE_PATTERNS_FRONTEND: Array<{ re: RegExp; goalType: string }> = [
+  { re: /^(?:grow|increase|boost|improve)\s+(?:organic\s+)?traffic\b/i,           goalType: 'traffic_growth' },
+  { re: /^(?:get\s+)?more\s+(?:organic\s+)?(?:traffic|clicks|visitors)\b/i,      goalType: 'traffic_growth' },
+  { re: /^(?:fix|resolve|recover|improve)\s+(?:technical|tech|core\s+web)\b/i,    goalType: 'technical_recovery' },
+  { re: /^(?:technical\s+recovery|fix\s+(?:all\s+)?(?:technical|site))\b/i,      goalType: 'technical_recovery' },
+  { re: /^(?:improve|build|grow|increase)\s+(?:domain\s+authority|da|dr)\b/i,     goalType: 'domain_authority' },
+  { re: /^(?:local\s+(?:seo|visibility|rankings?))\b/i,                            goalType: 'local_visibility' },
+  { re: /^(?:rank(?:ing)?\s+(?:in|for)\s+[a-z]+)\b/i,                            goalType: 'local_visibility' },
+  { re: /^(?:improve|build|boost)\s+e[\-–]?e[\-–]?a[\-–]?t\b/i,               goalType: 'eeat' },
+  { re: /^(?:improve|build)\s+(?:expertise|authority|trust|credibility)\b/i,       goalType: 'eeat' },
+  { re: /^(?:build|grow|establish)\s+(?:topical\s+)?content\s+authority\b/i,     goalType: 'content_authority' },
+];
+
+export function parseObjectiveCommand(text: string): {
+  goalType: string;
+  keywords: string[];
+  targetUrls: string[];
+  location?: string;
+} | null {
+  const lc = (text || '').trim();
+  let goalType: string | null = null;
+  for (const { re, goalType: gt } of OBJECTIVE_PATTERNS_FRONTEND) {
+    if (re.test(lc)) { goalType = gt; break; }
+  }
+  if (!goalType) return null;
+  const urlMatches = lc.match(/(?:https?:\/\/[^\s,]+|\/[a-zA-Z0-9\-_/]+)/g) || [];
+  const targetUrls  = urlMatches.filter(u => u.length > 1);
+  const kwMatches   = lc.match(/["']([^"']+)["']/g) || [];
+  const keywords    = kwMatches.map(k => k.replace(/["']/g, '').trim()).filter(Boolean);
+  let location: string | undefined;
+  if (goalType === 'local_visibility') {
+    const m = lc.match(/(?:in|for)\s+([a-zA-Z\s]+?)(?:\s+(?:for|with|on)|$)/i);
+    if (m) location = m[1].trim();
+  }
+  return { goalType, keywords, targetUrls, location };
+}
+
 export async function seoClassifyIntent(opts: { text: string }): Promise<{
   intent?:           'commitment' | 'exploration' | 'question';
   confidence?:       'high' | 'medium' | 'low';
