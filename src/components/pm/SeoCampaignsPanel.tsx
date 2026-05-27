@@ -180,7 +180,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(160,160,180,0.15)' }}>
         <TabButton active={tab === 'campaigns'} onClick={() => setTab('campaigns')}>
-          Campaigns ({campaigns.length})
+          Campaigns ({campaigns.filter(c => !c.campaign_type || c.campaign_type === 'keyword_ranking').length})
         </TabButton>
         <TabButton active={tab === 'opportunities'} onClick={() => setTab('opportunities')}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -226,7 +226,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
 
       {tab === 'campaigns' && (
         <CampaignsList
-          campaigns={campaigns}
+          campaigns={campaigns.filter(c => !c.campaign_type || c.campaign_type === 'keyword_ranking')}
           loading={loading}
           statusFilter={statusFilter}
           setStatusFilter={setStatusFilter}
