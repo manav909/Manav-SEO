@@ -1024,6 +1024,29 @@ function TaskDetail({
     const nl = '\n';
     const lines: string[] = [];
 
+    // ── Task category: determines which sections are relevant ──
+    const isPerformanceTask = ['lcp_fix','script_defer','lazy_loading','image_format'].includes(task.task_type);
+    const isSchemaTask      = ['faq_schema','date_modified_schema'].includes(task.task_type);
+    const isContentTask     = ['h1_update','first_para','h2_section'].includes(task.task_type);
+    const isIndexingTask    = task.task_type === 'gsc_indexing';
+    const isMetaTask        = task.task_type === 'meta_desc';
+
+    // ── Verification link — task-appropriate, never generic ──
+    const verifyLinks: Record<string, { label: string; url: string }> = {
+      lcp_fix:              { label: 'Run Google PageSpeed test for this page', url: pagespeedLink },
+      script_defer:         { label: 'Run Google PageSpeed test for this page', url: pagespeedLink },
+      lazy_loading:         { label: 'Run Google PageSpeed test for this page', url: pagespeedLink },
+      image_format:         { label: 'Run Google PageSpeed test for this page', url: pagespeedLink },
+      faq_schema:           { label: 'Check for FAQPage schema on this page (Google Rich Results Test)', url: `https://search.google.com/test/rich-results?url=${encodedUrl}` },
+      date_modified_schema: { label: 'Check existing structured data on this page', url: `https://search.google.com/test/rich-results?url=${encodedUrl}` },
+      h1_update:            { label: 'View the current H1 on this page', url: siteUrl },
+      first_para:           { label: 'View the current opening paragraph on this page', url: siteUrl },
+      h2_section:           { label: 'View the current page content', url: siteUrl },
+      gsc_indexing:         { label: 'Check this URL in Google Search Console', url: 'https://search.google.com/search-console' },
+      meta_desc:            { label: 'See how this page appears in Google right now', url: `https://www.google.com/search?q=site:${siteUrl.replace(/^https?:\/\//, '').split('/')[0]}` },
+    };
+    const verifyLink = verifyLinks[task.task_type] || { label: 'View the live page', url: siteUrl };
+
     lines.push('Hi,');
     lines.push('');
     lines.push('I am writing to request your approval before we make a change to your website. We do not make any changes to live sites without written client approval first.');
@@ -1038,9 +1061,128 @@ function TaskDetail({
       lines.push(`Our technical audit identified: ${taskTitle}`);
     }
     lines.push('');
-    lines.push(`You can verify this yourself right now: ${pagespeedLink}`);
-    lines.push('(Run the free test on your URL — it will show the same issues our audit found)');
+    lines.push(`You can verify this yourself: ${verifyLink.label}`);
+    lines.push(verifyLink.url);
     lines.push('');
+
+    // ── Extract metrics from analysis text ──────────────────────
+    // Pull actual numbers so the client sees real before/after data
+    const lcpMatch  = analysis.match(/(\d+\.?\d+)\s*s(?:econds?)?\s*(?:mobile\s*)?LCP|(?:mobile\s*)?LCP[^0-9]*(\d+\.?\d+)\s*s/i);
+    const tbtMatch  = analysis.match(/(\d+)\s*ms\s*(?:mobile\s*)?TBT|(?:mobile\s*)?TBT[^0-9]*(\d+)\s*ms/i);
+    const lcpVal    = lcpMatch  ? parseFloat(lcpMatch[1]  || lcpMatch[2])  : null;
+    const tbtVal    = tbtMatch  ? parseInt(tbtMatch[1]    || tbtMatch[2])  : null;
+
+    const lcpStatus = lcpVal === null ? null : lcpVal <= 2.5 ? 'Good' : lcpVal <= 4 ? 'Needs improvement' : 'Poor';
+    const tbtStatus = tbtVal === null ? null : tbtVal <= 200 ? 'Good' : tbtVal <= 600 ? 'Needs improvement' : 'Poor';
+
+    // ── Metrics section ───────────────────────────────────────
+    const hasMetrics = (lcpVal !== null || tbtVal !== null) &&
+      ['lcp_fix','script_defer','lazy_loading','image_format'].includes(task.task_type);
+
+    if (hasMetrics) {
+      lines.push('━━ CURRENT vs TARGET METRICS ━━');
+      lines.push('');
+      if (lcpVal !== null) {
+        lines.push(`  Largest Contentful Paint (LCP) — how fast your page visually loads:`);
+        lines.push(`  Current:  ${lcpVal}s  ← ${lcpStatus}`);
+        lines.push(`  Target:   Under 2.5s  ← Google "Good" threshold`);
+        lines.push(`  Gap:      ${Math.max(0, lcpVal - 2.5).toFixed(1)}s above Google\'s target`);
+      }
+      if (tbtVal !== null) {
+        lines.push('');
+        lines.push(`  Total Blocking Time (TBT) — how long scripts block the page:`);
+        lines.push(`  Current:  ${tbtVal}ms  ← ${tbtStatus}`);
+        lines.push(`  Target:   Under 200ms  ← Google "Good" threshold`);
+      }
+      lines.push('');
+      lines.push(`  Verify these numbers yourself (free Google test): ${pagespeedLink}`);
+      lines.push('');
+    }
+
+    // ── Google algorithm context per task type ────────────────
+    const algoContext: Record<string, { algo: string; year: string; impact: string; expectedGain: string }> = {
+      lcp_fix: {
+        algo:         'Google Page Experience Update + Core Web Vitals',
+        year:         'Active ranking signal since June 2021',
+        impact:       'LCP is a direct ranking factor. Google confirmed pages with Good LCP scores (under 2.5s) receive a ranking boost over equivalent pages with Poor scores.',
+        expectedGain: lcpVal && lcpVal > 4 ? `Reducing LCP from ${lcpVal}s to under 4s moves your page from "Poor" to "Needs Improvement." Reaching under 2.5s qualifies for the full ranking benefit.` : 'Improving LCP to under 2.5s qualifies this page for the Core Web Vitals ranking benefit.',
+      },
+      script_defer: {
+        algo:         'Google Page Experience Update + Core Web Vitals (TBT/INP signals)',
+        year:         'Active ranking signal since June 2021',
+        impact:       'Total Blocking Time (TBT) directly measures the damage caused by render-blocking scripts. Reducing TBT improves Interaction to Next Paint (INP), which replaced FID as a Core Web Vitals metric in March 2024.',
+        expectedGain: tbtVal && tbtVal > 200 ? `Current TBT is ${tbtVal}ms — the Good threshold is under 200ms. Deferring blocking scripts typically reduces TBT by 40-80%.` : 'Deferring scripts reduces TBT and improves the Core Web Vitals score.',
+      },
+      lazy_loading: {
+        algo:         'Google PageSpeed Insights + Core Web Vitals (LCP signal)',
+        year:         'Active ranking signal since June 2021',
+        impact:       'Offscreen images that load eagerly increase the total page weight on initial load, delaying LCP. Google explicitly flags "Defer offscreen images" as a scored improvement in PageSpeed.',
+        expectedGain: 'Lazy loading below-fold images reduces initial page weight, which typically reduces LCP by 0.5-2s depending on image count and size.',
+      },
+      image_format: {
+        algo:         'Google PageSpeed + Core Web Vitals',
+        year:         'Ongoing ranking signal',
+        impact:       'Google PageSpeed flags legacy image formats (JPG/PNG) as a scored issue. WebP delivers the same visual quality at 25-35% smaller file size, reducing page weight and improving load speed.',
+        expectedGain: 'Converting to WebP typically reduces image-related page weight by 25-40%. The visual result is identical.',
+      },
+      faq_schema: {
+        algo:         'Google Knowledge Graph + AI Overviews (MUM/Gemini systems)',
+        year:         'Rich results eligibility active; AI Overview citations expanding in 2024',
+        impact:       'FAQPage schema makes your Q&A content eligible for People Also Ask boxes in Google and for citation in AI Overviews. Google\'s AI systems preferentially reference structured, machine-readable content.',
+        expectedGain: 'Eligibility for PAA boxes and AI Overview citations can deliver additional organic impressions without any change to your ranking position.',
+      },
+      h1_update: {
+        algo:         'Google Core Algorithm (Helpful Content System)',
+        year:         'Helpful Content System active; last major update September 2023',
+        impact:       'Google reads the H1 tag as a primary signal for page topic relevance. When the H1 does not contain the campaign keyword, Google has weaker confirmation that the page is about that topic.',
+        expectedGain: 'Including the target keyword in the H1 strengthens topical relevance signals. Combined with other on-page signals, this supports ranking for the campaign keyword.',
+      },
+      first_para: {
+        algo:         'Google Helpful Content System + E-E-A-T signals',
+        year:         'Helpful Content System active; E-E-A-T guidance updated December 2022',
+        impact:       'Google evaluates the first visible paragraph to confirm page relevance. A generic opener with low keyword alignment is a weak topical signal. Google\'s quality raters are explicitly instructed to evaluate whether content "directly addresses the searcher\'s need."',
+        expectedGain: 'A targeted first paragraph with keyword alignment in the first sentence strengthens the topical match signal for this page.',
+      },
+      h2_section: {
+        algo:         'Google People Also Ask feature + AI Overviews (MUM system)',
+        year:         'PAA active; AI Overviews expanding significantly in 2024-2025',
+        impact:       'Google\'s PAA feature surfaces questions and answers directly in search results. Pages with H2 headings that match PAA questions verbatim — followed by a direct answer — are the primary source for these boxes. AI Overviews increasingly cite content that directly answers specific questions.',
+        expectedGain: 'Each PAA question answered on this page is eligible for a PAA citation, which can appear even when the page is not ranking on page 1. AI Overview citations provide additional visibility.',
+      },
+      gsc_indexing: {
+        algo:         'Google Crawling and Indexing system',
+        year:         'Prerequisite for all ranking — not algorithm-dependent',
+        impact:       'A page that is not in Google\'s index does not appear in any search results, regardless of its content quality or technical optimisation. All SEO work on an unindexed page has zero effect until this is resolved.',
+        expectedGain: 'Successful indexing is the prerequisite for all other SEO work on this page to have any effect.',
+      },
+      date_modified_schema: {
+        algo:         'Google Freshness Algorithm + Crawl prioritisation',
+        year:         'Freshness signals active; QDF (Query Deserves Freshness) algorithm ongoing',
+        impact:       'Google\'s freshness algorithm gives ranking preference to recently updated content for certain query types. The dateModified field in structured data provides a reliable, machine-readable freshness signal that Google trusts over inferred dates.',
+        expectedGain: 'A verified recent dateModified strengthens freshness signals, particularly for queries where Google\'s QDF algorithm rewards updated content.',
+      },
+      meta_desc: {
+        algo:         'Click-Through Rate signals (indirect ranking factor)',
+        year:         'Ongoing — CTR is a documented quality signal',
+        impact:       'While Google sometimes auto-generates snippets, a well-written meta description controls your message in search results and improves click-through rate. Higher CTR is a user engagement signal that Google\'s systems use to assess content relevance.',
+        expectedGain: 'An optimised meta description with keyword and clear benefit typically improves click-through rate on existing impressions, delivering more organic traffic from current rankings.',
+      },
+    };
+    const algoInfo = algoContext[task.task_type];
+
+    if (algoInfo) {
+      lines.push('━━ GOOGLE ALGORITHM CONTEXT ━━');
+      lines.push('');
+      lines.push(`Algorithm affected:  ${algoInfo.algo}`);
+      lines.push(`Status:              ${algoInfo.year}`);
+      lines.push('');
+      lines.push(`Why it matters:`);
+      lines.push(algoInfo.impact);
+      lines.push('');
+      lines.push(`Expected outcome:`);
+      lines.push(algoInfo.expectedGain);
+      lines.push('');
+    }
 
     // AUTHORITATIVE BACKING
     if (taskSources.length > 0) {
@@ -1073,21 +1215,51 @@ function TaskDetail({
     lines.push(changeDetail[task.task_type] || 'A targeted technical change as described in the audit findings above.');
     lines.push('');
 
-    if (codePreview) {
-      lines.push('The exact code change (for your developer to review):');
+    // Code/content preview — task-aware labelling and filtering
+    if (codePreview && !isIndexingTask) {
+      if (isContentTask) {
+        // For content changes — show the proposed text, not "code"
+        const contentLabel: Record<string, string> = {
+          h1_update:  'Proposed new heading (for your review and approval):',
+          first_para: 'Proposed new opening paragraph (for your review and approval):',
+          h2_section: 'Proposed new sections to be added (for your review and approval):',
+        };
+        lines.push(contentLabel[task.task_type] || 'Proposed content change (for your review):');
+      } else if (isSchemaTask) {
+        lines.push('The structured data code to be added (invisible to visitors, read by Google only):');
+      } else if (isMetaTask) {
+        lines.push('Proposed meta description options (for your review and approval):');
+      } else {
+        lines.push('The exact technical change (your developer can review this):');
+      }
       lines.push('---');
       lines.push(codePreview);
       lines.push('---');
       lines.push('');
     }
 
-    // WHAT STAYS THE SAME
+    // WHAT STAYS THE SAME — task-specific
     lines.push('━━ WHAT WILL NOT CHANGE ━━');
     lines.push('');
-    lines.push('• Your page design and visual layout — identical');
-    lines.push('• Your existing content, images, and branding — untouched');
-    lines.push('• Your site will not go offline or show any errors to visitors');
-    lines.push('• All existing functionality (forms, buttons, navigation) — unchanged');
+    if (isIndexingTask) {
+      lines.push('• Nothing on your website changes — this is an administrative action only');
+      lines.push('• No code, content, or design is modified');
+      lines.push('• Your visitors see no difference whatsoever');
+    } else if (isSchemaTask) {
+      lines.push('• Your page design and visual layout — identical');
+      lines.push('• Your existing content, images, and text — untouched');
+      lines.push('• What visitors see on the page — completely unchanged');
+      lines.push('• Only a hidden machine-readable block is added (invisible to humans, read by Google)');
+    } else if (isContentTask && task.task_type !== 'h2_section') {
+      lines.push('• Only the specific text element being changed is affected');
+      lines.push('• Your page design, layout, images, and all other content — untouched');
+      lines.push('• Your site will not go offline');
+    } else {
+      lines.push('• Your page design and visual layout — identical');
+      lines.push('• Your existing content, images, and branding — untouched');
+      lines.push('• Your site will not go offline or show any errors to visitors');
+      lines.push('• All existing functionality (forms, buttons, navigation) — unchanged');
+    }
     lines.push('');
 
     // SAFETY
