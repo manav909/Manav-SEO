@@ -152,7 +152,7 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
     setStep(1);
   };
 
-  /* Step 1 — validate project fields, create client if new, create project */
+  /* Step 1 — create client (if new) + project, then update profile access */
   const handleCreateProject = async () => {
     setErr('');
     if (!projectForm.name || !projectForm.url)
@@ -160,56 +160,68 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
 
     setSaving(true);
     try {
-      /* Create client if needed */
+      // 1. Create client if needed
       let clientId = selectedClientId;
       if (clientMode === 'new') {
         const { data: c, error: cErr } = await supabase.from('clients').insert({
-          name:             clientForm.name,
-          company:          clientForm.company || clientForm.name,
-          email:            clientForm.email,
-          website:          clientForm.website,
-          industry:         clientForm.industry,
-          retainer_amount:  parseFloat(clientForm.retainer_amount) || 0,
+          name:            clientForm.name,
+          company:         clientForm.company || clientForm.name,
+          email:           clientForm.email   || null,
+          website:         clientForm.website || null,
+          industry:        clientForm.industry || null,
+          retainer_amount: parseFloat(clientForm.retainer_amount) || 0,
         }).select('id').single();
-        if (cErr) throw new Error(cErr.message);
+        if (cErr) throw new Error('Could not create client: ' + cErr.message);
         clientId = (c as any).id;
       }
 
-      /* Create project */
-      const kws  = projectForm.keywords.split(',').map(k => k.trim()).filter(Boolean);
-      const comp = projectForm.competitors.split(',').map(c => c.trim()).filter(Boolean);
+      if (!clientId) throw new Error('No client selected or created.');
+
+      // 2. Create project
+      const url = projectForm.url.startsWith('http')
+        ? projectForm.url
+        : 'https://' + projectForm.url;
       const { data: p, error: pErr } = await supabase.from('projects').insert({
         client_id:   clientId,
         name:        projectForm.name,
-        url:         projectForm.url.startsWith('http') ? projectForm.url : `https://${projectForm.url}`,
-        keywords:    kws,
-        competitors: comp,
-        goals:       projectForm.goals,
+        url,
+        keywords:    projectForm.keywords.split(',').map(k => k.trim()).filter(Boolean),
+        competitors: projectForm.competitors.split(',').map(c => c.trim()).filter(Boolean),
+        goals:       projectForm.goals || null,
         status:      'active',
       }).select('id').single();
-      if (pErr) throw new Error(pErr.message);
+      if (pErr) throw new Error('Could not create project: ' + pErr.message);
+
       const newProjectId = (p as any).id;
-      const newClientId  = clientId;
       setCreatedProjectId(newProjectId);
 
-      // CRITICAL: Update profiles.client_ids so refreshData() can find this project
-      // Without this the project is created but invisible to the user after reload
-      const { data: prof } = await supabase
-        .from('profiles').select('id, client_ids, client_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
-      if (prof) {
-        const existingIds: string[] = Array.isArray((prof as any).client_ids) ? (prof as any).client_ids : [];
-        if (!existingIds.includes(newClientId)) {
-          await supabase.from('profiles').update({
-            client_ids: [...existingIds, newClientId],
-            client_id:  (prof as any).client_id || newClientId,
-          }).eq('id', (prof as any).id);
+      // 3. Update profiles.client_ids so this user can access the new client/project.
+      //    This is the critical step — without it refreshData() cannot find the project.
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('id, client_id, client_ids')
+          .eq('id', currentUser.id)
+          .single();
+        if (prof) {
+          const existing: string[] = Array.isArray((prof as any).client_ids)
+            ? (prof as any).client_ids
+            : (prof as any).client_id ? [(prof as any).client_id] : [];
+          if (!existing.includes(clientId)) {
+            await supabase.from('profiles').update({
+              client_ids: [...existing, clientId],
+              client_id:  existing[0] || clientId,
+            }).eq('id', currentUser.id);
+          }
         }
       }
 
+      // 4. Reload — refreshData resets the guard so this always runs
       await refreshData();
       setStep(2);
     } catch (e: any) {
-      setErr(e.message || 'Failed to create project');
+      setErr(e.message || 'Failed. Please try again.');
     }
     setSaving(false);
   };
@@ -292,12 +304,7 @@ export default function PMOnboardingWizard({ onComplete, onDismiss }: Props) {
   };
 
   const finishWizard = async () => {
-    // Small delay ensures the loadingRef guard in AuthContext has reset
-    // after the refreshData() call inside handleCreateProject
-    await new Promise(r => setTimeout(r, 400));
     await refreshData();
-    // Extra wait for React state to propagate
-    await new Promise(r => setTimeout(r, 200));
     if (createdProjectId) onComplete(createdProjectId);
     else if (onDismiss) onDismiss();
   };

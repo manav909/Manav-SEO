@@ -162,7 +162,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const refreshData = useCallback(async () => {
-    if (user) await loadUserData(user);
+    if (!user) return;
+    // Reset the loading guard so repeated calls work correctly
+    loadingRef.current = false;
+    await loadUserData(user);
   }, [user, loadUserData]);
 
   const signOut = useCallback(async () => {
