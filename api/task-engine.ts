@@ -5107,6 +5107,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
           const page = (pages as any[]).find(p => p.id === t.page_id);
           return page?.url || '';
         }).filter(Boolean).slice(0, 10);
+        const pageIds = [...new Set(clusterTasks.map(t => t.page_id).filter(Boolean))];
         return {
           task_type:    taskType,
           count:        clusterTasks.length,
@@ -5115,6 +5116,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
           is_template:  isTemplate,
           is_page_specific: pageSpecific.has(taskType),
           task_ids:     clusterTasks.map(t => t.id),
+          page_ids:     pageIds,
           page_urls:    pageUrls,
           label:        clusterTasks[0]?.title || taskType,
         };

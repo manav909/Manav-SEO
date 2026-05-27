@@ -943,7 +943,7 @@ function IssueClusters({ siteId }: { siteId: string }) {
     const r = await callApi('site_execute_template_fix', {
       siteId,
       taskType:  cluster.task_type,
-      pageIds:   cluster.task_ids,
+      pageIds:   cluster.page_ids || [],
       projectId: selectedSite?.project_id,
     }, 60000);
     setGenerating(null);
