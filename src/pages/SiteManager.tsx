@@ -1715,32 +1715,36 @@ function BulkBrief({ pages, site, siteId }: { pages: DevPage[]; site: DevSite | 
 // ─────────────────────────────────────────────────────────────
 // LINK OBJECTIVE SECTION — connects site workspace to a campaign objective
 // ─────────────────────────────────────────────────────────────
-function LinkObjectiveSection({ siteId, projectId, onUpdated }: { siteId: string; projectId: string; onUpdated: () => void }) {
-  const [objectives,  setObjectives]  = useState<any[]>([]);
-  const [linked,      setLinked]      = useState<any | null>(null);
-  const [loading,     setLoading]     = useState(true);
-  const [saving,      setSaving]      = useState(false);
-  const [showPicker,  setShowPicker]  = useState(false);
+function LinkObjectiveSection({ siteId, projectId: initialProjectId, onUpdated }: { siteId: string; projectId: string | null; onUpdated: () => void }) {
+  const [objectives,   setObjectives]   = useState<any[]>([]);
+  const [projects,     setProjects]     = useState<any[]>([]);
+  const [selProjectId, setSelProjectId] = useState<string>(initialProjectId || '');
+  const [linked,       setLinked]       = useState<any | null>(null);
+  const [loading,      setLoading]      = useState(false);
+  const [saving,       setSaving]       = useState(false);
+  const [showPicker,   setShowPicker]   = useState(false);
 
+  // Load projects on mount so user can pick one even without workspace project link
   useEffect(() => {
+    fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list_projects' }) })
+      .then(r => r.json()).then(d => setProjects(d.projects || [])).catch(() => {});
+  }, []);
+
+  // Load objectives when project is selected
+  useEffect(() => {
+    if (!selProjectId) { setObjectives([]); setLinked(null); return; }
     setLoading(true);
-    Promise.all([
-      // Load all objectives for this project
-      fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bs_seo_campaign_list', projectId }) }).then(r => r.json()),
-      // Check which objective is already linked to this site
-      fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bs_seo_campaign_list', projectId }) }).then(r => r.json()),
-    ]).then(([r]) => {
-      const all = r.campaigns || [];
-      // Objectives are campaigns with a campaign_type (non-null)
-      const objs = all.filter((c: any) => c.campaign_type && c.campaign_type !== 'keyword_ranking');
-      setObjectives(objs);
-      const alreadyLinked = objs.find((c: any) => c.site_id === siteId);
-      setLinked(alreadyLinked || null);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [siteId, projectId]);
+    fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bs_seo_campaign_list', projectId: selProjectId }) })
+      .then(r => r.json()).then(r => {
+        const all = r.campaigns || [];
+        const objs = all.filter((c: any) => c.campaign_type && c.campaign_type !== 'keyword_ranking');
+        setObjectives(objs);
+        setLinked(objs.find((c: any) => c.site_id === siteId) || null);
+        setLoading(false);
+      }).catch(() => setLoading(false));
+  }, [siteId, selProjectId]);
 
   const linkTo = async (campaignId: string) => {
     setSaving(true);
@@ -1774,8 +1778,6 @@ function LinkObjectiveSection({ siteId, projectId, onUpdated }: { siteId: string
     technical_recovery: '⚙️', content_authority: '✍️', eeat: '🎓', keyword_ranking: '🏆',
   };
 
-  if (loading) return null;
-
   return (
     <div className="rounded-2xl border border-border bg-card/40 p-5 space-y-3">
       <div className="flex items-start gap-3">
@@ -1787,6 +1789,22 @@ function LinkObjectiveSection({ siteId, projectId, onUpdated }: { siteId: string
           </p>
         </div>
       </div>
+
+      {/* Project selector — always shown so user doesn't need to link workspace first */}
+      {projects.length > 0 && (
+        <div>
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">Project</label>
+          <select value={selProjectId} onChange={e => setSelProjectId(e.target.value)}
+            className="w-full px-3 py-2 rounded-xl border border-border bg-background text-xs focus:outline-none focus:border-primary/50">
+            <option value="">Select a project…</option>
+            {projects.map((p: any) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {loading && <div className="text-xs text-muted-foreground">Loading objectives…</div>}
 
       {linked ? (
         <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 flex items-center gap-3">
@@ -1807,10 +1825,11 @@ function LinkObjectiveSection({ siteId, projectId, onUpdated }: { siteId: string
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => setShowPicker(true)} disabled={objectives.length === 0}
+        <button type="button" onClick={() => setShowPicker(true)}
+          disabled={objectives.length === 0 || !selProjectId}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-border text-xs text-muted-foreground hover:border-primary/40 hover:text-primary disabled:opacity-40 transition-all">
           <Plus className="w-3.5 h-3.5" />
-          {objectives.length === 0 ? 'No objectives yet — create one in SEO Campaigns' : 'Link to an objective'}
+          {!selProjectId ? 'Select a project above first' : objectives.length === 0 ? 'No objectives yet — create one in SEO Campaigns' : 'Link to an objective'}
         </button>
       )}
 
@@ -1961,14 +1980,7 @@ function SiteSettings({ site, siteId, onUpdated }: { site: DevSite; siteId: stri
 
       {/* PageSpeed uses platform-wide key — no per-site config needed */}
       {/* Link to Campaign Objective */}
-      {site.project_id && (
-        <LinkObjectiveSection siteId={siteId} projectId={site.project_id} onUpdated={onUpdated} />
-      )}
-      {!site.project_id && (
-        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-          Link this workspace to a project first to connect it to a Campaign Objective.
-        </div>
-      )}
+      <LinkObjectiveSection siteId={siteId} projectId={site.project_id} onUpdated={onUpdated} />
 
       <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
         Once GSC is connected and a property selected, baseline capture will include real organic traffic data per URL.
