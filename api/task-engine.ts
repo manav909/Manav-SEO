@@ -4678,63 +4678,63 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       const task = await getTask(taskId);
       if (!task) return ok(res, { error: 'task not found' });
 
-      // Pull project + client info
+      // Pull project + client info in parallel — not sequential
       let projectName = 'your website';
-      let clientName  = 'Hi';
-      let agencyName  = 'our team';
+      let clientName  = 'the client';
       let siteUrl     = task.target_url || 'your website';
 
       if (pid) {
         try {
           const { db: getDb } = await import('./lib/db.js');
           const D = getDb();
-          const { data: proj } = await D.from('projects')
-            .select('name, url').eq('id', pid).maybeSingle();
-          if (proj) {
-            projectName = (proj as any).name || projectName;
-            siteUrl     = (proj as any).url   || siteUrl;
+          const [projRes, clientRes] = await Promise.all([
+            D.from('projects').select('name, url').eq('id', pid).maybeSingle(),
+            D.from('clients').select('name, contact_name').eq('project_id', pid).maybeSingle(),
+          ]);
+          if (projRes.data) {
+            projectName = (projRes.data as any).name || projectName;
+            siteUrl     = (projRes.data as any).url   || siteUrl;
           }
-          const { data: client } = await D.from('clients')
-            .select('name, contact_name').eq('project_id', pid).maybeSingle();
-          if (client) {
-            clientName = (client as any).contact_name || (client as any).name || clientName;
+          if (clientRes.data) {
+            clientName = (clientRes.data as any).contact_name || (clientRes.data as any).name || clientName;
           }
         } catch { /* best effort */ }
       }
 
+      const nl = '\n';
       const systemPrompt = [
         'You are writing a professional approval request email from an SEO agency to their client.',
         'The client is non-technical. They need to approve a change to their live website.',
-        '',
+        nl,
         'Your email must:',
-        '- Open with a warm, professional greeting',
+        '- Open with a warm, professional greeting using the client name provided',
         '- Explain what we want to do in plain English (no technical jargon)',
-        '- Explain WHY — what problem it solves, what business benefit it creates',
-        '- List exactly what will change (be specific and honest)',
-        '- List what will NOT change (visual design, content, functionality — reassure them)',
-        '- Give assurance: we have backed up the current state, change is reversible',
-        '- End with a clear, easy approval ask — ideally just "Reply YES to approve"',
-        '',
-        'Tone: professional but human. Not salesy. Honest about what this does.',
-        'Length: 200-280 words. Scannable. Short paragraphs.',
-        '',
-        'Return JSON only:',
-        '{ "subject": "string", "body": "string", "summary": "one sentence TL;DR" }',
-      ].join('');
+        '- Explain WHY — what problem it solves and what business benefit it creates',
+        '- List exactly what will change on their site (specific and honest)',
+        '- List what will NOT change (visual design, content, page functionality)',
+        '- Give assurance: we have a backup and the change is fully reversible',
+        '- End with a clear approval ask: "Please reply YES to this email to approve"',
+        nl,
+        'Tone: professional but warm. Not salesy. Honest.',
+        'Length: 200-260 words. Short paragraphs. Easy to scan.',
+        nl,
+        'Return ONLY valid JSON — no markdown, no backticks, no extra text:',
+        '{"subject":"...","body":"...","summary":"one sentence TL;DR"}',
+      ].join(nl);
 
       const taskContext = [
         'Project: ' + projectName,
         'Site: ' + siteUrl,
-        'Client contact: ' + clientName,
-        'Task: ' + task.title,
-        'Severity: ' + task.severity,
-        'What was found: ' + (task.analysis || task.finding_title || ''),
+        'Client name: ' + clientName,
+        'Task title: ' + task.title,
+        'Severity: ' + (task.severity || 'warning'),
+        'What was found: ' + (task.analysis || task.finding_title || 'SEO issue identified').slice(0, 400),
         'CMS: ' + (task.cms_platform || 'website platform'),
-        'Snapshot saved: ' + (task.snapshot_id ? 'yes — we have a before-state backup' : 'no'),
-      ].join('');
+        'Backup taken: ' + (task.snapshot_id ? 'Yes — current state is backed up' : 'No'),
+      ].join(nl);
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 45000);
+      const timer = setTimeout(() => controller.abort(), 20000); // 20s — Haiku should respond in <8s
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {

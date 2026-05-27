@@ -915,6 +915,8 @@ function TaskDetail({
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [briefOpen,    setBriefOpen]    = useState(false);
   const [briefLoading, setBriefLoading] = useState(false);
+  const [briefElapsed, setBriefElapsed] = useState(0);
+  const briefTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const [brief,        setBrief]        = useState<{ subject: string; body: string; summary: string } | null>(null);
   const [briefCopied,  setBriefCopied]  = useState(false);
   // Client thread
@@ -941,10 +943,16 @@ function TaskDetail({
     setBriefLoading(true);
     setBriefOpen(true);
     setBrief(null);
+    setBriefElapsed(0);
+    if (briefTimerRef.current) clearInterval(briefTimerRef.current);
+    briefTimerRef.current = setInterval(() => setBriefElapsed(s => s + 1), 1000);
+
     const result = await callApi<{ subject: string; body: string; summary: string }>('dev_client_brief', {
       taskId: task.id,
       projectId,
     });
+
+    if (briefTimerRef.current) { clearInterval(briefTimerRef.current); briefTimerRef.current = null; }
     setBriefLoading(false);
     if (result.ok && (result as any).data?.body) {
       setBrief({
@@ -1274,9 +1282,27 @@ function TaskDetail({
           </div>
 
           {briefLoading ? (
-            <div className="p-8 text-center">
-              <div className="animate-pulse text-sm text-muted-foreground">Drafting client brief…</div>
-              <div className="text-xs text-muted-foreground/60 mt-1">Writing a professional explanation for your client</div>
+            <div className="p-6 flex flex-col items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                <div className="text-sm text-foreground font-medium">
+                  {briefElapsed < 3 ? 'Setting up…'
+                    : briefElapsed < 8 ? 'Writing email body…'
+                    : briefElapsed < 14 ? 'Refining tone and clarity…'
+                    : 'Almost done…'}
+                </div>
+                <div className="text-xs text-muted-foreground tabular-nums">{briefElapsed}s</div>
+              </div>
+              <div className="w-full bg-muted/30 rounded-full h-1 overflow-hidden">
+                <div
+                  className="h-full bg-primary/40 rounded-full transition-all duration-1000"
+                  style={{ width: Math.min(95, briefElapsed * 5) + '%' }}
+                />
+              </div>
+              <button type="button"
+                onClick={() => { if (briefTimerRef.current) clearInterval(briefTimerRef.current); setBriefLoading(false); setBriefOpen(false); }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >Cancel</button>
             </div>
           ) : brief ? (
             <div className="p-4 space-y-4">
