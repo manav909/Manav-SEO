@@ -561,6 +561,10 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [error, setError] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<SeoCampaignReport | null>(null);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
+  // Site workspace linking
+  const [sites,          setSites]          = useState<any[]>([]);
+  const [showSitePicker, setShowSitePicker] = useState(false);
+  const [linkingSite,    setLinkingSite]    = useState(false);
   /* Active pipeline dashboard for this drawer */
   const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number } | null>(null);
   /* Phase 15 — audit state */
@@ -613,6 +617,20 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   }, [campaignId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load site workspaces for linking
+  useEffect(() => {
+    if (!data?.campaign?.project_id) return;
+    apiCall('site_list', { projectId: data.campaign.project_id }).then(r => setSites(r.sites || []));
+  }, [data?.campaign?.project_id]);
+
+  const handleLinkSite = async (siteId: string | null) => {
+    setLinkingSite(true);
+    await apiCall('bs_campaign_objective_update', { campaignId, updates: { site_id: siteId } });
+    setLinkingSite(false);
+    setShowSitePicker(false);
+    load();
+  };
 
   /* Auto-open dashboard if campaign has a running pipeline with 0 steps completed.
      This handles runs created from PM Module (not SEASON chat) that need driving. */
@@ -1041,6 +1059,70 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                 </div>
                 <h2 style={{ fontSize: 22, fontWeight: 700, margin: '4px 0' }}>"{data.campaign.keyword}"</h2>
                 <div style={{ fontSize: 12, color: 'rgba(150,150,170,0.85)' }}>{data.campaign.goal}</div>
+
+                {/* Site workspace link */}
+                <div style={{ marginTop: 8 }}>
+                  {data.campaign.site_id ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        🌐 {sites.find(s => s.id === data.campaign.site_id)?.label || 'Site linked'}
+                      </span>
+                      <button type="button" onClick={() => setShowSitePicker(v => !v)}
+                        style={{ fontSize: 10, color: 'rgba(150,150,170,0.7)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                        change
+                      </button>
+                      <button type="button" onClick={() => handleLinkSite(null)}
+                        style={{ fontSize: 10, color: 'rgba(150,150,170,0.7)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                        unlink
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setShowSitePicker(v => !v)}
+                      style={{
+                        fontSize: 11, color: 'hsl(var(--primary))', display: 'flex', alignItems: 'center', gap: 5,
+                        background: 'hsl(var(--primary)/0.08)', border: '1px solid hsl(var(--primary)/0.25)',
+                        borderRadius: 6, padding: '3px 10px', cursor: 'pointer',
+                      }}>
+                      🌐 Link site workspace
+                    </button>
+                  )}
+
+                  {showSitePicker && (
+                    <div style={{
+                      marginTop: 8, padding: 12, borderRadius: 10,
+                      background: 'hsl(var(--background)/0.9)', border: '1px solid hsl(var(--border))',
+                    }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(150,150,170,0.7)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        Select site workspace
+                      </div>
+                      {sites.length === 0 ? (
+                        <div style={{ fontSize: 11, color: 'rgba(150,150,170,0.7)' }}>
+                          No site workspaces yet. Create one in Site Manager first.
+                        </div>
+                      ) : sites.map((s: any) => (
+                        <button key={s.id} type="button" onClick={() => handleLinkSite(s.id)} disabled={linkingSite}
+                          style={{
+                            width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '8px 10px', borderRadius: 8, marginBottom: 4, cursor: 'pointer',
+                            border: data.campaign.site_id === s.id ? '1px solid hsl(var(--primary)/0.5)' : '1px solid hsl(var(--border))',
+                            background: data.campaign.site_id === s.id ? 'hsl(var(--primary)/0.08)' : 'transparent',
+                            textAlign: 'left',
+                          }}>
+                          <span style={{ fontSize: 16 }}>🌐</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600 }}>{s.label}</div>
+                            {s.domain && <div style={{ fontSize: 10, color: 'rgba(150,150,170,0.7)' }}>{s.domain}</div>}
+                          </div>
+                          {data.campaign.site_id === s.id && <span style={{ fontSize: 10, color: 'hsl(var(--primary))' }}>✓</span>}
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => setShowSitePicker(false)}
+                        style={{ fontSize: 11, color: 'rgba(150,150,170,0.7)', background: 'none', border: 'none', cursor: 'pointer', marginTop: 4 }}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               <button onClick={onClose} style={{
                 width: 30, height: 30, borderRadius: 15,
