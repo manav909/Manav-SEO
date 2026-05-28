@@ -2227,6 +2227,10 @@ function ObjectivesView({
 
   const typeInfo = (type: string) => OBJECTIVE_TYPES.find(t => t.type === type);
 
+  const objectivePipelines = pipelineRuns.filter((r: any) =>
+    ['traffic_growth','content_authority','local_visibility','domain_authority','technical_recovery','eeat'].includes(r.pipeline_type)
+  );
+
   const STATUS_COLOR: Record<string, string> = {
     running: '#f59e0b', completed: '#34d399', failed: '#f87171', pending: '#94a3b8',
   };
