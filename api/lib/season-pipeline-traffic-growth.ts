@@ -26,6 +26,20 @@ import { db } from "./db.js";
 import { cacheKnowledge, getKnowledge } from "./season-knowledge-cache.js";
 import type { PipelineDefinition, PipelineStepContext, PipelineStepResult } from "./season-pipeline-runner.js";
 
+/* DB query timeout wrapper — Supabase queries hang silently on connection issues.
+   Race every query against a 12-second timeout. */
+async function withTimeout<T>(promise: Promise<T>, label = 'query', ms = 12000): Promise<T | null> {
+  const timeout = new Promise<null>((_, reject) =>
+    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+  );
+  try {
+    return await Promise.race([promise, timeout]) as T;
+  } catch (e: any) {
+    console.warn(`[traffic-pipeline] ${e.message}`);
+    return null;
+  }
+}
+
 const MODEL             = "claude-sonnet-4-6";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
@@ -74,13 +88,13 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
 
   // 2. seo_campaigns.target_urls — objective already has pages defined
   try {
-    const { data: campaigns } = await db()
-      .from("seo_campaigns")
-      .select("target_urls")
-      .eq("project_id", ctx.projectId)
-      .eq("campaign_type", "traffic_growth")
-      .eq("status", "active")
-      .not("target_urls", "is", null);
+    const campaignsResult = await withTimeout(
+      db().from("seo_campaigns").select("target_urls")
+        .eq("project_id", ctx.projectId).eq("campaign_type", "traffic_growth")
+        .eq("status", "active").not("target_urls", "is", null),
+      "seo_campaigns query"
+    );
+    const campaigns = campaignsResult ? (campaignsResult as any) : { data: [] };
     for (const c of (campaigns || []) as any[]) {
       if (Array.isArray(c.target_urls)) c.target_urls.forEach(add);
     }
@@ -91,13 +105,13 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
 
   // 3. dev_pages — workspace pages linked to this project
   try {
-    const { data: pages } = await db()
-      .from("dev_pages")
-      .select("url")
-      .eq("project_id", ctx.projectId)
-      .order("priority", { ascending: false })
-      .limit(50);
-    for (const p of (pages || []) as any[]) add(p.url);
+    const pagesResult = await withTimeout(
+      db().from("dev_pages").select("url")
+        .eq("project_id", ctx.projectId)
+        .order("priority", { ascending: false }).limit(50),
+      "dev_pages query"
+    );
+    for (const p of ((pagesResult as any)?.data || []) as any[]) add(p.url);
     if (seen.size > 0) {
       return { urls: [...seen].slice(0, 50), source: 'site workspace pages' };
     }
@@ -105,14 +119,13 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
 
   // 4. GSC top pages cache — last resort
   try {
-    const { data } = await db()
-      .from("project_knowledge")
-      .select("field_value")
-      .eq("project_id", ctx.projectId)
-      .eq("field_key", "gsc_top_pages")
-      .maybeSingle();
-    if (data) {
-      const gscPages = JSON.parse((data as any).field_value || "[]");
+    const gscResult = await withTimeout(
+      db().from("project_knowledge").select("field_value")
+        .eq("project_id", ctx.projectId).eq("field_key", "gsc_top_pages").maybeSingle(),
+      "gsc_top_pages query"
+    );
+    if ((gscResult as any)?.data) {
+      const gscPages = JSON.parse(((gscResult as any).data as any).field_value || "[]");
       gscPages.forEach((p: any) => add(p.page || p.url || p.dimension || ""));
     }
   } catch { /* no cache */ }
