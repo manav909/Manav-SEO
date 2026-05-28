@@ -127,25 +127,64 @@ function extractPageFacts(html: string, url: string): {
   };
 }
 
-/* ─── PSI call (single URL, mobile strategy) ───────────────────── */
-async function runPsi(url: string): Promise<{
-  lcp: number | null; tbt: number | null; cls: number | null; score: number | null;
+/* ─── CrUX field data (REAL Chrome-user measurements) ─────────────
+   The CrUX API returns real-user Core Web Vitals from actual visitors.
+   This is what Google uses for ranking — and it returns in 2-5s, unlike
+   the Lighthouse lab test which takes 30-60s and frequently times out.
+   Returns null fields when the page has insufficient real-user traffic. */
+async function runCrux(url: string): Promise<{
+  lcp_ms: number | null;       // 75th percentile LCP from real users
+  cls: number | null;          // 75th percentile CLS
+  inp_ms: number | null;       // 75th percentile INP (replaced FID)
+  lcp_rating: string | null;   // 'good' | 'needs improvement' | 'poor'
+  has_field_data: boolean;
+  source: 'crux_url' | 'crux_origin' | 'none';
 }> {
-  const key = PSI_KEY;
-  if (!key) return { lcp: null, tbt: null, cls: null, score: null };
+  const key = PSI_KEY; // CrUX uses the same Google API key
+  const empty = { lcp_ms: null, cls: null, inp_ms: null, lcp_rating: null, has_field_data: false, source: 'none' as const };
+  if (!key) return empty;
+
+  const rate = (ms: number, good: number, poor: number) =>
+    ms <= good ? 'good' : ms <= poor ? 'needs improvement' : 'poor';
+
   try {
-    const endpoint = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&key=${key}&fields=lighthouseResult.categories.performance.score,lighthouseResult.audits.largest-contentful-paint.numericValue,lighthouseResult.audits.total-blocking-time.numericValue,lighthouseResult.audits.cumulative-layout-shift.numericValue`;
-    const r = await withTimeout(fetch(endpoint).then(r => r.json()), `PSI(${url})`, 20000);
-    if (!r) return { lcp: null, tbt: null, cls: null, score: null };
-    const lr = (r as any)?.lighthouseResult;
+    const r = await withTimeout(
+      fetch(`https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${key}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, formFactor: 'PHONE' }),
+      }).then(r => r.json()),
+      `CrUX(${url})`, 12000
+    );
+    let metrics = (r as any)?.record?.metrics;
+    let source: 'crux_url' | 'crux_origin' | 'none' = metrics ? 'crux_url' : 'none';
+
+    // Fall back to origin-level field data if this exact URL has no record
+    if (!metrics) {
+      const origin = (url.match(/^https?:\/\/[^/]+/) || [""])[0];
+      const ro = await withTimeout(
+        fetch(`https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${key}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ origin, formFactor: 'PHONE' }),
+        }).then(r => r.json()),
+        `CrUX-origin(${origin})`, 12000
+      );
+      metrics = (ro as any)?.record?.metrics;
+      source = metrics ? 'crux_origin' : 'none';
+    }
+
+    if (!metrics) return empty;
+    const lcp = metrics.largest_contentful_paint?.percentiles?.p75 ?? null;
+    const cls = metrics.cumulative_layout_shift?.percentiles?.p75 ?? null;
+    const inp = metrics.interaction_to_next_paint?.percentiles?.p75 ?? null;
     return {
-      lcp:   lr?.audits?.["largest-contentful-paint"]?.numericValue ?? null,
-      tbt:   lr?.audits?.["total-blocking-time"]?.numericValue ?? null,
-      cls:   lr?.audits?.["cumulative-layout-shift"]?.numericValue ?? null,
-      score: lr?.categories?.performance?.score != null
-        ? Math.round(lr.categories.performance.score * 100) : null,
+      lcp_ms: lcp != null ? Number(lcp) : null,
+      cls:    cls != null ? Number(cls) : null,
+      inp_ms: inp != null ? Number(inp) : null,
+      lcp_rating: lcp != null ? rate(Number(lcp), 2500, 4000) : null,
+      has_field_data: true,
+      source,
     };
-  } catch { return { lcp: null, tbt: null, cls: null, score: null }; }
+  } catch { return empty; }
 }
 
 /* ─── Resolve target pages — checks 4 sources in priority order ── */
@@ -451,76 +490,97 @@ Write:
 ════════════════════════════════════════════════════════════════ */
 const stepTechnicalPerformance = {
   id: "content_gap",
-  label: "Technical performance audit (PSI)",
-  description: "Live PageSpeed Insights per page — LCP, TBT, performance score",
+  label: "Core Web Vitals (field data)",
+  description: "Real Chrome-user CWV via CrUX — LCP, CLS, INP at 75th percentile",
   artifact_kind: "content_gap",
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const { urls: targetUrls } = await resolveTargetPages(ctx);
-    // PSI is slow (20-40s per page). Test only 3 pages, in PARALLEL, with a
-    // hard 50s ceiling on the whole batch so the step can't hit Vercel's timeout.
-    const toTest = targetUrls.slice(0, 3);
+    // CrUX field data returns in 2-5s. Test up to 8 pages in parallel, 30s ceiling.
+    const toTest = targetUrls.slice(0, 8);
 
-    const psiResults: Array<{ url: string; lcp: number | null; tbt: number | null; cls: number | null; score: number | null }> =
+    const results: Array<{ url: string } & Awaited<ReturnType<typeof runCrux>>> =
       await Promise.race([
-        Promise.all(toTest.map(async url => ({ url, ...(await runPsi(url)) }))),
+        Promise.all(toTest.map(async url => ({ url, ...(await runCrux(url)) }))),
         new Promise<any[]>((resolve) =>
-          setTimeout(() => resolve(toTest.map(url => ({ url, lcp: null, tbt: null, cls: null, score: null }))), 50000)
+          setTimeout(() => resolve(toTest.map(url => ({ url, lcp_ms: null, cls: null, inp_ms: null, lcp_rating: null, has_field_data: false, source: "none" }))), 30000)
         ),
       ]);
 
-    const failed = psiResults.filter(p => p.score === null);
-    const scored = psiResults.filter(p => p.score !== null);
+    const withData = results.filter(r => r.has_field_data);
+    const noData   = results.filter(r => !r.has_field_data);
+    const poorLcp  = withData.filter(r => r.lcp_rating === "poor");
 
-    const lcpRating = (ms: number | null) =>
-      ms === null ? "N/A" : ms < 2500 ? "✅ Good" : ms < 4000 ? "⚠️ Needs work" : "🔴 Poor";
+    // ── No real-user data path — state the raw fact, NO synthesis ──
+    if (withData.length === 0) {
+      const body = [
+        "# Core Web Vitals — Field Data",
+        "",
+        "**Result: No real-user field data available for these pages.**",
+        "",
+        "CrUX (Chrome User Experience Report) only publishes data for pages/origins that receive sufficient real Chrome traffic. These pages have not yet crossed that threshold — which is itself a factual signal: they are low-traffic, which is consistent with a traffic growth objective.",
+        "",
+        "**What this means (fact, not speculation):**",
+        "- No 75th-percentile LCP, CLS, or INP exists because too few real users have loaded these pages.",
+        "- Google still has no Page Experience field signal for these URLs.",
+        "",
+        "**To get lab data instead (real, on-demand):**",
+        "Run a Lighthouse audit per page from Site Manager → Baseline. That captures lab CWV (synthetic, but real measurement) which this pipeline reads on the next run. Lab testing is too slow to run inline here (30-60s per page), so it is intentionally deferred to the baseline capture step.",
+        "",
+        "---",
+        `**Pages checked:** ${results.length} | **With CrUX field data:** 0 | **CrUX requires real Chrome traffic these pages don't yet have**`,
+      ].join("\n");
 
-    const tableRows = psiResults.map(p => {
-      const slug  = p.url.replace(/^https?:\/\/[^/]+/, "") || "/";
-      const lcp   = p.lcp   ? `${(p.lcp/1000).toFixed(2)}s` : "—";
-      const tbt   = p.tbt   ? `${Math.round(p.tbt)}ms` : "—";
-      const cls   = p.cls   !== null ? p.cls.toFixed(3) : "—";
-      const score = p.score !== null ? `${p.score}/100` : "N/A";
-      const rating = lcpRating(p.lcp);
-      return `| ${slug} | ${score} | ${lcp} ${rating} | ${tbt} | ${cls} |`;
+      return {
+        ok: true,
+        output: { cruxResults: results, withData: 0 },
+        artifact: { kind: "content_gap", title: "Core Web Vitals (Field Data)", body },
+        honest_note: `${results.length} pages checked. 0 have CrUX field data — they lack the real-user traffic CrUX requires. Use Site Manager baseline for lab CWV instead.`,
+      };
+    }
+
+    // ── Real data path — analyse only what exists ──
+    const tableRows = withData.map(r => {
+      const slug = r.url.replace(/^https?:\/\/[^/]+/, "") || "/";
+      const lcp  = r.lcp_ms != null ? `${(r.lcp_ms/1000).toFixed(2)}s` : "—";
+      const cls  = r.cls != null ? r.cls.toFixed(3) : "—";
+      const inp  = r.inp_ms != null ? `${Math.round(r.inp_ms)}ms` : "—";
+      const rating = r.lcp_rating === "good" ? "✅ Good" : r.lcp_rating === "needs improvement" ? "⚠️ Needs work" : "🔴 Poor";
+      return `| ${slug} | ${lcp} ${rating} | ${cls} | ${inp} | ${r.source === "crux_origin" ? "origin avg" : "page-level"} |`;
     }).join("\n");
 
     const analysis = await llm(
-      `You are a Senior SEO Technical Specialist interpreting PageSpeed Insights data.
-Be specific — cite real scores and milliseconds. Explain impact on rankings and UX.
-Prioritise by severity. 500-600 words in clean markdown.`,
-      `Technical Performance Audit — Live PSI results for ${psiResults.length} pages.
+      `You are a Senior SEO Technical Specialist interpreting REAL Chrome-user Core Web Vitals (CrUX field data).
+Rules: cite ONLY the numbers given. Never speculate about causes you cannot see in the data.
+If a metric is missing, say it is missing — do not guess what it might be.
+400-500 words, clean markdown.`,
+      `Core Web Vitals field-data audit. These are REAL 75th-percentile measurements from actual Chrome users — the exact data Google uses for Page Experience ranking.
 
-PSI RESULTS TABLE (mobile):
-| URL | Perf Score | LCP | TBT | CLS |
+FIELD DATA (mobile, 75th percentile):
+| URL | LCP | CLS | INP | Data scope |
 |---|---|---|---|---|
 ${tableRows}
 
-${failed.length > 0 ? `Pages where PSI could not load (${failed.length}): ${failed.map(p => p.url.replace(/^https?:\/\/[^/]+/,"")||"/").join(", ")}` : "All pages loaded successfully."}
+${noData.length > 0 ? `Pages with no field data yet (insufficient real-user traffic): ${noData.length} — ${noData.slice(0,5).map(r => r.url.replace(/^https?:\/\/[^/]+/,"")||"/").join(", ")}` : "All tested pages have field data."}
 
-Average performance score: ${scored.length > 0 ? Math.round(scored.reduce((s,p) => s + (p.score||0), 0) / scored.length) : "N/A"}/100
-Pages with poor LCP (>4s): ${psiResults.filter(p => p.lcp && p.lcp > 4000).length}
-Pages with high TBT (>600ms): ${psiResults.filter(p => p.tbt && p.tbt > 600).length}
+Pages with POOR LCP (>4s at p75): ${poorLcp.length}
 
 Write:
-1. Overall performance health verdict
-2. Page-by-page breakdown — what each score means for that specific page
-3. LCP analysis — what is likely causing slow LCP on the worst pages?
-4. Prioritised fix list — which pages to fix first and what to fix
-5. Expected ranking impact of fixing these issues`
+1. Verdict on these pages' real-user experience — cite the actual LCP/CLS/INP numbers
+2. Which specific pages fail Google's thresholds (LCP>2.5s, CLS>0.1, INP>200ms) and by how much
+3. Prioritised list: which pages to fix first based on the real numbers
+4. For pages without field data: state plainly they need more traffic before field signals exist — do not speculate on their performance`
     );
 
     return {
       ok: true,
-      output: { psiResults, avgScore: scored.length > 0 ? Math.round(scored.reduce((s,p) => s + (p.score||0), 0) / scored.length) : null },
+      output: { cruxResults: results, withData: withData.length, poorLcp: poorLcp.length },
       artifact: {
         kind: "content_gap",
-        title: "Technical Performance (PSI)",
-        body: `# Technical Performance Audit\n\n${analysis}\n\n---\n**Pages tested:** ${psiResults.length} | **PSI key available:** ${PSI_KEY ? "Yes" : "No — add PAGESPEED_API_KEY to Vercel env"} | **Poor LCP:** ${psiResults.filter(p => p.lcp && p.lcp > 4000).length} pages`,
+        title: "Core Web Vitals (Field Data)",
+        body: `# Core Web Vitals — Field Data\n\n${analysis}\n\n---\n**Pages with field data:** ${withData.length} of ${results.length} | **Poor LCP (>4s p75):** ${poorLcp.length} | **Source:** CrUX real-user measurements`,
       },
-      honest_note: PSI_KEY
-        ? `${psiResults.length} pages tested via PSI. ${psiResults.filter(p => p.lcp && p.lcp > 4000).length} with poor LCP. Avg score: ${scored.length > 0 ? Math.round(scored.reduce((s,p) => s + (p.score||0), 0) / scored.length) : "N/A"}/100.`
-        : `No PSI API key in environment. Add PAGESPEED_API_KEY to Vercel env vars to enable live performance testing.`,
+      honest_note: `${withData.length} of ${results.length} pages have real CrUX field data. ${poorLcp.length} fail LCP. ${noData.length} lack enough traffic for field data.`,
     };
   },
 };
@@ -630,7 +690,8 @@ const stepActionPlan = {
 
     const invisibleCount = (gscData.invisiblePages || []).length;
     const issueCount     = onPage.issueCount || 0;
-    const avgScore       = techData.avgScore || null;
+    const cwvWithData    = techData.withData || 0;
+    const cwvPoorLcp     = techData.poorLcp || 0;
     const unlinkedCount  = (linkData.unlinkedTargets || []).length;
     const quickWins      = gscData.quickWins || [];
 
@@ -660,7 +721,7 @@ AUDIT FINDINGS SUMMARY:
 • Quick wins: ${quickWins.length} pages at positions 4-20 that could move to page 1
   ${quickWins.slice(0,5).map((p: any) => `  - ${(p.page||p.url||"").replace(/^https?:\/\/[^/]+/,"")||"/"}: pos ${(p.position||0).toFixed(1)}, ${p.impressions||0} impressions`).join("\n")}
 • On-page issues: ${issueCount} issues found (missing titles, H1s, thin content, noindex)
-• Performance: avg score ${avgScore !== null ? avgScore+"/100" : "not tested — no PSI key"} — ${(techData.psiResults||[]).filter((p:any) => p.lcp && p.lcp > 4000).length} pages with poor LCP
+• Core Web Vitals: ${cwvWithData} pages have real CrUX field data, ${cwvPoorLcp} fail LCP (>4s at 75th percentile). Pages without field data lack sufficient real-user traffic.
 • Internal links: ${unlinkedCount} target pages receive no internal links from high-traffic pages
 ${ga4Valid.length > 0 ? `• GA4 engagement (live, last 28 days):
 ${ga4Valid.map(g => `  - ${g.pagePath}: ${g.sessions} sessions, ${g.engagement_rate_pct}% engaged, ${g.bounce_rate_pct}% bounce, ${g.conversions} conversions`).join("\n")}` : "• GA4 engagement: no session data yet for target pages (expected for low-traffic pages)"}
@@ -727,7 +788,7 @@ Target pages: ${targetUrls.length} pages
 Pages invisible to Google: ${(gscData.invisiblePages||[]).length}
 Quick-win opportunities: ${(gscData.quickWins||[]).length} pages at positions 4-20
 On-page issues found: ${onPage.issueCount || 0}
-Average performance score: ${techData.avgScore !== null && techData.avgScore !== undefined ? techData.avgScore+"/100" : "not tested"}
+Core Web Vitals: ${techData.withData || 0} pages with real field data, ${techData.poorLcp || 0} failing LCP
 
 Action plan summary (first 500 chars):
 ${plan.slice(0, 500)}
