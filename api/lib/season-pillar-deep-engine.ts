@@ -568,15 +568,22 @@ Produce the complete JSON report now.`;
     }
     if (error) return { success: false, error: `report insert failed: ${error.message}` };
 
-    // Update the panel summary
+    // Update the panel summary — isolated in its own try/catch so a panel-update
+    // failure (e.g. a CHECK constraint on current_status) can NEVER fail the
+    // report write that already succeeded above. Use 'covered' — the same value
+    // season-traffic-pillars uses for a fully-analysed pillar.
     if ((panel as any)?.id) {
-      await db().from("seo_campaign_panels").update({
-        current_summary: parsed.headline?.slice(0, 500) || null,
-        current_status:  "analysed",
-        current_findings: parsed.insights || null,
-        last_assessed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq("id", (panel as any).id);
+      try {
+        await db().from("seo_campaign_panels").update({
+          current_summary: parsed.headline ? String(parsed.headline).slice(0, 500) : null,
+          current_status:  "covered",
+          current_findings: parsed.insights || null,
+          last_assessed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("id", (panel as any).id);
+      } catch (e: any) {
+        console.warn(`[pillar-deep] panel summary update failed (non-fatal): ${e?.message}`);
+      }
     }
 
     return { success: true, report_id: (inserted as any).id, pillar_create_error: pillarCreateError || undefined };
