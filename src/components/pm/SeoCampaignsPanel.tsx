@@ -79,20 +79,24 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
   const [showNewObjective, setShowNewObjective] = useState(false);
   /* Active pipeline run being driven/watched in dashboard overlay */
   const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number } | null>(null);
+  const [pipelineRuns, setPipelineRuns]   = useState<any[]>([]);
 
   const refresh = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
     setError(null);
     try {
-      const [c, o] = await Promise.all([
+      const [c, o, pr] = await Promise.all([
         seoCampaignList({ projectId, statusFilter: statusFilter === 'all' ? undefined : statusFilter }),
         seoOpportunityList({ projectId, status: 'open', limit: 50 }),
+        fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'bs_season_pipeline_list', projectId, limit: 10 }) }).then(r => r.json()),
       ]);
       if (c.error)   { setError(c.error); }
       else           { setCampaigns(c.campaigns || []); }
       setOpportunities(o.opportunities || []);
       setOppCounts(o.counts || {});
+      setPipelineRuns(pr.runs || []);
     } catch (e: any) {
       setError(e?.message || 'load failed');
     }
@@ -250,7 +254,9 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
         <ObjectivesView
           projectId={projectId}
           campaigns={campaigns}
+          pipelineRuns={pipelineRuns}
           onRefresh={refresh}
+          onWatchPipeline={(runId, label, stepCount) => setActiveDashRun({ runId, label, stepCount })}
         />
       )}
 
@@ -2168,11 +2174,13 @@ async function apiCall(action: string, payload: Record<string, unknown>) {
 }
 
 function ObjectivesView({
-  projectId, campaigns, onRefresh,
+  projectId, campaigns, pipelineRuns = [], onRefresh, onWatchPipeline,
 }: {
   projectId: string;
   campaigns: SeoCampaign[];
+  pipelineRuns?: any[];
   onRefresh: () => void;
+  onWatchPipeline?: (runId: string, label: string, stepCount: number) => void;
 }) {
   const [showNew,      setShowNew]      = React.useState(false);
   const [sites,        setSites]        = React.useState<any[]>([]);
@@ -2219,8 +2227,54 @@ function ObjectivesView({
 
   const typeInfo = (type: string) => OBJECTIVE_TYPES.find(t => t.type === type);
 
+  const STATUS_COLOR: Record<string, string> = {
+    running: '#f59e0b', completed: '#34d399', failed: '#f87171', pending: '#94a3b8',
+  };
+  const TYPE_ICON2: Record<string, string> = {
+    traffic_growth: '📈', technical_recovery: '⚙️', domain_authority: '🔗',
+    local_visibility: '📍', eeat: '🎓', content_authority: '✍️',
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Active pipeline runs for objective-type pipelines */}
+      {objectivePipelines.length > 0 && (
+        <div style={{ borderRadius: 16, border: '1px solid hsl(var(--border))', overflow: 'hidden' }}>
+          <div style={{ padding: '10px 16px', borderBottom: '1px solid hsl(var(--border))', fontSize: 10, fontWeight: 700, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Active pipelines
+          </div>
+          {objectivePipelines.slice(0, 5).map((run: any) => (
+            <div key={run.id} style={{ padding: '12px 16px', borderBottom: '1px solid hsl(var(--border)/0.4)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 18 }}>{TYPE_ICON2[run.pipeline_type] || '🔄'}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{run.input_text?.slice(0, 50) || run.pipeline_type}</span>
+                  <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: STATUS_COLOR[run.status] + '22', color: STATUS_COLOR[run.status], fontWeight: 700, flexShrink: 0 }}>
+                    {run.status}
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))', marginTop: 3 }}>
+                  {run.steps_completed || 0}/{run.step_count || 6} steps complete
+                  {run.finished_at && <span> · {new Date(run.finished_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                </div>
+                {run.status === 'running' && (
+                  <div style={{ marginTop: 5, height: 3, borderRadius: 3, background: 'hsl(var(--muted)/0.4)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: '#f59e0b', borderRadius: 3, transition: 'width 0.5s',
+                      width: ((run.steps_completed || 0) / (run.step_count || 6) * 100) + '%' }} />
+                  </div>
+                )}
+              </div>
+              <button type="button"
+                onClick={() => onWatchPipeline?.(run.id, run.input_text || run.pipeline_type, run.step_count || 6)}
+                style={{ fontSize: 10, padding: '4px 10px', borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'transparent', color: 'hsl(var(--muted-foreground))', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {run.status === 'running' ? '▶ Watch live' : '📄 View results'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <p style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
