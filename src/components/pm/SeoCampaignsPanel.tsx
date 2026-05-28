@@ -1307,12 +1307,34 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
               <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>
                 {(data.campaign.campaign_type && data.campaign.campaign_type !== 'keyword_ranking') ? 'Pillar deep analysis' : 'Documents &amp; reports'} ({(data.recent_reports || []).length})
               </h3>
+              {/* Role filter — show only insights tagged for the selected stakeholder */}
+              {(data.recent_reports || []).length > 0 && (data.campaign.campaign_type && data.campaign.campaign_type !== 'keyword_ranking') && (
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {[
+                    { id: 'all', label: 'All' },
+                    { id: 'client', label: 'Client' },
+                    { id: 'dms', label: 'Specialist' },
+                    { id: 'writer', label: 'Writer' },
+                    { id: 'brand', label: 'Brand' },
+                    { id: 'pm', label: 'PM' },
+                    { id: 'dev', label: 'Dev' },
+                  ].map(rf => (
+                    <button key={rf.id} onClick={() => setRoleFilter(rf.id)} style={{
+                      padding: '3px 10px', borderRadius: 6, fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
+                      border: '1px solid',
+                      borderColor: roleFilter === rf.id ? 'hsl(186 80% 55%)' : 'rgba(160,160,180,0.2)',
+                      background: roleFilter === rf.id ? 'hsla(186 80% 55% / 0.12)' : 'transparent',
+                      color: roleFilter === rf.id ? 'hsl(186 80% 65%)' : 'rgba(150,150,170,0.85)',
+                    }}>{rf.label}</button>
+                  ))}
+                </div>
+              )}
               {(data.recent_reports || []).length === 0 ? (
                 <div style={{ fontSize: 11.5, color: 'rgba(120,120,140,0.6)' }}>No deep analysis yet — click <strong>Generate deep analysis</strong> above.</div>
               ) : (
                 <>
                   {/* Latest report — expanded with full content */}
-                  <ExpandedReport report={data.recent_reports[0]} isFirst={true} />
+                  <ExpandedReport report={data.recent_reports[0]} isFirst={true} roleFilter={roleFilter} />
 
                   {/* Older reports — collapsed rows, click to swap into expanded view via modal */}
                   {data.recent_reports.length > 1 && (
@@ -1572,7 +1594,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
 
             {/* Report viewer modal */}
             {selectedReport && (
-              <ReportViewer report={selectedReport} onClose={() => setSelectedReport(null)} />
+              <ReportViewer report={selectedReport} onClose={() => setSelectedReport(null)} roleFilter={roleFilter} />
             )}
 
             {/* Phase 15 — Set target URL modal */}
@@ -1867,9 +1889,10 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
 }
 
 /* ─── Report viewer (modal for older reports) ────────────── */
-function ReportViewer({ report, onClose }: { report: SeoCampaignReport; onClose: () => void }) {
+function ReportViewer({ report, onClose, roleFilter = 'all' }: { report: SeoCampaignReport; onClose: () => void; roleFilter?: string }) {
   const [copied, setCopied] = useState(false);
-  const body = report.body_md || report.summary || '(no content)';
+  const rawBody = report.body_md || report.summary || '(no content)';
+  const body = filterReportByRole(rawBody, roleFilter);
 
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(body); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
@@ -1949,7 +1972,47 @@ function iconActionStyle(): React.CSSProperties {
 }
 
 /* ─── Expanded report (used for the latest, rendered inline in drawer) ─── */
-function ExpandedReport({ report, isFirst }: { report: SeoCampaignReport; isFirst?: boolean }) {
+/* Filter a deep-analysis report's markdown to show only insight blocks tagged
+   for the selected role. Role tags appear in insight headers as [CLIENT],
+   [SPECIALIST], [WRITER], [BRAND], [PM], [DEV]. 'all' returns the full report.
+   Non-insight sections (headline, state of play, open questions, 90-day plan)
+   always remain — only the per-insight ### blocks under "## Insights" are filtered. */
+const ROLE_TAG_MAP: Record<string, string> = {
+  client: 'CLIENT', dms: 'SPECIALIST', writer: 'WRITER', brand: 'BRAND', pm: 'PM', dev: 'DEV',
+};
+function filterReportByRole(md: string, role: string): string {
+  if (!md || role === 'all') return md;
+  const wantTag = ROLE_TAG_MAP[role];
+  if (!wantTag) return md;
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let inInsightBlock = false;
+  let keepBlock = true;
+  for (const line of lines) {
+    // An insight block starts at a ### header carrying role tags
+    if (line.startsWith('### ')) {
+      inInsightBlock = true;
+      keepBlock = line.includes(`[${wantTag}]`);
+      if (keepBlock) out.push(line);
+      continue;
+    }
+    // A new ## section ends insight filtering (back to always-keep)
+    if (line.startsWith('## ')) {
+      inInsightBlock = false;
+      keepBlock = true;
+      out.push(line);
+      continue;
+    }
+    if (inInsightBlock) {
+      if (keepBlock) out.push(line);
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join('\n');
+}
+
+function ExpandedReport({ report, isFirst, roleFilter = 'all' }: { report: SeoCampaignReport; isFirst?: boolean; roleFilter?: string }) {
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const body = report.body_md || report.summary || '(no content)';
