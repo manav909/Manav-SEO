@@ -1261,9 +1261,15 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
               display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10,
               marginBottom: 20,
             }}>
-              {(data.panels || []).map((p: SeoCampaignPanel) => (
+              {(data.panels || []).map((p: SeoCampaignPanel) => {
+                const pillarReport = (data.recent_reports || []).find(
+                  (r: SeoCampaignReport) => r.pillar === p.pillar && r.report_kind === 'deep_analysis'
+                );
+                return (
                 <PanelCard
                   key={p.id} panel={p}
+                  deepReport={pillarReport || null}
+                  onOpenReport={pillarReport ? () => setSelectedReport(pillarReport) : undefined}
                   onRunAudit={handleRunAudit}
                   onSetTargetUrl={handleSetTargetUrl}
                   onRunClusterMap={handleRunClusterMap}
@@ -1276,7 +1282,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                   offPageBusy={offPageBusyPanel === p.id}
                   monitoringBusy={monitoringBusyPanel === p.id}
                 />
-              ))}
+                );
+              })}
             </div>
 
             {/* Empty pillar state for traffic campaigns — guides the user to generate */}
@@ -1718,8 +1725,10 @@ function lifecycleBtnStyle(hue: string): React.CSSProperties {
   };
 }
 
-function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunInternalLinking, onRunOffPage, onRunMonitoring, auditBusy, clusterBusy, linkingBusy, offPageBusy, monitoringBusy }: {
+function PanelCard({ panel, deepReport, onOpenReport, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunInternalLinking, onRunOffPage, onRunMonitoring, auditBusy, clusterBusy, linkingBusy, offPageBusy, monitoringBusy }: {
   panel: SeoCampaignPanel;
+  deepReport?:           SeoCampaignReport | null;
+  onOpenReport?:         () => void;
   onRunAudit?:           (panel: SeoCampaignPanel) => void;
   onSetTargetUrl?:       (panel: SeoCampaignPanel) => void;
   onRunClusterMap?:      (panel: SeoCampaignPanel) => void;
@@ -1746,24 +1755,52 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
   const cov = (panel as any).coverage_state;
   const hasCoverage = cov && typeof cov.pages_total === 'number' && cov.pages_total > 0;
   const coveragePct = hasCoverage ? Math.round((cov.pages_covered / cov.pages_total) * 100) : 0;
+  // A pillar is "analysed" once a deep report exists for it.
+  const isAnalysed = !!deepReport;
+  const confHue = deepReport?.confidence_rating === 'high' ? '152 70% 50%'
+    : deepReport?.confidence_rating === 'medium' ? '38 92% 55%'
+    : deepReport?.confidence_rating === 'low' ? '0 75% 55%' : statusHue;
 
   return (
-    <div style={{
-      padding: 12, borderRadius: 10,
-      background: `linear-gradient(180deg, hsla(${statusHue} / 0.06) 0%, rgba(15,16,24,0.7) 100%)`,
-      border: `1px solid hsla(${statusHue} / 0.2)`,
-      opacity: isScheduled ? 0.7 : 1,
+    <div
+      onClick={isAnalysed && onOpenReport ? onOpenReport : undefined}
+      style={{
+        padding: 12, borderRadius: 10,
+        background: `linear-gradient(180deg, hsla(${isAnalysed ? confHue : statusHue} / 0.07) 0%, rgba(15,16,24,0.7) 100%)`,
+        border: `1px solid hsla(${isAnalysed ? confHue : statusHue} / ${isAnalysed ? 0.35 : 0.2})`,
+        opacity: isScheduled ? 0.7 : 1,
+        cursor: isAnalysed && onOpenReport ? 'pointer' : 'default',
+        transition: 'border-color 0.15s',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-        <Icon size={13} style={{ color: `hsl(${statusHue})` }} />
+        <Icon size={13} style={{ color: `hsl(${isAnalysed ? confHue : statusHue})` }} />
         <span style={{ fontSize: 11.5, fontWeight: 700 }}>{PILLAR_LABEL[panel.pillar] || panel.pillar}</span>
       </div>
-      <StatusBadge value={panel.status} hue={statusHue} />
-      <div style={{ fontSize: 10.5, color: 'rgba(150,150,170,0.85)', marginTop: 6, lineHeight: 1.5 }}>
-        {panel.current_summary || panel.scheduled_note || panel.goal_summary || ''}
+      {isAnalysed ? (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 4,
+          fontSize: 9, fontWeight: 700, background: `hsla(${confHue} / 0.18)`, color: `hsl(${confHue})`,
+          textTransform: 'uppercase', letterSpacing: '0.05em',
+        }}>
+          <CheckCircle2 size={9} /> Analysed
+          {deepReport?.confidence_rating && <span style={{ opacity: 0.8 }}>· {deepReport.confidence_rating} confidence</span>}
+        </span>
+      ) : (
+        <StatusBadge value={panel.status} hue={statusHue} />
+      )}
+      <div style={{ fontSize: 10.5, color: 'rgba(170,180,195,0.9)', marginTop: 6, lineHeight: 1.5 }}>
+        {isAnalysed
+          ? (deepReport?.title || deepReport?.summary || 'Deep analysis ready.')
+          : (panel.current_summary || panel.scheduled_note || panel.goal_summary || '')}
       </div>
-      {/* Traffic pillar coverage bar — pages analysed of total */}
-      {hasCoverage && (
+      {/* Read affordance when analysed */}
+      {isAnalysed && onOpenReport && (
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: `hsl(${confHue})` }}>
+          <FileText size={11} /> Read full analysis →
+        </div>
+      )}
+      {/* Coverage bar only for NOT-yet-analysed traffic pillars (avoids the misleading 0/17) */}
+      {!isAnalysed && hasCoverage && coveragePct > 0 && (
         <div style={{ marginTop: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: 'rgba(150,150,170,0.7)', marginBottom: 3 }}>
             <span>{cov.pages_covered} / {cov.pages_total} pages</span>
@@ -1774,7 +1811,7 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
           </div>
         </div>
       )}
-      {isActive && panel.next_recheck_at && (
+      {!isAnalysed && isActive && panel.next_recheck_at && (
         <div style={{ fontSize: 9.5, color: 'rgba(120,120,140,0.7)', marginTop: 5, display: 'flex', alignItems: 'center', gap: 3 }}>
           <Clock size={9} /> Next: {new Date(panel.next_recheck_at).toLocaleDateString()}
         </div>
