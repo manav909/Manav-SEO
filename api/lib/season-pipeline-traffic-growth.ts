@@ -21,6 +21,7 @@
 import { db } from "./db.js";
 import { ga4PullPageMetrics } from "./pm-ga4.js";
 import { fetchSerpFeatures } from "./serpapi.js";
+import { createTrafficPillars, updatePillarCoverage } from "./season-traffic-pillars.js";
 import type { PipelineDefinition, PipelineStepContext, PipelineStepResult } from "./season-pipeline-runner.js";
 
 const MODEL             = "claude-sonnet-4-6";
@@ -314,7 +315,6 @@ const stepVisibilityAudit = {
     const campaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
     if (campaignId) {
       try {
-        const { createTrafficPillars } = await import("./season-traffic-pillars.js");
         await createTrafficPillars({ campaignId, projectId: ctx.projectId, targetUrls });
       } catch { /* non-blocking */ }
     }
@@ -412,6 +412,21 @@ Write:
 5. CTR problems on ranking target pages
 6. Priority ranking of these target pages${serpContext ? "\n7. Competitive context from the live SERP below" + serpContext : ""}`
     );
+
+    // Feed pillars: visibility (full GSC read = all pages covered) + query_opportunity
+    if (campaignId) {
+      const visibleCount = targetUrls.length - invisiblePages.length;
+      await updatePillarCoverage({
+        campaignId, pillar: "visibility", pagesCovered: targetUrls.length, lastIndex: targetUrls.length,
+        summary: `${invisiblePages.length} of ${targetUrls.length} invisible to Google, ${visibleCount} visible.`,
+        reportBody: analysis,
+      }).catch(() => {});
+      await updatePillarCoverage({
+        campaignId, pillar: "query_opportunity", pagesCovered: targetUrls.length, lastIndex: targetUrls.length,
+        summary: `${targetQuickWins.length} quick-wins (pos 4-20), ${targetPairs.length} real query→page mappings.`,
+        reportBody: analysis,
+      }).catch(() => {});
+    }
 
     return {
       ok: true,
@@ -521,6 +536,17 @@ Write:
 5. Specific rewrite recommendations for the worst title tags and meta descriptions`
     );
 
+    // Feed on_page_health pillar
+    const campaignId2 = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
+    if (campaignId2) {
+      await updatePillarCoverage({
+        campaignId: campaignId2, pillar: "on_page_health",
+        pagesCovered: pageResults.length, lastIndex: pageResults.length,
+        summary: `${pageResults.length} of ${targetUrls.length} pages audited, ${issues.length} on-page issues found.`,
+        reportBody: analysis,
+      }).catch(() => {});
+    }
+
     return {
       ok: true,
       output: { pages: pageResults, issues, issueCount: issues.length },
@@ -547,8 +573,9 @@ const stepTechnicalPerformance = {
   artifact_kind: "content_gap",
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
+    const cwvCampaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
     const { urls: targetUrls } = await resolveTargetPages(ctx);
-    // CrUX field data returns in 2-5s. Test up to 8 pages in parallel, 30s ceiling.
+    // CrUX field data returns in 2-5s. Test up to MAX pages in parallel.
     const toTest = targetUrls.slice(0, MAX_PAGES_PER_STEP);
 
     const results: Array<{ url: string } & Awaited<ReturnType<typeof runCrux>>> =
@@ -582,6 +609,15 @@ const stepTechnicalPerformance = {
         "---",
         `**Pages checked:** ${results.length} | **With CrUX field data:** 0 | **CrUX requires real Chrome traffic these pages don't yet have**`,
       ].join("\n");
+
+      if (cwvCampaignId) {
+        await updatePillarCoverage({
+          campaignId: cwvCampaignId, pillar: "technical_performance",
+          pagesCovered: results.length, lastIndex: results.length,
+          summary: `${results.length} pages checked, 0 have CrUX field data (insufficient real-user traffic). Use Site Manager baseline for lab CWV.`,
+          reportBody: body,
+        }).catch(() => {});
+      }
 
       return {
         ok: true,
@@ -623,6 +659,15 @@ Write:
 3. Prioritised list: which pages to fix first based on the real numbers
 4. For pages without field data: state plainly they need more traffic before field signals exist — do not speculate on their performance`
     );
+
+    if (cwvCampaignId) {
+      await updatePillarCoverage({
+        campaignId: cwvCampaignId, pillar: "technical_performance",
+        pagesCovered: results.length, lastIndex: results.length,
+        summary: `${withData.length} of ${results.length} pages have CrUX field data, ${poorLcp.length} fail LCP.`,
+        reportBody: analysis,
+      }).catch(() => {});
+    }
 
     return {
       ok: true,
@@ -709,6 +754,16 @@ Write:
 3. Hub page strategy — if category pages exist, how they should distribute authority
 4. Anchor text recommendations for the most important links`
     );
+
+    const ilCampaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
+    if (ilCampaignId) {
+      await updatePillarCoverage({
+        campaignId: ilCampaignId, pillar: "internal_links",
+        pagesCovered: targetUrls.length, lastIndex: targetUrls.length,
+        summary: `${unlinkedTargets.length} of ${targetUrls.length} target pages have no internal links from authority pages.`,
+        reportBody: analysis,
+      }).catch(() => {});
+    }
 
     return {
       ok: true,
@@ -797,6 +852,18 @@ For each action, state:
 
 End with: **Realistic Traffic Forecast** — honest estimate of traffic change if all actions completed`
     );
+
+    const stCampaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
+    if (stCampaignId) {
+      await updatePillarCoverage({
+        campaignId: stCampaignId, pillar: "engagement",
+        pagesCovered: ga4Valid.length, lastIndex: ga4Valid.length,
+        summary: ga4Valid.length > 0
+          ? `${ga4Valid.length} pages with live GA4 engagement data analysed.`
+          : `No GA4 session data yet for target pages (expected for low-traffic pages).`,
+        reportBody: plan,
+      }).catch(() => {});
+    }
 
     return {
       ok: true,
