@@ -528,6 +528,12 @@ Produce the complete JSON report now.`;
     const { data: panel } = await db().from("seo_campaign_panels")
       .select("id").eq("campaign_id", opts.campaignId).eq("pillar", opts.pillar).maybeSingle();
 
+    // Use values the existing CHECK constraints already allow, so this works
+    // with NO database migration:
+    //   generated_by ∈ {cron, manual, pipeline}      → use 'manual'
+    //   report_kind  ∈ {... , (deep_analysis if migrated)} → try deep_analysis,
+    //                  fall back to 'manual_refresh' which is always allowed.
+    // The report is identified by its pillar, not its kind, so the fallback is fine.
     const baseRow: any = {
       campaign_id:       opts.campaignId,
       panel_id:          (panel as any)?.id || null,
@@ -537,28 +543,27 @@ Produce the complete JSON report now.`;
       summary:           parsed.state_of_play ? String(parsed.state_of_play).slice(0, 500) : null,
       body_md:           md,
       confidence_rating: avgConfidence(parsed.insights),
-      generated_by:      "pillar-deep-engine",
+      generated_by:      "manual",
       data_sources:      interro.data_sources,
     };
 
     let { data: inserted, error } = await db().from("seo_campaign_reports").insert(baseRow).select("id").single();
 
-    // If a CHECK constraint rejects report_kind='deep_analysis', retry with an
-    // allowed kind so the report still lands (it's identified by pillar anyway).
+    // If report_kind='deep_analysis' is rejected (migration not run), fall back
+    // to 'manual_refresh' — an always-allowed kind. Frontend matches by pillar.
     if (error && /report_kind/i.test(error.message || "")) {
-      console.error(`[pillar-deep] report_kind rejected, retrying with 'recheck': ${error.message}`);
-      const retry = await db().from("seo_campaign_reports").insert({ ...baseRow, report_kind: "recheck" }).select("id").single();
+      console.error(`[pillar-deep] deep_analysis kind rejected, using manual_refresh: ${error.message}`);
+      const retry = await db().from("seo_campaign_reports").insert({ ...baseRow, report_kind: "manual_refresh" }).select("id").single();
       inserted = retry.data; error = retry.error;
     }
-    // If some other column is rejected, retry with only the essential columns.
+    // Last-resort minimal row (still using only valid values).
     if (error) {
       console.error(`[pillar-deep] insert failed (${error.message}), retrying minimal row`);
-      const minimal = {
+      const retry = await db().from("seo_campaign_reports").insert({
         campaign_id: opts.campaignId, panel_id: (panel as any)?.id || null,
-        pillar: opts.pillar, report_kind: "deep_analysis",
-        title: baseRow.title, body_md: md,
-      };
-      const retry = await db().from("seo_campaign_reports").insert(minimal).select("id").single();
+        pillar: opts.pillar, report_kind: "manual_refresh",
+        title: baseRow.title, body_md: md, generated_by: "manual",
+      }).select("id").single();
       inserted = retry.data; error = retry.error;
     }
     if (error) return { success: false, error: `report insert failed: ${error.message}` };

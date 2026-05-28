@@ -1265,7 +1265,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
             }}>
               {(data.panels || []).map((p: SeoCampaignPanel) => {
                 const pillarReport = (data.recent_reports || []).find(
-                  (r: SeoCampaignReport) => r.pillar === p.pillar && r.report_kind === 'deep_analysis'
+                  (r: SeoCampaignReport) => r.pillar === p.pillar &&
+                    (r.report_kind === 'deep_analysis' || r.generated_by === 'manual' || r.report_kind === 'manual_refresh')
                 );
                 return (
                 <PanelCard
