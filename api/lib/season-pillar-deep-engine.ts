@@ -319,6 +319,56 @@ export const PILLAR_INTERROGATIONS: Record<string, Interrogation> = {
 /* ════════════════════════════════════════════════════════════════
    THE DEEP ANALYSIS — runs one pillar's full interrogation.
 ════════════════════════════════════════════════════════════════ */
+/* Repair a JSON string that was cut off at the token limit. Strategy: walk the
+   string tracking string/escape state and bracket depth; cut at the last point
+   where we were at the top level between complete fields, then close all open
+   brackets. Produces valid JSON containing every COMPLETE field, dropping only
+   the half-written tail. */
+function repairTruncatedJson(s: string): string {
+  // Find the last position that sits on a clean boundary (just after a complete
+  // value, i.e. right after a comma or a closing bracket) at ANY depth >= 1.
+  // Cutting there preserves every complete element/field and drops only the
+  // half-written tail. Then close all still-open brackets.
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  let lastSafe = -1;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{" || c === "[") { depth++; }
+    else if (c === "}" || c === "]") { depth--; if (depth >= 1) lastSafe = i + 1; }
+    else if (c === "," && depth >= 1) { lastSafe = i; }   // boundary BEFORE the next element
+  }
+  let out = s;
+  if (lastSafe > 0 && (inStr || depth > 0)) {
+    out = s.slice(0, lastSafe).replace(/,\s*$/, "");
+  } else {
+    out = s.replace(/,\s*$/, "");
+  }
+  // Recompute and close any open brackets on the trimmed string.
+  inStr = false; esc = false;
+  const open: string[] = [];
+  for (let i = 0; i < out.length; i++) {
+    const c = out[i];
+    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{") open.push("}");
+    else if (c === "[") open.push("]");
+    else if (c === "}" || c === "]") open.pop();
+  }
+  if (inStr) out += '"';
+  while (open.length) out += open.pop();
+  return out;
+}
+
+
 export async function runDeepPillarAnalysis(opts: {
   campaignId: string;
   pillar: string;
@@ -472,7 +522,7 @@ OUTPUT FORMAT — respond with ONLY valid JSON, no preamble, no markdown fences:
   "ninety_day_plan": "a tight prioritised sequence: what to do in week 1, month 1, quarter 1, grounded in the insights"
 }
 
-Aim for 8-15 high-quality insights covering all relevant roles. Quality over quantity — every insight must be specific, evidenced, and actionable.`;
+Provide 6-10 high-quality insights covering all relevant roles. Quality over quantity — every insight must be specific, evidenced, and actionable. Keep each field concise (1-3 sentences) so the full JSON object completes within the response.`;
 
   const user = `PILLAR: ${opts.pillar}
 Data sources leveraged: ${interro.data_sources.join(", ")}
@@ -484,27 +534,29 @@ ${questionBlock}
 
 Produce the complete JSON report now.`;
 
-  const raw = await deepLlm(system, user, 6000);
+  const raw = await deepLlm(system, user, 8000);
   if (!raw) return { success: false, error: "Deep analysis returned empty (LLM gave no output — likely timeout or API error)" };
 
-  // Parse JSON robustly. The model often wraps the object in prose ("Here is
-  // the report:") or fences, which breaks a naive JSON.parse. Strip fences,
-  // then extract the outermost { ... } span before parsing.
+  // Parse JSON robustly. Two failure modes to handle:
+  //  1. The model wraps the object in prose/fences → strip + extract { ... }.
+  //  2. The response was truncated at the token limit mid-JSON → the braces
+  //     don't close, so repair by trimming to the last complete field and
+  //     closing the open structures before parsing.
   let parsed: any;
   let parseFailed = false;
-  try {
-    let clean = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const extractAndParse = (text: string): any => {
+    let clean = text.replace(/```json/gi, "").replace(/```/g, "").trim();
     const first = clean.indexOf("{");
-    const last  = clean.lastIndexOf("}");
-    if (first !== -1 && last !== -1 && last > first) {
-      clean = clean.slice(first, last + 1);
-    }
-    parsed = JSON.parse(clean);
+    if (first === -1) throw new Error("no object");
+    clean = clean.slice(first);
+    // Try as-is first (handles the complete, well-formed case).
+    try { return JSON.parse(clean); } catch { /* try repair */ }
+    return JSON.parse(repairTruncatedJson(clean));
+  };
+  try {
+    parsed = extractAndParse(raw);
   } catch (e: any) {
-    // Don't discard the analysis — the model produced real content, it just
-    // wasn't valid JSON. Fall back to storing the raw text as the report body
-    // so the user ALWAYS gets their analysis, even if role-tagging is lost.
-    console.error(`[pillar-deep] JSON parse failed for ${opts.pillar}, storing raw. Head: ${raw.slice(0, 200)}`);
+    console.error(`[pillar-deep] JSON parse failed for ${opts.pillar} even after repair. Head: ${raw.slice(0, 200)}`);
     parseFailed = true;
     parsed = {
       headline: `${opts.pillar.replace(/_/g, " ")} analysis`,
