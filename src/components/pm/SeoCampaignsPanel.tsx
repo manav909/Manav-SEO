@@ -1962,19 +1962,31 @@ function PanelCard({ panel, deepReport, onOpenReport, onRunAudit, onSetTargetUrl
 function ReportViewer({ report, onClose, roleFilter = 'all' }: { report: SeoCampaignReport; onClose: () => void; roleFilter?: string }) {
   const [copied, setCopied] = useState(false);
   const rawBody = report.body_md || report.summary || '(no content)';
-  const body = filterReportByRole(rawBody, roleFilter);
+  const filtered = filterReportByRole(rawBody, roleFilter);   // what's shown on screen
+  const isFiltered = roleFilter !== 'all';
+  const body = filtered;
+  const safeTitle = (report.title || 'report').replace(/[^a-z0-9-_]/gi, '_').slice(0, 80);
+  const roleSuffix = isFiltered ? `_${roleFilter}` : '';
 
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(body); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
   };
-  const handleDownload = () => {
-    const safeTitle = report.title.replace(/[^a-z0-9-_]/gi, '_').slice(0, 80);
-    const blob = new Blob([body], { type: 'text/markdown;charset=utf-8' });
+  // Markdown download always exports the FULL report (not the filtered view),
+  // so "download" never silently drops content. The filtered view is exported
+  // explicitly via the PDF button when a role filter is active.
+  const handleDownloadMd = () => {
+    const blob = new Blob([rawBody], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = `${safeTitle}.md`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+  // PDF: client-ready. Exports the current view — full report when no filter,
+  // or the filtered (e.g. client-only) view when a role filter is active.
+  const handleDownloadPdf = () => {
+    const title = report.title || `${report.pillar} analysis`;
+    downloadReportPdf(isFiltered ? `${title} (${roleFilter})` : title, body);
   };
 
   return (
@@ -2014,12 +2026,19 @@ function ReportViewer({ report, onClose, roleFilter = 'all' }: { report: SeoCamp
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={handleCopy} style={iconActionStyle()} title="Copy markdown">
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button onClick={handleDownloadPdf} style={{
+              padding: '6px 11px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+              background: 'hsla(186 70% 55% / 0.12)', border: '1px solid hsla(186 70% 55% / 0.4)',
+              color: 'hsl(186 80% 68%)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+            }} title={isFiltered ? `Export the ${roleFilter} view as a client-ready PDF` : 'Export the full report as a client-ready PDF'}>
+              <Download size={12} /> PDF{isFiltered ? ` (${roleFilter})` : ''}
+            </button>
+            <button onClick={handleCopy} style={iconActionStyle()} title="Copy markdown (current view)">
               {copied ? <Check size={13} color="#34d399" /> : <Copy size={13} />}
             </button>
-            <button onClick={handleDownload} style={iconActionStyle()} title="Download .md">
-              <Download size={13} />
+            <button onClick={handleDownloadMd} style={iconActionStyle()} title="Download full report as .md">
+              <FileText size={13} />
             </button>
             <button onClick={onClose} style={iconActionStyle()} title="Close">
               <X size={14} />
@@ -2030,6 +2049,69 @@ function ReportViewer({ report, onClose, roleFilter = 'all' }: { report: SeoCamp
       </div>
     </div>
   );
+}
+
+/* ─── Markdown → styled HTML, for client-ready PDF export ───────────
+   Converts the report markdown to a clean, print-optimised HTML document
+   and triggers the browser's print dialog (Save as PDF). A4, serif body,
+   role tags rendered as coloured chips, page-break-avoid on headings. */
+function reportMarkdownToHtml(md: string): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inline = (s: string) => esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const renderTags = (s: string) => s.replace(/\[(CLIENT|SPECIALIST|WRITER|BRAND|PM|DEV)\]/g,
+    (_m: string, t: string) => `<span class="role-chip role-${t.toLowerCase()}">${t}</span>`);
+
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of lines) {
+    const line = raw.replace(/\r$/, '');
+    if (/^### /.test(line))      { closeList(); out.push(`<h3>${renderTags(inline(line.slice(4)))}</h3>`); }
+    else if (/^## /.test(line))  { closeList(); out.push(`<h2>${inline(line.slice(3))}</h2>`); }
+    else if (/^# /.test(line))   { closeList(); out.push(`<h1>${inline(line.slice(2))}</h1>`); }
+    else if (/^> /.test(line))   { closeList(); out.push(`<blockquote>${inline(line.slice(2))}</blockquote>`); }
+    else if (/^[-*] /.test(line)){ if (!inList) { out.push('<ul>'); inList = true; } out.push(`<li>${inline(line.slice(2))}</li>`); }
+    else if (line.trim() === '') { closeList(); }
+    else                         { closeList(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  closeList();
+  return out.join('\n');
+}
+
+function downloadReportPdf(title: string, md: string) {
+  const html = reportMarkdownToHtml(md);
+  const w = window.open('', '_blank');
+  if (!w) { alert('Please allow pop-ups to export the PDF.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title.replace(/[<>]/g, '')}</title>
+<style>
+  @page { size: A4; margin: 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: #1a1a1a; line-height: 1.55; font-size: 11pt; max-width: 760px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 21pt; margin: 0 0 6px; color: #0f1830; }
+  h2 { font-size: 14pt; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #d8dde8; color: #14306b; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 16px 0 4px; color: #1a1a1a; page-break-after: avoid; page-break-inside: avoid; }
+  p { margin: 6px 0; }
+  ul { margin: 6px 0 6px 18px; padding: 0; }
+  li { margin: 3px 0; }
+  blockquote { margin: 8px 0; padding: 8px 14px; background: #f4f6fb; border-left: 3px solid #14306b; font-style: italic; color: #333; }
+  code { background: #eef1f6; padding: 1px 5px; border-radius: 3px; font-family: 'SF Mono', Menlo, monospace; font-size: 9.5pt; }
+  strong { color: #0f1830; }
+  .role-chip { display: inline-block; font-family: Arial, sans-serif; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+  .role-client { background: #dbeafe; color: #1e40af; }
+  .role-specialist { background: #dcfce7; color: #166534; }
+  .role-writer { background: #fef3c7; color: #92400e; }
+  .role-brand { background: #fae8ff; color: #86198f; }
+  .role-pm { background: #e0e7ff; color: #3730a3; }
+  .role-dev { background: #f1f5f9; color: #334155; }
+  @media print { body { padding: 0; } }
+</style></head><body>${html}
+<script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };</script>
+</body></html>`);
+  w.document.close();
 }
 
 function iconActionStyle(): React.CSSProperties {
@@ -2085,20 +2167,26 @@ function filterReportByRole(md: string, role: string): string {
 function ExpandedReport({ report, isFirst, roleFilter = 'all' }: { report: SeoCampaignReport; isFirst?: boolean; roleFilter?: string }) {
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const body = report.body_md || report.summary || '(no content)';
+  const rawBody = report.body_md || report.summary || '(no content)';
+  const isFiltered = roleFilter !== 'all';
+  const body = filterReportByRole(rawBody, roleFilter);   // respect the role filter on screen
   const confHue = report.confidence_rating === 'high' ? '152 70% 50%' : report.confidence_rating === 'medium' ? '38 92% 55%' : '0 75% 55%';
+  const safeTitle = (report.title || 'report').replace(/[^a-z0-9-_]/gi, '_').slice(0, 80);
 
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(body); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
   };
-  const handleDownload = () => {
-    const safeTitle = report.title.replace(/[^a-z0-9-_]/gi, '_').slice(0, 80);
-    const blob = new Blob([body], { type: 'text/markdown;charset=utf-8' });
+  const handleDownloadMd = () => {
+    const blob = new Blob([rawBody], { type: 'text/markdown;charset=utf-8' });   // full report
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = `${safeTitle}.md`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+  const handleDownloadPdf = () => {
+    const title = report.title || `${report.pillar} analysis`;
+    downloadReportPdf(isFiltered ? `${title} (${roleFilter})` : title, body);
   };
 
   return (
@@ -2146,11 +2234,18 @@ function ExpandedReport({ report, isFirst, roleFilter = 'all' }: { report: SeoCa
           )}
         </div>
         <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-          <button onClick={handleCopy} style={iconActionStyle()} title="Copy markdown">
+          <button onClick={handleDownloadPdf} style={{
+            padding: '5px 9px', borderRadius: 8, fontSize: 10.5, fontWeight: 700,
+            background: 'hsla(186 70% 55% / 0.12)', border: '1px solid hsla(186 70% 55% / 0.4)',
+            color: 'hsl(186 80% 68%)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+          }} title={isFiltered ? `Export the ${roleFilter} view as a client-ready PDF` : 'Export the full report as a client-ready PDF'}>
+            <Download size={11} /> PDF{isFiltered ? ` (${roleFilter})` : ''}
+          </button>
+          <button onClick={handleCopy} style={iconActionStyle()} title="Copy markdown (current view)">
             {copied ? <Check size={13} color="#34d399" /> : <Copy size={13} />}
           </button>
-          <button onClick={handleDownload} style={iconActionStyle()} title="Download .md">
-            <Download size={13} />
+          <button onClick={handleDownloadMd} style={iconActionStyle()} title="Download full report as .md">
+            <FileText size={13} />
           </button>
           <button onClick={() => setCollapsed(!collapsed)} style={iconActionStyle()} title={collapsed ? 'Expand' : 'Collapse'}>
             <ChevronRight size={13} style={{ transform: collapsed ? 'rotate(90deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />
