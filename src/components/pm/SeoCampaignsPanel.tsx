@@ -59,9 +59,17 @@ const PILLAR_ICON: Record<string, any> = {
   internal_linking: Link2,
   off_page:         ExternalLink,
   monitoring:       Activity,
+  // Traffic growth pillars
+  visibility:            Activity,
+  query_opportunity:     Sparkles,
+  on_page_health:        FileText,
+  technical_performance: AlertCircle,
+  internal_links:        Link2,
+  engagement:            Activity,
 };
 
 const PILLAR_LABEL: Record<string, string> = {
+  // Keyword ranking pillars
   content:          'Content',
   research:         'Research',
   technical_audit:  'Technical Audit',
@@ -69,6 +77,13 @@ const PILLAR_LABEL: Record<string, string> = {
   internal_linking: 'Internal Linking',
   off_page:         'Off-Page Strategy',
   monitoring:       'Monitoring',
+  // Traffic growth pillars (multi-page, batch-tracked)
+  visibility:            'Visibility',
+  query_opportunity:     'Query Opportunity',
+  on_page_health:        'On-Page Health',
+  technical_performance: 'Technical Performance',
+  internal_links:        'Internal Links',
+  engagement:            'Engagement',
 };
 
 const STATUS_HUE: Record<string, string> = {
@@ -1645,6 +1660,11 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
   const isOffPage         = panel.pillar === 'off_page';
   const isMonitoring      = panel.pillar === 'monitoring';
 
+  // Traffic pillars carry coverage_state {pages_total, pages_covered, batch_size}
+  const cov = (panel as any).coverage_state;
+  const hasCoverage = cov && typeof cov.pages_total === 'number' && cov.pages_total > 0;
+  const coveragePct = hasCoverage ? Math.round((cov.pages_covered / cov.pages_total) * 100) : 0;
+
   return (
     <div style={{
       padding: 12, borderRadius: 10,
@@ -1660,6 +1680,18 @@ function PanelCard({ panel, onRunAudit, onSetTargetUrl, onRunClusterMap, onRunIn
       <div style={{ fontSize: 10.5, color: 'rgba(150,150,170,0.85)', marginTop: 6, lineHeight: 1.5 }}>
         {panel.current_summary || panel.scheduled_note || panel.goal_summary || ''}
       </div>
+      {/* Traffic pillar coverage bar — pages analysed of total */}
+      {hasCoverage && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: 'rgba(150,150,170,0.7)', marginBottom: 3 }}>
+            <span>{cov.pages_covered} / {cov.pages_total} pages</span>
+            <span>{coveragePct}%</span>
+          </div>
+          <div style={{ height: 4, borderRadius: 2, background: 'rgba(160,160,180,0.15)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${coveragePct}%`, background: `hsl(${statusHue})`, borderRadius: 2 }} />
+          </div>
+        </div>
+      )}
       {isActive && panel.next_recheck_at && (
         <div style={{ fontSize: 9.5, color: 'rgba(120,120,140,0.7)', marginTop: 5, display: 'flex', alignItems: 'center', gap: 3 }}>
           <Clock size={9} /> Next: {new Date(panel.next_recheck_at).toLocaleDateString()}

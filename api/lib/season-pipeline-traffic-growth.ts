@@ -308,6 +308,17 @@ const stepVisibilityAudit = {
     const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
     const { topPages, topQueries, queryPagePairs, zeroClickPages } = await loadGscData(ctx.projectId);
 
+    // Safety net: ensure traffic pillars exist for this campaign (idempotent).
+    // objective_full_setup creates them, but if the campaign predates that or
+    // setup was skipped, this guarantees pillars are present to be seeded.
+    const campaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
+    if (campaignId) {
+      try {
+        const { createTrafficPillars } = await import("./season-traffic-pillars.js");
+        await createTrafficPillars({ campaignId, projectId: ctx.projectId, targetUrls });
+      } catch { /* non-blocking */ }
+    }
+
     const norm = (u: string) => (u || "").replace(/\/$/, "").toLowerCase();
     const targetSet = new Set(targetUrls.map(norm));
 

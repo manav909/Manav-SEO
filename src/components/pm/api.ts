@@ -2773,6 +2773,8 @@ export interface SeoCampaignPanel {
   /* Phase 15 — technical audit target URL fields */
   target_url?:         string | null;
   target_url_source?:  string | null;
+  /* Traffic growth pillars — batch coverage tracking */
+  coverage_state?:     { pages_total: number; pages_covered: number; batch_size: number; last_index: number } | null;
 }
 
 export interface SeoCampaignReport {
