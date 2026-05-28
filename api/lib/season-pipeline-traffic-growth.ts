@@ -21,7 +21,7 @@
 import { db } from "./db.js";
 import type { PipelineDefinition, PipelineStepContext, PipelineStepResult } from "./season-pipeline-runner.js";
 
-const MODEL             = "claude-sonnet-4-5-20251001";
+const MODEL             = "claude-sonnet-4-6";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const PSI_KEY           = process.env.PAGESPEED_API_KEY || "";
 
@@ -40,7 +40,10 @@ async function withTimeout<T>(promise: Promise<T>, label = "query", ms = 12000):
 
 /* ─── LLM call ─────────────────────────────────────────────────── */
 async function llm(system: string, user: string, maxTokens = 2500): Promise<string> {
-  if (!ANTHROPIC_API_KEY) return "";
+  if (!ANTHROPIC_API_KEY) {
+    console.error("[traffic-pipeline] ANTHROPIC_API_KEY missing — cannot generate analysis");
+    return "";
+  }
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method:  "POST",
@@ -54,10 +57,19 @@ async function llm(system: string, user: string, maxTokens = 2500): Promise<stri
         system, messages: [{ role: "user", content: user }],
       }),
     });
-    if (!r.ok) return "";
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "");
+      console.error(`[traffic-pipeline] LLM call failed ${r.status}: ${errText.slice(0, 300)}`);
+      return "";
+    }
     const d = await r.json();
-    return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-  } catch { return ""; }
+    const text = (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+    if (!text) console.warn("[traffic-pipeline] LLM returned empty text block");
+    return text;
+  } catch (e: any) {
+    console.error(`[traffic-pipeline] LLM exception: ${e?.message}`);
+    return "";
+  }
 }
 
 /* ─── Fetch page HTML (15s timeout) ────────────────────────────── */
