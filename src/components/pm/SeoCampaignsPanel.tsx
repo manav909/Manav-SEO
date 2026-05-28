@@ -78,7 +78,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
   const [tab, setTab] = useState<'campaigns' | 'opportunities' | 'objectives'>('campaigns');
   const [showNewObjective, setShowNewObjective] = useState(false);
   /* Active pipeline run being driven/watched in dashboard overlay */
-  const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number } | null>(null);
+  const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number; pipelineType?: string } | null>(null);
   const [pipelineRuns, setPipelineRuns]   = useState<any[]>([]);
 
   const refresh = useCallback(async () => {
@@ -150,20 +150,19 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
   const openOppCount = oppCounts?.open || 0;
 
   return (
-    <>
-      {/* Pipeline dashboard overlay — mounts when a run needs driving or watching */}
+    <div style={{ padding: 20 }}>
+      {/* Pipeline dashboard overlay — renders inside panel, uses correct pipeline type */}
       {activeDashRun && (
         <SeasonPipelineDashboard
           key={activeDashRun.runId}
           runId={activeDashRun.runId}
           expectedSteps={activeDashRun.stepCount}
           pipelineLabel={activeDashRun.label}
-          pipelineType="rank_for_keyword"
+          pipelineType={activeDashRun.pipelineType || 'rank_for_keyword'}
           onClose={() => { setActiveDashRun(null); refresh(); }}
           onComplete={() => { refresh(); }}
         />
       )}
-    <div style={{ padding: 20 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
@@ -206,20 +205,6 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
         <TabButton active={tab === 'objectives'} onClick={() => setTab('objectives')}>
           🎯 Objectives
         </TabButton>
-        {tab === 'objectives' && (
-          <button
-            type="button"
-            onClick={() => setShowNewObjective(true)}
-            style={{
-              marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
-              padding: '5px 12px', borderRadius: 10, fontSize: 11, fontWeight: 600,
-              background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))',
-              border: 'none', cursor: 'pointer',
-            }}
-          >
-            + New objective
-          </button>
-        )}
       </div>
 
       {error && (
@@ -261,7 +246,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
           campaigns={campaigns}
           pipelineRuns={pipelineRuns}
           onRefresh={refresh}
-          onWatchPipeline={(runId, label, stepCount) => setActiveDashRun({ runId, label, stepCount })}
+          onWatchPipeline={(runId, label, stepCount, pipelineType) => setActiveDashRun({ runId, label, stepCount, pipelineType })}
         />
       )}
 
@@ -284,7 +269,6 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
         />
       )}
     </div>
-    </>
   );
 }
 
@@ -2185,7 +2169,7 @@ function ObjectivesView({
   campaigns: SeoCampaign[];
   pipelineRuns?: any[];
   onRefresh: () => void;
-  onWatchPipeline?: (runId: string, label: string, stepCount: number) => void;
+  onWatchPipeline?: (runId: string, label: string, stepCount: number, pipelineType?: string) => void;
 }) {
   const [showNew,      setShowNew]      = React.useState(false);
   const [sites,        setSites]        = React.useState<any[]>([]);
@@ -2279,7 +2263,7 @@ function ObjectivesView({
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <button type="button"
-                  onClick={() => onWatchPipeline?.(run.id, run.input_text || run.pipeline_type, run.step_count || 6)}
+                  onClick={() => onWatchPipeline?.(run.id, run.input_text || run.pipeline_type, run.step_count || 6, run.pipeline_type)}
                   style={{ fontSize: 10, padding: '4px 10px', borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'transparent', color: 'hsl(var(--muted-foreground))', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                   {run.status === 'running' ? '▶ Watch live' : '📄 View results'}
                 </button>
