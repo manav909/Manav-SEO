@@ -653,6 +653,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [selectedReport, setSelectedReport] = useState<SeoCampaignReport | null>(null);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
   const [deepBusy, setDeepBusy] = useState(false);
+  const [deepProgress, setDeepProgress] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   // Site workspace linking
   const [sites,          setSites]          = useState<any[]>([]);
@@ -754,13 +755,24 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
      Each pillar produces a complete, role-tagged report stored as a campaign report. */
   const handleDeepAnalysis = async () => {
     if (!data?.campaign?.project_id) return;
+    const projectId = data.campaign.project_id;
+    // The 7 pillars, run ONE PER REQUEST. Running all 7 in a single request
+    // blows past Vercel's 300s function limit (each is a deep LLM call + data
+    // pulls), so the function gets killed and nothing is written. Looping
+    // client-side keeps every request well within budget and shows progress.
+    const pillars = ['visibility', 'query_opportunity', 'on_page_health', 'technical_performance', 'internal_links', 'engagement', 'monitoring'];
     setDeepBusy(true);
-    toast({ title: 'Deep analysis started', description: 'Running the full interrogation across all pillars — this takes a minute.' });
-    const r = await pillarDeepAnalysis({ projectId: data.campaign.project_id, campaignId });
-    if (r.error) toast({ title: 'Deep analysis failed', description: r.error, variant: 'destructive' });
-    else toast({ title: 'Deep analysis complete', description: 'Reports generated for all pillars.' });
-    await load();
+    let ok = 0, failed = 0;
+    for (let i = 0; i < pillars.length; i++) {
+      setDeepProgress(`${i + 1}/${pillars.length} · ${PILLAR_LABEL[pillars[i]] || pillars[i]}`);
+      const r = await pillarDeepAnalysis({ projectId, campaignId, pillar: pillars[i] });
+      if (r.error) { failed++; } else { ok++; }
+      await load();  // surface each report as it lands
+    }
+    setDeepProgress('');
     setDeepBusy(false);
+    if (failed === 0) toast({ title: 'Deep analysis complete', description: `${ok} pillar reports generated.` });
+    else toast({ title: 'Deep analysis finished with errors', description: `${ok} succeeded, ${failed} failed. Re-run to retry.`, variant: failed > ok ? 'destructive' : 'default' });
   };
 
   /* Phase 17.5.1 — refresh pipeline run from latest audit + drive execution to completion.
@@ -1260,6 +1272,17 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
               ))}
             </div>
 
+            {/* Empty pillar state for traffic campaigns — guides the user to generate */}
+            {(data.panels || []).length === 0 && data.campaign.campaign_type && data.campaign.campaign_type !== 'keyword_ranking' && (
+              <div style={{
+                marginBottom: 20, padding: 14, borderRadius: 10, textAlign: 'center',
+                background: 'hsla(186 60% 50% / 0.05)', border: '1px dashed hsla(186 60% 55% / 0.3)',
+                fontSize: 12, color: 'rgba(170,180,195,0.85)', lineHeight: 1.6,
+              }}>
+                No pillars yet. Click <strong style={{ color: 'hsl(186 80% 65%)' }}>Generate deep analysis</strong> below to create the 7 traffic pillars and run the full interrogation on each. This takes a couple of minutes — it runs one pillar at a time so it never times out.
+              </div>
+            )}
+
             {/* Living overview */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -1272,7 +1295,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
                       display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, opacity: deepBusy ? 0.5 : 1,
                     }}>
                       <Sparkles size={11} className={deepBusy ? 'animate-spin' : ''} />
-                      {deepBusy ? 'Analysing…' : 'Generate deep analysis'}
+                      {deepBusy ? (deepProgress || 'Analysing…') : 'Generate deep analysis'}
                     </button>
                   )}
                   <button onClick={handleRefreshOverview} disabled={refreshingOverview} style={{
