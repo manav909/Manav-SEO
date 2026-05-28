@@ -105,8 +105,11 @@ export async function bsSeasonPipelineRun(body: any): Promise<any> {
     if (pipelineType === 'rank_for_keyword') {
       const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
       definition = buildRankForKeywordPipeline();
+    } else if (pipelineType === 'traffic_growth') {
+      const { buildTrafficGrowthPipeline } = await import("./season-pipeline-traffic-growth.js");
+      definition = buildTrafficGrowthPipeline();
     } else {
-      return { success: false, error: `Unknown pipeline type: ${pipelineType}. Currently supported: rank_for_keyword.` };
+      return { success: false, error: `Unknown pipeline type: ${pipelineType}. Currently supported: rank_for_keyword, traffic_growth.` };
     }
 
     const result = await runPipeline({
@@ -271,6 +274,9 @@ export async function bsSeasonPipelineCreate(body: any): Promise<any> {
     if (pipelineType === 'rank_for_keyword') {
       const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
       definition = buildRankForKeywordPipeline();
+    } else if (pipelineType === 'traffic_growth') {
+      const { buildTrafficGrowthPipeline } = await import("./season-pipeline-traffic-growth.js");
+      definition = buildTrafficGrowthPipeline();
     } else {
       return { success: false, error: `Unknown pipeline type: ${pipelineType}` };
     }
@@ -364,6 +370,9 @@ export async function bsSeasonPipelineExecuteNext(body: any): Promise<any> {
     if (pipelineType === 'rank_for_keyword') {
       const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
       definition = buildRankForKeywordPipeline();
+    } else if (pipelineType === 'traffic_growth') {
+      const { buildTrafficGrowthPipeline } = await import("./season-pipeline-traffic-growth.js");
+      definition = buildTrafficGrowthPipeline();
     } else {
       return { success: false, error: `Unknown pipeline type: ${pipelineType}` };
     }
@@ -468,6 +477,9 @@ export async function bsSeasonPipelineRefreshFromAudit(body: any): Promise<any> 
     if (r.pipeline_type === 'rank_for_keyword') {
       const { buildRankForKeywordPipeline, findFirstAuditDependentStepIndex } = await import("./season-pipeline-rank-for-keyword.js");
       definition = buildRankForKeywordPipeline();
+    } else if (r.pipeline_type === 'traffic_growth') {
+      const { buildTrafficGrowthPipeline } = await import("./season-pipeline-traffic-growth.js");
+      definition = buildTrafficGrowthPipeline();
       firstAuditStepIndex = findFirstAuditDependentStepIndex(definition);
     } else {
       return { success: false, error: `Refresh-from-audit not implemented for pipeline_type '${r.pipeline_type}' yet.` };
@@ -532,6 +544,9 @@ export async function bsSeasonPipelineReconcile(body: any): Promise<any> {
     if (r.pipeline_type === 'rank_for_keyword') {
       const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
       definition = buildRankForKeywordPipeline();
+    } else if (r.pipeline_type === 'traffic_growth') {
+      const { buildTrafficGrowthPipeline } = await import("./season-pipeline-traffic-growth.js");
+      definition = buildTrafficGrowthPipeline();
     } else {
       return { success: false, error: `Reconcile not implemented for pipeline_type '${r.pipeline_type}'` };
     }
