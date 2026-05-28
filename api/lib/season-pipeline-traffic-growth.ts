@@ -19,6 +19,8 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { ga4PullPageMetrics } from "./pm-ga4.js";
+import { fetchSerpFeatures } from "./serpapi.js";
 import type { PipelineDefinition, PipelineStepContext, PipelineStepResult } from "./season-pipeline-runner.js";
 
 const MODEL             = "claude-sonnet-4-6";
@@ -205,6 +207,7 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
 /* ─── Load GSC data (no impression threshold — ALL pages matter) ─ */
 async function loadGscData(projectId: string): Promise<{
   topPages: any[];
+  topQueries: any[];          // query-level GSC data — what searches pages appear for
   zeroClickPages: any[];      // ranked but no clicks = CTR problem
   notRankingPages: any[];     // in GSC but position > 50 = visibility problem
   quickWins: any[];           // positions 4-20 with impressions
@@ -216,17 +219,20 @@ async function loadGscData(projectId: string): Promise<{
       "gsc_data query"
     );
     const rows = ((r as any)?.data || []) as any[];
-    const topPagesRow = rows.find(r => r.field_key === "gsc_top_pages");
-    const topPages = topPagesRow ? JSON.parse(topPagesRow.field_value || "[]") : [];
+    const topPagesRow   = rows.find(r => r.field_key === "gsc_top_pages");
+    const topQueriesRow = rows.find(r => r.field_key === "gsc_top_queries");
+    const topPages   = topPagesRow   ? JSON.parse(topPagesRow.field_value || "[]")   : [];
+    const topQueries = topQueriesRow ? JSON.parse(topQueriesRow.field_value || "[]") : [];
 
     return {
       topPages,
+      topQueries,
       zeroClickPages:  topPages.filter((p: any) => (p.impressions || 0) > 0 && (p.clicks || 0) === 0),
       notRankingPages: topPages.filter((p: any) => (p.position || 0) > 50),
       quickWins:       topPages.filter((p: any) => (p.position || 0) >= 4 && (p.position || 0) <= 20),
     };
   } catch {
-    return { topPages: [], zeroClickPages: [], notRankingPages: [], quickWins: [] };
+    return { topPages: [], topQueries: [], zeroClickPages: [], notRankingPages: [], quickWins: [] };
   }
 }
 
@@ -244,7 +250,7 @@ const stepVisibilityAudit = {
   artifact_kind: "traffic_audit",
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
-    const { topPages, zeroClickPages, quickWins } = await loadGscData(ctx.projectId);
+    const { topPages, topQueries, zeroClickPages, quickWins } = await loadGscData(ctx.projectId);
 
     // Cross-reference: which target pages appear in GSC?
     const gscUrlSet = new Set(topPages.map((p: any) => (p.page || p.url || "").replace(/\/$/, "")));
@@ -265,6 +271,25 @@ const stepVisibilityAudit = {
                   : "🔴 Low ranking";
       return `| ${slug} | ${pos} | ${impr.toLocaleString()} | ${clicks} | ${ctr} | ${flag} |`;
     };
+
+    // For the highest-impression quick-win query, pull live SERP to see who ranks
+    let serpContext = "";
+    try {
+      const topQuery = (topQueries || []).filter((q: any) => (q.position||0) >= 4 && (q.position||0) <= 20)
+        .sort((a: any, b: any) => (b.impressions||0) - (a.impressions||0))[0];
+      if (topQuery && (topQuery.query || topQuery.keyword)) {
+        const serp = await Promise.race([
+          fetchSerpFeatures(topQuery.query || topQuery.keyword, ctx.projectId, {}),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
+        ]);
+        if (serp) {
+          serpContext = `\n\nLIVE SERP for top quick-win query "${topQuery.query || topQuery.keyword}" (currently pos ${(topQuery.position||0).toFixed(1)}):\n` +
+            `- SERP features present: ${(serp as any).features?.join(", ") || "none detected"}\n` +
+            `- People Also Ask: ${((serp as any).paa || []).slice(0,3).join(" | ") || "none"}\n` +
+            `- Top organic competitors: ${((serp as any).organic_results || []).slice(0,3).map((r: any) => r.domain || r.link).join(", ") || "none"}`;
+        }
+      }
+    } catch { /* SERP non-blocking */ }
 
     const analysis = await llm(
       `You are a Senior SEO Analyst writing a GSC visibility audit.
@@ -289,17 +314,22 @@ ${zeroClickPages.slice(0, 5).map((p: any) => `  • ${(p.page||p.url||"").replac
 - Quick-win pages (position 4-20): ${quickWins.length}
 ${quickWins.slice(0, 5).map((p: any) => `  • ${(p.page||p.url||"").replace(/^https?:\/\/[^/]+/, "") || "/"} — pos ${(p.position||0).toFixed(1)}, ${p.impressions||0} impr, ${p.clicks||0} clicks`).join("\n")}
 
+TOP QUERIES (what searches the site appears for — ${topQueries.length} total):
+${topQueries.slice(0, 12).map((q: any) => `  • "${q.query || q.keyword || ""}" — pos ${(q.position||0).toFixed(1)}, ${q.impressions||0} impr, ${q.clicks||0} clicks, CTR ${q.impressions > 0 ? ((q.clicks/q.impressions)*100).toFixed(1) : 0}%`).join("\n") || "  No query-level GSC data available"}
+
 Write:
 1. Headline finding (1 paragraph — what's the core GSC problem?)
+2. Query opportunity analysis — which queries have high impressions but low clicks or poor position? Which target pages should be optimised for these queries?
 2. Invisible pages analysis — WHY might these pages be invisible?
 3. Quick-win opportunities with specific expected outcomes
 4. CTR problems — pages ranking but not being clicked (title/meta issue)
-5. Clear priority ranking of these pages`
+5. Clear priority ranking of these pages
+${serpContext ? "6. Competitive context — based on the live SERP data below, what would it take to win the top quick-win query?" + serpContext : ""}`
     );
 
     return {
       ok: true,
-      output: { topPages: topPages.slice(0,20), quickWins: quickWins.slice(0,10), targetUrls, invisiblePages, visiblePages },
+      output: { topPages: topPages.slice(0,20), topQueries: topQueries.slice(0,20), quickWins: quickWins.slice(0,10), targetUrls, invisiblePages, visiblePages },
       artifact: {
         kind: "traffic_audit",
         title: "GSC Visibility Audit",
@@ -604,6 +634,18 @@ const stepActionPlan = {
     const unlinkedCount  = (linkData.unlinkedTargets || []).length;
     const quickWins      = gscData.quickWins || [];
 
+    // Pull live GA4 engagement for up to 5 target pages (parallel, 30s ceiling).
+    // Tells us which pages engage vs bounce — critical for prioritisation.
+    const ga4Pages = await Promise.race([
+      Promise.all(targetUrls.slice(0, 5).map(async url => {
+        const pagePath = url.replace(/^https?:\/\/[^/]+/, "") || "/";
+        const m = await ga4PullPageMetrics({ projectId: ctx.projectId, pagePath, days: 28 }).catch(() => null);
+        return m ? { pagePath, ...m } : null;
+      })),
+      new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 30000)),
+    ]);
+    const ga4Valid = (ga4Pages || []).filter(Boolean) as any[];
+
     const plan = await llm(
       `You are a Senior Digital Marketing Specialist building a traffic growth action plan.
 You are writing this for a client who needs to understand exactly what to do.
@@ -620,6 +662,8 @@ AUDIT FINDINGS SUMMARY:
 • On-page issues: ${issueCount} issues found (missing titles, H1s, thin content, noindex)
 • Performance: avg score ${avgScore !== null ? avgScore+"/100" : "not tested — no PSI key"} — ${(techData.psiResults||[]).filter((p:any) => p.lcp && p.lcp > 4000).length} pages with poor LCP
 • Internal links: ${unlinkedCount} target pages receive no internal links from high-traffic pages
+${ga4Valid.length > 0 ? `• GA4 engagement (live, last 28 days):
+${ga4Valid.map(g => `  - ${g.pagePath}: ${g.sessions} sessions, ${g.engagement_rate_pct}% engaged, ${g.bounce_rate_pct}% bounce, ${g.conversions} conversions`).join("\n")}` : "• GA4 engagement: no session data yet for target pages (expected for low-traffic pages)"}
 
 TARGET PAGES:
 ${targetUrls.slice(0,10).map(u => `• ${u.replace(/^https?:\/\/[^/]+/,"")||"/"}`).join("\n")}
@@ -641,13 +685,13 @@ End with: **Realistic Traffic Forecast** — honest estimate of traffic change i
 
     return {
       ok: true,
-      output: { plan, targetCount: targetUrls.length, invisibleCount, quickWinCount: quickWins.length },
+      output: { plan, targetCount: targetUrls.length, invisibleCount, quickWinCount: quickWins.length, ga4Pages: ga4Valid },
       artifact: {
         kind: "strategy",
         title: "Traffic Growth Action Plan",
         body: `# Traffic Growth Action Plan\n\n${plan}`,
       },
-      honest_note: `Plan built from ${targetUrls.length} target pages. ${invisibleCount} invisible to Google, ${quickWins.length} quick wins, ${issueCount} on-page issues, ${unlinkedCount} unlinked pages.`,
+      honest_note: `Plan built from ${targetUrls.length} target pages. ${invisibleCount} invisible to Google, ${quickWins.length} quick wins, ${issueCount} on-page issues, ${unlinkedCount} unlinked pages, ${ga4Valid.length} pages with live GA4 data.`,
     };
   },
 };
