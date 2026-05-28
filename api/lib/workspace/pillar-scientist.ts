@@ -29,22 +29,99 @@ const norm = (u: string) => (u || "").replace(/\/$/, "").toLowerCase();
 const pathOf = (u: string) => (u || "").replace(/^https?:\/\/[^/]+/, "") || "/";
 const domainOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 
-/* Interrogation definition per pillar — expert lens + data scope. */
-interface Interrogation { expert_role: string; data_sources: string[]; default_questions: string[]; }
+/* Interrogation definition per pillar — expert lens, data scope, the step
+   evidence it draws on (Path A), and its default questions (Path B). */
+interface Interrogation { expert_role: string; data_sources: string[]; step_keys: string[]; default_questions: string[]; }
 
 const INTERROGATIONS: Record<string, Interrogation> = {
   visibility: {
     expert_role: "Senior Technical SEO scientist specialising in indexation, crawl and visibility",
     data_sources: ["GSC pages", "GSC query-page pairs", "this site's CTR curve", "live HTML crawl", "SerpAPI"],
+    step_keys: ["gsc_visibility", "competitor_intel"],
     default_questions: [
       "Which target pages are invisible to Google and what is each one's verified indexation state (reachable / noindex / canonicalised)?",
       "For near-ranking pages, what specifically do the competitors ranking above have that this page lacks?",
-      "What is the realistic click ceiling if priority pages reach their target position, using THIS site's own CTR curve (not generic benchmarks)?",
+      "What is the realistic click ceiling if priority pages reach their target position, using THIS site's own CTR curve?",
       "Which single fix unlocks the most impressions for the least effort?",
     ],
   },
-  // Other pillars added when the slice is approved — same shape.
+  query_opportunity: {
+    expert_role: "Senior SEO scientist specialising in query intent and SERP positioning",
+    data_sources: ["GSC query-page pairs", "SerpAPI", "this site's CTR curve"],
+    step_keys: ["query_landscape", "gsc_visibility", "competitor_intel"],
+    default_questions: [
+      "Which queries rank via the wrong page (cannibalisation), and which page should own each?",
+      "Which high-impression, low-CTR queries signal a title/meta or intent mismatch, and what's the fix?",
+      "Which untapped query clusters (PAA, related) could the site realistically capture, and with what page?",
+      "Rank the query opportunities by realistic click gain using the site's own CTR curve.",
+    ],
+  },
+  on_page_health: {
+    expert_role: "Senior On-Page SEO and content-quality scientist",
+    data_sources: ["live HTML crawl", "competitor pages"],
+    step_keys: ["onpage_audit", "competitor_intel"],
+    default_questions: [
+      "Which pages have title/meta/H1/schema/word-count deficits, with the actual values?",
+      "Which thin pages are thin relative to the competitor depth for their target query?",
+      "Separate the instant mechanical fixes (title rewrites) from the content-investment projects.",
+      "Which single page, fully optimised, would benefit most given its impression volume?",
+    ],
+  },
+  technical_performance: {
+    expert_role: "Senior Web Performance scientist specialising in Core Web Vitals",
+    data_sources: ["CrUX field data"],
+    step_keys: ["core_web_vitals"],
+    default_questions: [
+      "Which pages fail Google's CWV thresholds (LCP>2.5s, CLS>0.1, INP>200ms) and by how much, from real field data?",
+      "Which pages lack field data and is that a traffic-volume fact rather than a performance verdict?",
+      "Which fix addresses the most failing commercially-important pages at once?",
+    ],
+  },
+  internal_links: {
+    expert_role: "Senior SEO scientist specialising in site architecture and PageRank flow",
+    data_sources: ["live HTML crawl", "GSC authority signal"],
+    step_keys: ["internal_link_graph", "gsc_visibility"],
+    default_questions: [
+      "Which target pages receive no internal links from the site's highest-authority pages?",
+      "What is the single highest-leverage internal link to add (from which authority page to which target), and why?",
+      "For each recommended link, give from-page, to-page, suggested anchor, ranked by source authority.",
+    ],
+  },
+  engagement: {
+    expert_role: "Senior Analytics and CRO scientist",
+    data_sources: ["GA4 (28 days)"],
+    step_keys: ["engagement_value"],
+    default_questions: [
+      "Which pages attract traffic but fail to engage or convert, with the real GA4 numbers?",
+      "Which pages engage well but get little traffic (visibility upside)?",
+      "Where is the biggest leak from organic landing to conversion, and which page to fix first?",
+    ],
+  },
+  monitoring: {
+    expert_role: "Senior SEO performance scientist tracking trajectory vs goal",
+    data_sources: ["metrics_snapshots", "GSC", "GA4"],
+    step_keys: ["trajectory", "gsc_visibility"],
+    default_questions: [
+      "What is the verified organic trajectory (clicks/impressions/position/sessions) over the available history?",
+      "Is the campaign on track to the goal in the timeframe; if off-trajectory, what is the corrective priority?",
+      "Distinguish real movement from normal GSC fluctuation and reporting lag.",
+    ],
+  },
 };
+
+/* Read the stored step evidence reports for a pillar (Path A). These were
+   already gathered exhaustively + sourced by the deep steps, so the pillar
+   builds on them rather than re-gathering. Returns the concatenated sourced
+   evidence blocks + a provenance note. */
+async function loadStepEvidenceForPillar(runId: string, stepKeys: string[]): Promise<{ block: string; provenance: SourcedFact[]; found: string[] }> {
+  const { data } = await db().from("step_reports")
+    .select("step_key, report_md").eq("run_id", runId).in("step_key", stepKeys);
+  const rows = (data || []) as any[];
+  const found = rows.map(r => r.step_key);
+  const block = rows.map(r => `## Evidence: ${r.step_key}\n${r.report_md || ""}`).join("\n\n");
+  const provenance: SourcedFact[] = rows.map(r => ({ value: r.step_key, source: "deep step evidence", fetched_at: new Date().toISOString() }));
+  return { block, provenance, found };
+}
 
 /** Gather the verified data the visibility scientist needs. Returns a sourced
     evidence block (string) plus the structured facts for forecasting. */
@@ -125,8 +202,27 @@ export async function solvePillar(opts: {
   let targetUrls = opts.targetUrls?.length ? opts.targetUrls : (await resolveTargetUrls(opts.campaignId, opts.projectId)).urls;
   if (!targetUrls.length) return { success: false, error: "No target pages to analyse." };
 
-  await status("Gathering verified data (GSC, live crawl, SerpAPI)");
-  const { block, provenance } = await gatherVisibilityData(opts.projectId, targetUrls);
+  // Gather the evidence to solve from. PATH A: read the deep steps' stored,
+  // already-sourced evidence for this pillar's domain. PATH B (no run, or no
+  // step evidence found): gather fresh — for visibility we have a full fresh
+  // gatherer; for other pillars without a run we tell the operator to run the
+  // deep steps (they're the gatherers), keeping the no-synthesis guarantee.
+  await status("Loading verified evidence");
+  let block = "";
+  let provenance: SourcedFact[] = [];
+  if (opts.runId) {
+    const ev = await loadStepEvidenceForPillar(opts.runId, interro.step_keys);
+    block = ev.block; provenance = ev.provenance;
+  }
+  if (!block.trim()) {
+    if (opts.pillar === "visibility") {
+      await status("No prior evidence — gathering fresh (GSC, live crawl, SerpAPI)");
+      const fresh = await gatherVisibilityData(opts.projectId, targetUrls);
+      block = fresh.block; provenance = fresh.provenance;
+    } else {
+      return { success: false, error: `No evidence found for ${opts.pillar}. Run the deep steps first (Deep Steps tab) so the scientist has verified data — the steps are the gatherers; pillars solve on their output.` };
+    }
+  }
 
   // Build the question set: panel questions for this pillar (Path A) or defaults (Path B)
   const pillarQs = (opts.panelQuestions || []).filter(q => q.pillar === opts.pillar);

@@ -130,6 +130,21 @@ export default function Workspace() {
     await load();
   };
 
+  const solveAll = async () => {
+    if (!selectedProjectId) return;
+    // Solve only the pillars this run's goal engages (from config), else all 7.
+    const target: string[] = (run?.run_config?.pillars && run.run_config.pillars.length) ? run.run_config.pillars : PILLARS;
+    for (const p of target) {
+      if (reports.find((r) => r.pillar === p)) continue;  // skip already-solved
+      setPillarBusy(p);
+      const r = await wsSolvePillar({ runId: run?.id, projectId: selectedProjectId, campaignId: run?.campaign_id, pillar: p });
+      if (!r.success) toast({ title: `${PILLAR_LABEL[p]} failed`, description: r.error, variant: 'destructive' });
+      await load();
+    }
+    setPillarBusy('');
+    toast({ title: 'Pillars solved', description: 'Reports ready in Documents.' });
+  };
+
   if (!selectedProjectId) {
     return <div style={{ padding: 40, color: 'rgba(180,190,205,0.7)' }}>Select a project to open its workspace.</div>;
   }
@@ -294,18 +309,24 @@ export default function Workspace() {
       {section === 'pillars' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ ...card }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Pillar scientists</div>
-            <div style={{ fontSize: 11.5, color: 'rgba(150,160,180,0.7)', marginTop: 2 }}>
-              Each scientist solves its assigned panel questions with deep, fully-sourced data. {run?.status !== 'pillars' && panel ? 'Release the panel first (Panel tab) to feed them the questions — or solve directly below.' : 'You can also run any pillar directly (Path B) without the panel.'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Pillar scientists</div>
+                <div style={{ fontSize: 11.5, color: 'rgba(150,160,180,0.7)', marginTop: 2 }}>
+                  Each scientist solves its panel questions with deep, fully-sourced data. {run?.status !== 'pillars' && panel ? 'Release the panel (Panel tab) to feed them questions — or solve directly.' : 'You can also run any pillar directly (Path B).'}
+                </div>
+              </div>
+              <button onClick={solveAll} disabled={!!pillarBusy} style={primaryBtn(!!pillarBusy)}>
+                <FlaskConical size={13} /> {pillarBusy ? 'Solving…' : 'Solve all'}
+              </button>
             </div>
             {run?.pillar_status && <div style={{ fontSize: 11, color: CYAN, marginTop: 8 }}>Working: {run.pillar_status}</div>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10 }}>
             {PILLARS.map((p) => {
               const rep = reports.find((r) => r.pillar === p);
-              const implemented = p === 'visibility';   // proven slice
               return (
-                <div key={p} style={{ ...card, padding: 14, opacity: implemented ? 1 : 0.55 }}>
+                <div key={p} style={{ ...card, padding: 14 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>{PILLAR_LABEL[p]}</div>
                   {rep ? (
                     <>
@@ -313,12 +334,10 @@ export default function Workspace() {
                       <div style={{ fontSize: 10.5, color: 'rgba(170,180,195,0.85)', margin: '8px 0' }}>{rep.title}</div>
                       <button onClick={() => setSection('documents')} style={linkBtn()}>Read in Documents →</button>
                     </>
-                  ) : implemented ? (
+                  ) : (
                     <button onClick={() => solve(p)} disabled={pillarBusy === p} style={{ ...primaryBtn(pillarBusy === p), width: '100%', justifyContent: 'center', marginTop: 4 }}>
                       {pillarBusy === p ? <><Loader2 size={12} className="animate-spin" /> Solving…</> : <><FlaskConical size={12} /> Solve</>}
                     </button>
-                  ) : (
-                    <div style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.6)', marginTop: 4 }}>Rolls out after Visibility is approved.</div>
                   )}
                 </div>
               );

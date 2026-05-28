@@ -94,10 +94,23 @@ export async function wsRunDeepSteps(body: any) {
       await upsertStepReport(runId, projectId, "competitor_intel", comp.evidence, comp.report_md, comp.evidence.worth_deeper);
       results["competitor_intel"] = "ok";
     }
-    // NOTE: other steps (query_landscape, onpage_audit, core_web_vitals,
-    // internal_link_graph, engagement_value, authority_signals, trajectory)
-    // are added in Build 2 — they slot in here, gated by isEnabled(), reading
-    // the run's goal from config to adapt their pulls.
+
+    // Remaining full-depth steps — each gated by the run config. Imported lazily.
+    const TS = await import("./deep-steps/traffic-steps.js");
+    const runStep = async (key: string, fn: (o: any) => Promise<{ evidence: any; report_md: string }>) => {
+      if (!isEnabled(key)) return;
+      try {
+        const { evidence, report_md } = await fn({ projectId, targetUrls });
+        await upsertStepReport(runId, projectId, key, evidence, report_md, evidence.worth_deeper || []);
+        results[key] = "ok";
+      } catch (e: any) { results[key] = `failed: ${e?.message}`; }
+    };
+    await runStep("query_landscape", TS.gatherQueryLandscape);
+    await runStep("onpage_audit", TS.gatherOnpageAudit);
+    await runStep("core_web_vitals", TS.gatherCoreWebVitals);
+    await runStep("internal_link_graph", TS.gatherInternalLinkGraph);
+    await runStep("engagement_value", TS.gatherEngagementValue);
+    await runStep("trajectory", TS.gatherTrajectory);
   } catch (e: any) {
     return { success: false, error: `deep steps failed: ${e?.message}`, results };
   }

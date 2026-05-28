@@ -1,6 +1,6 @@
 # PROJECT_BRIEF — SEO Season · Quantum Intelligence Workspace
 
-_Last updated: 2026-05-28 (Build 1 shipped). Re-upload at session start. Single source of truth for the Workspace architecture and build order._
+_Last updated: 2026-05-28 (Build 2 shipped). Re-upload at session start. Single source of truth for the Workspace architecture and build order._
 
 ---
 
@@ -46,7 +46,7 @@ Taxonomy + dependencies:
 
 ## 3. BUILD ORDER (confirmed)
 Build 1 — Goal infrastructure [SHIPPED 2026-05-28]: composable goal definitions (api/lib/workspace/goals.ts: GOAL_DEFS, STEP_DEFS, DATA_SOURCES, composeRunConfig, goalCatalog); goal-selection+config UI in Workspace.tsx (multi-select goals/custom, computed config, step toggles+depth shown, dependency-surfacing satisfied-vs-needs-activation); document run-folder label; CTR-curve bug FIXED (impression-weighted). Migration: workspace-build1-migration.sql adds goal_ids + run_config to workspace_runs. New actions: ws_goal_catalog, ws_compose_config; ws_create_run now takes goalIds/customLabel/stepOverrides; wsRunDeepSteps honors enabled steps; panel uses composed framing.
-Build 2 — Traffic full depth on the foundation: goal-aware deep steps using FULL GSC/GA4/SerpAPI/CrUX; all 7 pillars.
+Build 2 — Traffic full depth [SHIPPED 2026-05-28]: 6 new deep steps in api/lib/workspace/deep-steps/traffic-steps.ts (query_landscape, onpage_audit, core_web_vitals[CrUX], internal_link_graph, engagement_value[GA4], trajectory[metrics_snapshots diff]) — each exhaustive, sourced, downloadable; wired into wsRunDeepSteps gated by isEnabled. ALL 7 PILLARS now in pillar-scientist.ts (INTERROGATIONS map w/ step_keys + default_questions per pillar). Pillars now CONSUME stored step evidence (Path A via loadStepEvidenceForPillar reading step_reports) and fall back to fresh gather for visibility (Path B); other pillars require deep steps first (no synthesis). UI: all 7 pillars enabled, Solve-all button (solves run_config.pillars or all 7, skips solved). No new migration (uses existing step_reports + seo_campaign_reports).
 Then: goal by goal; shared infra built once in Build 1, reused. Infra-first avoids retrofit rework across 6+ goals.
 
 ---
@@ -65,8 +65,8 @@ Then: goal by goal; shared infra built once in Build 1, reused. Infra-first avoi
 
 ---
 
-## 6. DEPTH GAP (addressed in Build 2)
-Steps NOT goal-aware + under-use integrations. Goal lives only on run row (panel reads it) — STEPS DONT KNOW GOAL -> must pass goal into every step. Unused: GA4 (sessions/engagement/conversion VALUE), CrUX/PSI (CWV). SerpAPI under-used: only near-ranking; need untapped clusters (don't-rank-at-all), full PAA, AI Overview, wrong-page queries. GSC: wrong-page queries, position TRENDS from metrics_snapshots (exists — use for trackability/Monitoring). Depth = RIGHT data for goal, not just more.
+## 6. DEPTH GAP [LARGELY CLOSED in Build 2]
+GA4 (engagement_value step), CrUX (core_web_vitals step), wrong-page + high-impr-low-CTR queries + PAA/AI-Overview landscape (query_landscape step), internal link graph (internal_link_graph step), trajectory vs metrics_snapshots (trajectory step) — ALL now built. REMAINING for later: deep steps don't yet branch their pulls by traffic SUBTYPE (commercial/informational/local/branded) — currently goal framing handles subtype at panel level only; authority_signals step still needs backlink API (not built, traffic doesn't need it). Conversion VALUE: GA4 step pulls sessions/engagement/bounce/conversions; monetary value needs GA4 conversion config.
 
 ---
 
