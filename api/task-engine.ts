@@ -5125,7 +5125,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     const log: string[] = [];
 
     try {
-      // ── 1. Create the objective ──────────────────────────────────
+      // ── 1. Find existing objective OR create new one ─────────────
       const GOAL_LABELS: Record<string, string> = {
         keyword_ranking:    'Rank on page 1 for target keyword',
         traffic_growth:     'Increase organic traffic',
@@ -5136,20 +5136,32 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
         eeat:               'Improve E-E-A-T signals',
       };
       const objectiveTitle = title || GOAL_LABELS[campaignType] || campaignType;
-      const { data: campaign, error: campErr } = await getDb().from('seo_campaigns').insert({
-        project_id:    projectId,
-        keyword:       keyword || objectiveTitle,
-        campaign_kind: 'rank_for_keyword',
-        campaign_type: campaignType,
-        goal:          objectiveTitle,
-        status:        'active',
-        target_urls:   Array.isArray(targetUrls) && targetUrls.length > 0 ? targetUrls : null,
-        target_locations: Array.isArray(targetLocations) && targetLocations.length > 0 ? targetLocations : null,
-        updated_at:    new Date().toISOString(),
-      }).select('id').single();
-      if (campErr) return ok(res, { error: 'Objective create failed: ' + campErr.message });
-      const campaignId = (campaign as any).id;
-      log.push(`✓ Objective created: "${objectiveTitle}"`);
+
+      // Check if an objective of this type already exists for this project
+      let campaignId: string;
+      const { data: existingObj } = await getDb().from('seo_campaigns')
+        .select('id').eq('project_id', projectId).eq('campaign_type', campaignType)
+        .eq('status', 'active').limit(1).maybeSingle();
+
+      if (existingObj) {
+        campaignId = (existingObj as any).id;
+        log.push(`✓ Using existing ${campaignType} objective`);
+      } else {
+        const { data: campaign, error: campErr } = await getDb().from('seo_campaigns').insert({
+          project_id:    projectId,
+          keyword:       keyword || objectiveTitle,
+          campaign_kind: 'rank_for_keyword',
+          campaign_type: campaignType,
+          goal:          objectiveTitle,
+          status:        'active',
+          target_urls:   Array.isArray(targetUrls) && targetUrls.length > 0 ? targetUrls : null,
+          target_locations: Array.isArray(targetLocations) && targetLocations.length > 0 ? targetLocations : null,
+          updated_at:    new Date().toISOString(),
+        }).select('id').single();
+        if (campErr) return ok(res, { error: 'Objective create failed: ' + campErr.message });
+        campaignId = (campaign as any).id;
+        log.push(`✓ Objective created: "${objectiveTitle}"`);
+      }
 
       // ── 2. Find or create site workspace ────────────────────────
       let siteId: string | null = null;

@@ -108,10 +108,11 @@ export default function ObjectivePreviewInline({
           pipelineType,
           inputText:    preview.title || 'grow traffic',
           scope: {
-            keyword:    parsedKws[0] || undefined,
-            targetUrls: parsedUrls.length > 0 ? parsedUrls : undefined,
-            goalType:   preview.goalType,
-            campaignId,
+            keyword:      parsedKws[0] || undefined,
+            targetUrls:   parsedUrls.length > 0 ? parsedUrls : undefined,
+            goalType:     preview.goalType,
+            campaignId,    // links artifacts to campaign → appears in Documents
+            campaign_id:  campaignId,
             siteId,
           },
         };

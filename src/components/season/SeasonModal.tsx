@@ -594,6 +594,7 @@ export default function SeasonModal() {
               setActiveRunId(null);
               setActiveRunStepCount(0);
               setActiveRunLabel('');
+              setActiveRunType('rank_for_keyword');
             }}
             onComplete={(run) => {
               /* When the run completes, drop a synthesized response into the modal
